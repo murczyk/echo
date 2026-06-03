@@ -29,6 +29,8 @@ import {
   buildNetworkColumnOrder,
   buildNetworkLoadingRows,
   CountChipLabel,
+  NETWORK_STATUS_FILTER_LABELS,
+  NETWORK_STATUS_FILTER_ORDER,
   NETWORK_CALLSIGN_COLUMN_SIZES,
   NETWORK_COLUMNS_VISIBILITY,
 } from './NetworkCallsignsTableShared';
@@ -43,23 +45,19 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Catalog'];
-const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Unknown' | 'Verified'>, string> = {
-  All: 'Всі',
-  Developing: 'В дорозвідці',
-  Catalog: 'Каталог',
-};
-
 function getNetworkStatusFilterCount(
   filter: NetworkCallsignStatusFilter,
   statusCounts: ReturnType<typeof countNetworkCallsignStatusRows>,
 ) {
   if (filter === 'All') return statusCounts.all;
   if (filter === 'Developing') return statusCounts.developing;
-  return statusCounts.catalog;
+  if (filter === 'Catalog') return statusCounts.catalog;
+  return statusCounts.unknown;
 }
 
 type Props = {
+  title: string;
+  countLabel?: string;
   rows: NetworkCallsignRowView[];
   loading: boolean;
   loadingError: string | null;
@@ -75,6 +73,8 @@ type Props = {
 };
 
 export function NetworkCallsignsNetworkTable({
+  title,
+  countLabel,
   rows,
   loading,
   loadingError,
@@ -97,6 +97,8 @@ export function NetworkCallsignsNetworkTable({
       })}
     >
       <NetworkCallsignsNetworkTableContent
+        title={title}
+        countLabel={countLabel}
         rows={rows}
         loading={loading}
         loadingError={loadingError}
@@ -115,6 +117,8 @@ export function NetworkCallsignsNetworkTable({
 }
 
 function NetworkCallsignsNetworkTableContent({
+  title,
+  countLabel,
   rows,
   loading,
   loadingError,
@@ -132,20 +136,17 @@ function NetworkCallsignsNetworkTableContent({
   const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuTarget, setRowMenuTarget] = useState<NetworkCallsignRowView | null>(null);
 
-  const visibleRows = useMemo(
-    () => rows.filter((row) => row.status !== 'unknown'),
-    [rows],
-  );
+  const visibleRows = useMemo(() => rows, [rows]);
   const normalizedStatusFilter = NETWORK_STATUS_FILTER_ORDER.includes(statusFilter) ? statusFilter : 'All';
   const tableStateRows = useMemo(() => {
     const filtered = normalizedStatusFilter === 'All'
       ? visibleRows
       : visibleRows.filter((row) => (
-        normalizedStatusFilter === 'Verified'
-          ? row.status === 'verified'
-          : normalizedStatusFilter === 'Developing'
-            ? row.status === 'developing'
-            : row.status === 'catalog'
+        normalizedStatusFilter === 'Developing'
+          ? row.status === 'developing'
+          : normalizedStatusFilter === 'Catalog'
+            ? row.status === 'catalog'
+            : row.status === 'unknown'
       ));
 
     // comparator used inside each group: messageCount desc, lastDatetime desc, callsign uk
@@ -372,11 +373,24 @@ function NetworkCallsignsNetworkTableContent({
       <Stack spacing={2} sx={{ minHeight: 0, flex: 1 }}>
         <Stack spacing={1.25} sx={{ mt: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+              <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+                <Typography variant="h6">{title}</Typography>
+                {countLabel ? (
+                  <Typography variant="body2" color="text.secondary">
+                    {countLabel}
+                  </Typography>
+                ) : null}
+              </Stack>
               {NETWORK_STATUS_FILTER_ORDER.map((filter) => (
                 <PowerChip
                   key={filter}
-                  label={<CountChipLabel label={NETWORK_STATUS_FILTER_LABELS[filter]} count={getNetworkStatusFilterCount(filter, statusCounts)} />}
+                  label={
+                    <CountChipLabel
+                      label={NETWORK_STATUS_FILTER_LABELS[filter]}
+                      count={getNetworkStatusFilterCount(filter, statusCounts)}
+                    />
+                  }
                   selected={normalizedStatusFilter === filter}
                   onClick={() => onStatusFilterChange(filter)}
                   interactive

@@ -28,10 +28,9 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
-  defaultNetworkUnitId: number | null;
 };
 
-export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, defaultNetworkUnitId }: Args) {
+export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
 
   const addKnownCallsignsToCurrentNetwork = useCallback(async (knownCallsignId: number) => {

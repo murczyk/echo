@@ -1,5 +1,6 @@
-import { Box, Button, Stack, Typography } from '@mui/material';
-import { useMemo } from 'react';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material';
+import { useMemo, useState } from 'react';
 
 import type { NetworkCallsign, Source } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -12,10 +13,43 @@ import type {
   NetworkCallsignMarkerMode,
   NetworkCallsignStatusFilter,
 } from '../network-callsigns';
-import { buildNetworkCallsignRowViews, flattenCatalogCallsignRows } from '../network-callsigns';
+import {
+  buildNetworkCallsignRowViews,
+  filterCatalogCallsignGroups,
+  filterInterceptedCallsigns,
+  filterNetworkCallsignRows,
+  flattenCatalogCallsignRows,
+  normalizeCallsignDisplay,
+} from '../network-callsigns';
 import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
 import { NetworkCallsignsInterceptedPanel } from './NetworkCallsignsInterceptedPanel';
 import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';
+import { formatCountLabel } from './NetworkCallsignsTableShared';
+
+const SECTION_IDS = {
+  network: 'network-callsigns-network',
+  catalog: 'network-callsigns-catalog',
+  intercepted: 'network-callsigns-intercepted',
+} as const;
+
+function scrollToSection(sectionId: string) {
+  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function formatSectionCount(count: number, totalCount: number, searchActive: boolean): string {
+  if (!searchActive) return formatCountLabel(count);
+  return `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
+}
+
+const NETWORK_SECTION_TABLE_HEIGHT = {
+  xs: 500,
+  md: 'min(600px, 64vh)',
+} as const;
+
+const CATALOG_SECTION_TABLE_HEIGHT = {
+  xs: 520,
+  md: 'min(620px, 70vh)',
+} as const;
 
 export type Props = {
   sources: Source[];
@@ -72,99 +106,186 @@ export function NetworkDetailsCallsignsPanel({
   inFlightUpdateIds,
   inFlightDeleteIds,
 }: Props) {
+  const [searchQuery, setSearchQuery] = useState('');
   const networkRows = useMemo(
     () => buildNetworkCallsignRowViews(networkCallsigns, new Map(sources.map((source) => [source.id, source] as const))),
     [networkCallsigns, sources],
   );
   const catalogRows = useMemo(() => flattenCatalogCallsignRows(catalogCallsignGroups), [catalogCallsignGroups]);
-  const interceptedShouldFillAvailableHeight = interceptedExpanded && unknownInterceptedCallsigns.length > 8;
-  const contentAreaFlex = sectionMode === 'intercepted' ? (interceptedShouldFillAvailableHeight ? 1 : '0 0 auto') : 1;
+  const normalizedSearchQuery = normalizeCallsignDisplay(searchQuery);
+  const searchActive = normalizedSearchQuery !== '';
+  const filteredNetworkRows = useMemo(() => filterNetworkCallsignRows(networkRows, searchQuery), [networkRows, searchQuery]);
+  const filteredCatalogGroups = useMemo(() => filterCatalogCallsignGroups(catalogCallsignGroups, searchQuery), [catalogCallsignGroups, searchQuery]);
+  const filteredCatalogRows = useMemo(() => flattenCatalogCallsignRows(filteredCatalogGroups), [filteredCatalogGroups]);
+  const filteredInterceptedRows = useMemo(() => filterInterceptedCallsigns(unknownInterceptedCallsigns, searchQuery), [searchQuery, unknownInterceptedCallsigns]);
+  const sectionCounts = {
+    network: {
+      filtered: filteredNetworkRows.length,
+      total: networkRows.length,
+    },
+    catalog: {
+      filtered: filteredCatalogRows.length,
+      total: catalogRows.length,
+    },
+    intercepted: {
+      filtered: filteredInterceptedRows.length,
+      total: unknownInterceptedCallsigns.length,
+    },
+  } as const;
 
-  const tabNav = (
-    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-      <Typography variant="body1" color="text.secondary">
-        Перейти:
-      </Typography>
-      <PowerChip label="Позивні мережі" selected={sectionMode === 'network'} onClick={() => onSectionModeChange('network')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
-      <PowerChip label="Співпадіння з каталогом" selected={sectionMode === 'catalog'} onClick={() => onSectionModeChange('catalog')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
-      <PowerChip label="Присутні в перехопленнях" selected={sectionMode === 'intercepted'} onClick={() => onSectionModeChange('intercepted')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.9} labelPaddingY={0.1} sx={{ height: 30 }} />
-    </Stack>
-  );
+  const handleNavigateToSection = (nextSection: NetworkCallsignSectionMode) => {
+    onSectionModeChange(nextSection);
+    scrollToSection(SECTION_IDS[nextSection]);
+  };
 
-  const content = sectionMode === 'network' ? (
-    <NetworkCallsignsNetworkTable
-      rows={networkRows}
-      loading={loading}
-      loadingError={loadingError}
-      canManage={canManage}
-      statusFilter={statusFilter}
-      onStatusFilterChange={onStatusFilterChange}
-      onOpenEditDrawer={onOpenEditDrawer}
-      onOpenDeleteDialog={onOpenDeleteDialog}
-      onSetMarkerMode={onSetMarkerMode}
-      onReload={onReload}
-      inFlightUpdateIds={inFlightUpdateIds}
-      inFlightDeleteIds={inFlightDeleteIds}
-    />
-  ) : sectionMode === 'catalog' ? (
-    <NetworkCallsignsCatalogTable
-      rows={catalogRows}
-      loading={loading}
-      loadingError={loadingError}
-      canManage={canManage}
-      onAddKnownCallsign={onAddKnownCallsign}
-      onReload={onReload}
-      inFlightAddIds={inFlightAddIds}
-    />
-  ) : (
-    <Stack spacing={2} sx={{ minHeight: 0, flex: sectionMode === 'intercepted' ? (interceptedShouldFillAvailableHeight ? 1 : '0 0 auto') : 1 }}>
-      {loadingError && unknownInterceptedCallsigns.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
-      <NetworkCallsignsInterceptedPanel
-        rows={unknownInterceptedCallsigns}
-        canManage={canManage}
-        expanded={interceptedExpanded}
-        loading={loading}
-        mutationBusy={inFlightCreateCallsigns.length > 0}
-        onToggleExpanded={onToggleInterceptedExpanded}
-        onAddToDeveloping={onAddInterceptedToDeveloping}
-        onAddToNetwork={onAddInterceptedToNetwork}
-        inFlightCreateCallsigns={inFlightCreateCallsigns}
-      />
-    </Stack>
-  );
+  const clearSearch = () => setSearchQuery('');
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, flex: sectionMode === 'intercepted' ? (interceptedShouldFillAvailableHeight ? 1 : '0 0 auto') : 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
-      <Stack spacing={2} sx={{ minHeight: 0, flex: contentAreaFlex }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 2, flexWrap: 'wrap' }}>
-          {tabNav}
-          {canManage && sectionMode === 'network' ? (
-            <Button variant="contained" onClick={onOpenCreateDrawer} disabled={loading}>
-              Додати
-            </Button>
-          ) : null}
-        </Stack>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-          <Typography variant="h6">
-            {sectionMode === 'network'
-              ? 'Позивні мережі'
-              : sectionMode === 'catalog'
-                ? 'Співпадіння з каталогом'
-                : 'Присутні в перехопленнях'}
-          </Typography>
-        </Box>
-        {loadingError && networkCallsigns.length === 0 && catalogCallsignGroups.length === 0 && unknownInterceptedCallsigns.length === 0 ? (
-          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-            <PowerAlert severity="error">{loadingError}</PowerAlert>
-            <Button size="small" onClick={onReload}>
-              Спробувати ще раз
-            </Button>
+    <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0, flex: '0 1 auto' }}>
+          <TextField
+            label="Пошук"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            size="small"
+            placeholder="Пошук"
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || searchQuery === '') return;
+              event.preventDefault();
+              event.stopPropagation();
+              clearSearch();
+            }}
+            InputProps={{
+              endAdornment: searchQuery !== '' ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    aria-label="Очистити пошук"
+                    onClick={clearSearch}
+                    edge="end"
+                  >
+                    <CloseRoundedIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+            }}
+            sx={{ width: { xs: '100%', sm: 320, md: 360 }, flex: '0 0 auto' }}
+          />
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+            <PowerChip
+              label="Позивні мережі"
+              selected={sectionMode === 'network'}
+              onClick={() => handleNavigateToSection('network')}
+              interactive
+              fontSize="0.75rem"
+              fontWeight={600}
+              labelPaddingX={0.9}
+              labelPaddingY={0.1}
+              sx={{ height: 30 }}
+            />
+            <PowerChip
+              label="Співпадіння з каталогом"
+              selected={sectionMode === 'catalog'}
+              onClick={() => handleNavigateToSection('catalog')}
+              interactive
+              fontSize="0.75rem"
+              fontWeight={600}
+              labelPaddingX={0.9}
+              labelPaddingY={0.1}
+              sx={{ height: 30 }}
+            />
+            <PowerChip
+              label="Присутні в перехопленнях"
+              selected={sectionMode === 'intercepted'}
+              onClick={() => handleNavigateToSection('intercepted')}
+              interactive
+              fontSize="0.75rem"
+              fontWeight={600}
+              labelPaddingX={0.9}
+              labelPaddingY={0.1}
+              sx={{ height: 30 }}
+            />
           </Stack>
+        </Stack>
+        {canManage ? (
+          <Button variant="contained" onClick={onOpenCreateDrawer} disabled={loading}>
+            Додати
+          </Button>
         ) : null}
-        <Box sx={{ flex: contentAreaFlex, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {content}
-        </Box>
+      </Box>
+
+      {loadingError && networkCallsigns.length === 0 && catalogCallsignGroups.length === 0 && unknownInterceptedCallsigns.length === 0 ? (
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+          <PowerAlert severity="error">{loadingError}</PowerAlert>
+          <Button size="small" onClick={onReload}>
+            Спробувати ще раз
+          </Button>
+        </Stack>
+      ) : null}
+
+      <Stack spacing={2.5} sx={{ minHeight: 0, width: '100%' }}>
+        <Stack id={SECTION_IDS.network} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
+          <Box sx={{ height: NETWORK_SECTION_TABLE_HEIGHT, minHeight: 420, maxHeight: 640, display: 'flex' }}>
+            <NetworkCallsignsNetworkTable
+              title="Позивні мережі"
+              rows={filteredNetworkRows}
+              loading={loading}
+              loadingError={loadingError}
+              canManage={canManage}
+              statusFilter={statusFilter}
+              onStatusFilterChange={onStatusFilterChange}
+              onOpenEditDrawer={onOpenEditDrawer}
+              onOpenDeleteDialog={onOpenDeleteDialog}
+              onSetMarkerMode={onSetMarkerMode}
+              onReload={onReload}
+              inFlightUpdateIds={inFlightUpdateIds}
+              inFlightDeleteIds={inFlightDeleteIds}
+            />
+          </Box>
+        </Stack>
+
+        <Stack id={SECTION_IDS.catalog} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
+          <Box sx={{ height: CATALOG_SECTION_TABLE_HEIGHT, minHeight: 420, maxHeight: 720, display: 'flex' }}>
+            <NetworkCallsignsCatalogTable
+              title="Співпадіння з каталогом"
+              countLabel={formatSectionCount(sectionCounts.catalog.filtered, sectionCounts.catalog.total, searchActive)}
+              rows={filteredCatalogRows}
+              loading={loading}
+              loadingError={loadingError}
+              canManage={canManage}
+              onAddKnownCallsign={onAddKnownCallsign}
+              onReload={onReload}
+              inFlightAddIds={inFlightAddIds}
+            />
+          </Box>
+        </Stack>
+
+        <Stack id={SECTION_IDS.intercepted} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 2, flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
+              <Typography variant="h6">Присутні в перехопленнях</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {formatSectionCount(sectionCounts.intercepted.filtered, sectionCounts.intercepted.total, searchActive)}
+              </Typography>
+            </Stack>
+          </Stack>
+          {loadingError && unknownInterceptedCallsigns.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
+          <Box sx={{ mb: 2 }}>
+            <NetworkCallsignsInterceptedPanel
+              rows={filteredInterceptedRows}
+              canManage={canManage}
+              expanded={interceptedExpanded}
+              loading={loading}
+              mutationBusy={inFlightCreateCallsigns.length > 0}
+              onToggleExpanded={onToggleInterceptedExpanded}
+              onAddToDeveloping={onAddInterceptedToDeveloping}
+              onAddToNetwork={onAddInterceptedToNetwork}
+              inFlightCreateCallsigns={inFlightCreateCallsigns}
+            />
+          </Box>
+        </Stack>
       </Stack>
-    </Box>
+    </Stack>
   );
 }

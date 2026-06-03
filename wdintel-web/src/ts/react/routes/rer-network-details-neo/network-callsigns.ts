@@ -9,9 +9,9 @@ import { NO_DATA_LABEL, formatDateTime24 } from '../../utils/misc';
 
 export type NetworkCallsignSectionMode = 'network' | 'catalog' | 'intercepted';
 
-export type NetworkCallsignStatusFilter = 'All' | 'Verified' | 'Developing' | 'Catalog' | 'Unknown';
+export type NetworkCallsignStatusFilter = 'All' | 'Developing' | 'Catalog' | 'Unknown';
 
-export type NetworkCallsignStatus = 'verified' | 'developing' | 'catalog' | 'unknown';
+export type NetworkCallsignStatus = 'developing' | 'catalog' | 'unknown';
 export type NetworkCallsignMarkerMode = 'mainRadioStation' | 'commandControl' | 'none';
 
 export enum NetworkCallsignSourceId {
@@ -108,7 +108,6 @@ export type NetworkCallsignCatalogRowView = {
 
 export type NetworkCallsignStatusCounts = {
   all: number;
-  verified: number;
   developing: number;
   catalog: number;
   unknown: number;
@@ -155,7 +154,7 @@ export function createNetworkCallsignDrawerForm(
     id: networkCallsign.id,
     networkId,
     callsign: networkCallsign.callsign,
-    status: networkCallsign.status === 'verified' ? 'catalog' : networkCallsign.status,
+    status: networkCallsign.status,
     position: networkCallsign.position,
     comment: networkCallsign.comment,
     sourceId: networkCallsign.sourceId,
@@ -252,7 +251,7 @@ function compareInterceptedCallsignsByActivityDesc(
 export function getNetworkCallsignStatus(networkCallsign: Pick<NetworkCallsign, 'active' | 'developing' | 'knownCallsignId'>): NetworkCallsignStatus {
   if (networkCallsign.developing) return 'developing';
   if (networkCallsign.knownCallsignId !== null) return 'catalog';
-  if (networkCallsign.active) return 'verified';
+  if (networkCallsign.active) return 'catalog';
   return 'unknown';
 }
 
@@ -279,8 +278,7 @@ export function getNetworkCallsignMarkerState(markerMode: NetworkCallsignMarkerM
 export function getNetworkCallsignStatusLabel(status: NetworkCallsignStatus): string {
   if (status === 'developing') return 'В дорозвідці';
   if (status === 'catalog') return 'Каталог';
-  if (status === 'unknown') return 'Невідомо';
-  return 'Верифіковано';
+  return 'Невідомо';
 }
 
 export function buildNetworkCallsignRowViews(
@@ -443,11 +441,91 @@ export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): 
     },
     {
       all: 0,
-      verified: 0,
       developing: 0,
       catalog: 0,
       unknown: 0,
     },
+  );
+}
+
+function normalizeSearchNeedle(value: string): string {
+  return value.trim().toLocaleLowerCase('uk-UA');
+}
+
+function isSearchMatch(values: Array<string | number | null | undefined>, query: string): boolean {
+  const needle = normalizeSearchNeedle(query);
+  if (needle === '') return true;
+  return values.some((value) => {
+    if (value === null || value === undefined) return false;
+    return String(value).toLocaleLowerCase('uk-UA').includes(needle);
+  });
+}
+
+export function filterNetworkCallsignRows(rows: NetworkCallsignRowView[], query: string): NetworkCallsignRowView[] {
+  if (normalizeSearchNeedle(query) === '') return rows;
+  return rows.filter((row) =>
+    isSearchMatch(
+      [
+        row.callsign,
+        row.position,
+        row.unitName,
+        row.comment,
+        row.sourceName,
+        row.statusLabel,
+        row.lastDatetime === null ? null : formatNetworkCallsignDatetime(row.lastDatetime),
+        row.messageCount,
+      ],
+      query,
+    ),
+  );
+}
+
+export function filterCatalogCallsignGroups(
+  groups: NetworkCallsignCatalogGroupView[],
+  query: string,
+): NetworkCallsignCatalogGroupView[] {
+  if (normalizeSearchNeedle(query) === '') return groups;
+
+  return groups
+    .map((group) => ({
+      ...group,
+      knownCallsigns: group.knownCallsigns.filter((knownCallsign) =>
+        isSearchMatch(
+          [
+            knownCallsign.callsign,
+            knownCallsign.position,
+            knownCallsign.unitName,
+            knownCallsign.comment,
+            knownCallsign.sourceName,
+            group.callsign,
+            group.messageCount,
+            group.lastDatetime === null ? null : formatNetworkCallsignDatetime(group.lastDatetime),
+            knownCallsign.createdAt,
+          ],
+          query,
+        ),
+      ),
+    }))
+    .filter((group) => group.knownCallsigns.length > 0);
+}
+
+export function filterInterceptedCallsigns(
+  rows: NetworkCallsignInterceptedView[],
+  query: string,
+): NetworkCallsignInterceptedView[] {
+  if (normalizeSearchNeedle(query) === '') return rows;
+
+  return rows.filter((row) =>
+    isSearchMatch(
+      [
+        row.callsign,
+        row.messageCount,
+        row.lastDatetime === null ? null : formatNetworkCallsignDatetime(row.lastDatetime),
+        row.freqs?.join(' '),
+        row.isInDictionary ? 'dictionary' : null,
+      ],
+      query,
+    ),
   );
 }
 

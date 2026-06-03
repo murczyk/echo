@@ -158,7 +158,6 @@ function CallsignStatusControl({
 }) {
   const developingSelected = status === 'developing';
   const catalogSelected = status === 'catalog';
-  const verifiedSelected = status === 'verified';
 
   return (
     <Box
@@ -168,7 +167,7 @@ function CallsignStatusControl({
         borderRadius: 2,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 0.75,
         p: 0.5,
       })}
@@ -265,7 +264,8 @@ export function NetworkCallsignDrawer({
       && (!isRoSource || radioFreqValidationError === null),
   );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
-  const selectedUnitId = form?.unitId ?? null;
+  const unitOptions = [{ id: 0, label: 'Не вказано' }, ...units];
+  const selectedUnitId = form?.unitId ?? 0;
 
   useEffect(() => {
     if (!open) return;
@@ -383,9 +383,9 @@ export function NetworkCallsignDrawer({
               >
                 <SearchableOptionAutocomplete
                   label="Підрозділ"
-                  options={units}
+                  options={unitOptions}
                   valueId={selectedUnitId}
-                  onValueIdChange={(unitId) => updateForm(form, { unitId }, onChange)}
+                  onValueIdChange={(unitId) => updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange)}
                   getOptionLabel={(unit) => unit.label}
                   disabled={saving}
                   placeholder="Оберіть підрозділ"

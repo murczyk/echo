@@ -144,6 +144,7 @@ export type NetworkDetailsNeoPageState = {
   callsignDeleteTarget: NetworkCallsignRowView | null;
   callsignDeleteSubmitting: boolean;
   callsignDeleteError: string | null;
+  callsignDeleteAlsoFromCatalog: boolean;
   loading: boolean;
   referenceLoading: boolean;
   error: string | null;
@@ -264,6 +265,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   callsignDeleteTarget: null,
   callsignDeleteSubmitting: false,
   callsignDeleteError: null,
+  callsignDeleteAlsoFromCatalog: false,
   loading: true,
   referenceLoading: true,
   error: null,

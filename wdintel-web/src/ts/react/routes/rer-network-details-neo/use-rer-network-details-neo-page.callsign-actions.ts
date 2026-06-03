@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import { createNetworkCallsign, deleteNetworkCallsign, updateNetworkCallsign } from '../../services/api/callsigns';
+import {
+  createNetworkCallsign,
+  deleteCallsign as deleteCatalogCallsign,
+  deleteNetworkCallsign,
+  updateNetworkCallsign,
+} from '../../services/api/callsigns';
 import {
   formatErrorMessage,
   canManageNetworkCallsignActions,
@@ -26,11 +31,10 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
-  defaultNetworkUnitId: number | null;
   loadCallsigns: (networkId: number) => Promise<void>;
 };
 
-export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, defaultNetworkUnitId, loadCallsigns }: Args) {
+export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, loadCallsigns }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
 
   const reloadCallsignsData = useCallback(async () => {
@@ -57,14 +61,14 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
       callsignDrawerOpen: true,
       callsignDrawerMode: 'create',
       callsignDrawerForm: {
-        ...createDefaultNetworkCallsignDrawerForm(state.network?.id ?? 0, defaultNetworkUnitId),
+        ...createDefaultNetworkCallsignDrawerForm(state.network?.id ?? 0, null),
         ...(overrides ?? {}),
       },
       callsignDrawerSaving: false,
       callsignDrawerError: null,
       callsignWarning: null,
     }));
-  }, [canManageCallsignActions, defaultNetworkUnitId, setState, state.network]);
+  }, [canManageCallsignActions, setState, state.network]);
 
   const openCallsignDrawerForEdit = useCallback((networkCallsign: NetworkCallsignRowView) => {
     if (!canManageCallsignActions || !state.network) return;
@@ -105,6 +109,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
       callsignDeleteTarget: networkCallsign,
       callsignDeleteSubmitting: false,
       callsignDeleteError: null,
+      callsignDeleteAlsoFromCatalog: false,
     }));
   }, [canManageCallsignActions, setState]);
 
@@ -117,6 +122,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
         callsignDeleteTarget: null,
         callsignDeleteSubmitting: false,
         callsignDeleteError: null,
+        callsignDeleteAlsoFromCatalog: false,
       };
     });
   }, [setState]);
@@ -214,6 +220,9 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
 
     try {
       await deleteNetworkCallsign(target.id);
+      if (state.callsignDeleteAlsoFromCatalog && target.knownCallsignId !== null && target.status !== 'developing') {
+        await deleteCatalogCallsign(target.knownCallsignId);
+      }
       setState((current) => ({
         ...current,
         callsignDeleteDialogOpen: false,
@@ -221,6 +230,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
         callsignDeleteSubmitting: false,
         callsignDeleteError: null,
         callsignWarning: null,
+        callsignDeleteAlsoFromCatalog: false,
         callsignDeleteInFlightIds: current.callsignDeleteInFlightIds.filter((item) => item !== target.id),
       }));
       await reloadCallsignsData();
@@ -233,8 +243,13 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
         callsignWarning: errorMessage,
         callsignDeleteInFlightIds: current.callsignDeleteInFlightIds.filter((item) => item !== target.id),
       }));
+      void reloadCallsignsData().catch(() => undefined);
     }
-  }, [canManageCallsignActions, reloadCallsignsData, setState, state.callsignDeleteSubmitting, state.callsignDeleteTarget]);
+  }, [canManageCallsignActions, reloadCallsignsData, setState, state.callsignDeleteAlsoFromCatalog, state.callsignDeleteSubmitting, state.callsignDeleteTarget]);
+
+  const setCallsignDeleteAlsoFromCatalog = useCallback((callsignDeleteAlsoFromCatalog: boolean) => {
+    setState((current) => ({ ...current, callsignDeleteAlsoFromCatalog }));
+  }, [setState]);
 
   return {
     loadCallsigns: reloadCallsignsData,
@@ -250,5 +265,6 @@ export function useRerNetworkDetailsNeoPageCallsignActions({ state, setState, de
     openCallsignDeleteDialog,
     closeCallsignDeleteDialog,
     deleteCallsign,
+    setCallsignDeleteAlsoFromCatalog,
   };
 }

@@ -95,13 +95,11 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
   const callsignActions = useRerNetworkDetailsNeoPageCallsignActions({
     state,
     setState,
-    defaultNetworkUnitId: state.network?.unitIds?.[0] ?? null,
     loadCallsigns,
   });
   const callsignMutationActions = useRerNetworkDetailsNeoPageCallsignMutations({
     state,
     setState,
-    defaultNetworkUnitId: state.network?.unitIds?.[0] ?? null,
   });
 
   const openMenu = useCallback((anchorEl: HTMLElement) => {

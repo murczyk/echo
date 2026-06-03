@@ -214,6 +214,11 @@ export async function deleteNetworkCallsign(callsignId: number): Promise<Network
   return transformSnakeToCamel<NetworkCallsign>(raw);
 }
 
+export async function deleteCallsign(callsignId: number): Promise<Callsign> {
+  const raw = await postJson<unknown>('/api/sigint/callsign/delete', callsignId as any);
+  return transformSnakeToCamel<Callsign>(raw);
+}
+
 export async function addKnownCallsignsToNetwork(req: AddAsKnownNetworkCallsignReq): Promise<NetworkCallsign[]> {
   const raw = await postJson<unknown>('/api/sigint/network-callsign/add-as-known', transformCamelToSnake(req));
   return transformSnakeToCamel<NetworkCallsign[]>(raw);
@@ -380,11 +385,6 @@ export async function createCallsign(req: CreateCallsignReq): Promise<Callsign> 
 
 export async function updateCallsign(req: Callsign): Promise<Callsign> {
   const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', toUpdateCallsignReqBody(req) as any);
-  return normalizeCallsign(raw);
-}
-
-export async function deleteCallsign(callsignId: number): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/delete', callsignId as any);
   return normalizeCallsign(raw);
 }
 

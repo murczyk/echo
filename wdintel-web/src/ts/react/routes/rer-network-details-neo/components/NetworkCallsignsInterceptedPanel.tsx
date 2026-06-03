@@ -150,7 +150,6 @@ export function NetworkCallsignsInterceptedPanel({
 
   const visibleRows = expanded ? rows : rows.slice(0, 10);
   const overflowCount = Math.max(rows.length - visibleRows.length, 0);
-  const shouldFillAvailableHeight = expanded && rows.length > 10;
   const showEmptyState = !loading && rows.length === 0;
 
   return (
@@ -162,10 +161,10 @@ export function NetworkCallsignsInterceptedPanel({
         borderColor: 'divider',
         borderRadius: 2,
         bgcolor: 'background.paper',
-        flex: shouldFillAvailableHeight ? 1 : '0 0 auto',
+        flex: '0 0 auto',
         minHeight: 0,
         position: 'relative',
-        overflowY: shouldFillAvailableHeight ? 'auto' : 'visible',
+        overflowY: 'visible',
       }}
     >
       <Stack spacing={1.5} sx={{ minHeight: 0 }}>
