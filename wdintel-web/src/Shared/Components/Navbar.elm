@@ -462,7 +462,6 @@ changelogDropdown props maybeData =
 
                     else
                         props.onDropdownToggle (Just dropdownKey)
-
             in
             div [ class "relative" ]
                 [ button
@@ -520,7 +519,7 @@ changelogDropdown props maybeData =
                             , if data.unseen then
                                 button
                                     [ type_ "button"
-                                    , class "text-sm font-semibold text-red-500 hover:text-red-400 border-0 appearance-none bg-transparent cursor-pointer"
+                                    , class "text-sm font-semibold text-[var(--color-text)] hover:underline border-0 appearance-none bg-transparent cursor-pointer"
                                     , onClick (props.onChangelogSeen data.version)
                                     ]
                                     [ text "Відмітити прочитаним" ]
