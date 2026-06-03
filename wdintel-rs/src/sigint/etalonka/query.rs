@@ -2322,11 +2322,21 @@ mod tests {
             till_date_inclusive_ms: Some(1_740_000_600_000),
         };
 
-        let expr = build_network_freq_join_condition(Some(&filter), false)
-            .expect("join condition");
-        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+        let exclusive_sql = Query::select()
+            .expr(
+                build_network_freq_join_condition(Some(&filter), false)
+                    .expect("join condition"),
+            )
+            .to_string(PostgresQueryBuilder);
+        let inclusive_sql = Query::select()
+            .expr(
+                build_network_freq_join_condition(Some(&filter), true)
+                    .expect("join condition"),
+            )
+            .to_string(PostgresQueryBuilder);
 
-        assert!(sql.contains(" < LEAST("));
-        assert!(!sql.contains(" <= LEAST("));
+        assert!(exclusive_sql.contains(" < "), "{exclusive_sql}");
+        assert!(!exclusive_sql.contains(" <= "), "{exclusive_sql}");
+        assert!(inclusive_sql.contains(" <= "), "{inclusive_sql}");
     }
 }
