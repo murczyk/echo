@@ -36,9 +36,7 @@ async fn message_submit(
             ensure_group(datasource.id, &txn, req.group.clone())
                 .await
                 .c(h!())?;
-        let timestamp = chrono::DateTime::from_timestamp_millis(req.timestamp)
-            .c(h!())?
-            .naive_utc();
+        let timestamp = Utc::now().naive_utc();
 
         let message = Message {
             body: req.message.to_owned(),

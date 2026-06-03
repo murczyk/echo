@@ -7,7 +7,6 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 pub struct OperatorInboxMessage {
     pub instance_id: String,
     pub message: String,
-    pub timestamp: i64,
     pub group: Group,
     pub profile: Profile,
     pub metadata: Metadata,

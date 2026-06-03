@@ -45,7 +45,7 @@ Conflicts=postgresql@14-main.service
 [Service]
 Type=oneshot
 User=postgres
-ExecStart=/usr/bin/pgbackrest --stanza=${STANZA} --delta --log-level-console=info restore
+ExecStart=/usr/bin/pgbackrest --stanza=${STANZA} --delta --io-timeout=10m --log-level-console=info restore
 ExecStopPost=+/usr/bin/systemctl start --no-block postgresql@14-main.service
 EOF
 fi
