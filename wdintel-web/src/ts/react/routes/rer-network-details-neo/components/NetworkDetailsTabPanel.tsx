@@ -148,6 +148,8 @@ export function NetworkDetailsTabPanel({
       variant="outlined"
       sx={{
         minHeight: 0,
+        height: '100%',
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',

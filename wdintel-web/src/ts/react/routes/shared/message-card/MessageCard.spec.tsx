@@ -4,7 +4,7 @@
 import type { ComponentProps, ElementType, ReactNode } from 'react';
 import React, { act, forwardRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
 import type { InboxMessage, Network, Tag } from '../../../../../Bindings';
@@ -432,15 +432,37 @@ async function setInputValue(input: HTMLInputElement, value: string): Promise<vo
 describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        clear: () => {
+          storage.clear();
+        },
+      },
+    });
+  });
+
   afterEach(() => {
     resizeObserverCallbacks.splice(0);
-    vi.unstubAllGlobals();
+    if (typeof window.localStorage?.clear === 'function') {
+      window.localStorage.clear();
+    }
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
       });
       item.container.remove();
     }
+    vi.unstubAllGlobals();
   });
 
   it('resolves etalon display and copy values consistently', () => {
@@ -607,6 +629,25 @@ describe('MessageCard', () => {
     });
     expect(analysisLink.getAttribute('target')).toBe('_blank');
     expect(analysisLink.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('uses the stored classic preference for network drill-down links', async () => {
+    window.localStorage.setItem('rer-network-details.preferredView', 'classic');
+    const view = await renderCard({
+      msg: { ...buildMessage(), messageUid: 'uid-1' },
+    });
+    rendered.push(view);
+
+    const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
+    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    await click(navigateButton);
+
+    const networkUrl = new URL(
+      String(view.container.querySelector('a[href^="/rer-networks/"]')?.getAttribute('href') ?? ''),
+      'https://example.test',
+    );
+    expect(networkUrl.pathname).toBe('/rer-networks/7');
+    expect(networkUrl.searchParams.get('view')).toBe('classic');
   });
 
   it('keeps analysis navigation limited to network destinations', async () => {

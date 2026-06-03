@@ -1,4 +1,4 @@
-port module PagePorts.SharedPorts exposing (shared_getLocation, shared_getLocationRes, shared_loadLastSeenChangelog, shared_loadLastSeenChangelogRes, shared_loadThemeMode, shared_loadThemeModeRes, shared_saveLastSeenChangelog, shared_saveThemeMode, shared_toggleDarkMode, shared_triggerResize)
+port module PagePorts.SharedPorts exposing (shared_getLocation, shared_getLocationRes, shared_loadLastSeenChangelog, shared_loadLastSeenChangelogRes, shared_loadRerNetworkDetailsPreferredView, shared_loadRerNetworkDetailsPreferredViewRes, shared_loadThemeMode, shared_loadThemeModeRes, shared_saveLastSeenChangelog, shared_saveRerNetworkDetailsPreferredView, shared_saveThemeMode, shared_toggleDarkMode, shared_triggerResize)
 
 import Core.Types exposing (..)
 
@@ -39,3 +39,12 @@ port shared_loadLastSeenChangelog : () -> Cmd msg
 
 
 port shared_loadLastSeenChangelogRes : (String -> msg) -> Sub msg
+
+
+port shared_saveRerNetworkDetailsPreferredView : String -> Cmd msg
+
+
+port shared_loadRerNetworkDetailsPreferredView : () -> Cmd msg
+
+
+port shared_loadRerNetworkDetailsPreferredViewRes : (String -> msg) -> Sub msg

@@ -62,8 +62,9 @@ import {
   listZoneDatasources,
   updateZoneDatasourceGroup,
 } from '../../services/api/zones';
-import { formatDate } from '../../utils/misc';
+import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
 import { PowerAlert } from '../../components/PowerAlert';
+import { DatasourceKindIcon } from '../../components/icons';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -165,8 +166,8 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
 const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
   { id: 'activityDay', desc: true },
 ];
-const EMPTY_AOR_FILTER_VALUE = '—';
-const EMPTY_AOR_FILTER_LABEL = '—';
+const EMPTY_AOR_FILTER_VALUE = NO_DATA_LABEL;
+const EMPTY_AOR_FILTER_LABEL = NO_DATA_LABEL;
 
 const orphanDefaultMRTOptions = getDefaultMRTOptions<OrphanSignalGroupEntry>();
 const zoneDefaultMRTOptions = getDefaultMRTOptions<ZoneGroupRow>();
@@ -197,7 +198,7 @@ function formatErrorMessage(error: unknown): string {
 }
 
 function formatOptionalText(value: string | null | undefined): string {
-  if (!value || !value.trim()) return '—';
+  if (!value || !value.trim()) return NO_DATA_LABEL;
   return value;
 }
 
@@ -220,15 +221,80 @@ function getDatasourceLabel(
   datasourceId: number | null,
   datasourceById: Map<number, Datasource>
 ) {
-  if (datasourceId === null) return '—';
+  if (datasourceId === null) return NO_DATA_LABEL;
   const datasource = datasourceById.get(datasourceId);
   return datasource?.displayName || `#${datasourceId}`;
+}
+
+function getDatasource(
+  datasourceId: number | null,
+  datasourceById: Map<number, Datasource>
+) {
+  if (datasourceId === null) return null;
+  return datasourceById.get(datasourceId) ?? null;
+}
+
+function renderDatasourceCell(
+  datasourceId: number | null,
+  datasourceById: Map<number, Datasource>
+) {
+  const datasource = getDatasource(datasourceId, datasourceById);
+  if (!datasource) return <span>{NO_DATA_LABEL}</span>;
+
+  const label = datasource.displayName || `#${datasourceId}`;
+  const hasIcon = ['signal', 'whatsapp', 'echo_operator'].includes(
+    datasource.kind.toLowerCase()
+  );
+
+  if (!hasIcon) {
+    return (
+      <Tooltip title={label}>
+        <Box
+          component="span"
+          sx={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </Box>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 1,
+        minWidth: 0,
+      }}
+    >
+      <DatasourceKindIcon kind={datasource.kind} fontSize="small" />
+      <Tooltip title={label}>
+        <Box
+          component="span"
+          sx={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </Box>
+      </Tooltip>
+    </Box>
+  );
 }
 
 function buildAorLabels(
   aors: AreaOfResponsibility[] | null | undefined
 ): string {
-  if (!aors || aors.length === 0) return '—';
+  if (!aors || aors.length === 0) return NO_DATA_LABEL;
   return aors.map((aor) => aor.name).join(', ');
 }
 
@@ -345,11 +411,11 @@ function OrphanGroupsTable(props: {
         header: 'Група',
         id: 'group',
         accessorFn: (row) => {
-          if (!row?.masterKey) return '—';
+          if (!row?.masterKey) return NO_DATA_LABEL;
           return row.name && row.name.trim() ? row.name : row.masterKey.slice(-5);
         },
         Cell: ({ row }) => {
-          if (isLoading || !row.original?.masterKey) return <span>—</span>;
+          if (isLoading || !row.original?.masterKey) return <span>{NO_DATA_LABEL}</span>;
           const name =
             row.original.name && row.original.name.trim()
               ? row.original.name
@@ -367,6 +433,8 @@ function OrphanGroupsTable(props: {
         id: 'datasource',
         accessorFn: (row) =>
           getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
+        Cell: ({ row }) =>
+          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
         size: 180,
       },
       {
@@ -374,7 +442,7 @@ function OrphanGroupsTable(props: {
         id: 'activityDay',
         accessorFn: (row) => row?.groupStats?.activityLastDay ?? null,
         Cell: ({ row }) => (
-          <span>{row.original?.groupStats?.activityLastDay ?? '—'}</span>
+          <span>{row.original?.groupStats?.activityLastDay ?? NO_DATA_LABEL}</span>
         ),
         size: 140,
       },
@@ -383,7 +451,7 @@ function OrphanGroupsTable(props: {
         id: 'activityWeek',
         accessorFn: (row) => row?.groupStats?.activityLastWeek ?? null,
         Cell: ({ row }) => (
-          <span>{row.original?.groupStats?.activityLastWeek ?? '—'}</span>
+          <span>{row.original?.groupStats?.activityLastWeek ?? NO_DATA_LABEL}</span>
         ),
         size: 140,
       },
@@ -411,7 +479,7 @@ function OrphanGroupsTable(props: {
           const shortNote = row?.groupAdminData?.shortNote ?? '';
           const longNote = row?.groupAdminData?.longNote ?? '';
           return (
-            `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || '—'
+            `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || NO_DATA_LABEL
           );
         },
         Cell: ({ row }) => {
@@ -421,11 +489,11 @@ function OrphanGroupsTable(props: {
           const longNote = formatOptionalText(
             row.original?.groupAdminData?.longNote ?? null
           );
-          if (shortNote === '—' && longNote === '—') return <span>—</span>;
+          if (shortNote === NO_DATA_LABEL && longNote === NO_DATA_LABEL) return <span>{NO_DATA_LABEL}</span>;
           return (
             <div className="flex flex-col">
-              {shortNote !== '—' ? <span>{shortNote}</span> : null}
-              {longNote !== '—' ? (
+              {shortNote !== NO_DATA_LABEL ? <span>{shortNote}</span> : null}
+              {longNote !== NO_DATA_LABEL ? (
                 <span className="text-muted-foreground text-xs">
                   {longNote}
                 </span>
@@ -439,7 +507,7 @@ function OrphanGroupsTable(props: {
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (row) => row?.createdAt ?? null,
-        Cell: ({ row }) => <span>{row.original?.createdAt ? formatDate(row.original.createdAt) : '—'}</span>,
+        Cell: ({ row }) => <span>{row.original?.createdAt ? formatDate(row.original.createdAt) : NO_DATA_LABEL}</span>,
         size: 140,
       },
     ],
@@ -625,9 +693,9 @@ function ZoneGroupsTable(props: {
         accessorFn: (row) =>
           row?.group?.groupMasterKey
             ? getGroupName(row.group.groupMasterKey, null, props.groupInfos)
-            : '—',
+            : NO_DATA_LABEL,
         Cell: ({ row }) => {
-          if (isLoading || !row.original?.group?.groupMasterKey) return <span>—</span>;
+          if (isLoading || !row.original?.group?.groupMasterKey) return <span>{NO_DATA_LABEL}</span>;
           const groupName = getGroupName(
             row.original.group.groupMasterKey,
             null,
@@ -661,6 +729,8 @@ function ZoneGroupsTable(props: {
         id: 'datasource',
         accessorFn: (row) =>
           getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
+        Cell: ({ row }) =>
+          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
         size: 200,
       },
       {
@@ -676,7 +746,7 @@ function ZoneGroupsTable(props: {
           const stats = row.original?.group?.groupMasterKey
             ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
             : null;
-          if (!stats) return <span>—</span>;
+          if (!stats) return <span>{NO_DATA_LABEL}</span>;
           return <span>{stats.activityLastDay}</span>;
         },
         size: 140,
@@ -694,7 +764,7 @@ function ZoneGroupsTable(props: {
           const stats = row.original?.group?.groupMasterKey
             ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
             : null;
-          if (!stats) return <span>—</span>;
+          if (!stats) return <span>{NO_DATA_LABEL}</span>;
           return <span>{stats.activityLastWeek}</span>;
         },
         size: 140,
@@ -744,9 +814,9 @@ function ZoneGroupsTable(props: {
         accessorFn: (row) => {
           const shortNote = formatOptionalText(row?.group?.shortNote ?? null);
           const longNote = formatOptionalText(row?.group?.longNote ?? null);
-          if (shortNote === '—' && longNote === '—') return '—';
-          if (shortNote === '—') return longNote;
-          if (longNote === '—') return shortNote;
+          if (shortNote === NO_DATA_LABEL && longNote === NO_DATA_LABEL) return NO_DATA_LABEL;
+          if (shortNote === NO_DATA_LABEL) return longNote;
+          if (longNote === NO_DATA_LABEL) return shortNote;
           return `${shortNote} / ${longNote}`;
         },
         Cell: ({ row }) => {
@@ -756,18 +826,18 @@ function ZoneGroupsTable(props: {
           const longNote = formatOptionalText(
             row.original?.group?.longNote ?? null
           );
-          if (shortNote === '—' && longNote === '—') return <span>—</span>;
+          if (shortNote === NO_DATA_LABEL && longNote === NO_DATA_LABEL) return <span>{NO_DATA_LABEL}</span>;
           const tooltipLabel =
-            shortNote === '—'
+            shortNote === NO_DATA_LABEL
               ? longNote
-              : longNote === '—'
+              : longNote === NO_DATA_LABEL
               ? shortNote
               : `${shortNote} / ${longNote}`;
           return (
             <Tooltip title={tooltipLabel}>
               <div className="flex flex-col">
-                {shortNote !== '—' ? <span>{shortNote}</span> : null}
-                {longNote !== '—' ? (
+                {shortNote !== NO_DATA_LABEL ? <span>{shortNote}</span> : null}
+                {longNote !== NO_DATA_LABEL ? (
                   <span className="text-muted-foreground text-xs">
                     {longNote}
                   </span>
