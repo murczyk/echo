@@ -2324,9 +2324,9 @@ mod tests {
 
         let expr = build_network_freq_join_condition(Some(&filter), false)
             .expect("join condition");
-        let sql = format!("{expr:?}");
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
 
-        assert!(sql.contains("LessThan"));
-        assert!(!sql.contains("LessThanOrEqual"));
+        assert!(sql.contains(" < LEAST("));
+        assert!(!sql.contains(" <= LEAST("));
     }
 }
