@@ -121,6 +121,7 @@ mainBody user model shared route =
                                 model.networksExtra
                                 (RD.withDefault Dict.empty shared.networks)
                         , masterUnits = masterUnitsDict
+                        , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                         , currentRoute = Just route
                         , pointTokenClickUrlFor = Pages_.RerAnalysis.Utils.buildPointTokenClickUrlFor model.tags route
                         }

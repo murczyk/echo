@@ -42,6 +42,7 @@ import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as EUtils
+import Utils.RerNetworkDetails
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
@@ -1266,7 +1267,11 @@ networksTableConfig user shared model =
                                     []
                                 , a
                                     [ class "cursor-pointer"
-                                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                                    , Route.href
+                                        { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }
+                                        , hash = Nothing
+                                        , query = Utils.RerNetworkDetails.query shared.rerNetworkDetailsPreferredView
+                                        }
                                     , target "_blank"
                                     ]
                                     (case shared.masterUnits of

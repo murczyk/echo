@@ -1,5 +1,6 @@
 import type { InboxMessage, Network } from '../../../../../Bindings';
 import { NO_DATA_LABEL, isPresent } from '../../../utils/misc';
+import { buildRerNetworkDetailsHref } from '../../rer-network-details-neo/network-details-preference';
 
 export type EtalonBindingDisplayValue = {
   displayValue: string;
@@ -108,7 +109,7 @@ export function buildMessageCardNavigationMenuItems(
 ): MessageCardNavigationMenuItem[] {
   const items: MessageCardNavigationMenuItem[] = renderedNetworks.map((network) => ({
     kind: 'network',
-    href: `/rer-networks/${network.networkId}`,
+    href: buildRerNetworkDetailsHref(network.networkId),
     networkLabel: network.label,
     badge: network.badge,
   }));

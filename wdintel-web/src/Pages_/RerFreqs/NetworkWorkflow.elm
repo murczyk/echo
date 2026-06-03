@@ -20,6 +20,7 @@ import Shared.Components.Spinner
 import Shared.Components.Toggle as Toggle
 import Shared.Model exposing (isDarkMode)
 import Utils.NetworksUtils as NetworksUtils
+import Utils.RerNetworkDetails
 import Utils.RemoteData as RemoteData
 import Utils.Select
 
@@ -103,7 +104,16 @@ viewManagingLinks freq model shared networks =
                                 _ ->
                                     text "Завантаження..."
                             , div [ class "flex gap-2" ]
-                                [ a [ class "text-blue-500 hover:underline", Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }, query = Dict.empty, hash = Nothing }, target "_blank" ] [ i [ class "bi bi-pencil" ] [] ]
+                                [ a
+                                    [ class "text-blue-500 hover:underline"
+                                    , Route.href
+                                        { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }
+                                        , query = Utils.RerNetworkDetails.query shared.rerNetworkDetailsPreferredView
+                                        , hash = Nothing
+                                        }
+                                    , target "_blank"
+                                    ]
+                                    [ i [ class "bi bi-pencil" ] [] ]
                                 , button [ class "text-red-500 hover:underline", onClick (FreqRemoveFromExistingNetwork freq network_) ] [ i [ class "bi bi-trash" ] [] ]
                                 ]
                             ]

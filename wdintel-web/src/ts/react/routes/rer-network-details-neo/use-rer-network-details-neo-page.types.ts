@@ -187,6 +187,7 @@ export type NetworkDetailsNeoPageState = {
   deleteInProgress: boolean;
   menuAnchorEl: HTMLElement | null;
   copyStatus: string | null;
+  copyStatusTone: 'success' | 'error' | null;
   editDrawerOpen: boolean;
   editForm: NetworkEditForm | null;
   editInProgress: boolean;
@@ -318,6 +319,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   deleteInProgress: false,
   menuAnchorEl: null,
   copyStatus: null,
+  copyStatusTone: null,
   editDrawerOpen: false,
   editForm: null,
   editInProgress: false,

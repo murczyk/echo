@@ -80,6 +80,15 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       .filter((label) => label.trim() !== '');
   }, [state.network?.unitIds, unitsById]);
 
+  const aorItems = useMemo(() => {
+    const aorIds = state.network?.aorIds ?? [];
+    return aorIds.map((aorId) => ({ id: aorId, label: aorsById.get(aorId) ?? `#${aorId}` }));
+  }, [aorsById, state.network?.aorIds]);
+
+  const rangeLabel = useMemo(() => {
+    return formatNetworkFreqRange(state.network?.freqs ?? []);
+  }, [state.network?.freqs]);
+
   const actions = useRerNetworkDetailsNeoPageActions({
     state,
     setState,
@@ -218,19 +227,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.pelengPointsRequestedTo,
   ]);
 
-  const aorItems = useMemo(() => {
-    const aorIds = state.network?.aorIds ?? [];
-    return aorIds.map((aorId) => ({ id: aorId, label: aorsById.get(aorId) ?? `#${aorId}` }));
-  }, [aorsById, state.network?.aorIds]);
-
   const postItems = useMemo(() => {
     const postIds = state.network?.postIds ?? [];
     return postIds.map((postId) => ({ id: postId, label: postsById.get(postId) ?? `#${postId}` }));
   }, [postsById, state.network?.postIds]);
-
-  const rangeLabel = useMemo(() => {
-    return formatNetworkFreqRange(state.network?.freqs ?? []);
-  }, [state.network?.freqs]);
 
   const transferTypeLabel = useMemo(() => {
     return formatTransferTypeLabel(state.network?.freqs ?? [], modulationsById);
@@ -412,6 +412,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setEditForm: actions.setEditForm,
     saveNetworkEdit: actions.saveNetworkEdit,
     handleCopyNetworkInfo: actions.handleCopyNetworkInfo,
+    handleCopyMainInfo: actions.handleCopyMainInfo,
     handleDelete: actions.handleDelete,
     loadNetworkActivity,
     reload,

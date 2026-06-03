@@ -1693,6 +1693,7 @@ update user shared route msg model =
                     , serverInfo = shared.serverInfo
                     , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
+                    , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                     , currentRoute = Just route
                     , pointTokenClickUrlFor = RerAnalysisUtils.buildPointTokenClickUrlFor model.tags route
                     }
