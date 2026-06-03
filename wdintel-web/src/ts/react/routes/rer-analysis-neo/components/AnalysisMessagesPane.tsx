@@ -160,7 +160,9 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
           ? () => {
-              void copyMessageValue(buildCopyTextWithNetworkName(message.text, etalonDisplayModel.copyEtalonValue)).then(() => {
+              void copyMessageValue(
+                buildCopyTextWithNetworkName(message.text, etalonDisplayModel.copyEtalonValue, message.noHeadersBody),
+              ).then(() => {
                 onCopyFeedback(`text-network-${id}`);
               });
             }
@@ -173,7 +175,12 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
         message.extendedForm.trim() !== ''
           ? () => {
               void copyMessageValue(
-                buildCopyTextWithNetworkAndNote(message.text, etalonDisplayModel.copyEtalonValue, message.extendedForm),
+                buildCopyTextWithNetworkAndNote(
+                  message.text,
+                  etalonDisplayModel.copyEtalonValue,
+                  message.extendedForm,
+                  message.noHeadersBody,
+                ),
               ).then(() => {
                 onCopyFeedback(`text-network-note-${id}`);
               });

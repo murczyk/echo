@@ -47,6 +47,24 @@ ALPHA
     );
   });
 
+  it('recognizes csv/kmz import timestamp headers on the same line as frequency', () => {
+    const importedMessageText = `2024-03-02T07:09:00 F=460,3250(МГц)
+
+48.1434076, 37.7146826
+
+- Калуга
+- Брест, продолжайте связь.`;
+
+    expect(extractMessageTextForCopy(importedMessageText)).toBe(
+      `2024-03-02T07:09:00
+
+48.1434076, 37.7146826
+
+- Калуга
+- Брест, продолжайте связь.`,
+    );
+  });
+
   it('recognizes legacy importer datetime headers on the same line as frequency', () => {
     const legacyMessageText = `Отримано з поста "csv"
 31.08.2023_14:13 F=404,1350(МГц) П52
@@ -78,6 +96,41 @@ describe('buildCopyTextWithNetworkName', () => {
 — Гусар, Гусар, я Дуб 3. Проверка связи. Как меня слышно?
 — Гусар, Гусар, я Дуб 3. Как меня слышишь? Прием.`,
     );
+  });
+
+  it('inserts the network before transcript lines for csv/kmz import messages', () => {
+    const importedMessageText = `2024-03-02T07:09:00 F=460,3250(МГц)
+
+48.1434076, 37.7146826
+
+- Калуга
+- Брест, продолжайте связь.`;
+
+    expect(buildCopyTextWithNetworkName(importedMessageText, 'р/м Alpha')).toBe(
+      `2024-03-02T07:09:00
+
+48.1434076, 37.7146826
+
+р/м Alpha
+- Калуга
+- Брест, продолжайте связь.`,
+    );
+  });
+
+  it('uses no-headers body when the message has no recognizable timestamp header', () => {
+    const rawText = `УКХ р/м 70 мсп 42 мсд 58 А
+ЛАВИНА
+- Серь, я Лавина, продолжайте связь.`;
+
+    expect(
+      buildCopyTextWithNetworkName(rawText, 'р/м Alpha', {
+        body: '- Серь, я Лавина, продолжайте связь.',
+        start: 0,
+        end: 0,
+      }),
+    ).toBe(`р/м Alpha
+
+- Серь, я Лавина, продолжайте связь.`);
   });
 
   it('replaces the unit line after a legacy datetime header instead of prepending the network', () => {

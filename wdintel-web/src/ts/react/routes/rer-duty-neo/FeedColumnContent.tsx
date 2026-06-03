@@ -274,7 +274,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
                 etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
                   ? () =>
                       onMessageCopy(
-                        buildCopyTextWithNetworkName(msg.text || '', etalonDisplayModel.copyEtalonValue),
+                        buildCopyTextWithNetworkName(msg.text || '', etalonDisplayModel.copyEtalonValue, msg.noHeadersBody),
                         `text-network-${id}`,
                       )
                   : undefined
@@ -286,7 +286,12 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
                 msg.extendedForm.trim() !== ''
                   ? () =>
                       onMessageCopy(
-                        buildCopyTextWithNetworkAndNote(msg.text || '', etalonDisplayModel.copyEtalonValue, msg.extendedForm),
+                        buildCopyTextWithNetworkAndNote(
+                          msg.text || '',
+                          etalonDisplayModel.copyEtalonValue,
+                          msg.extendedForm,
+                          msg.noHeadersBody,
+                        ),
                         `text-network-note-${id}`,
                       )
                   : undefined
