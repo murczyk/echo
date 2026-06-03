@@ -1480,27 +1480,6 @@ pub fn build_network_freq_join_condition(
     Ok(join_condition)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
-        let filter = NetworkFreqFilter {
-            active_freqs_only: false,
-            since_date_inclusive_ms: Some(1_740_000_000_000),
-            till_date_inclusive_ms: Some(1_740_000_600_000),
-        };
-
-        let expr = build_network_freq_join_condition(Some(&filter), false)
-            .expect("join condition");
-        let sql = format!("{expr:?}");
-
-        assert!(sql.contains("LessThan"));
-        assert!(!sql.contains("LessThanOrEqual"));
-    }
-}
-
 /// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
@@ -2329,4 +2308,25 @@ pub async fn load_networks_by_id(
     }
 
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
+        let filter = NetworkFreqFilter {
+            active_freqs_only: false,
+            since_date_inclusive_ms: Some(1_740_000_000_000),
+            till_date_inclusive_ms: Some(1_740_000_600_000),
+        };
+
+        let expr = build_network_freq_join_condition(Some(&filter), false)
+            .expect("join condition");
+        let sql = format!("{expr:?}");
+
+        assert!(sql.contains("LessThan"));
+        assert!(!sql.contains("LessThanOrEqual"));
+    }
 }
