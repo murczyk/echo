@@ -1,7 +1,6 @@
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
-import { Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
 
@@ -22,9 +21,6 @@ import type {
 
 type Props = {
   headingId: string;
-  filterButtonId: string;
-  filterPopoverId: string;
-  filterAnchorEl: HTMLElement | null;
   svgRef: MutableRefObject<SVGSVGElement | null>;
   graphView: NetworkCallsignRelationsGraphView;
   layout: RelationGraphLayout;
@@ -49,7 +45,6 @@ type Props = {
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
-  onOpenFilters: (anchorEl: HTMLElement) => void;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
@@ -74,9 +69,6 @@ function sameFreqs(left: string[], right: string[]): boolean {
 
 export function NetworkCallsignRelationsGraphStage({
   headingId,
-  filterButtonId,
-  filterPopoverId,
-  filterAnchorEl,
   svgRef,
   graphView,
   layout,
@@ -101,7 +93,6 @@ export function NetworkCallsignRelationsGraphStage({
   onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
-  onOpenFilters,
   onSelectNodeId,
   onSelectEdgeId,
   onPointerDown,
@@ -226,40 +217,6 @@ export function NetworkCallsignRelationsGraphStage({
           >
             <RemoveIcon sx={{ fontSize: 24 }} />
           </IconButton>
-          <Tooltip title="Налаштування">
-            <IconButton
-              id={filterButtonId}
-              aria-label="Налаштування"
-              aria-describedby={filterAnchorEl ? filterPopoverId : undefined}
-              onClick={(event) => onOpenFilters(event.currentTarget)}
-              sx={{
-              width: 44,
-              height: 44,
-              borderRadius: 0,
-              color: graphTheme.zoomControlText,
-              flex: '0 0 44px',
-              minWidth: 44,
-              bgcolor: 'transparent',
-              '&:hover': {
-                bgcolor: graphTheme.zoomControlHoverBg,
-                color: graphTheme.zoomControlText,
-              },
-              '&:focus-visible': {
-                outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
-                outlineOffset: -3,
-              },
-              '&:active': {
-                bgcolor: graphTheme.zoomControlHoverBg,
-                color: graphTheme.zoomControlText,
-              },
-              '& .MuiSvgIcon-root': {
-                color: 'inherit',
-                },
-              }}
-            >
-              <SettingsRoundedIcon sx={{ fontSize: 22 }} />
-            </IconButton>
-          </Tooltip>
         </Box>
       </Box>
 

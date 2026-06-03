@@ -7,6 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { NetworkPoint } from '../../../../../Bindings';
 
+vi.mock('./NetworkDatePickerField', () => ({
+  NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
+}));
+vi.mock('./NetworkDetailsLoadingState', () => ({
+  NetworkDetailsLoadingState: ({ message }: { message: string }) => <div data-testid="peleng-loading">{message}</div>,
+}));
 vi.mock('./NetworkDetailsPelengationMap', () => ({
   NetworkDetailsPelengationMap: () => <div data-testid="pelengation-map" />,
 }));
@@ -38,17 +44,55 @@ function renderPanel(pelengPoints: NetworkPoint[] = []) {
         pelengPointsLoaded={true}
         pelengPointsLoading={false}
         pelengPointsError={null}
-        pelengSince="2026-05-20T00:00"
-        pelengTill="2026-05-20T01:00"
+        pelengSince="2026-05-20"
+        pelengTill="2026-05-20"
         pelengSearch=""
         pelengEnabledFreqs={[]}
         pelengShowLabels={true}
+        pelengSatelliteEnabled={true}
+        pelengHeatmapEnabled={false}
         onReloadPelengPoints={vi.fn()}
         onPelengSinceChange={vi.fn()}
         onPelengTillChange={vi.fn()}
         onPelengSearchChange={vi.fn()}
         onPelengEnabledFreqsChange={vi.fn()}
         onPelengShowLabelsChange={vi.fn()}
+        onPelengSatelliteEnabledChange={vi.fn()}
+        onPelengHeatmapEnabledChange={vi.fn()}
+      />,
+    );
+  });
+
+  return { container, root };
+}
+
+function renderLoadingPanel() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(
+      <NetworkDetailsPelengationPanel
+        pelengPoints={[]}
+        pelengPointsLoaded={false}
+        pelengPointsLoading={true}
+        pelengPointsError={null}
+        pelengSince="2026-05-20"
+        pelengTill="2026-05-20"
+        pelengSearch=""
+        pelengEnabledFreqs={[]}
+        pelengShowLabels={true}
+        pelengSatelliteEnabled={true}
+        pelengHeatmapEnabled={false}
+        onReloadPelengPoints={vi.fn()}
+        onPelengSinceChange={vi.fn()}
+        onPelengTillChange={vi.fn()}
+        onPelengSearchChange={vi.fn()}
+        onPelengEnabledFreqsChange={vi.fn()}
+        onPelengShowLabelsChange={vi.fn()}
+        onPelengSatelliteEnabledChange={vi.fn()}
+        onPelengHeatmapEnabledChange={vi.fn()}
       />,
     );
   });
@@ -78,15 +122,31 @@ describe('NetworkDetailsPelengationPanel', () => {
     expect(view.container.querySelector('[data-testid="pelengation-map"]')).toBeNull();
   });
 
+  it('shows loading state while pelengation points are reloading', () => {
+    const view = renderLoadingPanel();
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="peleng-loading"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Завантажуємо пеленги');
+    expect(view.container.querySelector('[data-testid="pelengation-map"]')).toBeNull();
+    expect(view.container.querySelector('input[placeholder="Пошук"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-Від"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-До"]')).not.toBeNull();
+  });
+
   it('keeps recovery controls visible when filters hide all points', () => {
     const view = renderPanel([visiblePoint]);
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Немає видимих пеленгів');
     expect(view.container.querySelector('[data-testid="pelengation-map"]')).toBeNull();
-    expect(view.container.querySelector('input[placeholder="Пошук частот"]')).not.toBeNull();
+    expect(view.container.querySelector('input[placeholder="Пошук"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-Від"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="date-picker-До"]')).not.toBeNull();
     expect(view.container.textContent).toContain('Частоти');
-    expect(view.container.textContent).toContain('Усі');
-    expect(view.container.textContent).toContain('Нічого');
+    expect(view.container.textContent).not.toContain('Усі');
+    expect(view.container.textContent).not.toContain('Нічого');
+    expect(view.container.textContent).toContain('Супутник');
+    expect(view.container.textContent).toContain('Heatmap');
   });
 });

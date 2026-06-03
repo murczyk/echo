@@ -125,6 +125,8 @@ export type NetworkDetailsNeoPageState = {
   pelengSearch: string;
   pelengEnabledFreqs: string[];
   pelengShowLabels: boolean;
+  pelengSatelliteEnabled: boolean;
+  pelengHeatmapEnabled: boolean;
   callsignsLoaded: boolean;
   callsignsLoading: boolean;
   callsignsError: string | null;
@@ -136,6 +138,7 @@ export type NetworkDetailsNeoPageState = {
   callsignUpdateInFlightIds: number[];
   callsignDeleteInFlightIds: number[];
   currentUser: User | null;
+  currentUserLoaded: boolean;
   units: Unit[];
   posts: Post[];
   aors: AreaOfResponsibility[];
@@ -237,6 +240,8 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   pelengSearch: '',
   pelengEnabledFreqs: [],
   pelengShowLabels: true,
+  pelengSatelliteEnabled: true,
+  pelengHeatmapEnabled: false,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],
@@ -266,6 +271,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   callsignUpdateInFlightIds: [],
   callsignDeleteInFlightIds: [],
   currentUser: null,
+  currentUserLoaded: false,
   units: [],
   posts: [],
   aors: [],

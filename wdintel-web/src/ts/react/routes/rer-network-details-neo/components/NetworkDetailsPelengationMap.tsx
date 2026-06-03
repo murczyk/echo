@@ -1,17 +1,15 @@
-import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
-import WhatshotOutlinedIcon from '@mui/icons-material/WhatshotOutlined';
-import { Box, Button, IconButton, Typography } from '@mui/material';
+import { Box, IconButton } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { createPortal } from 'react-dom';
-import { useMemo } from 'react';
 
 import type { NetworkPoint } from '../../../../../Bindings';
-import { getPelengationFrequencies } from './NetworkDetailsPelengationMap.shared';
 import { useNetworkDetailsPelengationMap } from './useNetworkDetailsPelengationMap';
 
 type Props = {
   pelengPoints: NetworkPoint[];
   showLabels: boolean;
+  satelliteEnabled: boolean;
+  heatmapEnabled: boolean;
 };
 
 function getMapShellSx(isFullscreen: boolean) {
@@ -86,23 +84,8 @@ function getMapControlSx(theme: Theme) {
   };
 }
 
-export function NetworkDetailsPelengationMap({ pelengPoints, showLabels }: Props) {
-  const {
-    mapContainerRef,
-    satelliteEnabled,
-    setSatelliteEnabled,
-    heatmapEnabled,
-    setHeatmapEnabled,
-    isFullscreen,
-    toggleFullscreen,
-  } = useNetworkDetailsPelengationMap(pelengPoints, showLabels);
-
-  const pointCountLabel = useMemo(() => `${pelengPoints.length} точок`, [pelengPoints.length]);
-  const activeFreqCountLabel = useMemo(() => `${getPelengationFrequencies(pelengPoints).length} частот`, [pelengPoints]);
-  const activeLayerLabel = useMemo(() => {
-    const baseLabel = satelliteEnabled ? 'Супутник' : 'Карта';
-    return heatmapEnabled ? `${baseLabel} • Heatmap` : baseLabel;
-  }, [heatmapEnabled, satelliteEnabled]);
+export function NetworkDetailsPelengationMap({ pelengPoints, showLabels, satelliteEnabled, heatmapEnabled }: Props) {
+  const { mapContainerRef, isFullscreen, toggleFullscreen } = useNetworkDetailsPelengationMap(pelengPoints, showLabels, satelliteEnabled, heatmapEnabled);
 
   const mapPanel = (
     <Box component="section" sx={getMapShellSx(isFullscreen)}>
@@ -130,66 +113,6 @@ export function NetworkDetailsPelengationMap({ pelengPoints, showLabels }: Props
         }}
       />
 
-      <Box
-        sx={{
-          position: 'absolute',
-          left: 10,
-          top: 10,
-          zIndex: 1200,
-          display: 'flex',
-          gap: 1,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Button
-          type="button"
-          variant={satelliteEnabled ? 'contained' : 'outlined'}
-          onClick={() => setSatelliteEnabled((current) => !current)}
-          startIcon={<LayersOutlinedIcon />}
-          sx={(theme) => ({
-            borderRadius: 2,
-            px: 1.4,
-            py: 0.7,
-            minWidth: 0,
-            textTransform: 'none',
-            fontWeight: 700,
-            bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
-            color: satelliteEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
-            borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
-            '&:hover': {
-              bgcolor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
-              borderColor: satelliteEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
-            },
-          })}
-        >
-          Супутник
-        </Button>
-
-        <Button
-          type="button"
-          variant={heatmapEnabled ? 'contained' : 'outlined'}
-          onClick={() => setHeatmapEnabled((current) => !current)}
-          startIcon={<WhatshotOutlinedIcon />}
-          sx={(theme) => ({
-            borderRadius: 2,
-            px: 1.4,
-            py: 0.7,
-            minWidth: 0,
-            textTransform: 'none',
-            fontWeight: 700,
-            bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.18) : undefined,
-            color: heatmapEnabled ? theme.palette.warning.main : theme.palette.text.secondary,
-            borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.35) : undefined,
-            '&:hover': {
-              bgcolor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.24) : alpha(theme.palette.text.primary, 0.04),
-              borderColor: heatmapEnabled ? alpha(theme.palette.warning.main, 0.5) : undefined,
-            },
-          })}
-        >
-          Heatmap
-        </Button>
-      </Box>
-
       <IconButton
         aria-label={isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
         title={isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
@@ -198,26 +121,6 @@ export function NetworkDetailsPelengationMap({ pelengPoints, showLabels }: Props
       >
         <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
       </IconButton>
-
-      <Box
-        sx={{
-          position: 'absolute',
-          right: 16,
-          bottom: 14,
-          zIndex: 1150,
-          px: 1.25,
-          py: 0.75,
-          borderRadius: 2,
-          bgcolor: 'rgba(15, 15, 12, 0.48)',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid',
-          borderColor: 'rgba(255, 255, 255, 0.08)',
-        }}
-      >
-        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.78)', fontWeight: 600 }}>
-          {`${pointCountLabel} · ${activeFreqCountLabel} · ${activeLayerLabel}`}
-        </Typography>
-      </Box>
     </Box>
   );
 

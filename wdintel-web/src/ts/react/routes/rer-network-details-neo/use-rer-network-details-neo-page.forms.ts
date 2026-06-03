@@ -4,7 +4,6 @@ import utc from 'dayjs/plugin/utc';
 import type { Network, NetworkFreqsRes } from '../../../../Bindings';
 import {
   APP_TIME_ZONE,
-  formatDateTimeInputValueInTimeZone,
   formatUtcDateInputValue,
 } from '../../utils/misc';
 import type {
@@ -165,8 +164,8 @@ export function getDefaultNetworkPelengDateRange(network: Network | null, now: D
     : dayjs(tillDate).tz(APP_TIME_ZONE).subtract(1, 'month').toDate();
 
   return {
-    pelengSince: formatDateTimeInputValueInTimeZone(sinceDate, APP_TIME_ZONE),
-    pelengTill: formatDateTimeInputValueInTimeZone(tillDate, APP_TIME_ZONE),
+    pelengSince: dayjs(sinceDate).tz(APP_TIME_ZONE).format('YYYY-MM-DD'),
+    pelengTill: dayjs(tillDate).tz(APP_TIME_ZONE).format('YYYY-MM-DD'),
   };
 }
 

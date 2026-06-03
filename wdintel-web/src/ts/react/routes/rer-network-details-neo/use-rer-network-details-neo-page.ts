@@ -22,7 +22,6 @@ import {
 } from './use-rer-network-details-neo-page.shared';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
 import {
-  combineDateTimeInputToMs,
   parseDateInputExclusiveEndInTimeZone,
   parseDateInputInTimeZone,
 } from '../../utils/misc';
@@ -183,6 +182,14 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setState((current) => ({ ...current, pelengShowLabels }));
   }, [setState]);
 
+  const setPelengSatelliteEnabled = useCallback((pelengSatelliteEnabled: boolean) => {
+    setState((current) => ({ ...current, pelengSatelliteEnabled }));
+  }, [setState]);
+
+  const setPelengHeatmapEnabled = useCallback((pelengHeatmapEnabled: boolean) => {
+    setState((current) => ({ ...current, pelengHeatmapEnabled }));
+  }, [setState]);
+
   const relationsDateRangeValid = useMemo(() => {
     const since = parseDateInputInTimeZone(state.relationsSince);
     const till = parseDateInputInTimeZone(state.relationsTill);
@@ -190,8 +197,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     return since <= till;
   }, [state.relationsSince, state.relationsTill]);
 
-  const pelengSinceMs = useMemo(() => combineDateTimeInputToMs(state.pelengSince), [state.pelengSince]);
-  const pelengTillMs = useMemo(() => combineDateTimeInputToMs(state.pelengTill), [state.pelengTill]);
+  const pelengSinceMs = useMemo(() => parseDateInputInTimeZone(state.pelengSince), [state.pelengSince]);
+  const pelengTillMs = useMemo(() => parseDateInputExclusiveEndInTimeZone(state.pelengTill), [state.pelengTill]);
   const pelengDateRangeValid = useMemo(() => {
     if (pelengSinceMs === null || pelengTillMs === null) return false;
     return pelengSinceMs <= pelengTillMs;
@@ -426,6 +433,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setPelengEnabledFreqs,
     pelengShowLabels: state.pelengShowLabels,
     setPelengShowLabels,
+    pelengSatelliteEnabled: state.pelengSatelliteEnabled,
+    setPelengSatelliteEnabled,
+    pelengHeatmapEnabled: state.pelengHeatmapEnabled,
+    setPelengHeatmapEnabled,
     loadRelations,
     loadPelengPoints,
     descriptionDrawerOpen: state.descriptionDrawerOpen,

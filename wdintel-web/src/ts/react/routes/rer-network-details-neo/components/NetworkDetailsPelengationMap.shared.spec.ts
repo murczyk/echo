@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { NetworkPoint } from '../../../../../Bindings';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import {
+  buildPelengationLabelGroups,
   filterPelengationPoints,
   getPelengationFrequencies,
   normalizePelengationFrequency,
@@ -33,5 +34,21 @@ describe('NetworkDetailsPelengationMap.shared', () => {
       { id: 3, lat: 49.3, lng: 32.3, body: 'three', freq: '149.0000' },
       { id: 4, lat: 49.4, lng: 32.4, body: 'four', freq: '   ' },
     ]);
+  });
+
+  it('groups nearby same-frequency points into a single label cluster', () => {
+    const clustered = buildPelengationLabelGroups(
+      [
+        { id: 1, lat: 49.1, lng: 32.1, body: 'one', freq: '146.5000' },
+        { id: 2, lat: 49.10005, lng: 32.10005, body: 'two', freq: '146.5000' },
+        { id: 3, lat: 49.5, lng: 32.5, body: 'three', freq: '146.5000' },
+        { id: 4, lat: 49.50005, lng: 32.50005, body: 'four', freq: '149.0000' },
+      ],
+      (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }),
+      50,
+    );
+
+    expect(clustered.map((group) => group.label)).toEqual(['146.5000 · 2', '146.5000', '149.0000']);
+    expect(clustered[0].points).toHaveLength(2);
   });
 });

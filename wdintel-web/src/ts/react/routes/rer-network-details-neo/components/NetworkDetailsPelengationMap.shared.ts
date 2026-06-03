@@ -29,6 +29,82 @@ export function filterPelengationPoints(points: NetworkPoint[], search: string, 
   });
 }
 
+export type PelengationLabelGroup = {
+  freq: string;
+  label: string;
+  lat: number;
+  lng: number;
+  points: NetworkPoint[];
+};
+
+export function buildPelengationLabelGroups(
+  points: NetworkPoint[],
+  projectPoint: (point: NetworkPoint) => { x: number; y: number },
+  maxDistancePx: number = 44,
+): PelengationLabelGroup[] {
+  const groupedByFreq = new Map<string, Array<{ point: NetworkPoint; x: number; y: number }>>();
+
+  for (const point of points) {
+    const freq = normalizePelengationFrequency(point.freq);
+    const projected = projectPoint(point);
+    const group = groupedByFreq.get(freq) ?? [];
+    group.push({ point, ...projected });
+    groupedByFreq.set(freq, group);
+  }
+
+  const groups: PelengationLabelGroup[] = [];
+
+  for (const [freq, freqPoints] of groupedByFreq.entries()) {
+    const visited = new Set<number>();
+
+    for (let index = 0; index < freqPoints.length; index += 1) {
+      if (visited.has(index)) continue;
+
+      const queue = [index];
+      const componentIndexes: number[] = [];
+      visited.add(index);
+
+      while (queue.length > 0) {
+        const currentIndex = queue.pop();
+        if (currentIndex === undefined) continue;
+        componentIndexes.push(currentIndex);
+        const currentPoint = freqPoints[currentIndex];
+
+        for (let otherIndex = 0; otherIndex < freqPoints.length; otherIndex += 1) {
+          if (visited.has(otherIndex)) continue;
+          const otherPoint = freqPoints[otherIndex];
+          const dx = currentPoint.x - otherPoint.x;
+          const dy = currentPoint.y - otherPoint.y;
+          if (Math.hypot(dx, dy) <= maxDistancePx) {
+            visited.add(otherIndex);
+            queue.push(otherIndex);
+          }
+        }
+      }
+
+      const componentPoints = componentIndexes.map((itemIndex) => freqPoints[itemIndex].point);
+      const centroid = componentPoints.reduce(
+        (accumulator, point) => ({
+          lat: accumulator.lat + point.lat / componentPoints.length,
+          lng: accumulator.lng + point.lng / componentPoints.length,
+        }),
+        { lat: 0, lng: 0 },
+      );
+      const label = componentPoints.length > 1 ? `${freq} · ${componentPoints.length}` : freq;
+
+      groups.push({
+        freq,
+        label,
+        lat: centroid.lat,
+        lng: centroid.lng,
+        points: componentPoints,
+      });
+    }
+  }
+
+  return groups;
+}
+
 export function createPelengationPopupContent(point: NetworkPoint, label: string) {
   const content = document.createElement('div');
   content.style.minWidth = '180px';
@@ -79,16 +155,12 @@ export function applyPelengationMapStyles() {
       background: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
       box-shadow: none !important;
     }
-    .peleng-heat-point {
-      width: 156px;
-      height: 156px;
-      border-radius: 50%;
-      background:
-        radial-gradient(circle, rgba(233, 151, 70, 0.36) 0 14%, rgba(208, 111, 58, 0.24) 24%, rgba(207, 146, 68, 0.16) 48%, rgba(207, 146, 68, 0.08) 62%, rgba(207, 146, 68, 0) 78%);
-      filter: blur(8px);
-      mix-blend-mode: screen;
-      opacity: 0.95;
+    .peleng-label-anchor {
+      width: 1px;
+      height: 1px;
       pointer-events: none;
+      background: transparent;
+      border: 0;
     }
     .leaflet-tooltip.peleng-point-label {
       background: #11110f !important;

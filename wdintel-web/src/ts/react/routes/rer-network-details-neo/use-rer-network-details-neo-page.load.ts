@@ -332,6 +332,24 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     const isCurrent = () => reloadGeneration.current === generation;
 
+    void fetchCurrentUser()
+      .then((currentUser) => {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          currentUser,
+          currentUserLoaded: true,
+        }));
+      })
+      .catch(() => {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          currentUser: null,
+          currentUserLoaded: true,
+        }));
+      });
+
     const loadCore = async () => {
       if (!Number.isFinite(networkId) || networkId <= 0) {
         setState((current) => ({ ...current, loading: false, error: 'Некоректний ID мережі' }));
@@ -380,22 +398,6 @@ export function useRerNetworkDetailsNeoPageLoad(
           pelengEnabledFreqs: [],
           pelengShowLabels: true,
         }));
-
-        void fetchCurrentUser()
-          .then((currentUser) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              currentUser,
-            }));
-          })
-          .catch(() => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              currentUser: null,
-            }));
-          });
       } catch (error) {
         if (!isCurrent()) return;
         setState((current) => ({
