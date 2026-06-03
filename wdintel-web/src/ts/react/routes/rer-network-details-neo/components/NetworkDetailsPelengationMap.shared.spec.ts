@@ -4,9 +4,15 @@ import type { NetworkPoint } from '../../../../../Bindings';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildPelengationLabelGroups,
+  getPelengationHeatmapAlpha,
+  getPelengationHeatmapRadius,
   filterPelengationPoints,
   getPelengationFrequencies,
+  PELENG_HEATMAP_MAX_RADIUS,
   normalizePelengationFrequency,
+  PELENG_HEATMAP_MAX_ALPHA,
+  PELENG_HEATMAP_MIN_ALPHA,
+  PELENG_HEATMAP_MIN_RADIUS,
 } from './NetworkDetailsPelengationMap.shared';
 
 const points: NetworkPoint[] = [
@@ -50,5 +56,22 @@ describe('NetworkDetailsPelengationMap.shared', () => {
 
     expect(clustered.map((group) => group.label)).toEqual(['146.5000 · 2', '146.5000', '149.0000']);
     expect(clustered[0].points).toHaveLength(2);
+  });
+
+  it('derives a bounded heatmap radius from zoom', () => {
+    expect(getPelengationHeatmapRadius(2)).toBe(100);
+    expect(getPelengationHeatmapRadius(10)).toBeGreaterThanOrEqual(PELENG_HEATMAP_MIN_RADIUS);
+    expect(getPelengationHeatmapRadius(19)).toBe(PELENG_HEATMAP_MIN_RADIUS);
+  });
+
+  it('keeps heatmap alpha visible while capping dense cells', () => {
+    expect(getPelengationHeatmapAlpha(1)).toBe(PELENG_HEATMAP_MIN_ALPHA);
+    expect(getPelengationHeatmapAlpha(4)).toBeGreaterThan(PELENG_HEATMAP_MIN_ALPHA);
+    expect(getPelengationHeatmapAlpha(100)).toBe(PELENG_HEATMAP_MAX_ALPHA);
+  });
+
+  it('keeps heatmap radius bounded across zoom levels', () => {
+    expect(getPelengationHeatmapRadius(1)).toBe(PELENG_HEATMAP_MAX_RADIUS);
+    expect(getPelengationHeatmapRadius(50)).toBe(PELENG_HEATMAP_MIN_RADIUS);
   });
 });

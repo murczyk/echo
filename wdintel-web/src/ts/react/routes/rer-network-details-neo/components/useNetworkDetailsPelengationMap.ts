@@ -7,6 +7,8 @@ import {
   BASE_TILE_URL,
   buildPelengationLabelGroups,
   createPelengationPopupContent,
+  getPelengationHeatmapAlpha,
+  getPelengationHeatmapRadius,
   SATELLITE_TILE_SUBDOMAINS,
   SATELLITE_TILE_URL,
 } from './NetworkDetailsPelengationMap.shared';
@@ -25,6 +27,7 @@ export function useNetworkDetailsPelengationMap(
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatScratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatRedrawRafRef = useRef<number | null>(null);
+  const heatCanvasSizeRef = useRef<{ width: number; height: number; dpr: number } | null>(null);
   const redrawHeatmapRef = useRef<(() => void) | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const viewTransitionRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
@@ -41,6 +44,7 @@ export function useNetworkDetailsPelengationMap(
       }
       canvas.style.display = 'none';
     }
+    heatCanvasSizeRef.current = null;
     if (scratchCanvas) {
       const scratchCtx = scratchCanvas.getContext('2d');
       if (scratchCtx) {
@@ -160,6 +164,7 @@ export function useNetworkDetailsPelengationMap(
         labelLayerRef.current = null;
         heatCanvasRef.current = null;
         heatScratchCanvasRef.current = null;
+        heatCanvasSizeRef.current = null;
       };
     };
 
@@ -196,6 +201,7 @@ export function useNetworkDetailsPelengationMap(
     if (!mapReady || !map || !canvas) return;
 
     const drawHeatmap = () => {
+      heatRedrawRafRef.current = null;
       const currentCanvas = heatCanvasRef.current;
       if (!currentCanvas) return;
 
@@ -206,10 +212,19 @@ export function useNetworkDetailsPelengationMap(
       const drawWidth = Math.max(1, Math.round(width * devicePixelRatio));
       const drawHeight = Math.max(1, Math.round(height * devicePixelRatio));
 
-      currentCanvas.width = drawWidth;
-      currentCanvas.height = drawHeight;
-      currentCanvas.style.width = `${width}px`;
-      currentCanvas.style.height = `${height}px`;
+      const canvasSize = heatCanvasSizeRef.current;
+      if (
+        canvasSize === null
+        || canvasSize.width !== width
+        || canvasSize.height !== height
+        || canvasSize.dpr !== devicePixelRatio
+      ) {
+        currentCanvas.width = drawWidth;
+        currentCanvas.height = drawHeight;
+        currentCanvas.style.width = `${width}px`;
+        currentCanvas.style.height = `${height}px`;
+        heatCanvasSizeRef.current = { width, height, dpr: devicePixelRatio };
+      }
 
       const context = currentCanvas.getContext('2d');
       if (!context) return;
@@ -225,44 +240,76 @@ export function useNetworkDetailsPelengationMap(
       const scratchHeight = Math.max(1, Math.round(drawHeight * renderScale));
       const scratchCanvas = heatScratchCanvasRef.current ?? document.createElement('canvas');
       heatScratchCanvasRef.current = scratchCanvas;
-      scratchCanvas.width = scratchWidth;
-      scratchCanvas.height = scratchHeight;
+      if (scratchCanvas.width !== scratchWidth) {
+        scratchCanvas.width = scratchWidth;
+      }
+      if (scratchCanvas.height !== scratchHeight) {
+        scratchCanvas.height = scratchHeight;
+      }
 
       const scratchContext = scratchCanvas.getContext('2d');
       if (!scratchContext) return;
 
       scratchContext.clearRect(0, 0, scratchWidth, scratchHeight);
-      scratchContext.globalCompositeOperation = 'screen';
+      scratchContext.globalCompositeOperation = 'source-over';
 
-      const radius = Math.max(72, Math.round(160 * devicePixelRatio * renderScale));
+      const radius = getPelengationHeatmapRadius(map.getZoom());
+      const renderRadius = Math.max(1, Math.round(radius * devicePixelRatio * renderScale));
+      const cellSize = Math.max(24, Math.round(radius * 0.8));
+      const densityByCell = new Map<string, number>();
+      const cellCenters = new Map<string, { x: number; y: number; count: number }>();
+      const projectedPoints = pelengPoints
+        .map((point) => ({
+          point,
+          projected: map.latLngToContainerPoint([point.lat, point.lng]),
+        }))
+        .filter(({ projected }) => {
+          const x = projected.x * devicePixelRatio * renderScale;
+          const y = projected.y * devicePixelRatio * renderScale;
+          return !(x < -renderRadius || y < -renderRadius || x > scratchWidth + renderRadius || y > scratchHeight + renderRadius);
+        });
 
-      for (const point of pelengPoints) {
-        const projected = map.latLngToContainerPoint([point.lat, point.lng]);
-        const x = projected.x * devicePixelRatio * renderScale;
-        const y = projected.y * devicePixelRatio * renderScale;
+      for (const { projected } of projectedPoints) {
+        const cellX = Math.floor(projected.x / cellSize);
+        const cellY = Math.floor(projected.y / cellSize);
+        const key = `${cellX}:${cellY}`;
+        densityByCell.set(key, (densityByCell.get(key) ?? 0) + 1);
+        const existing = cellCenters.get(key);
+        if (existing) {
+          existing.x += projected.x;
+          existing.y += projected.y;
+          existing.count += 1;
+        } else {
+          cellCenters.set(key, { x: projected.x, y: projected.y, count: 1 });
+        }
+      }
 
-        if (x < -radius || y < -radius || x > scratchWidth + radius || y > scratchHeight + radius) {
+      for (const [key, center] of cellCenters.entries()) {
+        const x = (center.x / center.count) * devicePixelRatio * renderScale;
+        const y = (center.y / center.count) * devicePixelRatio * renderScale;
+        const alpha = getPelengationHeatmapAlpha(densityByCell.get(key) ?? 1);
+
+        if (x < -renderRadius || y < -renderRadius || x > scratchWidth + renderRadius || y > scratchHeight + renderRadius) {
           continue;
         }
 
-        const gradient = scratchContext.createRadialGradient(x, y, 0, x, y, radius);
-        gradient.addColorStop(0, 'rgba(233, 151, 70, 0.26)');
-        gradient.addColorStop(0.2, 'rgba(233, 151, 70, 0.18)');
-        gradient.addColorStop(0.42, 'rgba(208, 111, 58, 0.09)');
-        gradient.addColorStop(0.68, 'rgba(207, 146, 68, 0.035)');
-        gradient.addColorStop(1, 'rgba(207, 146, 68, 0)');
+        const gradient = scratchContext.createRadialGradient(x, y, 0, x, y, renderRadius);
+        gradient.addColorStop(0, `rgba(235, 158, 66, ${alpha * 0.78})`);
+        gradient.addColorStop(0.2, `rgba(235, 158, 66, ${alpha * 0.46})`);
+        gradient.addColorStop(0.48, `rgba(211, 122, 55, ${alpha * 0.2})`);
+        gradient.addColorStop(0.78, `rgba(211, 122, 55, ${alpha * 0.055})`);
+        gradient.addColorStop(1, 'rgba(211, 122, 55, 0)');
 
         scratchContext.fillStyle = gradient;
         scratchContext.beginPath();
-        scratchContext.arc(x, y, radius, 0, Math.PI * 2);
+        scratchContext.arc(x, y, renderRadius, 0, Math.PI * 2);
         scratchContext.fill();
       }
 
       context.save();
-      context.clearRect(0, 0, drawWidth, drawHeight);
-      context.globalCompositeOperation = 'source-over';
+      context.globalCompositeOperation = 'copy';
       context.imageSmoothingEnabled = true;
-      context.filter = 'blur(2px)';
+      context.filter = 'blur(1px)';
       context.drawImage(scratchCanvas, 0, 0, drawWidth, drawHeight);
       context.filter = 'none';
       context.restore();
@@ -270,9 +317,7 @@ export function useNetworkDetailsPelengationMap(
     };
 
     const scheduleDraw = () => {
-      if (heatRedrawRafRef.current !== null) {
-        window.cancelAnimationFrame(heatRedrawRafRef.current);
-      }
+      if (heatRedrawRafRef.current !== null) return;
       heatRedrawRafRef.current = window.requestAnimationFrame(drawHeatmap);
     };
 
@@ -283,10 +328,10 @@ export function useNetworkDetailsPelengationMap(
       scheduleDraw();
     };
 
-    map.on('moveend zoomend', handleViewChange);
+    map.on('move zoom moveend zoomend resize', handleViewChange);
 
     return () => {
-      map.off('moveend zoomend', handleViewChange);
+      map.off('move zoom moveend zoomend resize', handleViewChange);
       if (heatRedrawRafRef.current !== null) {
         window.cancelAnimationFrame(heatRedrawRafRef.current);
         heatRedrawRafRef.current = null;
@@ -405,7 +450,7 @@ export function useNetworkDetailsPelengationMap(
       maxZoom: 16,
     });
     redrawHeatmapRef.current?.();
-  }, [mapReady, pelengPoints, showLabels, heatmapEnabled]);
+  }, [mapReady, pelengPoints, showLabels]);
 
   useEffect(() => {
     if (!mapRef.current) return;

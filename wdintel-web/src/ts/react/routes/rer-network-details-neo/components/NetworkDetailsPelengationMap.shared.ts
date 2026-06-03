@@ -5,6 +5,10 @@ export const SATELLITE_TILE_URL = 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y
 export const SATELLITE_TILE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3'];
 export const BASE_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const PELENG_TOOLTIP_ARROW_COLOR = '#000000';
+export const PELENG_HEATMAP_MAX_ALPHA = 0.58;
+export const PELENG_HEATMAP_MIN_ALPHA = 0.38;
+export const PELENG_HEATMAP_MIN_RADIUS = 72;
+export const PELENG_HEATMAP_MAX_RADIUS = 100;
 
 export function normalizePelengationFrequency(freq: string): string {
   const trimmed = freq.trim();
@@ -103,6 +107,18 @@ export function buildPelengationLabelGroups(
   }
 
   return groups;
+}
+
+export function getPelengationHeatmapRadius(zoom: number): number {
+  const normalizedZoom = Math.max(2, Math.min(19, zoom));
+  const radius = 100 - (normalizedZoom - 2) * 2;
+  return Math.max(PELENG_HEATMAP_MIN_RADIUS, Math.min(PELENG_HEATMAP_MAX_RADIUS, Math.round(radius)));
+}
+
+export function getPelengationHeatmapAlpha(pointCount: number): number {
+  const normalizedCount = Math.max(1, pointCount);
+  const densityBoost = Math.log1p(normalizedCount - 1) / Math.log(12);
+  return Math.min(PELENG_HEATMAP_MAX_ALPHA, PELENG_HEATMAP_MIN_ALPHA + densityBoost * 0.14);
 }
 
 export function createPelengationPopupContent(point: NetworkPoint, label: string) {
