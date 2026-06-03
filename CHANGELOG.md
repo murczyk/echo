@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2467](https://github.com/echoua/echo/issues/2467) ✅ Аналіз (нова): відображення DMR-метаданих в картці повідомлення.
 - [#2503](https://github.com/echoua/echo/issues/2503) 🐞 ЕХО-Оператор: виправлено отримання мітки часу повідомлення.
 - [#1434](https://github.com/echoua/echo/issues/1434) 🐞 Виправлено баг з не зніманням позивного з дорозвідки 
 - [#2468](https://github.com/echoua/echo/issues/2468) ✅ Напрямки: додано значки джерел.

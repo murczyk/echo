@@ -25,6 +25,7 @@ import type {
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
+  InboxMessageMetadata,
   Tag,
   ContentNode,
 } from '../../../../Bindings';
@@ -73,6 +74,27 @@ type InboxMessageTagRaw = {
   organismId?: number | null;
 };
 
+type InboxMessageMetadataRaw = Partial<InboxMessageMetadata> & {
+  color_code?: string | null;
+  color_code_start_index?: number | null;
+  color_code_end_index?: number | null;
+  call_group_id?: string | null;
+  call_group_id_start_index?: number | null;
+  call_group_id_end_index?: number | null;
+  call_group_name?: string | null;
+  call_group_name_start_index?: number | null;
+  call_group_name_end_index?: number | null;
+  sender_id?: string | null;
+  sender_id_start_index?: number | null;
+  sender_id_end_index?: number | null;
+  sender_name?: string | null;
+  sender_name_start_index?: number | null;
+  sender_name_end_index?: number | null;
+  hash_id?: string | null;
+  hash_id_start_index?: number | null;
+  hash_id_end_index?: number | null;
+};
+
 type ContentNodeCandidate = Partial<{
   CNHighlightC: { text?: string | null };
   CNPointC: { text?: string | null; etalon?: string | null };
@@ -86,6 +108,30 @@ function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag {
     login: (t.login ?? null) as string | null,
     model: (t.model ?? null) as string | null,
     organismId: (t.organismId ?? t.organism_id ?? null) as number | null,
+  };
+}
+
+function normalizeInboxMessageMetadata(metadata: InboxMessageMetadataRaw): InboxMessageMetadata {
+  return {
+    colorCode: (metadata.colorCode ?? metadata.color_code ?? null) as string | null,
+    colorCodeStartIndex: (metadata.colorCodeStartIndex ?? metadata.color_code_start_index ?? null) as number | null,
+    colorCodeEndIndex: (metadata.colorCodeEndIndex ?? metadata.color_code_end_index ?? null) as number | null,
+    callGroupId: (metadata.callGroupId ?? metadata.call_group_id ?? null) as string | null,
+    callGroupIdStartIndex: (metadata.callGroupIdStartIndex ?? metadata.call_group_id_start_index ?? null) as number | null,
+    callGroupIdEndIndex: (metadata.callGroupIdEndIndex ?? metadata.call_group_id_end_index ?? null) as number | null,
+    callGroupName: (metadata.callGroupName ?? metadata.call_group_name ?? null) as string | null,
+    callGroupNameStartIndex:
+      (metadata.callGroupNameStartIndex ?? metadata.call_group_name_start_index ?? null) as number | null,
+    callGroupNameEndIndex: (metadata.callGroupNameEndIndex ?? metadata.call_group_name_end_index ?? null) as number | null,
+    senderId: (metadata.senderId ?? metadata.sender_id ?? null) as string | null,
+    senderIdStartIndex: (metadata.senderIdStartIndex ?? metadata.sender_id_start_index ?? null) as number | null,
+    senderIdEndIndex: (metadata.senderIdEndIndex ?? metadata.sender_id_end_index ?? null) as number | null,
+    senderName: (metadata.senderName ?? metadata.sender_name ?? null) as string | null,
+    senderNameStartIndex: (metadata.senderNameStartIndex ?? metadata.sender_name_start_index ?? null) as number | null,
+    senderNameEndIndex: (metadata.senderNameEndIndex ?? metadata.sender_name_end_index ?? null) as number | null,
+    hashId: (metadata.hashId ?? metadata.hash_id ?? null) as string | null,
+    hashIdStartIndex: (metadata.hashIdStartIndex ?? metadata.hash_id_start_index ?? null) as number | null,
+    hashIdEndIndex: (metadata.hashIdEndIndex ?? metadata.hash_id_end_index ?? null) as number | null,
   };
 }
 
@@ -125,6 +171,7 @@ function normalizeInboxMessage(
     location?: string | null;
     extended_form?: string | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
+    metadata?: InboxMessageMetadataRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
     point_tokens?: InboxMessageType['pointTokens'];
   }
@@ -139,10 +186,15 @@ function normalizeInboxMessage(
     isPresent(rawInboxTags) && Array.isArray(rawInboxTags)
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
+  const rawMetadata = (raw.metadata ?? m.metadata ?? null) as InboxMessageMetadataRaw[] | null | undefined;
+  const metadata: InboxMessageType['metadata'] =
+    isPresent(rawMetadata) && Array.isArray(rawMetadata)
+      ? rawMetadata.map(normalizeInboxMessageMetadata)
+      : [];
   const textMarked = normalizeTextMarked((raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked']);
   const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
   const pointTokens = normalizePointTokens(rawPointTokens);
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked, pointTokens };
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, metadata, textMarked, pointTokens };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
