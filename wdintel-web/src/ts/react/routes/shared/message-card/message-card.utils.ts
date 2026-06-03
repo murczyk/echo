@@ -189,7 +189,7 @@ function stripEmbeddedFrequencyFromLine(line: string): string {
   return line.replace(EMBEDDED_FREQUENCY_REGEXP, ' ').replace(/\s{2,}/g, ' ').trimEnd();
 }
 
-function normalizeMessageLineForCopy(line: string): string {
+function normalizeMetadataLineForCopy(line: string): string {
   const trimmed = line.trim();
   if (trimmed === '') return line;
   if (!MESSAGE_DATETIME_UNDERSCORE_REGEXP.test(trimmed)) {
@@ -209,23 +209,47 @@ function normalizeMessageLineForCopy(line: string): string {
   return line.startsWith(' ') || line.startsWith('\t') ? line.replace(trimmed, normalized) : normalized;
 }
 
+/**
+ * Determines if a line is part of the message body (not metadata).
+ * Returns true for:
+ *   - Lines starting with em-dashes ("—") or dashes ("- ", "--").
+ *     These are typical for transcript/dialogue formatting.
+ * No real messages found with numeric lists, so do not match number-prefixed bullets.
+ * Ignores blank lines and metadata/header-like lines.
+ */
 function isMessageBodyLine(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed === '') return false;
   if (trimmed.startsWith('—')) return true;
   if (trimmed.startsWith('- ') || trimmed.startsWith('--')) return true;
-  if (/^\d+\s*[—–-]\s/.test(trimmed)) return true;
-  if (/^\d+\.\s+\S/.test(trimmed)) return true;
   return false;
+}
+
+function findFirstMessageBodyLineIndex(lines: string[]): number {
+  return lines.findIndex((line) => isMessageBodyLine(line));
 }
 
 export function extractMessageTextForCopy(rawText: string): string {
   const lines = rawText.split('\n');
   const startIndex = findMessageDateTimeLineIndex(lines);
   const relevantLines = startIndex >= 0 ? lines.slice(startIndex) : [...lines];
-  const processed = relevantLines
-    .filter((line) => !isStandaloneFrequencyLine(line))
-    .map((line) => (line.trim() === '' ? line : normalizeMessageLineForCopy(line)));
+  const bodyStartIndex = findFirstMessageBodyLineIndex(relevantLines);
+  const metadataEndIndex = bodyStartIndex >= 0 ? bodyStartIndex : relevantLines.length;
+  const processed: string[] = [];
+
+  for (let index = 0; index < relevantLines.length; index += 1) {
+    const line = relevantLines[index] ?? '';
+    if (index >= metadataEndIndex) {
+      processed.push(line);
+      continue;
+    }
+    if (line.trim() === '') {
+      processed.push(line);
+      continue;
+    }
+    if (isStandaloneFrequencyLine(line)) continue;
+    processed.push(normalizeMetadataLineForCopy(line));
+  }
 
   while (processed.length > 0 && processed[processed.length - 1]?.trim() === '') {
     processed.pop();

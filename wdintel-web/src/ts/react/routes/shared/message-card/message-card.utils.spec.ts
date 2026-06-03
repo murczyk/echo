@@ -30,6 +30,23 @@ describe('extractMessageTextForCopy', () => {
     );
   });
 
+  it('preserves operational frequencies mentioned in transcript lines', () => {
+    const messageText = `08.09.2025, 14:07:06
+143.1500
+УКХ р/м тест
+ALPHA
+
+— Переходите на 143.150 МГц и продолжайте связь.`;
+
+    expect(extractMessageTextForCopy(messageText)).toBe(
+      `08.09.2025, 14:07:06
+УКХ р/м тест
+ALPHA
+
+— Переходите на 143.150 МГц и продолжайте связь.`,
+    );
+  });
+
   it('recognizes legacy importer datetime headers on the same line as frequency', () => {
     const legacyMessageText = `Отримано з поста "csv"
 31.08.2023_14:13 F=404,1350(МГц) П52
