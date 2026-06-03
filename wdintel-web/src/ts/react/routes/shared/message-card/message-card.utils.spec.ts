@@ -29,6 +29,25 @@ describe('extractMessageTextForCopy', () => {
 — Гусар, Гусар, я Дуб 3. Как меня слышишь? Прием.`,
     );
   });
+
+  it('recognizes legacy importer datetime headers on the same line as frequency', () => {
+    const legacyMessageText = `Отримано з поста "csv"
+31.08.2023_14:13 F=404,1350(МГц) П52
+УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А (КОПАНІ)
+ФИЗРУК
+НВ (НВ)
+
+- На приёме`;
+
+    expect(extractMessageTextForCopy(legacyMessageText)).toBe(
+      `31.08.2023_14:13 П52
+УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А (КОПАНІ)
+ФИЗРУК
+НВ (НВ)
+
+- На приёме`,
+    );
+  });
 });
 
 describe('buildCopyTextWithNetworkName', () => {
@@ -41,6 +60,22 @@ describe('buildCopyTextWithNetworkName', () => {
 
 — Гусар, Гусар, я Дуб 3. Проверка связи. Как меня слышно?
 — Гусар, Гусар, я Дуб 3. Как меня слышишь? Прием.`,
+    );
+  });
+
+  it('replaces the unit line after a legacy datetime header instead of prepending the network', () => {
+    const legacyMessageText = `31.08.2023_14:13 F=404,1350(МГц) П52
+УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А (КОПАНІ)
+ФИЗРУК
+
+- На приёме`;
+
+    expect(buildCopyTextWithNetworkName(legacyMessageText, 'р/м Alpha')).toBe(
+      `31.08.2023_14:13 П52
+р/м Alpha
+ФИЗРУК
+
+- На приёме`,
     );
   });
 });

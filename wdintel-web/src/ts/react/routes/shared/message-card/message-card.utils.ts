@@ -164,12 +164,19 @@ export function resolveEtalonBindingDisplayValue(
   };
 }
 
-const MESSAGE_DATETIME_LINE_REGEXP = /^\d{2}\.\d{2}\.\d{4},\s*\d{2}:\d{2}:\d{2}/;
+const MESSAGE_DATETIME_COMMA_REGEXP = /^\d{2}\.\d{2}\.\d{4},\s*\d{2}:\d{2}:\d{2}/;
+const MESSAGE_DATETIME_UNDERSCORE_REGEXP = /^\d{2}\.\d{2}\.\d{4}_\d{1,2}:\d{2}(?::\d{2})?/;
+const LEGACY_HEADER_FREQUENCY_REGEXP = /\s*F=\d{1,4}[.,]?\d*\(МГц\)/i;
 const STANDALONE_FREQUENCY_LINE_REGEXP = /^\d{1,4}[.,]\d+$/;
 const EMBEDDED_FREQUENCY_REGEXP = /\s*(?:F=)?\d{1,4}[.,]?\d*(?:\s*\(МГц\)|\s*МГц|\s*MHz|\s*\(MHz\))\s*/gi;
 
+function isMessageDateTimeLine(line: string): boolean {
+  const trimmed = line.trim();
+  return MESSAGE_DATETIME_COMMA_REGEXP.test(trimmed) || MESSAGE_DATETIME_UNDERSCORE_REGEXP.test(trimmed);
+}
+
 function findMessageDateTimeLineIndex(lines: string[]): number {
-  return lines.findIndex((line) => MESSAGE_DATETIME_LINE_REGEXP.test(line.trim()));
+  return lines.findIndex((line) => isMessageDateTimeLine(line));
 }
 
 function isStandaloneFrequencyLine(line: string): boolean {
@@ -179,6 +186,26 @@ function isStandaloneFrequencyLine(line: string): boolean {
 
 function stripEmbeddedFrequencyFromLine(line: string): string {
   return line.replace(EMBEDDED_FREQUENCY_REGEXP, ' ').replace(/\s{2,}/g, ' ').trimEnd();
+}
+
+function normalizeMessageLineForCopy(line: string): string {
+  const trimmed = line.trim();
+  if (trimmed === '') return line;
+  if (!MESSAGE_DATETIME_UNDERSCORE_REGEXP.test(trimmed)) {
+    return stripEmbeddedFrequencyFromLine(line);
+  }
+
+  const datetimeMatch = trimmed.match(/^(\d{2}\.\d{2}\.\d{4}_\d{1,2}:\d{2}(?::\d{2})?)/);
+  if (datetimeMatch == null) return stripEmbeddedFrequencyFromLine(line);
+
+  const datetimePart = datetimeMatch[1];
+  const rest = trimmed
+    .slice(datetimePart.length)
+    .replace(LEGACY_HEADER_FREQUENCY_REGEXP, '')
+    .replace(EMBEDDED_FREQUENCY_REGEXP, ' ')
+    .trim();
+  const normalized = rest === '' ? datetimePart : `${datetimePart} ${rest}`;
+  return line.startsWith(' ') || line.startsWith('\t') ? line.replace(trimmed, normalized) : normalized;
 }
 
 function isMessageBodyLine(line: string): boolean {
@@ -197,7 +224,7 @@ export function extractMessageTextForCopy(rawText: string): string {
   const relevantLines = startIndex >= 0 ? lines.slice(startIndex) : [...lines];
   const processed = relevantLines
     .filter((line) => !isStandaloneFrequencyLine(line))
-    .map((line) => (line.trim() === '' ? line : stripEmbeddedFrequencyFromLine(line)));
+    .map((line) => (line.trim() === '' ? line : normalizeMessageLineForCopy(line)));
 
   while (processed.length > 0 && processed[processed.length - 1]?.trim() === '') {
     processed.pop();
