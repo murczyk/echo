@@ -4,10 +4,10 @@ export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/echo-ai"
 
 if ! command -v uv > /dev/null 2>&1; then
-    if ! command -v pip > /dev/null 2>&1; then
-        sudo apt-get -y update && sudo apt-get -y install python3-pip
+    if ! command -v pipx > /dev/null 2>&1; then
+        sudo apt-get -y update && sudo apt-get -y install python3-pip pipx
     fi
-    pip install --user uv
+    pipx install uv
 fi
 
 if ! command -v mlflow > /dev/null 2>&1; then
