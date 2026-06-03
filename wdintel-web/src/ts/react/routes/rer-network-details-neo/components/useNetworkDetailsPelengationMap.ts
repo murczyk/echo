@@ -450,7 +450,7 @@ export function useNetworkDetailsPelengationMap(
       maxZoom: 16,
     });
     redrawHeatmapRef.current?.();
-  }, [mapReady, pelengPoints, showLabels]);
+  }, [mapReady, pelengPoints]);
 
   useEffect(() => {
     if (!mapRef.current) return;
