@@ -519,7 +519,7 @@ changelogDropdown props maybeData =
                             , if data.unseen then
                                 button
                                     [ type_ "button"
-                                    , class "text-sm font-semibold text-[var(--color-text)] hover:underline border-0 appearance-none bg-transparent cursor-pointer"
+                                    , class "text-sm font-semibold text-[var(--color-text-muted)] hover:underline border-0 appearance-none bg-transparent cursor-pointer"
                                     , onClick (props.onChangelogSeen data.version)
                                     ]
                                     [ text "Відмітити прочитаним" ]
