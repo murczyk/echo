@@ -3,18 +3,20 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { postBytes } from './client';
-import { downloadNetworkEtalonkaReport } from './networks';
+import { postBytes, postJson } from './client';
+import { downloadNetworkEtalonkaReport, getNetworkCallsignRelationMessages } from './networks';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
   postBytes: vi.fn(),
 }));
 
+const postJsonMock = vi.mocked(postJson);
 const postBytesMock = vi.mocked(postBytes);
 
 describe('networks API etalonka report download', () => {
   beforeEach(() => {
+    postJsonMock.mockReset();
     postBytesMock.mockReset();
   });
 
@@ -85,6 +87,40 @@ describe('networks API etalonka report download', () => {
           },
         },
       }),
+    );
+  });
+
+  it('encodes the relation messages request with snake_case body and passes abort signal through', async () => {
+    const controller = new AbortController();
+    postJsonMock.mockResolvedValueOnce({ messages: [] });
+
+    await getNetworkCallsignRelationMessages(
+      {
+        networkId: 17,
+        sinceDateInclusiveMs: 1,
+        tillDateNoninclusiveMs: 2,
+        callsign: 'ALPHA',
+        source: null,
+        target: null,
+        freqs: ['652.111', '852.111'],
+        limit: 24,
+      },
+      { signal: controller.signal },
+    );
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-callsigns/relations/messages',
+      expect.objectContaining({
+        network_id: 17,
+        since_date_inclusive_ms: 1,
+        till_date_noninclusive_ms: 2,
+        callsign: 'ALPHA',
+        source: null,
+        target: null,
+        freqs: ['652.111', '852.111'],
+        limit: 24,
+      }),
+      { signal: controller.signal },
     );
   });
 });

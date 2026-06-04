@@ -10,6 +10,7 @@ import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
 import { NetworkCallsignRelationsGraph } from './NetworkCallsignRelationsGraph';
 
 type Props = {
+  networkId: number | null;
   relations: NetworkCallsignRelationsRsp | null;
   relationsLoaded: boolean;
   relationsLoading: boolean;
@@ -34,6 +35,7 @@ type Props = {
 };
 
 export function NetworkCallsignRelationsPanel({
+  networkId,
   relations,
   relationsLoaded,
   relationsLoading,
@@ -114,6 +116,7 @@ export function NetworkCallsignRelationsPanel({
 
   return (
     <NetworkCallsignRelationsGraph
+      networkId={networkId}
       relations={relations}
       relationsSearch={relationsSearch}
       relationsEnabledFreqs={relationsEnabledFreqs}

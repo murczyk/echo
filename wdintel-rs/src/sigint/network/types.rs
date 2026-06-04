@@ -213,12 +213,46 @@ pub struct NetworkCallsignRelationsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct NetworkCallsignRelationMessagesReq {
+    pub network_id: i64,
+    pub since_date_inclusive_ms: i64,
+    pub till_date_noninclusive_ms: i64,
+    pub callsign: Option<String>,
+    pub source: Option<String>,
+    pub target: Option<String>,
+    pub freqs: Vec<String>,
+    pub limit: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationMessage {
+    pub id: i64,
+    pub timestamp: Option<i64>,
+    pub freq: Option<String>,
+    pub text: String,
+    pub callsigns: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRelationMessagesRsp {
+    pub messages: Vec<NetworkCallsignRelationMessage>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct NetworkCallsignRelationNode {
     pub id: String,
     pub label: String,
     pub weight: i64,
     pub relation_count: i64,
     pub activity_count: i64,
+    pub main_radio_station: bool,
+    pub command_control: bool,
     pub position: Option<String>,
     pub unit_name: Option<String>,
     pub known_callsign_id: Option<i64>,
