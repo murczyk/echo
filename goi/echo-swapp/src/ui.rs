@@ -131,6 +131,35 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     }
 
+    function copyIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      `;
+    }
+
+    function checkIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 6 9 17l-5-5"></path>
+        </svg>
+      `;
+    }
+
+    function deleteIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18"></path>
+          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+          <path d="M10 11v6"></path>
+          <path d="M14 11v6"></path>
+        </svg>
+      `;
+    }
+
     function renderRow(item) {
       const row = document.createElement('article');
       row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
@@ -146,7 +175,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
           </div>
           <div class="flex gap-2">
             <button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>
-            <button data-copy="${item.name}" class="h-9 rounded-md bg-zinc-100 px-3 text-sm text-zinc-950 hover:bg-white">Скопіювати URL API</button>
+            <button data-copy="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 text-zinc-950 hover:bg-white" type="button" aria-label="Скопіювати URL API" title="Скопіювати URL API">${copyIcon()}</button>
+            <button data-delete="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити месенджер" title="Видалити месенджер">${deleteIcon()}</button>
           </div>
         </div>
         <code class="block overflow-hidden text-ellipsis whitespace-nowrap rounded bg-zinc-900 px-3 py-2 text-xs text-zinc-400">${apiBase(item.name)}</code>
@@ -175,12 +205,22 @@ const INDEX_HTML: &str = r#"<!doctype html>
     });
 
     list.addEventListener('click', async (event) => {
-      const linkName = event.target.dataset.link;
-      const copyName = event.target.dataset.copy;
+      const button = event.target.closest('button');
+      if (!button) return;
+
+      const linkName = button.dataset.link;
+      const copyName = button.dataset.copy;
+      const deleteName = button.dataset.delete;
+
       if (copyName) {
         await navigator.clipboard.writeText(apiBase(copyName));
-        event.target.textContent = 'Скопійовано';
-        setTimeout(() => event.target.textContent = 'Скопіювати URL API', 1200);
+        button.innerHTML = checkIcon();
+        setTimeout(() => button.innerHTML = copyIcon(), 1200);
+      }
+      if (deleteName) {
+        if (!confirm(`Видалити месенджер ${deleteName}?`)) return;
+        await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
+        await load();
       }
       if (linkName) openQr(linkName);
     });

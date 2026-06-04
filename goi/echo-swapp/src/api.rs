@@ -1,6 +1,6 @@
 use crate::messenger::{self, CreateMessengerReq, MessengerKind};
 use crate::AppState;
-use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
@@ -10,6 +10,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(create_messenger)
         .service(link_messenger)
         .service(messenger_status)
+        .service(delete_messenger)
         .service(whatsapp_qrcode)
         .service(whatsapp_health)
         .service(whatsapp_groups)
@@ -62,6 +63,17 @@ async fn messenger_status(
         .await
         .map_err(error)?;
     Ok(web::Json(json!({ "isLinked": is_linked })))
+}
+
+#[delete("/ui-api/messengers/{name}")]
+async fn delete_messenger(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> actix_web::Result<impl Responder> {
+    messenger::delete(&state.db, &state.config, &path.into_inner())
+        .await
+        .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
 
 #[get("/api/{name}/api/whatsapp/qrcode")]

@@ -120,6 +120,21 @@ pub async fn create(
     load(db, &req.name).await
 }
 
+pub async fn delete(
+    db: &DatabaseConnection,
+    config: &Config,
+    name: &str,
+) -> Result<()> {
+    let messenger = load(db, name).await?;
+    stop_client(config, messenger.kind, name).await?;
+    let txn = db.begin().await?;
+    echo_im::detach_client(name, &txn)
+        .await
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    txn.commit().await?;
+    Ok(())
+}
+
 pub async fn list(db: &DatabaseConnection) -> Result<Vec<MessengerView>> {
     let clients = echo_client::Entity::find()
         .filter(echo_client::Column::Deleted.eq(false))
@@ -378,6 +393,32 @@ async fn start_client(
                 config.whatsapp_client_dir(),
                 config.whatsapp_unit_name(),
                 config.client_data_dir_name(),
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn stop_client(
+    config: &Config,
+    kind: MessengerKind,
+    name: &str,
+) -> Result<()> {
+    match kind {
+        MessengerKind::Signal => {
+            echo_im::os_specific::stop_signal_client(
+                name,
+                config.signal_client_dir(),
+                config.signal_unit_name(),
+            )
+            .await?;
+        }
+        MessengerKind::Whatsapp => {
+            echo_im::os_specific::stop_whatsapp_client(
+                name,
+                config.whatsapp_client_dir(),
+                config.whatsapp_unit_name(),
             )
             .await?;
         }
