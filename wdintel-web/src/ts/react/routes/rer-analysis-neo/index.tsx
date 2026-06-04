@@ -319,28 +319,32 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           ) : (
             <>
               {leftPanelVisible ? (
-                <Paper
-                  variant="outlined"
-                  component="aside"
-                  aria-label="Панель фільтрів"
+              <Paper
+                variant="outlined"
+                component="aside"
+                aria-label="Панель фільтрів"
+                sx={{
+                  minHeight: 0,
+                  height: { xs: 'auto', lg: '100%' },
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <Box
                   sx={{
+                    flex: 1,
+                    minWidth: 0,
                     minHeight: 0,
-                    height: { xs: 'auto', lg: '100%' },
                     overflow: 'hidden',
-                    display: 'block',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
                   }}
                 >
-                  <Box
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      display: 'block',
-                    }}
-                  >
                     <AnalysisFiltersPanel page={page} />
-                  </Box>
-                </Paper>
+                </Box>
+              </Paper>
               ) : null}
 
               <Paper

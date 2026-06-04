@@ -62,6 +62,8 @@ type ActionIconsRowProps = {
   onComment: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onDelete?: () => void;
@@ -182,6 +184,8 @@ function ActionIconsRow({
   onComment,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onDelete,
@@ -203,6 +207,8 @@ function ActionIconsRow({
   const canShowNavigationMenu = navigationMenuItems.length > 0;
   const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
   const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
+  const hasCopyTextWithNetwork = isPresent(onCopyTextWithNetwork);
+  const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy = etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
   const overflowMenuItems = [
@@ -492,6 +498,22 @@ function ActionIconsRow({
             <span>Копіювати повідомлення</span>
           </Box>
         </MenuItem>
+        {hasCopyTextWithNetwork ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
+              <PeopleIcon fontSize="small" />
+              <span>Копіювати повідомлення з назвою мережі</span>
+            </Box>
+          </MenuItem>
+        ) : null}
+        {hasCopyTextWithNetworkAndNote ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
+              <ChatBubbleOutlineOutlinedIcon fontSize="small" />
+              <span>Копіювати повідомлення з мережею та коментарем</span>
+            </Box>
+          </MenuItem>
+        ) : null}
         {hasFrequencyCopy ? (
           <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
@@ -802,11 +824,14 @@ export type MessageCardHeaderProps = {
   analysisHref?: string;
   rightInsetPx?: number;
   topRight?: ReactNode;
+  metadataTrigger?: ReactNode;
   onBookmark: () => void;
   onImportant: () => void;
   onComment: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
@@ -830,11 +855,14 @@ export function MessageCardHeader({
   analysisHref,
   rightInsetPx = 0,
   topRight,
+  metadataTrigger,
   onBookmark,
   onImportant,
   onComment,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
@@ -932,6 +960,8 @@ export function MessageCardHeader({
             onComment={onComment}
             onCopyText={onCopyText}
             onCopyFreq={onCopyFreq}
+            onCopyTextWithNetwork={onCopyTextWithNetwork}
+            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
             onCopyEtalon={onCopyEtalon}
             onCopyLocation={onCopyLocation}
             onDelete={onDelete}
@@ -1001,7 +1031,9 @@ export function MessageCardHeader({
             gridRow: 2,
           }}
         >
-          <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+          <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
+          </Box>
         </Box>
         <Box
           sx={{
@@ -1054,6 +1086,8 @@ export function MessageCardHeader({
           onComment={onComment}
           onCopyText={onCopyText}
           onCopyFreq={onCopyFreq}
+          onCopyTextWithNetwork={onCopyTextWithNetwork}
+          onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
           onCopyEtalon={onCopyEtalon}
           onCopyLocation={onCopyLocation}
           onDelete={onDelete}
@@ -1116,7 +1150,9 @@ export function MessageCardHeader({
           gridRow: 2,
         }}
       >
-        <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+        <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
+        </Box>
       </Box>
       <Box
         sx={{

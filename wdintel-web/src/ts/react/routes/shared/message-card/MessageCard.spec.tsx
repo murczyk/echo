@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
-import type { InboxMessage, Network, Tag } from '../../../../../Bindings';
+import type { InboxMessage, InboxMessageMetadata, Network, Tag } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyFilter } from '../../rer-duty-neo/utils';
@@ -46,6 +46,16 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.anchorEl;
   delete clone.onClose;
   delete clone.open;
+  delete clone.anchorOrigin;
+  delete clone.transformOrigin;
+  delete clone.disablePortal;
+  delete clone.disableAutoFocus;
+  delete clone.disableEnforceFocus;
+  delete clone.disableRestoreFocus;
+  delete clone.keepMounted;
+  delete clone.marginThreshold;
+  delete clone.transitionDuration;
+  delete clone.PaperProps;
   delete clone.MenuListProps;
   delete clone.slotProps;
   return clone;
@@ -162,6 +172,8 @@ vi.mock('@mui/material', () => ({
       {children}
     </a>
   ),
+  Popover: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
   Menu: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
     open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
   MenuItem: ({
@@ -304,8 +316,33 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     location: 'ЛИМАН ПЕРШИЙ',
     pointTokens: [],
     textMarked: [],
+    metadata: [],
     ...overrides,
   } as InboxMessage;
+}
+
+function buildMetadata(overrides: Partial<InboxMessageMetadata> = {}): InboxMessageMetadata {
+  return {
+    colorCode: null,
+    colorCodeStartIndex: null,
+    colorCodeEndIndex: null,
+    callGroupId: null,
+    callGroupIdStartIndex: null,
+    callGroupIdEndIndex: null,
+    callGroupName: null,
+    callGroupNameStartIndex: null,
+    callGroupNameEndIndex: null,
+    senderId: null,
+    senderIdStartIndex: null,
+    senderIdEndIndex: null,
+    senderName: null,
+    senderNameStartIndex: null,
+    senderNameEndIndex: null,
+    hashId: null,
+    hashIdStartIndex: null,
+    hashIdEndIndex: null,
+    ...overrides,
+  };
 }
 
 async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>> = {}): Promise<Rendered> {
@@ -577,6 +614,74 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`)).not.toBeNull();
+  });
+
+  it('shows normalized DMR metadata in analysis mode when metadata exists', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: buildMessage({
+        metadata: [
+          buildMetadata({
+            colorCode: ' 3 ',
+            senderId: ' 123 ',
+            senderName: ' Alpha ',
+            callGroupId: ' 456 ',
+            callGroupName: ' Bravo ',
+            hashId: ' hash-1 ',
+          }),
+          buildMetadata({
+            colorCode: '3',
+            senderId: '123',
+            senderName: 'Alpha',
+            callGroupId: '456',
+            callGroupName: 'Bravo',
+            hashId: 'hash-1',
+          }),
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    const trigger = view.container.querySelector('button[aria-label="DMR метадані"]');
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error('dmr metadata trigger not found');
+    await click(trigger);
+
+    expect(view.container.textContent).toContain('DMR метадані');
+    expect(view.container.textContent).toContain('CC');
+    expect(view.container.textContent).toContain('3');
+    expect(view.container.textContent).toContain('Відправник');
+    expect(view.container.textContent).toContain('123 / Alpha');
+    expect(view.container.textContent).toContain('Група');
+    expect(view.container.textContent).toContain('456 / Bravo');
+    expect(view.container.textContent).toContain('Хеш');
+    expect(view.container.textContent).toContain('hash-1');
+  });
+
+  it('hides the DMR metadata trigger in analysis mode when metadata is absent', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: buildMessage({ metadata: [] }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="DMR метадані"]')).toBeNull();
+  });
+
+  it('hides the DMR metadata trigger in duty mode even when metadata exists', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        metadata: [
+          buildMetadata({
+            colorCode: ' 3 ',
+            senderId: ' 123 ',
+            senderName: ' Alpha ',
+          }),
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="DMR метадані"]')).toBeNull();
   });
 
   it('uses the timestamp for minute-only hover time so seconds are preserved', () => {
