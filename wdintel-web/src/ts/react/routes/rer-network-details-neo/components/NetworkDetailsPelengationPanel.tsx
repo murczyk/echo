@@ -248,7 +248,7 @@ function PelengationToolbar({
               },
             })}
           >
-            Heatmap
+            Теплова карта
           </Button>
         </Stack>
       </Stack>

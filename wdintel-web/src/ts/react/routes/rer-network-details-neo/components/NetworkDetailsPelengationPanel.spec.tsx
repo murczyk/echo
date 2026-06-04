@@ -147,6 +147,6 @@ describe('NetworkDetailsPelengationPanel', () => {
     expect(view.container.textContent).not.toContain('Усі');
     expect(view.container.textContent).not.toContain('Нічого');
     expect(view.container.textContent).toContain('Супутник');
-    expect(view.container.textContent).toContain('Heatmap');
+    expect(view.container.textContent).toContain('Теплова карта');
   });
 });
