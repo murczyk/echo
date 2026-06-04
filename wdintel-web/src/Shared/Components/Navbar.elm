@@ -44,6 +44,7 @@ type alias Props msg =
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
     , onChangelogSeen : String -> msg
+    , onOpenChangelog : String -> msg
     , onCloseDropdownOnly : msg
     , mobileNavOpen : Bool
     , onToggleMobileNav : msg
@@ -460,6 +461,9 @@ changelogDropdown props maybeData =
                     if isOpen then
                         props.onDropdownToggle Nothing
 
+                    else if data.unseen then
+                        props.onOpenChangelog data.version
+
                     else
                         props.onDropdownToggle (Just dropdownKey)
             in
@@ -507,25 +511,14 @@ changelogDropdown props maybeData =
                             [ text ("Останні зміни: Реліз " ++ String.replace "-" "." data.version) ]
                         , ul [ class "space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1" ]
                             (List.map renderChangelogLine data.preview)
-                        , div [ class "mt-3 flex items-center justify-between gap-3" ]
+                        , div [ class "mt-3" ]
                             [ a
                                 [ href data.fullUrl
                                 , target "_blank"
                                 , rel "noopener noreferrer"
                                 , class "text-sm font-semibold text-[var(--color-text)] hover:underline"
-                                , onClick (props.onChangelogSeen data.version)
                                 ]
                                 [ text "Читати повністю" ]
-                            , if data.unseen then
-                                button
-                                    [ type_ "button"
-                                    , class "text-sm font-semibold text-[var(--color-text-muted)] hover:underline border-0 appearance-none bg-transparent cursor-pointer"
-                                    , onClick (props.onChangelogSeen data.version)
-                                    ]
-                                    [ text "Відмітити прочитаним" ]
-
-                              else
-                                text ""
                             ]
                         ]
                     ]
