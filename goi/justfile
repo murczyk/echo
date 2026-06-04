@@ -260,15 +260,31 @@ deploy-echo-swapp server:
     set -euo pipefail
 
     SERVER="{{ server }}"
+    DEB_PATH=""
+    DEB_NAME=""
 
-    echo "Installing fresh echo-swapp on ${SERVER}..."
+    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp
+
+    DEB_PATH="$(ls -1t "{{ repo_dir }}"/target/debian/echo-swapp_*_*.deb | head -n 1)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "Failed to find built echo-swapp .deb in target/debian" >&2
+      exit 1
+    fi
+    DEB_NAME="$(basename "${DEB_PATH}")"
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}..."
+    scp "${DEB_PATH}" "${SERVER}:/var/tmp/${DEB_NAME}"
+
+    echo "Installing ${DEB_NAME} on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       sudo apt-get update
-      sudo apt-get install -y --reinstall echo-swapp
+      cd /var/tmp
+      sudo apt-get install -y --reinstall --allow-downgrades \"./${DEB_NAME}\"
       sudo systemctl enable --now echo-swapp
       sudo systemctl restart echo-swapp
       sudo systemctl status echo-swapp --no-pager
+      rm -f \"./${DEB_NAME}\"
     "
 
     echo "Updating nginx on ${SERVER}..."
