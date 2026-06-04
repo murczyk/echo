@@ -227,20 +227,26 @@ update req msg model =
             )
 
         LastSeenChangelogLoaded value ->
-            let
-                trimmedValue =
-                    String.trim value
-            in
-            ( { model
-                | changelogLastSeen =
-                    if String.isEmpty trimmedValue then
-                        Nothing
+            case model.user of
+                Just _ ->
+                    -- Server value (set by GotUser) takes precedence over localStorage
+                    ( model, E.none )
 
-                    else
-                        Just trimmedValue
-              }
-            , E.none
-            )
+                Nothing ->
+                    let
+                        trimmedValue =
+                            String.trim value
+                    in
+                    ( { model
+                        | changelogLastSeen =
+                            if String.isEmpty trimmedValue then
+                                Nothing
+
+                            else
+                                Just trimmedValue
+                      }
+                    , E.none
+                    )
 
         SaveChangelogLastSeen version ->
             ( { model | changelogLastSeen = Just version }
