@@ -363,7 +363,7 @@ async fn load_network_relation_message_ids(
         query = query.filter(freq_condition);
     }
 
-    let limit = req.limit.max(0);
+    let limit = clamp_network_relation_messages_limit(req.limit);
     if limit <= 0 {
         return Ok(Vec::new());
     }
@@ -378,6 +378,10 @@ async fn load_network_relation_message_ids(
         .context(h!())?;
 
     Ok(ids)
+}
+
+fn clamp_network_relation_messages_limit(limit: i64) -> i64 {
+    limit.clamp(0, crate::config::SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX)
 }
 
 async fn load_network_callsigns(
@@ -960,6 +964,16 @@ mod tests {
             },
         );
         assert!(condition.is_some());
+    }
+
+    #[test]
+    fn relation_message_limit_is_clamped() {
+        assert_eq!(clamp_network_relation_messages_limit(-1), 0);
+        assert_eq!(clamp_network_relation_messages_limit(10), 10);
+        assert_eq!(
+            clamp_network_relation_messages_limit(999),
+            crate::config::SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX,
+        );
     }
 
     #[test]
