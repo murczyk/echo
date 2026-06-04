@@ -824,6 +824,7 @@ export type MessageCardHeaderProps = {
   analysisHref?: string;
   rightInsetPx?: number;
   topRight?: ReactNode;
+  metadataTrigger?: ReactNode;
   onBookmark: () => void;
   onImportant: () => void;
   onComment: () => void;
@@ -854,6 +855,7 @@ export function MessageCardHeader({
   analysisHref,
   rightInsetPx = 0,
   topRight,
+  metadataTrigger,
   onBookmark,
   onImportant,
   onComment,
@@ -1029,7 +1031,9 @@ export function MessageCardHeader({
             gridRow: 2,
           }}
         >
-          <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+          <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
+          </Box>
         </Box>
         <Box
           sx={{
@@ -1146,7 +1150,9 @@ export function MessageCardHeader({
           gridRow: 2,
         }}
       >
-        <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />
+        <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
+        </Box>
       </Box>
       <Box
         sx={{
