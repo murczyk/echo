@@ -7,8 +7,8 @@ import type { Palitra } from '../../../../../Bindings';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
-  FULL_WIDTH_TABLE_PAPER_SX,
-  getPageScrollTableContainerSx,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   buildDefaultColumnOrder,
@@ -87,8 +87,6 @@ export function PalitraTable({
   const tableStateContext = useTableStateContext();
   const columns = useMemo(() => buildPalitraTableColumns(onToggleFolderExpanded), [onToggleFolderExpanded]);
 
-  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
   const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {
@@ -183,8 +181,6 @@ export function PalitraTable({
       }),
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
       table,
-      noDataMessage: 'Палітри відсутні',
-      filteredMessage: 'Немає палітр за обраними фільтрами',
     }),
     defaultColumn: {
       size: 180,
@@ -204,15 +200,11 @@ export function PalitraTable({
       },
     },
     muiTablePaperProps: ({ table }) => {
-      const baseProps = resolvedPaperProps({ table });
+      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'list' });
       return {
-        ...baseProps,
+        ...paperProps,
         sx: {
-          ...((baseProps as { sx?: object }).sx ?? {}),
-          ...FULL_WIDTH_TABLE_PAPER_SX,
-          height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : 0,
-          overflow: table.getState().isFullScreen ? 'auto' : 'hidden',
+          ...((paperProps as { sx?: object }).sx ?? {}),
           ...(isInitialLoading
             ? {
                 backgroundImage: 'none',
@@ -222,23 +214,18 @@ export function PalitraTable({
             : {}),
         },
         style: {
-          ...((baseProps as { style?: object }).style ?? {}),
+          ...((paperProps as { style?: object }).style ?? {}),
           padding: 0,
         },
       };
     },
-    muiTableContainerProps: ({ table }) => ({
-      sx: {
-        ...((CUSTOM_STYLES.muiTableContainerProps as { sx?: object }).sx ?? {}),
-        ...getPageScrollTableContainerSx({
-          loading: showTableOverlay,
-          height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : 0,
-          maxHeight: table.getState().isFullScreen ? '100%' : 'none',
-          idleOverflow: 'auto',
-        }),
-      },
-    }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading: showTableOverlay,
+        layout: 'list',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: rows.length > 0,
+      }),
     muiTableBodyRowProps: ({ row }) => ({
       hover: true,
       sx: {

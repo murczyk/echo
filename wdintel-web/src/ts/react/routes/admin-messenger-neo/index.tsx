@@ -615,7 +615,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(4, 'grid'),
+        size: mrtRowActionsColumnSize(4),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

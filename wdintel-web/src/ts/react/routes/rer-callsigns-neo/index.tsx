@@ -17,7 +17,7 @@ import {
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
 import { EditCallsignDrawer } from './components/EditCallsignDrawer';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
-import { DESKTOP_LAYOUT_MIN_WIDTH_PX, getExportPermissionFromRoles } from './helpers';
+import { getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
 import { PowerAlert } from '../../components/PowerAlert';
 
@@ -26,7 +26,7 @@ const XLSX_LOADING_TEXT = `Завантаження XLSX${ELLIPSIS}`;
 
 function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerCallsignsNeoPage({ authUserRoles });
-  const isDesktopLayout = useMediaQuery(`(min-width:${DESKTOP_LAYOUT_MIN_WIDTH_PX}px)`);
+  const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
   const shellPermissions = getExportPermissionFromRoles(authUserRoles);
   const controlsDisabled = page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
   const filtersDisabled = page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;

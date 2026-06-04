@@ -1,3 +1,6 @@
+import type { MRT_RowData, MRT_TableInstance } from 'material-react-table';
+import { ensureTableWatermarkObserver } from './table-watermark';
+
 export const CUSTOM_CELL_STYLES = {
   borderRight: '1px solid',
   borderBottom: '1px solid',
@@ -65,12 +68,81 @@ export function getPageScrollTableContainerSx({
 }
 
 export const FULL_HEIGHT_LOADING_ROW_COUNT = 24;
+export type MrtTableFrameLayout = 'list' | 'workspace';
 
-function getAuthUserNameFromShell(): string {
-  if (typeof document === 'undefined') return '';
-  const name = document.querySelector('.app-shell')?.getAttribute('data-auth-user-name');
-  if (!name || name === 'anonymous') return '';
-  return name;
+const DEFAULT_LIST_TABLE_MIN_HEIGHT = 320;
+const DEFAULT_LIST_TABLE_MAX_HEIGHT = 560;
+
+function resolveDefaultMrtPaperProps<TData extends MRT_RowData>({ table }: { table: MRT_TableInstance<TData> }) {
+  const paperProps = CUSTOM_STYLES.muiTablePaperProps;
+  return typeof paperProps === 'function' ? paperProps({ table }) : paperProps || {};
+}
+
+function resolveDefaultMrtContainerProps() {
+  return CUSTOM_STYLES.muiTableContainerProps;
+}
+
+export function getDefaultMrtPaperProps<TData extends MRT_RowData>({
+  table,
+  loading = false,
+  layout = 'list',
+}: {
+  table: MRT_TableInstance<TData>;
+  loading?: boolean;
+  layout?: MrtTableFrameLayout;
+}) {
+  const baseProps = resolveDefaultMrtPaperProps({ table });
+  const isWorkspace = layout === 'workspace';
+
+  return {
+    ...baseProps,
+    sx: {
+      ...(baseProps as { sx?: object }).sx,
+      ...FULL_WIDTH_TABLE_PAPER_SX,
+      ...(isWorkspace
+        ? {
+            height: '100%',
+            minHeight: 0,
+          }
+        : {
+          height: 'auto',
+          minHeight: DEFAULT_LIST_TABLE_MIN_HEIGHT,
+          }),
+    },
+  };
+}
+
+export function getDefaultMrtContainerProps({
+  loading = false,
+  layout = 'list',
+  fullScreen = false,
+  hasRows,
+}: {
+  loading?: boolean;
+  layout?: MrtTableFrameLayout;
+  fullScreen?: boolean;
+  hasRows?: boolean;
+}) {
+  const baseProps = resolveDefaultMrtContainerProps();
+  const isWorkspace = layout === 'workspace' || fullScreen;
+  const hasVisibleRows = hasRows ?? true;
+  const isEmptyList = layout === 'list' && !loading && !hasVisibleRows;
+
+  return {
+    ...baseProps,
+    sx: {
+      ...(baseProps as { sx?: object }).sx,
+      ...getPageScrollTableContainerSx({
+        loading,
+        height: isWorkspace ? '100%' : 'clamp(320px, 48vh, 560px)',
+        minHeight: isWorkspace ? 0 : DEFAULT_LIST_TABLE_MIN_HEIGHT,
+        maxHeight: isWorkspace ? '100%' : DEFAULT_LIST_TABLE_MAX_HEIGHT,
+        idleOverflowX: 'auto',
+        idleOverflowY: isWorkspace || !isEmptyList ? 'auto' : 'hidden',
+        idleOverflow: isWorkspace || !isEmptyList ? 'auto' : undefined,
+      }),
+    },
+  };
 }
 
 export const CUSTOM_STYLES = {
@@ -110,7 +182,10 @@ export const CUSTOM_STYLES = {
   },
   displayColumnDefOptions: {
     'mrt-row-actions': {
-      size: 80,
+      size: 48,
+      minSize: 48,
+      maxSize: 48,
+      enableResizing: false,
       enableHiding: true,
       enableColumnOrdering: false,
       visibleInShowHideMenu: false,
@@ -218,63 +293,67 @@ export const CUSTOM_STYLES = {
       },
     },
   },
-  muiTablePaperProps: ({ table }: { table: any }) => ({
-    'data-table-watermark': getAuthUserNameFromShell(),
-    sx: {
-      ...(table.getState().showSkeletons
-        ? {
-            '& .MuiTableBody-root .MuiTableRow-root, & .MuiTableBody-root .MuiTableCell-root, & .MuiSkeleton-root': {
-              cursor: 'progress',
-            },
-          }
-        : {}),
-      ...(table.getState().showSkeletons
-        ? {
-            backgroundImage:
-              'repeating-linear-gradient(to bottom, transparent 0, transparent 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 55px)',
-            backgroundSize: '100% 56px',
-            backgroundPosition: '0 56px',
-          }
-        : {}),
-      borderRadius: 0,
-      boxShadow: 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'relative',
-      bgcolor: 'var(--bs-body-bg)',
-      color: 'var(--bs-body-color)',
-      '&::before, &::after': {
-        content: 'attr(data-table-watermark)',
-        position: 'absolute',
-        fontSize: 'clamp(2.2rem, 4vw, 3.8rem)',
-        fontWeight: 600,
-        lineHeight: 1,
-        letterSpacing: '0.02em',
-        color: 'var(--bs-body-color)',
-        opacity: 0.04,
-        transform: 'rotate(-28deg)',
-        pointerEvents: 'none',
-        userSelect: 'none',
-        whiteSpace: 'nowrap',
-        zIndex: 2,
-      },
-      '&::before': {
-        left: '8%',
-        top: '16%',
-      },
-      '&::after': {
-        right: '6%',
-        top: '56%',
-      },
-      '& > *': {
+  muiTablePaperProps: ({ table }: { table: any }) => {
+    ensureTableWatermarkObserver();
+
+    return {
+      'data-table-watermark': '',
+      sx: {
+        ...(table.getState().showSkeletons
+          ? {
+              '& .MuiTableBody-root .MuiTableRow-root, & .MuiTableBody-root .MuiTableCell-root, & .MuiSkeleton-root': {
+                cursor: 'progress',
+              },
+            }
+          : {}),
+        ...(table.getState().showSkeletons
+          ? {
+              backgroundImage:
+                'repeating-linear-gradient(to bottom, transparent 0, transparent 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 54px, color-mix(in srgb, var(--bs-border-color) 78%, transparent) 55px)',
+              backgroundSize: '100% 56px',
+              backgroundPosition: '0 56px',
+            }
+          : {}),
+        borderRadius: 0,
+        boxShadow: 'none',
+        display: 'flex',
+        flexDirection: 'column',
         position: 'relative',
-        zIndex: 1,
+        bgcolor: 'var(--bs-body-bg)',
+        color: 'var(--bs-body-color)',
+        '&::before, &::after': {
+          content: 'attr(data-table-watermark)',
+          position: 'absolute',
+          fontSize: 'clamp(2.2rem, 4vw, 3.8rem)',
+          fontWeight: 600,
+          lineHeight: 1,
+          letterSpacing: '0.02em',
+          color: 'var(--bs-body-color)',
+          opacity: 0.04,
+          transform: 'rotate(-28deg)',
+          pointerEvents: 'none',
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+          zIndex: 2,
+        },
+        '&::before': {
+          left: '8%',
+          top: '16%',
+        },
+        '&::after': {
+          right: '6%',
+          top: '56%',
+        },
+        '& > *': {
+          position: 'relative',
+          zIndex: 1,
+        },
       },
-    },
-    style: {
-      padding: table.getState().isFullScreen ? 16 : undefined,
-    },
-  }),
+      style: {
+        padding: table.getState().isFullScreen ? 16 : undefined,
+      },
+    };
+  },
   muiTableContainerProps: {
     sx: {
       flex: 1,
