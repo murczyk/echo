@@ -19,8 +19,8 @@ import {
   filterInterceptedCallsigns,
   filterNetworkCallsignRows,
   flattenCatalogCallsignRows,
-  normalizeCallsignDisplay,
 } from '../network-callsigns';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
 import { NetworkCallsignsInterceptedPanel } from './NetworkCallsignsInterceptedPanel';
 import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';

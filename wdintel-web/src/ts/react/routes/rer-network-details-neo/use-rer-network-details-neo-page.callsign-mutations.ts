@@ -14,13 +14,13 @@ import {
 import {
   buildNetworkCallsignTabData,
   mergeNetworkCallsigns,
-  normalizeCallsignDisplay,
   createDefaultNetworkCallsignDrawerForm,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
   getNetworkCallsignMarkerState,
   type NetworkCallsignRowView,
   type NetworkCallsignMarkerMode,
 } from './network-callsigns';
+import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;

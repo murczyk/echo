@@ -7,7 +7,7 @@ import { useState } from 'react';
 import type { NetworkCallsignInterceptedView } from '../network-callsigns';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
-import { normalizeCallsignDisplay } from '../network-callsigns';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 
 type InterceptedPanelProps = {

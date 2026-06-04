@@ -22,8 +22,8 @@ import {
   type NetworkCallsignRowView,
   type NetworkCallsignSectionMode,
   type NetworkCallsignStatusFilter,
-  normalizeCallsignDisplay,
 } from './network-callsigns';
+import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
