@@ -238,7 +238,8 @@ describe('NetworkCallsignRelationsPanel', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('Частоти');
 
     act(() => {
       view.container.querySelector<HTMLButtonElement>('[aria-label="Очистити пошук"]')?.click();
@@ -401,7 +402,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
 
     expect(view.container.textContent).toContain('Немає графових даних');
-    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними.");
+    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними");
     expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
   });
 
@@ -414,7 +415,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
     expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
   });
 
@@ -438,7 +439,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
     expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
   });
 
@@ -471,7 +472,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.textContent).toContain("Забагато зв'язків для відображення");
     expect(view.container.textContent).toContain('Збільшіть інтенсивність, звузьте період або вимкніть частоти.');
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label="Налаштування"]')).not.toBeNull();
+    expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="date-picker-Від"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="date-picker-До"]')).not.toBeNull();
   });

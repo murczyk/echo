@@ -26,6 +26,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
+import { DatasourceKindIcon } from '../../components/icons';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Info } from '../../components/info';
 import { PowerButton } from '../../components/PowerButton';
@@ -351,13 +352,17 @@ function getMessengerLabel(messenger: string) {
 }
 
 function MessengerIcon({ messenger }: { messenger: string }) {
-  if (messenger === 'signal')
-    return <i className="bi bi-signal text-blue-500" title="Signal" />;
-  if (messenger === 'whatsapp')
-    return <i className="bi bi-whatsapp text-green-500" title="WhatsApp" />;
-  if (messenger === 'echo_operator')
-    return <i className="bi bi-link text-red-500" title="ЕХО Оператор" />;
-  return <i className="bi bi-chat-fill text-gray-500" title={messenger} />;
+  const label = getMessengerLabel(messenger);
+
+  if (
+    messenger === 'signal'
+    || messenger === 'whatsapp'
+    || messenger === 'echo_operator'
+  ) {
+    return <DatasourceKindIcon kind={messenger} fontSize="small" titleAccess={label} />;
+  }
+
+  return <span title={label}>{label}</span>;
 }
 
 function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {

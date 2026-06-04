@@ -1,4 +1,4 @@
-import { Box } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../../utils/misc';
 import { NetworkDetailsLeftPanel } from './NetworkDetailsLeftPanel';
 import { NetworkDetailsTabPanel } from './NetworkDetailsTabPanel';
@@ -32,7 +32,12 @@ function buildRelationsReloadHandler(page: Page) {
 }
 
 function buildPelengReloadHandler(page: Page, networkId: number) {
-  return () => void page.loadPelengPoints(networkId, page.network?.activeFrom ?? null, page.network?.activeTo ?? null);
+  return () => {
+    const since = parseDateInputInTimeZone(page.pelengSince);
+    const till = parseDateInputExclusiveEndInTimeZone(page.pelengTill);
+    if (since === null || till === null) return;
+    void page.loadPelengPoints(networkId, since, till);
+  };
 }
 
 function buildCallsignPanelProps(page: Page) {
@@ -64,6 +69,22 @@ function buildCallsignPanelProps(page: Page) {
     inFlightUpdateIds: page.callsignUpdateInFlightIds,
     inFlightDeleteIds: page.callsignDeleteInFlightIds,
   };
+}
+
+function PermissionsLoadingPlaceholder() {
+  return (
+    <Box
+      data-testid="permissions-loading"
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
+      <CircularProgress size={24} />
+    </Box>
+  );
 }
 
 function buildSharedLeftPanelProps(
@@ -122,7 +143,9 @@ export function NetworkDetailsNeoPageBody({
   const pelengReload = buildPelengReloadHandler(page, networkId);
   const callsignPanelProps = buildCallsignPanelProps(page);
 
-  const detailsTabPanel = (
+  const detailsTabPanel = !page.currentUserLoaded ? (
+    <PermissionsLoadingPlaceholder />
+  ) : (
     <NetworkDetailsTabPanel
       network={page.network}
       loading={page.loading}
@@ -187,6 +210,20 @@ export function NetworkDetailsNeoPageBody({
       relationsTill={page.relationsTill}
       onRelationsSinceChange={page.setRelationsSince}
       onRelationsTillChange={page.setRelationsTill}
+      pelengSince={page.pelengSince}
+      pelengTill={page.pelengTill}
+      pelengSearch={page.pelengSearch}
+      pelengEnabledFreqs={page.pelengEnabledFreqs}
+      pelengShowLabels={page.pelengShowLabels}
+      pelengSatelliteEnabled={page.pelengSatelliteEnabled}
+      pelengHeatmapEnabled={page.pelengHeatmapEnabled}
+      onPelengSinceChange={page.setPelengSince}
+      onPelengTillChange={page.setPelengTill}
+      onPelengSearchChange={page.setPelengSearch}
+      onPelengEnabledFreqsChange={page.setPelengEnabledFreqs}
+      onPelengShowLabelsChange={page.setPelengShowLabels}
+      onPelengSatelliteEnabledChange={page.setPelengSatelliteEnabled}
+      onPelengHeatmapEnabledChange={page.setPelengHeatmapEnabled}
     />
   );
 

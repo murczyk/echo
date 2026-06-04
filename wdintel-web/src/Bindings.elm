@@ -6452,6 +6452,7 @@ type alias NetworkPoint =
     , lng : Float
     , body : String
     , id : Int
+    , freq : String
     }
 
 
@@ -6462,6 +6463,7 @@ networkPointEncoder struct =
         , ( "lng", (Json.Encode.float) struct.lng )
         , ( "body", (Json.Encode.string) struct.body )
         , ( "id", (Json.Encode.int) struct.id )
+        , ( "freq", (Json.Encode.string) struct.freq )
         ]
 
 
@@ -11735,6 +11737,7 @@ networkPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
 
 
 networkCallsignRelationsReqDecoder : Json.Decode.Decoder NetworkCallsignRelationsReq

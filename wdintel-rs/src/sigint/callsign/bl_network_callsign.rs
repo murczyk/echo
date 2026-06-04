@@ -271,15 +271,20 @@ pub async fn bl_update_network_callsign(
     // we must sync it — otherwise sc_developing keeps the callsign displayed as "в дорозвідці".
     if req.unit_developing {
         if !req.developing {
-            if let Some(sigint_callsign_id) = network_callsign.sigint_callsign_id {
+            if let Some(sigint_callsign_id) =
+                network_callsign.sigint_callsign_id
+            {
                 let known_callsign = find_callsign(txn, sigint_callsign_id)
                     .await
                     .context(h!())?;
                 if known_callsign.developing {
                     let additional_sources =
-                        list_callsign_additional_source_ids(txn, known_callsign.id)
-                            .await
-                            .context(h!())?;
+                        list_callsign_additional_source_ids(
+                            txn,
+                            known_callsign.id,
+                        )
+                        .await
+                        .context(h!())?;
                     let known_callsign_req = UpdateCallsignReq {
                         id: known_callsign.id,
                         callsign: known_callsign.callsign.clone(),
@@ -291,7 +296,10 @@ pub async fn bl_update_network_callsign(
                         active: known_callsign.deleted,
                         source_id: known_callsign.source_id,
                         callsign_additional_sources: additional_sources,
-                        created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+                        created_at: known_callsign
+                            .created_at
+                            .and_utc()
+                            .timestamp_millis(),
                         developing: false,
                         radio_freq: Some(known_callsign.radio_freq.clone()),
                     };

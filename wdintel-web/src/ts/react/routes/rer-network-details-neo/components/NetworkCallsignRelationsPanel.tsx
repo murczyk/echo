@@ -99,7 +99,7 @@ export function NetworkCallsignRelationsPanel({
           <NetworkDetailsEmptyState
             icon={<AccountTreeOutlinedIcon />}
             title="Немає графових даних"
-            description="Граф будується після першого зв'язку між позивними."
+            description="Граф будується після першого зв'язку між позивними"
             minHeight={360}
             action={
               <Button variant="outlined" onClick={onReload}>

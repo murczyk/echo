@@ -15,7 +15,7 @@ export function NetworkDetailsActivityEmptyState() {
     <NetworkDetailsEmptyState
       icon={<MonitorHeartOutlinedIcon />}
       title="Немає даних активності"
-      description="Активність будеться після першої фіксації сигналу."
+      description="Активність буде доступна після першої фіксації сигналу"
       minHeight={360}
     />
   );

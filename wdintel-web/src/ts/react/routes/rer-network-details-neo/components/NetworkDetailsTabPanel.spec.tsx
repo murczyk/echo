@@ -84,8 +84,22 @@ function renderPanel(): Rendered {
     pelengPointsLoaded: false,
     pelengPointsLoading: false,
     pelengPointsError: null,
+    pelengSince: '2026-05-20',
+    pelengTill: '2026-05-20',
+    pelengSearch: '',
+    pelengEnabledFreqs: [],
+    pelengShowLabels: true,
+    pelengSatelliteEnabled: true,
+    pelengHeatmapEnabled: false,
     onReloadNetworkActivity: vi.fn(),
     onReloadPelengPoints: vi.fn(),
+    onPelengSinceChange: vi.fn(),
+    onPelengTillChange: vi.fn(),
+    onPelengSearchChange: vi.fn(),
+    onPelengEnabledFreqsChange: vi.fn(),
+    onPelengShowLabelsChange: vi.fn(),
+    onPelengSatelliteEnabledChange: vi.fn(),
+    onPelengHeatmapEnabledChange: vi.fn(),
     modulations: [],
     expandedFrequencyGroupIds: [],
     toggleFrequencyGroupExpanded: vi.fn(),
@@ -170,6 +184,13 @@ describe('NetworkDetailsTabPanel', () => {
           relationsSelectedEdgeId={null}
           relationsSince=""
           relationsTill=""
+          pelengSince="2026-05-20"
+          pelengTill="2026-05-20"
+          pelengSearch=""
+          pelengEnabledFreqs={[]}
+          pelengShowLabels={true}
+          pelengSatelliteEnabled={true}
+          pelengHeatmapEnabled={false}
           onReloadRelations={vi.fn()}
           onRelationsSearchChange={vi.fn()}
           onRelationsEnabledFreqsChange={vi.fn()}
@@ -179,6 +200,13 @@ describe('NetworkDetailsTabPanel', () => {
           onRelationsSelectEdgeId={vi.fn()}
           onRelationsSinceChange={vi.fn()}
           onRelationsTillChange={vi.fn()}
+          onPelengSinceChange={vi.fn()}
+          onPelengTillChange={vi.fn()}
+          onPelengSearchChange={vi.fn()}
+          onPelengEnabledFreqsChange={vi.fn()}
+          onPelengShowLabelsChange={vi.fn()}
+          onPelengSatelliteEnabledChange={vi.fn()}
+          onPelengHeatmapEnabledChange={vi.fn()}
           pelengPoints={[]}
           pelengPointsLoaded={false}
           pelengPointsLoading={false}

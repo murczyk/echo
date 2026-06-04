@@ -12,10 +12,13 @@ import { fetchCurrentUser } from '../../services/api/user';
 import {
   parseDateInputExclusiveEndInTimeZone,
   parseDateInputInTimeZone,
+  sortFrequenciesNumerically,
 } from '../../utils/misc';
+import { normalizePelengationFrequency } from './components/NetworkDetailsPelengationMap.shared';
 import {
   EMPTY_STATE,
   getDefaultNetworkRelationsDateRange,
+  getDefaultNetworkPelengDateRange,
   formatErrorMessage,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
@@ -56,6 +59,14 @@ export function isCurrentRelationsWindow(
   );
 }
 
+export function derivePelengEnabledFreqs(currentPelengEnabledFreqs: string[], pelengPoints: Array<{ freq: string }>): string[] {
+  const pelengFreqs = sortFrequenciesNumerically([
+    ...new Set(pelengPoints.map((point) => normalizePelengationFrequency(point.freq))),
+  ]);
+  const nextEnabledFreqs = currentPelengEnabledFreqs.filter((freq) => pelengFreqs.includes(freq));
+  return nextEnabledFreqs.length > 0 ? nextEnabledFreqs : pelengFreqs;
+}
+
 export function useRerNetworkDetailsNeoPageLoad(
   networkId: number,
   setState: SetState,
@@ -65,7 +76,11 @@ export function useRerNetworkDetailsNeoPageLoad(
   loadCallsigns: (networkId: number) => Promise<void>;
   loadRelations: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
-  loadPelengPoints: (networkId: number, activeFrom: number | null, activeTo: number | null) => Promise<void>;
+  loadPelengPoints: (
+    networkId: number,
+    sinceDateInclusiveMs: number,
+    tillDateNoninclusiveMs: number | null,
+  ) => Promise<void>;
 } {
   const callsignLoadRequestIdRef = useRef(0);
   const relationsLoadRequestIdRef = useRef(0);
@@ -248,7 +263,7 @@ export function useRerNetworkDetailsNeoPageLoad(
     }
   }, [reloadGeneration, setState]);
 
-  const loadPelengPoints = useCallback(async (targetNetworkId: number, activeFrom: number | null, activeTo: number | null) => {
+  const loadPelengPoints = useCallback(async (targetNetworkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number | null) => {
     const generation = reloadGeneration.current;
     const requestId = ++pelengPointsLoadRequestIdRef.current;
     const isCurrent = () => reloadGeneration.current === generation && pelengPointsLoadRequestIdRef.current === requestId;
@@ -267,21 +282,21 @@ export function useRerNetworkDetailsNeoPageLoad(
       return;
     }
 
-    setState((current) => ({
-      ...current,
-      pelengPointsLoading: true,
-      pelengPointsError: null,
-      pelengPointsLoaded: false,
-      pelengPoints: [],
-      pelengPointsRequestedFrom: activeFrom,
-      pelengPointsRequestedTo: activeTo,
-    }));
+      setState((current) => ({
+        ...current,
+        pelengPointsLoading: true,
+        pelengPointsError: null,
+        pelengPointsLoaded: false,
+        pelengPoints: [],
+        pelengPointsRequestedFrom: sinceDateInclusiveMs,
+        pelengPointsRequestedTo: tillDateNoninclusiveMs,
+      }));
 
     try {
       const response = await listNetworkPoints({
         networkId: targetNetworkId,
-        sinceDateInclusiveMs: activeFrom ?? 0,
-        tillDateNoninclusiveMs: activeTo,
+        sinceDateInclusiveMs,
+        tillDateNoninclusiveMs,
       });
 
       if (!isCurrent()) return;
@@ -289,11 +304,12 @@ export function useRerNetworkDetailsNeoPageLoad(
       setState((current) => ({
         ...current,
         pelengPoints: response.points ?? [],
+        pelengEnabledFreqs: derivePelengEnabledFreqs(current.pelengEnabledFreqs, response.points ?? []),
         pelengPointsLoaded: true,
         pelengPointsLoading: false,
         pelengPointsError: null,
-        pelengPointsRequestedFrom: activeFrom,
-        pelengPointsRequestedTo: activeTo,
+        pelengPointsRequestedFrom: sinceDateInclusiveMs,
+        pelengPointsRequestedTo: tillDateNoninclusiveMs,
       }));
     } catch (error) {
       if (!isCurrent()) return;
@@ -302,8 +318,8 @@ export function useRerNetworkDetailsNeoPageLoad(
         pelengPointsLoading: false,
         pelengPointsLoaded: false,
         pelengPointsError: formatErrorMessage(error),
-        pelengPointsRequestedFrom: activeFrom,
-        pelengPointsRequestedTo: activeTo,
+        pelengPointsRequestedFrom: sinceDateInclusiveMs,
+        pelengPointsRequestedTo: tillDateNoninclusiveMs,
       }));
     }
   }, [reloadGeneration, setState]);
@@ -315,6 +331,24 @@ export function useRerNetworkDetailsNeoPageLoad(
     reloadGeneration.current = generation;
 
     const isCurrent = () => reloadGeneration.current === generation;
+
+    void fetchCurrentUser()
+      .then((currentUser) => {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          currentUser,
+          currentUserLoaded: true,
+        }));
+      })
+      .catch(() => {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          currentUser: null,
+          currentUserLoaded: true,
+        }));
+      });
 
     const loadCore = async () => {
       if (!Number.isFinite(networkId) || networkId <= 0) {
@@ -359,23 +393,11 @@ export function useRerNetworkDetailsNeoPageLoad(
           relationsSelectedNodeId: null,
           relationsSelectedEdgeId: null,
           ...getDefaultNetworkRelationsDateRange(),
+          ...getDefaultNetworkPelengDateRange(network),
+          pelengSearch: '',
+          pelengEnabledFreqs: [],
+          pelengShowLabels: true,
         }));
-
-        void fetchCurrentUser()
-          .then((currentUser) => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              currentUser,
-            }));
-          })
-          .catch(() => {
-            if (!isCurrent()) return;
-            setState((current) => ({
-              ...current,
-              currentUser: null,
-            }));
-          });
       } catch (error) {
         if (!isCurrent()) return;
         setState((current) => ({
