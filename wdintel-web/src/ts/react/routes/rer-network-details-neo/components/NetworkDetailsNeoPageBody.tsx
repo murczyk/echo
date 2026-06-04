@@ -55,8 +55,9 @@ function buildCallsignPanelProps(page: Page) {
     onOpenDeleteDialog: page.openCallsignDeleteDialog,
     onSetMarkerMode: page.setNetworkCallsignMarkerMode,
     onAddKnownCallsign: page.addKnownCallsignsToNetwork,
-    onAddInterceptedToDeveloping: (callsign: string) => page.openCallsignDrawerForCreate({ callsign, developing: true, status: 'developing' }),
-    onAddInterceptedToNetwork: (callsign: string) => page.openCallsignDrawerForCreate({ callsign }),
+    onAddInterceptedToDeveloping: (callsign: string) => page.openCallsignDrawerForCreate({ callsign, developing: true }),
+    onAddInterceptedToNetwork: (callsign: string) =>
+      page.openCallsignDrawerForCreate({ callsign, developing: false }),
     onReload: page.loadCallsigns,
     inFlightCreateCallsigns: page.callsignCreateInFlightCallsigns,
     inFlightAddIds: page.callsignCatalogAddInFlightIds,

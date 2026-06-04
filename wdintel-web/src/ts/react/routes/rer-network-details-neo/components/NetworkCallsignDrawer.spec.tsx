@@ -220,7 +220,6 @@ describe('NetworkCallsignDrawer', () => {
       ...createDefaultNetworkCallsignDrawerForm(10, null),
       callsign: 'СОКІЛ',
       sourceId: 1,
-      status: 'catalog',
       developing: false,
     });
     rendered.push(view);
@@ -230,8 +229,15 @@ describe('NetworkCallsignDrawer', () => {
     });
 
     expect(view.getCurrentForm()).toMatchObject({
-      status: 'developing',
       developing: true,
+    });
+
+    act(() => {
+      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Каталог')?.click();
+    });
+
+    expect(view.getCurrentForm()).toMatchObject({
+      developing: false,
     });
   });
 });

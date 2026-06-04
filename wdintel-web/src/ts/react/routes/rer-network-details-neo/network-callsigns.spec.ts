@@ -114,7 +114,6 @@ describe('network-callsigns helpers', () => {
       id: null,
       networkId: 10,
       callsign: '',
-      status: 'developing',
       position: '',
       comment: '',
       sourceId: null,
@@ -143,7 +142,6 @@ describe('network-callsigns helpers', () => {
       id: null,
       networkId: 10,
       callsign: '',
-      status: 'developing',
       position: '',
       comment: '',
       sourceId: null,
@@ -157,7 +155,6 @@ describe('network-callsigns helpers', () => {
       expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
         id: 8,
         networkId: 10,
-        status: 'catalog',
         mainRadioStation: false,
         commandControl: true,
       });

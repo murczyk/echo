@@ -271,7 +271,7 @@ export function NetworkDetailsCallsignsPanel({
             </Stack>
           </Stack>
           {loadingError && unknownInterceptedCallsigns.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
-          <Box sx={{ mb: 2 }}>
+          <Box sx={{ pb: 2 }}>
             <NetworkCallsignsInterceptedPanel
               rows={filteredInterceptedRows}
               canManage={canManage}

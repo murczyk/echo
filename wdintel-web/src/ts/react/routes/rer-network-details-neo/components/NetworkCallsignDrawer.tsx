@@ -24,7 +24,6 @@ import {
   NetworkCallsignSourceId,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignStatus,
   type NetworkCallsignDrawerForm,
   type NetworkCallsignDrawerMode,
 } from '../network-callsigns';
@@ -148,16 +147,16 @@ function MarkerModeControl({
 }
 
 function CallsignStatusControl({
-  status,
+  developing,
   disabled,
   onChange,
 }: {
-  status: NetworkCallsignStatus;
+  developing: boolean;
   disabled: boolean;
-  onChange: (nextStatus: NetworkCallsignStatus) => void;
+  onChange: (nextDeveloping: boolean) => void;
 }) {
-  const developingSelected = status === 'developing';
-  const catalogSelected = status === 'catalog';
+  const developingSelected = developing;
+  const catalogSelected = !developing;
 
   return (
     <Box
@@ -174,7 +173,7 @@ function CallsignStatusControl({
     >
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange('developing')}
+        onClick={() => onChange(true)}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -204,7 +203,7 @@ function CallsignStatusControl({
       </ButtonBase>
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange('catalog')}
+        onClick={() => onChange(false)}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -333,13 +332,12 @@ export function NetworkCallsignDrawer({
                   Статус
                 </Typography>
                 <CallsignStatusControl
-                  status={form.status}
+                  developing={form.developing}
                   disabled={saving}
-                  onChange={(nextStatus) => updateForm(
+                  onChange={(nextDeveloping) => updateForm(
                     form,
                     {
-                      status: nextStatus,
-                      developing: nextStatus === 'developing',
+                      developing: nextDeveloping,
                     },
                     onChange,
                   )}
