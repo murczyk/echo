@@ -4,6 +4,7 @@ import type { PropsWithChildren } from 'react';
 
 import { useLocalStorage } from '../../../hooks/use-local-storage';
 import { isNullOrUndefined, isPresent, objectsEqual, strArraysEqual } from '../../../utils/misc';
+import { ensureTableWatermarkObserver, syncTableWatermarks } from './table-watermark';
 import {
   MRT_ColumnFiltersState,
   MRT_ColumnOrderState,
@@ -297,6 +298,11 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   const columnSizeTouched = Object.keys(columnSizing).length > 0;
 
   const columnVisibilityTouched = !objectsEqual(columnVisibility, defaultColumnVisibility);
+
+  useEffect(() => {
+    ensureTableWatermarkObserver();
+    syncTableWatermarks();
+  }, []);
 
   function getInitialColumnOrder() {
     const columnOrderFromStorage = localStorage.getItem(`columnOrder-${props.tableId}`);

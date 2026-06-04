@@ -1,5 +1,5 @@
 import ClearIcon from '@mui/icons-material/Clear';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import SearchIcon from '@mui/icons-material/Search';
 import { InputAdornment, TextField } from '@mui/material';
 import clsx from 'clsx';
 
@@ -56,7 +56,7 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
           autoComplete: 'new-password',
           startAdornment: (
             <InputAdornment position="start">
-              <FilterAltIcon
+              <SearchIcon
                 sx={{
                   color: 'text.secondary',
                 }}

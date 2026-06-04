@@ -15,8 +15,8 @@ import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
-  FULL_WIDTH_TABLE_PAPER_SX,
-  getPageScrollTableContainerSx,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
@@ -145,9 +145,6 @@ function KeyPoliciesTable(props: {
   const tableStateContext = useTableStateContext();
   const columns = usePolicyColumns(props.organismNames);
 
-  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-
   const state = {
     showAlertBanner: false,
     showLoadingOverlay: false,
@@ -204,22 +201,14 @@ function KeyPoliciesTable(props: {
         size: mrtRowActionsColumnSize(1),
       },
     },
-    muiTablePaperProps: ({ table }) => {
-      const baseProps = resolvedPaperProps({ table });
-      return {
-        ...baseProps,
-        sx: {
-          ...(baseProps as any)?.sx,
-          ...FULL_WIDTH_TABLE_PAPER_SX,
-        },
-      };
-    },
-    muiTableContainerProps: {
-      sx: {
-        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...getPageScrollTableContainerSx({ loading: props.loading, idleOverflow: 'auto' }),
-      },
-    },
+    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading: props.loading, layout: 'list' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading: props.loading,
+        layout: 'list',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: props.data.length > 0,
+      }),
     state,
   });
 

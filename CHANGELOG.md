@@ -10,6 +10,7 @@
 ## NEXT
 
 - [#2426](https://github.com/echoua/echo/issues/2426) ✅ Додано можливість відмітити прочитаним останні новини в релізі
+- [#2508](https://github.com/echoua/echo/issues/2508) ✅ UX/UI покращення таблиць нових сторінок.
 - [#2458](https://github.com/echoua/echo/issues/2458) ✅ Налаштування: адміністрування груп.
 - [#2498](https://github.com/echoua/echo/issues/2498) ✅ Мережа (нова): зміни сторінки позивних згідно відгуків користувачів.
 

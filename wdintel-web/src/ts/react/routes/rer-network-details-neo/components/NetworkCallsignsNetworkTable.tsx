@@ -1,10 +1,9 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
-import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import StarIcon from '@mui/icons-material/Star';
-import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { Box, Stack, Tooltip, Typography } from '@mui/material';
+import { useEffect, useMemo } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
 import type { NetworkCallsignMarkerMode, NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns.types';
@@ -22,7 +21,7 @@ import { InternalTableActions } from '../../../components/mui-customized/table/c
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
-import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import {
@@ -46,6 +45,15 @@ const NETWORK_MRT_LOCALIZATION = {
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+
+function getMainMarkerActionLabel(networkCallsign: NetworkCallsignRowView): string {
+  return networkCallsign.mainRadioStation ? 'Зняти головну' : 'Зробити головною';
+}
+
+function getCommandMarkerActionLabel(networkCallsign: NetworkCallsignRowView): string {
+  return networkCallsign.commandControl ? 'Зняти ланку управління' : 'Зробити ланкою управління';
+}
+
 function getNetworkStatusFilterCount(
   filter: NetworkCallsignStatusFilter,
   statusCounts: ReturnType<typeof countNetworkCallsignStatusRows>,
@@ -134,8 +142,6 @@ function NetworkCallsignsNetworkTableContent({
   inFlightDeleteIds,
 }: Props) {
   const tableStateContext = useTableStateContext();
-  const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const [rowMenuTarget, setRowMenuTarget] = useState<NetworkCallsignRowView | null>(null);
 
   const visibleRows = useMemo(() => rows, [rows]);
   const normalizedStatusFilter = NETWORK_STATUS_FILTER_ORDER.includes(statusFilter) ? statusFilter : 'All';
@@ -276,28 +282,44 @@ function NetworkCallsignsNetworkTableContent({
     renderRowActions: ({ row }) => {
       if (isInitialLoading) return <Box sx={{ minHeight: 28 }} />;
       const networkCallsign = row.original;
-      const editDisabled = !canManage || inFlightUpdateIds.includes(networkCallsign.id);
       if (!canManage) return <Box sx={{ minHeight: 28 }} />;
+      const editDisabled = inFlightUpdateIds.includes(networkCallsign.id);
+      const markerDisabled = editDisabled;
+      const clearMarkerDisabled = editDisabled || (!networkCallsign.mainRadioStation && !networkCallsign.commandControl);
       return (
-        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
+        <MrtRowActions>
           <MrtRowActionButton
             onClick={() => onOpenEditDrawer(networkCallsign)}
             disabled={editDisabled}
             icon={<EditIcon fontSize="small" />}
             label="Редагувати позивний"
           />
-          <IconButton
-            size="small"
-            aria-label="Дії з позивним"
-            onClick={(event) => {
-              event.stopPropagation();
-              setRowMenuTarget(networkCallsign);
-              setRowMenuAnchorEl(event.currentTarget);
-            }}
-          >
-            <MoreVertOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Stack>
+          <MrtRowActionButton
+            label={getMainMarkerActionLabel(networkCallsign)}
+            onClick={() => onSetMarkerMode(networkCallsign, networkCallsign.mainRadioStation ? 'none' : 'mainRadioStation')}
+            disabled={markerDisabled}
+            icon={<StarIcon fontSize="small" />}
+          />
+          <MrtRowActionButton
+            label={getCommandMarkerActionLabel(networkCallsign)}
+            onClick={() => onSetMarkerMode(networkCallsign, networkCallsign.commandControl ? 'none' : 'commandControl')}
+            disabled={markerDisabled}
+            icon={<MilitaryTechOutlinedIcon fontSize="small" />}
+          />
+          <MrtRowActionButton
+            label="Очистити маркер"
+            onClick={() => onSetMarkerMode(networkCallsign, 'none')}
+            disabled={clearMarkerDisabled}
+            icon={<Box component="span" sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>−</Box>}
+          />
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onOpenDeleteDialog(networkCallsign)}
+            disabled={inFlightDeleteIds.includes(networkCallsign.id)}
+            icon={<DeleteIcon fontSize="small" />}
+            tone="danger"
+          />
+        </MrtRowActions>
       );
     },
     renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
@@ -416,79 +438,6 @@ function NetworkCallsignsNetworkTableContent({
         </Box>
       </Stack>
 
-      <Menu
-        anchorEl={rowMenuAnchorEl}
-        open={rowMenuAnchorEl !== null && rowMenuTarget !== null}
-        onClose={() => {
-          setRowMenuAnchorEl(null);
-          setRowMenuTarget(null);
-        }}
-        slotProps={{ paper: { sx: { minWidth: 220 } } }}
-      >
-        {rowMenuTarget ? (
-          <MenuItem
-            onClick={() => {
-              onSetMarkerMode(rowMenuTarget, 'mainRadioStation');
-              setRowMenuAnchorEl(null);
-              setRowMenuTarget(null);
-            }}
-            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
-          >
-            <ListItemIcon sx={{ color: rowMenuTarget.mainRadioStation ? 'warning.main' : 'text.secondary' }}>
-              <StarIcon fontSize="small" />
-            </ListItemIcon>
-            Зробити головною
-          </MenuItem>
-        ) : null}
-        {rowMenuTarget ? (
-          <MenuItem
-            onClick={() => {
-              onSetMarkerMode(rowMenuTarget, 'commandControl');
-              setRowMenuAnchorEl(null);
-              setRowMenuTarget(null);
-            }}
-            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
-          >
-            <ListItemIcon sx={{ color: rowMenuTarget.commandControl ? 'info.main' : 'text.secondary' }}>
-              <MilitaryTechOutlinedIcon fontSize="small" />
-            </ListItemIcon>
-            Зробити ланкою управління
-          </MenuItem>
-        ) : null}
-        {rowMenuTarget ? (
-          <MenuItem
-            onClick={() => {
-              onSetMarkerMode(rowMenuTarget, 'none');
-              setRowMenuAnchorEl(null);
-              setRowMenuTarget(null);
-            }}
-            disabled={!canManage || inFlightUpdateIds.includes(rowMenuTarget.id)}
-          >
-            <ListItemIcon sx={{ color: 'text.secondary' }}>
-              <Box component="span" sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>
-                −
-              </Box>
-            </ListItemIcon>
-            Очистити маркер
-          </MenuItem>
-        ) : null}
-        {rowMenuTarget ? (
-          <MenuItem
-            onClick={() => {
-              onOpenDeleteDialog(rowMenuTarget);
-              setRowMenuAnchorEl(null);
-              setRowMenuTarget(null);
-            }}
-            sx={{ color: 'error.main' }}
-            disabled={!canManage || inFlightDeleteIds.includes(rowMenuTarget?.id ?? 0)}
-          >
-            <ListItemIcon sx={{ color: 'error.main' }}>
-              <DeleteIcon fontSize="small" />
-            </ListItemIcon>
-            Видалити
-          </MenuItem>
-        ) : null}
-      </Menu>
     </Box>
   );
 }

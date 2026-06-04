@@ -6,7 +6,7 @@ import { MRT_ColumnDef, type MRT_SortingState } from 'material-react-table';
 
 import { CUSTOM_STYLES } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
@@ -45,9 +45,10 @@ export function buildAnalysisSummaryTableColumns({
       ...rowActionsDisplayColumnDef,
       header: 'Дії',
       id: 'rowActions',
-      size: mrtRowActionsColumnSize(3),
-      minSize: mrtRowActionsColumnSize(3),
-      maxSize: mrtRowActionsColumnSize(3),
+      size: 48,
+      minSize: 48,
+      maxSize: 48,
+      enableResizing: false,
       grow: false,
       enableColumnActions: false,
       enableHiding: false,

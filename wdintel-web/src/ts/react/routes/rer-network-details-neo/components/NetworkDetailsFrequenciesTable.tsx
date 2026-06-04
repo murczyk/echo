@@ -3,8 +3,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import { Box, Button, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Stack, Tooltip, Typography } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -14,7 +13,7 @@ import {
 import { useEffect, useMemo } from 'react';
 
 import type { ModulationRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
-import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
@@ -234,8 +233,6 @@ function NetworkDetailsFrequenciesTableContent({
   const modulationsById = useMemo(() => new Map(modulations.map((modulation) => [modulation.id, modulation.name])), [modulations]);
   const rows = useMemo(() => buildNetworkFreqRows(freqs, modulationsById, expandedFrequencyGroupIds), [expandedFrequencyGroupIds, freqs, modulationsById]);
   const loadingRows = useMemo(() => buildLoadingRows(), []);
-  const activeRow = useMemo(() => rows.find((row) => row.kind === 'freq' && row.freq.networkFreqId === freqRowActionTargetId) ?? null, [freqRowActionTargetId, rows]);
-  const activeFreq = activeRow && activeRow.kind === 'freq' ? activeRow.freq : null;
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
   const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
@@ -244,6 +241,10 @@ function NetworkDetailsFrequenciesTableContent({
     [rows, statusFilterValue],
   );
   const hasActiveFilters = tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
+  void onOpenFreqRowActions;
+  void onCloseFreqRowActions;
+  void freqRowActionMenuAnchorEl;
+  void freqRowActionTargetId;
 
   function onStatusFilterChange(nextStatusFilterValue: StatusFilterValue) {
     const nextFilters = tableStateContext.columnFilters.filter((filter) => filter.id !== STATUS_FILTER_COLUMN_ID);
@@ -312,12 +313,11 @@ function NetworkDetailsFrequenciesTableContent({
       if (!canManage) return <Box sx={{ minHeight: 28 }} />;
       const freqRow = row.original.freq;
       return (
-        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" useFlexGap>
+        <MrtRowActions>
           <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} />
-          <IconButton size="small" aria-label="Дії з частотою" onClick={(event) => { event.stopPropagation(); onOpenFreqRowActions(event.currentTarget, freqRow.networkFreqId); }}>
-            <MoreVertOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Stack>
+          <MrtRowActionButton label="Редагувати тех. дані" onClick={() => onOpenFreqTechDrawer(freqRow)} icon={<BuildIcon fontSize="small" />} />
+          <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" />
+        </MrtRowActions>
       );
     },
     state: {
@@ -426,23 +426,6 @@ function NetworkDetailsFrequenciesTableContent({
           </Box>
         </Box>
       </Stack>
-
-      <Menu anchorEl={freqRowActionMenuAnchorEl} open={freqRowActionMenuAnchorEl !== null && activeFreq !== null} onClose={onCloseFreqRowActions} slotProps={{ paper: { sx: { minWidth: 220 } } }}>
-        {activeFreq ? (
-          [
-            <MenuItem key="tech" onClick={() => { onCloseFreqRowActions(); onOpenFreqTechDrawer(activeFreq); }}>
-              <ListItemIcon><BuildIcon fontSize="small" /></ListItemIcon>
-              Редагувати тех. дані
-            </MenuItem>,
-            <MenuItem key="delete" onClick={() => { onCloseFreqRowActions(); onOpenDeleteFreqDialog(activeFreq); }} sx={{ color: 'error.main' }}>
-              <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>
-              Видалити
-            </MenuItem>,
-          ]
-        ) : (
-          <MenuItem disabled>Немає дій</MenuItem>
-        )}
-      </Menu>
     </Box>
   );
 }
