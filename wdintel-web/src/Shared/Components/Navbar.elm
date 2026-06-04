@@ -492,7 +492,7 @@ changelogDropdown props maybeData =
                             []
                         , if data.unseen then
                             span
-                                [ class "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-white/30" ]
+                                [ class "absolute -top-1px -right-4px h-2 w-2 rounded-full bg-orange-400 ring-1 ring-white/30" ]
                                 []
 
                           else
