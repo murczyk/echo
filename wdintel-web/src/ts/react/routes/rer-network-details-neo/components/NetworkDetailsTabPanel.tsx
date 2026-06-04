@@ -242,8 +242,8 @@ export function NetworkDetailsTabPanel({
             />
           </Box>
         ) : activeNetworkDetailsTab === 'callsigns' ? (
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }}>
+            <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
               <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
             </Box>
           </Box>

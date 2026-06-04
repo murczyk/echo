@@ -1,3 +1,4 @@
+import { Checkbox, FormControlLabel } from '@mui/material';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDescriptionDrawer } from './NetworkDescriptionDrawer';
@@ -79,6 +80,20 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         submitting={page.callsignDeleteSubmitting}
         disabled={!page.canManageCallsignActions || page.callsignDeleteTarget === null}
       >
+        {page.callsignDeleteTarget
+          && page.callsignDeleteTarget.status !== 'developing'
+          && page.callsignDeleteTarget.knownCallsignId !== null
+          && page.canDeleteCatalogCallsign ? (
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={page.callsignDeleteAlsoFromCatalog}
+                onChange={(_, checked) => page.setCallsignDeleteAlsoFromCatalog(checked)}
+              />
+            }
+            label="Видалити також з каталогу"
+          />
+        ) : null}
         {page.callsignDeleteError ? <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert> : null}
       </ConfirmDangerDialog>
 

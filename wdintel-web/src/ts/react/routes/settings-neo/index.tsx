@@ -1,4 +1,4 @@
-import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import type { MyAdminSignalGroup } from '../../../../Bindings';
@@ -6,6 +6,7 @@ import { ELLIPSIS, isNullOrUndefined } from '../../utils/misc';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
+import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -43,87 +44,6 @@ function buildSettingsSectionUrl(section: SettingsSection): string {
   return url.pathname + url.search + url.hash;
 }
 
-function formatOptionalText(value: string | null | undefined): string {
-  if (!value || !value.trim()) return '—';
-  return value;
-}
-
-function formatAors(group: MyAdminSignalGroup): string {
-  const aors = group.areasOfResponsibility ?? [];
-  if (aors.length === 0) return '—';
-  return aors.map((aor) => aor.name).join(', ');
-}
-
-function formatAllowedUsers(group: MyAdminSignalGroup): string {
-  if (!group.isGroupSecret) return 'без обмежень';
-  if (group.allowedUsers.length === 0) return '—';
-  return group.allowedUsers.join(', ');
-}
-
-function SettingsMyGroupsSection(props: {
-  status: 'idle' | 'loading' | 'success' | 'error';
-  groups: MyAdminSignalGroup[];
-  error: string | null;
-}) {
-  return (
-    <Box role="tabpanel" id="settings-neo-panel-my-groups" aria-labelledby="settings-neo-tab-my-groups">
-      <Box sx={{ p: 3 }}>
-        <Stack spacing={3}>
-          <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
-            Мої групи
-          </Typography>
-
-          <PowerAlert severity="info">
-            Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
-            <br />
-            1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
-            <br />
-            2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
-          </PowerAlert>
-
-          {props.error ? <PowerAlert severity="error">{props.error}</PowerAlert> : null}
-
-          {props.status === 'loading' ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CircularProgress size={18} />
-              <Typography variant="body2" color="text.secondary">
-                Завантаження груп{ELLIPSIS}
-              </Typography>
-            </Box>
-          ) : null}
-
-          {props.status === 'success' ? (
-            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 2 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Група</TableCell>
-                    <TableCell>Джерело</TableCell>
-                    <TableCell>Смуги</TableCell>
-                    <TableCell>Приватність</TableCell>
-                    <TableCell>Логіни приватної групи</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {props.groups.map((group) => (
-                    <TableRow key={group.masterKey}>
-                      <TableCell>{group.name || group.masterKey.slice(-5)}</TableCell>
-                      <TableCell>{formatOptionalText(group.datasourceName ?? group.datasourceKind)}</TableCell>
-                      <TableCell>{formatAors(group)}</TableCell>
-                      <TableCell>{group.isGroupSecret ? 'приватна' : 'публічна'}</TableCell>
-                      <TableCell>{formatAllowedUsers(group)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          ) : null}
-        </Stack>
-      </Box>
-    </Box>
-  );
-}
-
 export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() =>
     parseSettingsSection(section ?? readSettingsSectionFromUrl()),
@@ -135,7 +55,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
   const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
   const hasMyGroups = myGroups.length > 0;
-  const showMyGroupsTab = hasMyGroups || myGroupsStatus === 'loading' || settingsSection === 'myGroups';
+  const showMyGroupsTab = hasMyGroups || settingsSection === 'myGroups' || myGroupsStatus === 'error';
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;

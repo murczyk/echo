@@ -25,7 +25,7 @@ import {
 import {
   buildNetworkCallsignTabData,
   createNetworkCallsignActivityMap,
-} from './network-callsigns';
+} from './network-callsigns.tab';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 

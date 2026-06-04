@@ -86,8 +86,8 @@ vi.mock('./NetworkCallsignSourceUi', () => ({
 }));
 
 import { NetworkCallsignDrawer } from './NetworkCallsignDrawer';
-import { createDefaultNetworkCallsignDrawerForm } from '../network-callsigns';
-import type { NetworkCallsignDrawerForm } from '../network-callsigns';
+import { createDefaultNetworkCallsignDrawerForm } from '../network-callsigns.forms';
+import type { NetworkCallsignDrawerForm } from '../network-callsigns.types';
 import type { Source } from '../../../../../Bindings';
 
 type Rendered = {
@@ -220,7 +220,6 @@ describe('NetworkCallsignDrawer', () => {
       ...createDefaultNetworkCallsignDrawerForm(10, null),
       callsign: 'СОКІЛ',
       sourceId: 1,
-      status: 'catalog',
       developing: false,
     });
     rendered.push(view);
@@ -230,8 +229,15 @@ describe('NetworkCallsignDrawer', () => {
     });
 
     expect(view.getCurrentForm()).toMatchObject({
-      status: 'developing',
       developing: true,
+    });
+
+    act(() => {
+      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Каталог')?.click();
+    });
+
+    expect(view.getCurrentForm()).toMatchObject({
+      developing: false,
     });
   });
 });

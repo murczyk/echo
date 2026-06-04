@@ -1,16 +1,15 @@
-import { Box, Stack, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
+import { Box, Stack } from '@mui/material';
 import type { MRT_ColumnOrderState } from 'material-react-table';
 
 import type {
   NetworkCallsignCatalogRowView,
   NetworkCallsignRowView,
   NetworkCallsignStatusFilter,
-} from '../network-callsigns';
+} from '../network-callsigns.types';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
 
-export const NETWORK_STATUS_FILTER_LABELS: Record<Exclude<NetworkCallsignStatusFilter, 'Verified'>, string> = {
+export const NETWORK_STATUS_FILTER_LABELS: Record<NetworkCallsignStatusFilter, string> = {
   All: 'Всі',
   Developing: 'В дорозвідці',
   Catalog: 'Каталог',
@@ -68,7 +67,18 @@ export function buildNetworkColumnOrder({
   });
 }
 
-export function CountChipLabel({ label, count, selected = false }: { label: string; count: number; selected?: boolean }) {
+export function CountChipLabel({
+  label,
+  count,
+  totalCount,
+  selected = false,
+}: {
+  label: string;
+  count: number;
+  totalCount?: number;
+  selected?: boolean;
+}) {
+  const countLabel = totalCount !== undefined ? `${formatCountLabel(count)}/${formatCountLabel(totalCount)}` : formatCountLabel(count);
   return (
     <Stack direction="row" spacing={0.4} alignItems="center" sx={{ lineHeight: 1 }}>
       <Box component="span" sx={{ lineHeight: 1 }}>
@@ -90,7 +100,7 @@ export function CountChipLabel({ label, count, selected = false }: { label: stri
           transform: 'translateY(-0.04em)',
         })}
       >
-        {formatCountLabel(count)}
+        {countLabel}
       </Box>
     </Stack>
   );

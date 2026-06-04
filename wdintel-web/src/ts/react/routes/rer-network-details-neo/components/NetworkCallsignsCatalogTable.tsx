@@ -1,9 +1,9 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
-import type { NetworkCallsignCatalogRowView } from '../network-callsigns';
+import type { NetworkCallsignCatalogRowView } from '../network-callsigns.types';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
@@ -38,6 +38,8 @@ const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
 type Props = {
+  title: string;
+  countLabel: string;
   rows: NetworkCallsignCatalogRowView[];
   loading: boolean;
   loadingError: string | null;
@@ -48,6 +50,8 @@ type Props = {
 };
 
 export function NetworkCallsignsCatalogTable({
+  title,
+  countLabel,
   rows,
   loading,
   loadingError,
@@ -65,6 +69,8 @@ export function NetworkCallsignsCatalogTable({
       })}
     >
       <NetworkCallsignsCatalogTableContent
+        title={title}
+        countLabel={countLabel}
         rows={rows}
         loading={loading}
         loadingError={loadingError}
@@ -78,6 +84,8 @@ export function NetworkCallsignsCatalogTable({
 }
 
 function NetworkCallsignsCatalogTableContent({
+  title,
+  countLabel,
   rows,
   loading,
   loadingError,
@@ -270,7 +278,13 @@ function NetworkCallsignsCatalogTableContent({
 
   return (
     <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2, mt: 0, mb: 1.25, width: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 0, mb: 1.25, width: '100%', flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+          <Typography variant="h6">{title}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {countLabel}
+          </Typography>
+        </Stack>
         <InternalTableActions table={table} rowNumberAppearanceControl />
       </Box>
 

@@ -124,6 +124,11 @@ export function canManageNetworkCallsignActions(user: User | null): boolean {
   return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
 }
 
+export function canDeleteCatalogCallsign(user: User | null): boolean {
+  const roles = new Set(user?.roles ?? []);
+  return roles.has('Admin') || (roles.has('CallsignsEditor') && (roles.has('Rer') || roles.has('Full')));
+}
+
 export function canViewNetworkActivityTab(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
   return roles.has('Admin') || roles.has('Full') || roles.has('Rer');

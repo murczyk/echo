@@ -20,14 +20,12 @@ import { SearchableOptionAutocomplete } from '../../../components/SearchableOpti
 import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
-  normalizeCallsignDisplay,
-  NetworkCallsignSourceId,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignStatus,
-  type NetworkCallsignDrawerForm,
-  type NetworkCallsignDrawerMode,
-} from '../network-callsigns';
+} from '../network-callsigns.forms';
+import type { NetworkCallsignDrawerForm, NetworkCallsignDrawerMode } from '../network-callsigns.types';
+import { NetworkCallsignSourceId } from '../network-callsigns.types';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS } from './dropdownProps';
 
 type Props = {
@@ -148,17 +146,16 @@ function MarkerModeControl({
 }
 
 function CallsignStatusControl({
-  status,
+  developing,
   disabled,
   onChange,
 }: {
-  status: NetworkCallsignStatus;
+  developing: boolean;
   disabled: boolean;
-  onChange: (nextStatus: NetworkCallsignStatus) => void;
+  onChange: (nextDeveloping: boolean) => void;
 }) {
-  const developingSelected = status === 'developing';
-  const catalogSelected = status === 'catalog';
-  const verifiedSelected = status === 'verified';
+  const developingSelected = developing;
+  const catalogSelected = !developing;
 
   return (
     <Box
@@ -168,14 +165,14 @@ function CallsignStatusControl({
         borderRadius: 2,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 0.75,
         p: 0.5,
       })}
     >
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange('developing')}
+        onClick={() => onChange(true)}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -205,7 +202,7 @@ function CallsignStatusControl({
       </ButtonBase>
       <ButtonBase
         disabled={disabled}
-        onClick={() => onChange('catalog')}
+        onClick={() => onChange(false)}
         sx={(theme) => ({
           minHeight: 38,
           borderRadius: 1.5,
@@ -265,7 +262,8 @@ export function NetworkCallsignDrawer({
       && (!isRoSource || radioFreqValidationError === null),
   );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
-  const selectedUnitId = form?.unitId ?? null;
+  const unitOptions = [{ id: 0, label: 'Не вказано' }, ...units];
+  const selectedUnitId = form?.unitId ?? 0;
 
   useEffect(() => {
     if (!open) return;
@@ -333,13 +331,12 @@ export function NetworkCallsignDrawer({
                   Статус
                 </Typography>
                 <CallsignStatusControl
-                  status={form.status}
+                  developing={form.developing}
                   disabled={saving}
-                  onChange={(nextStatus) => updateForm(
+                  onChange={(nextDeveloping) => updateForm(
                     form,
                     {
-                      status: nextStatus,
-                      developing: nextStatus === 'developing',
+                      developing: nextDeveloping,
                     },
                     onChange,
                   )}
@@ -383,9 +380,9 @@ export function NetworkCallsignDrawer({
               >
                 <SearchableOptionAutocomplete
                   label="Підрозділ"
-                  options={units}
+                  options={unitOptions}
                   valueId={selectedUnitId}
-                  onValueIdChange={(unitId) => updateForm(form, { unitId }, onChange)}
+                  onValueIdChange={(unitId) => updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange)}
                   getOptionLabel={(unit) => unit.label}
                   disabled={saving}
                   placeholder="Оберіть підрозділ"

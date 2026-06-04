@@ -210,8 +210,13 @@ export async function updateNetworkCallsign(req: UpdateNetworkCallsignReq): Prom
 }
 
 export async function deleteNetworkCallsign(callsignId: number): Promise<NetworkCallsign> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsign/delete', callsignId as any);
+  const raw = await postJson<unknown>('/api/sigint/network-callsign/delete', callsignId);
   return transformSnakeToCamel<NetworkCallsign>(raw);
+}
+
+export async function deleteCallsign(callsignId: number): Promise<Callsign> {
+  const raw = await postJson<unknown>('/api/sigint/callsign/delete', callsignId);
+  return transformSnakeToCamel<Callsign>(raw);
 }
 
 export async function addKnownCallsignsToNetwork(req: AddAsKnownNetworkCallsignReq): Promise<NetworkCallsign[]> {
@@ -369,32 +374,27 @@ function toUpdateCallsignReqBody(req: Callsign): UpdateCallsignReqBody {
 }
 
 export async function listCallsigns(req: ListCallsignsReq, signal?: AbortSignal): Promise<ListCallsignsRsp> {
-  const raw = await postJson<ListCallsignsRspLike>('/api/sigint/callsigns', toListCallsignsReqBody(req) as any, { signal });
+  const raw = await postJson<ListCallsignsRspLike>('/api/sigint/callsigns', toListCallsignsReqBody(req), { signal });
   return normalizeListCallsignsRsp(raw);
 }
 
 export async function createCallsign(req: CreateCallsignReq): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/create', toCreateCallsignReqBody(req) as any);
+  const raw = await postJson<CallsignLike>('/api/sigint/callsign/create', toCreateCallsignReqBody(req));
   return normalizeCallsign(raw);
 }
 
 export async function updateCallsign(req: Callsign): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', toUpdateCallsignReqBody(req) as any);
-  return normalizeCallsign(raw);
-}
-
-export async function deleteCallsign(callsignId: number): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/delete', callsignId as any);
+  const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', toUpdateCallsignReqBody(req));
   return normalizeCallsign(raw);
 }
 
 export async function listSources(): Promise<Source[]> {
-  const raw = await postJson<ListSourcesRspLike>('/api/sigint/sources', null as any);
+  const raw = await postJson<ListSourcesRspLike>('/api/sigint/sources', null);
   return normalizeListSourcesRsp(raw).sources;
 }
 
 export async function getCallsignUnitStats(): Promise<CallsignUnitStatRow[]> {
-  const raw = await postJson<CallsignUnitStatsRspLike>('/api/sigint/callsign/unit-stats', null as any);
+  const raw = await postJson<CallsignUnitStatsRspLike>('/api/sigint/callsign/unit-stats', null);
   return normalizeCallsignUnitStatsRsp(raw).units;
 }
 

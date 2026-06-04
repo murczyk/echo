@@ -4,23 +4,33 @@
 import { describe, expect, it } from 'vitest';
 
 import type { KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
-import type { NetworkCallsignRowView } from './network-callsigns';
+import type { NetworkCallsignRowView } from './network-callsigns.types';
 import {
   buildNetworkCallsignRowViews,
-  buildNetworkCallsignTabData,
   countNetworkCallsignStatusRows,
+  getNetworkCallsignStatusLabel,
+} from './network-callsigns.rows';
+import {
+  filterCatalogCallsignGroups,
+  filterInterceptedCallsigns,
+  filterNetworkCallsignRows,
+} from './network-callsigns.search';
+import {
   createDefaultNetworkCallsignDrawerForm,
   createNetworkCallsignDrawerForm,
-  createNetworkCallsignActivityMap,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
-  getNetworkCallsignStatusLabel,
   getNetworkCallsignDrawerSaveError,
+} from './network-callsigns.forms';
+import {
+  buildNetworkCallsignTabData,
+  createNetworkCallsignActivityMap,
   flattenCatalogCallsignRows,
-  normalizeCallsignDisplay,
   mergeNetworkCallsigns,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
-} from './network-callsigns';
+} from './network-callsigns.tab';
+import { formatNetworkCallsignDatetime } from './network-callsigns.search';
+import { normalizeCallsignDisplay } from './network-callsigns.utils';
 
 function createNetworkCallsign(overrides: Partial<NetworkCallsign> = {}): NetworkCallsign {
   return {
@@ -93,16 +103,15 @@ describe('network-callsigns helpers', () => {
     );
 
     expect(rows.map((row) => [row.callsign, row.statusLabel])).toEqual([
-      ['СОКІЛ-1', 'Верифіковано'],
+      ['СОКІЛ-1', 'Каталог'],
       ['ТИГР-7', 'В дорозвідці'],
       ['ВОВК-1', 'Каталог'],
       ['ОРЕЛ-5', 'Невідомо'],
     ]);
     expect(countNetworkCallsignStatusRows(rows)).toEqual({
       all: 4,
-      verified: 1,
       developing: 1,
-      catalog: 1,
+      catalog: 2,
       unknown: 1,
     });
   });
@@ -112,7 +121,6 @@ describe('network-callsigns helpers', () => {
       id: null,
       networkId: 10,
       callsign: '',
-      status: 'developing',
       position: '',
       comment: '',
       sourceId: null,
@@ -125,15 +133,15 @@ describe('network-callsigns helpers', () => {
     });
   });
 
-    it('preserves primary marker and enforces exclusivity in drawer forms', () => {
+  it('preserves primary marker and enforces exclusivity in drawer forms', () => {
     const row = {
       ...createNetworkCallsign({
         id: 8,
         mainRadioStation: true,
         commandControl: true,
       }),
-      status: 'verified',
-      statusLabel: getNetworkCallsignStatusLabel('verified'),
+      status: 'catalog',
+      statusLabel: getNetworkCallsignStatusLabel('catalog'),
       sourceName: 'Каталог 2024',
     } as NetworkCallsignRowView;
 
@@ -141,7 +149,6 @@ describe('network-callsigns helpers', () => {
       id: null,
       networkId: 10,
       callsign: '',
-      status: 'developing',
       position: '',
       comment: '',
       sourceId: null,
@@ -152,31 +159,30 @@ describe('network-callsigns helpers', () => {
       mainRadioStation: false,
       commandControl: false,
     });
-      expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
-        id: 8,
-        networkId: 10,
-        status: 'catalog',
-        mainRadioStation: false,
-        commandControl: true,
-      });
-      // when both flags are present on the source row, prefer `commandControl` in the drawer
-      expect(getNetworkCallsignMarkerMode(row)).toBe('mainRadioStation');
+    expect(createNetworkCallsignDrawerForm(10, row)).toMatchObject({
+      id: 8,
+      networkId: 10,
+      mainRadioStation: false,
+      commandControl: true,
+    });
+    // when both flags are present on the source row, prefer `commandControl` in the drawer
+    expect(getNetworkCallsignMarkerMode(row)).toBe('mainRadioStation');
     expect(getNetworkCallsignMarkerState('mainRadioStation')).toEqual({ mainRadioStation: true, commandControl: false });
     expect(getNetworkCallsignMarkerState('commandControl')).toEqual({ mainRadioStation: false, commandControl: true });
     expect(getNetworkCallsignMarkerState('none')).toEqual({ mainRadioStation: false, commandControl: false });
   });
 
-    it('never allows both markers to be true in drawer forms', () => {
-      const rowBoth = {
-        ...createNetworkCallsign({ mainRadioStation: true, commandControl: true }),
-        status: 'verified',
-        statusLabel: getNetworkCallsignStatusLabel('verified'),
-        sourceName: 'Каталог 2024',
-      } as NetworkCallsignRowView;
+  it('never allows both markers to be true in drawer forms', () => {
+    const rowBoth = {
+      ...createNetworkCallsign({ mainRadioStation: true, commandControl: true }),
+      status: 'catalog',
+      statusLabel: getNetworkCallsignStatusLabel('catalog'),
+      sourceName: 'Каталог 2024',
+    } as NetworkCallsignRowView;
 
-      const form = createNetworkCallsignDrawerForm(10, rowBoth);
-      expect(Boolean(form.mainRadioStation && form.commandControl)).toBe(false);
-    });
+    const form = createNetworkCallsignDrawerForm(10, rowBoth);
+    expect(Boolean(form.mainRadioStation && form.commandControl)).toBe(false);
+  });
 
   it('requires a callsign, source and RO radio frequency before saving a drawer form', () => {
     expect(getNetworkCallsignDrawerSaveError(null)).toBeNull();
@@ -291,5 +297,51 @@ describe('network-callsigns helpers', () => {
       createNetworkCallsign({ id: 1, callsign: 'сокіл-1-оновлений' }),
       createNetworkCallsign({ id: 2, callsign: 'барс-4' }),
     ]);
+  });
+
+  it('filters network, catalog and intercepted callsigns by search query', () => {
+    const networkRows = [
+      {
+        ...buildNetworkCallsignRowViews([createNetworkCallsign({ callsign: 'сокіл-1', comment: 'дозвіл' })], new Map())[0],
+        sourceName: 'Пеленг',
+      },
+      {
+        ...buildNetworkCallsignRowViews([createNetworkCallsign({ callsign: 'барс-4', comment: 'резерв' })], new Map())[0],
+        sourceName: 'Каталог',
+      },
+    ];
+    const catalogGroups = [
+      createCatalogGroup({
+        callsign: 'барс-4',
+        knownCallsigns: [createKnownCallsign({ callsign: 'Барс-4', comment: 'Збiг' })],
+      }),
+    ];
+    const intercepted = [
+      {
+        callsign: 'орел-5',
+        messageCount: 12,
+        lastDatetime: 1710200000000,
+        freqs: ['145.1000'],
+        isOld: false,
+        isInDictionary: false,
+        activity: { messageCount: 12, lastDatetime: 1710200000000, freqs: ['145.1000'] },
+      },
+    ];
+
+    expect(filterNetworkCallsignRows(networkRows, 'дозвіл')).toHaveLength(1);
+    expect(filterCatalogCallsignGroups(catalogGroups, 'збiг')).toHaveLength(1);
+    expect(filterInterceptedCallsigns(intercepted, '145.1')).toHaveLength(1);
+  });
+
+  it('filters catalog groups by the formatted created-at timestamp', () => {
+    const createdAt = 1710100000000;
+    const catalogGroups = [
+      createCatalogGroup({
+        callsign: 'барс-4',
+        knownCallsigns: [createKnownCallsign({ createdAt })],
+      }),
+    ];
+
+    expect(filterCatalogCallsignGroups(catalogGroups, formatNetworkCallsignDatetime(createdAt))).toHaveLength(1);
   });
 });

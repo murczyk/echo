@@ -14,13 +14,14 @@ import {
 import {
   buildNetworkCallsignTabData,
   mergeNetworkCallsigns,
-  normalizeCallsignDisplay,
-  createDefaultNetworkCallsignDrawerForm,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
+} from './network-callsigns.tab';
+import {
+  createDefaultNetworkCallsignDrawerForm,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignRowView,
-  type NetworkCallsignMarkerMode,
-} from './network-callsigns';
+} from './network-callsigns.forms';
+import type { NetworkCallsignMarkerMode, NetworkCallsignRowView } from './network-callsigns.types';
+import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
@@ -28,10 +29,9 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
-  defaultNetworkUnitId: number | null;
 };
 
-export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState, defaultNetworkUnitId }: Args) {
+export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
 
   const addKnownCallsignsToCurrentNetwork = useCallback(async (knownCallsignId: number) => {

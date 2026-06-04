@@ -6,6 +6,7 @@ import {
   canDeleteNetwork,
   canEditNetwork,
   canManageDescriptions,
+  canDeleteCatalogCallsign,
   canManageNetworkCallsignActions,
   canViewNetworkActivityTab,
   canViewNetworkRelationsTab,
@@ -53,6 +54,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
   const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
+  const canDeleteCatalogCallsignAction = useMemo(() => canDeleteCatalogCallsign(state.currentUser), [state.currentUser]);
   const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
   const canViewActivityTab = useMemo(() => canViewNetworkActivityTab(state.currentUser), [state.currentUser]);
   const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
@@ -295,6 +297,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     canDelete,
     canEdit,
     canManageDescriptionActions,
+    canDeleteCatalogCallsign: canDeleteCatalogCallsignAction,
     canManageCallsignActions,
     canViewActivityTab,
     canViewRelationsTab,
@@ -397,9 +400,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     callsignDeleteTarget: state.callsignDeleteTarget,
     callsignDeleteSubmitting: state.callsignDeleteSubmitting,
     callsignDeleteError: state.callsignDeleteError,
+    callsignDeleteAlsoFromCatalog: state.callsignDeleteAlsoFromCatalog,
     openCallsignDeleteDialog: actions.openCallsignDeleteDialog,
     closeCallsignDeleteDialog: actions.closeCallsignDeleteDialog,
     deleteCallsign: actions.deleteCallsign,
+    setCallsignDeleteAlsoFromCatalog: actions.setCallsignDeleteAlsoFromCatalog,
     addKnownCallsignsToNetwork: actions.addKnownCallsignsToNetwork,
     addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
     setNetworkCallsignMarkerMode: actions.setNetworkCallsignMarkerMode,
@@ -485,3 +490,5 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     reload,
   };
 }
+
+export type RerNetworkDetailsNeoPage = ReturnType<typeof useRerNetworkDetailsNeoPage>;

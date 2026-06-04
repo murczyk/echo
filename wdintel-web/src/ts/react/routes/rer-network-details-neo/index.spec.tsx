@@ -154,6 +154,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     canEdit: false,
     canManageDescriptionActions: false,
     canManageCallsignActions: false,
+    canDeleteCatalogCallsign: false,
     canViewActivityTab: false,
     canViewRelationsTab: false,
     isAdmin: false,
@@ -261,6 +262,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     callsignDeleteTarget: null,
     callsignDeleteSubmitting: false,
     callsignDeleteError: null,
+    callsignDeleteAlsoFromCatalog: false,
     descriptionDrawerOpen: false,
     descriptionDrawerMode: 'create',
     descriptionDrawerDescrType: 'Confirmation',
@@ -437,4 +439,5 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('classic');
     expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
   });
+
 });

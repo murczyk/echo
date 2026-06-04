@@ -4,10 +4,10 @@ import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack } from '@mui/material';
 import { useState } from 'react';
 
-import type { NetworkCallsignInterceptedView } from '../network-callsigns';
+import type { NetworkCallsignInterceptedView } from '../network-callsigns.types';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
-import { normalizeCallsignDisplay } from '../network-callsigns';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 
 type InterceptedPanelProps = {
@@ -150,7 +150,6 @@ export function NetworkCallsignsInterceptedPanel({
 
   const visibleRows = expanded ? rows : rows.slice(0, 10);
   const overflowCount = Math.max(rows.length - visibleRows.length, 0);
-  const shouldFillAvailableHeight = expanded && rows.length > 10;
   const showEmptyState = !loading && rows.length === 0;
 
   return (
@@ -162,10 +161,10 @@ export function NetworkCallsignsInterceptedPanel({
         borderColor: 'divider',
         borderRadius: 2,
         bgcolor: 'background.paper',
-        flex: shouldFillAvailableHeight ? 1 : '0 0 auto',
+        flex: '0 0 auto',
         minHeight: 0,
         position: 'relative',
-        overflowY: shouldFillAvailableHeight ? 'auto' : 'visible',
+        overflowY: 'visible',
       }}
     >
       <Stack spacing={1.5} sx={{ minHeight: 0 }}>
