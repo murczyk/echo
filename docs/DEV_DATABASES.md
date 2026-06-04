@@ -6,37 +6,39 @@
 
 Крок 2: Створення локального SSH-тунелю
 
-`$ ssh -nNT -L 6432:localhost:5432 echo-pivnich-dev`
+`$ just ssh-pivnich`
 
-Крок 3: Запуск клієнту PostgreSQL і підключення до бази даних
+Аналогічно доступні:
 
-`$ PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd`
+`$ just ssh-skhid`
 
-Крок 4: Створення користувача
+`$ just ssh-zp2`
+
+Крок 3: Створення користувача
 
 `$ cargo run --bin wdintel-rs -- --mode=debug oneoff-register-user --login="<login>" --password="<password>" --role="Admin" --sigint-zone=1 --organism-id=6`
 
 ***Примітка:** користувач видаляється щоночі з очищенням бази.*
 
-Крок 5 (опціонально): Зменшення кількості повідомлень від `just dev-back` в терміналі
+Крок 4 (опціонально): Зменшення кількості повідомлень від `just dev-back` в терміналі
 
 `$ cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im`
 
 ***Примітка:** команда має бути запущена перед `just dev-back` в тому ж терміналі.*
 
-Крок 6: Запуск backend-серверу
+Крок 5: Запуск backend-серверу
 
 `$ just dev-back`
 
-Крок 7: Запуск Python
+Крок 6: Запуск Python
 
 `$ just dev-py`
 
-Крок 8: Запуск frontend-серверу
+Крок 7: Запуск frontend-серверу
 
 `$ just dev-front`
 
-***Примітка:** усі команди (кроки 2-4 та 6-8) мають бути запущені в окремих терміналах, що лишаються працювати в фоновому режимі.*
+***Примітка:** усі команди (кроки 2-3 та 5-7) мають бути запущені в окремих терміналах, що лишаються працювати в фоновому режимі.*
 
 ## Автоматичне налаштування запуску команд в терміналах для VS Code
 
@@ -62,7 +64,7 @@
     {
       "label": "start-db-session",
       "type": "shell",
-      "command": "just dev-north",
+      "command": "just ssh-pivnich",
       "problemMatcher": [],
       "presentation": { "panel": "new", "focus": true }
     },

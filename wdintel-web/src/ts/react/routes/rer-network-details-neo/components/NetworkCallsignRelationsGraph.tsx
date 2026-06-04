@@ -1,7 +1,8 @@
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
-import { Box, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
+import { Box, Button, FormControlLabel, IconButton, InputAdornment, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
@@ -269,13 +270,27 @@ export function NetworkCallsignRelationsGraph({
         </Stack>
 
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
-          <Stack direction="row" alignItems="center" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0, flex: 1 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0, flex: 1 }}>
             <TextField
               size="small"
               value={relationsSearch}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Пошук"
-              sx={{ width: { xs: 180, sm: 220 }, flexShrink: 0 }}
+              sx={{
+                width: { xs: 180, sm: 220 },
+                flexShrink: 0,
+                '& .MuiOutlinedInput-root': {
+                  height: 40,
+                  minHeight: 40,
+                  backgroundColor: 'transparent',
+                  '& .MuiInputBase-input': {
+                    fontSize: '0.875rem',
+                    lineHeight: '20px',
+                    boxSizing: 'border-box',
+                    padding: '9px 8px 9px 0 !important',
+                  },
+                },
+              }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -311,7 +326,7 @@ export function NetworkCallsignRelationsGraph({
               allowEmpty={false}
               width={148}
             />
-            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+            <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
               <FormControlLabel
                 control={<Switch checked={relationsShowLabels} onChange={(_, checked) => onShowLabelsChange(checked)} disabled={renderGraphView.warning || denseGraph} />}
                 label="Підписи"
@@ -337,15 +352,22 @@ export function NetworkCallsignRelationsGraph({
                   </IconButton>
                 </Tooltip>
               ) : null}
+              <Button
+                id={filterButtonId}
+                type="button"
+                variant="outlined"
+                onClick={(event) => setFilterAnchorEl(event.currentTarget)}
+                startIcon={<TuneOutlinedIcon />}
+                sx={{ borderRadius: 2, px: 1.6, py: 0.8, minWidth: 0, height: 40, textTransform: 'none', fontWeight: 700 }}
+              >
+                Частоти
+              </Button>
             </Stack>
           </Stack>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
           headingId={headingId}
-          filterButtonId={filterButtonId}
-          filterPopoverId={filterPopoverId}
-          filterAnchorEl={filterAnchorEl}
           svgRef={svgRef}
           graphView={renderGraphView}
           layout={layout}
@@ -369,7 +391,6 @@ export function NetworkCallsignRelationsGraph({
           onSearchChange={onSearchChange}
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
-          onOpenFilters={(anchorEl) => setFilterAnchorEl(anchorEl)}
           relationsLoading={relationsLoading}
           onSelectNodeId={onSelectNodeId}
           onSelectEdgeId={onSelectEdgeId}

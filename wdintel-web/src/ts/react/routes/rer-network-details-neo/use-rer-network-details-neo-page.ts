@@ -13,6 +13,8 @@ import {
   formatTransferTypeLabel,
   normalizeNetworkRelationsSinceChange,
   normalizeNetworkRelationsTillChange,
+  normalizeNetworkPelengSinceChange,
+  normalizeNetworkPelengTillChange,
   networkStatusDisplay,
   sortDescriptionsByCreatedAtDesc,
   type NetworkDetailsNeoPageState,
@@ -56,8 +58,6 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
-  const pelengActiveFrom = state.network?.activeFrom ?? null;
-  const pelengActiveTo = state.network?.activeTo ?? null;
 
   const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
   const unitOptions = useMemo(() => buildOptions(state.units), [state.units]);
@@ -146,12 +146,63 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     });
   }, [setState]);
 
+  const setPelengSince = useCallback((pelengSince: string) => {
+    setState((current) => {
+      const next = normalizeNetworkPelengSinceChange(current.pelengSince, current.pelengTill, pelengSince);
+      return {
+        ...current,
+        ...next,
+        pelengPointsLoaded: false,
+        pelengPointsError: null,
+      };
+    });
+  }, [setState]);
+
+  const setPelengTill = useCallback((pelengTill: string) => {
+    setState((current) => {
+      const next = normalizeNetworkPelengTillChange(current.pelengSince, current.pelengTill, pelengTill);
+      return {
+        ...current,
+        ...next,
+        pelengPointsLoaded: false,
+        pelengPointsError: null,
+      };
+    });
+  }, [setState]);
+
+  const setPelengSearch = useCallback((pelengSearch: string) => {
+    setState((current) => ({ ...current, pelengSearch }));
+  }, [setState]);
+
+  const setPelengEnabledFreqs = useCallback((pelengEnabledFreqs: string[]) => {
+    setState((current) => ({ ...current, pelengEnabledFreqs: [...pelengEnabledFreqs] }));
+  }, [setState]);
+
+  const setPelengShowLabels = useCallback((pelengShowLabels: boolean) => {
+    setState((current) => ({ ...current, pelengShowLabels }));
+  }, [setState]);
+
+  const setPelengSatelliteEnabled = useCallback((pelengSatelliteEnabled: boolean) => {
+    setState((current) => ({ ...current, pelengSatelliteEnabled }));
+  }, [setState]);
+
+  const setPelengHeatmapEnabled = useCallback((pelengHeatmapEnabled: boolean) => {
+    setState((current) => ({ ...current, pelengHeatmapEnabled }));
+  }, [setState]);
+
   const relationsDateRangeValid = useMemo(() => {
     const since = parseDateInputInTimeZone(state.relationsSince);
     const till = parseDateInputInTimeZone(state.relationsTill);
     if (since === null || till === null) return false;
     return since <= till;
   }, [state.relationsSince, state.relationsTill]);
+
+  const pelengSinceMs = useMemo(() => parseDateInputInTimeZone(state.pelengSince), [state.pelengSince]);
+  const pelengTillMs = useMemo(() => parseDateInputExclusiveEndInTimeZone(state.pelengTill), [state.pelengTill]);
+  const pelengDateRangeValid = useMemo(() => {
+    if (pelengSinceMs === null || pelengTillMs === null) return false;
+    return pelengSinceMs <= pelengTillMs;
+  }, [pelengSinceMs, pelengTillMs]);
 
   useEffect(() => {
     if (state.network === null) return;
@@ -209,15 +260,17 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.activeNetworkDetailsTab !== 'pelengation') return;
 
     const pelengWindowMatched =
-      state.pelengPointsRequestedFrom === pelengActiveFrom &&
-      state.pelengPointsRequestedTo === pelengActiveTo;
+      state.pelengPointsRequestedFrom === pelengSinceMs &&
+      state.pelengPointsRequestedTo === pelengTillMs;
 
     if (pelengWindowMatched && (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)) return;
-    void loadPelengPoints(state.network.id, pelengActiveFrom, pelengActiveTo);
+    if (!pelengDateRangeValid) return;
+    void loadPelengPoints(state.network.id, pelengSinceMs ?? 0, pelengTillMs);
   }, [
     loadPelengPoints,
-    pelengActiveFrom,
-    pelengActiveTo,
+    pelengDateRangeValid,
+    pelengSinceMs,
+    pelengTillMs,
     state.activeNetworkDetailsTab,
     state.network,
     state.pelengPointsError,
@@ -370,6 +423,20 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setRelationsSince,
     relationsTill: state.relationsTill,
     setRelationsTill,
+    pelengSince: state.pelengSince,
+    setPelengSince,
+    pelengTill: state.pelengTill,
+    setPelengTill,
+    pelengSearch: state.pelengSearch,
+    setPelengSearch,
+    pelengEnabledFreqs: state.pelengEnabledFreqs,
+    setPelengEnabledFreqs,
+    pelengShowLabels: state.pelengShowLabels,
+    setPelengShowLabels,
+    pelengSatelliteEnabled: state.pelengSatelliteEnabled,
+    setPelengSatelliteEnabled,
+    pelengHeatmapEnabled: state.pelengHeatmapEnabled,
+    setPelengHeatmapEnabled,
     loadRelations,
     loadPelengPoints,
     descriptionDrawerOpen: state.descriptionDrawerOpen,

@@ -30,6 +30,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <div data-testid="circular-progress" />,
   Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -103,6 +104,10 @@ vi.mock('./components/NetworkDetailsLeftPanel', () => ({
       {placement}:{collapsed ? 'collapsed' : 'expanded'}
     </div>
   ),
+}));
+
+vi.mock('./components/NetworkDetailsLoadingState', () => ({
+  NetworkDetailsLoadingState: () => <div data-testid="loading-state" />,
 }));
 
 vi.mock('./components/NetworkDetailsTabPanel', () => ({
@@ -389,6 +394,7 @@ describe('RerNetworkDetailsNeoPage', () => {
       buildPage({
         network: { name: '', status: 'NetworkActive', deleted: false },
         unitNames: [],
+        currentUserLoaded: true,
       }),
     );
     const view = await renderPage();
@@ -396,6 +402,22 @@ describe('RerNetworkDetailsNeoPage', () => {
 
     expect(view.container.textContent).not.toContain('skeleton');
     expect(view.container.textContent).toContain(NO_DATA_LABEL);
+  });
+
+  it('keeps the tab area gated until permissions are loaded', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(
+      buildPage({
+        network: { name: 'Тестова', status: 'NetworkActive', deleted: false },
+        unitNames: [],
+        currentUserLoaded: false,
+      }),
+    );
+    const view = await renderPage();
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="circular-progress"]')).not.toBeNull();
+    expect(view.container.textContent).not.toContain('Завантажуємо права доступу');
+    expect(view.container.querySelector('[data-testid="tab-panel"]')).toBeNull();
   });
 
   it('stores classic preference before navigating to the classic page', async () => {

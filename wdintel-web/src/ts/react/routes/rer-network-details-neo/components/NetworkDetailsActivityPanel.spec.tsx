@@ -77,7 +77,7 @@ describe('NetworkDetailsActivityPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Немає даних активності');
-    expect(view.container.textContent).toContain('Активність будеться після першої фіксації сигналу.');
+    expect(view.container.textContent).toContain('Активність буде доступна після першої фіксації сигналу');
     expect(view.container.querySelector('svg[data-chart="network-activity"]')).toBeNull();
   });
 

@@ -120,6 +120,13 @@ export type NetworkDetailsNeoPageState = {
   relationsSelectedEdgeId: string | null;
   relationsSince: string;
   relationsTill: string;
+  pelengSince: string;
+  pelengTill: string;
+  pelengSearch: string;
+  pelengEnabledFreqs: string[];
+  pelengShowLabels: boolean;
+  pelengSatelliteEnabled: boolean;
+  pelengHeatmapEnabled: boolean;
   callsignsLoaded: boolean;
   callsignsLoading: boolean;
   callsignsError: string | null;
@@ -131,6 +138,7 @@ export type NetworkDetailsNeoPageState = {
   callsignUpdateInFlightIds: number[];
   callsignDeleteInFlightIds: number[];
   currentUser: User | null;
+  currentUserLoaded: boolean;
   units: Unit[];
   posts: Post[];
   aors: AreaOfResponsibility[];
@@ -204,6 +212,11 @@ export type NetworkRelationsDateRange = {
   relationsTill: string;
 };
 
+export type NetworkPelengDateRange = {
+  pelengSince: string;
+  pelengTill: string;
+};
+
 export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   network: null,
   sources: [],
@@ -222,6 +235,13 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   pelengPointsError: null,
   pelengPointsRequestedFrom: null,
   pelengPointsRequestedTo: null,
+  pelengSince: '',
+  pelengTill: '',
+  pelengSearch: '',
+  pelengEnabledFreqs: [],
+  pelengShowLabels: true,
+  pelengSatelliteEnabled: true,
+  pelengHeatmapEnabled: false,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],
@@ -251,6 +271,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   callsignUpdateInFlightIds: [],
   callsignDeleteInFlightIds: [],
   currentUser: null,
+  currentUserLoaded: false,
   units: [],
   posts: [],
   aors: [],

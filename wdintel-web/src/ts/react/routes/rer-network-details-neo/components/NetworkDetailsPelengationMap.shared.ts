@@ -1,9 +1,125 @@
 import type { NetworkPoint } from '../../../../../Bindings';
+import { NO_DATA_LABEL, sortFrequenciesNumerically } from '../../../utils/misc';
 
 export const SATELLITE_TILE_URL = 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk';
 export const SATELLITE_TILE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3'];
 export const BASE_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const PELENG_TOOLTIP_ARROW_COLOR = '#000000';
+export const PELENG_HEATMAP_MAX_ALPHA = 0.58;
+export const PELENG_HEATMAP_MIN_ALPHA = 0.38;
+export const PELENG_HEATMAP_MIN_RADIUS = 72;
+export const PELENG_HEATMAP_MAX_RADIUS = 100;
+
+export function normalizePelengationFrequency(freq: string): string {
+  const trimmed = freq.trim();
+  return trimmed === '' ? NO_DATA_LABEL : trimmed;
+}
+
+export function getPelengationFrequencies(points: NetworkPoint[]): string[] {
+  return sortFrequenciesNumerically([
+    ...new Set(points.map((point) => normalizePelengationFrequency(point.freq))),
+  ]);
+}
+
+export function filterPelengationPoints(points: NetworkPoint[], search: string, enabledFreqs: string[]): NetworkPoint[] {
+  const normalizedSearch = search.trim().toLocaleUpperCase('uk-UA');
+  const enabledFreqSet = new Set(enabledFreqs.map(normalizePelengationFrequency));
+
+  return points.filter((point) => {
+    const freq = normalizePelengationFrequency(point.freq);
+    if (!enabledFreqSet.has(freq)) return false;
+    if (normalizedSearch === '') return true;
+    return freq.toLocaleUpperCase('uk-UA').includes(normalizedSearch);
+  });
+}
+
+export type PelengationLabelGroup = {
+  freq: string;
+  label: string;
+  lat: number;
+  lng: number;
+  points: NetworkPoint[];
+};
+
+export function buildPelengationLabelGroups(
+  points: NetworkPoint[],
+  projectPoint: (point: NetworkPoint) => { x: number; y: number },
+  maxDistancePx: number = 44,
+): PelengationLabelGroup[] {
+  const groupedByFreq = new Map<string, Array<{ point: NetworkPoint; x: number; y: number }>>();
+
+  for (const point of points) {
+    const freq = normalizePelengationFrequency(point.freq);
+    const projected = projectPoint(point);
+    const group = groupedByFreq.get(freq) ?? [];
+    group.push({ point, ...projected });
+    groupedByFreq.set(freq, group);
+  }
+
+  const groups: PelengationLabelGroup[] = [];
+
+  for (const [freq, freqPoints] of groupedByFreq.entries()) {
+    const visited = new Set<number>();
+
+    for (let index = 0; index < freqPoints.length; index += 1) {
+      if (visited.has(index)) continue;
+
+      const queue = [index];
+      const componentIndexes: number[] = [];
+      visited.add(index);
+
+      while (queue.length > 0) {
+        const currentIndex = queue.pop();
+        if (currentIndex === undefined) continue;
+        componentIndexes.push(currentIndex);
+        const currentPoint = freqPoints[currentIndex];
+
+        for (let otherIndex = 0; otherIndex < freqPoints.length; otherIndex += 1) {
+          if (visited.has(otherIndex)) continue;
+          const otherPoint = freqPoints[otherIndex];
+          const dx = currentPoint.x - otherPoint.x;
+          const dy = currentPoint.y - otherPoint.y;
+          if (Math.hypot(dx, dy) <= maxDistancePx) {
+            visited.add(otherIndex);
+            queue.push(otherIndex);
+          }
+        }
+      }
+
+      const componentPoints = componentIndexes.map((itemIndex) => freqPoints[itemIndex].point);
+      const centroid = componentPoints.reduce(
+        (accumulator, point) => ({
+          lat: accumulator.lat + point.lat / componentPoints.length,
+          lng: accumulator.lng + point.lng / componentPoints.length,
+        }),
+        { lat: 0, lng: 0 },
+      );
+      const label = componentPoints.length > 1 ? `${freq} · ${componentPoints.length}` : freq;
+
+      groups.push({
+        freq,
+        label,
+        lat: centroid.lat,
+        lng: centroid.lng,
+        points: componentPoints,
+      });
+    }
+  }
+
+  return groups;
+}
+
+export function getPelengationHeatmapRadius(zoom: number): number {
+  const normalizedZoom = Math.max(2, Math.min(19, zoom));
+  const radius = 100 - (normalizedZoom - 2) * 2;
+  return Math.max(PELENG_HEATMAP_MIN_RADIUS, Math.min(PELENG_HEATMAP_MAX_RADIUS, Math.round(radius)));
+}
+
+export function getPelengationHeatmapAlpha(pointCount: number): number {
+  const normalizedCount = Math.max(1, pointCount);
+  const densityBoost = Math.log1p(normalizedCount - 1) / Math.log(12);
+  return Math.min(PELENG_HEATMAP_MAX_ALPHA, PELENG_HEATMAP_MIN_ALPHA + densityBoost * 0.14);
+}
 
 export function createPelengationPopupContent(point: NetworkPoint, label: string) {
   const content = document.createElement('div');
@@ -19,6 +135,11 @@ export function createPelengationPopupContent(point: NetworkPoint, label: string
   title.style.fontSize = '14px';
   title.style.lineHeight = '1.2';
 
+  const freq = document.createElement('div');
+  freq.textContent = `Частота: ${normalizePelengationFrequency(point.freq)}`;
+  freq.style.fontSize = '13px';
+  freq.style.lineHeight = '1.35';
+
   const body = document.createElement('div');
   body.textContent = point.body?.trim() === '' ? 'Без тексту' : point.body;
   body.style.whiteSpace = 'pre-wrap';
@@ -30,7 +151,7 @@ export function createPelengationPopupContent(point: NetworkPoint, label: string
   coords.style.fontSize = '12px';
   coords.style.opacity = '0.8';
 
-  content.append(title, body, coords);
+  content.append(title, freq, body, coords);
   return content;
 }
 
@@ -50,16 +171,12 @@ export function applyPelengationMapStyles() {
       background: ${PELENG_TOOLTIP_ARROW_COLOR} !important;
       box-shadow: none !important;
     }
-    .peleng-heat-point {
-      width: 156px;
-      height: 156px;
-      border-radius: 50%;
-      background:
-        radial-gradient(circle, rgba(233, 151, 70, 0.36) 0 14%, rgba(208, 111, 58, 0.24) 24%, rgba(207, 146, 68, 0.16) 48%, rgba(207, 146, 68, 0.08) 62%, rgba(207, 146, 68, 0) 78%);
-      filter: blur(8px);
-      mix-blend-mode: screen;
-      opacity: 0.95;
+    .peleng-label-anchor {
+      width: 1px;
+      height: 1px;
       pointer-events: none;
+      background: transparent;
+      border: 0;
     }
     .leaflet-tooltip.peleng-point-label {
       background: #11110f !important;

@@ -2,13 +2,17 @@ import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import type { Network, NetworkFreqsRes } from '../../../../Bindings';
-import { APP_TIME_ZONE, formatUtcDateInputValue } from '../../utils/misc';
+import {
+  APP_TIME_ZONE,
+  formatUtcDateInputValue,
+} from '../../utils/misc';
 import type {
   NetworkDescriptionForm,
   NetworkEditForm,
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
   NetworkFreqTechDataForm,
+  NetworkPelengDateRange,
   NetworkRelationsDateRange,
 } from './use-rer-network-details-neo-page.types';
 
@@ -150,5 +154,61 @@ export function normalizeNetworkRelationsTillChange(currentSince: string, curren
   return {
     relationsSince: currentSince.trim(),
     relationsTill: trimmedTill,
+  };
+}
+
+export function getDefaultNetworkPelengDateRange(network: Network | null, now: Date = new Date()): NetworkPelengDateRange {
+  const tillDate = network?.activeTo !== null && network?.activeTo !== undefined ? new Date(network.activeTo) : now;
+  const sinceDate = network?.activeFrom !== null && network?.activeFrom !== undefined
+    ? new Date(network.activeFrom)
+    : dayjs(tillDate).tz(APP_TIME_ZONE).subtract(1, 'month').toDate();
+
+  return {
+    pelengSince: dayjs(sinceDate).tz(APP_TIME_ZONE).format('YYYY-MM-DD'),
+    pelengTill: dayjs(tillDate).tz(APP_TIME_ZONE).format('YYYY-MM-DD'),
+  };
+}
+
+export function normalizeNetworkPelengSinceChange(currentSince: string, currentTill: string, nextSince: string): NetworkPelengDateRange {
+  const trimmedSince = nextSince.trim();
+  if (trimmedSince === '') {
+    return {
+      pelengSince: currentSince,
+      pelengTill: currentTill,
+    };
+  }
+
+  if (currentTill.trim() !== '' && trimmedSince > currentTill.trim()) {
+    return {
+      pelengSince: trimmedSince,
+      pelengTill: trimmedSince,
+    };
+  }
+
+  return {
+    pelengSince: trimmedSince,
+    pelengTill: currentTill.trim(),
+  };
+}
+
+export function normalizeNetworkPelengTillChange(currentSince: string, currentTill: string, nextTill: string): NetworkPelengDateRange {
+  const trimmedTill = nextTill.trim();
+  if (trimmedTill === '') {
+    return {
+      pelengSince: currentSince,
+      pelengTill: currentTill,
+    };
+  }
+
+  if (currentSince.trim() !== '' && trimmedTill < currentSince.trim()) {
+    return {
+      pelengSince: trimmedTill,
+      pelengTill: trimmedTill,
+    };
+  }
+
+  return {
+    pelengSince: currentSince.trim(),
+    pelengTill: trimmedTill,
   };
 }

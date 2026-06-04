@@ -6,10 +6,13 @@ import utc from 'dayjs/plugin/utc';
 import { APP_TIME_ZONE } from '../../utils/misc';
 import {
   getDefaultNetworkRelationsDateRange,
+  getDefaultNetworkPelengDateRange,
   parseNetworkDetailsDateInput,
   parseNetworkDetailsDateInputExclusiveEnd,
   normalizeNetworkRelationsSinceChange,
   normalizeNetworkRelationsTillChange,
+  normalizeNetworkPelengSinceChange,
+  normalizeNetworkPelengTillChange,
   canViewNetworkActivityTab,
   canViewNetworkRelationsTab,
 } from './use-rer-network-details-neo-page.shared';
@@ -57,6 +60,24 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
     expect(normalizeNetworkRelationsTillChange('2026-05-20', '2026-05-25', '2026-05-10')).toEqual({
       relationsSince: '2026-05-10',
       relationsTill: '2026-05-10',
+    });
+  });
+
+  it('defaults the peleng range to the active window or the last month through now', () => {
+    expect(getDefaultNetworkPelengDateRange(null, new Date('2026-05-20T12:00:00Z'))).toEqual({
+      pelengSince: '2026-04-20',
+      pelengTill: '2026-05-20',
+    });
+  });
+
+  it('clamps peleng range endpoints the same way as the relations range', () => {
+    expect(normalizeNetworkPelengSinceChange('2026-05-10', '2026-05-20', '2026-05-25')).toEqual({
+      pelengSince: '2026-05-25',
+      pelengTill: '2026-05-25',
+    });
+    expect(normalizeNetworkPelengTillChange('2026-05-20', '2026-05-25', '2026-05-10')).toEqual({
+      pelengSince: '2026-05-10',
+      pelengTill: '2026-05-10',
     });
   });
 

@@ -195,7 +195,8 @@ async fn load_freqs_impl(
     }
 
     let nf = Alias::new("network_freqs");
-    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
+    let join_condition =
+        build_network_freq_join_condition(filter, true).c(h!())?;
     let callsigns_expr: SimpleExpr = if include_callsigns {
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)).into()
     } else {
@@ -1231,7 +1232,7 @@ pub fn build_callsigns_queries(
         .to_owned();
 
     let join_condition =
-        build_network_freq_join_condition(net_freq_filter).c(h!())?;
+        build_network_freq_join_condition(net_freq_filter, true).c(h!())?;
 
     let mut network_messages_select = Query::select();
     network_messages_select
@@ -1399,14 +1400,16 @@ pub fn build_callsigns_queries(
 }
 
 /// Helper to build join condition for sigint_inbox_item_network and sigint_network_freqs based on the filter.
+/// `till_inclusive` selects the upper-bound operator so callers can keep their own window semantics.
 ///
 /// sigint_inbox_item.id = sigint_inbox_item_network.sigint_inbox_item_id
 /// AND sigint_inbox_item_network.sigint_network_id = network_freqs.network_id
 /// AND sigint_inbox_item.freq = network_freqs.freq
 /// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= GREATEST(since_date_inclusive, network_freqs.active_from)
-/// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))
+/// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) {<,<=} LEAST(till_date, COALESCE(network_freqs.active_to, now()))
 pub fn build_network_freq_join_condition(
     filter: Option<&NetworkFreqFilter>,
+    till_inclusive: bool,
 ) -> Result<SimpleExpr, AppError> {
     let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
     let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
@@ -1463,12 +1466,16 @@ pub fn build_network_freq_join_condition(
         )
         .gte(lower_bound),
     )
-    .and(
-        Expr::cust(
+    .and({
+        let datetime_expr = Expr::cust(
             "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
-        )
-        .lte(upper_bound),
-    );
+        );
+        if till_inclusive {
+            datetime_expr.lte(upper_bound)
+        } else {
+            datetime_expr.lt(upper_bound)
+        }
+    });
 
     Ok(join_condition)
 }
@@ -1754,7 +1761,8 @@ pub async fn get_callsigns_for_network_freq(
     network_freq_id: i64,
 ) -> Result<Vec<String>, AppError> {
     let nf = Alias::new("network_freqs");
-    let join_condition = build_network_freq_join_condition(None).c(h!())?;
+    let join_condition =
+        build_network_freq_join_condition(None, true).c(h!())?;
 
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -1886,7 +1894,8 @@ pub async fn bl_get_network_points(
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<NetworkPointQueryRes>, AppError> {
-    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
+    let join_condition =
+        build_network_freq_join_condition(filter, false).c(h!())?;
 
     let nf_alias = Alias::new("network_freqs");
 
@@ -2299,4 +2308,35 @@ pub async fn load_networks_by_id(
     }
 
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
+        let filter = NetworkFreqFilter {
+            active_freqs_only: false,
+            since_date_inclusive_ms: Some(1_740_000_000_000),
+            till_date_inclusive_ms: Some(1_740_000_600_000),
+        };
+
+        let exclusive_sql = Query::select()
+            .expr(
+                build_network_freq_join_condition(Some(&filter), false)
+                    .expect("join condition"),
+            )
+            .to_string(PostgresQueryBuilder);
+        let inclusive_sql = Query::select()
+            .expr(
+                build_network_freq_join_condition(Some(&filter), true)
+                    .expect("join condition"),
+            )
+            .to_string(PostgresQueryBuilder);
+
+        assert!(exclusive_sql.contains(" < "), "{exclusive_sql}");
+        assert!(!exclusive_sql.contains(" <= "), "{exclusive_sql}");
+        assert!(inclusive_sql.contains(" <= "), "{inclusive_sql}");
+    }
 }
