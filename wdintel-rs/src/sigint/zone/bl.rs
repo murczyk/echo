@@ -3,6 +3,7 @@ use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 
 #[derive(Debug)]
@@ -10,6 +11,7 @@ pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
+    pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
 }
@@ -21,6 +23,7 @@ pub async fn bl_szd_group_update(
 ) -> Result<BlSzdGroupUpdateRes, AppError> {
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
+        req.admin_logins.clone(),
         req.is_secret,
         req.short_note.clone(),
         req.long_note.clone(),
@@ -83,6 +86,14 @@ pub async fn bl_szd_group_update(
         is_secret,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
+        admin_logins: collect_signal_group_admins(
+            vec![szd.group_master_key.clone()],
+            txn,
+        )
+        .await
+        .c(h!())?
+        .remove(&szd.group_master_key)
+        .unwrap_or_default(),
         short_note,
         long_note,
     };
@@ -91,6 +102,7 @@ pub async fn bl_szd_group_update(
 
 pub async fn bl_zones_datasources_group_update_or_add(
     user_logins: Vec<String>,
+    admin_logins: Vec<String>,
     is_secret: bool,
     short_note: Option<String>,
     long_note: Option<String>,
@@ -156,8 +168,90 @@ pub async fn bl_zones_datasources_group_update_or_add(
             .await
             .c(h!())?;
         }
+
+        replace_group_admin_logins(txn, &master_key, admin_logins)
+            .await
+            .c(h!())?;
     }
     Ok(())
+}
+
+pub async fn replace_group_admin_logins(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    admin_logins: Vec<String>,
+) -> Result<(), AppError> {
+    let admin_logins = admin_logins
+        .into_iter()
+        .map(|login| login.trim().to_string())
+        .filter(|login| !login.is_empty())
+        .collect::<HashSet<_>>();
+
+    signal_group_admin::Entity::update_many()
+        .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))
+        .filter(signal_group_admin::Column::SignalGroupId.eq(master_key))
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    for login in admin_logins {
+        let existing = signal_group_admin::Entity::find_by_id((
+            master_key.to_string(),
+            login.clone(),
+        ))
+        .one(txn)
+        .await
+        .c(h!())?;
+
+        if let Some(admin) = existing {
+            let mut admin = admin.into_active_model();
+            admin.deleted = Set(false);
+            admin.update(txn).await.c(h!())?;
+            continue;
+        }
+
+        signal_group_admin::ActiveModel {
+            signal_group_id: Set(master_key.to_string()),
+            login: Set(login),
+            deleted: Set(false),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+
+    Ok(())
+}
+
+pub async fn collect_signal_group_admins<'a, 'async_trait, C>(
+    master_keys: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, Vec<String>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if master_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = signal_group_admin::Entity::find()
+        .filter(signal_group_admin::Column::Deleted.eq(false))
+        .filter(signal_group_admin::Column::SignalGroupId.eq_any(master_keys))
+        .select_only()
+        .column(signal_group_admin::Column::SignalGroupId)
+        .column(signal_group_admin::Column::Login)
+        .order_by_asc(signal_group_admin::Column::Login)
+        .into_tuple::<(String, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res = HashMap::<String, Vec<String>>::new();
+    for (master_key, login) in rows {
+        res.entry(master_key).or_default().push(login);
+    }
+    Ok(res)
 }
 
 pub async fn unlink_reserve_group_dupes<'a, 'async_trait, C>(
@@ -290,6 +384,7 @@ pub async fn bl_szd_groups_list(
         crate::sigint::aor::bl::collect_group_aors(keys.clone(), txn)
             .await
             .c(h!())?;
+    let group_admins = collect_signal_group_admins(keys, txn).await.c(h!())?;
 
     let groups = res
         .into_iter()
@@ -302,9 +397,13 @@ pub async fn bl_szd_groups_list(
                 ZoneDatasourceGroup {
                     areas_of_responsibility: aors,
                     sigint_zone_datasource_id: szd_id,
-                    group_master_key: master_key,
                     is_group_secret: is_secret,
                     allowed_users,
+                    admin_logins: group_admins
+                        .get(&master_key)
+                        .cloned()
+                        .unwrap_or_default(),
+                    group_master_key: master_key,
                     short_note,
                     long_note,
                 }

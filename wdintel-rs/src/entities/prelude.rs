@@ -111,6 +111,7 @@ pub use super::sigint_zone::Entity as SigintZone;
 pub use super::sigint_zone_aor::Entity as SigintZoneAor;
 pub use super::sigint_zone_datasource::Entity as SigintZoneDatasource;
 pub use super::signal_group::Entity as SignalGroup;
+pub use super::signal_group_admin::Entity as SignalGroupAdmin;
 pub use super::signal_group_aor::Entity as SignalGroupAor;
 pub use super::signal_group_batch::Entity as SignalGroupBatch;
 pub use super::signal_message::Entity as SignalMessage;

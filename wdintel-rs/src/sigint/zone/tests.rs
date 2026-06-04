@@ -40,6 +40,7 @@ async fn test_bl_szd_group_update_01() {
         id: szd.id,
         is_secret: false,
         user_logins: vec![],
+        admin_logins: vec![],
         short_note: None,
         long_note: None,
         area_of_responsibility_id: None,

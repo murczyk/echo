@@ -27,6 +27,7 @@ pub struct ZoneDatasourceGroup {
     pub group_master_key: String,
     pub is_group_secret: bool,
     pub allowed_users: Vec<String>,
+    pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
@@ -46,6 +47,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
     pub is_secret: bool,
     pub user_logins: Vec<String>,
+    pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     /// Deprecated
@@ -62,6 +64,7 @@ pub struct ZoneDatasourceGroupAddReq {
     pub is_secret: bool,
     pub master_key: String,
     pub user_logins: Vec<String>,
+    pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
 }
@@ -75,4 +78,25 @@ pub struct ZoneDatasourceGroupAddRsp {
     pub group_master_key: String,
     pub group_name: Option<String>,
     pub zone_datasource_group: ZoneDatasourceGroup,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyAdminSignalGroup {
+    pub master_key: String,
+    pub name: String,
+    pub datasource_name: Option<String>,
+    pub datasource_kind: Option<String>,
+    pub is_group_secret: bool,
+    pub allowed_users: Vec<String>,
+    pub admin_logins: Vec<String>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyAdminSignalGroupsRsp {
+    pub groups: Vec<MyAdminSignalGroup>,
 }

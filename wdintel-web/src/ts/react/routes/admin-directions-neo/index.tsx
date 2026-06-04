@@ -82,6 +82,7 @@ type OrphanAssignState = {
   selectedZones: ZoneEntry[];
   isSecret: boolean;
   selectedUsers: string[];
+  selectedAdmins: string[];
   isSaving: boolean;
   error: string | null;
 };
@@ -93,6 +94,7 @@ type GroupEditState = {
   groupName: string;
   isSecret: boolean;
   selectedUsers: string[];
+  selectedAdmins: string[];
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -147,6 +149,7 @@ const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
   activityDay: true,
   activityWeek: true,
   access: true,
+  admins: true,
   aors: true,
   notes: true,
 };
@@ -159,6 +162,7 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'activityDay',
   'activityWeek',
   'access',
+  'admins',
   'aors',
   'notes',
 ];
@@ -182,6 +186,7 @@ const ZONE_GLOBAL_FILTER_COLUMN_IDS = new Set([
   'group',
   'datasource',
   'access',
+  'admins',
   'aors',
   'notes',
 ]);
@@ -343,6 +348,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       groupMasterKey: '',
       isGroupSecret: false,
       allowedUsers: [],
+      adminLogins: [],
       areaOfResponsibilityId: null,
       areasOfResponsibility: null,
       shortNote: null,
@@ -781,6 +787,26 @@ function ZoneGroupsTable(props: {
             row.original?.group?.allowedUsers?.length > 0
               ? row.original.group.allowedUsers.join(', ')
               : 'без обмежень';
+          return (
+            <Tooltip title={label}>
+              <span>{label}</span>
+            </Tooltip>
+          );
+        },
+        size: 220,
+      },
+      {
+        header: 'Адміни',
+        id: 'admins',
+        accessorFn: (row) =>
+          row?.group?.adminLogins?.length > 0
+            ? row.group.adminLogins.join(', ')
+            : NO_DATA_LABEL,
+        Cell: ({ row }) => {
+          const label =
+            row.original?.group?.adminLogins?.length > 0
+              ? row.original.group.adminLogins.join(', ')
+              : NO_DATA_LABEL;
           return (
             <Tooltip title={label}>
               <span>{label}</span>
@@ -1346,6 +1372,7 @@ function AdminDirectionsNeoPageBody() {
       groupName,
       isSecret: group.isGroupSecret,
       selectedUsers: group.allowedUsers,
+      selectedAdmins: group.adminLogins,
       shortNote: group.shortNote ?? '',
       longNote: group.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -1378,6 +1405,7 @@ function AdminDirectionsNeoPageBody() {
       selectedZones: preselectedZones,
       isSecret: false,
       selectedUsers: [],
+      selectedAdmins: [],
       isSaving: false,
       error: null,
     });
@@ -1409,6 +1437,7 @@ function AdminDirectionsNeoPageBody() {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
       userLogins: selectedUsers,
+      adminLogins: editDialog.selectedAdmins,
       shortNote: editDialog.shortNote.trim()
         ? editDialog.shortNote.trim()
         : null,
@@ -1524,6 +1553,7 @@ function AdminDirectionsNeoPageBody() {
         masterKey: assignDialog.group.masterKey,
         isSecret: assignDialog.isSecret,
         userLogins: selectedUsers,
+        adminLogins: assignDialog.selectedAdmins,
         shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
         longNote: assignDialog.group.groupAdminData?.longNote ?? null,
       }));
@@ -1765,6 +1795,18 @@ function AdminDirectionsNeoPageBody() {
           ) : null}
           <Autocomplete
             multiple
+            options={logins}
+            value={editDialog?.selectedAdmins ?? []}
+            onChange={(_, value) =>
+              editDialog &&
+              setEditDialog({ ...editDialog, selectedAdmins: value })
+            }
+            renderInput={(params) => (
+              <TextField {...params} label="Адміністратори групи" />
+            )}
+          />
+          <Autocomplete
+            multiple
             options={aorOptions}
             getOptionLabel={(option) => option.name}
             value={
@@ -1984,6 +2026,18 @@ function AdminDirectionsNeoPageBody() {
               )}
             />
           ) : null}
+          <Autocomplete
+            multiple
+            options={logins}
+            value={assignDialog?.selectedAdmins ?? []}
+            onChange={(_, value) =>
+              assignDialog &&
+              setAssignDialog({ ...assignDialog, selectedAdmins: value })
+            }
+            renderInput={(params) => (
+              <TextField {...params} label="Адміністратори групи" />
+            )}
+          />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
           <PowerButton
