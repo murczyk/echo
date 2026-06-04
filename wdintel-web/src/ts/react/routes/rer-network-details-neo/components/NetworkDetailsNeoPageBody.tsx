@@ -3,6 +3,7 @@ import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '
 import { NetworkDetailsLeftPanel } from './NetworkDetailsLeftPanel';
 import { NetworkDetailsTabPanel } from './NetworkDetailsTabPanel';
 import { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
+import { buildCallsignPanelProps } from '../network-callsigns-page';
 
 type Page = ReturnType<typeof useRerNetworkDetailsNeoPage>;
 type PanelPlacement = 'left' | 'top';
@@ -37,37 +38,6 @@ function buildPelengReloadHandler(page: Page, networkId: number) {
     const till = parseDateInputExclusiveEndInTimeZone(page.pelengTill);
     if (since === null || till === null) return;
     void page.loadPelengPoints(networkId, since, till);
-  };
-}
-
-export function buildCallsignPanelProps(page: Page) {
-  return {
-    sources: page.sources,
-    networkCallsigns: page.networkCallsigns,
-    catalogCallsignGroups: page.catalogCallsignGroups,
-    unknownInterceptedCallsigns: page.unknownInterceptedCallsigns,
-    loading: page.callsignsLoading,
-    loadingError: page.callsignsError,
-    canManage: page.canManageCallsignActions,
-    sectionMode: page.callsignSectionMode,
-    onSectionModeChange: page.setCallsignSectionMode,
-    statusFilter: page.callsignStatusFilter,
-    onStatusFilterChange: page.setCallsignStatusFilter,
-    interceptedExpanded: page.callsignInterceptedExpanded,
-    onToggleInterceptedExpanded: page.toggleCallsignInterceptedExpanded,
-    onOpenCreateDrawer: page.openCallsignDrawerForCreate,
-    onOpenEditDrawer: page.openCallsignDrawerForEdit,
-    onOpenDeleteDialog: page.openCallsignDeleteDialog,
-    onSetMarkerMode: page.setNetworkCallsignMarkerMode,
-    onAddKnownCallsign: page.addKnownCallsignsToNetwork,
-    onAddInterceptedToDeveloping: (callsign: string) => page.openCallsignDrawerForCreate({ callsign, developing: true }),
-    onAddInterceptedToNetwork: (callsign: string) =>
-      page.openCallsignDrawerForCreate({ callsign, developing: false }),
-    onReload: page.loadCallsigns,
-    inFlightCreateCallsigns: page.callsignCreateInFlightCallsigns,
-    inFlightAddIds: page.callsignCatalogAddInFlightIds,
-    inFlightUpdateIds: page.callsignUpdateInFlightIds,
-    inFlightDeleteIds: page.callsignDeleteInFlightIds,
   };
 }
 

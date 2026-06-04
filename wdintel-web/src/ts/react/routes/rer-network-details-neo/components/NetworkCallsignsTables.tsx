@@ -12,14 +12,14 @@ import type {
   NetworkCallsignSectionMode,
   NetworkCallsignMarkerMode,
   NetworkCallsignStatusFilter,
-} from '../network-callsigns';
+} from '../network-callsigns.types';
 import {
-  buildNetworkCallsignRowViews,
   filterCatalogCallsignGroups,
   filterInterceptedCallsigns,
   filterNetworkCallsignRows,
-  flattenCatalogCallsignRows,
-} from '../network-callsigns';
+} from '../network-callsigns.search';
+import { buildNetworkCallsignRowViews } from '../network-callsigns.rows';
+import { flattenCatalogCallsignRows } from '../network-callsigns.tab';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
 import { NetworkCallsignsInterceptedPanel } from './NetworkCallsignsInterceptedPanel';

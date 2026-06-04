@@ -20,12 +20,11 @@ import { SearchableOptionAutocomplete } from '../../../components/SearchableOpti
 import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
-  NetworkCallsignSourceId,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignDrawerForm,
-  type NetworkCallsignDrawerMode,
-} from '../network-callsigns';
+} from '../network-callsigns.forms';
+import type { NetworkCallsignDrawerForm, NetworkCallsignDrawerMode } from '../network-callsigns.types';
+import { NetworkCallsignSourceId } from '../network-callsigns.types';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS } from './dropdownProps';
 

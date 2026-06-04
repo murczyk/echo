@@ -3,7 +3,7 @@ import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
-import type { NetworkCallsignCatalogRowView } from '../network-callsigns';
+import type { NetworkCallsignCatalogRowView } from '../network-callsigns.types';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,

@@ -1,6 +1,6 @@
 import { Box, Tooltip } from '@mui/material';
 
-import type { NetworkCallsignStatus } from '../network-callsigns';
+import type { NetworkCallsignStatus } from '../network-callsigns.types';
 
 type Props = {
   statusLabel: string;

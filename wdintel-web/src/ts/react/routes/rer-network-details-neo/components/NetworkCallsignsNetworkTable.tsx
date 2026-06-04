@@ -7,7 +7,7 @@ import { Box, IconButton, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typograp
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
 
-import type { NetworkCallsignMarkerMode, NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns';
+import type { NetworkCallsignMarkerMode, NetworkCallsignRowView, NetworkCallsignStatusFilter } from '../network-callsigns.types';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -36,7 +36,8 @@ import {
 } from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
-import { countNetworkCallsignStatusRows, formatNetworkCallsignDatetime } from '../network-callsigns';
+import { countNetworkCallsignStatusRows } from '../network-callsigns.rows';
+import { formatNetworkCallsignDatetime } from '../network-callsigns.search';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
 const NETWORK_MRT_LOCALIZATION = {

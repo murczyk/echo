@@ -5,7 +5,7 @@ import type {
   NetworkCallsignCatalogRowView,
   NetworkCallsignRowView,
   NetworkCallsignStatusFilter,
-} from '../network-callsigns';
+} from '../network-callsigns.types';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
 

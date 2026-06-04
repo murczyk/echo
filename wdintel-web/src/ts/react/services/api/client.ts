@@ -2,6 +2,8 @@ import { emitUnauthorizedEvent } from '../../auth-redirect';
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
+type JsonRequestObject = { [key: string]: JsonValue | undefined };
+export type JsonBody = JsonValue | JsonObject | JsonRequestObject;
 
 type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
 type RequestOptions = {
@@ -41,7 +43,10 @@ async function parseErrorMessage(response: Response): Promise<string> {
       const data = await response.json();
       if (typeof data === 'string') return data;
       if (data && typeof data === 'object') {
-        const knownMessage = (data as any).error || (data as any).message || (data as any).detail;
+        const knownMessage =
+          typeof data === 'object' && data !== null
+            ? (data as Record<string, unknown>).error ?? (data as Record<string, unknown>).message ?? (data as Record<string, unknown>).detail
+            : undefined;
         if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) return knownMessage;
         return JSON.stringify(data);
       }
@@ -59,7 +64,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
 async function requestJson<T>(
   method: HttpMethod,
   url: string,
-  body?: JsonValue | JsonObject,
+  body?: JsonBody,
   options?: RequestOptions,
 ) {
   const init: RequestInit = {
@@ -100,7 +105,7 @@ async function requestJson<T>(
 async function requestBytes(
   method: HttpMethod,
   url: string,
-  body?: JsonValue | JsonObject,
+  body?: JsonBody,
   options?: RequestOptions,
 ) {
   const init: RequestInit = {
@@ -129,11 +134,11 @@ async function requestBytes(
   return response.blob();
 }
 
-export async function postJson<T>(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function postJson<T>(url: string, body?: JsonBody, options?: RequestOptions) {
   return requestJson<T>('POST', url, body, options);
 }
 
-export async function postBytes(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function postBytes(url: string, body?: JsonBody, options?: RequestOptions) {
   return requestBytes('POST', url, body, options);
 }
 
@@ -141,18 +146,18 @@ export async function getJson<T>(url: string, options?: RequestOptions) {
   return requestJson<T>('GET', url, undefined, options);
 }
 
-export async function postVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function postVoid(url: string, body?: JsonBody, options?: RequestOptions) {
   await requestJson('POST', url, body, options);
 }
 
-export async function putJson<T>(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function putJson<T>(url: string, body?: JsonBody, options?: RequestOptions) {
   return requestJson<T>('PUT', url, body, options);
 }
 
-export async function putVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function putVoid(url: string, body?: JsonBody, options?: RequestOptions) {
   await requestJson('PUT', url, body, options);
 }
 
-export async function deleteVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+export async function deleteVoid(url: string, body?: JsonBody, options?: RequestOptions) {
   await requestJson('DELETE', url, body, options);
 }

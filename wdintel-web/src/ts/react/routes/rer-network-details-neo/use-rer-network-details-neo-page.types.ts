@@ -26,7 +26,7 @@ import type {
   NetworkCallsignRowView,
   NetworkCallsignSectionMode,
   NetworkCallsignStatusFilter,
-} from './network-callsigns';
+} from './network-callsigns.types';
 
 export type { NetworkEtalonkaReportState, NetworkEtalonkaReportType };
 export { createDefaultNetworkEtalonkaReportState };

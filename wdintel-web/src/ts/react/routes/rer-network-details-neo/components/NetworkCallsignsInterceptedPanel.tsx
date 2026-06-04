@@ -4,7 +4,7 @@ import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack } from '@mui/material';
 import { useState } from 'react';
 
-import type { NetworkCallsignInterceptedView } from '../network-callsigns';
+import type { NetworkCallsignInterceptedView } from '../network-callsigns.types';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';

@@ -490,3 +490,5 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     reload,
   };
 }
+
+export type RerNetworkDetailsNeoPage = ReturnType<typeof useRerNetworkDetailsNeoPage>;

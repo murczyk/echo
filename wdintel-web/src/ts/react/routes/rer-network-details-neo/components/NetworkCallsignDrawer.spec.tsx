@@ -86,8 +86,8 @@ vi.mock('./NetworkCallsignSourceUi', () => ({
 }));
 
 import { NetworkCallsignDrawer } from './NetworkCallsignDrawer';
-import { createDefaultNetworkCallsignDrawerForm } from '../network-callsigns';
-import type { NetworkCallsignDrawerForm } from '../network-callsigns';
+import { createDefaultNetworkCallsignDrawerForm } from '../network-callsigns.forms';
+import type { NetworkCallsignDrawerForm } from '../network-callsigns.types';
 import type { Source } from '../../../../../Bindings';
 
 type Rendered = {

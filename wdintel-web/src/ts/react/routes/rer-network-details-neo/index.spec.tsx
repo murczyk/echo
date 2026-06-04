@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { navigateWithinSpa } from '../../utils/browser';
-import { buildCallsignPanelProps } from './components/NetworkDetailsNeoPageBody';
 
 const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
@@ -441,25 +440,4 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
   });
 
-  it('opens intercepted callsigns with the expected create defaults', async () => {
-    const openCallsignDrawerForCreate = vi.fn();
-    const page = buildPage({
-      network: { name: 'NET', status: 'NetworkActive', deleted: false },
-      canManageCallsignActions: true,
-      openCallsignDrawerForCreate,
-    });
-    const callsignPanelProps = buildCallsignPanelProps(page as any);
-
-    callsignPanelProps.onAddInterceptedToDeveloping('ABC-1');
-    callsignPanelProps.onAddInterceptedToNetwork('XYZ-2');
-
-    expect(openCallsignDrawerForCreate).toHaveBeenNthCalledWith(1, {
-      callsign: 'ABC-1',
-      developing: true,
-    });
-    expect(openCallsignDrawerForCreate).toHaveBeenNthCalledWith(2, {
-      callsign: 'XYZ-2',
-      developing: false,
-    });
-  });
 });

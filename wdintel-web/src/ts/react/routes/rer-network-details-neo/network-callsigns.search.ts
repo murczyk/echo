@@ -6,7 +6,7 @@ import {
 } from './network-callsigns.types';
 
 function normalizeSearchNeedle(value: string): string {
-  return value.trim().toLocaleLowerCase('uk-UA');
+  return value.trim().toLowerCase();
 }
 
 function isSearchMatch(values: Array<string | number | null | undefined>, query: string): boolean {
@@ -14,7 +14,7 @@ function isSearchMatch(values: Array<string | number | null | undefined>, query:
   if (needle === '') return true;
   return values.some((value) => {
     if (value === null || value === undefined) return false;
-    return String(value).toLocaleLowerCase('uk-UA').includes(needle);
+    return String(value).toLowerCase().includes(needle);
   });
 }
 

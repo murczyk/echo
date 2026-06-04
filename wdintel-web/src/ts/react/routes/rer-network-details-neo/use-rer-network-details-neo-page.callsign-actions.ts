@@ -18,11 +18,13 @@ import {
   getNetworkCallsignDrawerSaveError,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignDrawerForm,
-  type NetworkCallsignRowView,
-  type NetworkCallsignSectionMode,
-  type NetworkCallsignStatusFilter,
-} from './network-callsigns';
+} from './network-callsigns.forms';
+import type {
+  NetworkCallsignDrawerForm,
+  NetworkCallsignRowView,
+  NetworkCallsignSectionMode,
+  NetworkCallsignStatusFilter,
+} from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 

@@ -14,12 +14,13 @@ import {
 import {
   buildNetworkCallsignTabData,
   mergeNetworkCallsigns,
-  createDefaultNetworkCallsignDrawerForm,
   removeKnownCallsignIdsFromNetworkCallsignGroups,
+} from './network-callsigns.tab';
+import {
+  createDefaultNetworkCallsignDrawerForm,
   getNetworkCallsignMarkerState,
-  type NetworkCallsignRowView,
-  type NetworkCallsignMarkerMode,
-} from './network-callsigns';
+} from './network-callsigns.forms';
+import type { NetworkCallsignMarkerMode, NetworkCallsignRowView } from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
