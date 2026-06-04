@@ -46,7 +46,7 @@ async fn link_messenger(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    let rsp = messenger::link(&state.db, &path.into_inner())
+    let rsp = messenger::link(&state.db, &state.config, &path.into_inner())
         .await
         .map_err(error)?;
     Ok(web::Json(rsp))

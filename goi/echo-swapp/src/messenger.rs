@@ -9,6 +9,8 @@ use echo_im::entities::{
 };
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
+use std::time::Duration;
+
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter,
     QuerySelect, RelationTrait, TransactionTrait,
@@ -116,6 +118,7 @@ pub async fn create(
     .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     start_client(config, req.kind, &req.name, port).await?;
+    wait_for_signal_client(req.kind, port).await?;
     txn.commit().await?;
     load(db, &req.name).await
 }
@@ -159,8 +162,14 @@ pub async fn load(
         .with_context(|| format!("messenger not found: {name}"))
 }
 
-pub async fn link(db: &DatabaseConnection, name: &str) -> Result<QrRsp> {
+pub async fn link(
+    db: &DatabaseConnection,
+    config: &Config,
+    name: &str,
+) -> Result<QrRsp> {
     let messenger = load(db, name).await?;
+    start_client(config, messenger.kind, name, messenger.signal_port).await?;
+    wait_for_signal_client(messenger.kind, messenger.signal_port).await?;
     let txn = db.begin().await?;
     let qr_code_base64 =
         echo_im::link_account(name, messenger.kind.message_source(), &txn)
@@ -366,6 +375,27 @@ async fn load_account(
         .one(db)
         .await?;
     Ok(account)
+}
+
+async fn wait_for_signal_client(kind: MessengerKind, port: i32) -> Result<()> {
+    if kind != MessengerKind::Signal {
+        return Ok(());
+    }
+    let addr = format!("127.0.0.1:{port}");
+    let mut last_err = None;
+    for _ in 0..40 {
+        match tokio::net::TcpStream::connect(&addr).await {
+            Ok(_) => return Ok(()),
+            Err(err) => {
+                last_err = Some(err);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        }
+    }
+    let err = last_err
+        .map(|err| err.to_string())
+        .unwrap_or_else(|| "unknown error".to_string());
+    bail!("signal service did not become ready on {addr}: {err}");
 }
 
 async fn start_client(
