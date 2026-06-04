@@ -17,7 +17,7 @@ import type {
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
-import { resolveMessageCardEtalonDisplayModel } from '../../shared/message-card/message-card.utils';
+import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../../shared/message-card/message-card.utils';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildSenderLabel, copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -157,6 +157,36 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
           onCopyFeedback(`freq-${id}`);
         });
       }}
+      onCopyTextWithNetwork={
+        etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
+          ? () => {
+              void copyMessageValue(
+                buildCopyTextWithNetworkName(message.text, etalonDisplayModel.copyEtalonValue, message.noHeadersBody),
+              ).then(() => {
+                onCopyFeedback(`text-network-${id}`);
+              });
+            }
+          : undefined
+      }
+      onCopyTextWithNetworkAndNote={
+        etalonDisplayModel.primaryKind === 'network' &&
+        etalonDisplayModel.copyEtalonValue != null &&
+        isPresent(message.extendedForm) &&
+        message.extendedForm.trim() !== ''
+          ? () => {
+              void copyMessageValue(
+                buildCopyTextWithNetworkAndNote(
+                  message.text,
+                  etalonDisplayModel.copyEtalonValue,
+                  message.extendedForm,
+                  message.noHeadersBody,
+                ),
+              ).then(() => {
+                onCopyFeedback(`text-network-note-${id}`);
+              });
+            }
+          : undefined
+      }
       onCopyEtalon={
         etalonDisplayModel.copyEtalonValue == null
           ? undefined

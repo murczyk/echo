@@ -23,6 +23,7 @@ function buildRawMessage(overrides: Partial<InboxMessage> & Record<string, unkno
     networkIds: [],
     tags: [],
     inboxTags: null,
+    metadata: [],
     textMarked: null,
     pointTokens: null,
     ...overrides,
@@ -74,5 +75,72 @@ describe('inbox API normalization', () => {
       { CNPointC: { begin: 0, end: 3, etalon: 'P-2', text: 'P-2' } },
     ]);
     expect(message?.pointTokens).toEqual([{ begin: 0, end: 3, etalon: 'P-2', text: 'P-2' }]);
+  });
+
+  it('normalizes inbox metadata fields from snake_case and falls back to an empty array', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      inbox_items: [
+        [7, buildRawMessage({ metadata: null })],
+        [
+          8,
+          buildRawMessage({
+            metadata: [
+              {
+                color_code: ' 3 ',
+                color_code_start_index: 1,
+                color_code_end_index: 2,
+                call_group_id: ' 456 ',
+                call_group_id_start_index: 3,
+                call_group_id_end_index: 4,
+                call_group_name: ' Bravo ',
+                call_group_name_start_index: 5,
+                call_group_name_end_index: 6,
+                sender_id: ' 123 ',
+                sender_id_start_index: 7,
+                sender_id_end_index: 8,
+                sender_name: ' Alpha ',
+                sender_name_start_index: 9,
+                sender_name_end_index: 10,
+                hash_id: ' hash-1 ',
+                hash_id_start_index: 11,
+                hash_id_end_index: 12,
+              },
+            ],
+          }),
+        ],
+      ],
+      callsigns: [],
+      signal_profiles: {},
+      signal_groups: [],
+      freq_pelengs_summary: null,
+    });
+
+    const response = await fetchInboxMessages({} as Parameters<typeof fetchInboxMessages>[0]);
+    const firstMessage = response.inboxItems[0]?.[1];
+    const secondMessage = response.inboxItems[1]?.[1];
+
+    expect(firstMessage?.metadata).toEqual([]);
+    expect(secondMessage?.metadata).toEqual([
+      {
+        colorCode: ' 3 ',
+        colorCodeStartIndex: 1,
+        colorCodeEndIndex: 2,
+        callGroupId: ' 456 ',
+        callGroupIdStartIndex: 3,
+        callGroupIdEndIndex: 4,
+        callGroupName: ' Bravo ',
+        callGroupNameStartIndex: 5,
+        callGroupNameEndIndex: 6,
+        senderId: ' 123 ',
+        senderIdStartIndex: 7,
+        senderIdEndIndex: 8,
+        senderName: ' Alpha ',
+        senderNameStartIndex: 9,
+        senderNameEndIndex: 10,
+        hashId: ' hash-1 ',
+        hashIdStartIndex: 11,
+        hashIdEndIndex: 12,
+      },
+    ]);
   });
 });

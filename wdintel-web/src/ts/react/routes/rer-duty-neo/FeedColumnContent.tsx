@@ -8,7 +8,7 @@ import type { FeedColumnModel } from './FeedColumn';
 import { profileLabel } from './utils';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
-import { resolveMessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../shared/message-card/message-card.utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
@@ -270,6 +270,32 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               onImportant={() => onMessageImportant(id, msg.important)}
               onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
               onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
+              onCopyTextWithNetwork={
+                etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
+                  ? () =>
+                      onMessageCopy(
+                        buildCopyTextWithNetworkName(msg.text || '', etalonDisplayModel.copyEtalonValue, msg.noHeadersBody),
+                        `text-network-${id}`,
+                      )
+                  : undefined
+              }
+              onCopyTextWithNetworkAndNote={
+                etalonDisplayModel.primaryKind === 'network' &&
+                etalonDisplayModel.copyEtalonValue != null &&
+                isPresent(msg.extendedForm) &&
+                msg.extendedForm.trim() !== ''
+                  ? () =>
+                      onMessageCopy(
+                        buildCopyTextWithNetworkAndNote(
+                          msg.text || '',
+                          etalonDisplayModel.copyEtalonValue,
+                          msg.extendedForm,
+                          msg.noHeadersBody,
+                        ),
+                        `text-network-note-${id}`,
+                      )
+                  : undefined
+              }
               onCopyEtalon={
                 etalonDisplayModel.copyEtalonValue == null
                   ? undefined

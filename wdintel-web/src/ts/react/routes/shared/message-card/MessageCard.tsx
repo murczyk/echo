@@ -13,6 +13,8 @@ import type {
 } from '../../../../../Bindings';
 import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
+import { MessageCardDmrMetadataPopover } from './MessageCardDmrMetadataPopover';
+import { hasVisibleDmrMetadata } from './message-card-metadata';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 import { APP_TIME_ZONE, isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
@@ -82,6 +84,8 @@ export type MessageCardProps = {
   onImportant: () => void;
   onCopyText: () => void;
   onCopyFreq: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
@@ -120,6 +124,8 @@ export function MessageCard({
   onImportant,
   onCopyText,
   onCopyFreq,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
@@ -191,6 +197,8 @@ export function MessageCard({
     );
 
   const analysisHref = displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined;
+  const metadataTrigger =
+    displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? <MessageCardDmrMetadataPopover msg={msg} /> : undefined;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -211,12 +219,15 @@ export function MessageCard({
     onComment,
     onCopyText,
     onCopyFreq,
+    onCopyTextWithNetwork,
+    onCopyTextWithNetworkAndNote,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
     onAddFrequencyToFilter,
     onDelete,
     onEditDetails,
     onExcludeMessageEntity,
+    metadataTrigger,
     excludeMenuOptions,
   };
   const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
