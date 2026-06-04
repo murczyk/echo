@@ -91,15 +91,12 @@ function getButtons(container: HTMLElement): HTMLButtonElement[] {
 }
 
 describe('mrtRowActionsColumnSize', () => {
-  it('uses compact fixed widths for grid and single-action layouts', () => {
+  it('uses the compact one-button width for all action counts', () => {
     expect(mrtRowActionsColumnSize(1)).toBe(48);
-    expect(mrtRowActionsColumnSize(5, 'grid')).toBe(84);
-  });
-
-  it('keeps 3-plus action rows at a stable width for the primary action and overflow menu', () => {
-    expect(mrtRowActionsColumnSize(2)).toBe(78);
-    expect(mrtRowActionsColumnSize(3)).toBe(78);
-    expect(mrtRowActionsColumnSize(4)).toBe(78);
+    expect(mrtRowActionsColumnSize(2)).toBe(48);
+    expect(mrtRowActionsColumnSize(3)).toBe(48);
+    expect(mrtRowActionsColumnSize(4)).toBe(48);
+    expect(mrtRowActionsColumnSize(5, 'grid')).toBe(48);
   });
 });
 
@@ -115,73 +112,92 @@ describe('MrtRowActions', () => {
     }
   });
 
-  it('keeps one and two actions visible without rendering overflow menu', async () => {
+  it('renders one action directly without a menu button', async () => {
     const onEdit = vi.fn();
-    const onDelete = vi.fn();
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" />
       </MrtRowActions>,
     );
     rendered.push(view);
 
+    const buttons = getButtons(view.container);
+    expect(buttons).toHaveLength(1);
     expect(view.container.textContent).toContain('edit-icon');
-    expect(view.container.textContent).toContain('delete-icon');
     expect(view.container.textContent).not.toContain('more-icon');
     expect(view.container.querySelector('[data-testid="overflow-menu"]')).toBeNull();
   });
 
-  it('keeps only the first action visible and moves the rest into overflow menu for 3-plus actions', async () => {
+  it('renders two actions as a single menu button and keeps both actions in the menu', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
-    const onArchive = vi.fn();
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
         <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" />
-        <MrtRowActionButton label="Архівувати" onClick={onArchive} icon={<span>archive-icon</span>} />
       </MrtRowActions>,
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('edit-icon');
-    expect(view.container.textContent).toContain('more-icon');
-    expect(view.container.textContent).not.toContain('delete-icon');
-    expect(view.container.textContent).not.toContain('archive-icon');
-
     const buttonsBeforeOpen = getButtons(view.container);
-    expect(buttonsBeforeOpen).toHaveLength(2);
+    expect(buttonsBeforeOpen).toHaveLength(1);
+    expect(view.container.textContent).toContain('more-icon');
+    expect(view.container.textContent).not.toContain('edit-icon');
+    expect(view.container.textContent).not.toContain('delete-icon');
 
-    await click(buttonsBeforeOpen[1]!);
+    await click(buttonsBeforeOpen[0]!);
 
     expect(view.container.textContent).toContain('Видалити');
-    expect(view.container.textContent).toContain('Архівувати');
+    expect(view.container.textContent).toContain('Редагувати');
     expect(view.container.textContent).toContain('delete-icon');
-    expect(view.container.textContent).toContain('archive-icon');
+    expect(view.container.textContent).toContain('edit-icon');
 
-    const menuButtons = getButtons(view.container);
-    await click(menuButtons[2]!);
+    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    expect(menuButtons).toHaveLength(2);
+    expect(menuButtons[0]?.textContent).toContain('Редагувати');
+    expect(menuButtons[0]?.textContent).toContain('edit-icon');
+    expect(menuButtons[1]?.textContent).toContain('Видалити');
+    expect(menuButtons[1]?.textContent).toContain('delete-icon');
+
+    await click(menuButtons[1]!);
 
     expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
-  it('applies the same overflow rule to explicit grid layouts with 3-plus actions', async () => {
+  it('renders three-plus actions as a single menu button with all entries in the menu', async () => {
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const onArchive = vi.fn();
     const view = await renderComponent(
       <MrtRowActions layout="grid">
         <MrtRowActionButton label="Перезапустити" onClick={() => {}} icon={<span>restart-icon</span>} />
-        <MrtRowActionButton label="Редагувати" onClick={() => {}} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Підключити" onClick={() => {}} icon={<span>connect-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={() => {}} icon={<span>delete-icon</span>} tone="danger" />
+        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
+        <MrtRowActionButton label="Архівувати" onClick={onArchive} icon={<span>archive-icon</span>} />
+        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" />
       </MrtRowActions>,
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('restart-icon');
+    const buttonsBeforeOpen = getButtons(view.container);
+    expect(buttonsBeforeOpen).toHaveLength(1);
     expect(view.container.textContent).toContain('more-icon');
+    expect(view.container.textContent).not.toContain('restart-icon');
     expect(view.container.textContent).not.toContain('edit-icon');
-    expect(view.container.textContent).not.toContain('connect-icon');
+    expect(view.container.textContent).not.toContain('archive-icon');
     expect(view.container.textContent).not.toContain('delete-icon');
+
+    await click(buttonsBeforeOpen[0]!);
+
+    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    expect(menuButtons).toHaveLength(4);
+    expect(menuButtons[0]?.textContent).toContain('Перезапустити');
+    expect(menuButtons[0]?.textContent).toContain('restart-icon');
+    expect(menuButtons[1]?.textContent).toContain('Редагувати');
+    expect(menuButtons[1]?.textContent).toContain('edit-icon');
+    expect(menuButtons[2]?.textContent).toContain('Архівувати');
+    expect(menuButtons[2]?.textContent).toContain('archive-icon');
+    expect(menuButtons[3]?.textContent).toContain('Видалити');
+    expect(menuButtons[3]?.textContent).toContain('delete-icon');
   });
 
   it('keeps disabled overflow actions disabled in the menu', async () => {
@@ -197,10 +213,11 @@ describe('MrtRowActions', () => {
     );
     rendered.push(view);
 
-    await click(getButtons(view.container)[1]!);
+    await click(getButtons(view.container)[0]!);
 
-    const menuButtons = getButtons(view.container);
-    expect(menuButtons[2]?.disabled).toBe(true);
-    expect(menuButtons[3]?.disabled).toBe(false);
+    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    expect(menuButtons[0]?.disabled).toBe(false);
+    expect(menuButtons[1]?.disabled).toBe(true);
+    expect(menuButtons[2]?.disabled).toBe(false);
   });
 });

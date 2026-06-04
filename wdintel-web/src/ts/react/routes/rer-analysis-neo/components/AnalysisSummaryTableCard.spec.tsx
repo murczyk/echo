@@ -80,10 +80,12 @@ vi.mock('material-react-table', () => ({
     const columns = table.columns as Array<any>;
     const data = table.data as Array<any>;
     const callsignsColumn = columns.find((column) => column.id === 'callsignSearchText');
+    const rowActionsColumn = columns.find((column) => column.id === 'rowActions');
     return (
       <>
         <div data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</div>
         <div data-testid="default-head-bg">{table.defaultColumn?.muiTableHeadCellProps?.sx?.backgroundColor ?? ''}</div>
+        <div data-testid="row-actions-enable-resizing">{String(rowActionsColumn?.enableResizing ?? '')}</div>
         <table aria-label={table.muiTableProps?.['aria-label']}>
           <thead>
             <tr>
@@ -309,6 +311,13 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Дії');
     expect(view.container.textContent).toContain('XLSX');
     expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe('var(--bs-body-bg)');
+  });
+
+  it('disables resizing for the row actions column', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="row-actions-enable-resizing"]')?.textContent).toBe('false');
   });
 
   it('keeps the first load skeleton free of the reload overlay', async () => {

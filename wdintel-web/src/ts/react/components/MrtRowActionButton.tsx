@@ -1,5 +1,5 @@
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import { ListItemIcon, ListItemText, MenuItem, Stack, Theme, Tooltip, alpha } from '@mui/material';
+import { ListItemIcon, ListItemText, MenuItem, Theme, Tooltip, alpha } from '@mui/material';
 import { SystemStyleObject } from '@mui/system';
 import { Children, isValidElement, useId, useState } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
@@ -73,74 +73,49 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
   const menuButtonId = useId();
   const menuLabelId = `${menuButtonId}-trigger`;
 
-  if (actions.length >= 3) {
-    const primaryAction = actions[0];
-    const overflowActions = actions.slice(1);
-    const menuOpen = Boolean(anchorEl);
-
-    return (
-      <>
-      <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" useFlexGap>
-        {primaryAction}
-        <Tooltip title="Інші дії">
-          <span style={{ display: 'inline-flex' }}>
-            <PowerIconButton
-              id={menuLabelId}
-              size="small"
-              aria-label="Інші дії"
-              aria-controls={menuOpen ? menuButtonId : undefined}
-              aria-expanded={menuOpen ? 'true' : undefined}
-              aria-haspopup="menu"
-              onClick={(event) => {
-                event.stopPropagation();
-                setAnchorEl(event.currentTarget);
-              }}
-              sx={(theme) => actionButtonSx(theme, 'default')}
-            >
-              <MoreVertIcon fontSize="small" />
-            </PowerIconButton>
-          </span>
-        </Tooltip>
-      </Stack>
-        <PowerMenu
-          id={menuButtonId}
-          anchorEl={anchorEl}
-          open={menuOpen}
-          onClose={() => setAnchorEl(null)}
-          slotProps={{ list: { 'aria-labelledby': menuLabelId } }}
-        >
-          {overflowActions.map((action, index) => (
-            <OverflowMenuAction
-              key={action.key ?? `overflow-action-${index}`}
-              action={action}
-              onClose={() => setAnchorEl(null)}
-            />
-          ))}
-        </PowerMenu>
-      </>
-    );
+  if (actions.length <= 1) {
+    return actions[0] ?? null;
   }
 
+  const menuOpen = Boolean(anchorEl);
+
   return (
-    <Stack
-      direction={layout === 'grid' ? undefined : 'row'}
-      spacing={1}
-      alignItems="center"
-      justifyContent="center"
-      useFlexGap
-      sx={
-        layout === 'grid'
-          ? {
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: 1,
-              justifyItems: 'center',
-            }
-          : undefined
-      }
-    >
-      {children}
-    </Stack>
+    <>
+      <Tooltip title="Дії">
+        <span style={{ display: 'inline-flex' }}>
+          <PowerIconButton
+            id={menuLabelId}
+            size="small"
+            aria-label="Дії"
+            aria-controls={menuOpen ? menuButtonId : undefined}
+            aria-expanded={menuOpen ? 'true' : undefined}
+            aria-haspopup="menu"
+            onClick={(event) => {
+              event.stopPropagation();
+              setAnchorEl(event.currentTarget);
+            }}
+            sx={(theme) => actionButtonSx(theme, 'default')}
+          >
+            <MoreVertIcon fontSize="small" />
+          </PowerIconButton>
+        </span>
+      </Tooltip>
+      <PowerMenu
+        id={menuButtonId}
+        anchorEl={anchorEl}
+        open={menuOpen}
+        onClose={() => setAnchorEl(null)}
+        slotProps={{ list: { 'aria-labelledby': menuLabelId } }}
+      >
+        {actions.map((action, index) => (
+          <OverflowMenuAction
+            key={action.key ?? `overflow-action-${index}`}
+            action={action}
+            onClose={() => setAnchorEl(null)}
+          />
+        ))}
+      </PowerMenu>
+    </>
   );
 }
 
@@ -184,7 +159,14 @@ function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClos
   }
 
   return (
-    <MenuItem disabled={disabled} onClick={handleClick} sx={{ pl: 0.5 }}>
+    <MenuItem
+      disabled={disabled}
+      onClick={handleClick}
+      sx={(theme) => ({
+        pl: 0.5,
+        ...(tone === 'danger' ? { color: theme.palette.error.main } : {}),
+      })}
+    >
       <ListItemIcon
         sx={(theme) => ({
           minWidth: 40,
@@ -205,17 +187,7 @@ function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClos
 }
 
 export function mrtRowActionsColumnSize(actionCount: number, layout: Layout = 'row') {
-  if (actionCount >= 3) {
-    return layout === 'grid' ? 84 : 78;
-  }
-
-  if (layout === 'grid') {
-    return 84;
-  }
-
-  if (actionCount <= 1) {
-    return 48;
-  }
-
-  return 20 + actionCount * 28 + (actionCount - 1) * 2;
+  void actionCount;
+  void layout;
+  return 48;
 }

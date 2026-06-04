@@ -20,8 +20,6 @@ import { normalizeUnitSearchValue } from '../../utils/unit-search';
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const DESKTOP_LAYOUT_MIN_WIDTH_PX = 1440;
-
 export const DEFAULT_SORT: CallsignsSortState = {
   column: 'unit',
   direction: 'asc',
