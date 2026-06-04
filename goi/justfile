@@ -15,6 +15,13 @@ b_tmp := "2470-goi-messenger" #TODO delete before merging to main, start using m
 default:
     @just --list
 
+checkout-messenger-debs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sudo apt-get update
+    mkdir -p "{{ goi_dir }}/.deb"
+    cd "{{ goi_dir }}/.deb" && apt-get download echo-im-signal echo-im-whatsapp
+
 build-echo-swapp:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -262,6 +269,40 @@ deploy-echo-swapp server:
     SERVER="{{ server }}"
     DEB_PATH=""
     DEB_NAME=""
+    MESSENGER_DEB_DIR="{{ goi_dir }}/.deb"
+    SIGNAL_DEB_PATH=""
+    SIGNAL_DEB_NAME=""
+    WHATSAPP_DEB_PATH=""
+    WHATSAPP_DEB_NAME=""
+
+    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs
+
+    SIGNAL_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
+      echo "Failed to find echo-im-signal .deb in ${MESSENGER_DEB_DIR}" >&2
+      exit 1
+    fi
+    SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
+
+    WHATSAPP_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${WHATSAPP_DEB_PATH}" ]]; then
+      echo "Failed to find echo-im-whatsapp .deb in ${MESSENGER_DEB_DIR}" >&2
+      exit 1
+    fi
+    WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
+
+    echo "Uploading ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} to ${SERVER}..."
+    scp "${SIGNAL_DEB_PATH}" "${SERVER}:/var/tmp/${SIGNAL_DEB_NAME}"
+    scp "${WHATSAPP_DEB_PATH}" "${SERVER}:/var/tmp/${WHATSAPP_DEB_NAME}"
+
+    echo "Installing ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      cd /var/tmp
+      sudo apt-get install -y --reinstall --allow-downgrades \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
+      rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
+    "
 
     just --justfile "{{ goi_dir }}/justfile" build-echo-swapp
 

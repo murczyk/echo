@@ -1,5 +1,8 @@
 use actix_web::{get, HttpResponse, Responder};
 
+const ECHO_LOGO_SVG: &str =
+    include_str!("../../../wdintel-web/static/img/echo-logo-white.svg");
+
 #[get("/")]
 pub async fn index() -> impl Responder {
     HttpResponse::Ok()
@@ -7,8 +10,15 @@ pub async fn index() -> impl Responder {
         .body(INDEX_HTML)
 }
 
+#[get("/echo-logo.svg")]
+pub async fn echo_logo() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("image/svg+xml; charset=utf-8")
+        .body(ECHO_LOGO_SVG)
+}
+
 const INDEX_HTML: &str = r#"<!doctype html>
-<html lang="en">
+<html lang="uk">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -19,39 +29,42 @@ const INDEX_HTML: &str = r#"<!doctype html>
   <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
     <header class="flex flex-col gap-3 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-normal">Echo Swapp</h1>
-        <p class="mt-1 text-sm text-zinc-400">Signal and WhatsApp API adapters</p>
+        <div class="flex items-center gap-3">
+          <img src="echo-logo.svg" alt="ECHO" class="h-8 w-auto shrink-0" />
+          <h1 class="text-2xl font-semibold tracking-normal">Echo Swapp</h1>
+        </div>
+        <p class="mt-1 text-sm text-zinc-400">Адаптери API для Signal і WhatsApp</p>
       </div>
-      <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Refresh</button>
+      <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Оновити</button>
     </header>
 
     <section class="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="createForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
-        <h2 class="text-base font-medium">New messenger</h2>
+        <h2 class="text-base font-medium">Новий месенджер</h2>
         <div class="mt-4 grid gap-3">
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Name</span>
+            <span class="text-zinc-400">Назва</span>
             <input id="nameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="goi-signal-1" required />
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Messenger</span>
+            <span class="text-zinc-400">Месенджер</span>
             <select id="kindInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
               <option value="signal">Signal</option>
               <option value="whatsapp">WhatsApp</option>
             </select>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Phone</span>
+            <span class="text-zinc-400">Телефон</span>
             <input id="phoneInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="+380000000000" required />
           </label>
-          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Create</button>
+          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
           <p id="formMsg" class="min-h-5 text-sm text-zinc-400"></p>
         </div>
       </form>
 
       <section class="rounded-lg border border-zinc-800 bg-zinc-900/50">
         <div class="border-b border-zinc-800 px-4 py-3">
-          <h2 class="text-base font-medium">Messengers</h2>
+          <h2 class="text-base font-medium">Месенджери</h2>
         </div>
         <div id="list" class="grid gap-3 p-4"></div>
       </section>
@@ -60,12 +73,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
   <dialog id="qrDialog" class="w-[min(92vw,420px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
     <div class="border-b border-zinc-800 px-4 py-3">
-      <h2 id="qrTitle" class="text-base font-medium">Link messenger</h2>
+      <h2 id="qrTitle" class="text-base font-medium">Підключення месенджера</h2>
     </div>
     <div class="grid gap-4 p-4 text-center">
-      <div id="qrBox" class="grid min-h-72 place-items-center rounded-md bg-white p-4 text-zinc-950">Loading...</div>
-      <p id="qrStatus" class="text-sm text-zinc-400">Waiting for link...</p>
-      <button id="closeQr" class="h-10 rounded-md border border-zinc-700 px-4 text-sm hover:bg-zinc-900">Close</button>
+      <div id="qrBox" class="grid min-h-72 place-items-center rounded-md bg-white p-4 text-zinc-950">Завантаження...</div>
+      <p id="qrStatus" class="text-sm text-zinc-400">Очікування підключення...</p>
+      <button id="closeQr" class="h-10 rounded-md border border-zinc-700 px-4 text-sm hover:bg-zinc-900">Закрити</button>
     </div>
   </dialog>
 
@@ -104,11 +117,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     async function load() {
-      list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Loading...</div>';
+      list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/messengers'));
         if (data.length === 0) {
-          list.innerHTML = '<div class="p-4 text-sm text-zinc-400">No messengers yet.</div>';
+          list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Месенджерів ще немає.</div>';
           return;
         }
         list.innerHTML = '';
@@ -127,13 +140,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="truncate text-base font-medium">${item.name}</h3>
               <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.kind}</span>
-              <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'linked' : 'not linked'}</span>
+              <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'підключено' : 'не підключено'}</span>
             </div>
             <p class="mt-1 text-sm text-zinc-400">${item.phone || ''}</p>
           </div>
           <div class="flex gap-2">
-            <button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Link</button>
-            <button data-copy="${item.name}" class="h-9 rounded-md bg-zinc-100 px-3 text-sm text-zinc-950 hover:bg-white">Copy API URL</button>
+            <button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>
+            <button data-copy="${item.name}" class="h-9 rounded-md bg-zinc-100 px-3 text-sm text-zinc-950 hover:bg-white">Скопіювати URL API</button>
           </div>
         </div>
         <code class="block overflow-hidden text-ellipsis whitespace-nowrap rounded bg-zinc-900 px-3 py-2 text-xs text-zinc-400">${apiBase(item.name)}</code>
@@ -143,7 +156,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     document.getElementById('createForm').addEventListener('submit', async (event) => {
       event.preventDefault();
-      formMsg.textContent = 'Creating...';
+      formMsg.textContent = 'Створення...';
       try {
         await request(appUrl('/ui-api/messengers'), {
           method: 'POST',
@@ -153,7 +166,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
             phone: document.getElementById('phoneInput').value.trim(),
           }),
         });
-        formMsg.textContent = 'Created.';
+        formMsg.textContent = 'Створено.';
         event.target.reset();
         await load();
       } catch (err) {
@@ -166,17 +179,17 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const copyName = event.target.dataset.copy;
       if (copyName) {
         await navigator.clipboard.writeText(apiBase(copyName));
-        event.target.textContent = 'Copied';
-        setTimeout(() => event.target.textContent = 'Copy API URL', 1200);
+        event.target.textContent = 'Скопійовано';
+        setTimeout(() => event.target.textContent = 'Скопіювати URL API', 1200);
       }
       if (linkName) openQr(linkName);
     });
 
     async function openQr(name) {
       clearInterval(pollTimer);
-      qrTitle.textContent = `Link ${name}`;
-      qrBox.textContent = 'Loading...';
-      qrStatus.textContent = 'Waiting for link...';
+      qrTitle.textContent = `Підключення ${name}`;
+      qrBox.textContent = 'Завантаження...';
+      qrStatus.textContent = 'Очікування підключення...';
       qrDialog.showModal();
       try {
         const rsp = await request(appUrl(`/ui-api/messengers/${name}/link`), { method: 'POST' });
@@ -185,13 +198,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
           const status = await request(appUrl(`/ui-api/messengers/${name}/status`));
           if (status.isLinked) {
             clearInterval(pollTimer);
-            qrStatus.textContent = 'Linked.';
+            qrStatus.textContent = 'Підключено.';
             await load();
           }
         }, 3000);
       } catch (err) {
         qrBox.textContent = err.message;
-        qrStatus.textContent = 'Failed';
+        qrStatus.textContent = 'Не вдалося підключити';
       }
     }
 

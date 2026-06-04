@@ -33,6 +33,7 @@ async fn main() -> Result<()> {
             .app_data(state.clone())
             .wrap(Logger::default())
             .service(ui::index)
+            .service(ui::echo_logo)
             .configure(api::configure)
     })
     .bind(bind)?

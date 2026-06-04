@@ -32,6 +32,7 @@ deploy/vector/kibana/sink-hammer.yaml
 wdintel-web/test-results/
 
 # GOI local/runtime artifacts
+goi/.deb/
 goi/swapp/.runtime/
 goi/swapp/.next/
 goi/swapp/.output/
