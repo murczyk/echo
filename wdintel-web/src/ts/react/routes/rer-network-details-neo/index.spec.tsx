@@ -9,9 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { navigateWithinSpa } from '../../utils/browser';
+import { buildCallsignPanelProps } from './components/NetworkDetailsNeoPageBody';
 
 const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
-const networkDetailsTabPanelMock = vi.hoisted(() => ({ current: null as any }));
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -112,10 +112,7 @@ vi.mock('./components/NetworkDetailsLoadingState', () => ({
 }));
 
 vi.mock('./components/NetworkDetailsTabPanel', () => ({
-  NetworkDetailsTabPanel: (props: any) => {
-    networkDetailsTabPanelMock.current = props;
-    return <div data-testid="tab-panel" />;
-  },
+  NetworkDetailsTabPanel: () => <div data-testid="tab-panel" />,
 }));
 
 vi.mock('./components/NetworkDescriptionDrawer', () => ({ NetworkDescriptionDrawer: () => null }));
@@ -365,7 +362,6 @@ describe('RerNetworkDetailsNeoPage', () => {
 
   afterEach(() => {
     useRerNetworkDetailsNeoPageMock.mockReset();
-    networkDetailsTabPanelMock.current = null;
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -447,18 +443,15 @@ describe('RerNetworkDetailsNeoPage', () => {
 
   it('opens intercepted callsigns with the expected create defaults', async () => {
     const openCallsignDrawerForCreate = vi.fn();
-    useRerNetworkDetailsNeoPageMock.mockReturnValue(
-      buildPage({
-        network: { name: 'NET', status: 'NetworkActive', deleted: false },
-        canManageCallsignActions: true,
-        openCallsignDrawerForCreate,
-      }),
-    );
-    const view = await renderPage();
-    rendered.push(view);
+    const page = buildPage({
+      network: { name: 'NET', status: 'NetworkActive', deleted: false },
+      canManageCallsignActions: true,
+      openCallsignDrawerForCreate,
+    });
+    const callsignPanelProps = buildCallsignPanelProps(page as any);
 
-    networkDetailsTabPanelMock.current.callsignPanelProps.onAddInterceptedToDeveloping('ABC-1');
-    networkDetailsTabPanelMock.current.callsignPanelProps.onAddInterceptedToNetwork('XYZ-2');
+    callsignPanelProps.onAddInterceptedToDeveloping('ABC-1');
+    callsignPanelProps.onAddInterceptedToNetwork('XYZ-2');
 
     expect(openCallsignDrawerForCreate).toHaveBeenNthCalledWith(1, {
       callsign: 'ABC-1',

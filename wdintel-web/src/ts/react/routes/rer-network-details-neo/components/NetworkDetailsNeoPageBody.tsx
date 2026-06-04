@@ -40,7 +40,7 @@ function buildPelengReloadHandler(page: Page, networkId: number) {
   };
 }
 
-function buildCallsignPanelProps(page: Page) {
+export function buildCallsignPanelProps(page: Page) {
   return {
     sources: page.sources,
     networkCallsigns: page.networkCallsigns,
