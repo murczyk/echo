@@ -41,6 +41,8 @@ pub enum Relation {
     SecretGroupUser,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
+    #[sea_orm(has_many = "super::signal_group_admin::Entity")]
+    SignalGroupAdmin,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
     SignalGroupAor,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
@@ -89,6 +91,12 @@ impl Related<super::sigint_zone_datasource::Entity> for Entity {
     }
 }
 
+impl Related<super::signal_group_admin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroupAdmin.def()
+    }
+}
+
 impl Related<super::signal_group_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalGroupAor.def()
@@ -98,6 +106,15 @@ impl Related<super::signal_group_aor::Entity> for Entity {
 impl Related<super::signal_message_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessageGroup.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::signal_group_admin::Relation::Login.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::signal_group_admin::Relation::SignalGroup.def().rev())
     }
 }
 

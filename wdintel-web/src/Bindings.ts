@@ -1613,6 +1613,7 @@ export type ZoneDatasourceGroup = {
   groupMasterKey: string;
   isGroupSecret: boolean;
   allowedUsers: Array<string>;
+  adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -1633,6 +1634,7 @@ export type ZoneDatasourceGroupAddReq = {
   isSecret: boolean;
   masterKey: string;
   userLogins: Array<string>;
+  adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
 };
@@ -1641,10 +1643,26 @@ export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
   userLogins: Array<string>;
+  adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
+};
+
+export type MyAdminSignalGroup = {
+  masterKey: string;
+  name: string;
+  datasourceName: string | null;
+  datasourceKind: string | null;
+  isGroupSecret: boolean;
+  allowedUsers: Array<string>;
+  adminLogins: Array<string>;
+  areasOfResponsibility: Array<AreaOfResponsibility> | null;
+};
+
+export type MyAdminSignalGroupsRsp = {
+  groups: Array<MyAdminSignalGroup>;
 };
 
 export type EncryptionKeyData = {

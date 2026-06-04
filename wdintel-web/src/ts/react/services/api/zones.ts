@@ -2,6 +2,8 @@ import {
   AreaOfResponsibility,
   BatchSignalGroupReq,
   Datasource,
+  MyAdminSignalGroup,
+  MyAdminSignalGroupsRsp,
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupEntry,
@@ -111,6 +113,8 @@ type ZoneDatasourceGroupLike = {
   is_group_secret?: boolean;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
+  adminLogins?: string[] | null;
+  admin_logins?: string[] | null;
   shortNote?: string | null;
   short_note?: string | null;
   longNote?: string | null;
@@ -122,6 +126,28 @@ type ZoneDatasourceGroupLike = {
 type ZoneDatasourceGroupListRspLike = {
   zoneDatasourceGroups?: ZoneDatasourceGroupLike[] | null;
   zone_datasource_groups?: ZoneDatasourceGroupLike[] | null;
+};
+
+type MyAdminSignalGroupLike = {
+  masterKey?: string;
+  master_key?: string;
+  name?: string;
+  datasourceName?: string | null;
+  datasource_name?: string | null;
+  datasourceKind?: string | null;
+  datasource_kind?: string | null;
+  isGroupSecret?: boolean;
+  is_group_secret?: boolean;
+  allowedUsers?: string[] | null;
+  allowed_users?: string[] | null;
+  adminLogins?: string[] | null;
+  admin_logins?: string[] | null;
+  areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
+  areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+};
+
+type MyAdminSignalGroupsRspLike = {
+  groups?: MyAdminSignalGroupLike[] | null;
 };
 
 type ZoneDatasourceGroupAddRspLike = {
@@ -150,6 +176,7 @@ type ZoneDatasourceGroupAddReqBody = {
   is_secret: boolean;
   master_key: string;
   user_logins: string[];
+  admin_logins: string[];
   short_note: string | null;
   long_note: string | null;
 };
@@ -158,6 +185,7 @@ type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
   is_secret: boolean;
   user_logins: string[];
+  admin_logins: string[];
   short_note: string | null;
   long_note: string | null;
   area_of_responsibility_id: number | null;
@@ -249,6 +277,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
+    adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
     areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
@@ -320,6 +349,7 @@ function toZoneDatasourceGroupAddReqBody(req: ZoneDatasourceGroupAddReq): ZoneDa
     is_secret: req.isSecret,
     master_key: req.masterKey,
     user_logins: req.userLogins,
+    admin_logins: req.adminLogins,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
   };
@@ -330,6 +360,7 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
     id: req.id,
     is_secret: req.isSecret,
     user_logins: req.userLogins,
+    admin_logins: req.adminLogins,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
@@ -360,6 +391,19 @@ function normalizeZoneDatasourceGroupAddRsp(raw: ZoneDatasourceGroupAddRspLike):
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     groupName: raw.groupName ?? raw.group_name ?? null,
     zoneDatasourceGroup: normalizeZoneDatasourceGroup(raw.zoneDatasourceGroup ?? raw.zone_datasource_group ?? {}),
+  };
+}
+
+function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignalGroup {
+  return {
+    masterKey: raw.masterKey ?? raw.master_key ?? '',
+    name: raw.name ?? '',
+    datasourceName: raw.datasourceName ?? raw.datasource_name ?? null,
+    datasourceKind: raw.datasourceKind ?? raw.datasource_kind ?? null,
+    isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
+    allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
+    adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
+    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }
 
@@ -407,6 +451,15 @@ export async function addZoneDatasourceGroup(req: ZoneDatasourceGroupAddReq): Pr
 
 export async function deleteZoneDatasourceGroup(zoneDatasourceId: number): Promise<void> {
   await postVoid('/api/sigint/zones/zone-datasource-group-delete', zoneDatasourceId);
+}
+
+export async function listMyAdminGroups(signal?: AbortSignal): Promise<MyAdminSignalGroupsRsp> {
+  const data = await postJson<MyAdminSignalGroupsRspLike>(
+    '/api/sigint/zones/my-admin-groups',
+    {},
+    { signal },
+  );
+  return { groups: (data?.groups ?? []).map(normalizeMyAdminSignalGroup) };
 }
 
 export async function listOrphanSignalGroups(): Promise<OrphanSignalGroupEntry[]> {

@@ -12,6 +12,7 @@ import type { SigintZone } from '../../../../Bindings';
 const saveUserDutySettings = vi.hoisted(() => vi.fn());
 const fetchServerInfoMock = vi.hoisted(() => vi.fn().mockResolvedValue({ version: '1.0.0' }));
 const fetchCurrentUserMock = vi.hoisted(() => vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }));
+const listMyAdminGroupsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -25,6 +26,12 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Table: ({ children }: { children: ReactNode }) => <table>{children}</table>,
+  TableBody: ({ children }: { children: ReactNode }) => <tbody>{children}</tbody>,
+  TableCell: ({ children }: { children: ReactNode }) => <td>{children}</td>,
+  TableContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TableHead: ({ children }: { children: ReactNode }) => <thead>{children}</thead>,
+  TableRow: ({ children }: { children: ReactNode }) => <tr>{children}</tr>,
   Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (_event: unknown, value: boolean) => void }) => (
@@ -73,6 +80,7 @@ vi.mock('../../services/api/user-settings', () => ({
 
 vi.mock('../../services/api/zones', () => ({
   listSigintZones: vi.fn().mockResolvedValue([[1, { name: 'Zone 1' } as SigintZone]]),
+  listMyAdminGroups: listMyAdminGroupsMock,
 }));
 
 vi.mock('./SettingsDutySection', () => ({
@@ -127,6 +135,8 @@ describe('SettingsNeoPage', () => {
     fetchServerInfoMock.mockResolvedValue({ version: '1.0.0' });
     fetchCurrentUserMock.mockReset();
     fetchCurrentUserMock.mockResolvedValue({ sigintZoneId: 1, roles: [] });
+    listMyAdminGroupsMock.mockReset();
+    listMyAdminGroupsMock.mockResolvedValue({ groups: [] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -227,6 +237,36 @@ describe('SettingsNeoPage', () => {
 
     expect(container.textContent).toContain('Загальні');
     expect(container.textContent).toContain('Версія: 1.0.0');
+  });
+
+  it('keeps general settings active when admin groups exist', async () => {
+    listMyAdminGroupsMock.mockResolvedValueOnce({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: null,
+          datasourceKind: 'signal',
+          isGroupSecret: false,
+          allowedUsers: [],
+          adminLogins: ['DeltaUser'],
+          areasOfResponsibility: null,
+        },
+      ],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).toContain('Мої групи');
+    expect(container.textContent).toContain('Версія: 1.0.0');
+    expect(container.textContent).not.toContain('Group 1');
   });
 
   it('keeps required settings loaded when server info fails', async () => {

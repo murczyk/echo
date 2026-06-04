@@ -114,6 +114,7 @@ pub mod sigint_zone;
 pub mod sigint_zone_aor;
 pub mod sigint_zone_datasource;
 pub mod signal_group;
+pub mod signal_group_admin;
 pub mod signal_group_aor;
 pub mod signal_group_batch;
 pub mod signal_message;
