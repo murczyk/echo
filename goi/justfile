@@ -281,14 +281,26 @@ deploy-echo-swapp server:
       sudo apt-get update
       cd /var/tmp
       sudo apt-get install -y --reinstall --allow-downgrades \"./${DEB_NAME}\"
+      if [[ -f /etc/goi-echo-worker/config.toml ]]; then
+        tmp_config=\$(mktemp)
+        chmod 0600 "\${tmp_config}"
+        sudo awk '/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/goi-echo-worker/config.toml > "\${tmp_config}"
+        printf '\n' >> "\${tmp_config}"
+        sudo awk '!/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/echo-swapp/config.toml >> "\${tmp_config}"
+        sudo mv "\${tmp_config}" /etc/echo-swapp/config.toml
+        sudo chown root:root /etc/echo-swapp/config.toml
+        sudo chmod 0600 /etc/echo-swapp/config.toml
+      fi
       sudo systemctl enable --now echo-swapp
       sudo systemctl restart echo-swapp
-      sudo systemctl status echo-swapp --no-pager
       rm -f \"./${DEB_NAME}\"
     "
 
     echo "Updating nginx on ${SERVER}..."
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
+
+    echo "Checking echo-swapp.service on ${SERVER}..."
+    ssh "$SERVER" "sudo systemctl status echo-swapp --no-pager"
 
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
 
