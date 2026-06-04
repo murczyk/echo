@@ -239,7 +239,21 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Версія: 1.0.0');
   });
 
-  it('keeps general settings active when admin groups exist', async () => {
+  it('does not show the my groups tab after an empty successful load', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).not.toContain('Мої групи');
+    expect(container.textContent).toContain('Версія: 1.0.0');
+  });
+
+  it('shows the my groups tab when groups exist', async () => {
     listMyAdminGroupsMock.mockResolvedValueOnce({
       groups: [
         {
@@ -267,6 +281,52 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Мої групи');
     expect(container.textContent).toContain('Версія: 1.0.0');
     expect(container.textContent).not.toContain('Group 1');
+  });
+
+  it('shows an empty state on the direct my groups section when there are no groups', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="myGroups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Мої групи');
+    expect(container.textContent).toContain('Груп не знайдено');
+    expect(container.textContent).toContain('Тут з');
+  });
+
+  it('renders the groups table when groups exist', async () => {
+    listMyAdminGroupsMock.mockResolvedValueOnce({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: 'Source 1',
+          datasourceKind: 'signal',
+          isGroupSecret: true,
+          allowedUsers: ['user-a', 'user-b'],
+          adminLogins: ['DeltaUser'],
+          areasOfResponsibility: [{ name: 'AOR 1' }],
+        },
+      ],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="myGroups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Мої групи');
+    expect(container.textContent).toContain('Group 1');
+    expect(container.textContent).toContain('Source 1');
+    expect(container.textContent).toContain('AOR 1');
+    expect(container.textContent).toContain('приватна');
+    expect(container.textContent).toContain('user-a, user-b');
   });
 
   it('keeps required settings loaded when server info fails', async () => {
