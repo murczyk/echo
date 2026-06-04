@@ -210,3 +210,5 @@ milgeo-rs/data_gen/hum.csv filter=lfs diff=lfs merge=lfs -text
 *.kmz filter=lfs diff=lfs merge=lfs -text
 deploy/wd_test-2025-08-17-07-43.pgrestore filter=lfs diff=lfs merge=lfs -text
 wdintel-rs/data/951.[[:space:]]Срібні[[:space:]]-[[:space:]]Новопідгородне[[:space:]]Райполе[[:space:]]433[[:space:]]мсп.kmz filter=lfs diff=lfs merge=lfs -text
+docs/releases/2026-06-04/media/2026-06-04-exclude.mp4 filter=lfs diff=lfs merge=lfs -text
+docs/releases/2026-06-04/media/2026-06-04-keywords.mp4 filter=lfs diff=lfs merge=lfs -text
