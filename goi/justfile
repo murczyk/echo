@@ -10,9 +10,22 @@ swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
 goi_version := "1.4.3"
 goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur"
+b_tmp := "2470-goi-messenger" #TODO delete before merging to main, start using main instead
 
 default:
     @just --list
+
+build-echo-swapp:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    BRANCH="{{ b_tmp }}"
+
+    echo "Switching {{ repo_dir }} to ${BRANCH}..."
+    (cd "{{ repo_dir }}" && git fetch origin "${BRANCH}" && git clean -df && git checkout "${BRANCH}" && git pull --ff-only origin "${BRANCH}")
+
+    echo "Building echo-swapp deb package..."
+    (cd "{{ repo_dir }}" && cargo deb -p echo-swapp)
 
 _require-goi-cloud-access:
     #!/usr/bin/env bash
@@ -257,6 +270,9 @@ deploy-echo-swapp server:
       sudo systemctl restart echo-swapp
       sudo systemctl status echo-swapp --no-pager
     "
+
+    echo "Updating nginx on ${SERVER}..."
+    just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
 
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
 
