@@ -59,6 +59,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [addValidationError, setAddValidationError] = useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
   const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = useState(false);
+  const [addDuplicateHintsImmediate, setAddDuplicateHintsImmediate] = useState(false);
   const [editForm, setEditForm] = useState<CallsignEditForm | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editValidationError, setEditValidationError] = useState<string | null>(null);
@@ -128,9 +129,10 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const unitStatsView = useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
   const addPotentialDuplicateGroups = useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
-    if (deferredDuplicateHintInputs.length === 0) return [];
-    return buildDuplicateHintGroups(deferredDuplicateHintInputs, callsigns, addUnitId, unitsById);
-  }, [addDuplicateHintsEnabled, addSubmitting, addUnitId, callsigns, deferredDuplicateHintInputs, unitsById]);
+    const activeDuplicateHintInputs = addDuplicateHintsImmediate ? duplicateHintInputs : deferredDuplicateHintInputs;
+    if (activeDuplicateHintInputs.length === 0) return [];
+    return buildDuplicateHintGroups(activeDuplicateHintInputs, callsigns, addUnitId, unitsById);
+  }, [addDuplicateHintsEnabled, addDuplicateHintsImmediate, addSubmitting, addUnitId, callsigns, deferredDuplicateHintInputs, duplicateHintInputs, unitsById]);
 
   const actions = useRerCallsignsNeoPageActions({
     permissions,
@@ -144,7 +146,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     addCallsignAdditionalSourceIds,
     addRows,
     addSubmitting,
-    addDuplicateHintsEnabled,
     editForm,
     editSubmitting,
     deleteTarget,
@@ -168,6 +169,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddValidationError,
     setAddDrawerOpen,
     setAddDuplicateHintsEnabled,
+    setAddDuplicateHintsImmediate,
     setEditForm,
     setEditSubmitting,
     setEditValidationError,
