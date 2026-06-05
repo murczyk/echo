@@ -6,6 +6,7 @@ use crate::sigint::callsign::bl_network_callsign::bl_get_network_callsigns_list;
 use crate::sigint::callsign::types::ListNetworkCallsignsReq;
 use crate::sigint::network::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -212,20 +213,8 @@ async fn load_network_relation_message_rows(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_network::Relation::SigintNetwork.def(),
-        )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Id.is_in(message_ids.to_vec()));
+        .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
 
     let rows = query
         .into_model::<NetworkCallsignRelationMessageRow>()
@@ -595,6 +584,8 @@ fn build_network_relation_message_freq_condition(
         );
     }
 
+    // Keep frequencyless messages visible: the graph has no frequency toggle
+    // for them, so they must remain part of any selected node/edge messages.
     Some(
         Condition::any()
             .add(sigint_inbox_item::Column::Freq.is_null())
