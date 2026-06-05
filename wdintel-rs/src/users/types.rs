@@ -24,6 +24,14 @@ pub struct User {
     pub goi_full_access_for_organism: bool,
     pub goi_host: Option<String>,
     pub goi_integrations: Vec<crate::organism::goi::types::GoiUserIntegration>,
+    pub last_release_seen: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MarkReleaseSeenReq {
+    pub release_id: String,
 }
 
 #[derive(

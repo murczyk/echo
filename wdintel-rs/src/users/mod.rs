@@ -286,6 +286,7 @@ pub async fn create_login(
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: NotSet,
             deleted_permanently: NotSet,
+            last_release_seen: NotSet,
         },
     )
     .await
@@ -491,7 +492,28 @@ async fn api_user(
         goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
         goi_integrations: goi.integrations,
+        last_release_seen: login_obj.last_release_seen,
     }))
+}
+
+#[post("/api/user/release-seen")]
+pub async fn mark_release_seen(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: Json<types::MarkReleaseSeenReq>,
+) -> Result<Json<()>, AppError> {
+    let username = user.id().c(h!())?;
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(username.clone()))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let mut login_obj: login::ActiveModel = login_obj.into();
+    login_obj.last_release_seen = Set(Some(req.release_id.clone()));
+    login_obj.update(&env.dbx).await.c(h!())?;
+    Ok(Json(()))
 }
 
 #[post("/api/user/user-info")]
@@ -536,6 +558,7 @@ async fn api_user_info(
         goi_full_access_for_organism: goi.full_access,
         goi_host: goi.host,
         goi_integrations: goi.integrations,
+        last_release_seen: login_obj.last_release_seen,
     }))
 }
 
@@ -783,6 +806,7 @@ pub async fn register_user(
         last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
         deleted_permanently: NotSet,
+        last_release_seen: NotSet,
     }
     .insert(&txn)
     .await
@@ -1131,6 +1155,7 @@ async fn register_delta_user(
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: NotSet,
             deleted_permanently: NotSet,
+            last_release_seen: NotSet,
         },
     )
     .await
@@ -1522,6 +1547,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
             },
         )
         .await
@@ -1589,6 +1615,7 @@ mod tests {
                     last_active_at: Set(Some(Utc::now().naive_utc())),
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
+                    last_release_seen: Default::default(),
                 },
             )
             .await
@@ -1656,6 +1683,7 @@ mod tests {
                     last_active_at: Set(Some(Utc::now().naive_utc())),
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
+                    last_release_seen: Default::default(),
                 },
             )
             .await
@@ -1676,6 +1704,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
             },
         )
         .await
@@ -1724,6 +1753,7 @@ mod tests {
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: Set(None),
             deleted_permanently: Set(true),
+            last_release_seen: Default::default(),
         }
         .insert(&env.dbx)
         .await
@@ -1743,6 +1773,7 @@ mod tests {
                 last_active_at: Set(Some(Utc::now().naive_utc())),
                 deactivation_reason: NotSet,
                 deleted_permanently: NotSet,
+                last_release_seen: Default::default(),
             },
         )
         .await

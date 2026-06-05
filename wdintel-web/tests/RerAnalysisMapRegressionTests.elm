@@ -41,6 +41,7 @@ suite =
                                     , goiFullAccessForOrganism = False
                                     , goiHost = Nothing
                                     , goiIntegrations = []
+                                    , lastReleaseSeen = Nothing
                                     }
                                     shared.user
 
@@ -91,6 +92,7 @@ suite =
                                     , goiFullAccessForOrganism = False
                                     , goiHost = Nothing
                                     , goiIntegrations = []
+                                    , lastReleaseSeen = Nothing
                                     }
                                     shared.user
 

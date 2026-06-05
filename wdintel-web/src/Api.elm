@@ -621,6 +621,18 @@ server_info toMsg =
         }
 
 
+api_mark_release_seen :
+    String
+    -> (Result ApiError () -> msg)
+    -> Cmd msg
+api_mark_release_seen releaseId toMsg =
+    Http.post
+        { url = "/api/user/release-seen"
+        , body = Http.jsonBody (markReleaseSeenReqEncoder { releaseId = releaseId })
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 changelog_index :
     (Result ApiError (List Shared.Msg.ChangelogReleaseMeta) -> msg)
     -> Cmd msg

@@ -76,6 +76,7 @@ init flagsResult _ =
                 , goiFullAccessForOrganism = False
                 , goiHost = Nothing
                 , goiIntegrations = []
+                , lastReleaseSeen = Nothing
                 }
       , themeMode =
             if flags.isDark then
@@ -142,7 +143,7 @@ update req msg model =
                 ( model, E.none )
 
         GotUser (Ok user) ->
-            ( { model | user = Just user }
+            ( { model | user = Just user, changelogLastSeen = user.lastReleaseSeen }
             , E.batch
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_
@@ -226,24 +227,41 @@ update req msg model =
             )
 
         LastSeenChangelogLoaded value ->
-            let
-                trimmedValue =
-                    String.trim value
-            in
-            ( { model
-                | changelogLastSeen =
-                    if String.isEmpty trimmedValue then
-                        Nothing
+            case model.user of
+                Just _ ->
+                    -- Server value (set by GotUser) takes precedence over localStorage
+                    ( model, E.none )
 
-                    else
-                        Just trimmedValue
-              }
-            , E.none
-            )
+                Nothing ->
+                    let
+                        trimmedValue =
+                            String.trim value
+                    in
+                    ( { model
+                        | changelogLastSeen =
+                            if String.isEmpty trimmedValue then
+                                Nothing
+
+                            else
+                                Just trimmedValue
+                      }
+                    , E.none
+                    )
 
         SaveChangelogLastSeen version ->
             ( { model | changelogLastSeen = Just version }
-            , E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+            , E.batch
+                [ E.sendCmd <| Ports.shared_saveLastSeenChangelog version
+                , E.sendCmd <| Api.api_mark_release_seen version ReleaseSeenApiSaved
+                ]
+            )
+
+        ReleaseSeenApiSaved (Ok _) ->
+            ( model, E.none )
+
+        ReleaseSeenApiSaved (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження прочитаного релізу" err
             )
 
         TriggerResize ->
