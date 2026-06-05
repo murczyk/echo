@@ -80,6 +80,7 @@ type Msg
     | ToggleMobileNav
     | SetOpenDropdown (Maybe String)
     | ChangelogSeen String
+    | OpenChangelog String
     | CloseDropdownOnly
     | ToastMsg Toast.Msg
 
@@ -165,6 +166,11 @@ update route msg model =
             , E.sendSharedMsg (Shared.Msg.SaveChangelogLastSeen version)
             )
 
+        OpenChangelog version ->
+            ( { model | openDropdown = Just "changelog" }
+            , E.sendSharedMsg (Shared.Msg.SaveChangelogLastSeen version)
+            )
+
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
 
@@ -215,6 +221,7 @@ view user activeName shared route { toContentMsg, model, content } =
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
             , onChangelogSeen = ChangelogSeen
+            , onOpenChangelog = OpenChangelog
             , onCloseDropdownOnly = CloseDropdownOnly
             , mobileNavOpen = model.mobileNavOpen
             , onToggleMobileNav = ToggleMobileNav

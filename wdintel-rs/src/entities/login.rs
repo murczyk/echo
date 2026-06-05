@@ -23,6 +23,8 @@ pub struct Model {
     pub last_active_at: Option<DateTime>,
     pub deactivation_reason: Option<DeactivationReasonEnum>,
     pub deleted_permanently: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub last_release_seen: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

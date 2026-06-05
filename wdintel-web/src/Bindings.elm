@@ -3366,6 +3366,7 @@ type alias User =
     , goiFullAccessForOrganism : Bool
     , goiHost : Maybe (String)
     , goiIntegrations : List (GoiUserIntegration)
+    , lastReleaseSeen : Maybe (String)
     }
 
 
@@ -3381,6 +3382,7 @@ userEncoder struct =
         , ( "goi_full_access_for_organism", (Json.Encode.bool) struct.goiFullAccessForOrganism )
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiHost )
         , ( "goi_integrations", (Json.Encode.list (goiUserIntegrationEncoder)) struct.goiIntegrations )
+        , ( "last_release_seen", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastReleaseSeen )
         ]
 
 
@@ -3578,6 +3580,18 @@ keepAliveReqEncoder : KeepAliveReq -> Json.Encode.Value
 keepAliveReqEncoder struct =
     Json.Encode.object
         [ ( "page_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageId )
+        ]
+
+
+type alias MarkReleaseSeenReq =
+    { releaseId : String
+    }
+
+
+markReleaseSeenReqEncoder : MarkReleaseSeenReq -> Json.Encode.Value
+markReleaseSeenReqEncoder struct =
+    Json.Encode.object
+        [ ( "release_id", (Json.Encode.string) struct.releaseId )
         ]
 
 
@@ -9732,6 +9746,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_full_access_for_organism" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list (goiUserIntegrationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_release_seen" (Json.Decode.nullable (Json.Decode.string))))
 
 
 goiUserIntegrationDecoder : Json.Decode.Decoder GoiUserIntegration
@@ -9847,6 +9862,12 @@ keepAliveReqDecoder : Json.Decode.Decoder KeepAliveReq
 keepAliveReqDecoder =
     Json.Decode.succeed KeepAliveReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+markReleaseSeenReqDecoder : Json.Decode.Decoder MarkReleaseSeenReq
+markReleaseSeenReqDecoder =
+    Json.Decode.succeed MarkReleaseSeenReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "release_id" (Json.Decode.string)))
 
 
 deactivationReasonTypeDecoder : Json.Decode.Decoder DeactivationReasonType

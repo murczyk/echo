@@ -1285,6 +1285,7 @@ export type User = {
   goiFullAccessForOrganism: boolean;
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
+  lastReleaseSeen: string | null;
 };
 
 export type GoiUserIntegration = {
@@ -1362,6 +1363,10 @@ export type SigintGroupsReq = {
 
 export type KeepAliveReq = {
   pageId: string | null;
+};
+
+export type MarkReleaseSeenReq = {
+  releaseId: string;
 };
 
 export type DeactivationReasonType =
