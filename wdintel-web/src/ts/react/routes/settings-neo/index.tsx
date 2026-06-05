@@ -1,15 +1,13 @@
-import { Autocomplete, Box, Card, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Box, Card, FormControlLabel, Stack, Switch, Tab, Tabs, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import type { MyAdminSignalGroup } from '../../../../Bindings';
-import { ELLIPSIS, isNullOrUndefined } from '../../utils/misc';
+import { isNullOrUndefined } from '../../utils/misc';
 
 import { PageHeader } from '../../components/PageHeader';
-import { PowerButton } from '../../components/PowerButton';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
-import { PowerAlert } from '../../components/PowerAlert';
 import { SettingsReportsSection } from './SettingsReportsSection';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
@@ -30,7 +28,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'duty' || section === 'analysis' || section === 'reports') {
     return section;
   }
-  return 'general';
+  return 'duty';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -130,12 +128,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               },
             }}
           >
-            <Tab
-              value="general"
-              label="Загальні"
-              id="settings-neo-tab-general"
-              aria-controls="settings-neo-panel-general"
-            />
             {showMyGroupsTab ? (
               <Tab
                 value="myGroups"
@@ -163,95 +155,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               aria-controls="settings-neo-panel-reports"
             />
           </Tabs>
-
-          {settingsSection === 'general' ? (
-            <Box role="tabpanel" id="settings-neo-panel-general" aria-labelledby="settings-neo-tab-general">
-              <Box component="form" onSubmit={(event) => { event.preventDefault(); void globalSettings.save(); }} noValidate sx={{ p: 3 }}>
-                <Stack spacing={3} sx={{ width: '100%' }}>
-                  <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
-                    Загальні
-                  </Typography>
-                  {globalSettings.loadError ? <PowerAlert severity="error">{globalSettings.loadError}</PowerAlert> : null}
-                  {globalSettings.saveError ? <PowerAlert severity="error">{globalSettings.saveError}</PowerAlert> : null}
-                  {globalSettings.saveSuccess ? (
-                    <PowerAlert severity="success" role="status">
-                      {globalSettings.saveSuccess}
-                    </PowerAlert>
-                  ) : null}
-
-                  <Box>
-                    <Autocomplete
-                      size="small"
-                      options={globalSettings.zoneOptions}
-                      value={globalSettings.selectedZone}
-                      onChange={(_, option) => {
-                        globalSettings.setZoneId(option?.id ?? null);
-                      }}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
-                      getOptionLabel={(option) => option.label}
-                      clearText="Очистити"
-                      noOptionsText="Немає варіантів"
-                      loading={globalSettings.loadInProgress}
-                      loadingText={`Завантаження${ELLIPSIS}`}
-                      renderOption={(props, option) => {
-                        const { key: _unusedKey, ...optionProps } = props;
-                        return (
-                          <Box component="li" {...optionProps} key={option.id}>
-                            {option.label}
-                          </Box>
-                        );
-                      }}
-                      sx={{
-                        width: { xs: '100%', sm: '420px' },
-                        maxWidth: '100%',
-                        '& .MuiOutlinedInput-root': {
-                          backgroundColor: 'var(--bs-body-bg)',
-                        },
-                        '& .MuiAutocomplete-clearIndicator': {
-                          visibility: 'visible',
-                          opacity: 1,
-                        },
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          id="settings-zone"
-                          name="settings-zone"
-                          label="РЕР-напрямок"
-                          placeholder="Оберіть зону"
-                          helperText="Оберіть зону РЕР-напрямку для вашого облікового запису"
-                        />
-                      )}
-                    />
-                  </Box>
-
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: { xs: 'flex-start', sm: 'center' },
-                      justifyContent: 'space-between',
-                      gap: 2,
-                      flexWrap: 'wrap',
-                      pt: 2,
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary">
-                      Версія: {globalSettings.versionText}
-                    </Typography>
-                    <PowerButton
-                      variant="contained"
-                      type="submit"
-                      disabled={globalSettings.saveInProgress || !globalSettings.isDirty}
-                      startIcon={globalSettings.saveInProgress ? <CircularProgress size={18} /> : undefined}
-                      sx={{ fontWeight: 500 }}
-                    >
-                      зберегти
-                    </PowerButton>
-                  </Box>
-                </Stack>
-              </Box>
-            </Box>
-          ) : null}
 
           {settingsSection === 'myGroups' ? (
             <SettingsMyGroupsSection
