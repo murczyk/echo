@@ -22,7 +22,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Echo Swapp</title>
+  <title>MESSENGERS</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-zinc-950 text-zinc-100">
@@ -31,9 +31,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <div>
         <div class="flex items-center gap-3">
           <img src="echo-logo.svg" alt="ECHO" class="h-8 w-auto shrink-0" />
-          <h1 class="text-2xl font-semibold tracking-normal">Echo Swapp</h1>
+          <h1 class="text-2xl font-semibold tracking-normal">MESSENGERS</h1>
         </div>
-        <p class="mt-1 text-sm text-zinc-400">Адаптери API для Signal і WhatsApp</p>
       </div>
       <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Оновити</button>
     </header>
@@ -78,7 +77,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <div class="grid gap-4 p-4 text-center">
       <div id="qrBox" class="grid min-h-72 place-items-center rounded-md bg-white p-4 text-zinc-950">Завантаження...</div>
       <p id="qrStatus" class="text-sm text-zinc-400">Очікування підключення...</p>
-      <button id="closeQr" class="h-10 rounded-md border border-zinc-700 px-4 text-sm hover:bg-zinc-900">Закрити</button>
+      <div class="flex justify-center gap-2">
+        <button id="refreshQr" class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Оновити QR" title="Оновити QR"></button>
+        <button id="closeQr" class="h-10 rounded-md border border-zinc-700 px-4 text-sm hover:bg-zinc-900">Закрити</button>
+      </div>
     </div>
   </dialog>
 
@@ -89,7 +91,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
     const qrStatus = document.getElementById('qrStatus');
+    const refreshQr = document.getElementById('refreshQr');
     let pollTimer = null;
+    let currentQrName = null;
 
     function appBasePath() {
       const path = window.location.pathname;
@@ -144,6 +148,17 @@ const INDEX_HTML: &str = r#"<!doctype html>
       return `
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 6 9 17l-5-5"></path>
+        </svg>
+      `;
+    }
+
+    function refreshIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+          <path d="M3 21v-5h5"></path>
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+          <path d="M16 8h5V3"></path>
         </svg>
       `;
     }
@@ -226,11 +241,17 @@ const INDEX_HTML: &str = r#"<!doctype html>
     });
 
     async function openQr(name) {
-      clearInterval(pollTimer);
+      currentQrName = name;
       qrTitle.textContent = `Підключення ${name}`;
+      qrDialog.showModal();
+      await loadQr(name);
+    }
+
+    async function loadQr(name) {
+      clearInterval(pollTimer);
       qrBox.textContent = 'Завантаження...';
       qrStatus.textContent = 'Очікування підключення...';
-      qrDialog.showModal();
+      refreshQr.disabled = true;
       try {
         const rsp = await request(appUrl(`/ui-api/messengers/${name}/link`), { method: 'POST' });
         qrBox.innerHTML = `<img class="max-h-72 max-w-full" src="${rsp.qrCodeBase64}" alt="QR code" />`;
@@ -245,8 +266,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
       } catch (err) {
         qrBox.textContent = err.message;
         qrStatus.textContent = 'Не вдалося підключити';
+      } finally {
+        refreshQr.disabled = false;
       }
     }
+
+    refreshQr.innerHTML = refreshIcon();
+    refreshQr.addEventListener('click', () => {
+      if (currentQrName) loadQr(currentQrName);
+    });
 
     document.getElementById('closeQr').addEventListener('click', () => {
       clearInterval(pollTimer);

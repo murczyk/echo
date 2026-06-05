@@ -12,8 +12,8 @@ use regex::Regex;
 use std::time::Duration;
 
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter,
-    QuerySelect, RelationTrait, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, JoinType,
+    QueryFilter, QuerySelect, RelationTrait, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -187,6 +187,7 @@ pub async fn is_linked(
     let is_linked =
         echo_im::is_client_logged_in(name, kind.message_source(), &txn).await?;
     txn.commit().await?;
+    persist_is_linked(db, name, kind, is_linked).await?;
     Ok(is_linked)
 }
 
@@ -375,6 +376,24 @@ async fn load_account(
         .one(db)
         .await?;
     Ok(account)
+}
+
+async fn persist_is_linked(
+    db: &DatabaseConnection,
+    name: &str,
+    kind: MessengerKind,
+    is_linked: bool,
+) -> Result<()> {
+    let Some(account) = load_account(db, name, kind).await? else {
+        return Ok(());
+    };
+    if account.is_linked == is_linked {
+        return Ok(());
+    }
+    let mut account: echo_account::ActiveModel = account.into();
+    account.is_linked = Set(is_linked);
+    account.update(db).await?;
+    Ok(())
 }
 
 async fn wait_for_signal_client(kind: MessengerKind, port: i32) -> Result<()> {
