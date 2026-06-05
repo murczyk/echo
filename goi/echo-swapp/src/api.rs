@@ -9,6 +9,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_messengers)
         .service(create_messenger)
         .service(link_messenger)
+        .service(unlink_messenger)
         .service(messenger_status)
         .service(delete_messenger)
         .service(whatsapp_qrcode)
@@ -50,6 +51,17 @@ async fn link_messenger(
         .await
         .map_err(error)?;
     Ok(web::Json(rsp))
+}
+
+#[post("/ui-api/messengers/{name}/unlink")]
+async fn unlink_messenger(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> actix_web::Result<impl Responder> {
+    messenger::unlink(&state.db, &path.into_inner())
+        .await
+        .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
 
 #[get("/ui-api/messengers/{name}/status")]

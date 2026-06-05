@@ -189,7 +189,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <p class="mt-1 text-sm text-zinc-400">${item.phone || ''}</p>
           </div>
           <div class="flex gap-2">
-            <button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>
+            ${item.isLinked
+              ? `<button data-unlink="${item.name}" class="h-9 rounded-md border border-red-700 px-3 text-sm text-red-400 hover:bg-red-950/40">Відключити</button>`
+              : `<button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>`}
             <button data-copy="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 text-zinc-950 hover:bg-white" type="button" aria-label="Скопіювати URL API" title="Скопіювати URL API">${copyIcon()}</button>
             <button data-delete="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити месенджер" title="Видалити месенджер">${deleteIcon()}</button>
           </div>
@@ -224,6 +226,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       if (!button) return;
 
       const linkName = button.dataset.link;
+      const unlinkName = button.dataset.unlink;
       const copyName = button.dataset.copy;
       const deleteName = button.dataset.delete;
 
@@ -235,6 +238,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
       if (deleteName) {
         if (!confirm(`Видалити месенджер ${deleteName}?`)) return;
         await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
+        await load();
+      }
+      if (unlinkName) {
+        if (!confirm(`Відключити месенджер ${unlinkName}?`)) return;
+        await request(appUrl(`/ui-api/messengers/${unlinkName}/unlink`), { method: 'POST' });
         await load();
       }
       if (linkName) openQr(linkName);

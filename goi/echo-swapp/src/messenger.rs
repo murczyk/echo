@@ -178,6 +178,30 @@ pub async fn link(
     Ok(QrRsp { qr_code_base64 })
 }
 
+pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
+    let messenger = load(db, name).await?;
+    let phone = messenger
+        .phone
+        .clone()
+        .with_context(|| format!("phone not found for messenger: {name}"))?;
+    let txn = db.begin().await?;
+    echo_im::unlink_account(name, messenger.kind.message_source(), &txn)
+        .await
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    echo_im::set_account_phone(
+        phone,
+        name,
+        messenger.kind.message_source(),
+        true,
+        &txn,
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    txn.commit().await?;
+    persist_is_linked(db, name, messenger.kind, false).await?;
+    Ok(())
+}
+
 pub async fn is_linked(
     db: &DatabaseConnection,
     name: &str,
