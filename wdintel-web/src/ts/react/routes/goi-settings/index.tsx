@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  Link,
   Stack,
   Table,
   TableBody,
@@ -25,6 +26,8 @@ import {
   restartCurrentUserGoiService,
   unlinkCurrentUserGoiWhatsapp,
 } from '../../services/api/goi-settings';
+
+const ECHO_MESSENGERS_DOC_URL = '/docs/#goi-messengers';
 
 type ActionStatus = {
   kind: 'success' | 'error';
@@ -92,6 +95,7 @@ type ServiceTableRowProps = {
   openLabel: string;
   url: string | null;
   unavailableLabel: string;
+  docsUrl?: string;
   restartService: GoiRestartService;
   unlinkService?: GoiWhatsappService;
   pendingKey: string | null;
@@ -111,8 +115,20 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 
   return (
     <TableRow>
-      <TableCell sx={{ width: 170, fontWeight: 600, whiteSpace: 'nowrap' }}>
-        {props.label}
+      <TableCell sx={{ width: 170, whiteSpace: 'nowrap' }}>
+        <Stack spacing={0.25}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {props.label}
+          </Typography>
+          {props.docsUrl ? (
+            <Typography variant="caption" color="text.secondary">
+              детальніше{' '}
+              <Link href={props.docsUrl} target="_blank" rel="noopener noreferrer">
+                тут
+              </Link>
+            </Typography>
+          ) : null}
+        </Stack>
       </TableCell>
       <TableCell>
         {url ? (
@@ -214,6 +230,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                   openLabel="Відкрити Месенджери"
                   url={integrationEchoSwappUrl}
                   unavailableLabel="URL Месенджерів не вказано"
+                  docsUrl={ECHO_MESSENGERS_DOC_URL}
                   restartService="echo_swapp"
                   pendingKey={props.pendingKey}
                   restartPendingKey={echoSwappKey}
