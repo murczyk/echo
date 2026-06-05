@@ -1,13 +1,38 @@
-import { Box, CircularProgress, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { useEffect, useMemo } from 'react';
 
-import type { MyAdminSignalGroup } from '../../../../Bindings';
+import type { MyAdminSignalGroup, SignalGroupLogin } from '../../../../Bindings';
 import { ELLIPSIS } from '../../utils/misc';
 import { PowerAlert } from '../../components/PowerAlert';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  getPageScrollTableContainerSx,
+} from '../../components/mui-customized/table/custom-styles';
+import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../components/mui-customized/table/get-default-table-options';
+import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
-function formatOptionalText(value: string | null | undefined): string {
-  if (!value || !value.trim()) return '—';
-  return value;
-}
+const DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY = {
+  name: true,
+  aors: true,
+  admins: true,
+  privacy: true,
+  allowedUsers: true,
+};
+
+const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'name',
+  'aors',
+  'admins',
+  'privacy',
+  'allowedUsers',
+];
+
+const defaultMyGroupsMRTOptions = getDefaultMRTOptions<MyAdminSignalGroup>();
 
 function formatAors(group: MyAdminSignalGroup): string {
   const aors = group.areasOfResponsibility ?? [];
@@ -15,10 +40,156 @@ function formatAors(group: MyAdminSignalGroup): string {
   return aors.map((aor) => aor.name).join(', ');
 }
 
+function formatGroupLogin(login: SignalGroupLogin): string {
+  if (!login.deltaLogin || login.login.toLocaleLowerCase() === login.deltaLogin.toLocaleLowerCase()) {
+    return login.login;
+  }
+  return `${login.login} (${login.deltaLogin})`;
+}
+
+function formatGroupLogins(logins: SignalGroupLogin[]): string {
+  if (logins.length === 0) return '—';
+  return logins.map(formatGroupLogin).join(', ');
+}
+
 function formatAllowedUsers(group: MyAdminSignalGroup): string {
   if (!group.isGroupSecret) return 'без обмежень';
-  if (group.allowedUsers.length === 0) return '—';
-  return group.allowedUsers.join(', ');
+  return formatGroupLogins(group.allowedUsers);
+}
+
+function buildMyGroupLoadingRows(): MyAdminSignalGroup[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    masterKey: `loading-${index}`,
+    name: '',
+    datasourceName: null,
+    datasourceKind: null,
+    isGroupSecret: false,
+    allowedUsers: [],
+    adminLogins: [],
+    areasOfResponsibility: null,
+  }));
+}
+
+function useMyGroupsColumns() {
+  return useMemo<MRT_ColumnDef<MyAdminSignalGroup>[]>(
+    () => [
+      {
+        header: 'Група',
+        id: 'name',
+        accessorFn: (row) => row.name || row.masterKey.slice(-5),
+        size: 240,
+      },
+      {
+        header: 'Смуги',
+        id: 'aors',
+        accessorFn: formatAors,
+        enableSorting: false,
+        size: 240,
+      },
+      {
+        header: 'Адміни',
+        id: 'admins',
+        accessorFn: (row) => formatGroupLogins(row.adminLogins),
+        enableSorting: false,
+        size: 260,
+      },
+      {
+        header: 'Приватність',
+        id: 'privacy',
+        accessorFn: (row) => (row.isGroupSecret ? 'приватна' : 'публічна'),
+        size: 140,
+      },
+      {
+        header: 'Логіни приватної групи',
+        id: 'allowedUsers',
+        accessorFn: formatAllowedUsers,
+        enableSorting: false,
+        size: 300,
+      },
+    ],
+    [],
+  );
+}
+
+function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: boolean }) {
+  const columns = useMyGroupsColumns();
+  const tableStateContext = useTableStateContext();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+
+  const table = useMaterialReactTable({
+    columns,
+    data: props.loading ? buildMyGroupLoadingRows() : props.groups,
+    ...defaultMyGroupsMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowVirtualization: false,
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: {
+      size: 200,
+      renderColumnActionsMenuItems,
+    },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: {
+            justifyContent: 'center',
+            ...CUSTOM_CELL_STYLES,
+          },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...getPageScrollTableContainerSx({ loading: props.loading, idleOverflow: 'auto' }),
+      },
+    },
+    state: {
+      showAlertBanner: false,
+      showLoadingOverlay: false,
+      showSkeletons: props.loading,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing: tableStateContext.columnSizing,
+    },
+  });
+
+  useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table]);
+
+  return <MaterialReactTable table={table} />;
 }
 
 export type SettingsMyGroupsSectionProps = {
@@ -58,37 +229,16 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
           ) : null}
 
           {status === 'success' && hasGroups ? (
-            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 2 }}>
-              <Table
-                size="small"
-                sx={{
-                  '& .MuiTableBody-root .MuiTableRow-root:last-of-type .MuiTableCell-root': {
-                    borderBottom: 0,
-                  },
-                }}
-              >
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Група</TableCell>
-                    <TableCell>Джерело</TableCell>
-                    <TableCell>Смуги</TableCell>
-                    <TableCell>Приватність</TableCell>
-                    <TableCell>Логіни приватної групи</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {groups.map((group) => (
-                    <TableRow key={group.masterKey}>
-                      <TableCell>{group.name || group.masterKey.slice(-5)}</TableCell>
-                      <TableCell>{formatOptionalText(group.datasourceName ?? group.datasourceKind)}</TableCell>
-                      <TableCell>{formatAors(group)}</TableCell>
-                      <TableCell>{group.isGroupSecret ? 'приватна' : 'публічна'}</TableCell>
-                      <TableCell>{formatAllowedUsers(group)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <TableStateProvider
+              tableId="settings-neo-my-groups"
+              defaultColumnOrder={DEFAULT_MY_GROUPS_COLUMN_ORDER}
+              defaultColumnVisibility={DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY}
+              defaultEnableColumnOrdering={false}
+            >
+              <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+                <SettingsMyGroupsTable groups={groups} loading={false} />
+              </Box>
+            </TableStateProvider>
           ) : null}
 
           {status === 'success' && !hasGroups ? (

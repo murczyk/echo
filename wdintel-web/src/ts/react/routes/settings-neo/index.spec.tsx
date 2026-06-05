@@ -59,6 +59,63 @@ vi.mock('../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('material-react-table', () => ({
+  useMaterialReactTable: (config: any) => config,
+  MaterialReactTable: ({ table }: { table: any }) => (
+    <div>
+      {table.columns.map((column: any) => (
+        <span key={column.id ?? column.accessorKey}>{column.header}</span>
+      ))}
+      {table.data.map((row: any) => (
+        <div key={row.masterKey}>
+          {table.columns.map((column: any) => (
+            <span key={column.id ?? column.accessorKey}>{String(column.accessorFn ? column.accessorFn(row) : row[column.accessorKey] ?? '')}</span>
+          ))}
+        </div>
+      ))}
+    </div>
+  ),
+}));
+
+vi.mock('../../components/mui-customized/table/custom-styles', () => ({
+  CUSTOM_CELL_STYLES: {},
+  CUSTOM_STYLES: {
+    displayColumnDefOptions: { 'mrt-row-numbers': {} },
+    muiTableContainerProps: {},
+    muiTablePaperProps: {},
+  },
+  FULL_HEIGHT_LOADING_ROW_COUNT: 2,
+  FULL_WIDTH_TABLE_PAPER_SX: {},
+  getPageScrollTableContainerSx: () => ({}),
+}));
+
+vi.mock('../../components/mui-customized/table/get-default-table-options', () => ({
+  getDefaultMRTOptions: () => ({}),
+  renderColumnActionsMenuItems: () => [],
+}));
+
+vi.mock('../../components/mui-customized/table/table-state-provider', () => ({
+  TableStateProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  useTableStateContext: () => ({
+    enableColumnOrdering: false,
+    enableColumnResizing: true,
+    globalFilter: '',
+    columnVisibility: {},
+    columnFilters: [],
+    density: 'compact',
+    sorting: [],
+    columnOrder: [],
+    columnSizing: {},
+    onColumnVisibilityChange: vi.fn(),
+    onColumnFiltersChange: vi.fn(),
+    onColumnOrderChange: vi.fn(),
+    onColumnSizingChange: vi.fn(),
+    onSortingChange: vi.fn(),
+    onChangeGlobalFilter: vi.fn(),
+    onTableInitialized: vi.fn(),
+  }),
+}));
+
 vi.mock('../../services/api/client', () => ({
   isUnauthorizedError: () => false,
 }));
@@ -226,7 +283,7 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('renders general settings', async () => {
+  it('hides general settings and opens duty for the legacy general section', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="general" />);
     });
@@ -235,8 +292,8 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Загальні');
-    expect(container.textContent).toContain('Версія: 1.0.0');
+    expect(container.textContent).not.toContain('Загальні');
+    expect(container.textContent).toContain('change-layout');
   });
 
   it('does not show the my groups tab after an empty successful load', async () => {
@@ -248,9 +305,9 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).not.toContain('Мої групи');
-    expect(container.textContent).toContain('Версія: 1.0.0');
+    expect(container.textContent).toContain('change-layout');
   });
 
   it('shows the my groups tab when groups exist', async () => {
@@ -263,7 +320,7 @@ describe('SettingsNeoPage', () => {
           datasourceKind: 'signal',
           isGroupSecret: false,
           allowedUsers: [],
-          adminLogins: ['DeltaUser'],
+          adminLogins: [{ login: 'DeltaUser', deltaLogin: null }],
           areasOfResponsibility: null,
         },
       ],
@@ -277,9 +334,9 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).toContain('Мої групи');
-    expect(container.textContent).toContain('Версія: 1.0.0');
+    expect(container.textContent).toContain('change-layout');
     expect(container.textContent).not.toContain('Group 1');
   });
 
@@ -306,9 +363,12 @@ describe('SettingsNeoPage', () => {
           datasourceName: 'Source 1',
           datasourceKind: 'signal',
           isGroupSecret: true,
-          allowedUsers: ['user-a', 'user-b'],
-          adminLogins: ['DeltaUser'],
-          areasOfResponsibility: [{ name: 'AOR 1' }],
+          allowedUsers: [
+            { login: 'user-a', deltaLogin: 'DeltaUserA' },
+            { login: 'user-b', deltaLogin: 'USER-B' },
+          ],
+          adminLogins: [{ login: 'DeltaUser', deltaLogin: 'AdminDelta' }],
+          areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
         },
       ],
     });
@@ -323,10 +383,13 @@ describe('SettingsNeoPage', () => {
 
     expect(container.textContent).toContain('Мої групи');
     expect(container.textContent).toContain('Group 1');
-    expect(container.textContent).toContain('Source 1');
+    expect(container.textContent).not.toContain('Джерело');
+    expect(container.textContent).toContain('Адміни');
+    expect(container.textContent).not.toContain('Source 1');
     expect(container.textContent).toContain('AOR 1');
     expect(container.textContent).toContain('приватна');
-    expect(container.textContent).toContain('user-a, user-b');
+    expect(container.textContent).toContain('DeltaUser (AdminDelta)');
+    expect(container.textContent).toContain('user-a (DeltaUserA), user-b');
   });
 
   it('keeps required settings loaded when server info fails', async () => {

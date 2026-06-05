@@ -4327,14 +4327,28 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         ]
 
 
+type alias SignalGroupLogin =
+    { login : String
+    , deltaLogin : Maybe (String)
+    }
+
+
+signalGroupLoginEncoder : SignalGroupLogin -> Json.Encode.Value
+signalGroupLoginEncoder struct =
+    Json.Encode.object
+        [ ( "login", (Json.Encode.string) struct.login )
+        , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
+        ]
+
+
 type alias MyAdminSignalGroup =
     { masterKey : String
     , name : String
     , datasourceName : Maybe (String)
     , datasourceKind : Maybe (String)
     , isGroupSecret : Bool
-    , allowedUsers : List (String)
-    , adminLogins : List (String)
+    , allowedUsers : List (SignalGroupLogin)
+    , adminLogins : List (SignalGroupLogin)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
     }
 
@@ -4347,8 +4361,8 @@ myAdminSignalGroupEncoder struct =
         , ( "datasource_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.datasourceName )
         , ( "datasource_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.datasourceKind )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
-        , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
-        , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
+        , ( "allowed_users", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUsers )
+        , ( "admin_logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.adminLogins )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
         ]
 
@@ -10542,6 +10556,13 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
 
 
+signalGroupLoginDecoder : Json.Decode.Decoder SignalGroupLogin
+signalGroupLoginDecoder =
+    Json.Decode.succeed SignalGroupLogin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
+
+
 myAdminSignalGroupDecoder : Json.Decode.Decoder MyAdminSignalGroup
 myAdminSignalGroupDecoder =
     Json.Decode.succeed MyAdminSignalGroup
@@ -10550,8 +10571,8 @@ myAdminSignalGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_kind" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (signalGroupLoginDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
 
 

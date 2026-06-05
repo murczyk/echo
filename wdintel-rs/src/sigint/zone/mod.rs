@@ -321,6 +321,16 @@ pub async fn my_admin_groups(
     let datasource_map = collect_datasources(datasource_ids, &env.dbx)
         .await
         .c(h!())?;
+    let login_delta_map = collect_group_logins_delta(
+        group_admins
+            .values()
+            .chain(allowed_users.values())
+            .flat_map(|logins| logins.iter().cloned())
+            .collect(),
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
 
     let groups = groups
         .into_iter()
@@ -342,14 +352,14 @@ pub async fn my_admin_groups(
                 datasource_kind: datasource
                     .map(|datasource| datasource.kind.clone()),
                 areas_of_responsibility: group_aors.get(&master_key).cloned(),
-                allowed_users: allowed_users
-                    .get(&master_key)
-                    .cloned()
-                    .unwrap_or_default(),
-                admin_logins: group_admins
-                    .get(&master_key)
-                    .cloned()
-                    .unwrap_or_default(),
+                allowed_users: render_group_logins(
+                    allowed_users.get(&master_key).cloned().unwrap_or_default(),
+                    &login_delta_map,
+                ),
+                admin_logins: render_group_logins(
+                    group_admins.get(&master_key).cloned().unwrap_or_default(),
+                    &login_delta_map,
+                ),
                 master_key,
                 is_group_secret,
             }
@@ -357,6 +367,50 @@ pub async fn my_admin_groups(
         .collect();
 
     Ok(Json(MyAdminSignalGroupsRsp { groups }))
+}
+
+fn render_group_logins(
+    logins: Vec<String>,
+    login_delta_map: &HashMap<String, Option<String>>,
+) -> Vec<SignalGroupLogin> {
+    logins
+        .into_iter()
+        .map(|login| SignalGroupLogin {
+            delta_login: login_delta_map.get(&login).cloned().flatten(),
+            login,
+        })
+        .collect()
+}
+
+async fn collect_group_logins_delta<'a, 'async_trait, C>(
+    logins: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, Option<String>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if logins.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let logins = logins
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let rows = login::Entity::find()
+        .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
+        .filter(login::Column::Login.eq_any(logins))
+        .select_only()
+        .column(login::Column::Login)
+        .column_as(delta_login::Column::Login, "delta_login")
+        .into_tuple::<(String, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(rows.into_iter().collect())
 }
 
 async fn collect_secret_group_users<'a, 'async_trait, C>(

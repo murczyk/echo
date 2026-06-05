@@ -83,14 +83,22 @@ pub struct ZoneDatasourceGroupAddRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct SignalGroupLogin {
+    pub login: String,
+    pub delta_login: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MyAdminSignalGroup {
     pub master_key: String,
     pub name: String,
     pub datasource_name: Option<String>,
     pub datasource_kind: Option<String>,
     pub is_group_secret: bool,
-    pub allowed_users: Vec<String>,
-    pub admin_logins: Vec<String>,
+    pub allowed_users: Vec<SignalGroupLogin>,
+    pub admin_logins: Vec<SignalGroupLogin>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 

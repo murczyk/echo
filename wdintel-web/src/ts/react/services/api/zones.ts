@@ -4,6 +4,7 @@ import {
   Datasource,
   MyAdminSignalGroup,
   MyAdminSignalGroupsRsp,
+  SignalGroupLogin,
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupEntry,
@@ -128,6 +129,14 @@ type ZoneDatasourceGroupListRspLike = {
   zone_datasource_groups?: ZoneDatasourceGroupLike[] | null;
 };
 
+type SignalGroupLoginLike =
+  | string
+  | {
+      login?: string;
+      deltaLogin?: string | null;
+      delta_login?: string | null;
+    };
+
 type MyAdminSignalGroupLike = {
   masterKey?: string;
   master_key?: string;
@@ -138,10 +147,10 @@ type MyAdminSignalGroupLike = {
   datasource_kind?: string | null;
   isGroupSecret?: boolean;
   is_group_secret?: boolean;
-  allowedUsers?: string[] | null;
-  allowed_users?: string[] | null;
-  adminLogins?: string[] | null;
-  admin_logins?: string[] | null;
+  allowedUsers?: SignalGroupLoginLike[] | null;
+  allowed_users?: SignalGroupLoginLike[] | null;
+  adminLogins?: SignalGroupLoginLike[] | null;
+  admin_logins?: SignalGroupLoginLike[] | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
 };
@@ -394,6 +403,16 @@ function normalizeZoneDatasourceGroupAddRsp(raw: ZoneDatasourceGroupAddRspLike):
   };
 }
 
+function normalizeSignalGroupLogin(raw: SignalGroupLoginLike): SignalGroupLogin {
+  if (typeof raw === 'string') {
+    return { login: raw, deltaLogin: null };
+  }
+  return {
+    login: raw.login ?? '',
+    deltaLogin: raw.deltaLogin ?? raw.delta_login ?? null,
+  };
+}
+
 function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignalGroup {
   return {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
@@ -401,8 +420,8 @@ function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignal
     datasourceName: raw.datasourceName ?? raw.datasource_name ?? null,
     datasourceKind: raw.datasourceKind ?? raw.datasource_kind ?? null,
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
-    allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
-    adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
+    allowedUsers: (raw.allowedUsers ?? raw.allowed_users ?? []).map(normalizeSignalGroupLogin),
+    adminLogins: (raw.adminLogins ?? raw.admin_logins ?? []).map(normalizeSignalGroupLogin),
     areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }

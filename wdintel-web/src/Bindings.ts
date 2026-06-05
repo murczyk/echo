@@ -1655,14 +1655,19 @@ export type ZoneDatasourceGroupUpdateReq = {
   areaOfResponsibilityIds: Array<number> | null;
 };
 
+export type SignalGroupLogin = {
+  login: string;
+  deltaLogin: string | null;
+};
+
 export type MyAdminSignalGroup = {
   masterKey: string;
   name: string;
   datasourceName: string | null;
   datasourceKind: string | null;
   isGroupSecret: boolean;
-  allowedUsers: Array<string>;
-  adminLogins: Array<string>;
+  allowedUsers: Array<SignalGroupLogin>;
+  adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
 };
 
