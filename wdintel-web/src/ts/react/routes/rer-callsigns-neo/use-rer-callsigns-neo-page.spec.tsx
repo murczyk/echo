@@ -31,7 +31,11 @@ vi.mock('./use-rer-callsigns-neo-page.load', () => ({
     if (!loadMockState.loaded) {
       loadMockState.loaded = true;
       setUser({ roles: ['Rer', 'CallsignsEditor'] } as User);
-      setUnits([{ id: 1, name: '11 АК' } as Unit]);
+      setUnits([
+        { id: 1, name: '11 АК' } as Unit,
+        { id: 2, name: ' 11 АК ' } as Unit,
+        { id: 3, name: '' } as Unit,
+      ]);
       setSources([{ id: 1, name: 'РО' } as Source]);
       setCallsigns([
         {
@@ -95,6 +99,12 @@ afterEach(() => {
 });
 
 describe('useRerCallsignsNeoPage duplicate hints', () => {
+  it('exposes selectable units without blank-name entries', () => {
+    const page = renderHookHarness();
+
+    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК' }]);
+  });
+
   it('calculates duplicate hints immediately after quick paste', () => {
     const page = renderHookHarness();
 
@@ -103,7 +113,7 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
     });
 
     act(() => {
-      latestPage?.onApplyPastedRows('ЛЕСНОЙ\tКомандир\tІваненко Іван Іванович\tновий коментар');
+      latestPage?.onApplyPastedRows('ЛЕСНОЙ\tНачальник\tІваненко Іван Іванович\tновий коментар');
     });
 
     expect(latestPage?.addPotentialDuplicateGroups).toEqual([

@@ -24,6 +24,7 @@ import {
 } from './use-rer-callsigns-neo-page.shared';
 import { useRerCallsignsNeoPageActions } from './use-rer-callsigns-neo-page.actions';
 import { useRerCallsignsNeoPageLoad } from './use-rer-callsigns-neo-page.load';
+import { buildSelectableUnitOptions } from '../../utils/unit-search';
 import type {
   CallsignDraftRow,
   CallsignEditForm,
@@ -79,6 +80,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   const unitsById = useMemo(() => createUnitsById(units), [units]);
   const sourcesById = useMemo(() => createSourcesById(sources), [sources]);
+  const selectableUnits = useMemo(() => buildSelectableUnitOptions(units), [units]);
   const permissions = useMemo(() => {
     const apiPermissions = getExportPermission(user);
     const shellPermissions = getExportPermissionFromRoles(authUserRoles);
@@ -242,6 +244,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     user,
     permissions,
     units,
+    selectableUnits,
     sources,
     rows,
     sort,
