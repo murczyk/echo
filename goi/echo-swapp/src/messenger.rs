@@ -288,6 +288,7 @@ pub async fn send(
         bail!("message or attachment is required");
     }
     let txn = db.begin().await?;
+    let should_tick_after_send = kind == MessengerKind::Signal;
     echo_im::send_message(
         SendMessageReq {
             text,
@@ -305,6 +306,9 @@ pub async fn send(
     )
     .await?;
     txn.commit().await?;
+    if should_tick_after_send {
+        echo_im::worker::signal_worker_tick_once(name, db).await?;
+    }
     Ok(())
 }
 

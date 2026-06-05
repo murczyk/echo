@@ -18,10 +18,18 @@ server {
         server_name _;
 
         location = /messengers {
-            return 302 /messengers/;
+            return 302 /echo-im/;
         }
 
         location /messengers/ {
+            return 302 /echo-im/;
+        }
+
+        location = /echo-im {
+            return 302 /echo-im/;
+        }
+
+        location /echo-im/ {
             proxy_pass http://127.0.0.1:4010/;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;

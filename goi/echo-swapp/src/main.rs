@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod messenger;
 mod ui;
+mod worker;
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use anyhow::Result;
@@ -21,6 +22,7 @@ async fn main() -> Result<()> {
     let config = config::read_config()?;
     let db = db::connect(&config).await?;
     echo_im::run_migration(&db).await?;
+    worker::spawn_workers(db.clone());
     let state = web::Data::new(AppState {
         config: config.clone(),
         db,

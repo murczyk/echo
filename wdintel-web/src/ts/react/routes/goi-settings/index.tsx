@@ -69,7 +69,7 @@ function echoSwappUrl(goiUrl: string | null): string | null {
 
   try {
     const url = new URL(goiUrl);
-    url.pathname = '/messengers/';
+    url.pathname = '/echo-im/';
     url.search = '';
     url.hash = '';
     return url.toString();
