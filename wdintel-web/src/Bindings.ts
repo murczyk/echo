@@ -2510,15 +2510,40 @@ export type NetworkCallsignRelationsReq = {
   tillDateNoninclusiveMs: number;
 };
 
+export type NetworkCallsignRelationMessagesReq = {
+  networkId: number;
+  sinceDateInclusiveMs: number;
+  tillDateNoninclusiveMs: number;
+  callsign: string | null;
+  source: string | null;
+  target: string | null;
+  freqs: Array<string>;
+  limit: number;
+};
+
 export type NetworkCallsignRelationNode = {
   id: string;
   label: string;
   weight: number;
   relationCount: number;
   activityCount: number;
+  mainRadioStation: boolean;
+  commandControl: boolean;
   position: string | null;
   unitName: string | null;
   knownCallsignId: number | null;
+};
+
+export type NetworkCallsignRelationMessage = {
+  id: number;
+  timestamp: number | null;
+  freq: string | null;
+  text: string;
+  callsigns: Array<string>;
+};
+
+export type NetworkCallsignRelationMessagesRsp = {
+  messages: Array<NetworkCallsignRelationMessage>;
 };
 
 export type NetworkCallsignRelationEdgeFreq = {

@@ -21,6 +21,8 @@ import type {
   SingleNetworkCallsignsListRsp,
   NetworkCallsignRelationsReq,
   NetworkCallsignRelationsRsp,
+  NetworkCallsignRelationMessagesReq,
+  NetworkCallsignRelationMessagesRsp,
   UpdateNetworkDescriptionReq,
   UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
@@ -30,6 +32,10 @@ import type {
 } from '../../../../Bindings';
 import { postBytes, postJson } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
+
+type RequestOptions = {
+  signal?: AbortSignal;
+};
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
 export async function getNetworksList(): Promise<Network[]> {
@@ -113,9 +119,20 @@ export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<st
   return normalized.callsigns ?? [];
 }
 
-export async function getNetworkCallsignRelations(req: NetworkCallsignRelationsReq): Promise<NetworkCallsignRelationsRsp> {
-  const data = await postJson<NetworkCallsignRelationsRsp>('/api/sigint/network-callsigns/relations', transformCamelToSnake(req));
+export async function getNetworkCallsignRelations(
+  req: NetworkCallsignRelationsReq,
+  options?: RequestOptions,
+): Promise<NetworkCallsignRelationsRsp> {
+  const data = await postJson<NetworkCallsignRelationsRsp>('/api/sigint/network-callsigns/relations', transformCamelToSnake(req), options);
   return transformSnakeToCamel<NetworkCallsignRelationsRsp>(data);
+}
+
+export async function getNetworkCallsignRelationMessages(
+  req: NetworkCallsignRelationMessagesReq,
+  options?: RequestOptions,
+): Promise<NetworkCallsignRelationMessagesRsp> {
+  const data = await postJson<NetworkCallsignRelationMessagesRsp>('/api/sigint/network-callsigns/relations/messages', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<NetworkCallsignRelationMessagesRsp>(data);
 }
 
 export async function addFreqToNetwork(req: AddNetworkFreqReq): Promise<Network> {

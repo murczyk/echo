@@ -3,6 +3,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import { Box, Button, CircularProgress, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
 
 import { ELLIPSIS } from '../../../utils/misc';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
@@ -29,7 +30,11 @@ type Props = {
   selectedEdgeId: string | null;
   selectedNode: NetworkCallsignRelationsNodeView | null;
   selectedEdge: NetworkCallsignRelationsEdgeView | null;
+  drilldownNode: NetworkCallsignRelationsNodeView | null;
   selectedNodeEdges: NetworkCallsignRelationsEdgeView[];
+  selectedMessages: NetworkCallsignRelationMessage[];
+  selectedMessagesLoading: boolean;
+  selectedMessagesError: string | null;
   selectedNeighborIds: Set<string>;
   visibleEdgeIdsForRender: Set<string>;
   visibleNodeIdsForRender: Set<string>;
@@ -47,6 +52,8 @@ type Props = {
   onMinIntensityChange: (value: number) => void;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
+  onOpenNodeEdgeId: (edgeId: string) => void;
+  onBackToNode: () => void;
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
@@ -77,7 +84,11 @@ export function NetworkCallsignRelationsGraphStage({
   selectedEdgeId,
   selectedNode,
   selectedEdge,
+  drilldownNode,
   selectedNodeEdges,
+  selectedMessages,
+  selectedMessagesLoading,
+  selectedMessagesError,
   selectedNeighborIds,
   visibleEdgeIdsForRender,
   visibleNodeIdsForRender,
@@ -95,6 +106,8 @@ export function NetworkCallsignRelationsGraphStage({
   onMinIntensityChange,
   onSelectNodeId,
   onSelectEdgeId,
+  onOpenNodeEdgeId,
+  onBackToNode,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -342,10 +355,16 @@ export function NetworkCallsignRelationsGraphStage({
           <NetworkCallsignRelationsGraphDetails
             selectedNode={selectedNode}
             selectedEdge={selectedEdge}
+            drilldownNode={drilldownNode}
             selectedNodeEdges={selectedNodeEdges}
+            selectedMessages={selectedMessages}
+            selectedMessagesLoading={selectedMessagesLoading}
+            selectedMessagesError={selectedMessagesError}
             selectedEdgeId={selectedEdgeId}
+            onBackToNode={onBackToNode}
             onSelectNodeId={onSelectNodeId}
             onSelectEdgeId={onSelectEdgeId}
+            onOpenNodeEdgeId={onOpenNodeEdgeId}
           />
 
           <NetworkCallsignRelationsGraphCanvas

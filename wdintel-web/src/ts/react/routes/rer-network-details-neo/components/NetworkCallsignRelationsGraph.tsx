@@ -7,11 +7,13 @@ import dayjs from 'dayjs';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
-import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
-import { APP_DATETIME_INPUT_MIN } from '../../../utils/misc';
+import type { NetworkCallsignRelationMessage, NetworkCallsignRelationsRsp } from '../../../../../Bindings';
+import { APP_DATETIME_INPUT_MIN, parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../../utils/misc';
+import { formatErrorMessage } from '../use-rer-network-details-neo-page.helpers';
 import { NetworkDatePickerField } from './NetworkDatePickerField';
 import { NetworkCallsignRelationsGraphFilters } from './NetworkCallsignRelationsGraphFilters';
 import { NetworkCallsignRelationsGraphStage } from './NetworkCallsignRelationsGraphStage';
+import { getNetworkCallsignRelationMessages } from '../../../services/api/networks';
 import {
   buildRelationNeighborIds,
   buildNetworkCallsignRelationsGraphView,
@@ -37,6 +39,7 @@ type Props = {
   relationsSelectedEdgeId: string | null;
   relationsSince: string;
   relationsTill: string;
+  networkId: number | null;
   relationsLoading: boolean;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
@@ -61,6 +64,7 @@ export function NetworkCallsignRelationsGraph({
   relationsSelectedEdgeId,
   relationsSince,
   relationsTill,
+  networkId,
   relationsLoading,
   onSearchChange,
   onEnabledFreqsChange,
@@ -79,6 +83,10 @@ export function NetworkCallsignRelationsGraph({
   const labelsAutoDisabledRef = useRef(false);
   const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null);
   const [viewBox, setViewBox] = useState<RelationGraphViewBox>({ x: -450, y: -450, width: 900, height: 900 });
+  const [selectedMessages, setSelectedMessages] = useState<NetworkCallsignRelationMessage[]>([]);
+  const [selectedMessagesLoading, setSelectedMessagesLoading] = useState(false);
+  const [selectedMessagesError, setSelectedMessagesError] = useState<string | null>(null);
+  const [edgeDrilldownNodeId, setEdgeDrilldownNodeId] = useState<string | null>(null);
 
   const graphView = useMemo(
     () => buildNetworkCallsignRelationsGraphView(relations, relationsSearch, relationsEnabledFreqs, relationsMinIntensity),
@@ -102,6 +110,10 @@ export function NetworkCallsignRelationsGraph({
     () => renderGraphView.nodes.find((node) => node.id === relationsSelectedNodeId) ?? null,
     [renderGraphView.nodes, relationsSelectedNodeId],
   );
+  const drilldownNode = useMemo(
+    () => (relationsSelectedEdgeId !== null && edgeDrilldownNodeId !== null ? graphView.nodes.find((node) => node.id === edgeDrilldownNodeId) ?? null : null),
+    [edgeDrilldownNodeId, graphView.nodes, relationsSelectedEdgeId],
+  );
   const selectedEdge = useMemo(
     () => renderGraphView.edges.find((edge) => edge.id === relationsSelectedEdgeId) ?? null,
     [renderGraphView.edges, relationsSelectedEdgeId],
@@ -110,6 +122,15 @@ export function NetworkCallsignRelationsGraph({
     () => renderGraphView.edges.filter((edge) => edge.source === relationsSelectedNodeId || edge.target === relationsSelectedNodeId),
     [renderGraphView.edges, relationsSelectedNodeId],
   );
+  const selectedMessageSelection = useMemo(() => {
+    if (relationsSelectedNodeId !== null && selectedNode !== null) {
+      return { callsign: selectedNode.id, source: null, target: null };
+    }
+    if (relationsSelectedEdgeId !== null && selectedEdge !== null) {
+      return { callsign: null, source: selectedEdge.source, target: selectedEdge.target };
+    }
+    return null;
+  }, [relationsSelectedEdgeId, relationsSelectedNodeId, selectedEdge?.source, selectedEdge?.target, selectedNode?.id]);
   const selectedNeighborIds = useMemo(() => {
     if (selectedNode) {
       const ids = new Set<string>([selectedNode.id]);
@@ -154,6 +175,62 @@ export function NetworkCallsignRelationsGraph({
     const parsed = dayjs(relationsSince);
     return parsed.isValid() ? parsed.startOf('day') : relationsDateMin;
   }, [relationsSince, relationsDateMin]);
+
+  useEffect(() => {
+    const selection = selectedMessageSelection;
+    const sinceDateInclusiveMs = parseDateInputInTimeZone(relationsSince);
+    const tillDateNoninclusiveMs = parseDateInputExclusiveEndInTimeZone(relationsTill);
+
+    if (networkId === null || selection === null || sinceDateInclusiveMs === null || tillDateNoninclusiveMs === null) {
+      setSelectedMessages([]);
+      setSelectedMessagesLoading(false);
+      setSelectedMessagesError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSelectedMessages([]);
+    setSelectedMessagesLoading(true);
+    setSelectedMessagesError(null);
+
+    void (async () => {
+      try {
+        const response = await getNetworkCallsignRelationMessages(
+          {
+            networkId,
+            sinceDateInclusiveMs,
+            tillDateNoninclusiveMs,
+            callsign: selection.callsign,
+            source: selection.source,
+            target: selection.target,
+            freqs: relationsEnabledFreqs,
+            limit: 24,
+          },
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        setSelectedMessages(response.messages ?? []);
+        setSelectedMessagesLoading(false);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setSelectedMessages([]);
+        setSelectedMessagesLoading(false);
+        setSelectedMessagesError(formatErrorMessage(error));
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    networkId,
+    relationsEnabledFreqs,
+    relationsSince,
+    relationsTill,
+    selectedMessageSelection?.callsign,
+    selectedMessageSelection?.source,
+    selectedMessageSelection?.target,
+  ]);
   const visibleEdgeIdsForRender = useMemo(() => {
     if (!hasRenderableGraph) return new Set<string>();
     const ids = new Set<string>();
@@ -225,6 +302,33 @@ export function NetworkCallsignRelationsGraph({
   const handleFilterToggle = (freq: string, checked: boolean) => {
     const nextFreqs = checked ? [...new Set([...relationsEnabledFreqs, freq])] : relationsEnabledFreqs.filter((item) => item !== freq);
     onEnabledFreqsChange(nextFreqs);
+  };
+
+  const handleSelectNodeId = (nodeId: string | null) => {
+    setEdgeDrilldownNodeId(null);
+    onSelectNodeId(nodeId);
+  };
+
+  const handleSelectEdgeId = (edgeId: string | null) => {
+    setEdgeDrilldownNodeId(null);
+    onSelectEdgeId(edgeId);
+  };
+
+  const handleOpenNodeEdgeId = (edgeId: string) => {
+    if (selectedNode) {
+      setEdgeDrilldownNodeId(selectedNode.id);
+    }
+    onSelectEdgeId(edgeId);
+  };
+
+  const handleBackToNode = () => {
+    if (edgeDrilldownNodeId === null) {
+      onSelectEdgeId(null);
+      return;
+    }
+    const nodeId = edgeDrilldownNodeId;
+    setEdgeDrilldownNodeId(null);
+    onSelectNodeId(nodeId);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -376,7 +480,11 @@ export function NetworkCallsignRelationsGraph({
           selectedEdgeId={relationsSelectedEdgeId}
           selectedNode={selectedNode}
           selectedEdge={selectedEdge}
+          drilldownNode={drilldownNode}
           selectedNodeEdges={selectedNodeEdges}
+          selectedMessages={selectedMessages}
+          selectedMessagesLoading={selectedMessagesLoading}
+          selectedMessagesError={selectedMessagesError}
           selectedNeighborIds={selectedNeighborIds}
           visibleEdgeIdsForRender={visibleEdgeIdsForRender}
           visibleNodeIdsForRender={visibleNodeIdsForRender}
@@ -392,8 +500,10 @@ export function NetworkCallsignRelationsGraph({
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
           relationsLoading={relationsLoading}
-          onSelectNodeId={onSelectNodeId}
-          onSelectEdgeId={onSelectEdgeId}
+          onSelectNodeId={handleSelectNodeId}
+          onSelectEdgeId={handleSelectEdgeId}
+          onOpenNodeEdgeId={handleOpenNodeEdgeId}
+          onBackToNode={handleBackToNode}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

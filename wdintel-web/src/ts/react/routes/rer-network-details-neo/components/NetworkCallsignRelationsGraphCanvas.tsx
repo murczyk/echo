@@ -1,4 +1,8 @@
+import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
+import StarIcon from '@mui/icons-material/Star';
+import { useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import type { ComponentType } from 'react';
 
 import {
   getRelationEdgeLabel,
@@ -33,6 +37,22 @@ type Props = {
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
 };
 
+function renderNodeMarkerBadge(
+  x: number,
+  y: number,
+  label: string,
+  Icon: ComponentType<any>,
+  fill: string,
+) {
+  return (
+    <g key={label} transform={`translate(${x} ${y})`} role="img" aria-label={label} style={{ pointerEvents: 'none' }}>
+      <title>{label}</title>
+      <circle cx={0} cy={0} r={9} fill={fill} stroke="rgba(255,255,255,0.42)" strokeWidth={1} />
+      <Icon x={-6} y={-6} width={12} height={12} htmlColor="#ffffff" />
+    </g>
+  );
+}
+
 export function NetworkCallsignRelationsGraphCanvas({
   svgRef,
   headingId,
@@ -54,6 +74,7 @@ export function NetworkCallsignRelationsGraphCanvas({
   onPointerMove,
   onPointerUp,
 }: Props) {
+  const theme = useTheme();
   return (
     <svg
       ref={svgRef}
@@ -155,6 +176,24 @@ export function NetworkCallsignRelationsGraphCanvas({
               strokeWidth={selected ? 4 : 2}
               filter={`url(#${headingId}-node-shadow)`}
             />
+            {node.mainRadioStation
+              ? renderNodeMarkerBadge(
+                  position.x + radius * 0.56,
+                  position.y - radius * 0.72,
+                  'Головна радіостанція',
+                  StarIcon,
+                  theme.palette.warning.main,
+                )
+              : null}
+            {node.commandControl
+              ? renderNodeMarkerBadge(
+                  node.mainRadioStation ? position.x - radius * 0.56 : position.x + radius * 0.56,
+                  position.y - radius * 0.72,
+                  'Ланка управління',
+                  MilitaryTechOutlinedIcon,
+                  theme.palette.info.main,
+                )
+              : null}
             {((relationsShowLabels && !denseGraph && isPointVisibleInRelationViewBox(position.x, position.y, viewBox, radius * 3)) || selected || node.matchedSearch) && (
               <text
                 x={position.x}

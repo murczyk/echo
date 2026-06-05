@@ -6,6 +6,7 @@ use crate::sigint::callsign::bl_network_callsign::bl_get_network_callsigns_list;
 use crate::sigint::callsign::types::ListNetworkCallsignsReq;
 use crate::sigint::network::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -31,20 +32,13 @@ struct CatalogCallsignRow {
     unit_name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-struct RelationMessage {
-    id: i64,
-    timestamp: Option<i64>,
-    freq: Option<String>,
-    text: String,
-    callsigns: Vec<String>,
-}
-
 #[derive(Debug, Clone, Default)]
 struct NodeEnrichment {
     position: Option<String>,
     unit_name: Option<String>,
     known_callsign_id: Option<i64>,
+    main_radio_station: bool,
+    command_control: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -86,7 +80,7 @@ pub async fn network_callsigns_relations(
     .await
     .context(h!())?;
 
-    let messages = load_network_relation_messages(
+    let messages = load_network_relation_messages_for_graph(
         &env.dbx,
         network_id,
         &groups,
@@ -116,14 +110,149 @@ pub async fn network_callsigns_relations(
     Ok(Json(rsp))
 }
 
+#[post("/api/sigint/network-callsigns/relations/messages")]
+pub async fn network_callsigns_relation_messages(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkCallsignRelationMessagesReq>,
+) -> Result<Json<NetworkCallsignRelationMessagesRsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", "Api", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+
+    let req = req.into_inner();
+    validate_network_relation_message_selection(&req)?;
+    let messages =
+        load_network_relation_messages(&env.dbx, &user, &env.config, &req)
+            .await
+            .context(h!())?;
+
+    Ok(Json(NetworkCallsignRelationMessagesRsp { messages }))
+}
+
+fn validate_network_relation_message_selection(
+    req: &NetworkCallsignRelationMessagesReq,
+) -> Result<(), AppError> {
+    let has_callsign = req
+        .callsign
+        .as_deref()
+        .map(normalize_callsign)
+        .is_some_and(|value| !value.is_empty());
+    let has_source = req
+        .source
+        .as_deref()
+        .map(normalize_callsign)
+        .is_some_and(|value| !value.is_empty());
+    let has_target = req
+        .target
+        .as_deref()
+        .map(normalize_callsign)
+        .is_some_and(|value| !value.is_empty());
+
+    let has_node_selection = has_callsign;
+    let has_edge_selection = has_source && has_target;
+
+    match (has_node_selection, has_edge_selection) {
+        (true, false) | (false, true) => Ok(()),
+        _ => Err(AppError::BL {
+            msg: "Either callsign or source + target must be provided"
+                .to_string(),
+        }),
+    }
+}
+
 async fn load_network_relation_messages(
+    dbx: &DatabaseConnection,
+    user: &actix_identity::Identity,
+    config: &crate::Config,
+    req: &NetworkCallsignRelationMessagesReq,
+) -> Result<Vec<NetworkCallsignRelationMessage>, AppError> {
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        dbx, user, config,
+    )
+    .await
+    .context(h!())?;
+
+    let message_ids =
+        load_network_relation_message_ids(dbx, req.network_id, &groups, req)
+            .await
+            .context(h!())?;
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = load_network_relation_message_rows(dbx, &message_ids)
+        .await
+        .context(h!())?;
+
+    Ok(aggregate_relation_messages(rows))
+}
+
+async fn load_network_relation_message_rows(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<Vec<NetworkCallsignRelationMessageRow>, AppError> {
+    let query = signal_message::Entity::find()
+        .select_only()
+        .column_as(signal_message::Column::Id, "message_id")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(Expr::cust("coalesce(signal_message.body, '')"), "text")
+        .column_as(
+            Expr::cust(
+                "jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb))",
+            ),
+            "callsign",
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
+
+    let rows = query
+        .into_model::<NetworkCallsignRelationMessageRow>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    Ok(rows)
+}
+
+async fn load_network_relation_messages_for_graph(
     dbx: &DatabaseConnection,
     network_id: i64,
     groups: &[String],
     since_date_inclusive_ms: i64,
     till_date_noninclusive_ms: i64,
-) -> Result<Vec<RelationMessage>, AppError> {
-    let mut query = signal_message::Entity::find()
+) -> Result<Vec<NetworkCallsignRelationMessage>, AppError> {
+    let rows = load_network_relation_message_rows_for_graph(
+        dbx,
+        network_id,
+        groups,
+        since_date_inclusive_ms,
+        till_date_noninclusive_ms,
+    )
+    .await
+    .context(h!())?;
+
+    Ok(aggregate_relation_messages(rows))
+}
+
+async fn load_network_relation_message_rows_for_graph(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    groups: &[String],
+    since_date_inclusive_ms: i64,
+    till_date_noninclusive_ms: i64,
+) -> Result<Vec<NetworkCallsignRelationMessageRow>, AppError> {
+    let query = signal_message::Entity::find()
         .select_only()
         .column_as(signal_message::Column::Id, "message_id")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
@@ -154,16 +283,15 @@ async fn load_network_relation_messages(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Id.eq(network_id))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(groups.to_vec()));
-
-    query = query.filter(
-        sigint_inbox_item::Column::Datetime
-            .gte(dt_from_millis(since_date_inclusive_ms)?),
-    );
-    query = query.filter(
-        sigint_inbox_item::Column::Datetime
-            .lt(dt_from_millis(till_date_noninclusive_ms)?),
-    );
+        .filter(datasource_group::Column::GroupMasterKey.is_in(groups.to_vec()))
+        .filter(
+            sigint_inbox_item::Column::Datetime
+                .gte(dt_from_millis(since_date_inclusive_ms)?),
+        )
+        .filter(
+            sigint_inbox_item::Column::Datetime
+                .lt(dt_from_millis(till_date_noninclusive_ms)?),
+        );
 
     let rows = query
         .into_model::<NetworkCallsignRelationMessageRow>()
@@ -171,7 +299,78 @@ async fn load_network_relation_messages(
         .await
         .context(h!())?;
 
-    Ok(aggregate_relation_messages(rows))
+    Ok(rows)
+}
+
+async fn load_network_relation_message_ids(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    groups: &[String],
+    req: &NetworkCallsignRelationMessagesReq,
+) -> Result<Vec<i64>, AppError> {
+    let mut query = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Id.eq(network_id))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(groups.to_vec()))
+        .filter(
+            sigint_inbox_item::Column::Datetime
+                .gte(dt_from_millis(req.since_date_inclusive_ms)?),
+        )
+        .filter(
+            sigint_inbox_item::Column::Datetime
+                .lt(dt_from_millis(req.till_date_noninclusive_ms)?),
+        );
+
+    if let Some(selection) =
+        build_network_relation_message_selection_condition(req)
+    {
+        query = query.filter(selection);
+    }
+
+    if let Some(freq_condition) =
+        build_network_relation_message_freq_condition(req)
+    {
+        query = query.filter(freq_condition);
+    }
+
+    let limit = clamp_network_relation_messages_limit(req.limit);
+    if limit <= 0 {
+        return Ok(Vec::new());
+    }
+
+    let ids = query
+        .order_by_desc(sigint_inbox_item::Column::Datetime)
+        .order_by_desc(signal_message::Column::Id)
+        .limit(limit as u64)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    Ok(ids)
+}
+
+fn clamp_network_relation_messages_limit(limit: i64) -> i64 {
+    limit.clamp(0, crate::config::SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX)
 }
 
 async fn load_network_callsigns(
@@ -202,6 +401,8 @@ async fn load_network_callsigns(
                 position: network_callsign.position.clone(),
                 unit_name: network_callsign.unit_name.clone(),
                 known_callsign_id: network_callsign.known_callsign_id,
+                main_radio_station: network_callsign.main_radio_station,
+                command_control: network_callsign.command_control,
             },
         );
     }
@@ -256,6 +457,8 @@ async fn load_catalog_callsigns(
                 position: row.position.clone(),
                 unit_name: row.unit_name.clone(),
                 known_callsign_id: Some(row.id),
+                main_radio_station: false,
+                command_control: false,
             },
         );
     }
@@ -265,8 +468,9 @@ async fn load_catalog_callsigns(
 
 fn aggregate_relation_messages(
     rows: Vec<NetworkCallsignRelationMessageRow>,
-) -> Vec<RelationMessage> {
-    let mut messages_by_id: HashMap<i64, RelationMessage> = HashMap::new();
+) -> Vec<NetworkCallsignRelationMessage> {
+    let mut messages_by_id: HashMap<i64, NetworkCallsignRelationMessage> =
+        HashMap::new();
     let mut seen_callsigns_by_id: HashMap<i64, HashSet<String>> =
         HashMap::new();
 
@@ -278,7 +482,7 @@ fn aggregate_relation_messages(
 
         let message =
             messages_by_id.entry(row.message_id).or_insert_with(|| {
-                RelationMessage {
+                NetworkCallsignRelationMessage {
                     id: row.message_id,
                     timestamp: row.timestamp.map(|timestamp| {
                         timestamp.and_utc().timestamp_millis()
@@ -322,8 +526,75 @@ fn aggregate_relation_messages(
     messages
 }
 
+fn build_network_relation_message_selection_condition(
+    req: &NetworkCallsignRelationMessagesReq,
+) -> Option<Condition> {
+    if let Some(callsign) = req
+        .callsign
+        .as_deref()
+        .map(normalize_callsign)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(Condition::all().add(Expr::cust_with_values(
+            "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
+            vec![callsign],
+        )));
+    }
+
+    let source = req
+        .source
+        .as_deref()
+        .map(normalize_callsign)
+        .filter(|value| !value.is_empty());
+    let target = req
+        .target
+        .as_deref()
+        .map(normalize_callsign)
+        .filter(|value| !value.is_empty());
+
+    match (source, target) {
+        (Some(source), Some(target)) => Some(
+            Condition::all()
+                .add(Expr::cust_with_values(
+                    "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
+                    vec![source],
+                ))
+                .add(Expr::cust_with_values(
+                    "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
+                    vec![target],
+                )),
+        ),
+        _ => None,
+    }
+}
+
+fn build_network_relation_message_freq_condition(
+    req: &NetworkCallsignRelationMessagesReq,
+) -> Option<Condition> {
+    let freqs = req
+        .freqs
+        .iter()
+        .map(|freq| freq.trim().to_string())
+        .filter(|freq| !freq.is_empty())
+        .collect::<Vec<_>>();
+
+    if freqs.is_empty() {
+        return Some(
+            Condition::all().add(sigint_inbox_item::Column::Freq.is_null()),
+        );
+    }
+
+    // Keep frequencyless messages visible: the graph has no frequency toggle
+    // for them, so they must remain part of any selected node/edge messages.
+    Some(
+        Condition::any()
+            .add(sigint_inbox_item::Column::Freq.is_null())
+            .add(sigint_inbox_item::Column::Freq.is_in(freqs)),
+    )
+}
+
 fn aggregate_network_callsign_relations(
-    messages: Vec<RelationMessage>,
+    messages: Vec<NetworkCallsignRelationMessage>,
     network_callsigns: &HashMap<String, NodeEnrichment>,
     catalog_callsigns: &HashMap<String, NodeEnrichment>,
 ) -> NetworkCallsignRelationsRsp {
@@ -406,6 +677,8 @@ fn aggregate_network_callsign_relations(
                 weight: stats.activity_count,
                 relation_count: 0,
                 activity_count: stats.activity_count,
+                main_radio_station: enrichment.main_radio_station,
+                command_control: enrichment.command_control,
                 position: enrichment.position,
                 unit_name: enrichment.unit_name,
                 known_callsign_id: enrichment.known_callsign_id,
@@ -526,8 +799,8 @@ fn relation_message_for_test(
     freq: Option<&str>,
     text: &str,
     callsigns: &[&str],
-) -> RelationMessage {
-    RelationMessage {
+) -> NetworkCallsignRelationMessage {
+    NetworkCallsignRelationMessage {
         id,
         timestamp: Some(timestamp),
         freq: freq.map(|freq| freq.to_string()),
@@ -607,6 +880,8 @@ mod tests {
                 position: Some("КР".to_string()),
                 unit_name: Some("1 мб".to_string()),
                 known_callsign_id: Some(12),
+                main_radio_station: true,
+                command_control: false,
             },
         );
         let mut catalog_callsigns = HashMap::new();
@@ -616,6 +891,8 @@ mod tests {
                 position: Some("КП".to_string()),
                 unit_name: Some("2 мб".to_string()),
                 known_callsign_id: Some(99),
+                main_radio_station: false,
+                command_control: true,
             },
         );
 
@@ -628,5 +905,110 @@ mod tests {
         assert_eq!(alpha.position.as_deref(), Some("КР"));
         assert_eq!(alpha.unit_name.as_deref(), Some("1 мб"));
         assert_eq!(alpha.known_callsign_id, Some(12));
+        assert!(alpha.main_radio_station);
+        assert!(!alpha.command_control);
+    }
+
+    #[test]
+    fn relation_message_selection_conditions_cover_node_and_edge_filters() {
+        assert!(build_network_relation_message_selection_condition(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: Some("alpha".to_string()),
+                source: None,
+                target: None,
+                freqs: vec![],
+                limit: 10,
+            }
+        )
+        .is_some());
+
+        assert!(build_network_relation_message_selection_condition(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: None,
+                source: Some("alpha".to_string()),
+                target: Some("beta".to_string()),
+                freqs: vec![],
+                limit: 10,
+            }
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn relation_message_freq_condition_keeps_frequencyless_messages() {
+        let condition = build_network_relation_message_freq_condition(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: None,
+                source: None,
+                target: None,
+                freqs: vec![],
+                limit: 10,
+            },
+        );
+        assert!(condition.is_some());
+    }
+
+    #[test]
+    fn relation_message_limit_is_clamped() {
+        assert_eq!(clamp_network_relation_messages_limit(-1), 0);
+        assert_eq!(clamp_network_relation_messages_limit(10), 10);
+        assert_eq!(
+            clamp_network_relation_messages_limit(999),
+            crate::config::SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX,
+        );
+    }
+
+    #[test]
+    fn relation_message_selection_validation_requires_exactly_one_mode() {
+        assert!(validate_network_relation_message_selection(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: Some("alpha".to_string()),
+                source: None,
+                target: None,
+                freqs: vec![],
+                limit: 10,
+            }
+        )
+        .is_ok());
+
+        assert!(validate_network_relation_message_selection(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: None,
+                source: Some("alpha".to_string()),
+                target: Some("beta".to_string()),
+                freqs: vec![],
+                limit: 10,
+            }
+        )
+        .is_ok());
+
+        assert!(validate_network_relation_message_selection(
+            &NetworkCallsignRelationMessagesReq {
+                network_id: 1,
+                since_date_inclusive_ms: 0,
+                till_date_noninclusive_ms: 10,
+                callsign: None,
+                source: None,
+                target: None,
+                freqs: vec![],
+                limit: 10,
+            }
+        )
+        .is_err());
     }
 }

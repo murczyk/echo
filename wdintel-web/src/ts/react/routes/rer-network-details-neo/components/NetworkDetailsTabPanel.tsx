@@ -251,6 +251,7 @@ export function NetworkDetailsTabPanel({
           <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkCallsignRelationsPanel
+                networkId={network?.id ?? null}
                 relations={relations}
                 relationsLoaded={relationsLoaded}
                 relationsLoading={relationsLoading}
