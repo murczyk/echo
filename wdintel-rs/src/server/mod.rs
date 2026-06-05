@@ -678,6 +678,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::network_callsigns)
             .service(crate::sigint::network::network_callsigns_list)
             .service(crate::sigint::network::relations::network_callsigns_relations)
+            .service(crate::sigint::network::relations::network_callsigns_relation_messages)
             .service(crate::sigint::network::network_freqs_activity_one)
             .service(crate::sigint::network::network_freq_callsigns)
             .service(crate::sigint::network::network_freqs_list)

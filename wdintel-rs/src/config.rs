@@ -55,6 +55,7 @@ pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
 pub const SIGINT_CSV_UTF8_BOM: &[u8; 3] = b"\xEF\xBB\xBF";
 pub const SIGINT_NETWORK_LIST_DEFAULT_LIMIT: i64 = 100;
 pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
+pub const SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX: i64 = 50;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;

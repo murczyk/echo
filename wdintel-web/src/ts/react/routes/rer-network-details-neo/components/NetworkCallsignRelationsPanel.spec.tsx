@@ -149,6 +149,7 @@ function renderPanel(relations?: NetworkCallsignRelationsRsp | null, overrides: 
   const root = createRoot(container);
 
   const props: PanelProps = {
+    networkId: 1,
     relations: relations ?? {
       nodes: [
         {
