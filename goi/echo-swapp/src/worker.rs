@@ -1,4 +1,4 @@
-use crate::messenger::{self, MessengerKind};
+use crate::messenger;
 use sea_orm::DatabaseConnection;
 use tokio::time::{sleep, Duration};
 
@@ -21,8 +21,14 @@ async fn messenger_worker(db: DatabaseConnection) {
 }
 
 async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
+    if messenger::global_is_paused(db).await? {
+        return Ok(());
+    }
     let messengers = messenger::list(db).await?;
     for messenger in messengers {
+        if messenger.is_paused {
+            continue;
+        }
         let is_linked = if messenger.is_linked {
             true
         } else {
@@ -31,16 +37,7 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
         if !is_linked {
             continue;
         }
-        match messenger.kind {
-            MessengerKind::Signal => {
-                echo_im::worker::signal_worker_tick_once(&messenger.name, db)
-                    .await?
-            }
-            MessengerKind::Whatsapp => {
-                echo_im::worker::whatsapp_worker_tick_once(&messenger.name, db)
-                    .await?
-            }
-        }
+        messenger::refresh_groups(db, &messenger.name, messenger.kind).await?;
     }
     Ok(())
 }

@@ -11,6 +11,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(link_messenger)
         .service(unlink_messenger)
         .service(messenger_status)
+        .service(pause_messenger)
+        .service(global_pause_status)
+        .service(set_global_pause)
         .service(delete_messenger)
         .service(whatsapp_qrcode)
         .service(whatsapp_health)
@@ -127,6 +130,56 @@ struct GroupsQuery {
     refresh: Option<bool>,
     #[serde(rename = "includeChats")]
     include_chats: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PauseReq {
+    is_paused: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PauseRsp {
+    is_paused: bool,
+}
+
+#[post("/ui-api/messengers/{name}/pause")]
+async fn pause_messenger(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<PauseReq>,
+) -> actix_web::Result<impl Responder> {
+    let is_paused = messenger::set_paused(
+        &state.db,
+        &path.into_inner(),
+        req.into_inner().is_paused,
+    )
+    .await
+    .map_err(error)?;
+    Ok(web::Json(PauseRsp { is_paused }))
+}
+
+#[get("/ui-api/sync-pause")]
+async fn global_pause_status(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    let is_paused = messenger::global_is_paused(&state.db)
+        .await
+        .map_err(error)?;
+    Ok(web::Json(PauseRsp { is_paused }))
+}
+
+#[post("/ui-api/sync-pause")]
+async fn set_global_pause(
+    state: web::Data<AppState>,
+    req: web::Json<PauseReq>,
+) -> actix_web::Result<impl Responder> {
+    let is_paused =
+        messenger::set_global_paused(&state.db, req.into_inner().is_paused)
+            .await
+            .map_err(error)?;
+    Ok(web::Json(PauseRsp { is_paused }))
 }
 
 #[derive(Debug, Serialize)]

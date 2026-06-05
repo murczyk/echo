@@ -34,7 +34,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
           <h1 class="text-2xl font-semibold tracking-normal">MESSENGERS</h1>
         </div>
       </div>
-      <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Оновити</button>
+      <div class="flex gap-2">
+        <button id="globalPauseBtn" class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Зупинити синхронізацію" title="Зупинити синхронізацію"></button>
+        <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Оновити</button>
+      </div>
     </header>
 
     <section class="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -92,7 +95,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const qrTitle = document.getElementById('qrTitle');
     const qrStatus = document.getElementById('qrStatus');
     const refreshQr = document.getElementById('refreshQr');
+    const globalPauseBtn = document.getElementById('globalPauseBtn');
     let pollTimer = null;
+    let globalPaused = false;
     let currentQrName = null;
 
     function appBasePath() {
@@ -121,6 +126,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     async function load() {
+      await loadGlobalPause();
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/messengers'));
@@ -163,6 +169,23 @@ const INDEX_HTML: &str = r#"<!doctype html>
       `;
     }
 
+    function pauseIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="6" y="4" width="4" height="16"></rect>
+          <rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+      `;
+    }
+
+    function playIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="6 3 20 12 6 21 6 3"></polygon>
+        </svg>
+      `;
+    }
+
     function deleteIcon() {
       return `
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -175,6 +198,21 @@ const INDEX_HTML: &str = r#"<!doctype html>
       `;
     }
 
+    function updateGlobalPauseButton() {
+      globalPauseBtn.innerHTML = globalPaused ? playIcon() : pauseIcon();
+      globalPauseBtn.setAttribute('aria-label', globalPaused ? 'Відновити всю синхронізацію' : 'Зупинити всю синхронізацію');
+      globalPauseBtn.setAttribute('title', globalPaused ? 'Відновити всю синхронізацію' : 'Зупинити всю синхронізацію');
+      globalPauseBtn.className = globalPaused
+        ? 'inline-flex h-10 w-10 items-center justify-center rounded-md border border-amber-700 text-amber-300 hover:bg-amber-950/40'
+        : 'inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900';
+    }
+
+    async function loadGlobalPause() {
+      const state = await request(appUrl('/ui-api/sync-pause'));
+      globalPaused = state.isPaused;
+      updateGlobalPauseButton();
+    }
+
     function renderRow(item) {
       const row = document.createElement('article');
       row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
@@ -185,6 +223,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               <h3 class="truncate text-base font-medium">${item.name}</h3>
               <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.kind}</span>
               <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'підключено' : 'не підключено'}</span>
+              ${item.isPaused ? '<span class="text-sm text-amber-300">синхронізацію зупинено</span>' : ''}
             </div>
             <p class="mt-1 text-sm text-zinc-400">${item.phone || ''}</p>
           </div>
@@ -192,6 +231,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
             ${item.isLinked
               ? `<button data-unlink="${item.name}" class="h-9 rounded-md border border-red-700 px-3 text-sm text-red-400 hover:bg-red-950/40">Відключити</button>`
               : `<button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>`}
+            <button data-pause="${item.name}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Відновити синхронізацію' : 'Зупинити синхронізацію'}" title="${item.isPaused ? 'Відновити синхронізацію' : 'Зупинити синхронізацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
             <button data-copy="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 text-zinc-950 hover:bg-white" type="button" aria-label="Скопіювати URL API" title="Скопіювати URL API">${copyIcon()}</button>
             <button data-delete="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити месенджер" title="Видалити месенджер">${deleteIcon()}</button>
           </div>
@@ -229,7 +269,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const unlinkName = button.dataset.unlink;
       const copyName = button.dataset.copy;
       const deleteName = button.dataset.delete;
+      const pauseName = button.dataset.pause;
 
+      if (pauseName) {
+        await request(appUrl(`/ui-api/messengers/${pauseName}/pause`), {
+          method: 'POST',
+          body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
+        });
+        await load();
+      }
       if (copyName) {
         await navigator.clipboard.writeText(apiBase(copyName));
         button.innerHTML = checkIcon();
@@ -287,6 +335,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
     document.getElementById('closeQr').addEventListener('click', () => {
       clearInterval(pollTimer);
       qrDialog.close();
+    });
+    globalPauseBtn.addEventListener('click', async () => {
+      await request(appUrl('/ui-api/sync-pause'), {
+        method: 'POST',
+        body: JSON.stringify({ isPaused: !globalPaused }),
+      });
+      await load();
     });
     document.getElementById('refreshBtn').addEventListener('click', load);
     load();
