@@ -137,6 +137,7 @@ pub async fn create(
     )
     .await
     .map_err(|err| anyhow::anyhow!("{err}"))?;
+    persist_is_linked(&txn, &client_name, req.kind, false).await?;
 
     start_client(config, req.kind, &client_name, port).await?;
     wait_for_signal_client(req.kind, port).await?;
@@ -196,6 +197,7 @@ pub async fn link(
         .await?;
     wait_for_signal_client(messenger.kind, messenger.signal_port).await?;
     let txn = db.begin().await?;
+    persist_is_linked(&txn, &client_name, messenger.kind, false).await?;
     let qr_code_base64 = echo_im::link_account(
         &client_name,
         messenger.kind.message_source(),
@@ -453,11 +455,14 @@ async fn ensure_client_available(
     Ok(())
 }
 
-async fn load_account(
-    db: &DatabaseConnection,
+async fn load_account<C>(
+    db: &C,
     name: &str,
     kind: MessengerKind,
-) -> Result<Option<echo_account::Model>> {
+) -> Result<Option<echo_account::Model>>
+where
+    C: ConnectionTrait,
+{
     let Some(client) = echo_client::Entity::find()
         .filter(echo_client::Column::Name.eq(name))
         .filter(echo_client::Column::Deleted.eq(false))
@@ -478,12 +483,15 @@ async fn load_account(
     Ok(account)
 }
 
-async fn persist_is_linked(
-    db: &DatabaseConnection,
+async fn persist_is_linked<C>(
+    db: &C,
     name: &str,
     kind: MessengerKind,
     is_linked: bool,
-) -> Result<()> {
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
     let Some(account) = load_account(db, name, kind).await? else {
         return Ok(());
     };

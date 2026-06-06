@@ -29,11 +29,8 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
         if messenger.is_paused {
             continue;
         }
-        let is_linked = if messenger.is_linked {
-            true
-        } else {
-            messenger::is_linked(db, &messenger.name, messenger.kind).await?
-        };
+        let is_linked =
+            messenger::is_linked(db, &messenger.name, messenger.kind).await?;
         if !is_linked {
             continue;
         }
