@@ -33,6 +33,8 @@ const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
 ];
 
 const defaultMyGroupsMRTOptions = getDefaultMRTOptions<MyAdminSignalGroup>();
+const MY_GROUPS_SETUP_FLOW_IMAGE_ALT =
+  'Схема додавання групи: 1. Додайте номер бота до групи Signal або WhatsApp. 2. Напишіть в підтримку "Додано групу ...". 3. Вкажіть тип групи: приватна група — користувачі Delta1, Delta2; смугова група — смуга АК33, АК34.';
 
 function formatAors(group: MyAdminSignalGroup): string {
   const aors = group.areasOfResponsibility ?? [];
@@ -193,6 +195,24 @@ function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: b
   return <MaterialReactTable table={table} />;
 }
 
+function MyGroupsSetupFlowImage() {
+  return (
+    <Box
+      component="img"
+      src="/img/settings-my-groups-flow.svg"
+      alt={MY_GROUPS_SETUP_FLOW_IMAGE_ALT}
+      sx={{
+        display: 'block',
+        width: '100%',
+        maxWidth: 920,
+        height: 'auto',
+        mt: 0.5,
+        borderRadius: 1,
+      }}
+    />
+  );
+}
+
 export type SettingsMyGroupsSectionProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
   groups: MyAdminSignalGroup[];
@@ -211,11 +231,16 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
           </Typography>
 
           <PowerAlert severity="info">
-            Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
-            <br />
-            1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
-            <br />
-            2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+            <Stack spacing={1.5}>
+              <Box>
+                Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
+                <br />
+                1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
+                <br />
+                2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+              </Box>
+              <MyGroupsSetupFlowImage />
+            </Stack>
           </PowerAlert>
 
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}

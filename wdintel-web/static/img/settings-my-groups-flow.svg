@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 250" fill="none">
+  <defs>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0 1L10 6L0 11Z" fill="#1778b8"/>
+    </marker>
+    <style>
+      .card { fill: #ffffff; stroke: #a7d8f0; stroke-width: 1.5; }
+      .badge { fill: #dff3fb; stroke: #69b9df; stroke-width: 1; }
+      .step { fill: #176c9e; font: 700 15px Arial, sans-serif; letter-spacing: 0; }
+      .title { fill: #10384f; font: 700 20px Arial, sans-serif; letter-spacing: 0; }
+      .body { fill: #244b5f; font: 500 16px Arial, sans-serif; letter-spacing: 0; }
+      .body-strong { fill: #123b56; font: 700 15px Arial, sans-serif; letter-spacing: 0; }
+      .label { fill: #123b56; font: 700 13px Arial, sans-serif; letter-spacing: 0; }
+      .arrow { stroke: #1778b8; stroke-width: 4; stroke-linecap: round; marker-end: url(#arrowhead); }
+      .pill { fill: #f0f9fd; stroke: #9ed5ee; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect x="12" y="18" width="306" height="214" rx="8" class="card"/>
+  <circle cx="42" cy="48" r="16" class="badge"/>
+  <text x="42" y="53" text-anchor="middle" class="step">1</text>
+  <text x="68" y="50" class="title">Додайте номер бота</text>
+  <text x="68" y="76" class="body">до групи</text>
+
+  <g transform="translate(66 106)">
+    <circle cx="36" cy="36" r="30" fill="#3d86f6"/>
+    <circle cx="36" cy="36" r="24" stroke="#ffffff" stroke-width="3" stroke-dasharray="4 5"/>
+    <path d="M22 35c0-9 7-15 16-15 10 0 17 7 17 16s-7 16-17 16c-3 0-6-1-8-2l-10 4 4-9c-2-3-2-6-2-10Z" fill="#ffffff"/>
+    <text x="36" y="95" text-anchor="middle" class="label">Signal</text>
+  </g>
+
+  <g transform="translate(188 106)">
+    <circle cx="36" cy="36" r="30" fill="#20b858"/>
+    <path d="M20 35c0-10 8-18 18-18s18 8 18 18-8 18-18 18c-3 0-6-1-8-2l-11 4 4-10c-2-3-3-6-3-10Z" fill="#ffffff"/>
+    <path d="M31 25c1-1 2-1 3 1l2 4c1 1 1 2 0 3l-1 1c2 4 5 7 9 9l2-2c1-1 2-1 3 0l4 2c1 1 1 2 1 3-1 4-4 6-8 5-9-2-18-10-20-20-1-3 1-6 5-6Z" fill="#20b858"/>
+    <text x="36" y="95" text-anchor="middle" class="label">WhatsApp</text>
+  </g>
+
+  <line x1="338" y1="125" x2="395" y2="125" class="arrow"/>
+
+  <rect x="412" y="18" width="306" height="214" rx="8" class="card"/>
+  <circle cx="442" cy="48" r="16" class="badge"/>
+  <text x="442" y="53" text-anchor="middle" class="step">2</text>
+  <text x="468" y="50" class="title">Напишіть в підтримку</text>
+  <rect x="452" y="98" width="228" height="64" rx="8" fill="#f0f9fd" stroke="#9ed5ee"/>
+  <text x="566" y="124" text-anchor="middle" class="body">“Додано групу ...”</text>
+  <path d="M470 169h156l28 24v-24h24c8 0 14-6 14-14V88c0-8-6-14-14-14H470c-8 0-14 6-14 14v67c0 8 6 14 14 14Z" stroke="#3da4d4" stroke-width="2" stroke-linejoin="round"/>
+
+  <line x1="738" y1="125" x2="795" y2="125" class="arrow"/>
+
+  <rect x="812" y="18" width="306" height="214" rx="8" class="card"/>
+  <circle cx="842" cy="48" r="16" class="badge"/>
+  <text x="842" y="53" text-anchor="middle" class="step">3</text>
+  <text x="868" y="50" class="title">Вкажіть формат</text>
+  <text x="868" y="76" class="body">доступу до групи</text>
+
+  <rect x="844" y="102" width="248" height="52" rx="8" class="pill"/>
+  <text x="864" y="124" class="body-strong">ПРИВАТНА ГРУПА –</text>
+  <text x="864" y="144" class="body">користувачі Delta1, Delta2</text>
+
+  <rect x="844" y="166" width="248" height="52" rx="8" class="pill"/>
+  <text x="864" y="188" class="body-strong">СМУГОВА ГРУПА</text>
+  <text x="864" y="208" class="body">(смуга АК33, АК34)</text>
+</svg>
