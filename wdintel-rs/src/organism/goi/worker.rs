@@ -4,6 +4,7 @@ use crate::config::{
     ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
+    ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE,
     ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
 };
@@ -604,33 +605,39 @@ async fn upsert_goi_knowledge_snapshot(
         return Ok(());
     }
 
-    goi_knowledge::Entity::insert_many(knowledge_items)
-        .on_conflict(
-            OnConflict::columns([
-                goi_knowledge::Column::IntegrationId,
-                goi_knowledge::Column::SourceKnowledgeId,
-            ])
-            .update_columns([
-                goi_knowledge::Column::SourceCreatedAt,
-                goi_knowledge::Column::Row,
-                goi_knowledge::Column::Deleted,
-                goi_knowledge::Column::DeletedAt,
-                goi_knowledge::Column::Name,
-                goi_knowledge::Column::Key,
-                goi_knowledge::Column::KnowledgeType,
-                goi_knowledge::Column::Author,
-                goi_knowledge::Column::Note,
-                goi_knowledge::Column::SourceDateRaw,
-                goi_knowledge::Column::SourceDate,
-                goi_knowledge::Column::Formation,
-            ])
-            .to_owned(),
-        )
-        .exec(&tx)
-        .await
-        .c(h!())?;
+    for knowledge_items in goi_knowledge_upsert_batches(&knowledge_items) {
+        goi_knowledge::Entity::insert_many(knowledge_items.iter().cloned())
+            .on_conflict(
+                OnConflict::columns([
+                    goi_knowledge::Column::IntegrationId,
+                    goi_knowledge::Column::SourceKnowledgeId,
+                ])
+                .update_columns([
+                    goi_knowledge::Column::SourceCreatedAt,
+                    goi_knowledge::Column::Row,
+                    goi_knowledge::Column::Deleted,
+                    goi_knowledge::Column::DeletedAt,
+                    goi_knowledge::Column::Name,
+                    goi_knowledge::Column::Key,
+                    goi_knowledge::Column::KnowledgeType,
+                    goi_knowledge::Column::Author,
+                    goi_knowledge::Column::Note,
+                    goi_knowledge::Column::SourceDateRaw,
+                    goi_knowledge::Column::SourceDate,
+                    goi_knowledge::Column::Formation,
+                ])
+                .to_owned(),
+            )
+            .exec(&tx)
+            .await
+            .c(h!())?;
+    }
     tx.commit().await.c(h!())?;
     Ok(())
+}
+
+fn goi_knowledge_upsert_batches<T>(items: &[T]) -> std::slice::Chunks<'_, T> {
+    items.chunks(ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE)
 }
 
 async fn mark_missing_goi_knowledge_deleted(
@@ -786,4 +793,21 @@ fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
     (chrono::Utc::now()
         - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
     .fixed_offset()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_knowledge_upsert_batches_split_oversized_snapshots() {
+        let items =
+            vec![(); ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE * 5 + 415];
+
+        let batch_lengths = goi_knowledge_upsert_batches(&items)
+            .map(|batch| batch.len())
+            .collect::<Vec<_>>();
+
+        assert_eq!(batch_lengths, vec![1_000, 1_000, 1_000, 1_000, 1_000, 415]);
+    }
 }
