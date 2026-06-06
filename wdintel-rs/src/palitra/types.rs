@@ -272,7 +272,7 @@ impl Coords {
 /// KML color format: alpha, blue, green, red (each 2 hex digits)
 /// Returns hex color without alpha channel
 pub fn kml_color_to_hex(kml_color: &str) -> anyhow::Result<String> {
-    let color = kml_color.trim();
+    let color = kml_color.trim().trim_start_matches('#');
 
     // KML colors should be 8 characters: AABBGGRR
     if color.len() != 8 {
@@ -321,5 +321,11 @@ mod tests {
         assert_eq!(coords[0].lng, 30.5);
         assert_eq!(coords[1].lat, 49.9);
         assert_eq!(coords[1].lng, 31.1);
+    }
+
+    #[test]
+    fn converts_kml_abgr_color_with_optional_hash() {
+        assert_eq!(kml_color_to_hex("ff00ffff").unwrap(), "#ffff00");
+        assert_eq!(kml_color_to_hex("#FF00FFFF").unwrap(), "#ffff00");
     }
 }

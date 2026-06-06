@@ -70,6 +70,7 @@ export function initializeAnalysisMapControls({
   map.addControl(searchControl);
   map.addControl(switchTimeControl);
   map.addControl(mapWindowControl);
+  map.addControl(palitrasControl);
   map.addControl(layerSwitchControl);
   map.addControl(mapSettingsControl);
   map.addControl(createAttributionControl());

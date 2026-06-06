@@ -19,6 +19,7 @@ export type Palitra = {
 export type PalitraPoint = {
   coords: Coords;
   label: string | null;
+  color?: string | null;
 };
 
 export type PalitraDetails = {
