@@ -35,6 +35,7 @@ function stringArraysEqual(left: string[], right: string[]): boolean {
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const isStackedFiltersLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -43,7 +44,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isStackedFiltersLayout);
+  const leftPanelTouchedRef = useRef(false);
   const [newestFirst, setNewestFirst] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
@@ -105,6 +107,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       setCenterTabState(tab);
     });
   }, []);
+
+  useEffect(() => {
+    if (leftPanelTouchedRef.current) return;
+    setLeftPanelOpen(!isStackedFiltersLayout);
+  }, [isStackedFiltersLayout]);
 
   const showMapDeepLinkAppliedRef = useRef(false);
   useEffect(() => {
@@ -265,6 +272,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [data.invalidateFilterSectionLoads, dutySettings.analysisMapInSidebar]);
 
   const toggleLeftPanel = useCallback(() => {
+    leftPanelTouchedRef.current = true;
     setLeftPanelOpen((current) => !current);
   }, []);
 

@@ -203,8 +203,11 @@ export class PalitraManager {
 
     // Leaflet control keeps map link in private `_map` field.
     const isControlOnMap = (this.control as any)._map === this.map;
-    const shouldShowControl =
-      this.enabled && (this.palitras.length > 0 || this.loadState === 'loading' || this.loadState === 'error');
+    const shouldShowControl = shouldShowPalitrasControl({
+      enabled: this.enabled,
+      loadState: this.loadState,
+      palitrasCount: this.palitras.length,
+    });
 
     if (!shouldShowControl) {
       if (isControlOnMap) {
@@ -217,4 +220,12 @@ export class PalitraManager {
       this.map.addControl(this.control);
     }
   }
+}
+
+export function shouldShowPalitrasControl(params: {
+  enabled: boolean;
+  loadState: PalitrasLoadState;
+  palitrasCount: number;
+}): boolean {
+  return params.enabled && (params.palitrasCount > 0 || params.loadState !== 'idle');
 }
