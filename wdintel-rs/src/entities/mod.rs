@@ -36,6 +36,7 @@ pub mod echo_recipient;
 pub mod echo_restapi_error;
 pub mod echo_sender;
 pub mod echo_signal_identities;
+pub mod echo_swapp_sync_state;
 pub mod echo_whatsapp_group;
 pub mod echo_whatsapp_profile;
 pub mod echo_whatsapp_queue;

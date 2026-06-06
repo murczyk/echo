@@ -58,6 +58,7 @@ pub enum RestartCurrentUserGoiService {
     Swapp,
     SwappAlt,
     Goi,
+    EchoSwapp,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -1295,6 +1296,9 @@ pub(super) fn goi_restart_service_command(
             "sudo systemctl restart swapp-alt"
         }
         RestartCurrentUserGoiService::Goi => "sudo systemctl restart goi",
+        RestartCurrentUserGoiService::EchoSwapp => {
+            "sudo systemctl restart echo-swapp"
+        }
     }
 }
 
@@ -1311,6 +1315,9 @@ pub(super) fn goi_restart_service_error_context(
         RestartCurrentUserGoiService::Goi => {
             "Не вдалося перезапустити GOI на інстансі ГОІ"
         }
+        RestartCurrentUserGoiService::EchoSwapp => {
+            "Не вдалося перезапустити Месенджери на інстансі ГОІ"
+        }
     }
 }
 
@@ -1324,7 +1331,8 @@ pub(super) fn goi_unlink_whatsapp_command(
         RestartCurrentUserGoiService::SwappAlt => {
             Ok("(cd /etc/swapp-alt && npm run whatsapp:delete)")
         }
-        RestartCurrentUserGoiService::Goi => Err(AppError::BL {
+        RestartCurrentUserGoiService::Goi
+        | RestartCurrentUserGoiService::EchoSwapp => Err(AppError::BL {
             msg: "Відв'язування доступне лише для SWAPP".to_string(),
         }),
     }
@@ -1342,6 +1350,9 @@ pub(super) fn goi_unlink_whatsapp_error_context(
         }
         RestartCurrentUserGoiService::Goi => {
             "Не вдалося відв'язати GOI на інстансі ГОІ"
+        }
+        RestartCurrentUserGoiService::EchoSwapp => {
+            "Не вдалося відв'язати Месенджери на інстансі ГОІ"
         }
     }
 }

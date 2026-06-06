@@ -34,6 +34,7 @@ pub use super::echo_recipient::Entity as EchoRecipient;
 pub use super::echo_restapi_error::Entity as EchoRestapiError;
 pub use super::echo_sender::Entity as EchoSender;
 pub use super::echo_signal_identities::Entity as EchoSignalIdentities;
+pub use super::echo_swapp_sync_state::Entity as EchoSwappSyncState;
 pub use super::echo_whatsapp_group::Entity as EchoWhatsappGroup;
 pub use super::echo_whatsapp_profile::Entity as EchoWhatsappProfile;
 pub use super::echo_whatsapp_queue::Entity as EchoWhatsappQueue;

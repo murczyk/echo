@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  Link,
   Stack,
   Table,
   TableBody,
@@ -26,6 +27,8 @@ import {
   unlinkCurrentUserGoiWhatsapp,
 } from '../../services/api/goi-settings';
 
+const ECHO_MESSENGERS_DOC_URL = '/docs/#goi-messengers';
+
 type ActionStatus = {
   kind: 'success' | 'error';
   integrationId: number;
@@ -44,6 +47,7 @@ function isAbortError(error: unknown): boolean {
 function restartServiceLabel(service: GoiRestartService): string {
   if (service === 'swapp') return 'Swapp';
   if (service === 'swapp_alt') return 'Swapp Додатковий';
+  if (service === 'echo_swapp') return 'Месенджери';
   return 'GOI';
 }
 
@@ -57,6 +61,20 @@ function swappAltUrl(swappUrl: string | null): string | null {
   try {
     const url = new URL(swappUrl);
     url.port = '4003';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function echoSwappUrl(goiUrl: string | null): string | null {
+  if (!goiUrl) return null;
+
+  try {
+    const url = new URL(goiUrl);
+    url.pathname = '/echo-im/';
+    url.search = '';
+    url.hash = '';
     return url.toString();
   } catch {
     return null;
@@ -77,6 +95,7 @@ type ServiceTableRowProps = {
   openLabel: string;
   url: string | null;
   unavailableLabel: string;
+  docsUrl?: string;
   restartService: GoiRestartService;
   unlinkService?: GoiWhatsappService;
   pendingKey: string | null;
@@ -96,8 +115,20 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 
   return (
     <TableRow>
-      <TableCell sx={{ width: 170, fontWeight: 600, whiteSpace: 'nowrap' }}>
-        {props.label}
+      <TableCell sx={{ width: 170, whiteSpace: 'nowrap' }}>
+        <Stack spacing={0.25}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {props.label}
+          </Typography>
+          {props.docsUrl ? (
+            <Typography variant="caption" color="text.secondary">
+              детальніше{' '}
+              <Link href={props.docsUrl} target="_blank" rel="noopener noreferrer">
+                тут
+              </Link>
+            </Typography>
+          ) : null}
+        </Stack>
       </TableCell>
       <TableCell>
         {url ? (
@@ -148,7 +179,9 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 function IntegrationCard(props: IntegrationCardProps) {
   const { integration } = props;
   const integrationSwappAltUrl = swappAltUrl(integration.swappUrl);
+  const integrationEchoSwappUrl = echoSwappUrl(integration.goiUrl);
   const goiKey = `${integration.id}:restart:goi`;
+  const echoSwappKey = `${integration.id}:restart:echo_swapp`;
   const swappKey = `${integration.id}:restart:swapp`;
   const swappUnlinkKey = `${integration.id}:unlink:swapp`;
   const swappAltKey = `${integration.id}:restart:swapp_alt`;
@@ -187,6 +220,20 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="goi"
                   pendingKey={props.pendingKey}
                   restartPendingKey={goiKey}
+                  disabled={disabled}
+                  onRestart={props.onRestart}
+                  onUnlink={props.onUnlink}
+                />
+                <ServiceTableRow
+                  integrationId={integration.id}
+                  label="Месенджери"
+                  openLabel="Відкрити Месенджери"
+                  url={integrationEchoSwappUrl}
+                  unavailableLabel="URL Месенджерів не вказано"
+                  docsUrl={ECHO_MESSENGERS_DOC_URL}
+                  restartService="echo_swapp"
+                  pendingKey={props.pendingKey}
+                  restartPendingKey={echoSwappKey}
                   disabled={disabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
