@@ -283,7 +283,7 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('hides general settings and opens duty for the legacy general section', async () => {
+  it('hides general settings and opens my groups for the legacy general section', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="general" />);
     });
@@ -293,12 +293,12 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).not.toContain('Загальні');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('Мої групи');
   });
 
   it('always shows the my groups tab after an empty successful load', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -327,7 +327,7 @@ describe('SettingsNeoPage', () => {
     });
 
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
