@@ -25,9 +25,9 @@ export type CoordinateMenuTarget = {
 };
 
 export class DataCircleMarker extends L.CircleMarker {
-  data: { messageId: number };
+  data: { messageId: number; freq?: string | null };
 
-  constructor(latLng: L.LatLngExpression, data: { messageId: number }, options: L.CircleMarkerOptions) {
+  constructor(latLng: L.LatLngExpression, data: { messageId: number; freq?: string | null }, options: L.CircleMarkerOptions) {
     super(latLng, options);
     this.setData(data);
   }
@@ -36,7 +36,7 @@ export class DataCircleMarker extends L.CircleMarker {
     return this.data;
   }
 
-  setData(data: { messageId: number }) {
+  setData(data: { messageId: number; freq?: string | null }) {
     this.data = data;
   }
 }

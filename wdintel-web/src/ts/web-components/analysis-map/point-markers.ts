@@ -5,7 +5,6 @@ import { CoordinateMenuTarget, DataCircleMarker } from './types';
 
 type CreatePointsMarkersGroupOptions = {
   points: MapPointDetailed[];
-  pelengLabelsPermanent: boolean;
   onPointClick: (point: MapPointDetailed, circle: DataCircleMarker) => void;
   onPointContextMenu: (
     target: CoordinateMenuTarget,
@@ -19,6 +18,7 @@ export function replacePointsLayer(params: {
   map: L.Map | null;
   markersGroup: L.MarkerClusterGroup | null;
   pelengsLayerGroup: L.LayerGroup | null;
+  pelengLabelsLayerGroup: L.LayerGroup | null;
   points: MapPointDetailed[];
   boundedAlready: boolean;
   buildMarkersGroup: (points: MapPointDetailed[]) => {
@@ -26,8 +26,8 @@ export function replacePointsLayer(params: {
     markersGroup: L.MarkerClusterGroup;
   };
 }): { markersGroup: L.MarkerClusterGroup; boundedAlready: boolean } {
-  const { map, markersGroup, pelengsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
-  cleanupMarkersGroup(markersGroup, pelengsLayerGroup, map);
+  const { map, markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
+  cleanupMarkersGroup(markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, map);
 
   const nextBoundedAlready = fitBoundsOnInitialLowZoom(map, points, boundedAlready);
   const { bounds, markersGroup: nextMarkersGroup } = buildMarkersGroup(points);
@@ -45,7 +45,6 @@ export function replacePointsLayer(params: {
 
 export function createPointsMarkersGroup({
   points,
-  pelengLabelsPermanent,
   onPointClick,
   onPointContextMenu,
   onClusterClick,
@@ -73,15 +72,13 @@ export function createPointsMarkersGroup({
   const bounds = L.latLngBounds(points);
 
   points.forEach((point) => {
-    const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id }, {
+    const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id, freq: point.freq }, {
       color: '#000',
       fillColor: '#ED1C23',
       fillOpacity: 1,
       radius: 4,
       weight: 1,
     });
-
-    bindPelengLabel(circle, point, pelengLabelsPermanent);
 
     circle.on('click', () => {
       onPointClick(point, circle);
@@ -128,36 +125,6 @@ export function createPointsMarkersGroup({
   return { bounds, markersGroup };
 }
 
-export function updatePelengLabelsPermanent(
-  markersGroup: L.MarkerClusterGroup | null,
-  pelengLabelsPermanent: boolean,
-): void {
-  if (!markersGroup) {
-    return;
-  }
-
-  const opts = {
-    permanent: pelengLabelsPermanent,
-    direction: 'top' as const,
-    offset: [0, -8] as [number, number],
-    className: 'peleng-point-label',
-  };
-
-  markersGroup.eachLayer((layer: L.Layer) => {
-    getChildLayers(layer).forEach((childLayer) => {
-      if (!(childLayer instanceof DataCircleMarker)) {
-        return;
-      }
-      const label = (childLayer as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel;
-      if (!label) {
-        return;
-      }
-      childLayer.unbindTooltip();
-      childLayer.bindTooltip(label, opts);
-    });
-  });
-}
-
 export function findPointMarkerByMessageId(
   markersGroup: L.MarkerClusterGroup | null,
   messageId: number,
@@ -181,6 +148,7 @@ export function findPointMarkerByMessageId(
 function cleanupMarkersGroup(
   markersGroup: L.MarkerClusterGroup | null,
   pelengsLayerGroup: L.LayerGroup | null,
+  pelengLabelsLayerGroup: L.LayerGroup | null,
   map: L.Map | null,
 ): void {
   if (!markersGroup) {
@@ -197,6 +165,7 @@ function cleanupMarkersGroup(
   });
   markersGroup.clearLayers();
   pelengsLayerGroup?.removeLayer(markersGroup);
+  pelengLabelsLayerGroup?.clearLayers();
   map?.removeLayer(markersGroup);
 }
 
@@ -216,28 +185,4 @@ function fitBoundsOnInitialLowZoom(
 
   map.fitBounds(bounds);
   return true;
-}
-
-function bindPelengLabel(
-  circle: DataCircleMarker,
-  point: MapPointDetailed,
-  pelengLabelsPermanent: boolean,
-): void {
-  const freqLabel = point.freq ?? '';
-  if (!freqLabel) {
-    return;
-  }
-
-  (circle as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel = freqLabel;
-  circle.bindTooltip(freqLabel, {
-    permanent: pelengLabelsPermanent,
-    direction: 'top',
-    offset: [0, -8],
-    className: 'peleng-point-label',
-  });
-}
-
-function getChildLayers(layer: L.Layer): L.Layer[] {
-  const withGetChildren = layer as unknown as { getAllChildMarkers?: () => L.Layer[] };
-  return typeof withGetChildren.getAllChildMarkers === 'function' ? withGetChildren.getAllChildMarkers() : [layer];
 }

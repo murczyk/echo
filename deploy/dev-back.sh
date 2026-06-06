@@ -32,6 +32,7 @@ if [ "$verbose" = "false" ]; then
         }
 
         function is_build_error(line) {
+            line = tolower(line)
             return line ~ /^error(\[[^]]+\])?:/ ||
                 line ~ /^error: /
         }
