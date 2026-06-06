@@ -28,7 +28,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'duty' || section === 'analysis' || section === 'reports') {
     return section;
   }
-  return 'duty';
+  return 'myGroups';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {

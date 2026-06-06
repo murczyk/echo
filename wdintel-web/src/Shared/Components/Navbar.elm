@@ -269,7 +269,7 @@ navBar user shared activeName props =
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other-tools" "Інше" otherSubs ]
                 , ifOrEmpty (hasRole "Basic" user)
-                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "general" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
+                    [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "myGroups" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
                 , ifOrEmpty (adminMenuIsVisible user)
                     [ menuWithSubs "admin" "Адмін" adminSubs ]
                 ]
