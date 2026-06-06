@@ -77,34 +77,34 @@ function useMyGroupsColumns() {
         header: 'Група',
         id: 'name',
         accessorFn: (row) => row.name || row.masterKey.slice(-5),
-        size: 240,
+        size: 160,
       },
       {
         header: 'Смуги',
         id: 'aors',
         accessorFn: formatAors,
         enableSorting: false,
-        size: 240,
+        size: 130,
       },
       {
         header: 'Адміни',
         id: 'admins',
         accessorFn: (row) => formatGroupLogins(row.adminLogins),
         enableSorting: false,
-        size: 260,
+        size: 180,
       },
       {
-        header: 'Приватність',
+        header: 'Є приватною',
         id: 'privacy',
-        accessorFn: (row) => (row.isGroupSecret ? 'приватна' : 'публічна'),
-        size: 140,
+        accessorFn: (row) => (row.isGroupSecret ? 'так' : 'ні'),
+        size: 110,
       },
       {
         header: 'Логіни приватної групи',
         id: 'allowedUsers',
         accessorFn: formatAllowedUsers,
         enableSorting: false,
-        size: 300,
+        size: 250,
       },
     ],
     [],
@@ -121,6 +121,7 @@ function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: b
     columns,
     data: props.loading ? buildMyGroupLoadingRows() : props.groups,
     ...defaultMyGroupsMRTOptions,
+    layoutMode: 'grid-no-grow',
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -230,7 +231,7 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
 
           {status === 'success' && hasGroups ? (
             <TableStateProvider
-              tableId="settings-neo-my-groups"
+              tableId="settings-neo-my-groups-v2"
               defaultColumnOrder={DEFAULT_MY_GROUPS_COLUMN_ORDER}
               defaultColumnVisibility={DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY}
               defaultEnableColumnOrdering={false}
