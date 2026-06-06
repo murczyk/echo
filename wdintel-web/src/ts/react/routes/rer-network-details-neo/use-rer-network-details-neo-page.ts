@@ -26,6 +26,7 @@ import {
   parseDateInputExclusiveEndInTimeZone,
   parseDateInputInTimeZone,
 } from '../../utils/misc';
+import { buildSelectableUnitOptions } from '../../utils/unit-search';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
@@ -62,7 +63,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
 
   const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
-  const unitOptions = useMemo(() => buildOptions(state.units), [state.units]);
+  const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
+  const unitOptions = useMemo(() => buildOptions(selectableUnits), [selectableUnits]);
   const postOptions = useMemo(() => buildOptions(state.posts), [state.posts]);
 
   const confirmationDescriptions = useMemo(() => {

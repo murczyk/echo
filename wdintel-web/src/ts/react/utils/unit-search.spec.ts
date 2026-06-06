@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Unit } from '../../../Bindings';
 import {
   UNIT_FILTER_UNSET_ID,
+  buildSelectableUnitOptions,
   buildUnitFilterOptions,
   getUnitFilterValue,
   unitNamesFromUnits,
@@ -24,6 +25,24 @@ function makeUnit(id: number, name: string): Unit {
     createdBy: '',
   };
 }
+
+describe('buildSelectableUnitOptions', () => {
+  it('drops blank names, trims labels, dedupes by name and keeps the lowest id', () => {
+    const options = buildSelectableUnitOptions([
+      makeUnit(8, ' 3 мсб '),
+      makeUnit(4, '3 мсб'),
+      makeUnit(7, ''),
+      makeUnit(2, ' 4 мсб'),
+      makeUnit(1, '4 мсб '),
+      makeUnit(9, '   '),
+    ]);
+
+    expect(options.map((unit) => ({ id: unit.id, name: unit.name }))).toEqual([
+      { id: 4, name: '3 мсб' },
+      { id: 1, name: '4 мсб' },
+    ]);
+  });
+});
 
 describe('buildUnitFilterOptions', () => {
   it('dedupes names and keeps the lowest id', () => {

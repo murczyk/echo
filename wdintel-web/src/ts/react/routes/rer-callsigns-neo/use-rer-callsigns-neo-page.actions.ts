@@ -40,7 +40,7 @@ type Args = {
   addCallsignAdditionalSourceIds: number[];
   addRows: CallsignDraftRow[];
   addSubmitting: boolean;
-  addDuplicateHintsEnabled: boolean;
+  setAddDuplicateHintsImmediate: SetState<boolean>;
   editForm: CallsignEditForm | null;
   editSubmitting: boolean;
   deleteTarget: Callsign | null;
@@ -93,7 +93,6 @@ export function useRerCallsignsNeoPageActions({
   addCallsignAdditionalSourceIds,
   addRows,
   addSubmitting,
-  addDuplicateHintsEnabled,
   editForm,
   editSubmitting,
   deleteTarget,
@@ -117,6 +116,7 @@ export function useRerCallsignsNeoPageActions({
   setAddValidationError,
   setAddDrawerOpen,
   setAddDuplicateHintsEnabled,
+  setAddDuplicateHintsImmediate,
   setEditForm,
   setEditSubmitting,
   setEditValidationError,
@@ -135,13 +135,11 @@ export function useRerCallsignsNeoPageActions({
 }: Args) {
   const addActions = useRerCallsignsNeoPageAddActions({
     permissions,
-    callsigns,
     addUnitId,
     addSourceId,
     addCallsignAdditionalSourceIds,
     addRows,
     addSubmitting,
-    addDuplicateHintsEnabled,
     sources,
     setAddUnitId,
     setAddSourceId,
@@ -151,6 +149,7 @@ export function useRerCallsignsNeoPageActions({
     setAddValidationError,
     setAddDrawerOpen,
     setAddDuplicateHintsEnabled,
+    setAddDuplicateHintsImmediate,
     setStatus,
     setCallsigns,
     refreshLookupsAndStats,

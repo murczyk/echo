@@ -133,6 +133,45 @@ describe('rer-callsigns helpers', () => {
     ]);
   });
 
+  it('does not hide duplicate hints when pasted position differs from the existing callsign', () => {
+    const unitsById = new Map<number, Unit>([
+      [1, { id: 1, name: '11 АК' } as Unit],
+    ]);
+    const callsigns = [
+      {
+        id: 10,
+        callsign: 'ЛЕСНОЙ',
+        position: 'Старший оператор',
+        fullName: 'Іваненко Іван',
+        comment: '',
+        unitId: 1,
+      } as Callsign,
+    ];
+
+    const groups = buildDuplicateHintGroups(
+      [{ rowIndex: 0, callsignInput: 'лесной', fullNameInput: '', positionInput: 'командир' }],
+      callsigns,
+      1,
+      unitsById,
+    );
+
+    expect(groups).toEqual([
+      {
+        rowIndex: 0,
+        matches: [
+          {
+            id: 10,
+            callsign: 'ЛЕСНОЙ',
+            position: 'Старший оператор',
+            fullName: 'Іваненко Іван',
+            comment: '',
+            unitName: '11 АК',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('keeps sidebar hierarchy filters in the request, including empty hierarchy nodes', () => {
     const req = buildListCallsignsReq({
       filters: createDefaultFilters(new Date('2026-03-18T12:00:00Z')),

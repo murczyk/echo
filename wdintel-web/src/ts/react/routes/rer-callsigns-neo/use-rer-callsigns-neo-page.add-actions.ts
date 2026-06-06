@@ -19,13 +19,12 @@ type SetState<T> = Dispatch<SetStateAction<T>>;
 
 type Args = {
   permissions: ExportPermission;
-  callsigns: Callsign[];
   addUnitId: number | null;
   addSourceId: number | null;
   addCallsignAdditionalSourceIds: number[];
   addRows: CallsignDraftRow[];
   addSubmitting: boolean;
-  addDuplicateHintsEnabled: boolean;
+  setAddDuplicateHintsImmediate: SetState<boolean>;
   sources: Source[];
   setAddUnitId: SetState<number | null>;
   setAddSourceId: SetState<number | null>;
@@ -42,13 +41,12 @@ type Args = {
 
 export function useRerCallsignsNeoPageAddActions({
   permissions,
-  callsigns,
   addUnitId,
   addSourceId,
   addCallsignAdditionalSourceIds,
   addRows,
   addSubmitting,
-  addDuplicateHintsEnabled,
+  setAddDuplicateHintsImmediate,
   sources,
   setAddUnitId,
   setAddSourceId,
@@ -64,10 +62,12 @@ export function useRerCallsignsNeoPageAddActions({
 }: Args) {
   const onAppendRow = useCallback(() => {
     setAddRows((prev) => [...prev, createEmptyDraftRow()]);
-  }, [setAddRows]);
+    setAddDuplicateHintsImmediate(false);
+  }, [setAddDuplicateHintsImmediate, setAddRows]);
 
   const onRemoveRow = useCallback((index: number) => {
     setAddValidationError(null);
+    setAddDuplicateHintsImmediate(false);
     setAddRows((prev) => {
       if (prev.length <= 1) {
         setAddDuplicateHintsEnabled(false);
@@ -77,13 +77,14 @@ export function useRerCallsignsNeoPageAddActions({
       setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
       return nextRows;
     });
-  }, [setAddDuplicateHintsEnabled, setAddRows, setAddValidationError]);
+  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
 
   const onClearRows = useCallback(() => {
     setAddRows([createEmptyDraftRow()]);
     setAddValidationError(null);
     setAddDuplicateHintsEnabled(false);
-  }, [setAddDuplicateHintsEnabled, setAddRows, setAddValidationError]);
+    setAddDuplicateHintsImmediate(false);
+  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
 
   const onOpenAddDrawer = useCallback(() => {
     if (!permissions.canEdit) return;
@@ -99,7 +100,8 @@ export function useRerCallsignsNeoPageAddActions({
     setAddCallsignAdditionalSourceIds([]);
     setAddValidationError(null);
     setAddDuplicateHintsEnabled(false);
-  }, [setAddCallsignAdditionalSourceIds, setAddDuplicateHintsEnabled, setAddRows, setAddSourceId, setAddUnitId, setAddValidationError, sources]);
+    setAddDuplicateHintsImmediate(false);
+  }, [setAddCallsignAdditionalSourceIds, setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddSourceId, setAddUnitId, setAddValidationError, sources]);
 
   const onCloseAddDrawer = useCallback(() => {
     if (addSubmitting) return;
@@ -109,12 +111,13 @@ export function useRerCallsignsNeoPageAddActions({
 
   const onRowChange = useCallback((index: number, next: CallsignDraftRow) => {
     setAddValidationError(null);
+    setAddDuplicateHintsImmediate(false);
     setAddRows((prev) => {
       const nextRows = prev.map((row, rowIndex) => (rowIndex === index ? next : row));
       setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
       return nextRows;
     });
-  }, [setAddDuplicateHintsEnabled, setAddRows, setAddValidationError]);
+  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
 
   const onApplyPastedRows = useCallback((value: string) => {
     if (!value.includes('\t') && !value.includes('\n')) {
@@ -125,19 +128,22 @@ export function useRerCallsignsNeoPageAddActions({
     if (parsed.error) {
       setAddRows([createEmptyDraftRow()]);
       setAddDuplicateHintsEnabled(false);
+      setAddDuplicateHintsImmediate(false);
       setAddValidationError(parsed.error);
       return;
     }
     if (parsed.rows.length === 0) {
       setAddRows([createEmptyDraftRow()]);
       setAddDuplicateHintsEnabled(false);
+      setAddDuplicateHintsImmediate(false);
       setAddValidationError(QUICK_PASTE_TSV_FORMAT_ERROR);
       return;
     }
     setAddRows(parsed.rows);
     setAddValidationError(null);
     setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(parsed.rows));
-  }, [setAddDuplicateHintsEnabled, setAddRows, setAddValidationError]);
+    setAddDuplicateHintsImmediate(true);
+  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
 
   const onSubmitAdd = useCallback(async () => {
     if (!permissions.canEdit) return;
@@ -166,6 +172,7 @@ export function useRerCallsignsNeoPageAddActions({
 
     setAddSubmitting(true);
     setAddDuplicateHintsEnabled(false);
+    setAddDuplicateHintsImmediate(false);
 
     try {
       const nonEmptyRows = addRows.filter((row) => hasAnyDraftValue(row));
@@ -197,6 +204,7 @@ export function useRerCallsignsNeoPageAddActions({
       const failedRows = failed.map((item) => item.row);
       setAddRows(failedRows);
       setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(failedRows));
+      setAddDuplicateHintsImmediate(false);
       setAddValidationError(
         failed.length === 1
           ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
@@ -217,6 +225,7 @@ export function useRerCallsignsNeoPageAddActions({
     refreshLookupsAndStats,
     resetAddDrawerState,
     setAddDuplicateHintsEnabled,
+    setAddDuplicateHintsImmediate,
     setAddDrawerOpen,
     setAddRows,
     setAddSubmitting,

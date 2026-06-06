@@ -143,7 +143,6 @@ export function buildDuplicateHintGroups(
   for (const callsign of callsigns) {
     const callsignValue = normalizeDuplicateLookupValue(callsign.callsign);
     const fullNameValue = normalizeDuplicateLookupValue(callsign.fullName);
-    const positionValue = normalizeDuplicateLookupValue(callsign.position);
     const unitMatches = isNullOrUndefined(unitId) || callsign.unitId === unitId;
 
     if (!unitMatches) continue;
@@ -153,10 +152,8 @@ export function buildDuplicateHintGroups(
         draftInput.callsignInput.length >= 2 && callsignValue.includes(draftInput.callsignInput);
       const fullNameMatches =
         draftInput.fullNameInput.length >= 2 && fullNameValue.includes(draftInput.fullNameInput);
-      const positionMatches =
-        draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
 
-      if (!(callsignMatches || fullNameMatches) || !positionMatches) continue;
+      if (!(callsignMatches || fullNameMatches)) continue;
 
       const group = groupsByRowIndex.get(draftInput.rowIndex) ?? {
         rowIndex: draftInput.rowIndex,

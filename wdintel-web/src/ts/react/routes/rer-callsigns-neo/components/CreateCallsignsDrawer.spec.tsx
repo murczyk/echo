@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, useState, type ReactNode } from 'react';
+import { act, useMemo, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,9 +56,38 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, helperText }: { label?: ReactNode; helperText?: ReactNode }) => (
+  TextField: ({
+    label,
+    helperText,
+    multiline,
+    onChange,
+    placeholder,
+    value,
+  }: {
+    label?: ReactNode;
+    helperText?: ReactNode;
+    multiline?: boolean;
+    onChange?: (_event: { target: { value: string } }) => void;
+    placeholder?: string;
+    value?: string;
+  }) => (
     <label>
       {label}
+      {multiline ? (
+        <textarea
+          aria-label={typeof label === 'string' ? label : undefined}
+          placeholder={placeholder}
+          value={value ?? ''}
+          onChange={(event) => onChange?.(event as never)}
+        />
+      ) : (
+        <input
+          aria-label={typeof label === 'string' ? label : undefined}
+          placeholder={placeholder}
+          value={value ?? ''}
+          onChange={(event) => onChange?.(event as never)}
+        />
+      )}
       {helperText ? <div>{helperText}</div> : null}
     </label>
   ),
@@ -69,7 +98,7 @@ vi.mock('@mui/material', () => ({
 import { CreateCallsignsDrawer } from './CreateCallsignsDrawer';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import type { Source, Unit } from '../../../../../Bindings';
-import { UNIT_SELECTION_REQUIRED_ERROR } from '../helpers';
+import { buildDuplicateHintGroups, normalizeDuplicateLookupValue, parseTabDelimitedInput, UNIT_SELECTION_REQUIRED_ERROR } from '../helpers';
 
 let latestAutocompleteInputChange:
   | ((_event: unknown, value: string, reason: string) => void)
@@ -141,6 +170,83 @@ function renderComponent(
   return { container, root };
 }
 
+function renderQuickPasteHarness(): Rendered {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const units = [{ id: 1, name: '11 АК' } as Unit];
+  const sources = [{ id: 1, name: 'РО' } as Source];
+  const loadedCallsigns = [
+    {
+      id: 10,
+      callsign: 'ЛЕСНОЙ',
+      position: 'Командир',
+      fullName: 'Іваненко Іван Іванович',
+      comment: '',
+      unitId: 1,
+    },
+  ];
+
+  function Harness() {
+    const [rows, setRows] = useState<CallsignDraftRow[]>([
+      { callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' },
+    ]);
+
+    const duplicateHintGroups = useMemo(() => {
+      const duplicateHintInputs = rows
+        .map((row, rowIndex) => ({
+          rowIndex,
+          callsignInput: normalizeDuplicateLookupValue(row.callsign),
+          fullNameInput: normalizeDuplicateLookupValue(row.fullName),
+          positionInput: normalizeDuplicateLookupValue(row.position),
+        }))
+        .filter((row) => row.callsignInput.length >= 2 || row.fullNameInput.length >= 2);
+
+      return buildDuplicateHintGroups(duplicateHintInputs, loadedCallsigns, 1, new Map(units.map((unit) => [unit.id, unit])));
+    }, [rows]);
+
+    return (
+      <CreateCallsignsDrawer
+        open
+        onClose={() => {}}
+        units={units}
+        sources={sources}
+        addUnitId={1}
+        addSourceId={1}
+        addCallsignAdditionalSourceIds={[]}
+        rows={rows}
+        submitting={false}
+        disabled={false}
+        validationError={null}
+        duplicateHintGroups={duplicateHintGroups}
+        onAddUnitIdChange={() => {}}
+        onAddSourceIdChange={() => {}}
+        onAddCallsignAdditionalSourceIdsChange={() => {}}
+        onRowChange={(_, next) => setRows([next])}
+        onAppendRow={() => {}}
+        onRemoveRow={() => {}}
+        onClearRows={() => setRows([{ callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' }])}
+        onApplyPastedRows={(value) => {
+          const parsed = parseTabDelimitedInput(value);
+          setRows(parsed.rows.length > 0 ? parsed.rows : [{ callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' }]);
+        }}
+        onSubmit={() => {}}
+      />
+    );
+  }
+
+  act(() => {
+    root.render(<Harness />);
+  });
+
+  return { container, root };
+}
+
+function setInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value');
+  descriptor?.set?.call(element, value);
+}
+
 describe('CreateCallsignsDrawer', () => {
   it('renders a sticky duplicate summary and row-level hints', () => {
     const view = renderComponent([
@@ -191,5 +297,26 @@ describe('CreateCallsignsDrawer', () => {
     ) as HTMLButtonElement | undefined;
 
     expect(addButton?.disabled).toBe(true);
+  });
+
+  it('shows duplicate summary and row hints after quick TSV paste', () => {
+    const view = renderQuickPasteHarness();
+    rendered.push(view);
+
+    const pastedField = Array.from(view.container.querySelectorAll('textarea')).find((field) =>
+      field.getAttribute('placeholder')?.includes('позивний<TAB>посада<TAB>коментар'),
+    ) as HTMLTextAreaElement | undefined;
+    expect(pastedField).toBeTruthy();
+
+    act(() => {
+      if (!pastedField) return;
+      setInputValue(pastedField, 'ЛЕСНОЙ\tКомандир\tІваненко Іван Іванович\tновий коментар');
+      pastedField.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(view.container.textContent).toContain('Схожі позивні знайдено: 1 у 1 рядках');
+    expect(view.container.textContent).toContain('Рядок 1: ЛЕСНОЙ | 11 АК');
+    expect(view.container.textContent).toContain('Схожий існуючий позивний:');
+    expect(view.container.textContent).toContain('ЛЕСНОЙ | 11 АК');
   });
 });

@@ -382,7 +382,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
       <CreateCallsignsDrawer
         open={page.addDrawerOpen}
         onClose={page.onCloseAddDrawer}
-        units={page.units}
+        units={page.selectableUnits}
         sources={page.sources}
         addUnitId={page.addUnitId}
         addSourceId={page.addSourceId}
@@ -406,7 +406,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
       <EditCallsignDrawer
         open={page.editForm !== null}
         form={page.editForm}
-        units={page.units}
+        units={page.selectableUnits}
         sources={page.sources}
         submitting={page.editSubmitting}
         error={page.editValidationError}

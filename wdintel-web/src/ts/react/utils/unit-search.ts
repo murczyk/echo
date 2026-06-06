@@ -32,6 +32,10 @@ function createSyntheticUnsetUnit(): Unit {
 }
 
 export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
+  return [createSyntheticUnsetUnit(), ...buildSelectableUnitOptions(unitsList)];
+}
+
+export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {
   const byName = new Map<string, Unit>();
 
   for (const unit of unitsList) {
@@ -45,7 +49,7 @@ export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
   }
 
   const sorted = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
-  return [createSyntheticUnsetUnit(), ...sorted];
+  return sorted;
 }
 
 export function unitsFromNames(names: readonly string[], options: readonly Unit[]): Unit[] {
