@@ -25,8 +25,6 @@ build-echo-swapp:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    BRANCH="{{ b_tmp }}"
-
     echo "Switching {{ repo_dir }} to ${BRANCH}..."
     (cd "{{ repo_dir }}" && git fetch origin "${BRANCH}" && git clean -df && git checkout "${BRANCH}" && git pull --ff-only origin "${BRANCH}")
 
