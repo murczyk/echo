@@ -20,6 +20,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'networkDisplayMap'
   | 'networks'
   | 'queryState'
+  | 'unitsExactMatchOnlyDefault'
   | 'saveInFlight'
   | 'savedFilterName'
   | 'savedFilters'

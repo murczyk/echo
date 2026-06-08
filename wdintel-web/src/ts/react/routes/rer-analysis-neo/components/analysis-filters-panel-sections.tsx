@@ -1,5 +1,6 @@
-import { Box, Checkbox, FormControlLabel, FormControl, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 import type { AnalysisFilterSectionId } from '../types';
 import { NO_DATA_LABEL } from '../../../utils/misc';
@@ -17,18 +18,30 @@ type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'includeOnlyNewFreqs' | '
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
   filtersLoading: boolean;
+  unitsExactMatchOnlyDefault: boolean | null;
   toggleSection: (section: FilterSectionId) => void;
   isSectionLoading: (section: FilterSectionId) => boolean;
   loadFilterSectionWithSpinner: (section: AnalysisFilterSectionId) => Promise<void>;
 };
 
-type CoordsFilterMode = 'all' | 'with' | 'without';
+type MetadataFilterMode = 'all' | 'with' | 'without';
 
-function coordsFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): CoordsFilterMode {
-  if (queryState.orWithCoords && queryState.orWithoutCoords) return 'all';
-  if (queryState.orWithCoords) return 'with';
-  if (queryState.orWithoutCoords) return 'without';
+function metadataFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): MetadataFilterMode {
+  if (queryState.withoutMetadata) return 'without';
+  if (queryState.onlyWithMetadata) return 'with';
   return 'all';
+}
+
+function metadataFilterModeHint(mode: MetadataFilterMode): string {
+  switch (mode) {
+    case 'with':
+      return 'Показувати лише записи з метаданими';
+    case 'without':
+      return 'Показувати лише записи без метаданих';
+    case 'all':
+    default:
+      return 'Показувати всі записи';
+  }
 }
 
 export function AnalysisFiltersPanelSections({
@@ -41,6 +54,7 @@ export function AnalysisFiltersPanelSections({
   loadFilterSectionWithSpinner,
   options,
   queryState,
+  unitsExactMatchOnlyDefault,
   setIncludeOnlyNewFreqs,
   toggleSection,
   updateQueryState,
@@ -52,11 +66,11 @@ export function AnalysisFiltersPanelSections({
     void loadFilterSectionWithSpinner(section);
   };
 
-  const handleCoordsFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: CoordsFilterMode | null) => {
+  const handleMetadataFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: MetadataFilterMode | null) => {
     const mode = nextMode ?? 'all';
     updateQueryState({
-      orWithCoords: mode === 'with',
-      orWithoutCoords: mode === 'without',
+      onlyWithMetadata: mode === 'with',
+      withoutMetadata: mode === 'without',
     });
   };
 
@@ -66,7 +80,9 @@ export function AnalysisFiltersPanelSections({
         ? `Точний збіг за еталонкою: ${counts.unitsExactMatchesCount}`
         : 'Точний збіг за еталонкою'
       : null;
+  const effectiveUnitsExactMatchOnly = queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
 
+  const metadataFilterMode = metadataFilterModeFromState(queryState);
   return (
     <>
       <FilterSection
@@ -176,12 +192,12 @@ export function AnalysisFiltersPanelSections({
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           {queryState.unitsSelected.length > 0 ? (
-          <FormControlLabel
-            control={<Checkbox checked={queryState.unitsExactMatchOnly === true} onChange={(_event, value) => updateQueryState({ unitsExactMatchOnly: value })} />}
-            label={unitsExactMatchLabel}
-            sx={compactCheckboxLabelSx}
-          />
-        ) : null}
+            <FormControlLabel
+              control={<Checkbox checked={effectiveUnitsExactMatchOnly} onChange={(_event, value) => updateQueryState({ unitsExactMatchOnly: value })} />}
+              label={unitsExactMatchLabel}
+              sx={compactCheckboxLabelSx}
+            />
+          ) : null}
         </Stack>
       </FilterSection>
       <FilterSection
@@ -271,21 +287,24 @@ export function AnalysisFiltersPanelSections({
         >
           <FormControlLabel
             control={<Checkbox checked={queryState.orWithExtendedForm} onChange={(_event, value) => updateQueryState({ orWithExtendedForm: value })} />}
-            label={
-              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.375, whiteSpace: 'nowrap' }}>
-                З коментарем
-              </Box>
+            label="З коментарем"
+            sx={compactCheckboxLabelSx}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={queryState.orWithCoords}
+                onChange={(_event, value) =>
+                  updateQueryState(
+                    value
+                      ? { orWithCoords: true, orWithoutCoords: false }
+                      : { orWithCoords: false, orWithoutCoords: false },
+                  )
+                }
+              />
             }
-            sx={{
-              ...compactCheckboxLabelSx,
-              gridColumn: '1 / -1',
-              alignSelf: 'start',
-              justifySelf: 'start',
-              '& .MuiFormControlLabel-label': {
-                lineHeight: 1.3,
-                whiteSpace: 'nowrap',
-              },
-            }}
+            label="З пеленгом"
+            sx={compactCheckboxLabelSx}
           />
           <FormControlLabel
             control={<Checkbox checked={queryState.orBookmarked} onChange={(_event, value) => updateQueryState({ orBookmarked: value })} />}
@@ -297,42 +316,6 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
-          <Box
-            sx={{
-              gridColumn: '1 / -1',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.75,
-              minWidth: 0,
-              mt: 0.5,
-            }}
-          >
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Режим пеленга
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              fullWidth
-              size="small"
-              color="primary"
-              value={coordsFilterModeFromState(queryState)}
-              onChange={handleCoordsFilterModeChange}
-              aria-label="Режим пеленга"
-              sx={{
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  py: 0.75,
-                },
-              }}
-            >
-              <ToggleButton value="all">Усі</ToggleButton>
-              <ToggleButton value="with">З пеленгом</ToggleButton>
-              <ToggleButton value="without">Без пеленга</ToggleButton>
-            </ToggleButtonGroup>
-            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
-              Показувати всі записи або лише ті, де є координати пеленга.
-            </Typography>
-          </Box>
         </Box>
       </FilterSection>
       <FilterSection
@@ -350,19 +333,21 @@ export function AnalysisFiltersPanelSections({
             value={queryState.tags.map((tagId) => String(tagId))}
             onChange={(next) => updateQueryState({ tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)) })}
           />
-          <FormControl size="small">
-            <InputLabel id="analysis-tags-mode-label">Збіг тегів</InputLabel>
-            <Select
-              labelId="analysis-tags-mode-label"
-              label="Збіг тегів"
-              value={queryState.filterTagsOption}
-              onChange={(event) => updateQueryState({ filterTagsOption: event.target.value as 'OneOfTags' | 'AllTags' })}
-            >
-              <MenuItem value="OneOfTags">Будь-який з вибраних</MenuItem>
-              <MenuItem value="AllTags">Усі вибрані</MenuItem>
-            </Select>
-          </FormControl>
           <Stack spacing={0.5}>
+            <FormControlLabel
+              control={<Checkbox checked={queryState.filterTagsOption === 'AllTags'} onChange={(_event, value) => updateQueryState({ filterTagsOption: value ? 'AllTags' : 'OneOfTags' })} />}
+              label={
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                  <Box component="span">Співпадіння з усіма вибраними вище</Box>
+                  <Tooltip title="Якщо ввімкнено, запис має збігатися з усіма вибраними вище тегами." placement="top">
+                    <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }} aria-label="Підказка">
+                      <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                    </Box>
+                  </Tooltip>
+                </Box>
+              }
+              sx={compactCheckboxLabelSx}
+            />
             <FormControlLabel
               control={<Checkbox checked={queryState.withoutModelTags} onChange={(_event, value) => updateQueryState({ withoutModelTags: value })} />}
               label="Без відміток роботами"
@@ -416,18 +401,40 @@ export function AnalysisFiltersPanelSections({
             value={queryState.metadataHash}
             onChange={(metadataHash) => updateQueryState({ metadataHash })}
           />
-        </Stack>
-        <Stack spacing={0.5}>
-          <FormControlLabel
-            control={<Checkbox checked={queryState.onlyWithMetadata} disabled={queryState.withoutMetadata} onChange={(_event, value) => updateQueryState({ onlyWithMetadata: value })} />}
-            label="Тільки з метаданими"
-            sx={compactCheckboxLabelSx}
-          />
-          <FormControlLabel
-            control={<Checkbox checked={queryState.withoutMetadata} disabled={queryState.onlyWithMetadata} onChange={(_event, value) => updateQueryState({ withoutMetadata: value })} />}
-            label="Тільки без метаданих"
-            sx={compactCheckboxLabelSx}
-          />
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              minWidth: 0,
+            }}
+          >
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              Режим метаданих
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              color="primary"
+              value={metadataFilterMode}
+              onChange={handleMetadataFilterModeChange}
+              aria-label="Режим метаданих"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  py: 0.75,
+                },
+              }}
+            >
+              <ToggleButton value="all">Усі</ToggleButton>
+              <ToggleButton value="with">З метаданими</ToggleButton>
+              <ToggleButton value="without">Без метаданих</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+              {metadataFilterModeHint(metadataFilterMode)}
+            </Typography>
+          </Box>
         </Stack>
       </FilterSection>
     </>

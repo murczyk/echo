@@ -396,7 +396,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
   });
 
-  it('resets the exact-match setting to the loaded system default', async () => {
+  it('keeps the exact-match query value unset after reset', async () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
       rerAnalysisUnitsExactMatchOnlyDefault: true,
@@ -416,8 +416,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(latest?.queryState.unitsExactMatchOnly).toBe(true);
-    expect(latest?.queryState.unitsExactMatchOnly).not.toBeNull();
+    expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
   });
 
   it('does not duplicate a frequency already in the analysis filter', async () => {
@@ -454,13 +453,14 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.unitsSelected).toEqual([]);
   });
 
-  it('applies the current system default for exact-match when the query state leaves it unset', async () => {
+  it('keeps the exact-match query value unset after the system default loads', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState({}, '', window.location.pathname);
     renderHook();
     await flushEffects();
 
-    expect(latest?.queryState.unitsExactMatchOnly).toBe(false);
+    expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
+    expect(window.location.search).not.toContain('unitsExactMatchOnly');
     window.history.replaceState({}, '', originalUrl);
   });
 

@@ -2,15 +2,8 @@ import type { SavedFilter } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
-
-
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
-import {
-  applyUnitsExactMatchOnlyDefault,
-  buildAnalysisReq,
-  queryStateFromSavedFilter,
-  queryStateMatchesSavedFilter,
-} from './helpers';
+import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
 import type { AnalysisQueryState } from './types';
 
 type Props = {
@@ -18,7 +11,6 @@ type Props = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
-  unitsExactMatchOnlyDefault: boolean | null;
   setQueryState: Dispatch<SetStateAction<AnalysisQueryState>>;
 };
 
@@ -47,7 +39,6 @@ export function useAnalysisSavedFilters({
   onUnauthorized,
   queryState,
   setQueryState,
-  unitsExactMatchOnlyDefault,
 }: Props): Result {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
@@ -117,12 +108,11 @@ export function useAnalysisSavedFilters({
       }
 
       const current = queryState;
-      const nextState = applyUnitsExactMatchOnlyDefault(queryStateFromSavedFilter(savedFilter, current), unitsExactMatchOnlyDefault);
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
-      setQueryState(nextState);
+      setQueryState(queryStateFromSavedFilter(savedFilter, current));
     },
-    [queryState, setQueryState, unitsExactMatchOnlyDefault],
+    [queryState, setQueryState],
   );
 
   const saveAsNew = useCallback(async (name: string) => {

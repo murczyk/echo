@@ -7,13 +7,13 @@ import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import {
-  applyUnitsExactMatchOnlyDefault,
   buildAnalysisReq,
   createInitialQueryState,
   createResetQueryState,
   hasMeaningfulFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
+  normalizeQueryState,
   queryStateComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
@@ -81,7 +81,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     queryState,
-    unitsExactMatchOnlyDefault,
     setQueryState,
   });
 
@@ -133,13 +132,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .then((settings) => {
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
-        setQueryState((current) => {
-          const nextState = applyUnitsExactMatchOnlyDefault(current, settings.rerAnalysisUnitsExactMatchOnlyDefault);
-          setLastResetState((currentReset) => {
-            return applyUnitsExactMatchOnlyDefault(currentReset, settings.rerAnalysisUnitsExactMatchOnlyDefault);
-          });
-          return nextState;
-        });
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -193,7 +185,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
     data.invalidateFilterSectionLoads();
-    setQueryState((current) => ({ ...current, ...patch }));
+    setQueryState((current) => normalizeQueryState({ ...current, ...patch }));
   }, [data.invalidateFilterSectionLoads]);
 
   const applySavedFilter = useCallback(
@@ -224,14 +216,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {
-    const nextState = applyUnitsExactMatchOnlyDefault(createResetQueryState(), unitsExactMatchOnlyDefault);
+    const nextState = createResetQueryState();
     savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
-  }, [data, savedFilters, unitsExactMatchOnlyDefault]);
+  }, [data, savedFilters]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
@@ -447,6 +439,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     repeatReportTaskRun: report.repeatReportTaskRun,
     setReportProgressExpanded: report.setReportProgressExpanded,
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
+    unitsExactMatchOnlyDefault,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

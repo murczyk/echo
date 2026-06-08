@@ -47,11 +47,9 @@ function buildSavedFilter(): SavedFilter {
 function Harness({
   allFrequencies,
   queryState,
-  unitsExactMatchOnlyDefault,
 }: {
   allFrequencies: string[];
   queryState: AnalysisQueryState;
-  unitsExactMatchOnlyDefault: boolean | null;
 }) {
   const [queryStateValue, setQueryStateValue] = useState(queryState);
   currentQueryState = queryStateValue;
@@ -60,24 +58,23 @@ function Harness({
     onError: vi.fn(),
     onUnauthorized: vi.fn(() => false),
     queryState: queryStateValue,
-    unitsExactMatchOnlyDefault,
     setQueryState: setQueryStateValue,
   });
   return null;
 }
 
-async function renderHook(allFrequencies: string[], queryState = emptyQueryState(), unitsExactMatchOnlyDefault: boolean | null = null) {
+async function renderHook(allFrequencies: string[], queryState = emptyQueryState()) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(Harness, { allFrequencies, queryState, unitsExactMatchOnlyDefault }));
+    root?.render(createElement(Harness, { allFrequencies, queryState }));
   });
 }
 
-async function rerenderHook(allFrequencies: string[], queryState = emptyQueryState(), unitsExactMatchOnlyDefault: boolean | null = null) {
+async function rerenderHook(allFrequencies: string[], queryState = emptyQueryState()) {
   await act(async () => {
-    root?.render(createElement(Harness, { allFrequencies, queryState, unitsExactMatchOnlyDefault }));
+    root?.render(createElement(Harness, { allFrequencies, queryState }));
   });
 }
 
@@ -153,9 +150,9 @@ describe('useAnalysisSavedFilters', () => {
     expect(latest?.savedFilterName).toBe('');
   });
 
-  it('applies the loaded default when a saved filter leaves units exact-match unset', async () => {
+  it('keeps units exact-match unset when applying a saved filter that leaves it unset', async () => {
     const savedFilter = buildSavedFilter();
-    await renderHook(['100.0000', '100.0030'], emptyQueryState(), true);
+    await renderHook(['100.0000', '100.0030'], emptyQueryState());
     await flushEffects();
 
     await act(async () => {
@@ -163,6 +160,6 @@ describe('useAnalysisSavedFilters', () => {
     });
     await flushEffects();
 
-    expect(currentQueryState?.unitsExactMatchOnly).toBe(true);
+    expect(currentQueryState?.unitsExactMatchOnly).toBeNull();
   });
 });

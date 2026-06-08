@@ -138,7 +138,7 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
     Number(queryState.orWithExtendedForm) +
     Number(queryState.orBookmarked) +
     Number(queryState.orImportant) +
-    (queryState.orWithCoords && queryState.orWithoutCoords ? 0 : Number(queryState.orWithCoords) + Number(queryState.orWithoutCoords));
+    Number(queryState.orWithCoords);
 
   const tagsSelectedCount =
     queryState.tags.length +

@@ -24,6 +24,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     loadedSavedFilter,
     options,
     queryState,
+    unitsExactMatchOnlyDefault,
     saveInFlight,
     savedFilterName,
     savedFilters,
@@ -231,6 +232,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
                   options={options}
                   queryState={queryState}
+                  unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}
@@ -282,6 +284,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
                   options={options}
                   queryState={queryState}
+                  unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}

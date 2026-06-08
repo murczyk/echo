@@ -4,9 +4,10 @@ import { emptyQueryState } from '../helpers';
 import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 
 describe('buildAnalysisFiltersPanelDerivedData', () => {
-  it('keeps tag-only toggles and legacy peleng dual state out of the important badge count', () => {
+  it('counts only the active peleng checkbox in the important badge count', () => {
     const derived = buildAnalysisFiltersPanelDerivedData({
       aorEntries: [],
+      counts: null,
       groupInfos: {},
       options: {
         tags: [],
@@ -31,20 +32,55 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
         orBookmarked: true,
         orImportant: true,
         orWithCoords: true,
-        orWithoutCoords: true,
         withoutModelTags: true,
         reportTagsOnlyThisUnit: true,
       },
       tagsMap: {},
     });
 
-    expect(derived.importantSelectedCount).toBe(3);
+    expect(derived.importantSelectedCount).toBe(4);
     expect(derived.tagsSelectedCount).toBe(2);
+  });
+
+  it('does not count the peleng checkbox when it is off', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      counts: null,
+      groupInfos: {},
+      options: {
+        tags: [],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [],
+        units: [],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: {
+        ...emptyQueryState(),
+        orWithExtendedForm: true,
+        orBookmarked: true,
+        orImportant: true,
+        orWithCoords: false,
+      },
+      tagsMap: {},
+    });
+
+    expect(derived.importantSelectedCount).toBe(3);
   });
 
   it('normalizes unknown unit stats to the canonical empty filter option', () => {
     const derived = buildAnalysisFiltersPanelDerivedData({
       aorEntries: [],
+      counts: null,
       groupInfos: {},
       options: {
         tags: [],

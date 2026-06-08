@@ -185,11 +185,10 @@ describe('rer-analysis-neo helpers', () => {
     ]);
   });
 
-  it('normalizes legacy peleng flags so both true becomes the neutral all state', () => {
+  it('drops the legacy without-coords state when it is the only peleng flag', () => {
     expect(
       normalizeQueryState(
         createQueryState({
-          orWithCoords: true,
           orWithoutCoords: true,
         }),
       ),
