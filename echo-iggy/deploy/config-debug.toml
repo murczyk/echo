@@ -1,0 +1,33 @@
+[system]
+database_path = "/etc/iggy/data"
+
+[enterprise]
+workers_count = 0
+
+[tcp]
+enabled = true
+address = "0.0.0.0:8090"
+raw_buffer_size = 65536
+
+[http]
+enabled = true
+address = "0.0.0.0:3000"
+cors_allowed_origins = ["*"]
+
+[quic]
+enabled = false
+
+[system.security]
+authentication_enabled = true
+
+[[system.security.initial_users]]
+username = "echo"
+password = "1qazZAQ!"
+status = "active"
+permissions = { global = { manage_servers = true, read_servers = true } }
+
+[[system.security.initial_users]]
+username = "promin"
+password = "1qazxXZAQ!"
+status = "active"
+permissions = { global = { manage_servers = false, read_servers = true } }

@@ -47,3 +47,5 @@ goi/swapp/yarn-debug.log*
 goi/swapp/yarn-error.log*
 goi/swapp/pnpm-debug.log*
 goi/goi/
+echo-iggy/deploy/config.toml
+echo-iggy/deploy/iggy-server

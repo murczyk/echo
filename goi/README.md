@@ -12,3 +12,4 @@ it deploys 3 units:
 - download new version like `goi-1.3.3.zip`, unzip under `goi/goi/goi-1.3.3`
 - edit `justfile` `goi_version`
 - run `just release`
+d

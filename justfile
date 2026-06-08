@@ -32,6 +32,9 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
+workspace_echo     := "/home/ubuntu/workspace/echo"
+workspace_iggy     := "~/workspace/iggy"
+local_assets_iggy  := "echo-iggy/deploy"
 
 default:
     @just --list
@@ -1534,7 +1537,6 @@ setup-echo-ai-train server='echo-ai-train':
     ssh -t "$SERVER" echo-ai/deploy.sh
 
 # [positional-arguments]
-[arg('branch', long='branch')]
 [arg('builder', long='builder')]
 [arg('server', long='server')]
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
@@ -2201,6 +2203,25 @@ import-unit-to-target:
     ask_yes_no
     scp {{ server }}:/tmp/unit_export_{{ dt1 }}.json {{ target }}:/tmp/unit_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live import-unit --src-path /tmp/unit_import_{{ dt1 }}.json --origin {{ origin }}'
+
+# [positional-arguments]
+[arg('server', long='server')]
+deploy-iggy server="echo-staging":
+    scp echo-iggy/deploy/config.toml {{server}}:/etc/iggy/
+    ssh {{builder}} "[ -f {{workspace_echo}}/debian/iggy*.deb ]"
+    scp {{builder}}/{{workspace_echo}}/debian/iggy*.deb "{{server}}:/var/tmp/iggy-server.deb"
+    ssh {{server}} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
+    @echo "==> Pipeline finished successfully!"
+
+# [positional-arguments]
+_builder-build-iggy:
+    @echo "==> Checking workspace existence on build server..."
+    ssh {{builder}} "[ -d {{workspace_iggy}} ]" || (echo "ERROR: Remote folder {{workspace_iggy}} does not exist on {{builder}}" && exit 1)
+    @echo "==> Building optimized native binary on build server..."
+    ssh {{builder}} "cd {{workspace_iggy}} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
+    @echo "==> Syncing compiled binary back to local assets folder..."
+    ssh {{builder}} "cp {{workspace_iggy}}/target/release/iggy-server {{workspace_echo}}/{{local_assets_iggy}}/"
+    ssh {{builder}} "cd {{workspace_echo}}/{{local_assets_iggy}} && cargo deb --no-build"
 
 ## Version bump helpers (similar to echo-operator)
 
