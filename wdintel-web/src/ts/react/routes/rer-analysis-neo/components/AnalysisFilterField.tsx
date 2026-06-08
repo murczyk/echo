@@ -1,14 +1,16 @@
 import { Autocomplete, Chip, TextField } from '@mui/material';
 import { Box, Typography } from '@mui/material';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ELLIPSIS } from '../../../utils/misc';
 
-export type AnalysisFilterOption = string | {
-  value: string;
-  label: string;
-  count: number;
-  values?: string[];
-};
+export type AnalysisFilterOption =
+  | string
+  | {
+      value: string;
+      label: string;
+      count: number;
+      values?: string[];
+    };
 
 type AutocompleteOption = {
   key: string;
@@ -25,6 +27,7 @@ type Props = {
   disabled?: boolean;
   loading?: boolean;
   normalizeUnknownAliases?: boolean;
+  deferredCommit?: boolean;
   onChange: (next: string[]) => void;
 };
 
@@ -48,27 +51,62 @@ function optionContainsValue(option: AutocompleteOption, selected: string, norma
   return normalizeUnknownAliases && option.value === '' && (selected === '' || selected === 'Не визначено');
 }
 
-export function AnalysisFilterField({ label, options, value, disabled, loading, normalizeUnknownAliases = false, onChange }: Props) {
+export function AnalysisFilterField({
+  label,
+  options,
+  value,
+  disabled,
+  loading,
+  normalizeUnknownAliases = false,
+  deferredCommit = false,
+  onChange,
+}: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
   const labelCacheRef = useRef<Record<string, string>>({});
+  const [open, setOpen] = useState(false);
+  const [draftValue, setDraftValue] = useState(value);
+  const draftValueRef = useRef(value);
+
+  const updateDraftValue = (nextValue: string[]) => {
+    draftValueRef.current = nextValue;
+    setDraftValue(nextValue);
+  };
+
   autocompleteOptions.forEach((option) => {
     labelCacheRef.current[option.value] = option.label;
     option.values.forEach((value) => {
       labelCacheRef.current[value] = option.label;
     });
   });
-  const autocompleteValue = autocompleteOptions.filter((option) => value.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases)));
-  const unknownAutocompleteValue = value
+
+  useEffect(() => {
+    if (!open) {
+      updateDraftValue(value);
+    }
+  }, [open, value]);
+
+  const effectiveValue = deferredCommit && open ? draftValue : value;
+  const autocompleteValue = autocompleteOptions.filter((option) => effectiveValue.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases)));
+  const unknownAutocompleteValue = effectiveValue
     .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected, normalizeUnknownAliases)))
     .map((selected) => {
       const label = labelCacheRef.current[selected] ?? selected;
       return { key: selected, label, value: selected, count: 0, values: [selected] };
     });
 
+  const commitValue = (nextValue: string[]) => {
+    if (deferredCommit) {
+      draftValueRef.current = nextValue;
+      setDraftValue(nextValue);
+    }
+    onChange(nextValue);
+  };
+
   return (
     <Autocomplete<AutocompleteOption, true, false, false>
       multiple
       disableCloseOnSelect
+      open={open}
       size="small"
       options={autocompleteOptions}
       value={[...autocompleteValue, ...unknownAutocompleteValue]}
@@ -81,6 +119,18 @@ export function AnalysisFilterField({ label, options, value, disabled, loading, 
       closeText="Закрити"
       clearText="Очистити"
       noOptionsText={loading ? `Завантаження${ELLIPSIS}` : 'Немає варіантів'}
+      onOpen={() => {
+        setOpen(true);
+        if (deferredCommit) {
+          updateDraftValue(value);
+        }
+      }}
+      onClose={() => {
+        setOpen(false);
+        if (deferredCommit) {
+          onChange(draftValueRef.current);
+        }
+      }}
       renderTags={(tagValue, getTagProps) =>
         tagValue.map((option, index) => {
           const tagProps = getTagProps({ index });
@@ -99,7 +149,14 @@ export function AnalysisFilterField({ label, options, value, disabled, loading, 
           );
         })
       }
-      onChange={(_event, next) => onChange(next.flatMap((option) => option.values))}
+      onChange={(_event, next, reason) => {
+        const nextValues = next.flatMap((option) => option.values);
+        if (!deferredCommit || reason === 'clear') {
+          commitValue(nextValues);
+          return;
+        }
+        updateDraftValue(nextValues);
+      }}
       renderOption={(props, option) => {
         const { key: _unusedKey, ...optionProps } = props;
         return (

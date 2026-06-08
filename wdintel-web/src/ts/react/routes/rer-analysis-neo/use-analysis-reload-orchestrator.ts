@@ -5,6 +5,8 @@ import { buildAnalysisReq } from './helpers';
 import { reloadAnalysisData } from './use-analysis-data.reload';
 import type { AnalysisAorEntry, AnalysisCenterTab, AnalysisCountItem, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState, AnalysisSidebarTab } from './types';
 
+type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchAnalysisNetworks;
+
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type Params = {
@@ -20,8 +22,15 @@ type Params = {
   shouldLoadNewCallsigns: boolean;
   optionsFreqValuesRef: React.MutableRefObject<string[]>;
   getLoadedFilterSections: () => AnalysisFilterSectionId[];
+  getReloadFilterSections: () => AnalysisFilterSectionId[];
   invalidateFilterSectionLoads: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>, forceReload?: boolean, loadedSections?: AnalysisFilterSectionId[]) => Promise<void>;
+  invalidateFilterSectionLoadsForPatch: (patch?: Partial<AnalysisQueryState>) => void;
+  loadInitialFilterSections: (
+    analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
+    forceReload?: boolean,
+    loadedSections?: AnalysisFilterSectionId[],
+    networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
+  ) => Promise<void>;
   invalidateCallsignGraph: () => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateRightSidebarData: () => void;
@@ -77,9 +86,11 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
+    getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch,
     invalidateMessagePaging,
     invalidateRightSidebarData,
     invalidateSummaryData,
@@ -184,16 +195,20 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
       invalidateTopSidebarLoads: invalidateRightSidebarData,
       getLoadedFilterSections,
+      getReloadFilterSections,
       loadInitialFilterSections,
       invalidateFilterSectionLoads,
+      invalidateFilterSectionLoadsForPatch,
     });
   }, [
     centerTab,
     clearAnalysisResults,
     getLoadedFilterSections,
+    getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch,
     invalidateMessagePaging,
     invalidateRightSidebarData,
     invalidateSummaryData,
@@ -240,6 +255,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     shouldLoadNewCallsigns,
   ]);
 
+  const mapVisible = centerTab === 'map' || (rightSidebarVisible && rightSidebarTab === 'map');
+
   useEffect(() => {
     if (deferInitialLoad) return;
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
@@ -248,12 +265,37 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (centerTab === 'summary') {
       invalidateSummaryData(true);
     }
+    void reload()
+      .then(() => {
+        if (mapVisible) {
+          mapReloadedKeyRef.current = reloadTriggerKey;
+        }
+      })
+      .finally(() => {
+        if (summaryReloadPendingKeyRef.current !== reloadTriggerKey) return;
+        summaryReloadPendingKeyRef.current = null;
+        setSummaryReloadBarrier((current) => current + 1);
+      });
+  }, [centerTab, deferInitialLoad, invalidateSummaryData, mapVisible, reload, reloadTriggerKey]);
+
+  const mapReloadPendingKeyRef = useRef<string | null>(null);
+  const mapReloadedKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (deferInitialLoad) return;
+    if (!mapVisible) return;
+    if (lastReloadTriggerKeyRef.current !== reloadTriggerKey) return;
+    if (summaryReloadPendingKeyRef.current === reloadTriggerKey) return;
+    if (mapReloadPendingKeyRef.current === reloadTriggerKey) return;
+    if (mapReloadedKeyRef.current === reloadTriggerKey) return;
+
+    mapReloadPendingKeyRef.current = reloadTriggerKey;
     void reload().finally(() => {
-      if (summaryReloadPendingKeyRef.current !== reloadTriggerKey) return;
-      summaryReloadPendingKeyRef.current = null;
-      setSummaryReloadBarrier((current) => current + 1);
+      if (mapReloadPendingKeyRef.current !== reloadTriggerKey) return;
+      mapReloadPendingKeyRef.current = null;
+      mapReloadedKeyRef.current = reloadTriggerKey;
     });
-  }, [centerTab, deferInitialLoad, invalidateSummaryData, reload, reloadTriggerKey]);
+  }, [deferInitialLoad, mapVisible, reload, reloadTriggerKey]);
 
   useEffect(() => {
     if (deferInitialLoad) return;

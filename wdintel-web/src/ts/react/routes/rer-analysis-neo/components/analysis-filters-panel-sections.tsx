@@ -59,8 +59,12 @@ export function AnalysisFiltersPanelSections({
   toggleSection,
   updateQueryState,
 }: Props) {
-  const showInitialLoadingIndicators = filtersLoading;
   const loadingCountLabel = NO_DATA_LABEL;
+
+  const countLabel = (section: AnalysisFilterSectionId | 'freqs', optionCount: number, selectedCount: number, overallCount: number | null | undefined) =>
+    isSectionLoading(section) || (filtersLoading && optionCount === 0 && selectedCount === 0)
+      ? loadingCountLabel
+      : sectionCountLabel(selectedCount, overallCount);
 
   const loadSection = (section: AnalysisFilterSectionId) => () => {
     void loadFilterSectionWithSpinner(section);
@@ -87,7 +91,7 @@ export function AnalysisFiltersPanelSections({
     <>
       <FilterSection
         title="Смуги"
-        countLabel={isSectionLoading('aors') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
+        countLabel={countLabel('aors', options.aors.length, derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
         expanded={expandedSections.aors}
         onToggle={() => toggleSection('aors')}
         onLoad={loadSection('aors')}
@@ -97,12 +101,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.aorOptions}
           loading={isSectionLoading('aors')}
           value={queryState.aorsSelected}
+          deferredCommit
           onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Частоти"
-        countLabel={isSectionLoading('freqs') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
+        countLabel={countLabel('freqs', options.freqs.length, derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
         expanded={expandedSections.freqs}
         onToggle={() => toggleSection('freqs')}
       >
@@ -113,6 +118,7 @@ export function AnalysisFiltersPanelSections({
             disabled={includeOnlyNewFreqs}
             loading={isSectionLoading('freqs')}
             value={queryState.freqsSelected}
+            deferredCommit
             onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
           />
           <FormControl size="small" disabled={includeOnlyNewFreqs}>
@@ -139,7 +145,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Позивні"
-        countLabel={isSectionLoading('callsigns') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
+        countLabel={countLabel('callsigns', options.callsigns.length, derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
         onLoad={loadSection('callsigns')}
@@ -149,12 +155,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.callsignsOptions}
           loading={isSectionLoading('callsigns')}
           value={queryState.callsignsSelected}
+          deferredCommit
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Мережі"
-        countLabel={isSectionLoading('networks') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
+        countLabel={countLabel('networks', options.networks.length, derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
         expanded={expandedSections.networks}
         onToggle={() => toggleSection('networks')}
         onLoad={loadSection('networks')}
@@ -165,6 +172,7 @@ export function AnalysisFiltersPanelSections({
           disabled={queryState.withoutNetwork}
           loading={isSectionLoading('networks')}
           value={queryState.networksSelected}
+          deferredCommit
           onChange={(networksSelected) => updateQueryState({ networksSelected })}
         />
         <Stack spacing={0.5}>
@@ -177,7 +185,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Підрозділи"
-        countLabel={isSectionLoading('units') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
+        countLabel={countLabel('units', options.units.length, derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
         expanded={expandedSections.units}
         onToggle={() => toggleSection('units')}
         onLoad={loadSection('units')}
@@ -189,6 +197,7 @@ export function AnalysisFiltersPanelSections({
             loading={isSectionLoading('units')}
             value={queryState.unitsSelected}
             normalizeUnknownAliases
+            deferredCommit
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           {queryState.unitsSelected.length > 0 ? (
@@ -202,7 +211,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Групи"
-        countLabel={isSectionLoading('groups') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
+        countLabel={countLabel('groups', options.groups.length, derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
         expanded={expandedSections.groups}
         onToggle={() => toggleSection('groups')}
         onLoad={loadSection('groups')}
@@ -212,12 +221,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.groupOptions}
           loading={isSectionLoading('groups')}
           value={queryState.groupsSelected}
+          deferredCommit
           onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Відправники"
-        countLabel={isSectionLoading('senders') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
+        countLabel={countLabel('senders', options.senders.length, derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
         expanded={expandedSections.senders}
         onToggle={() => toggleSection('senders')}
         onLoad={loadSection('senders')}
@@ -227,12 +237,13 @@ export function AnalysisFiltersPanelSections({
           options={options.senders}
           loading={isSectionLoading('senders')}
           value={queryState.sendersSelected}
+          deferredCommit
           onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Пости"
-        countLabel={isSectionLoading('posts') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
+        countLabel={countLabel('posts', options.posts.length, derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
         expanded={expandedSections.posts}
         onToggle={() => toggleSection('posts')}
         onLoad={loadSection('posts')}
@@ -243,13 +254,14 @@ export function AnalysisFiltersPanelSections({
             options={derived.postsOptions}
             loading={isSectionLoading('posts')}
             value={queryState.postsSelected}
+            deferredCommit
             onChange={(postsSelected) => updateQueryState({ postsSelected })}
           />
         </Stack>
       </FilterSection>
       <FilterSection
         title="Локації"
-        countLabel={isSectionLoading('locations') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
+        countLabel={countLabel('locations', options.locations.length, derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
         expanded={expandedSections.locations}
         onToggle={() => toggleSection('locations')}
         onLoad={loadSection('locations')}
@@ -260,6 +272,7 @@ export function AnalysisFiltersPanelSections({
             options={derived.locationsOptions}
             loading={isSectionLoading('locations')}
             value={queryState.locationsSelected}
+            deferredCommit
             onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
           />
           <FormControlLabel
@@ -320,7 +333,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Теги"
-        countLabel={isSectionLoading('tags') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
+        countLabel={countLabel('tags', options.tags.length, derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
         expanded={expandedSections.tags}
         onToggle={() => toggleSection('tags')}
         onLoad={loadSection('tags')}
@@ -363,7 +376,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Метадані"
-        countLabel={isSectionLoading('metadata') ? loadingCountLabel : sectionCountLabel(derived.metadataSelectedCount, null)}
+        countLabel={countLabel('metadata', derived.metadataOptionsCount, derived.metadataSelectedCount, null)}
         expanded={expandedSections.metadata}
         onToggle={() => toggleSection('metadata')}
         onLoad={loadSection('metadata')}

@@ -59,7 +59,14 @@ export function useAnalysisData({
     setUsers: referenceState.setUsers,
   });
 
-  const { getLoadedFilterSections, invalidateFilterSectionLoads, loadFilterSection, loadInitialFilterSections } = useAnalysisFilterSections({
+  const {
+    getLoadedFilterSections,
+    getReloadFilterSections,
+    invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch,
+    loadFilterSection,
+    loadInitialFilterSections,
+  } = useAnalysisFilterSections({
     queryState,
     optionsFreqValues,
     unitsMapRef: referenceState.unitsMapRef,
@@ -122,7 +129,9 @@ export function useAnalysisData({
       shouldLoadNewCallsigns: referenceState.shouldLoadNewCallsignsRef.current,
       optionsFreqValuesRef: referenceState.optionsFreqsRef,
       getLoadedFilterSections,
+      getReloadFilterSections,
       invalidateFilterSectionLoads,
+      invalidateFilterSectionLoadsForPatch,
       loadInitialFilterSections,
       invalidateCallsignGraph: sidebarData.invalidateCallsignGraph,
       invalidateCorrelatedFreqsCache: sidebarData.invalidateCorrelatedFreqsCache,
@@ -197,6 +206,8 @@ export function useAnalysisData({
     loadAllMessages: messageList.loadAllMessages,
     loadFilterSection,
     invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch,
+    getReloadFilterSections,
     toggleCallsignGraphNolimit: sidebarData.toggleCallsignGraphNolimit,
     loadCorrelatedFreqs: sidebarData.loadCorrelatedFreqs,
     loadGroupsActivity: sidebarData.loadGroupsActivity,

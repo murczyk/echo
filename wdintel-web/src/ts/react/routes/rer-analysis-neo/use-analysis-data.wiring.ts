@@ -7,6 +7,8 @@ import type { AnalysisCountItem, AnalysisFilterOptions, AnalysisQueryState, Anal
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
 import type { UseAnalysisDataProps } from './use-analysis-data.types';
 
+type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchAnalysisNetworks;
+
 type ReferenceState = ReturnType<typeof useAnalysisReferenceState>;
 type MessageList = ReturnType<typeof useAnalysisMessageList>;
 type MapData = ReturnType<typeof useAnalysisMapData>;
@@ -105,8 +107,15 @@ type BuildReloadParamsInput = {
   shouldLoadNewCallsigns: boolean;
   optionsFreqValuesRef: React.MutableRefObject<string[]>;
   getLoadedFilterSections: () => AnalysisFilterSectionId[];
+  getReloadFilterSections: () => AnalysisFilterSectionId[];
   invalidateFilterSectionLoads: () => void;
-  loadInitialFilterSections: (analysisReq: NonNullable<ReturnType<typeof import('./helpers').buildAnalysisReq>>, forceReload?: boolean, loadedSections?: AnalysisFilterSectionId[]) => Promise<void>;
+  invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
+  loadInitialFilterSections: (
+    analysisReq: NonNullable<ReturnType<typeof import('./helpers').buildAnalysisReq>>,
+    forceReload?: boolean,
+    loadedSections?: AnalysisFilterSectionId[],
+    networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
+  ) => Promise<void>;
   invalidateCallsignGraph: () => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateRightSidebarData: () => void;
@@ -165,7 +174,9 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     shouldLoadNewCallsigns: input.shouldLoadNewCallsigns,
     optionsFreqValuesRef: input.optionsFreqValuesRef,
     getLoadedFilterSections: input.getLoadedFilterSections,
+    getReloadFilterSections: input.getReloadFilterSections,
     invalidateFilterSectionLoads: input.invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch: input.invalidateFilterSectionLoadsForPatch,
     loadInitialFilterSections: input.loadInitialFilterSections,
     invalidateCallsignGraph: input.invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache: input.invalidateCorrelatedFreqsCache,

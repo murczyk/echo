@@ -37,7 +37,13 @@ describe('AnalysisFilterField', () => {
   function latestAutocompleteProps() {
     return autocompleteSpy.mock.calls.at(-1)?.[0] as {
       disableCloseOnSelect?: boolean;
-      onChange: (_event: unknown, next: Array<{ value: string; label: string; count: number; values: string[] }>) => void;
+      onChange: (
+        _event: unknown,
+        next: Array<{ value: string; label: string; count: number; values: string[] }>,
+        reason: 'createOption' | 'selectOption' | 'removeOption' | 'blur' | 'clear' | 'escape',
+      ) => void;
+      onClose?: () => void;
+      onOpen?: () => void;
       renderOption: (props: { key: string; [key: string]: unknown }, option: { key: string; value: string; label: string; count: number; values: string[] }) => unknown;
       renderTags: (
         value: Array<{ key: string; value: string; label: string; count: number; values: string[] }>,
@@ -48,6 +54,7 @@ describe('AnalysisFilterField', () => {
       loading?: boolean;
       loadingText?: string;
       noOptionsText?: string;
+      open?: boolean;
     };
   }
 
@@ -128,6 +135,90 @@ describe('AnalysisFilterField', () => {
     expect(props.value).toEqual([
       { key: '99', value: '99', label: '99', count: 0, values: ['99'] },
     ]);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps multi-select edits local until close when deferred commit is enabled', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: 'Unit 1', count: 1 },
+        { value: 'u2', label: 'Unit 2', count: 2 },
+        { value: 'u3', label: 'Unit 3', count: 3 },
+      ],
+      value: ['u1'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onOpen?.();
+    });
+    act(() => {
+      props.onChange(null, [props.options[0], props.options[1], props.options[2]], 'selectOption');
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(latestAutocompleteProps().value.map((option) => option.value)).toEqual(['u1', 'u2', 'u3']);
+
+    act(() => {
+      props.onClose?.();
+    });
+    expect(onChange).toHaveBeenCalledWith(['u1', 'u2', 'u3']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('commits clear immediately even in deferred mode', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [{ value: 'u1', label: 'Unit 1', count: 1 }],
+      value: ['u1'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onChange(null, [], 'clear');
+    });
+    expect(onChange).toHaveBeenCalledWith([]);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps a cleared deferred selection empty when the menu closes', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [{ value: 'u1', label: 'Unit 1', count: 1 }],
+      value: ['u1'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onOpen?.();
+    });
+    act(() => {
+      props.onChange(null, [], 'clear');
+    });
+    act(() => {
+      props.onClose?.();
+    });
+
+    expect(onChange).toHaveBeenCalledWith([]);
+    expect(onChange).not.toHaveBeenCalledWith(['u1']);
 
     act(() => {
       root.unmount();

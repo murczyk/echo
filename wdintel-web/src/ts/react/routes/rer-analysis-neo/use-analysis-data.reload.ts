@@ -57,6 +57,7 @@ type FilterSectionLoadContext = {
   analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
   loadVersion: number;
   loadVersionRef: React.MutableRefObject<number>;
+  networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setNetworks: Setter<Network[]>;
@@ -104,6 +105,19 @@ function mergeSignalGroups(
   next: Record<string, SignalGroupEntry>,
 ): Record<string, SignalGroupEntry> {
   return { ...current, ...next };
+}
+
+async function loadAnalysisNetworksWithCache(
+  analysisReq: AnalysisStatsReq,
+  cache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
+): ReturnType<typeof fetchAnalysisNetworks> {
+  const requestKey = JSON.stringify(analysisReq);
+  const cached = cache?.get(requestKey);
+  if (cached) return cached;
+
+  const request = fetchAnalysisNetworks(analysisReq);
+  cache?.set(requestKey, request);
+  return request;
 }
 
 export function filterSectionsForQueryState(queryState: AnalysisQueryState): AnalysisFilterSectionId[] {
@@ -299,7 +313,7 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'networks': {
-      const networksStatsRsp = await fetchAnalysisNetworks(context.analysisReq);
+      const networksStatsRsp = await loadAnalysisNetworksWithCache(context.analysisReq, context.networkStatsCache);
       if (isStale()) return;
       const networkIds = networksStatsRsp.networks.map((item) => item.networkId);
       const networksById = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
@@ -340,6 +354,9 @@ type ReloadParams = {
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
+  centerTab?: import('./types').AnalysisCenterTab;
+  rightSidebarVisible?: boolean;
+  rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -387,8 +404,11 @@ type ReloadParams = {
     analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
     forceReload?: boolean,
     loadedSections?: AnalysisFilterSectionId[],
+    networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
   ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
+  invalidateFilterSectionLoadsForPatch: (patch?: Partial<AnalysisQueryState>) => void;
+  getReloadFilterSections?: () => AnalysisFilterSectionId[];
 };
 
 export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
@@ -396,7 +416,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
-  const loadedFilterSectionsBeforeReload = params.getLoadedFilterSections?.() ?? [];
+  const networkStatsCache = new Map<string, ReturnType<typeof fetchAnalysisNetworks>>();
+  const loadedFilterSectionsBeforeReload = params.getReloadFilterSections?.() ?? params.getLoadedFilterSections?.() ?? [];
+  const shouldLoadMap =
+    params.centerTab === 'map' || (params.rightSidebarVisible === true && params.rightSidebarTab === 'map');
 
   params.onError('');
   params.invalidateMessagePaging();
@@ -406,10 +429,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setFiltersLoading(true);
   params.setNewCallsignsLoading(true);
   params.setNewCallsignsLoadedKey(null);
-  params.setMapLoading(true);
+  params.setMapLoading(shouldLoadMap);
   params.setNoMoreToLoad(false);
   params.setNolimitShown(false);
-  params.invalidateFilterSectionLoads();
 
   try {
     const loadCriticalData = async (
@@ -539,7 +561,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
       }));
-      await params.loadInitialFilterSections(resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload);
+      await params.loadInitialFilterSections(resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload, networkStatsCache);
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
@@ -585,9 +607,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadReferenceData = async () => {
       try {
+        const networksAnalysisReq = buildAnalysisReqForFilterSection('networks', criticalData.resolvedAnalysisReq);
         const [units, networksStatsRsp] = await Promise.all([
           getUnitsList(),
-          fetchAnalysisNetworks(criticalData.resolvedAnalysisReq),
+          loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache),
         ]);
         if (isStaleReload()) return;
         const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
@@ -636,8 +659,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     const secondaryLoads = [
       loadCountsData(),
       loadReferenceData(),
-      loadMapData(),
     ];
+    if (shouldLoadMap) {
+      secondaryLoads.push(loadMapData());
+    }
     if (params.shouldLoadNewCallsigns) {
       secondaryLoads.push(
         (async () => {
