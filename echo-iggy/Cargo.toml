@@ -3,6 +3,7 @@ name = "iggy"
 version = "1.0.0"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
+license = "AllRightsReserved"
 description = "ЕХО - Apache Iggy deb"
 
 [[bin]]
