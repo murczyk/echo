@@ -32,7 +32,7 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
-workspace_echo     := "/home/ubuntu/workspace/echo"
+workspace_echo     := "/home/ubuntu/workspace/krab/echo-feature/echo"
 workspace_iggy     := "~/workspace/iggy"
 local_assets_iggy  := "echo-iggy/deploy"
 
@@ -2219,9 +2219,8 @@ _builder-build-iggy:
     ssh {{builder}} "[ -d {{workspace_iggy}} ]" || (echo "ERROR: Remote folder {{workspace_iggy}} does not exist on {{builder}}" && exit 1)
     @echo "==> Building optimized native binary on build server..."
     ssh {{builder}} "cd {{workspace_iggy}} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
-    @echo "==> Syncing compiled binary back to local assets folder..."
     ssh {{builder}} "cp {{workspace_iggy}}/target/release/iggy-server {{workspace_echo}}/{{local_assets_iggy}}/"
-    ssh {{builder}} "cd {{workspace_echo}}/{{local_assets_iggy}} && cargo deb --no-build"
+    ssh {{builder}} "cd {{workspace_echo}}/{{local_assets_iggy}} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
 
 ## Version bump helpers (similar to echo-operator)
 
