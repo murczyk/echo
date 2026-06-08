@@ -21,6 +21,7 @@ import type {
 } from '../../../../Bindings';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import type { AnalysisBotTagAction } from './use-analysis-data.message-actions';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -153,6 +154,7 @@ export type AnalysisPageState = {
   hasLoadedInitialMessages: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
+  botTagAction: AnalysisBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
   messagesPaging: boolean;
@@ -209,6 +211,8 @@ export type AnalysisPageActions = {
   loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
+  onCancelBotTagAction: () => void;
+  onMarkBotTagWrong: (messageId: number, tagId: number) => void;
   renameSummaryUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;

@@ -60,6 +60,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const data = useAnalysisData({
+    authUserName,
     currentUser,
     deferInitialLoad: !systemSettingsLoaded,
     centerTab,
@@ -354,6 +355,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadedSavedFilter: savedFilters.loadedSavedFilter,
     mapAttrs: data.mapAttrs,
     messageActionLoading: data.messageActionLoading,
+    botTagAction: data.botTagAction,
     messagesLoading: data.messagesLoading,
     messagesPaging: data.messagesPaging,
     messageComments: data.messageComments,
@@ -367,6 +369,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     newestFirst,
     options: data.options,
     onDeleteMessage: data.onDeleteMessage,
+    onCancelBotTagAction: data.onCancelBotTagAction,
+    onMarkBotTagWrong: data.onMarkBotTagWrong,
     onSaveMessageComment: data.onSaveMessageComment,
     onToggleMessageBookmark: data.onToggleMessageBookmark,
     onToggleMessageImportant: data.onToggleMessageImportant,

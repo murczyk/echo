@@ -24,10 +24,16 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { filterOtherMessageComments } from '../use-analysis-data.comments';
 
+type BotTagAction = {
+  messageId: number;
+  tagId: number;
+};
+
 type Props = {
   authUserName: string | null;
   currentUser: User | null;
   copiedFeedbackId: string | null;
+  botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
   loading: boolean;
   paginationLoading: boolean;
@@ -39,6 +45,8 @@ type Props = {
   editorSaveInFlight: boolean;
   onCloseEditor: () => void;
   onDeleteMessage: (messageId: number) => void;
+  onCancelBotTagAction?: () => void;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
   onSaveEditor: (message: InboxMessage) => void;
@@ -68,9 +76,12 @@ type AnalysisMessageCardItemProps = {
   message: InboxMessage;
   messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
+  botTagAction?: BotTagAction | null;
   onCommentOpen: (id: number, message: InboxMessage) => void;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
+  onCancelBotTagAction?: () => void;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
   onSaveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
@@ -93,6 +104,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   authUserName,
   currentUser,
   copiedFeedbackId,
+  botTagAction,
   groupInfos,
   id,
   message,
@@ -101,6 +113,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onCommentOpen,
   onCopyFeedback,
   onDeleteOpen,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
   onOpenEditor,
   onSaveMessageUpdate,
   onToggleMessageBookmark,
@@ -210,6 +224,9 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={() => onOpenEditor(id)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
+      botTagAction={botTagAction?.messageId === id ? botTagAction : null}
+      onCancelBotTagAction={onCancelBotTagAction}
+      onMarkBotTagWrong={onMarkBotTagWrong}
       analysisCallsignActions={{
         onAddCallsign: async (callsign) => {
           return saveCallsignPatch((current) => {
@@ -242,6 +259,7 @@ function AnalysisMessagesPaneComponent({
   authUserName,
   currentUser,
   copiedFeedbackId: copiedFeedbackIdProp,
+  botTagAction,
   editorMessage,
   editorSaveInFlight,
   groupInfos,
@@ -253,6 +271,8 @@ function AnalysisMessagesPaneComponent({
   noMoreToLoad,
   onCloseEditor,
   onDeleteMessage,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
   onLoadMoreMessages,
   onOpenEditor,
   onSaveEditor,
@@ -373,6 +393,7 @@ function AnalysisMessagesPaneComponent({
               authUserName={authUserName}
               currentUser={currentUser}
               copiedFeedbackId={copiedFeedbackId}
+              botTagAction={botTagAction}
               groupInfos={groupInfos}
               id={id}
               message={message}
@@ -381,6 +402,8 @@ function AnalysisMessagesPaneComponent({
               onCommentOpen={handleCommentOpen}
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={handleDeleteOpen}
+              onCancelBotTagAction={onCancelBotTagAction}
+              onMarkBotTagWrong={onMarkBotTagWrong}
               onOpenEditor={handleOpenEditor}
               onSaveMessageUpdate={onSaveMessageUpdate}
               onToggleMessageBookmark={onToggleMessageBookmark}

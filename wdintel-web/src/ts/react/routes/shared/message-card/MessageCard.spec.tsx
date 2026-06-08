@@ -280,6 +280,7 @@ vi.mock('./MarkedText', () => ({
 type Rendered = {
   container: HTMLDivElement;
   root: Root;
+  props?: ComponentProps<typeof MessageCard>;
 };
 
 type ResizeObserverCallback = () => void;
@@ -389,7 +390,7 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
     root.render(<MessageCard {...props} />);
   });
 
-  return { container, root };
+  return { container, root, props };
 }
 
 async function renderHeader(overrides: Partial<ComponentProps<typeof MessageCardHeader>> = {}): Promise<Rendered> {
@@ -450,6 +451,13 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
+}
+
+function getTagButtonLabels(container: HTMLElement): string[] {
+  const tagLabels = new Set(['переміщення', 'зв’язок', 'РЕБ', 'арта', 'палітра', 'іфо', 'розвідка']);
+  return Array.from(container.querySelectorAll('button'))
+    .map((button) => button.textContent?.trim() ?? '')
+    .filter((label) => tagLabels.has(label));
 }
 
 async function click(element: HTMLElement): Promise<void> {
@@ -1276,6 +1284,37 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('GHOST');
   });
 
+  it('shows human and bot contribution badges and renders the bot-error prompt', async () => {
+    const onToggleTag = vi.fn();
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      msg: buildMessage({
+        inboxTags: [
+          { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          { id: 2, tagId: 3, confidence: 0.92, login: null, model: 'bot', organismId: null },
+        ],
+      }),
+      botTagAction: { messageId: 42, tagId: 3 },
+      onToggleTag,
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
+    expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    expect(view.container.textContent).toContain('бот помилився');
+    expect(view.container.textContent).toContain('закрити');
+
+    await click(getButton(view.container, 'бот помилився'));
+    await click(getButton(view.container, 'закрити'));
+
+    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
+    expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
+    expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
   it('does not render analysis-only callsign controls in duty mode', async () => {
     const view = await renderCard();
     rendered.push(view);
@@ -1351,6 +1390,66 @@ describe('MessageCard', () => {
     } finally {
       rectSpy.mockRestore();
     }
+  });
+
+  it('keeps compact tag order stable when a chip is unchecked', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: TAG_ROW_MEASURE_WIDTH_PX,
+      height: 32,
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: TAG_ROW_MEASURE_WIDTH_PX,
+      bottom: 32,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    try {
+      const onToggleTag = vi.fn();
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        msg: buildMessage({
+          inboxTags: [{ id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 }],
+        }),
+        onToggleTag,
+      });
+      rendered.push(view);
+
+      const before = getTagButtonLabels(view.container).slice(0, 4);
+      expect(before[0]).toBe('переміщення');
+
+      await click(getButton(view.container, 'переміщення'));
+      expect(onToggleTag).toHaveBeenCalledWith(3);
+
+      const nextProps = {
+        ...view.props,
+        msg: buildMessage({
+          inboxTags: [],
+          tags: [4, 5, 6, 7, 8, 9],
+        }),
+      };
+
+      await act(async () => {
+        view.root.render(<MessageCard {...nextProps} />);
+      });
+
+      const after = getTagButtonLabels(view.container).slice(0, 4);
+      expect(after).toEqual(before);
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('keeps full tag ordering aligned with the tag map', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        inboxTags: [{ id: 1, tagId: 7, confidence: 1, login: 'tester', model: null, organismId: 1 }],
+      }),
+    });
+    rendered.push(view);
+
+    expect(getTagButtonLabels(view.container)).toEqual(['переміщення', 'зв’язок', 'РЕБ', 'арта', 'палітра', 'іфо', 'розвідка']);
   });
 
   it('shows a tags spinner before analysis tags load', async () => {
