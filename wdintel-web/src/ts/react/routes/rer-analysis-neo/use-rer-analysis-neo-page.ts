@@ -4,8 +4,10 @@ import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
+import { currentSystemSettings } from '../../services/api/system-settings';
 import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import {
+  applyUnitsExactMatchOnlyDefault,
   buildAnalysisReq,
   createInitialQueryState,
   createResetQueryState,
@@ -38,6 +40,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
+  const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(null);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
@@ -57,6 +61,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const data = useAnalysisData({
     currentUser,
+    deferInitialLoad: !systemSettingsLoaded,
     centerTab,
     newestFirst,
     onError: setPageError,
@@ -76,6 +81,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     queryState,
+    unitsExactMatchOnlyDefault,
     setQueryState,
   });
 
@@ -119,6 +125,35 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     }
     setCenterTab('map');
   }, [dutySettings.analysisMapInSidebar, setCenterTab]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void currentSystemSettings()
+      .then((settings) => {
+        if (abortController.signal.aborted) return;
+        setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
+        setQueryState((current) => {
+          const nextState = applyUnitsExactMatchOnlyDefault(current, settings.rerAnalysisUnitsExactMatchOnlyDefault);
+          setLastResetState((currentReset) => {
+            return applyUnitsExactMatchOnlyDefault(currentReset, settings.rerAnalysisUnitsExactMatchOnlyDefault);
+          });
+          return nextState;
+        });
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return;
+        setPageError('Не вдалося завантажити системні налаштування.');
+      })
+      .finally(() => {
+        if (abortController.signal.aborted) return;
+        setSystemSettingsLoaded(true);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -169,8 +204,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   useEffect(() => {
+    if (!systemSettingsLoaded) return;
     pushQueryStateToUrl(queryState);
-  }, [queryState]);
+  }, [queryState, systemSettingsLoaded]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (unitName === null) return;
@@ -188,14 +224,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [data.invalidateFilterSectionLoads]);
 
   const resetFilters = useCallback(() => {
-    const nextState = createResetQueryState();
+    const nextState = applyUnitsExactMatchOnlyDefault(createResetQueryState(), unitsExactMatchOnlyDefault);
     savedFilters.applySavedFilter(null);
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
     pushQueryStateToUrl(nextState);
-  }, [data, savedFilters]);
+  }, [data, savedFilters, unitsExactMatchOnlyDefault]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {

@@ -326,6 +326,20 @@ export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: Ana
   });
 }
 
+export function applyUnitsExactMatchOnlyDefault(
+  state: AnalysisQueryState,
+  unitsExactMatchOnlyDefault: boolean | null,
+): AnalysisQueryState {
+  if (state.unitsExactMatchOnly !== null || unitsExactMatchOnlyDefault == null) {
+    return state;
+  }
+
+  return {
+    ...state,
+    unitsExactMatchOnly: unitsExactMatchOnlyDefault,
+  };
+}
+
 function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQueryState {
   const normalized = { ...req };
 

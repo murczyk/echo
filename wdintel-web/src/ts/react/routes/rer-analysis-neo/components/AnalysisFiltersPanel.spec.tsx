@@ -244,32 +244,11 @@ function findLabelInput(container: HTMLElement, labelText: string): HTMLInputEle
   return input;
 }
 
-function findLabelSelect(container: HTMLElement, labelText: string): HTMLSelectElement {
-  const wrapper = Array.from(container.querySelectorAll('div,label')).find((item) => {
-    if (!item.textContent?.includes(labelText)) return false;
-    const select = item.querySelector('select');
-    if (!(select instanceof HTMLSelectElement)) return false;
-    const optionValues = Array.from(select.options).map((option) => option.value);
-    return optionValues.includes('default') && optionValues.includes('exact') && optionValues.includes('non-exact');
-  });
-  if (!wrapper) throw new Error(`Select label not found: ${labelText}`);
-  const select = wrapper.querySelector('select');
-  if (!(select instanceof HTMLSelectElement)) throw new Error(`Select not found for label: ${labelText}`);
-  return select;
-}
-
 async function setChecked(input: HTMLInputElement, checked: boolean): Promise<void> {
   await act(async () => {
     if (input.checked !== checked) {
       input.click();
     }
-  });
-}
-
-async function setSelectValue(select: HTMLSelectElement, value: string): Promise<void> {
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
 
@@ -748,7 +727,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('Показувати всі записи або лише ті, де є координати пеленга.');
   });
 
-  it('uses the lighter default label for the units exact-match selector without an extra hint chip', async () => {
+  it('hides the exact-match control when no units are selected', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -769,17 +748,18 @@ describe('AnalysisFiltersPanel', () => {
         } as AnalysisPageState['counts'],
         queryState: {
           ...emptyQueryState(),
+          unitsSelected: [],
           unitsExactMatchOnly: null,
         },
       }),
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('За замовчуванням');
-    expect(view.container.textContent).not.toContain('режим:');
+    expect(view.container.textContent).not.toContain('Точний збіг');
+    expect(view.container.textContent).not.toContain('За замовчуванням');
   });
 
-  it('does not render the removed exact-match hint chip when count stats are available', async () => {
+  it('renders the exact-match checkbox when units are selected', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -795,42 +775,60 @@ describe('AnalysisFiltersPanel', () => {
           tagsCount: 0,
           aorsCount: 0,
           networksCount: 0,
-          unitsExactMatchesCount: 3,
+          unitsExactMatchesCount: 8,
           unitsNonExactMatchesCount: 7,
         } as AnalysisPageState['counts'],
         queryState: {
           ...emptyQueryState(),
+          unitsSelected: ['u1'],
           unitsExactMatchOnly: true,
         },
       }),
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('За замовчуванням');
-    expect(view.container.textContent).not.toContain('неточних збігів: 7');
+    expect(view.container.textContent).toContain('Точний збіг за еталонкою: 8');
+    expect(view.container.textContent).not.toContain('За замовчуванням');
   });
 
-  it('updates the tri-state units match filter explicitly', async () => {
+  it('sends true when the exact-match checkbox is checked', async () => {
     const updateQueryState = vi.fn();
     const view = await renderComponent(
       buildProps({
         updateQueryState,
         queryState: {
           ...emptyQueryState(),
+          unitsSelected: ['u1'],
           unitsExactMatchOnly: null,
         },
       }),
     );
     rendered.push(view);
 
-    const select = findLabelSelect(view.container, 'Збіг за еталонкою');
-    await setSelectValue(select, 'exact');
-    await setSelectValue(select, 'non-exact');
-    await setSelectValue(select, 'default');
+    const checkbox = findLabelInput(view.container, 'Точний збіг');
+    await setChecked(checkbox, true);
 
     expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: true });
+  });
+
+  it('sends false when the exact-match checkbox is unchecked', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'Точний збіг');
+    await setChecked(checkbox, false);
+
     expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: false });
-    expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: null });
   });
 
   it('renders reset inside the filters panel and disables it when there is nothing to reset', async () => {

@@ -6,6 +6,7 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
 import {
+  applyUnitsExactMatchOnlyDefault,
   buildAnalysisReq,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
@@ -17,6 +18,7 @@ type Props = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
+  unitsExactMatchOnlyDefault: boolean | null;
   setQueryState: Dispatch<SetStateAction<AnalysisQueryState>>;
 };
 
@@ -39,7 +41,14 @@ function toErrorMessage(error: unknown): string {
   return 'Сталася помилка під час роботи зі збереженими фільтрами.';
 }
 
-export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorized, queryState, setQueryState }: Props): Result {
+export function useAnalysisSavedFilters({
+  allFrequencies,
+  onError,
+  onUnauthorized,
+  queryState,
+  setQueryState,
+  unitsExactMatchOnlyDefault,
+}: Props): Result {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
@@ -108,12 +117,12 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       }
 
       const current = queryState;
-      const nextState = queryStateFromSavedFilter(savedFilter, current);
+      const nextState = applyUnitsExactMatchOnlyDefault(queryStateFromSavedFilter(savedFilter, current), unitsExactMatchOnlyDefault);
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
       setQueryState(nextState);
     },
-    [queryState, setQueryState],
+    [queryState, setQueryState, unitsExactMatchOnlyDefault],
   );
 
   const saveAsNew = useCallback(async (name: string) => {

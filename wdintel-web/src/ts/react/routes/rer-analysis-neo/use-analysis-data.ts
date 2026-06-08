@@ -52,6 +52,7 @@ export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-da
 
 export function useAnalysisData({
   currentUser,
+  deferInitialLoad = false,
   centerTab,
   newestFirst,
   onError,
@@ -499,6 +500,7 @@ export function useAnalysisData({
   }, [loadMessageComments, loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
+    if (deferInitialLoad) return;
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
     lastReloadTriggerKeyRef.current = reloadTriggerKey;
     summaryReloadPendingKeyRef.current = reloadTriggerKey;
@@ -510,23 +512,26 @@ export function useAnalysisData({
       summaryReloadPendingKeyRef.current = null;
       setSummaryReloadBarrier((current) => current + 1);
     });
-  }, [centerTab, invalidateSummaryData, reload, reloadTriggerKey]);
+  }, [centerTab, deferInitialLoad, invalidateSummaryData, reload, reloadTriggerKey]);
 
   useEffect(() => {
+    if (deferInitialLoad) return;
     if (centerTab !== 'summary') return;
     if (summaryReloadPendingKeyRef.current !== null) return;
     void loadSummaryData();
-  }, [centerTab, loadSummaryData, summaryReloadBarrier]);
+  }, [centerTab, deferInitialLoad, loadSummaryData, summaryReloadBarrier]);
 
   useEffect(() => {
+    if (deferInitialLoad) return;
     if (!rightSidebarVisible) return;
     if (rightSidebarTab !== 'stats' && rightSidebarTab !== 'callsigns') return;
     void loadTopSidebarData();
-  }, [loadTopSidebarData, rightSidebarTab, rightSidebarVisible]);
+  }, [deferInitialLoad, loadTopSidebarData, rightSidebarTab, rightSidebarVisible]);
 
   useEffect(() => {
+    if (deferInitialLoad) return;
     void loadMapPalitras();
-  }, [loadMapPalitras]);
+  }, [deferInitialLoad, loadMapPalitras]);
 
   const mapAttrs = useMemo(
     () =>

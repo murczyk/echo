@@ -12,6 +12,9 @@ import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 const userSettingsMock = vi.hoisted(() => ({
   fetchUserSettings: vi.fn(),
 }));
+const systemSettingsMock = vi.hoisted(() => ({
+  currentSystemSettings: vi.fn(),
+}));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
 const useAnalysisSavedFiltersMock = vi.hoisted(() => vi.fn());
@@ -38,6 +41,10 @@ vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: userSettingsMock.fetchUserSettings,
   saveUserSettings: vi.fn(),
+}));
+
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: systemSettingsMock.currentSystemSettings,
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -254,6 +261,17 @@ describe('useRerAnalysisNeoPage', () => {
       disableAutoScroll: false,
       analysisMapInSidebar: false,
     });
+    systemSettingsMock.currentSystemSettings.mockReset();
+    systemSettingsMock.currentSystemSettings.mockResolvedValue({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+    });
 
     useAnalysisDataMock.mockReset();
     useAnalysisDataMock.mockImplementation(() => buildAnalysisData());
@@ -378,6 +396,30 @@ describe('useRerAnalysisNeoPage', () => {
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
   });
 
+  it('resets the exact-match setting to the loaded system default', async () => {
+    systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: true,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+    });
+
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.resetFilters();
+    });
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBe(true);
+    expect(latest?.queryState.unitsExactMatchOnly).not.toBeNull();
+  });
+
   it('does not duplicate a frequency already in the analysis filter', async () => {
     renderHook();
     await flushEffects();
@@ -410,6 +452,35 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.queryState.unitsSelected).toEqual([]);
+  });
+
+  it('applies the current system default for exact-match when the query state leaves it unset', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', window.location.pathname);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBe(false);
+    window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('preserves an explicit exact-match setting from the parsed query state', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', `${window.location.pathname}?unitsExactMatchOnly=true`);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBe(true);
+    window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('shows an error when system settings fail to load', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('boom'));
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
   });
 
   it('moves the active map away from the sidebar when the setting turns off', async () => {

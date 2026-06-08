@@ -759,11 +759,15 @@ view isDark _ model =
                             "всі"
                             { options | loading = isRefreshing model.units }
                     )
-                , div [ class "my-1" ]
-                    [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
-                        |> Shared.Components.Checkbox.withContent (unitsExactMatchCheckboxContent model)
-                        |> Shared.Components.Checkbox.view
-                    ]
+                , if List.isEmpty model.unitsSelected then
+                    text ""
+
+                  else
+                    div [ class "my-1" ]
+                        [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
+                            |> Shared.Components.Checkbox.withContent (unitsExactMatchCheckboxContent model)
+                            |> Shared.Components.Checkbox.view
+                        ]
                 ]
 
         tabFiltersLocations =

@@ -24,6 +24,7 @@ type HookResult = ReturnType<typeof useAnalysisSavedFilters>;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
+let currentQueryState: AnalysisQueryState | null = null;
 
 function buildSavedFilter(): SavedFilter {
   const queryState = {
@@ -43,30 +44,40 @@ function buildSavedFilter(): SavedFilter {
   };
 }
 
-function Harness({ allFrequencies, queryState }: { allFrequencies: string[]; queryState: AnalysisQueryState }) {
-  const [currentQueryState, setCurrentQueryState] = useState(queryState);
+function Harness({
+  allFrequencies,
+  queryState,
+  unitsExactMatchOnlyDefault,
+}: {
+  allFrequencies: string[];
+  queryState: AnalysisQueryState;
+  unitsExactMatchOnlyDefault: boolean | null;
+}) {
+  const [queryStateValue, setQueryStateValue] = useState(queryState);
+  currentQueryState = queryStateValue;
   latest = useAnalysisSavedFilters({
     allFrequencies,
     onError: vi.fn(),
     onUnauthorized: vi.fn(() => false),
-    queryState: currentQueryState,
-    setQueryState: setCurrentQueryState,
+    queryState: queryStateValue,
+    unitsExactMatchOnlyDefault,
+    setQueryState: setQueryStateValue,
   });
   return null;
 }
 
-async function renderHook(allFrequencies: string[], queryState = emptyQueryState()) {
+async function renderHook(allFrequencies: string[], queryState = emptyQueryState(), unitsExactMatchOnlyDefault: boolean | null = null) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(Harness, { allFrequencies, queryState }));
+    root?.render(createElement(Harness, { allFrequencies, queryState, unitsExactMatchOnlyDefault }));
   });
 }
 
-async function rerenderHook(allFrequencies: string[], queryState = emptyQueryState()) {
+async function rerenderHook(allFrequencies: string[], queryState = emptyQueryState(), unitsExactMatchOnlyDefault: boolean | null = null) {
   await act(async () => {
-    root?.render(createElement(Harness, { allFrequencies, queryState }));
+    root?.render(createElement(Harness, { allFrequencies, queryState, unitsExactMatchOnlyDefault }));
   });
 }
 
@@ -82,6 +93,7 @@ describe('useAnalysisSavedFilters', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
+    currentQueryState = null;
 
     analysisApiMock.listAnalysisSavedFilters.mockReset();
     analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([buildSavedFilter()]);
@@ -139,5 +151,18 @@ describe('useAnalysisSavedFilters', () => {
 
     expect(latest?.loadedSavedFilter).toBe(null);
     expect(latest?.savedFilterName).toBe('');
+  });
+
+  it('applies the loaded default when a saved filter leaves units exact-match unset', async () => {
+    const savedFilter = buildSavedFilter();
+    await renderHook(['100.0000', '100.0030'], emptyQueryState(), true);
+    await flushEffects();
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(currentQueryState?.unitsExactMatchOnly).toBe(true);
   });
 });

@@ -91,20 +91,6 @@ export type FilterSectionProps = {
   children: ReactNode;
 };
 
-export type UnitsExactMatchMode = 'default' | 'exact' | 'non-exact';
-
-export function unitsExactMatchModeFromState(value: boolean | null): UnitsExactMatchMode {
-  if (value === true) return 'exact';
-  if (value === false) return 'non-exact';
-  return 'default';
-}
-
-export function unitsExactMatchStateFromMode(value: UnitsExactMatchMode): boolean | null {
-  if (value === 'exact') return true;
-  if (value === 'non-exact') return false;
-  return null;
-}
-
 export function getInitialExpandedSections(): Record<FilterSectionId, boolean> {
   return { ...defaultExpandedSections };
 }

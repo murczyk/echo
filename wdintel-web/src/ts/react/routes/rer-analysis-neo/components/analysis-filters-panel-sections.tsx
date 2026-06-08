@@ -1,4 +1,4 @@
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography, type SelectChangeEvent } from '@mui/material';
+import { Box, Checkbox, FormControlLabel, FormControl, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { AnalysisFilterSectionId } from '../types';
@@ -11,9 +11,6 @@ import {
   type AnalysisFiltersPanelPage,
   type FilterSectionId,
   sectionCountLabel,
-  unitsExactMatchModeFromState,
-  unitsExactMatchStateFromMode,
-  type UnitsExactMatchMode,
 } from './analysis-filters-panel-shared';
 
 type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
@@ -55,12 +52,6 @@ export function AnalysisFiltersPanelSections({
     void loadFilterSectionWithSpinner(section);
   };
 
-  const handleUnitsExactMatchModeChange = (event: SelectChangeEvent) => {
-    updateQueryState({
-      unitsExactMatchOnly: unitsExactMatchStateFromMode(event.target.value as UnitsExactMatchMode),
-    });
-  };
-
   const handleCoordsFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: CoordsFilterMode | null) => {
     const mode = nextMode ?? 'all';
     updateQueryState({
@@ -68,6 +59,13 @@ export function AnalysisFiltersPanelSections({
       orWithoutCoords: mode === 'without',
     });
   };
+
+  const unitsExactMatchLabel =
+    queryState.unitsSelected.length > 0
+      ? counts?.unitsExactMatchesCount != null
+        ? `Точний збіг за еталонкою: ${counts.unitsExactMatchesCount}`
+        : 'Точний збіг за еталонкою'
+      : null;
 
   return (
     <>
@@ -177,19 +175,13 @@ export function AnalysisFiltersPanelSections({
             normalizeUnknownAliases
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
-            <InputLabel id="units-exact-match-mode-label">Збіг за еталонкою</InputLabel>
-            <Select
-              labelId="units-exact-match-mode-label"
-              label="Збіг за еталонкою"
-              value={unitsExactMatchModeFromState(queryState.unitsExactMatchOnly)}
-              onChange={handleUnitsExactMatchModeChange}
-            >
-              <MenuItem value="default">За замовчуванням</MenuItem>
-              <MenuItem value="exact">Точний збіг</MenuItem>
-              <MenuItem value="non-exact">Неточний збіг</MenuItem>
-            </Select>
-          </FormControl>
+          {queryState.unitsSelected.length > 0 ? (
+          <FormControlLabel
+            control={<Checkbox checked={queryState.unitsExactMatchOnly === true} onChange={(_event, value) => updateQueryState({ unitsExactMatchOnly: value })} />}
+            label={unitsExactMatchLabel}
+            sx={compactCheckboxLabelSx}
+          />
+        ) : null}
         </Stack>
       </FilterSection>
       <FilterSection

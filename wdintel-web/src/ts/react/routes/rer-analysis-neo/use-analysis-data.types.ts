@@ -27,6 +27,7 @@ import type {
 
 export type UseAnalysisDataProps = {
   currentUser: User | null;
+  deferInitialLoad?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
