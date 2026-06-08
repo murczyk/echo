@@ -116,6 +116,7 @@ pub struct LinkAccountReq {
     pub messenger: String,
     pub display_name: String,
     pub system_service_name: String,
+    pub signal_cli_mode: Option<String>,
     pub description: Option<String>,
     pub aor_id: i64,
 }

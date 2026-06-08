@@ -147,6 +147,7 @@ pub async fn link_account(
     display_name: &str,
     system_service_name: &str,
     source: &str,
+    signal_cli_mode: SignalCliMode,
     description: Option<String>,
     aor_id: i64,
     txn: &DatabaseTransaction,
@@ -202,7 +203,7 @@ pub async fn link_account(
         unit_name,
         port,
         txn,
-        SignalCliMode::Native,
+        signal_cli_mode.clone(),
     )
     .await
     .map_err(|res| {
@@ -258,6 +259,10 @@ pub async fn link_account(
         .id
     };
 
+    set_client_signal_mode(system_service_name, signal_cli_mode.clone(), txn)
+        .await
+        .c(h!())?;
+
     match src {
         MessageSource::Signal => os_specific::start_new_signal_client(
             system_service_name,
@@ -265,7 +270,7 @@ pub async fn link_account(
             SIGNAL_CLIENT_DIR,
             SIGNAL_UNIT_NAME,
             CLIENT_DATA_DIR_NAME,
-            &SignalCliMode::Native,
+            &signal_cli_mode,
         )
         .await
         .c(h!())?,
@@ -281,6 +286,33 @@ pub async fn link_account(
     };
 
     load_echo_account(id, txn).await
+}
+
+async fn set_client_signal_mode(
+    client_name: &str,
+    signal_cli_mode: SignalCliMode,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let Some(client) = echo_client::Entity::find()
+        .filter(echo_client::Column::Name.eq(client_name))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+
+    echo_client_config::Entity::update_many()
+        .filter(echo_client_config::Column::ClientId.eq(client.id))
+        .col_expr(
+            echo_client_config::Column::SignalMode,
+            Expr::value(signal_cli_mode),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 pub async fn get_qr_code(
@@ -350,6 +382,7 @@ async fn link_existing_datasource(
         &datasource.display_name,
         &process_name,
         &datasource.kind,
+        SignalCliMode::Normal,
         datasource.description,
         aor_id,
         txn,
