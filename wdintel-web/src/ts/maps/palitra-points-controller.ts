@@ -236,9 +236,9 @@ export class PalitraPointsController {
   private getViewportPointsMinZoom(): number {
     const maxZoom = this.map.getMaxZoom();
     if (Number.isFinite(maxZoom)) {
-      return Math.max(0, maxZoom - 2);
+      return Math.max(0, maxZoom - 1);
     }
-    return this.options.minZoomForPoints;
+    return Math.max(0, this.options.minZoomForPoints);
   }
 
   private async renderVisiblePointsFromCache(): Promise<void> {
