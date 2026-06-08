@@ -5,6 +5,7 @@ import { act } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTheme } from '@mui/material/styles';
 import { ELLIPSIS } from '../../../utils/misc';
 
 import type { InboxMessage } from '../../../../../Bindings';
@@ -115,7 +116,7 @@ vi.mock('../message-utils', async () => {
   };
 });
 
-import { AnalysisMessagesPane } from './AnalysisMessagesPane';
+import { AnalysisMessagesPane, getAnalysisMessagesScrollSx } from './AnalysisMessagesPane';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -234,6 +235,23 @@ describe('AnalysisMessagesPane', () => {
     await click(getButton(view.container, 'Завантажити ще'));
 
     expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a theme-aware scrollbar thumb in the messages pane', () => {
+    const lightTheme = createTheme({ palette: { mode: 'light' } });
+    const darkTheme = createTheme({ palette: { mode: 'dark' } });
+
+    const lightSx = getAnalysisMessagesScrollSx(lightTheme);
+    const darkSx = getAnalysisMessagesScrollSx(darkTheme);
+
+    expect(lightSx.scrollbarColor).toContain('rgba(');
+    expect(lightSx.scrollbarColor).not.toContain('rgba(255, 255, 255, 0.38)');
+    expect(darkSx.scrollbarColor).toBe('rgba(255, 255, 255, 0.38) transparent');
+    expect(lightSx['&::-webkit-scrollbar-thumb']).toMatchObject({
+      borderRadius: 999,
+      border: '3px solid transparent',
+      backgroundClip: 'content-box',
+    });
   });
 
   it('passes the tags layout through to analysis message cards', async () => {

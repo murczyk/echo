@@ -1,8 +1,7 @@
 import { Box, Button } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
-
-
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -28,6 +27,35 @@ type BotTagAction = {
   messageId: number;
   tagId: number;
 };
+
+export function getAnalysisMessagesScrollSx(theme: Theme) {
+  const thumbColor =
+    theme.palette.mode === 'light' ? alpha(theme.palette.text.primary, 0.28) : 'rgba(255, 255, 255, 0.38)';
+
+  return {
+    height: '100%',
+    overflow: 'auto',
+    borderRight: '1px solid',
+    borderColor: 'divider',
+    scrollbarColor: `${thumbColor} transparent`,
+    '&::-webkit-scrollbar': {
+      width: 12,
+      height: 12,
+    },
+    '&::-webkit-scrollbar-track': {
+      backgroundColor: 'transparent',
+    },
+    '&::-webkit-scrollbar-thumb': {
+      backgroundColor: thumbColor,
+      borderRadius: 999,
+      border: '3px solid transparent',
+      backgroundClip: 'content-box',
+    },
+    '&::-webkit-scrollbar-corner': {
+      backgroundColor: 'transparent',
+    },
+  };
+}
 
 type Props = {
   authUserName: string | null;
@@ -368,23 +396,7 @@ function AnalysisMessagesPaneComponent({
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
       <Box
-        sx={{
-          height: '100%',
-          overflow: 'auto',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          scrollbarColor: 'rgba(255, 255, 255, 0.38) transparent',
-          '&::-webkit-scrollbar': {
-            width: 12,
-            height: 12,
-          },
-          '&::-webkit-scrollbar-track': {
-            backgroundColor: 'transparent',
-          },
-          '&::-webkit-scrollbar-corner': {
-            backgroundColor: 'transparent',
-          },
-        }}
+        sx={getAnalysisMessagesScrollSx}
       >
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
           {messages.map(([id, message]) => (
