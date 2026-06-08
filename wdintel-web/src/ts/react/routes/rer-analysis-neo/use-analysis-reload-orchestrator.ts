@@ -199,6 +199,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       loadInitialFilterSections,
       invalidateFilterSectionLoads,
       invalidateFilterSectionLoadsForPatch,
+      centerTab,
+      rightSidebarVisible,
+      rightSidebarTab,
     });
   }, [
     centerTab,
