@@ -160,4 +160,40 @@ describe('useAnalysisReloadOrchestrator', () => {
       rightSidebarTab: 'map',
     });
   });
+
+  it('retries the map reload after the initial summary reload settles', async () => {
+    let resolveInitialReload: (() => void) | null = null;
+    const initialReload = new Promise<void>((resolve) => {
+      resolveInitialReload = resolve;
+    });
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => initialReload);
+
+    const params = buildParams();
+
+    await renderHook(params);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      rightSidebarVisible: true,
+      rightSidebarTab: 'map',
+      queryState: { ...params.queryState },
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveInitialReload?.();
+      await initialReload;
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]).toMatchObject({
+      rightSidebarVisible: true,
+      rightSidebarTab: 'map',
+    });
+  });
 });

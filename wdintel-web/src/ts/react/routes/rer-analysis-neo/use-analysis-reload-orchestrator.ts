@@ -300,7 +300,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       mapReloadPendingKeyRef.current = null;
       mapReloadedKeyRef.current = reloadTriggerKey;
     });
-  }, [deferInitialLoad, mapVisible, reload, reloadTriggerKey]);
+  }, [deferInitialLoad, mapVisible, reload, reloadTriggerKey, summaryReloadBarrier]);
 
   useEffect(() => {
     if (deferInitialLoad) return;
