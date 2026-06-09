@@ -118,11 +118,13 @@ export function useAnalysisFilterSections({
   const filterSectionLoadVersionRef = useRef(0);
   const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>({} as Record<AnalysisFilterSectionId, string>);
   const reloadFilterSectionsRef = useRef<Set<AnalysisFilterSectionId>>(new Set());
+  const hasTargetedFilterSectionInvalidationRef = useRef(false);
 
   const invalidateFilterSectionLoads = useCallback(() => {
     filterSectionLoadVersionRef.current += 1;
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
     reloadFilterSectionsRef.current.clear();
+    hasTargetedFilterSectionInvalidationRef.current = false;
   }, []);
 
   const invalidateFilterSectionLoadsForPatch = useCallback(
@@ -136,6 +138,7 @@ export function useAnalysisFilterSections({
       if (sectionsToInvalidate.length === 0) return;
 
       filterSectionLoadVersionRef.current += 1;
+      hasTargetedFilterSectionInvalidationRef.current = true;
       sectionsToInvalidate.forEach((section) => {
         if (section in loadedFilterSectionKeyRef.current) {
           reloadFilterSectionsRef.current.add(section);
@@ -152,7 +155,7 @@ export function useAnalysisFilterSections({
   );
 
   const getReloadFilterSections = useCallback(
-    () => Array.from(reloadFilterSectionsRef.current),
+    () => (hasTargetedFilterSectionInvalidationRef.current ? Array.from(reloadFilterSectionsRef.current) : null),
     [],
   );
 
@@ -212,8 +215,15 @@ export function useAnalysisFilterSections({
       loadedSections: AnalysisFilterSectionId[] = [],
       networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
     ) => {
+      const targetedInvalidationVersion = hasTargetedFilterSectionInvalidationRef.current ? filterSectionLoadVersionRef.current : null;
       const sections = buildFilterSectionsToLoad(queryState, loadedSections, forceReload);
-      if (sections.length === 0) return;
+      if (sections.length === 0) {
+        if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+          hasTargetedFilterSectionInvalidationRef.current = false;
+          reloadFilterSectionsRef.current.clear();
+        }
+        return;
+      }
 
       await Promise.all(
         sections.map(async (section) => {
@@ -246,6 +256,11 @@ export function useAnalysisFilterSections({
           }
         }),
       );
+
+      if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+        hasTargetedFilterSectionInvalidationRef.current = false;
+        reloadFilterSectionsRef.current.clear();
+      }
     },
     [
       onError,

@@ -408,7 +408,7 @@ type ReloadParams = {
   ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (patch?: Partial<AnalysisQueryState>) => void;
-  getReloadFilterSections?: () => AnalysisFilterSectionId[];
+  getReloadFilterSections?: () => AnalysisFilterSectionId[] | null;
 };
 
 export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
@@ -417,7 +417,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
   const networkStatsCache = new Map<string, ReturnType<typeof fetchAnalysisNetworks>>();
-  const loadedFilterSectionsBeforeReload = params.getReloadFilterSections?.() ?? params.getLoadedFilterSections?.() ?? [];
+  const targetedReloadSections = params.getReloadFilterSections?.() ?? null;
+  const loadedFilterSectionsBeforeReload = targetedReloadSections ?? params.getLoadedFilterSections?.() ?? [];
   const shouldLoadMap =
     params.centerTab === 'map' || (params.rightSidebarVisible === true && params.rightSidebarTab === 'map');
 

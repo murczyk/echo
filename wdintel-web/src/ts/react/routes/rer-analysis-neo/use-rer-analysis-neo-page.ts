@@ -256,13 +256,16 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   useEffect(() => {
     if (!queryState.includeOnlyNewFreqs) return;
+    if (stringArraysEqual(queryState.freqsSelected, dataNewFreqValues)) return;
+
+    data.invalidateFilterSectionLoadsForPatch({ freqsSelected: dataNewFreqValues });
     setQueryState((current) => {
       if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, dataNewFreqValues)) {
         return current;
       }
       return { ...current, freqsSelected: dataNewFreqValues };
     });
-  }, [dataNewFreqValues, queryState.includeOnlyNewFreqs]);
+  }, [data.invalidateFilterSectionLoadsForPatch, dataNewFreqValues, queryState.includeOnlyNewFreqs]);
 
   const selectOnlyFreq = useCallback((freq: string) => {
     data.invalidateFilterSectionLoadsForPatch({ freqsSelected: [freq], includeOnlyNewFreqs: false });

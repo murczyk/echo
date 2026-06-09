@@ -107,7 +107,7 @@ type BuildReloadParamsInput = {
   shouldLoadNewCallsigns: boolean;
   optionsFreqValuesRef: React.MutableRefObject<string[]>;
   getLoadedFilterSections: () => AnalysisFilterSectionId[];
-  getReloadFilterSections: () => AnalysisFilterSectionId[];
+  getReloadFilterSections: () => AnalysisFilterSectionId[] | null;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
   loadInitialFilterSections: (

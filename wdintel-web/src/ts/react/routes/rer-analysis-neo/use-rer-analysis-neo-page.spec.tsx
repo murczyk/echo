@@ -24,6 +24,9 @@ const mediaQueryMock = vi.hoisted(() => ({
   useMediaQuery: vi.fn(),
 }));
 
+let analysisFreqValues = ['111.1'];
+let currentAnalysisData: ReturnType<typeof buildAnalysisData> | null = null;
+
 vi.mock('@mui/material', () => ({
   useMediaQuery: mediaQueryMock.useMediaQuery,
 }));
@@ -285,7 +288,14 @@ describe('useRerAnalysisNeoPage', () => {
     });
 
     useAnalysisDataMock.mockReset();
-    useAnalysisDataMock.mockImplementation(() => buildAnalysisData());
+    analysisFreqValues = ['111.1'];
+    currentAnalysisData = buildAnalysisData();
+    useAnalysisDataMock.mockImplementation(() => {
+      if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+      currentAnalysisData.options.freqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
+      currentAnalysisData.options.newFreqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
+      return currentAnalysisData;
+    });
     useAnalysisSavedFiltersMock.mockReset();
     useAnalysisSavedFiltersMock.mockImplementation(() => buildSavedFilters());
     useAnalysisReportMock.mockReset();
@@ -302,6 +312,7 @@ describe('useRerAnalysisNeoPage', () => {
     container?.remove();
     container = null;
     latest = null;
+    currentAnalysisData = null;
   });
 
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -406,6 +417,34 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('stats');
     expect(latest?.queryState.freqsSelected).toEqual(['111.1', '123.4']);
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
+  });
+
+  it('syncs include-only-new frequencies through targeted invalidation when the option list changes', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setIncludeOnlyNewFreqs(true);
+    });
+    await flushEffects();
+
+    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
+      includeOnlyNewFreqs: true,
+      freqsSelected: ['111.1'],
+    });
+
+    currentAnalysisData?.invalidateFilterSectionLoadsForPatch.mockClear();
+    analysisFreqValues = ['222.2'];
+
+    await act(async () => {
+      latest?.toggleLeftPanel();
+    });
+    await flushEffects();
+
+    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
+      freqsSelected: ['222.2'],
+    });
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
   });
 
   it('clears the loaded saved filter when filters are reset', async () => {
