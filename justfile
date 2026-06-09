@@ -2225,12 +2225,12 @@ _builder-build-iggy:
 
 # Update UFW firewall rules on a remote server based on local config.toml
 
-# Usage: just update-firewall user@remote-server-ip
-update-firewall remote_host:
+# Usage: just update-firewall user@remote-server-ip [config]
+update-firewall remote_host config="config.toml":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    CONFIG="config.toml"
+    CONFIG="{{ config }}"
 
     if [ ! -f "$CONFIG" ]; then
         echo "Error: $CONFIG not found locally."
@@ -2255,7 +2255,7 @@ update-firewall remote_host:
     [ -n "$HTTP_PORT" ] && PORTS="$PORTS $HTTP_PORT"
 
     if [ -z "$PORTS" ]; then
-        echo "No enabled TCP or HTTP ports found in config.toml. Nothing to do."
+        echo "No enabled TCP or HTTP ports found in $CONFIG. Nothing to do."
         exit 0
     fi
 
@@ -2302,6 +2302,26 @@ update-firewall remote_host:
         echo "Current UFW Status:"
         sudo ufw status verbose
     EOF
+
+[arg("server", long="server")]
+iggy-deploy-config server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    . deploy/utils.sh
+
+    SERVER="{{ server }}"
+    ensure_nonempty "server" "$SERVER"
+
+    CONFIG="$(mktemp)"
+    trap "rm -f \"$CONFIG\"" EXIT
+    chmod 600 "$CONFIG"
+
+    bw_get_note "iggy-config-$SERVER" > "$CONFIG"
+    scp "$CONFIG" "$SERVER:/var/tmp/iggy-config.toml"
+    ssh "$SERVER" "sudo install -d -m 755 /etc/iggy && sudo install -m 600 /var/tmp/iggy-config.toml /etc/iggy/config.toml && rm /var/tmp/iggy-config.toml"
+
+    just update-firewall "$SERVER" "$CONFIG"
 
 ## Version bump helpers (similar to echo-operator)
 
