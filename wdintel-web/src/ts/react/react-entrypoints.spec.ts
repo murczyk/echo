@@ -14,6 +14,7 @@ const ENTRYPOINTS = [
   { modulePath: './admin-directions-neo-element', tag: 'admin-directions-neo' },
   { modulePath: './goi-knowledge-element', tag: 'goi-knowledge' },
   { modulePath: './goi-integrations-neo-element', tag: 'goi-integrations-neo' },
+  { modulePath: './api-integrations-element', tag: 'api-integrations' },
   { modulePath: './goi-settings-element', tag: 'goi-settings' },
   { modulePath: './rer-palitra-neo-element', tag: 'rer-palitra-neo' },
   { modulePath: './tags-neo-keyword-edit-element', tag: 'tags-neo-keyword-edit' },

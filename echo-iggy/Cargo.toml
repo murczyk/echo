@@ -5,10 +5,10 @@ edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
 description = "ЕХО - Apache Iggy deb"
+autobins = false
 
-[[bin]]
-name = "iggy-server"
-path = "deploy/iggy-server" # Points directly to your existing binary file
+[lib]
+path = "src/lib.rs"
 
 [package.metadata.deb]
 maintainer = "rickyrepel@gmail.com"

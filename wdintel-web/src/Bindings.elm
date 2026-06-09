@@ -3608,6 +3608,104 @@ deactivationReasonTypeEncoder enum =
         Inactive ->
             Json.Encode.string "Inactive"
 
+type alias ApiIntegration =
+    { id : Int
+    , description : Maybe (String)
+    , apiUser : String
+    , hasIggyConnection : Bool
+    , iggyUrl : Maybe (String)
+    , iggyLogin : Maybe (String)
+    , iggyPassword : Maybe (String)
+    , iggyInboxTopic : Maybe (String)
+    , iggyAnalyticsTopic : Maybe (String)
+    , createdAtMs : Int
+    }
+
+
+apiIntegrationEncoder : ApiIntegration -> Json.Encode.Value
+apiIntegrationEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "api_user", (Json.Encode.string) struct.apiUser )
+        , ( "has_iggy_connection", (Json.Encode.bool) struct.hasIggyConnection )
+        , ( "iggy_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyUrl )
+        , ( "iggy_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyLogin )
+        , ( "iggy_password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyPassword )
+        , ( "iggy_inbox_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyInboxTopic )
+        , ( "iggy_analytics_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyAnalyticsTopic )
+        , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
+        ]
+
+
+type alias ListApiIntegrationsRsp =
+    { items : List (ApiIntegration)
+    }
+
+
+listApiIntegrationsRspEncoder : ListApiIntegrationsRsp -> Json.Encode.Value
+listApiIntegrationsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (apiIntegrationEncoder)) struct.items )
+        ]
+
+
+type alias UpsertApiIntegrationReq =
+    { id : Maybe (Int)
+    , description : Maybe (String)
+    , apiUser : String
+    , hasIggyConnection : Bool
+    , iggyUrl : Maybe (String)
+    , iggyLogin : Maybe (String)
+    , iggyPassword : Maybe (String)
+    , iggyInboxTopic : Maybe (String)
+    , iggyAnalyticsTopic : Maybe (String)
+    }
+
+
+upsertApiIntegrationReqEncoder : UpsertApiIntegrationReq -> Json.Encode.Value
+upsertApiIntegrationReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "api_user", (Json.Encode.string) struct.apiUser )
+        , ( "has_iggy_connection", (Json.Encode.bool) struct.hasIggyConnection )
+        , ( "iggy_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyUrl )
+        , ( "iggy_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyLogin )
+        , ( "iggy_password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyPassword )
+        , ( "iggy_inbox_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyInboxTopic )
+        , ( "iggy_analytics_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyAnalyticsTopic )
+        ]
+
+
+type alias DeleteApiIntegrationReq =
+    { id : Int
+    }
+
+
+deleteApiIntegrationReqEncoder : DeleteApiIntegrationReq -> Json.Encode.Value
+deleteApiIntegrationReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
+type alias TestIggyConnectionReq =
+    { url : String
+    , login : String
+    , password : String
+    }
+
+
+testIggyConnectionReqEncoder : TestIggyConnectionReq -> Json.Encode.Value
+testIggyConnectionReqEncoder struct =
+    Json.Encode.object
+        [ ( "url", (Json.Encode.string) struct.url )
+        , ( "login", (Json.Encode.string) struct.login )
+        , ( "password", (Json.Encode.string) struct.password )
+        ]
+
+
 type alias Organism =
     { id : Int
     , parentId : Maybe (Int)

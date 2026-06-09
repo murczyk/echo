@@ -15,6 +15,7 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 mod alpine;
+pub mod api_integrations;
 pub mod atak;
 pub mod aws;
 pub mod backup;
@@ -27,6 +28,7 @@ pub mod error;
 pub mod event_stream;
 pub mod functest;
 pub mod icons;
+pub mod iggy;
 pub mod importer;
 pub mod inbox;
 mod install;

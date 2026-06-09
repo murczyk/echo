@@ -32,9 +32,9 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
-workspace_echo     := "/home/ubuntu/workspace/krab/echo-feature/echo"
-workspace_iggy     := "~/workspace/iggy"
-local_assets_iggy  := "echo-iggy/deploy"
+workspace_echo := "/home/ubuntu/workspace/krab/echo-feature/echo"
+workspace_iggy := "~/workspace/iggy"
+local_assets_iggy := "echo-iggy/deploy"
 
 default:
     @just --list
@@ -2207,23 +2207,24 @@ import-unit-to-target:
 # [positional-arguments]
 [arg('server', long='server')]
 setup-iggy server="echo-staging":
-    scp echo-iggy/deploy/config.toml {{server}}:/var/tmp
-    ssh {{server}} "sudo mkdir -p /etc/iggy && sudo mv /var/tmp/config.toml /etc/iggy/"
-    ssh {{builder}} "[ -f {{workspace_echo}}/debian/iggy*.deb ]"
-    scp {{builder}}/{{workspace_echo}}/target/debian/iggy*.deb "{{server}}:/var/tmp/iggy-server.deb"
-    ssh {{server}} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
+    scp echo-iggy/deploy/config.toml {{ server }}:/var/tmp
+    ssh {{ server }} "sudo mkdir -p /etc/iggy && sudo mv /var/tmp/config.toml /etc/iggy/"
+    ssh {{ builder }} "[ -f {{ workspace_echo }}/debian/iggy*.deb ]"
+    scp {{ builder }}/{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
+    ssh {{ server }} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
     @echo "==> Pipeline finished successfully!"
 
 # [positional-arguments]
 _builder-build-iggy:
     @echo "==> Checking workspace existence on build server..."
-    ssh {{builder}} "[ -d {{workspace_iggy}} ]" || (echo "ERROR: Remote folder {{workspace_iggy}} does not exist on {{builder}}" && exit 1)
+    ssh {{ builder }} "[ -d {{ workspace_iggy }} ]" || (echo "ERROR: Remote folder {{ workspace_iggy }} does not exist on {{ builder }}" && exit 1)
     @echo "==> Building optimized native binary on build server..."
-    ssh {{builder}} "cd {{workspace_iggy}} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
-    ssh {{builder}} "cp {{workspace_iggy}}/target/release/iggy-server {{workspace_echo}}/{{local_assets_iggy}}/"
-    ssh {{builder}} "cd {{workspace_echo}}/{{local_assets_iggy}} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+    ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
+    ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server {{ workspace_echo }}/{{ local_assets_iggy }}/"
+    ssh {{ builder }} "cd {{ workspace_echo }}/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
 
 # Update UFW firewall rules on a remote server based on local config.toml
+
 # Usage: just update-firewall user@remote-server-ip
 update-firewall remote_host:
     #!/usr/bin/env bash
@@ -2258,11 +2259,11 @@ update-firewall remote_host:
         exit 0
     fi
 
-    echo "Connecting to {{remote_host}} to update firewall for ports: $PORTS..."
+    echo "Connecting to {{ remote_host }} to update firewall for ports: $PORTS..."
 
     # 2. Stream the execution script to the remote server over SSH
     # We pass the local variables downstream into the SSH environment using 'EOF'
-    ssh -T "{{remote_host}}" bash -s << EOF
+    ssh -T "{{ remote_host }}" bash -s << EOF
         set -euo pipefail
 
         PORTS="$PORTS"
@@ -2300,7 +2301,7 @@ update-firewall remote_host:
         echo "✓ Remote firewall updated successfully."
         echo "Current UFW Status:"
         sudo ufw status verbose
-EOF
+    EOF
 
 ## Version bump helpers (similar to echo-operator)
 
