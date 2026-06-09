@@ -117,17 +117,14 @@ describe('buildFilterSectionsToLoad', () => {
     ['onlyWithMetadata', { onlyWithMetadata: true }],
     ['withoutMetadata', { withoutMetadata: true }],
     ['orWithoutCoords', { orWithoutCoords: true }],
+    ['filterTagsOption', { filterTagsOption: 'AllTags' }],
+    ['withoutModelTags', { withoutModelTags: true }],
+    ['reportTagsOnlyThisUnit', { reportTagsOnlyThisUnit: true }],
+    ['includePelengLocations', { includePelengLocations: false }],
   ] as const)('invalidates all option sections for %s changes', (_name, patch) => {
     expect(filterSectionsToInvalidateForPatch(patch)).toEqual([...ALL_OPTION_SECTIONS]);
   });
 
-  it('keeps tag mode fields local to the tags section', () => {
-    expect(filterSectionsToInvalidateForPatch({ filterTagsOption: 'AllTags' })).toEqual(['tags']);
-  });
-
-  it('keeps peleng location toggles local to the locations section', () => {
-    expect(filterSectionsToInvalidateForPatch({ includePelengLocations: false })).toEqual(['locations']);
-  });
 });
 
 describe('useAnalysisFilterSections', () => {

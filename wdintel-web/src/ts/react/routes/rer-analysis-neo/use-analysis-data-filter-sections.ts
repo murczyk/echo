@@ -37,6 +37,10 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'orImportant',
   'orWithCoords',
   'orWithoutCoords',
+  'filterTagsOption',
+  'withoutModelTags',
+  'reportTagsOnlyThisUnit',
+  'includePelengLocations',
   'unitsExactMatchOnly',
   'metadataCc',
   'metadataSender',
@@ -45,8 +49,6 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'onlyWithMetadata',
   'withoutMetadata',
 ];
-const TAGS_ONLY_QUERY_FIELDS: Array<keyof AnalysisQueryState> = ['filterTagsOption', 'withoutModelTags', 'reportTagsOnlyThisUnit'];
-const LOCATIONS_ONLY_QUERY_FIELDS: Array<keyof AnalysisQueryState> = ['includePelengLocations'];
 
 export function buildFilterSectionsToLoad(
   queryState: AnalysisQueryState,
@@ -73,14 +75,6 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
 
   if (GLOBAL_OPTION_QUERY_FIELDS.some((field) => field in patch)) {
     invalidateAllOptionSections();
-  }
-
-  if (TAGS_ONLY_QUERY_FIELDS.some((field) => field in patch)) {
-    invalidateSections.add('tags');
-  }
-
-  if (LOCATIONS_ONLY_QUERY_FIELDS.some((field) => field in patch)) {
-    invalidateSections.add('locations');
   }
 
   return Array.from(invalidateSections);
