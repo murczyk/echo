@@ -151,7 +151,7 @@ export function AnalysisFilterField({
       }
       onChange={(_event, next, reason) => {
         const nextValues = next.flatMap((option) => option.values);
-        if (!deferredCommit || reason === 'clear') {
+        if (!deferredCommit || reason === 'clear' || (reason === 'removeOption' && !open)) {
           commitValue(nextValues);
           return;
         }

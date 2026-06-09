@@ -15,6 +15,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'loadedSavedFilter'
   | 'options'
   | 'filtersLoading'
+  | 'countsLoading'
   | 'aorEntries'
   | 'groupInfos'
   | 'networkDisplayMap'

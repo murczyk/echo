@@ -962,6 +962,11 @@ describe('MessageCard', () => {
 
   it('keeps the compact duty toolbar inline when the action column still has room', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
     const view = await renderHeader();
     rendered.push(view);
 
@@ -980,8 +985,56 @@ describe('MessageCard', () => {
     expect(updatedToolbar.getAttribute('role')).toBeNull();
   });
 
+  it('ignores hidden width measurements before wrapping the compact duty toolbar', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const view = await renderHeader();
+    rendered.push(view);
+
+    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
+    const root = toolbar.parentElement;
+    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+
+    setClientWidth(root, 240);
+    await act(async () => {
+      resizeObserverCallbacks.at(-1)?.();
+    });
+
+    const inlineToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(inlineToolbar instanceof HTMLElement)) throw new Error('toolbar not found after inline resize');
+    expect(inlineToolbar.getAttribute('role')).toBeNull();
+
+    setClientWidth(root, 0);
+    await act(async () => {
+      resizeObserverCallbacks.at(-1)?.();
+    });
+
+    const hiddenToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(hiddenToolbar instanceof HTMLElement)) throw new Error('toolbar not found after hidden resize');
+    expect(hiddenToolbar.getAttribute('role')).toBeNull();
+
+    setClientWidth(root, 180);
+    await act(async () => {
+      resizeObserverCallbacks.at(-1)?.();
+    });
+
+    const wrappedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
+    if (!(wrappedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after narrow resize');
+    expect(wrappedToolbar.getAttribute('role')).toBe('group');
+  });
+
   it('wraps the compact duty toolbar into a 3-column grid when the action column is narrow', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
     const view = await renderHeader();
     rendered.push(view);
 

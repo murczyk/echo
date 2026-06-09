@@ -203,6 +203,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
       isDirty: false,
       canResetFilters: false,
       counts: null,
+      countsLoading: false,
       aorEntries: [],
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
@@ -612,7 +613,7 @@ describe('AnalysisFiltersPanel', () => {
     expect((resetButton as HTMLButtonElement | undefined)?.disabled ?? true).toBe(false);
   });
 
-  it('reloads an already open section after filter invalidation completes', async () => {
+  it('does not auto-reload an already open section after filter invalidation completes', async () => {
     const loadFilterSection = vi.fn();
     const props = buildProps({
       filtersLoading: true,
@@ -644,7 +645,7 @@ describe('AnalysisFiltersPanel', () => {
       );
     });
 
-    expect(loadFilterSection).toHaveBeenCalledWith('tags');
+    expect(loadFilterSection).not.toHaveBeenCalled();
   });
 
   it('uppercases callsign labels without changing filter values sent to the API state', async () => {
@@ -859,7 +860,7 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Точний збіг за еталонкою: 8');
+    expect(view.container.textContent).toContain('неточних збігів: 7');
     expect(view.container.textContent).not.toContain('За замовчуванням');
   });
 
@@ -867,6 +868,22 @@ describe('AnalysisFiltersPanel', () => {
     const view = await renderComponent(
       buildProps({
         unitsExactMatchOnlyDefault: true,
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 8,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
         queryState: {
           ...emptyQueryState(),
           unitsSelected: ['u1'],
@@ -876,8 +893,71 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    const checkbox = findLabelInput(view.container, 'Точний збіг');
-    expect(checkbox.checked).toBe(true);
+    expect(view.container.textContent).toContain('неточних збігів: 7');
+  });
+
+  it('keeps the exact-match count stable while counts are still loading', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 8,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('точних збігів: 8');
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisFiltersPanel
+          {...buildProps({
+            counts: {
+              countOverall: 0,
+              countSelected: 0,
+              groupsCount: 0,
+              sendersCount: 0,
+              freqsCount: 0,
+              callsignsCount: 0,
+              unitsCount: 0,
+              locationsCount: 0,
+              postsCount: 0,
+              tagsCount: 0,
+              aorsCount: 0,
+              networksCount: 0,
+              unitsExactMatchesCount: 0,
+              unitsNonExactMatchesCount: 0,
+            } as AnalysisPageState['counts'],
+            countsLoading: true,
+            queryState: {
+              ...emptyQueryState(),
+              unitsSelected: ['u1'],
+              unitsExactMatchOnly: null,
+            },
+          })}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain('точних збігів: 8');
   });
 
   it('sends true when the exact-match checkbox is checked', async () => {

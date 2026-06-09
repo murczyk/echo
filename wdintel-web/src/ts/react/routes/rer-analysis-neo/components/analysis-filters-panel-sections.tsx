@@ -1,6 +1,8 @@
 import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
+import { useEffect, useRef } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
 import { NO_DATA_LABEL } from '../../../utils/misc';
@@ -14,9 +16,10 @@ import {
   sectionCountLabel,
 } from './analysis-filters-panel-shared';
 
-type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
+type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'countsLoading' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
+  countsLoading: boolean;
   filtersLoading: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   toggleSection: (section: FilterSectionId) => void;
@@ -48,6 +51,7 @@ export function AnalysisFiltersPanelSections({
   counts,
   derived,
   expandedSections,
+  countsLoading,
   includeOnlyNewFreqs,
   filtersLoading,
   isSectionLoading,
@@ -60,6 +64,14 @@ export function AnalysisFiltersPanelSections({
   updateQueryState,
 }: Props) {
   const loadingCountLabel = NO_DATA_LABEL;
+  const lastCountsRef = useRef<CountStatsRsp | null>(counts);
+  const countsSnapshot = countsLoading ? lastCountsRef.current : counts;
+
+  useEffect(() => {
+    if (!countsLoading && counts != null) {
+      lastCountsRef.current = counts;
+    }
+  }, [counts, countsLoading]);
 
   const countLabel = (section: AnalysisFilterSectionId | 'freqs', optionCount: number, selectedCount: number, overallCount: number | null | undefined) =>
     isSectionLoading(section) || (filtersLoading && optionCount === 0 && selectedCount === 0)
@@ -78,13 +90,15 @@ export function AnalysisFiltersPanelSections({
     });
   };
 
+  const effectiveUnitsExactMatchOnly = queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
   const unitsExactMatchLabel =
     queryState.unitsSelected.length > 0
-      ? counts?.unitsExactMatchesCount != null
-        ? `Точний збіг за еталонкою: ${counts.unitsExactMatchesCount}`
+      ? countsSnapshot != null
+        ? effectiveUnitsExactMatchOnly
+          ? `неточних збігів: ${countsSnapshot.unitsNonExactMatchesCount}`
+          : `точних збігів: ${countsSnapshot.unitsExactMatchesCount}`
         : 'Точний збіг за еталонкою'
       : null;
-  const effectiveUnitsExactMatchOnly = queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
 
   const metadataFilterMode = metadataFilterModeFromState(queryState);
   return (

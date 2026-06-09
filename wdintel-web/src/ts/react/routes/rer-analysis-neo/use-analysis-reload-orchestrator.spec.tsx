@@ -142,13 +142,22 @@ describe('useAnalysisReloadOrchestrator', () => {
 
     await renderHook(params);
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0]).toMatchObject({
+      rightSidebarVisible: false,
+      rightSidebarTab: null,
+    });
 
     await rerenderHook({
       ...params,
-      centerTab: 'map',
+      rightSidebarVisible: true,
+      rightSidebarTab: 'map',
       queryState: { ...params.queryState },
     });
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]).toMatchObject({
+      rightSidebarVisible: true,
+      rightSidebarTab: 'map',
+    });
   });
 });

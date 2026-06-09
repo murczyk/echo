@@ -256,6 +256,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setTopUnits,
     setUnitsMap,
     shouldLoadNewCallsigns,
+    rightSidebarVisible,
+    rightSidebarTab,
   ]);
 
   const mapVisible = centerTab === 'map' || (rightSidebarVisible && rightSidebarTab === 'map');

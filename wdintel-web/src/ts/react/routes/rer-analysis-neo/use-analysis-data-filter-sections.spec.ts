@@ -27,7 +27,9 @@ describe('buildFilterSectionsToLoad', () => {
     );
   });
 
-  it('leaves non-option-only patches alone', () => {
-    expect(filterSectionsToInvalidateForPatch({ orImportant: true })).toEqual([]);
+  it('invalidates loaded option sections for important filter toggles', () => {
+    expect(filterSectionsToInvalidateForPatch({ orImportant: true })).toEqual(
+      expect.arrayContaining(['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata']),
+    );
   });
 });

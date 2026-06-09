@@ -372,8 +372,26 @@ function ActionIconsRow({
     }
 
     const minInlineWidth = buttons.length * 32;
+    let rafId: number | null = null;
     const updateLayout = () => {
+      if (root.clientWidth <= 0) {
+        return;
+      }
       setStackedLayout(root.clientWidth < minInlineWidth);
+    };
+
+    const scheduleUpdateLayout = () => {
+      if (typeof requestAnimationFrame === 'undefined') {
+        updateLayout();
+        return;
+      }
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateLayout();
+      });
     };
 
     updateLayout();
@@ -381,9 +399,16 @@ function ActionIconsRow({
       return;
     }
 
-    const observer = new ResizeObserver(updateLayout);
+    const observer = new ResizeObserver(() => {
+      scheduleUpdateLayout();
+    });
     observer.observe(root);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafId != null && typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [buttons.length, compact]);
 
   return (

@@ -196,6 +196,31 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('commits chip removal immediately when the popup is closed', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: 'Unit 1', count: 1 },
+        { value: 'u2', label: 'Unit 2', count: 2 },
+      ],
+      value: ['u1', 'u2'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onChange(null, [props.options[1]], 'removeOption');
+    });
+
+    expect(onChange).toHaveBeenCalledWith(['u2']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('keeps a cleared deferred selection empty when the menu closes', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({

@@ -55,6 +55,11 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
     'search',
     'includeOnlyNewFreqs',
     'adjacentFreqsRange',
+    'orWithExtendedForm',
+    'orBookmarked',
+    'orImportant',
+    'orWithCoords',
+    'orWithoutCoords',
   ];
 
   const tagsModeFields: Array<keyof AnalysisQueryState> = ['filterTagsOption', 'withoutModelTags', 'reportTagsOnlyThisUnit'];

@@ -2,7 +2,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { Badge, Box, Button, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerChip } from '../../../components/PowerChip';
@@ -18,6 +18,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     counts,
     canResetFilters,
     aorEntries,
+    countsLoading,
     filtersLoading,
     groupInfos,
     includeOnlyNewFreqs,
@@ -45,7 +46,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const [loadingSections, setLoadingSections] = useState<Partial<Record<FilterSectionId, boolean>>>({});
-  const prevFiltersLoadingRef = useRef(filtersLoading);
 
   const derived = useMemo(
     () =>
@@ -75,52 +75,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     },
     [loadFilterSection],
   );
-
-  useEffect(() => {
-    const wasLoading = prevFiltersLoadingRef.current;
-    prevFiltersLoadingRef.current = filtersLoading;
-    if (!wasLoading || filtersLoading) return;
-
-    const maybeReload = (section: AnalysisFilterSectionId, expanded: boolean, optionCount: number) => {
-      if (expanded && optionCount === 0) {
-        void loadFilterSectionWithSpinner(section);
-      }
-    };
-
-    maybeReload('tags', expandedSections.tags, options.tags.length);
-    maybeReload('networks', expandedSections.networks, options.networks.length);
-    maybeReload('aors', expandedSections.aors, options.aors.length);
-    maybeReload('groups', expandedSections.groups, options.groups.length);
-    maybeReload('senders', expandedSections.senders, options.senders.length);
-    maybeReload('callsigns', expandedSections.callsigns, options.callsigns.length);
-    maybeReload('units', expandedSections.units, options.units.length);
-    maybeReload('locations', expandedSections.locations, options.locations.length);
-    maybeReload('posts', expandedSections.posts, options.posts.length);
-    maybeReload('metadata', expandedSections.metadata, derived.metadataOptionsCount);
-  }, [
-    derived.metadataOptionsCount,
-    expandedSections.aors,
-    expandedSections.callsigns,
-    expandedSections.groups,
-    expandedSections.locations,
-    expandedSections.metadata,
-    expandedSections.networks,
-    expandedSections.posts,
-    expandedSections.senders,
-    expandedSections.tags,
-    expandedSections.units,
-    filtersLoading,
-    loadFilterSectionWithSpinner,
-    options.aors.length,
-    options.callsigns.length,
-    options.groups.length,
-    options.locations.length,
-    options.networks.length,
-    options.posts.length,
-    options.senders.length,
-    options.tags.length,
-    options.units.length,
-  ]);
 
   useEffect(() => {
     setMobileExpanded(!isMobileLayout);
@@ -224,6 +178,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
 
                 <AnalysisFiltersPanelSections
                   counts={counts}
+                  countsLoading={countsLoading}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
@@ -276,6 +231,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
 
                 <AnalysisFiltersPanelSections
                   counts={counts}
+                  countsLoading={countsLoading}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
