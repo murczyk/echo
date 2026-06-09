@@ -2207,8 +2207,8 @@ import-unit-to-target:
 # [positional-arguments]
 [arg('server', long='server')]
 setup-iggy server="echo-staging":
-    ssh {{ builder }} "[ -f {{ workspace_echo }}/debian/iggy*.deb ]"
-    scp {{ builder }}/{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
+    ssh {{ builder }} "[ -f {{ workspace_echo }}/target/debian/iggy*.deb ]"
+    scp {{ builder }}:{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
     ssh {{ server }} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
     @echo "==> Pipeline finished successfully!"
 
@@ -2318,7 +2318,7 @@ iggy-deploy-config server:
     bw sync 1>&2
     bw get notes "iggy-config-$SERVER" > "$CONFIG"
     scp "$CONFIG" "$SERVER:/var/tmp/iggy-config.toml"
-    ssh "$SERVER" "sudo install -d -m 755 /etc/iggy && sudo install -m 600 /var/tmp/iggy-config.toml /etc/iggy/config.toml && rm /var/tmp/iggy-config.toml"
+    ssh "$SERVER" "sudo install -d -m 755 /etc/iggy && sudo install -o echo -g echo -m 600 /var/tmp/iggy-config.toml /etc/iggy/config.toml && rm /var/tmp/iggy-config.toml"
 
     just update-firewall "$SERVER" "$CONFIG"
 
