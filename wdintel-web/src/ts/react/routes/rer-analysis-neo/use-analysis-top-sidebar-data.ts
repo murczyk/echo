@@ -39,11 +39,10 @@ export function useAnalysisTopSidebarData({ onError, onUnauthorized, optionsFreq
     rightSidebarRequestRef.current += 1;
     rightSidebarRequestKeyRef.current = null;
     setRightSidebarLoading(false);
-    setTopFreqs([]);
     setTopCallsigns([]);
     setTopLocations([]);
     setTopUnits([]);
-  }, [setRightSidebarLoading, setTopCallsigns, setTopFreqs, setTopLocations, setTopUnits]);
+  }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);

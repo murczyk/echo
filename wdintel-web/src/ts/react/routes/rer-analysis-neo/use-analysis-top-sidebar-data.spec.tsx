@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe('useAnalysisTopSidebarData', () => {
-  it('clears all top sidebar counters when invalidating right sidebar data', () => {
+  it('keeps top frequencies while invalidating the other right sidebar counters', () => {
     renderHook();
 
     act(() => {
@@ -72,7 +72,7 @@ describe('useAnalysisTopSidebarData', () => {
       latest?.invalidateRightSidebarData();
     });
 
-    expect(latest?.topFreqs).toEqual([]);
+    expect(latest?.topFreqs).toEqual([{ key: '100.0000', count: 3 }]);
     expect(latest?.topCallsigns).toEqual([]);
     expect(latest?.topLocations).toEqual([]);
     expect(latest?.topUnits).toEqual([]);

@@ -194,6 +194,25 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });
 
+  it('removes the fallback tag when the human tag is toggled off', async () => {
+    const apiRef = await renderHarness([
+      [
+        1,
+        buildMessage({
+          inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })],
+        }),
+      ],
+    ]);
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
+    expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
+  });
+
   it('confirms the bot error, clears the prompt, and removes bot rows locally', async () => {
     const apiRef = await renderHarness([
       [

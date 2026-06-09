@@ -104,10 +104,11 @@ function toggleHumanTag(
         ]
       : [];
   const inboxTags = [...added, ...remainingTags];
+  const hasRemainingTag = inboxTags.some((tag) => tag.tagId === tagId);
   return {
     ...message,
     inboxTags,
-    tags: tagIdsWithFallback(inboxTags, message.tags ?? []),
+    tags: hasRemainingTag ? tagIdsWithFallback(inboxTags, message.tags ?? []) : tagIdsWithoutTagId(inboxTags, message.tags ?? [], tagId),
   };
 }
 
