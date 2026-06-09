@@ -27,6 +27,12 @@ describe('buildFilterSectionsToLoad', () => {
     );
   });
 
+  it('invalidates all option sections for exact-match mode changes', () => {
+    expect(filterSectionsToInvalidateForPatch({ unitsExactMatchOnly: true })).toEqual(
+      expect.arrayContaining(['units', 'metadata', 'tags', 'aors', 'groups', 'senders', 'callsigns', 'locations', 'posts', 'networks']),
+    );
+  });
+
   it('invalidates loaded option sections for important filter toggles', () => {
     expect(filterSectionsToInvalidateForPatch({ orImportant: true })).toEqual(
       expect.arrayContaining(['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata']),

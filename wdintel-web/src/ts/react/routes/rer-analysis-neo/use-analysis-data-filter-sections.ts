@@ -60,6 +60,7 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
     'orImportant',
     'orWithCoords',
     'orWithoutCoords',
+    'unitsExactMatchOnly',
   ];
 
   const tagsModeFields: Array<keyof AnalysisQueryState> = ['filterTagsOption', 'withoutModelTags', 'reportTagsOnlyThisUnit'];
@@ -71,7 +72,6 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
     'onlyWithMetadata',
     'withoutMetadata',
   ];
-  const unitsFields: Array<keyof AnalysisQueryState> = ['unitsExactMatchOnly'];
   const locationsFields: Array<keyof AnalysisQueryState> = ['includePelengLocations'];
 
   if (optionFields.some((field) => field in patch)) {
@@ -84,10 +84,6 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
 
   if (metadataFields.some((field) => field in patch)) {
     invalidateSections.add('metadata');
-  }
-
-  if (unitsFields.some((field) => field in patch)) {
-    invalidateSections.add('units');
   }
 
   if (locationsFields.some((field) => field in patch)) {
