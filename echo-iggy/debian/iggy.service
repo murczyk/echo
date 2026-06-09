@@ -6,7 +6,8 @@ After=network.target
 Type=simple
 User=echo
 WorkingDirectory=/etc/iggy/data
-ExecStart=/usr/local/bin/iggy-server --config-path=/etc/iggy/config.toml
+Environment=IGGY_CONFIG_PATH=/etc/iggy/config.toml
+ExecStart=/usr/local/bin/iggy-server
 
 Restart=on-failure
 RestartSec=5
