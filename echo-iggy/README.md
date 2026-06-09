@@ -2,7 +2,7 @@
 
 This project is a thin wrapper on top of [Apache Iggy](https://github.com/apache/iggy), it
 configures `iggy-server` binary wrapped in a debian package.
-check out `../justfile` for commands `builder-build-iggy` and `deploy-iggy`.
+check out `../justfile` for commands `builder-build-iggy` and `setup-iggy`.
 
 ## future plans:
 - move echo-iggy to a dedicated github project echoua-info/iggy-wrapper

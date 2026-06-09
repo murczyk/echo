@@ -2204,6 +2204,10 @@ name = "echo-docs"
 version = "0.1.1-rc.202606090801"
 
 [[package]]
+name = "echo-iggy"
+version = "1.0.0"
+
+[[package]]
 name = "echo-im"
 version = "0.1.1-rc.202605031438"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df#3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df"
@@ -3317,10 +3321,6 @@ dependencies = [
  "icu_normalizer",
  "icu_properties",
 ]
-
-[[package]]
-name = "iggy"
-version = "1.0.0"
 
 [[package]]
 name = "image"

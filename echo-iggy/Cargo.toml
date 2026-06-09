@@ -1,5 +1,5 @@
 [package]
-name = "iggy"
+name = "echo-iggy"
 version = "1.0.0"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]

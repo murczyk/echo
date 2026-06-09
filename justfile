@@ -2206,10 +2206,11 @@ import-unit-to-target:
 
 # [positional-arguments]
 [arg('server', long='server')]
-deploy-iggy server="echo-staging":
-    scp echo-iggy/deploy/config.toml {{server}}:/etc/iggy/
+setup-iggy server="echo-staging":
+    scp echo-iggy/deploy/config.toml {{server}}:/var/tmp
+    ssh {{server}} "sudo mkdir -p /etc/iggy && sudo mv /var/tmp/config.toml /etc/iggy/"
     ssh {{builder}} "[ -f {{workspace_echo}}/debian/iggy*.deb ]"
-    scp {{builder}}/{{workspace_echo}}/debian/iggy*.deb "{{server}}:/var/tmp/iggy-server.deb"
+    scp {{builder}}/{{workspace_echo}}/target/debian/iggy*.deb "{{server}}:/var/tmp/iggy-server.deb"
     ssh {{server}} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
     @echo "==> Pipeline finished successfully!"
 
@@ -2221,6 +2222,85 @@ _builder-build-iggy:
     ssh {{builder}} "cd {{workspace_iggy}} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
     ssh {{builder}} "cp {{workspace_iggy}}/target/release/iggy-server {{workspace_echo}}/{{local_assets_iggy}}/"
     ssh {{builder}} "cd {{workspace_echo}}/{{local_assets_iggy}} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+
+# Update UFW firewall rules on a remote server based on local config.toml
+# Usage: just update-firewall user@remote-server-ip
+update-firewall remote_host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CONFIG="config.toml"
+
+    if [ ! -f "$CONFIG" ]; then
+        echo "Error: $CONFIG not found locally."
+        exit 1
+    fi
+
+    # 1. Parse the local config.toml details first
+    get_port() {
+        local section=$1
+        if awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /enabled = false/{p=0; exit} p && /address =/{print $0; exit}' "$CONFIG" | grep -q "true" || \
+           awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /enabled = true/{print "enabled"; exit}' "$CONFIG" | grep -q "enabled"; then
+            awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /address =/{gsub(/.*:/,""); gsub(/"/,""); print $1; exit}' "$CONFIG"
+        fi
+    }
+
+    WHITELIST_IPS=$(awk '/whitelist =/{gsub(/[^0-9.,]/,""); print}' "$CONFIG" | tr ',' ' ')
+    PORTS=""
+    TCP_PORT=$(get_port "tcp")
+    HTTP_PORT=$(get_port "http")
+
+    [ -n "$TCP_PORT" ] && PORTS="$PORTS $TCP_PORT"
+    [ -n "$HTTP_PORT" ] && PORTS="$PORTS $HTTP_PORT"
+
+    if [ -z "$PORTS" ]; then
+        echo "No enabled TCP or HTTP ports found in config.toml. Nothing to do."
+        exit 0
+    fi
+
+    echo "Connecting to {{remote_host}} to update firewall for ports: $PORTS..."
+
+    # 2. Stream the execution script to the remote server over SSH
+    # We pass the local variables downstream into the SSH environment using 'EOF'
+    ssh -T "{{remote_host}}" bash -s << EOF
+        set -euo pipefail
+
+        PORTS="$PORTS"
+        WHITELIST_IPS="$WHITELIST_IPS"
+
+        # --- IDEMPOTENCY: Reset existing rules for these specific ports ---
+        for port in \$PORTS; do
+            echo "Remote: Resetting existing UFW rules for port \$port..."
+            while sudo ufw status numbered | grep -E "\b\$port\b" >/dev/null; do
+                NUM=\$(sudo ufw status numbered | grep -E "\b\$port\b" | head -n1 | awk -F'[][]' '{print \$2}')
+                sudo ufw --force delete "\$NUM" > /dev/null
+            done
+        done
+
+        # --- APPLY NEW RULES ---
+        for port in \$PORTS; do
+            echo "Remote: Configuring rules for port \$port..."
+
+            # 1. Localhost
+            sudo ufw allow from 127.0.0.1 to any port "\$port" proto tcp > /dev/null
+            sudo ufw allow from ::1 to any port "\$port" proto tcp > /dev/null
+
+            # 2. Whitelisted IPs passed downstream
+            for ip in \$WHITELIST_IPS; do
+                if [ -n "\$ip" ]; then
+                    echo "  Allowing IP: \$ip"
+                    sudo ufw allow from "\$ip" to any port "\$port" proto tcp > /dev/null
+                fi
+            done
+
+            # 3. Deny all fallback
+            sudo ufw deny "\$port"/tcp > /dev/null
+        done
+
+        echo "✓ Remote firewall updated successfully."
+        echo "Current UFW Status:"
+        sudo ufw status verbose
+EOF
 
 ## Version bump helpers (similar to echo-operator)
 
