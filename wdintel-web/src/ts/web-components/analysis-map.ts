@@ -15,6 +15,7 @@ import { patchMouseDownMapFocus, shouldHandleMapSurfaceContextMenu, suppressNati
 import { openMessagesPopup } from './analysis-map/message-popup';
 import { createPointsMarkersGroup, findPointMarkerByMessageId, replacePointsLayer } from './analysis-map/point-markers';
 import { buildPelengLabelGroups } from './analysis-map/peleng-label-groups';
+import { buildPelengLabelTooltipHtml } from './analysis-map/peleng-label-tooltip';
 import { getTileLayers } from './analysis-map/tile-layers';
 import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
 import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
@@ -825,7 +826,12 @@ class AnalysisMap extends HTMLElement {
         }),
       });
 
-      marker.bindTooltip(group.displayLabel, {
+      const tooltipHtml = buildPelengLabelTooltipHtml(group);
+      if (!tooltipHtml) {
+        return;
+      }
+
+      marker.bindTooltip(tooltipHtml, {
         permanent: true,
         direction: 'top',
         offset: [0, -8],

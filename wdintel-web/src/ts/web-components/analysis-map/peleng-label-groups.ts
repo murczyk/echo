@@ -10,7 +10,10 @@ export type PelengLabelGroup<TPoint extends PelengLabelPoint = PelengLabelPoint>
   centroid: { lat: number; lng: number };
   points: TPoint[];
   uniqueFreqs: string[];
-  displayLabel: string;
+  pointsCount: number;
+  knownFreqCount: number;
+  displayKind: 'single-point' | 'single-freq-cluster' | 'multi-freq-cluster' | null;
+  displayLabel: string | null;
 };
 
 type PelengLabelGroupFormatter<TPoint extends PelengLabelPoint> = (group: {
@@ -66,7 +69,11 @@ export function buildPelengLabelGroups<TPoint extends PelengLabelPoint>(
     });
     const componentPoints = componentIndexes.map((componentIndex) => projectedPoints[componentIndex].point);
     const centroid = getCentroid(componentPoints);
-    const uniqueFreqs = [...new Set(componentIndexes.map((componentIndex) => projectedPoints[componentIndex].freq))];
+    const uniqueFreqs = [...new Set(componentIndexes.map((componentIndex) => projectedPoints[componentIndex].freq))]
+      .filter(isKnownPelengFreq);
+    const pointsCount = componentPoints.length;
+    const knownFreqCount = uniqueFreqs.length;
+    const displayKind = getDisplayKind({ pointsCount, knownFreqCount });
     const defaultLabel = formatPelengLabel({
       points: componentPoints,
       uniqueFreqs,
@@ -76,13 +83,18 @@ export function buildPelengLabelGroups<TPoint extends PelengLabelPoint>(
       centroid,
       points: componentPoints,
       uniqueFreqs,
-      displayLabel: labelFormatter
-        ? labelFormatter({
-            centroid,
-            points: componentPoints,
-            uniqueFreqs,
-          })
-        : defaultLabel,
+      pointsCount,
+      knownFreqCount,
+      displayKind,
+      displayLabel: knownFreqCount === 0
+        ? null
+        : labelFormatter
+          ? labelFormatter({
+              centroid,
+              points: componentPoints,
+              uniqueFreqs,
+            })
+          : defaultLabel,
     });
   }
 
@@ -196,13 +208,32 @@ function formatPelengLabel(group: { points: PelengLabelPoint[]; uniqueFreqs: str
   }
 
   if (group.uniqueFreqs.length === 1) {
-    return `${group.uniqueFreqs[0]} · ${group.points.length}`;
+    return `${group.points.length} (${group.uniqueFreqs[0]})`;
   }
 
-  return `${group.uniqueFreqs.length} частоти · ${group.points.length}`;
+  return `${group.points.length} (${group.uniqueFreqs.length} частоти)`;
 }
 
 function normalizePelengFreq(freq?: string | null): string {
   const trimmed = freq?.trim() ?? '';
   return trimmed === '' ? PELENG_NO_DATA_LABEL : trimmed;
+}
+
+export function isKnownPelengFreq(freq: string): boolean {
+  return freq !== PELENG_NO_DATA_LABEL;
+}
+
+function getDisplayKind(group: {
+  pointsCount: number;
+  knownFreqCount: number;
+}): PelengLabelGroup['displayKind'] {
+  if (group.knownFreqCount === 0) {
+    return null;
+  }
+
+  if (group.pointsCount === 1) {
+    return 'single-point';
+  }
+
+  return group.knownFreqCount === 1 ? 'single-freq-cluster' : 'multi-freq-cluster';
 }

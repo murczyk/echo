@@ -19,8 +19,11 @@ describe('buildPelengLabelGroups', () => {
     const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 50);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayLabel).toBe('147.4750 · 2');
+    expect(groups[0].displayLabel).toBe('2 (147.4750)');
     expect(groups[0].uniqueFreqs).toEqual(['147.4750']);
+    expect(groups[0].pointsCount).toBe(2);
+    expect(groups[0].knownFreqCount).toBe(1);
+    expect(groups[0].displayKind).toBe('single-freq-cluster');
     expect(groups[0].points.map((point) => point.id)).toEqual([1, 2]);
   });
 
@@ -34,8 +37,11 @@ describe('buildPelengLabelGroups', () => {
     const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 50);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayLabel).toBe('2 частоти · 3');
+    expect(groups[0].displayLabel).toBe('3 (2 частоти)');
     expect(groups[0].uniqueFreqs).toEqual(['147.4750', '148.2000']);
+    expect(groups[0].pointsCount).toBe(3);
+    expect(groups[0].knownFreqCount).toBe(2);
+    expect(groups[0].displayKind).toBe('multi-freq-cluster');
   });
 
   it('keeps distant points in separate labels', () => {
@@ -59,8 +65,42 @@ describe('buildPelengLabelGroups', () => {
     const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 50);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayLabel).toBe('— · 2');
-    expect(groups[0].uniqueFreqs).toEqual(['—']);
+    expect(groups[0].displayLabel).toBeNull();
+    expect(groups[0].uniqueFreqs).toEqual([]);
+    expect(groups[0].pointsCount).toBe(2);
+    expect(groups[0].knownFreqCount).toBe(0);
+    expect(groups[0].displayKind).toBeNull();
+  });
+
+  it('shows known label for known plus missing points', () => {
+    const points: TestPoint[] = [
+      { id: 1, lat: 49, lng: 32, freq: '147.4750' },
+      { id: 2, lat: 49.00001, lng: 32.00001, freq: null },
+    ];
+
+    const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 50);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayLabel).toBe('2 (147.4750)');
+    expect(groups[0].uniqueFreqs).toEqual(['147.4750']);
+    expect(groups[0].pointsCount).toBe(2);
+    expect(groups[0].knownFreqCount).toBe(1);
+  });
+
+  it('counts only known frequencies when missing points are mixed in', () => {
+    const points: TestPoint[] = [
+      { id: 1, lat: 49, lng: 32, freq: '147.4750' },
+      { id: 2, lat: 49.00001, lng: 32.00001, freq: '148.2000' },
+      { id: 3, lat: 49.00002, lng: 32.00002, freq: '   ' },
+    ];
+
+    const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 50);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayLabel).toBe('3 (2 частоти)');
+    expect(groups[0].uniqueFreqs).toEqual(['147.4750', '148.2000']);
+    expect(groups[0].pointsCount).toBe(3);
+    expect(groups[0].knownFreqCount).toBe(2);
   });
 
   it('respects the max distance threshold', () => {
@@ -86,7 +126,7 @@ describe('buildPelengLabelGroups', () => {
     const groups = buildPelengLabelGroups(points, (point) => ({ x: point.lng * 1000, y: point.lat * 1000 }), 0.5);
 
     expect(groups).toHaveLength(2);
-    expect(groups.map((group) => group.displayLabel)).toEqual(['147.4750 · 2', '147.4750']);
+    expect(groups.map((group) => group.displayLabel)).toEqual(['2 (147.4750)', '147.4750']);
   });
 
   it('does not merge a long transitive chain into one cluster', () => {
