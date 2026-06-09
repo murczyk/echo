@@ -1,6 +1,5 @@
-import * as L from 'leaflet';
-import "leaflet.markercluster/dist/MarkerCluster.css"
-import "leaflet.markercluster/dist/leaflet.markercluster.js"
+import { L } from './leaflet-markercluster';
+import type * as Leaflet from 'leaflet';
 
 import { Palitra, PalitraPoint } from './palitra-types';
 import { buildPalitraPopupContent } from './palitra-popup-content';
@@ -20,7 +19,7 @@ function resolvePalitraClusterColor(palitra: Palitra, points: PalitraPoint[]): s
 }
 
 export class PalitraPointClusterRenderer {
-  private pointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
+  private pointsClusters: Map<number, Leaflet.MarkerClusterGroup> = new Map();
   private pointMarkers: PointMarker[] = [];
 
   constructor(
@@ -35,7 +34,7 @@ export class PalitraPointClusterRenderer {
   }
 
   replace(
-    nextClusters: Array<{ palitraId: number; cluster: L.MarkerClusterGroup | null }>,
+    nextClusters: Array<{ palitraId: number; cluster: Leaflet.MarkerClusterGroup | null }>,
     nextPointMarkers: PointMarker[],
   ): void {
     this.clear();
@@ -79,7 +78,7 @@ export class PalitraPointClusterRenderer {
     palitra: Palitra,
     points: PalitraPoint[],
     markerSink: PointMarker[],
-  ): Promise<L.MarkerClusterGroup | null> {
+  ): Promise<Leaflet.MarkerClusterGroup | null> {
     if (!points || points.length === 0) {
       return null;
     }
@@ -117,7 +116,7 @@ export class PalitraPointClusterRenderer {
   }
 
   private addMarkerToCluster(
-    clusterGroup: L.MarkerClusterGroup,
+    clusterGroup: Leaflet.MarkerClusterGroup,
     palitra: Palitra,
     point: PalitraPoint,
     markerSink: PointMarker[],

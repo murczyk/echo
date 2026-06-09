@@ -1,4 +1,5 @@
-import * as L from 'leaflet';
+import { L } from '../../maps/leaflet-markercluster';
+import type * as Leaflet from 'leaflet';
 
 import { MapPointDetailed } from '../../maps/types';
 import { CoordinateMenuTarget, DataCircleMarker } from './types';
@@ -17,15 +18,15 @@ type CreatePointsMarkersGroupOptions = {
 
 export function replacePointsLayer(params: {
   map: L.Map | null;
-  markersGroup: L.MarkerClusterGroup | null;
+  markersGroup: Leaflet.MarkerClusterGroup | null;
   pelengsLayerGroup: L.LayerGroup | null;
   points: MapPointDetailed[];
   boundedAlready: boolean;
   buildMarkersGroup: (points: MapPointDetailed[]) => {
     bounds: L.LatLngBounds;
-    markersGroup: L.MarkerClusterGroup;
+    markersGroup: Leaflet.MarkerClusterGroup;
   };
-}): { markersGroup: L.MarkerClusterGroup; boundedAlready: boolean } {
+}): { markersGroup: Leaflet.MarkerClusterGroup; boundedAlready: boolean } {
   const { map, markersGroup, pelengsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
   cleanupMarkersGroup(markersGroup, pelengsLayerGroup, map);
 
@@ -51,7 +52,7 @@ export function createPointsMarkersGroup({
   onClusterClick,
 }: CreatePointsMarkersGroupOptions): {
   bounds: L.LatLngBounds;
-  markersGroup: L.MarkerClusterGroup;
+  markersGroup: Leaflet.MarkerClusterGroup;
 } {
   const markersGroup = L.markerClusterGroup({
     maxClusterRadius: points.length > 100 ? 30 : 10,
@@ -129,7 +130,7 @@ export function createPointsMarkersGroup({
 }
 
 export function updatePelengLabelsPermanent(
-  markersGroup: L.MarkerClusterGroup | null,
+  markersGroup: Leaflet.MarkerClusterGroup | null,
   pelengLabelsPermanent: boolean,
 ): void {
   if (!markersGroup) {
@@ -159,7 +160,7 @@ export function updatePelengLabelsPermanent(
 }
 
 export function findPointMarkerByMessageId(
-  markersGroup: L.MarkerClusterGroup | null,
+  markersGroup: Leaflet.MarkerClusterGroup | null,
   messageId: number,
 ): DataCircleMarker | null {
   if (!markersGroup) {
@@ -179,7 +180,7 @@ export function findPointMarkerByMessageId(
 }
 
 function cleanupMarkersGroup(
-  markersGroup: L.MarkerClusterGroup | null,
+  markersGroup: Leaflet.MarkerClusterGroup | null,
   pelengsLayerGroup: L.LayerGroup | null,
   map: L.Map | null,
 ): void {

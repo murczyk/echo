@@ -1,7 +1,6 @@
-import * as L from 'leaflet';
+import { L } from '../maps/leaflet-markercluster';
+import type * as Leaflet from 'leaflet';
 
-import "leaflet.markercluster/dist/MarkerCluster.css"
-import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { KMZLayer } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { TimeswitchControl, FeatureToggleState, FeatureName, LayerSwitchControl, SearchControl, MapWindowControl, MapSettingsControl, PalitrasControl, PalitrasLoadState } from '../maps/controls';
@@ -30,7 +29,7 @@ class AnalysisMap extends HTMLElement {
   private _messages: Message[] = [];
   private _networkUnits: NetworkUnit[] = [];
 
-  private _markersGroup: L.MarkerClusterGroup | null = null;
+  private _markersGroup: Leaflet.MarkerClusterGroup | null = null;
   private _clickedPoint: DataCircleMarker | null = null;
   private _clickedLatLng: L.LatLng | null = null;
   private _boundedAlready = false;

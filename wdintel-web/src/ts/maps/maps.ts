@@ -1,7 +1,5 @@
-import * as L from 'leaflet';
+import { L } from './leaflet-markercluster';
 import "leaflet/dist/leaflet.css"
-import "leaflet.markercluster/dist/MarkerCluster.css"
-import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { kmzLayerFactory } from './leaflet-kmz'
 import "./maps.css"
 import { MapPoint, MapPointShort } from './types'
