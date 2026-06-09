@@ -283,7 +283,7 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('hides general settings and opens duty for the legacy general section', async () => {
+  it('hides general settings and opens my groups for the legacy general section', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="general" />);
     });
@@ -293,12 +293,12 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).not.toContain('Загальні');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('Мої групи');
   });
 
-  it('does not show the my groups tab after an empty successful load', async () => {
+  it('always shows the my groups tab after an empty successful load', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -306,7 +306,7 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).not.toContain('Загальні');
-    expect(container.textContent).not.toContain('Мої групи');
+    expect(container.textContent).toContain('Мої групи');
     expect(container.textContent).toContain('change-layout');
   });
 
@@ -327,7 +327,7 @@ describe('SettingsNeoPage', () => {
     });
 
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -387,7 +387,9 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Адміни');
     expect(container.textContent).not.toContain('Source 1');
     expect(container.textContent).toContain('AOR 1');
-    expect(container.textContent).toContain('приватна');
+    expect(container.textContent).toContain('Є приватною');
+    expect(container.textContent).toContain('так');
+    expect(container.textContent).not.toContain('приватна');
     expect(container.textContent).toContain('DeltaUser (AdminDelta)');
     expect(container.textContent).toContain('user-a (DeltaUserA), user-b');
   });

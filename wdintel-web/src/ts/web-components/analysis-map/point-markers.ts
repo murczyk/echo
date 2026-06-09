@@ -1,4 +1,5 @@
-import * as L from 'leaflet';
+import { L } from '../../maps/leaflet-markercluster';
+import type * as Leaflet from 'leaflet';
 
 import { MapPointDetailed } from '../../maps/types';
 import { CoordinateMenuTarget, DataCircleMarker } from './types';
@@ -8,24 +9,24 @@ type CreatePointsMarkersGroupOptions = {
   onPointClick: (point: MapPointDetailed, circle: DataCircleMarker) => void;
   onPointContextMenu: (
     target: CoordinateMenuTarget,
-    latlng: L.LatLng,
+    latlng: Leaflet.LatLng,
     originalEvent?: MouseEvent | PointerEvent | Event,
   ) => void;
-  onClusterClick: (messageIds: number[], latlng: L.LatLng | null, cluster: L.Layer) => void;
+  onClusterClick: (messageIds: number[], latlng: Leaflet.LatLng | null, cluster: Leaflet.Layer) => void;
 };
 
 export function replacePointsLayer(params: {
-  map: L.Map | null;
-  markersGroup: L.MarkerClusterGroup | null;
-  pelengsLayerGroup: L.LayerGroup | null;
-  pelengLabelsLayerGroup: L.LayerGroup | null;
+  map: Leaflet.Map | null;
+  markersGroup: Leaflet.MarkerClusterGroup | null;
+  pelengsLayerGroup: Leaflet.LayerGroup | null;
+  pelengLabelsLayerGroup: Leaflet.LayerGroup | null;
   points: MapPointDetailed[];
   boundedAlready: boolean;
   buildMarkersGroup: (points: MapPointDetailed[]) => {
-    bounds: L.LatLngBounds;
-    markersGroup: L.MarkerClusterGroup;
+    bounds: Leaflet.LatLngBounds;
+    markersGroup: Leaflet.MarkerClusterGroup;
   };
-}): { markersGroup: L.MarkerClusterGroup; boundedAlready: boolean } {
+}): { markersGroup: Leaflet.MarkerClusterGroup; boundedAlready: boolean } {
   const { map, markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
   cleanupMarkersGroup(markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, map);
 
@@ -49,8 +50,8 @@ export function createPointsMarkersGroup({
   onPointContextMenu,
   onClusterClick,
 }: CreatePointsMarkersGroupOptions): {
-  bounds: L.LatLngBounds;
-  markersGroup: L.MarkerClusterGroup;
+  bounds: Leaflet.LatLngBounds;
+  markersGroup: Leaflet.MarkerClusterGroup;
 } {
   const markersGroup = L.markerClusterGroup({
     maxClusterRadius: points.length > 100 ? 30 : 10,
@@ -83,7 +84,7 @@ export function createPointsMarkersGroup({
     circle.on('click', () => {
       onPointClick(point, circle);
     });
-    circle.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+    circle.on('mousedown', (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
       if (event.originalEvent?.button !== 2) {
         return;
       }
@@ -93,7 +94,7 @@ export function createPointsMarkersGroup({
         event.originalEvent,
       );
     });
-    circle.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+    circle.on('contextmenu', (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
       event.originalEvent?.preventDefault();
       event.originalEvent?.stopPropagation();
     });
@@ -108,12 +109,12 @@ export function createPointsMarkersGroup({
   });
 
   markersGroup.on('clusterclick', (leafletEvent) => {
-    const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => L.Layer[] };
+    const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => Leaflet.Layer[] };
     const childMarkers = cluster.getAllChildMarkers() as unknown as DataCircleMarker[];
     const latlng =
-      (leafletEvent as L.LeafletMouseEvent).latlng ??
-      (typeof (cluster as unknown as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
-        ? (cluster as unknown as { getLatLng: () => L.LatLng }).getLatLng()
+      (leafletEvent as Leaflet.LeafletMouseEvent).latlng ??
+      (typeof (cluster as unknown as { getLatLng?: () => Leaflet.LatLng }).getLatLng === 'function'
+        ? (cluster as unknown as { getLatLng: () => Leaflet.LatLng }).getLatLng()
         : null);
     onClusterClick(
       childMarkers.map((marker) => marker.data.messageId),
@@ -126,7 +127,7 @@ export function createPointsMarkersGroup({
 }
 
 export function findPointMarkerByMessageId(
-  markersGroup: L.MarkerClusterGroup | null,
+  markersGroup: Leaflet.MarkerClusterGroup | null,
   messageId: number,
 ): DataCircleMarker | null {
   if (!markersGroup) {
@@ -134,7 +135,7 @@ export function findPointMarkerByMessageId(
   }
 
   let found: DataCircleMarker | null = null;
-  markersGroup.eachLayer((layer: L.Layer) => {
+  markersGroup.eachLayer((layer: Leaflet.Layer) => {
     if (found) {
       return;
     }
@@ -146,10 +147,10 @@ export function findPointMarkerByMessageId(
 }
 
 function cleanupMarkersGroup(
-  markersGroup: L.MarkerClusterGroup | null,
-  pelengsLayerGroup: L.LayerGroup | null,
-  pelengLabelsLayerGroup: L.LayerGroup | null,
-  map: L.Map | null,
+  markersGroup: Leaflet.MarkerClusterGroup | null,
+  pelengsLayerGroup: Leaflet.LayerGroup | null,
+  pelengLabelsLayerGroup: Leaflet.LayerGroup | null,
+  map: Leaflet.Map | null,
 ): void {
   if (!markersGroup) {
     return;
@@ -158,7 +159,7 @@ function cleanupMarkersGroup(
   markersGroup.off();
   markersGroup.eachLayer((layer) => {
     layer.off();
-    const maybeTooltipLayer = layer as L.Layer & { unbindTooltip?: () => void };
+    const maybeTooltipLayer = layer as Leaflet.Layer & { unbindTooltip?: () => void };
     if (typeof maybeTooltipLayer.unbindTooltip === 'function') {
       maybeTooltipLayer.unbindTooltip();
     }
@@ -170,7 +171,7 @@ function cleanupMarkersGroup(
 }
 
 function fitBoundsOnInitialLowZoom(
-  map: L.Map | null,
+  map: Leaflet.Map | null,
   points: MapPointDetailed[],
   boundedAlready: boolean,
 ): boolean {

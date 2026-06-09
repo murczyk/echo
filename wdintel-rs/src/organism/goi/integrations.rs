@@ -55,6 +55,7 @@ enum GoiService {
     Swapp,
     SwappAlt,
     Goi,
+    EchoSwapp,
 }
 
 #[post("/api/admin/goi/integrations")]
@@ -911,6 +912,7 @@ fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
         "swapp" => Ok(GoiService::Swapp),
         "swapp_alt" => Ok(GoiService::SwappAlt),
         "goi" => Ok(GoiService::Goi),
+        "echo_swapp" => Ok(GoiService::EchoSwapp),
         other => Err(AppError::BL {
             msg: format!("Невідомий сервіс ГОІ: {other}"),
         }),
@@ -925,6 +927,9 @@ impl From<&GoiService> for super::RestartCurrentUserGoiService {
                 super::RestartCurrentUserGoiService::SwappAlt
             }
             GoiService::Goi => super::RestartCurrentUserGoiService::Goi,
+            GoiService::EchoSwapp => {
+                super::RestartCurrentUserGoiService::EchoSwapp
+            }
         }
     }
 }

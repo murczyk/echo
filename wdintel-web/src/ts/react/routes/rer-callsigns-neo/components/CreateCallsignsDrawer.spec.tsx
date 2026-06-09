@@ -159,7 +159,7 @@ function renderComponent(
         onClearRows={() => {}}
         onApplyPastedRows={() => {}}
         onSubmit={() => {}}
-      />,
+      />
     );
   }
 

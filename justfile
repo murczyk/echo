@@ -282,6 +282,358 @@ check-git-hooks:
     rm echo-install/rusty-tags.emacs || true
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
+# One-off migration for Signal bots that still use native signal-cli.
+
+# Safe to rerun: it only targets clients whose DB config is still set to native.
+[arg('non_interactive', long='non-interactive', value='true')]
+[arg('server', long='server')]
+[arg('yolo', long='yolo', value='true')]
+migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers
+        exit 1
+    fi
+    if [[ "{{ yolo }}" != "true" && ! -f "deploy/nginx/{{ server }}" ]]; then
+        echo "Server parameter not recognized. Value: {{ server }}"
+        echo "Available servers:"
+        find deploy/nginx -maxdepth 1 -type f -printf '%f\n' | sort
+        exit 1
+    fi
+
+    if [[ "{{ non_interactive }}" != "true" ]]; then
+        echo ""
+        echo "This operation may install Java, install signal-cli, update Signal bot env files,"
+        echo "restart echo-signal-bot services, and modify {{ pgdb }}.echo_client_config on {{ server }}."
+        echo
+
+        read -r -p "Continue? [y/N] " reply
+        [[ "$reply" =~ ^[Yy]$ ]] || exit 1
+    fi
+
+    set -x
+    ssh {{ server }} 'bash -se' <<'EOF'
+    set -euo pipefail
+
+    PG_DB="{{ pgdb }}"
+    MIN_JAVA_MAJOR="${MIN_JAVA_MAJOR:-25}"
+    SIGNAL_ROOT="/etc/echo/signal-cli-data"
+    TMP_DIR=$(mktemp -d /tmp/echo-signal-jvm-migration.XXXXXX)
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    require_cmd() {
+        if ! command -v "$1" >/dev/null 2>&1; then
+            echo "Missing required command: $1" >&2
+            exit 1
+        fi
+    }
+
+    java_major_version() {
+        if ! command -v java >/dev/null 2>&1; then
+            return 1
+        fi
+
+        java -version 2>&1 | awk -F '[".]' '/version/ { if ($2 == 1) print $3; else print $2; exit }'
+    }
+
+    ensure_compatible_java() {
+        local current_java_major=""
+        current_java_major=$(java_major_version || true)
+
+        if [[ -n "$current_java_major" && "$current_java_major" -ge "$MIN_JAVA_MAJOR" ]]; then
+            return 0
+        fi
+
+        if [[ -z "$current_java_major" ]]; then
+            echo "Java is not installed on the server. signal-cli requires Java ${MIN_JAVA_MAJOR} or newer."
+        else
+            echo "Java ${current_java_major} is installed, but signal-cli requires Java ${MIN_JAVA_MAJOR} or newer."
+        fi
+
+        echo "Installing/upgrading Java to a compatible version..."
+
+        require_cmd apt-get
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get update
+
+        java_packages=(
+            "openjdk-${MIN_JAVA_MAJOR}-jre-headless"
+            "openjdk-${MIN_JAVA_MAJOR}-jre"
+            "openjdk-${MIN_JAVA_MAJOR}-jdk-headless"
+            "openjdk-${MIN_JAVA_MAJOR}-jdk"
+        )
+        java_installed=0
+        for java_package in "${java_packages[@]}"; do
+            if sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$java_package"; then
+                java_installed=1
+                break
+            fi
+        done
+
+        if [[ "$java_installed" != "1" ]]; then
+            echo "Failed to install a compatible Java runtime for signal-cli." >&2
+            exit 1
+        fi
+
+        current_java_major=$(java_major_version || true)
+        if [[ -z "$current_java_major" || "$current_java_major" -lt "$MIN_JAVA_MAJOR" ]]; then
+            echo "Java upgrade did not produce a compatible runtime; expected >= ${MIN_JAVA_MAJOR}, got ${current_java_major:-missing}." >&2
+            exit 1
+        fi
+    }
+
+    ensure_signal_cli() {
+        local version=""
+        local install_dir=""
+
+        if command -v signal-cli >/dev/null 2>&1; then
+            local resolved=""
+            resolved=$(readlink -f "$(command -v signal-cli)" 2>/dev/null || true)
+            if [[ "$resolved" == /opt/signal-cli-*/bin/signal-cli ]]; then
+                return 0
+            fi
+            echo "signal-cli is installed at ${resolved:-$(command -v signal-cli)} but is not the /opt JVM build; reinstalling..."
+        fi
+
+        echo "signal-cli is not installed on the server."
+        echo "Installing latest JVM signal-cli..."
+
+        require_cmd curl
+        require_cmd tar
+        version=$(curl -fsSL -o /dev/null -w %{url_effective} https://github.com/AsamK/signal-cli/releases/latest | sed -e 's/^.*\/v//')
+
+        if [[ -z "$version" ]]; then
+            echo "Failed to determine the latest signal-cli version from GitHub." >&2
+            exit 1
+        fi
+
+        install_dir="$TMP_DIR/signal-cli-install"
+        mkdir -p "$install_dir"
+
+        (
+            cd "$install_dir"
+            curl -fL -O "https://github.com/AsamK/signal-cli/releases/download/v${version}/signal-cli-${version}.tar.gz"
+
+            sudo tar xf "signal-cli-${version}.tar.gz" -C /opt
+            sudo ln -sf "/opt/signal-cli-${version}/bin/signal-cli" /usr/local/bin/
+        )
+
+        if ! command -v signal-cli >/dev/null 2>&1; then
+            echo "signal-cli installation completed but the binary is still not available in PATH." >&2
+            exit 1
+        fi
+    }
+
+    set_signal_mode() {
+        local client_id="$1"
+        local from_mode="$2"
+        local to_mode="$3"
+
+        sudo -u postgres psql -X -d "$PG_DB" -v ON_ERROR_STOP=1 \
+            -c "UPDATE echo_client_config SET signal_mode = '${to_mode}' WHERE client_id = ${client_id} AND signal_mode = '${from_mode}';" \
+            >/dev/null
+    }
+
+    get_signal_mode() {
+        local client_id="$1"
+
+        sudo -u postgres psql \
+            -X \
+            -v ON_ERROR_STOP=1 \
+            -d "$PG_DB" \
+            -At \
+            -c "SELECT signal_mode FROM echo_client_config WHERE client_id = ${client_id};"
+    }
+
+    restore_bot() {
+        local client_id="$1"
+        local unit_name="$2"
+        local env_file="$3"
+        local env_backup="$4"
+        local was_running="$5"
+
+        if [[ -f "$env_backup" ]]; then
+            sudo cp "$env_backup" "$env_file" || true
+        fi
+        set_signal_mode "$client_id" normal native || true
+        if [[ "$was_running" == "1" ]]; then
+            sudo systemctl restart "$unit_name" >/dev/null 2>&1 || true
+        fi
+    }
+
+    require_cmd psql
+    require_cmd sudo
+    require_cmd systemctl
+    require_cmd awk
+    require_cmd grep
+    require_cmd sed
+
+    ensure_compatible_java
+    ensure_signal_cli
+
+    mapfile -t running_units < <(systemctl list-units --type=service --state=running 'echo-signal-bot@*' --no-legend --plain | awk '{print $1}')
+    declare -A was_running=()
+    for unit_name in "${running_units[@]}"; do
+        bot_name="${unit_name#echo-signal-bot@}"
+        bot_name="${bot_name%.service}"
+        was_running["$bot_name"]=1
+    done
+
+    candidate_rows=$(
+        sudo -u postgres psql \
+            -X \
+            -v ON_ERROR_STOP=1 \
+            -d "$PG_DB" \
+            -At \
+            -F $'\t' \
+            -c "
+            SELECT DISTINCT
+                ec.id,
+                ec.name,
+                ea.phone_number,
+                ecc.signal_port
+            FROM echo_client ec
+            JOIN echo_client_config ecc ON ecc.client_id = ec.id
+            JOIN echo_client_lock ecl ON ecl.client_id = ec.id
+            JOIN echo_account ea ON ea.id = ecl.account_id
+            WHERE ec.deleted = false
+              AND ecl.remove_requested = false
+              AND ea.source = 'signal'
+              AND ea.phone_number IS NOT NULL
+              AND ecc.signal_mode = 'native'
+            ORDER BY ec.name;
+        "
+    )
+
+    candidates=()
+    if [[ -n "$candidate_rows" ]]; then
+        mapfile -t candidates <<<"$candidate_rows"
+    fi
+
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        echo "No Signal bots remain in native mode; nothing to migrate."
+        exit 0
+    fi
+
+    echo
+    echo "Migration candidates:"
+    for row in "${candidates[@]}"; do
+        IFS=$'\t' read -r _ bot_name phone_number _ <<<"$row"
+        echo "  - $bot_name ($phone_number)"
+    done
+    echo
+
+    migrated_count=0
+    failures=()
+
+    echo "Migrating ${#candidates[@]} Signal bot(s) from native to JVM mode..."
+
+    for row in "${candidates[@]}"; do
+        IFS=$'\t' read -r client_id bot_name phone_number signal_port <<<"$row"
+        if [[ -z "$bot_name" ]]; then
+            failures+=("invalid candidate row")
+            continue
+        fi
+
+        config_dir="$SIGNAL_ROOT/$bot_name/signal-cli"
+        env_file="$SIGNAL_ROOT/$bot_name/$bot_name.env"
+        env_backup="$TMP_DIR/$bot_name.env.bak"
+        unit_name="echo-signal-bot@$bot_name.service"
+        is_running="${was_running[$bot_name]:-0}"
+        env_file_exists=0
+
+        echo "--- $bot_name ($phone_number) ---"
+
+        if [[ ! -d "$config_dir" ]]; then
+            failures+=("$bot_name: missing Signal config dir $config_dir")
+            echo "Missing Signal config dir: $config_dir"
+            continue
+        fi
+
+        if sudo test -f "$env_file"; then
+            env_file_exists=1
+        fi
+
+        account_output=$(sudo signal-cli --output=json --data-dir "$config_dir" listAccounts 2>&1 || true)
+        if ! grep -Fq "\"$phone_number\"" <<<"$account_output"; then
+            failures+=("$bot_name: JVM signal-cli could not read account data for $phone_number :: $account_output")
+            echo "JVM preflight failed"
+            continue
+        fi
+
+        if [[ "$env_file_exists" != "1" ]]; then
+            echo "Env file is missing at $env_file; updating database only."
+            if ! set_signal_mode "$client_id" native normal; then
+                failures+=("$bot_name: failed to update echo_client_config.signal_mode")
+                echo "Database update failed"
+                continue
+            fi
+
+            mode_value=$(get_signal_mode "$client_id")
+            account_output=$(sudo signal-cli --output=json --data-dir "$config_dir" listAccounts 2>&1 || true)
+            if [[ "$mode_value" != "normal" ]] \
+                || ! grep -Fq "\"$phone_number\"" <<<"$account_output"; then
+                set_signal_mode "$client_id" normal native || true
+                failures+=("$bot_name: database-only post-migration verification failed")
+                echo "Database-only verification failed; reverted bot to native mode"
+                continue
+            fi
+
+            migrated_count=$((migrated_count + 1))
+            echo "Database migrated successfully; skipped env/systemd update"
+            continue
+        fi
+
+        sudo cp "$env_file" "$env_backup"
+        printf 'PORT=%s\nMODE=normal\n' "$signal_port" | sudo tee "$env_file" >/dev/null
+
+        if [[ "$is_running" == "1" ]]; then
+            if ! sudo systemctl restart "$unit_name"; then
+                restore_bot "$client_id" "$unit_name" "$env_file" "$env_backup" "$is_running"
+                failures+=("$bot_name: systemd restart failed")
+                echo "Restart failed; reverted bot to native mode"
+                continue
+            fi
+            if ! sudo systemctl is-active --quiet "$unit_name"; then
+                restore_bot "$client_id" "$unit_name" "$env_file" "$env_backup" "$is_running"
+                failures+=("$bot_name: service is not active after restart")
+                echo "Service did not return to active state; reverted bot to native mode"
+                continue
+            fi
+        fi
+
+        if ! set_signal_mode "$client_id" native normal; then
+            restore_bot "$client_id" "$unit_name" "$env_file" "$env_backup" "$is_running"
+            failures+=("$bot_name: failed to update echo_client_config.signal_mode")
+            echo "Database update failed; reverted bot to native mode"
+            continue
+        fi
+
+        mode_value=$(get_signal_mode "$client_id")
+        account_output=$(sudo signal-cli --output=json --data-dir "$config_dir" listAccounts 2>&1 || true)
+        if ! sudo grep -Fxq 'MODE=normal' "$env_file" \
+            || [[ "$mode_value" != "normal" ]] \
+            || ! grep -Fq "\"$phone_number\"" <<<"$account_output"; then
+            restore_bot "$client_id" "$unit_name" "$env_file" "$env_backup" "$is_running"
+            failures+=("$bot_name: post-migration verification failed")
+            echo "Verification failed; reverted bot to native mode"
+            continue
+        fi
+
+        migrated_count=$((migrated_count + 1))
+        echo "Migrated successfully"
+    done
+
+    echo
+    echo "Migration summary: migrated=$migrated_count failed=${#failures[@]}"
+    if [[ ${#failures[@]} -gt 0 ]]; then
+        printf 'FAILED: %s\n' "${failures[@]}"
+        exit 1
+    fi
+
+    echo "Signal JVM migration completed successfully."
+    EOF
+
 [arg('server', long='server')]
 deploy _server_pos="" server:
     #!/bin/bash

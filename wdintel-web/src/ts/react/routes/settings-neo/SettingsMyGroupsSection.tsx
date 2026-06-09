@@ -33,6 +33,8 @@ const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
 ];
 
 const defaultMyGroupsMRTOptions = getDefaultMRTOptions<MyAdminSignalGroup>();
+const MY_GROUPS_SETUP_FLOW_IMAGE_ALT =
+  'Схема додавання групи: 1. Додайте номер бота до групи Signal або WhatsApp. 2. Напишіть в підтримку "Додано групу ...". 3. Вкажіть тип групи: приватна група — користувачі Delta1, Delta2; смугова група — смуга АК33, АК34.';
 
 function formatAors(group: MyAdminSignalGroup): string {
   const aors = group.areasOfResponsibility ?? [];
@@ -77,34 +79,34 @@ function useMyGroupsColumns() {
         header: 'Група',
         id: 'name',
         accessorFn: (row) => row.name || row.masterKey.slice(-5),
-        size: 240,
+        size: 160,
       },
       {
         header: 'Смуги',
         id: 'aors',
         accessorFn: formatAors,
         enableSorting: false,
-        size: 240,
+        size: 130,
       },
       {
         header: 'Адміни',
         id: 'admins',
         accessorFn: (row) => formatGroupLogins(row.adminLogins),
         enableSorting: false,
-        size: 260,
+        size: 180,
       },
       {
-        header: 'Приватність',
+        header: 'Є приватною',
         id: 'privacy',
-        accessorFn: (row) => (row.isGroupSecret ? 'приватна' : 'публічна'),
-        size: 140,
+        accessorFn: (row) => (row.isGroupSecret ? 'так' : 'ні'),
+        size: 110,
       },
       {
         header: 'Логіни приватної групи',
         id: 'allowedUsers',
         accessorFn: formatAllowedUsers,
         enableSorting: false,
-        size: 300,
+        size: 250,
       },
     ],
     [],
@@ -121,6 +123,7 @@ function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: b
     columns,
     data: props.loading ? buildMyGroupLoadingRows() : props.groups,
     ...defaultMyGroupsMRTOptions,
+    layoutMode: 'grid-no-grow',
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -192,6 +195,24 @@ function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: b
   return <MaterialReactTable table={table} />;
 }
 
+function MyGroupsSetupFlowImage() {
+  return (
+    <Box
+      component="img"
+      src="/img/settings-my-groups-flow.svg"
+      alt={MY_GROUPS_SETUP_FLOW_IMAGE_ALT}
+      sx={{
+        display: 'block',
+        width: '100%',
+        maxWidth: 920,
+        height: 'auto',
+        mt: 0.5,
+        borderRadius: 1,
+      }}
+    />
+  );
+}
+
 export type SettingsMyGroupsSectionProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
   groups: MyAdminSignalGroup[];
@@ -210,11 +231,16 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
           </Typography>
 
           <PowerAlert severity="info">
-            Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
-            <br />
-            1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
-            <br />
-            2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+            <Stack spacing={1.5}>
+              <Box>
+                Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
+                <br />
+                1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
+                <br />
+                2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+              </Box>
+              <MyGroupsSetupFlowImage />
+            </Stack>
           </PowerAlert>
 
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
@@ -230,7 +256,7 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
 
           {status === 'success' && hasGroups ? (
             <TableStateProvider
-              tableId="settings-neo-my-groups"
+              tableId="settings-neo-my-groups-v2"
               defaultColumnOrder={DEFAULT_MY_GROUPS_COLUMN_ORDER}
               defaultColumnVisibility={DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY}
               defaultEnableColumnOrdering={false}

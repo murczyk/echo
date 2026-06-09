@@ -47,7 +47,7 @@ class SettingsNeoElement extends HTMLElement {
 
   private renderRoot() {
     if (!this.root) return;
-    const section = (this.getAttribute("data-settings-section") ?? "general") as SettingsSection;
+    const section = (this.getAttribute("data-settings-section") ?? "myGroups") as SettingsSection;
     this.root.render(<SettingsNeoRoot section={section} />);
   }
 }

@@ -62,6 +62,7 @@ type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
 type PhoneForm = {
   messengerType: string;
+  signalCliMode: SignalCliMode;
   phoneNumber: string;
   name: string;
   description: string;
@@ -87,6 +88,8 @@ type StatusMessage = {
   kind: 'success' | 'error';
   message: string;
 } | null;
+
+type SignalCliMode = 'Normal' | 'Native';
 
 type EchoAccountLegacy = {
   id: number;
@@ -137,6 +140,7 @@ const DEFAULT_COLUMN_ORDER = [
 
 const defaultPhoneForm: PhoneForm = {
   messengerType: 'signal',
+  signalCliMode: 'Normal',
   phoneNumber: '',
   name: '',
   description: '',
@@ -865,6 +869,7 @@ function AdminMessengerNeoPageBody() {
       phone: phoneForm.phoneNumber,
       displayName: phoneForm.name.trim(),
       systemServiceName: normalizeToSystemName(phoneForm.name),
+      signalCliMode: phoneForm.signalCliMode,
       description: normalizeDescription(phoneForm.description),
       aorId: phoneForm.aorId,
     };
@@ -1126,6 +1131,25 @@ function AdminMessengerNeoPageBody() {
                   <MenuItem value="signal">Signal</MenuItem>
                   <MenuItem value="whatsapp">WhatsApp</MenuItem>
                 </TextField>
+                {phoneForm.messengerType === 'signal' ? (
+                  <div className="pt-6">
+                    <TextField
+                      select
+                      label="Режим Signal CLI"
+                      value={phoneForm.signalCliMode}
+                      onChange={(event) =>
+                        setPhoneForm((prev) => ({
+                          ...prev,
+                          signalCliMode: event.target.value as SignalCliMode,
+                        }))
+                      }
+                      fullWidth
+                    >
+                      <MenuItem value="Normal">Normal (JVM)</MenuItem>
+                      <MenuItem value="Native">Native</MenuItem>
+                    </TextField>
+                  </div>
+                ) : null}
                 <div className="pt-6">
                   <TextField
                     label="Номер телефону"

@@ -20,13 +20,16 @@ const useAnalysisDataMock = vi.hoisted(() => vi.fn());
 const useAnalysisSavedFiltersMock = vi.hoisted(() => vi.fn());
 const useAnalysisReportMock = vi.hoisted(() => vi.fn());
 const useAnalysisMessageEditorMock = vi.hoisted(() => vi.fn());
+const mediaQueryMock = vi.hoisted(() => ({
+  useMediaQuery: vi.fn(),
+}));
 
 vi.mock('@mui/material', () => ({
-  useMediaQuery: () => false,
+  useMediaQuery: mediaQueryMock.useMediaQuery,
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: () => '(max-width: 600px)' } }),
+  useTheme: () => ({ breakpoints: { down: (key: string) => `(down:${key})` } }),
 }));
 
 vi.mock('../../services/api/client', () => ({
@@ -260,6 +263,9 @@ describe('useRerAnalysisNeoPage', () => {
     document.body.appendChild(container);
     latest = null;
 
+    mediaQueryMock.useMediaQuery.mockReset();
+    mediaQueryMock.useMediaQuery.mockReturnValue(false);
+
     userSettingsMock.fetchUserSettings.mockReset();
     userSettingsMock.fetchUserSettings.mockResolvedValue({
       tagsLayout: 'compact',
@@ -317,6 +323,22 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('stats');
+  });
+
+  it('folds the filters by default when they would stack above content', async () => {
+    mediaQueryMock.useMediaQuery.mockImplementation((query: string) => query === '(down:lg)');
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.leftPanelOpen).toBe(false);
+
+    await act(async () => {
+      latest?.toggleLeftPanel();
+    });
+    await flushEffects();
+
+    expect(latest?.leftPanelOpen).toBe(true);
   });
 
   it('moves the active map from the center into the sidebar when the setting turns on', async () => {

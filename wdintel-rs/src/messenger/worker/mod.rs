@@ -319,13 +319,17 @@ async fn sync_client_once(
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    let num_synced_inbox_messages =
-        receive_thread(&client_name, &mut client_groups_sync_ts_map, dbx)
-            .await
-            .unwrap_or_else(|e| {
-                error!("> {client_name}::receive_thread_nofail error: {:?}", e);
-                0
-            });
+    let num_synced_inbox_messages = receive_thread(
+        config,
+        &client_name,
+        &mut client_groups_sync_ts_map,
+        dbx,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        error!("> {client_name}::receive_thread_nofail error: {:?}", e);
+        0
+    });
     let is_healthy = !is_datasource_offline(dbx, cli.id).await;
     SyncResult {
         is_healthy,
@@ -526,6 +530,7 @@ async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
 }
 
 async fn receive_thread(
+    config: &Config,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
@@ -552,8 +557,9 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    let items_synced =
-        sync_inbox(Utc::now(), dbx, client_name).await.c(h!())?;
+    let items_synced = sync_inbox(config, Utc::now(), dbx, client_name)
+        .await
+        .c(h!())?;
 
     let mut model = datasource.into_active_model();
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
@@ -596,6 +602,7 @@ fn sources_eq(
 }
 
 async fn sync_inbox(
+    config: &Config,
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
@@ -619,6 +626,11 @@ async fn sync_inbox(
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
             .c(h!())?;
+    let private_message_bodies = inbox_messages
+        .iter()
+        .filter(|message| message.group_id.is_none())
+        .map(|message| message.text.clone())
+        .collect_vec();
     let inbox_internal_ids: Vec<i32> =
         inbox_messages.iter().map(|m| m.internal_id).collect();
     let db_attachment_counts = if inbox_internal_ids.is_empty() {
@@ -686,8 +698,38 @@ async fn sync_inbox(
         .c(h!())?;
     txn.commit().await.c(h!())?;
 
+    notify_private_messages(config, client_name, private_message_bodies).await;
     sync_senders(db, senders).await.c(h!())?;
     Ok(inbox_num)
+}
+
+async fn notify_private_messages(
+    config: &Config,
+    client_name: &str,
+    message_bodies: Vec<String>,
+) {
+    for message_body in message_bodies {
+        let content = format!(
+            "Private message received at echo server {} on service account {}: \n{}",
+            config.public_host, client_name, message_body
+        );
+        let result = tokio::time::timeout(
+            Duration::from_secs(
+                MESSENGER_PRIVATE_MESSAGE_DISCORD_ALERT_TIMEOUT_SEC,
+            ),
+            crate::server::discord::discord_notify(config, &content),
+        )
+        .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => error!(
+                "failed to send private message discord alert for client {client_name}: {e:?}"
+            ),
+            Err(e) => error!(
+                "timed out sending private message discord alert for client {client_name}: {e:?}"
+            ),
+        }
+    }
 }
 
 async fn write_to_signal_message_queue(

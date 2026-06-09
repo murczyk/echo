@@ -42,7 +42,7 @@ settingsSection : Route () -> String
 settingsSection route =
     route.query
         |> Dict.get "section"
-        |> Maybe.withDefault "general"
+        |> Maybe.withDefault "myGroups"
 
 
 toLayout : Auth.User -> Route () -> Model -> Layouts.Layout Msg

@@ -28,7 +28,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'duty' || section === 'analysis' || section === 'reports') {
     return section;
   }
-  return 'duty';
+  return 'myGroups';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -52,8 +52,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
   const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
-  const hasMyGroups = myGroups.length > 0;
-  const showMyGroupsTab = hasMyGroups || settingsSection === 'myGroups' || myGroupsStatus === 'error';
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
@@ -128,14 +126,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               },
             }}
           >
-            {showMyGroupsTab ? (
-              <Tab
-                value="myGroups"
-                label="Мої групи"
-                id="settings-neo-tab-my-groups"
-                aria-controls="settings-neo-panel-my-groups"
-              />
-            ) : null}
+            <Tab
+              value="myGroups"
+              label="Мої групи"
+              id="settings-neo-tab-my-groups"
+              aria-controls="settings-neo-panel-my-groups"
+            />
             <Tab
               value="duty"
               label="Оперативний"

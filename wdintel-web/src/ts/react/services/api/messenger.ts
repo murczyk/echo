@@ -42,6 +42,7 @@ type LinkAccountReqBody = {
   messenger: string;
   display_name: string;
   system_service_name: string;
+  signal_cli_mode: string | null;
   description: string | null;
   aor_id: number;
 };
@@ -153,6 +154,7 @@ function toLinkAccountReqBody(req: LinkAccountReq): LinkAccountReqBody {
     messenger: req.messenger,
     display_name: req.displayName,
     system_service_name: req.systemServiceName,
+    signal_cli_mode: req.signalCliMode ?? null,
     description: req.description,
     aor_id: req.aorId,
   };

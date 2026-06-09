@@ -44,11 +44,13 @@ if [ -n "$wdintel_epoch" ]; then
   SOURCE_DATE_EPOCH="$wdintel_epoch" cargo build --release \
     -p wdintel-rs \
     -p goi-echo-worker \
+    -p echo-swapp \
     -p echo-install
 else
   cargo build --release \
     -p wdintel-rs \
     -p goi-echo-worker \
+    -p echo-swapp \
     -p echo-install
 fi
 
@@ -57,11 +59,14 @@ if [ -n "$wdintel_epoch" ]; then
   touch -d "@$wdintel_epoch" wdintel-rs/version.txt 2>/dev/null || true
   touch -d "@$wdintel_epoch" target/release/wdintel-rs 2>/dev/null || true
   touch -d "@$wdintel_epoch" target/release/goi-echo-worker 2>/dev/null || true
+  touch -d "@$wdintel_epoch" target/release/echo-swapp 2>/dev/null || true
   SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p wdintel-rs --no-build
   SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p goi-echo-worker --no-build
+  SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p echo-swapp --no-build
 else
   cargo deb -p wdintel-rs --no-build
   cargo deb -p goi-echo-worker --no-build
+  cargo deb -p echo-swapp --no-build
 fi
 cargo deb -p echo-install --no-build || true
 

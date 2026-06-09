@@ -7,6 +7,7 @@ use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env, ShortContext};
 use actix_web::post;
 use actix_web::web::Json;
+use echo_im::entities::sea_orm_active_enums::SignalCliMode;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
@@ -163,6 +164,11 @@ pub async fn link(
     let txn = env.dbx.begin().await.cae(h!())?;
     only_alphanumeric_and_hyphen(&req.system_service_name)?;
     valid_phone_number(&req.phone)?;
+    let signal_cli_mode = if req.messenger.eq_ignore_ascii_case("signal") {
+        parse_signal_cli_mode(req.signal_cli_mode.as_deref())?
+    } else {
+        SignalCliMode::Native
+    };
 
     let account = bl::link_account(
         None,
@@ -170,6 +176,7 @@ pub async fn link(
         req.display_name.as_str(),
         req.system_service_name.as_str(),
         req.messenger.as_str(),
+        signal_cli_mode,
         req.description.clone(),
         req.aor_id,
         &txn,
@@ -243,4 +250,15 @@ fn valid_phone_number(x: &str) -> Result<(), AppError> {
         return Err(AppError::BL { msg });
     }
     Ok(())
+}
+
+fn parse_signal_cli_mode(signal_cli_mode: Option<&str>) -> Result<SignalCliMode, AppError> {
+    match signal_cli_mode.map(str::trim).filter(|x| !x.is_empty()) {
+        None => Ok(SignalCliMode::Normal),
+        Some("Normal") | Some("normal") => Ok(SignalCliMode::Normal),
+        Some("Native") | Some("native") => Ok(SignalCliMode::Native),
+        Some(value) => Err(AppError::BL {
+            msg: format!("Невідомий режим Signal CLI: {value}"),
+        }),
+    }
 }

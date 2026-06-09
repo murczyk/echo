@@ -247,6 +247,7 @@ mod m20260520_120000_create_organism_keyword_set;
 mod m20260529_110000_add_short_url_to_admin_config;
 mod m20260601_000000_add_release_news_viewed;
 mod m20260602_153344_add_signal_group_admin;
+mod m20260605_162305_echo_swapp_sync_state;
 
 pub struct Migrator;
 
@@ -503,6 +504,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260529_110000_add_short_url_to_admin_config::Migration),
             Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260601_000000_add_release_news_viewed::Migration),
+            Box::new(m20260605_162305_echo_swapp_sync_state::Migration),
         ]
     }
 }

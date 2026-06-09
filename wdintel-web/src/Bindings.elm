@@ -7792,6 +7792,7 @@ type alias LinkAccountReq =
     , messenger : String
     , displayName : String
     , systemServiceName : String
+    , signalCliMode : Maybe (String)
     , description : Maybe (String)
     , aorId : Int
     }
@@ -7804,6 +7805,7 @@ linkAccountReqEncoder struct =
         , ( "messenger", (Json.Encode.string) struct.messenger )
         , ( "display_name", (Json.Encode.string) struct.displayName )
         , ( "system_service_name", (Json.Encode.string) struct.systemServiceName )
+        , ( "signal_cli_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalCliMode )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "aor_id", (Json.Encode.int) struct.aorId )
         ]
@@ -12794,6 +12796,7 @@ linkAccountReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_cli_mode" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.int)))
 

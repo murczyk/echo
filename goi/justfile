@@ -9,10 +9,29 @@ swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
 goi_version := "1.4.3"
-goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp"
 
 default:
     @just --list
+
+checkout-messenger-debs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sudo apt-get update
+    mkdir -p "{{ goi_dir }}/.deb"
+    cd "{{ goi_dir }}/.deb" && apt-get download echo-im-signal echo-im-whatsapp
+
+build-echo-swapp:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    BRANCH="main"
+
+    echo "Switching {{ repo_dir }} to ${BRANCH}..."
+    (cd "{{ repo_dir }}" && git fetch origin "${BRANCH}" && git clean -df && git checkout "${BRANCH}" && git pull --ff-only origin "${BRANCH}")
+
+    echo "Building echo-swapp deb package..."
+    (cd "{{ repo_dir }}" && cargo deb -p echo-swapp)
 
 _require-goi-cloud-access:
     #!/usr/bin/env bash
@@ -241,6 +260,89 @@ deploy-goi-echo-worker server:
       sudo systemctl status goi-echo-worker --no-pager
     "
 
+[arg('server', long='server')]
+deploy-echo-swapp server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    DEB_PATH=""
+    DEB_NAME=""
+    MESSENGER_DEB_DIR="{{ goi_dir }}/.deb"
+    SIGNAL_DEB_PATH=""
+    SIGNAL_DEB_NAME=""
+    WHATSAPP_DEB_PATH=""
+    WHATSAPP_DEB_NAME=""
+
+    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs
+
+    SIGNAL_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
+      echo "Failed to find echo-im-signal .deb in ${MESSENGER_DEB_DIR}" >&2
+      exit 1
+    fi
+    SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
+
+    WHATSAPP_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${WHATSAPP_DEB_PATH}" ]]; then
+      echo "Failed to find echo-im-whatsapp .deb in ${MESSENGER_DEB_DIR}" >&2
+      exit 1
+    fi
+    WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
+
+    echo "Uploading ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} to ${SERVER}..."
+    scp "${SIGNAL_DEB_PATH}" "${SERVER}:/var/tmp/${SIGNAL_DEB_NAME}"
+    scp "${WHATSAPP_DEB_PATH}" "${SERVER}:/var/tmp/${WHATSAPP_DEB_NAME}"
+
+    echo "Installing ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      cd /var/tmp
+      sudo apt-get install -y --reinstall --allow-downgrades \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
+      rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
+    "
+
+    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp
+
+    DEB_PATH="$(ls -1t "{{ repo_dir }}"/target/debian/echo-swapp_*_*.deb | head -n 1)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "Failed to find built echo-swapp .deb in target/debian" >&2
+      exit 1
+    fi
+    DEB_NAME="$(basename "${DEB_PATH}")"
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}..."
+    scp "${DEB_PATH}" "${SERVER}:/var/tmp/${DEB_NAME}"
+
+    echo "Installing ${DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      cd /var/tmp
+      sudo apt-get install -y --reinstall --allow-downgrades \"./${DEB_NAME}\"
+      if [[ -f /etc/goi-echo-worker/config.toml ]]; then
+        tmp_config=\$(mktemp)
+        chmod 0600 "\${tmp_config}"
+        sudo awk '/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/goi-echo-worker/config.toml > "\${tmp_config}"
+        printf '\n' >> "\${tmp_config}"
+        sudo awk '!/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/echo-swapp/config.toml >> "\${tmp_config}"
+        sudo mv "\${tmp_config}" /etc/echo-swapp/config.toml
+        sudo chown root:root /etc/echo-swapp/config.toml
+        sudo chmod 0600 /etc/echo-swapp/config.toml
+      fi
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now echo-swapp
+      sudo systemctl restart echo-swapp
+      rm -f \"./${DEB_NAME}\"
+    "
+
+    echo "Updating nginx on ${SERVER}..."
+    just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
+
+    echo "Checking echo-swapp.service on ${SERVER}..."
+    ssh "$SERVER" "sudo systemctl status echo-swapp --no-pager"
+
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
 
 # Use only on Linux, preferrably 22.04 host
@@ -385,6 +487,7 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-first server:
@@ -470,6 +573,7 @@ deploy-first server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-swapp server:

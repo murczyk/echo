@@ -2999,6 +2999,7 @@ export type LinkAccountReq = {
   messenger: string;
   displayName: string;
   systemServiceName: string;
+  signalCliMode: string | null;
   description: string | null;
   aorId: number;
 };

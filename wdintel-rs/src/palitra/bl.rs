@@ -283,17 +283,20 @@ pub async fn search_palitra_points_by_labels(
         .select_only()
         .column(palitra_geometry::Column::Id)
         .column(palitra_geometry::Column::PalitraId)
-        .into_tuple::<(i64, i64)>()
+        .column(palitra_geometry::Column::Hex)
+        .into_tuple::<(i64, i64, String)>()
         .all(dbx)
         .await
         .c(h!())?;
-    let palitra_geometry_id_to_palitra_id = palitra_geometries
+    let palitra_geometry_id_to_info = palitra_geometries
         .iter()
-        .copied()
+        .map(|(id, palitra_id, color_hex)| {
+            (*id, (*palitra_id, color_hex.clone()))
+        })
         .collect::<HashMap<_, _>>();
     let palitra_geometry_ids = palitra_geometries
         .into_iter()
-        .map(|(id, _)| id)
+        .map(|(id, _, _)| id)
         .collect_vec();
     if palitra_geometry_ids.is_empty() {
         return Ok(vec![]);
@@ -320,9 +323,8 @@ pub async fn search_palitra_points_by_labels(
     let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
         HashMap::new();
     for (palitra_geometry_id, lat, lng, label) in points {
-        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
-            .get(&palitra_geometry_id)
-            .copied()
+        let Some((palitra_id, color_hex)) =
+            palitra_geometry_id_to_info.get(&palitra_geometry_id)
         else {
             warn!(
                 "palitra_geometry {} is missing palitra_id mapping while searching points by labels",
@@ -349,11 +351,11 @@ pub async fn search_palitra_points_by_labels(
             continue;
         }
 
-        points_by_palitra_id.entry(palitra_id).or_default().push(
+        points_by_palitra_id.entry(*palitra_id).or_default().push(
             PalitraPoint {
                 label,
                 coords: Coords { lat, lng },
-                color: None,
+                color: Some(color_hex.clone()),
             },
         );
     }
@@ -625,17 +627,20 @@ pub async fn list_palitra_points_by_viewport_bounds(
         .select_only()
         .column(palitra_geometry::Column::Id)
         .column(palitra_geometry::Column::PalitraId)
-        .into_tuple::<(i64, i64)>()
+        .column(palitra_geometry::Column::Hex)
+        .into_tuple::<(i64, i64, String)>()
         .all(dbx)
         .await
         .c(h!())?;
-    let palitra_geometry_id_to_palitra_id = palitra_geometries
+    let palitra_geometry_id_to_info = palitra_geometries
         .iter()
-        .copied()
+        .map(|(id, palitra_id, color_hex)| {
+            (*id, (*palitra_id, color_hex.clone()))
+        })
         .collect::<HashMap<_, _>>();
     let palitra_geometry_ids = palitra_geometries
         .into_iter()
-        .map(|(id, _)| id)
+        .map(|(id, _, _)| id)
         .collect_vec();
 
     if palitra_geometry_ids.is_empty() {
@@ -660,9 +665,8 @@ pub async fn list_palitra_points_by_viewport_bounds(
     let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
         HashMap::new();
     for point in points {
-        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
-            .get(&point.palitra_geometry_id)
-            .copied()
+        let Some((palitra_id, color_hex)) =
+            palitra_geometry_id_to_info.get(&point.palitra_geometry_id)
         else {
             warn!(
                 "palitra_geometry {} is missing palitra_id mapping while listing points by viewport",
@@ -670,14 +674,14 @@ pub async fn list_palitra_points_by_viewport_bounds(
             );
             continue;
         };
-        points_by_palitra_id.entry(palitra_id).or_default().push(
+        points_by_palitra_id.entry(*palitra_id).or_default().push(
             PalitraPoint {
                 label: point.label,
                 coords: Coords {
                     lat: point.lat,
                     lng: point.lng,
                 },
-                color: None,
+                color: Some(color_hex.clone()),
             },
         );
     }
