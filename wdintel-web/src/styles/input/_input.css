@@ -74,6 +74,20 @@ html[data-bs-theme="dark"] .form-input:disabled {
     background-color: var(--color-background);
 }
 
+/* Native checkbox alignment */
+.app-checkbox {
+    --app-checkbox-gap: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--app-checkbox-gap);
+    line-height: 1;
+}
+
+.app-checkbox__input {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
 /* Radio Group Styles */
 .radio-group {
     display: flex;

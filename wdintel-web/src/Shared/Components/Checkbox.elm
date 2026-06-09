@@ -37,13 +37,13 @@ withDisabled disabled (Config config) =
 view : Config msg -> Html msg
 view (Config config) =
     label
-        []
+        [ class "app-checkbox" ]
         (input
             [ type_ "checkbox"
             , checked config.isChecked
             , disabled config.isDisabled
             , onCheck config.onToggle
-            , class "accent-toggle-selected mr-[4px]!"
+            , class "app-checkbox__input accent-toggle-selected"
             ]
             []
             :: config.content
