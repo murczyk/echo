@@ -2209,7 +2209,7 @@ import-unit-to-target:
 setup-iggy server="echo-staging":
     ssh {{ builder }} "[ -f {{ workspace_echo }}/target/debian/iggy*.deb ]"
     scp {{ builder }}:{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
-    ssh {{ server }} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
+    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
     @echo "==> Pipeline finished successfully!"
 
 # [positional-arguments]
@@ -2302,7 +2302,7 @@ update-firewall remote_host config="config.toml":
     EOF
 
 [arg("server", long="server")]
-iggy-deploy-config server:
+deploy-config-iggy server:
     #!/usr/bin/env bash
     set -euo pipefail
 
