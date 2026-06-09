@@ -42,6 +42,7 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
   const optionFields: Array<keyof AnalysisQueryState> = [
     'fromDateTimeStr',
     'toDateTimeStr',
+    'tags',
     'aorsSelected',
     'groupsSelected',
     'sendersSelected',
