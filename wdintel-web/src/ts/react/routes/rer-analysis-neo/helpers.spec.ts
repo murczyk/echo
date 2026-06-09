@@ -185,10 +185,29 @@ describe('rer-analysis-neo helpers', () => {
     ]);
   });
 
-  it('drops the legacy without-coords state when it is the only peleng flag', () => {
+  it('preserves standalone without-coords and with-coords flags through normalization and request building', () => {
+    const withoutCoordsState = createQueryState({ orWithoutCoords: true });
+    const withCoordsState = createQueryState({ orWithCoords: true });
+
+    expect(normalizeQueryState(withoutCoordsState)).toMatchObject({
+      orWithCoords: false,
+      orWithoutCoords: true,
+    });
+    expect(normalizeQueryState(withCoordsState)).toMatchObject({
+      orWithCoords: true,
+      orWithoutCoords: false,
+    });
+    expect(buildAnalysisReq(withoutCoordsState)?.orWithoutCoords).toBe(true);
+    expect(buildAnalysisReq(withoutCoordsState)?.orWithCoords).toBe(false);
+    expect(buildAnalysisReq(withCoordsState)?.orWithCoords).toBe(true);
+    expect(buildAnalysisReq(withCoordsState)?.orWithoutCoords).toBe(false);
+  });
+
+  it('clears both coordinate flags only when both are set', () => {
     expect(
       normalizeQueryState(
         createQueryState({
+          orWithCoords: true,
           orWithoutCoords: true,
         }),
       ),

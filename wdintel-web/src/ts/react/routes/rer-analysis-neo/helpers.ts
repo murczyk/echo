@@ -153,8 +153,6 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   if (next.orWithCoords && next.orWithoutCoords) {
     next = { ...next, orWithCoords: false, orWithoutCoords: false };
-  } else if (next.orWithoutCoords) {
-    next = { ...next, orWithCoords: false, orWithoutCoords: false };
   }
 
   return {

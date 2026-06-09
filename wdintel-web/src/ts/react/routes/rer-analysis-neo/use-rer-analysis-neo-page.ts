@@ -198,9 +198,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const applySavedFilter = useCallback(
     (savedFilter: Parameters<typeof savedFilters.applySavedFilter>[0]) => {
+      if (savedFilter != null) {
+        data.invalidateFilterSectionLoads();
+      }
       savedFilters.applySavedFilter(savedFilter);
     },
-    [savedFilters],
+    [data.invalidateFilterSectionLoads, savedFilters],
   );
 
   useEffect(() => {

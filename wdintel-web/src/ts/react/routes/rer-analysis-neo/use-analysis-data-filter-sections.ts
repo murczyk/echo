@@ -15,6 +15,38 @@ import { toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisAorEntry, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState } from './types';
 
 const OPTION_FILTER_SECTIONS: AnalysisFilterSectionId[] = ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata'];
+const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
+  'fromDateTimeStr',
+  'toDateTimeStr',
+  'tags',
+  'aorsSelected',
+  'groupsSelected',
+  'sendersSelected',
+  'freqsSelected',
+  'callsignsSelected',
+  'unitsSelected',
+  'locationsSelected',
+  'postsSelected',
+  'networksSelected',
+  'withoutNetwork',
+  'search',
+  'includeOnlyNewFreqs',
+  'adjacentFreqsRange',
+  'orWithExtendedForm',
+  'orBookmarked',
+  'orImportant',
+  'orWithCoords',
+  'orWithoutCoords',
+  'unitsExactMatchOnly',
+  'metadataCc',
+  'metadataSender',
+  'metadataReceiver',
+  'metadataHash',
+  'onlyWithMetadata',
+  'withoutMetadata',
+];
+const TAGS_ONLY_QUERY_FIELDS: Array<keyof AnalysisQueryState> = ['filterTagsOption', 'withoutModelTags', 'reportTagsOnlyThisUnit'];
+const LOCATIONS_ONLY_QUERY_FIELDS: Array<keyof AnalysisQueryState> = ['includePelengLocations'];
 
 export function buildFilterSectionsToLoad(
   queryState: AnalysisQueryState,
@@ -39,55 +71,15 @@ export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryS
     OPTION_FILTER_SECTIONS.forEach((section) => invalidateSections.add(section));
   };
 
-  const optionFields: Array<keyof AnalysisQueryState> = [
-    'fromDateTimeStr',
-    'toDateTimeStr',
-    'tags',
-    'aorsSelected',
-    'groupsSelected',
-    'sendersSelected',
-    'freqsSelected',
-    'callsignsSelected',
-    'unitsSelected',
-    'locationsSelected',
-    'postsSelected',
-    'networksSelected',
-    'withoutNetwork',
-    'search',
-    'includeOnlyNewFreqs',
-    'adjacentFreqsRange',
-    'orWithExtendedForm',
-    'orBookmarked',
-    'orImportant',
-    'orWithCoords',
-    'orWithoutCoords',
-    'unitsExactMatchOnly',
-  ];
-
-  const tagsModeFields: Array<keyof AnalysisQueryState> = ['filterTagsOption', 'withoutModelTags', 'reportTagsOnlyThisUnit'];
-  const metadataFields: Array<keyof AnalysisQueryState> = [
-    'metadataCc',
-    'metadataSender',
-    'metadataReceiver',
-    'metadataHash',
-    'onlyWithMetadata',
-    'withoutMetadata',
-  ];
-  const locationsFields: Array<keyof AnalysisQueryState> = ['includePelengLocations'];
-
-  if (optionFields.some((field) => field in patch)) {
+  if (GLOBAL_OPTION_QUERY_FIELDS.some((field) => field in patch)) {
     invalidateAllOptionSections();
   }
 
-  if (tagsModeFields.some((field) => field in patch)) {
+  if (TAGS_ONLY_QUERY_FIELDS.some((field) => field in patch)) {
     invalidateSections.add('tags');
   }
 
-  if (metadataFields.some((field) => field in patch)) {
-    invalidateSections.add('metadata');
-  }
-
-  if (locationsFields.some((field) => field in patch)) {
+  if (LOCATIONS_ONLY_QUERY_FIELDS.some((field) => field in patch)) {
     invalidateSections.add('locations');
   }
 

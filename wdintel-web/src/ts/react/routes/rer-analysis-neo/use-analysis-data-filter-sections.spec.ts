@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyQueryState } from './helpers';
 import { buildFilterSectionsToLoad, filterSectionsToInvalidateForPatch } from './use-analysis-data-filter-sections';
 
+const ALL_OPTION_SECTIONS = ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata'] as const;
+
 describe('buildFilterSectionsToLoad', () => {
   it('keeps the initial default sections for a normal load', () => {
     expect(buildFilterSectionsToLoad(emptyQueryState(), [], false)).toEqual(['tags', 'groups', 'senders']);
@@ -21,27 +23,22 @@ describe('buildFilterSectionsToLoad', () => {
     expect(sections).toEqual(expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'locations', 'posts']));
   });
 
-  it('invalidates only option sections for a filter patch', () => {
-    expect(filterSectionsToInvalidateForPatch({ unitsSelected: ['u1'] })).toEqual(
-      expect.arrayContaining(['units', 'metadata', 'tags', 'aors', 'groups', 'senders', 'callsigns', 'locations', 'posts', 'networks']),
-    );
+  it.each([
+    ['tags', { tags: [1] }],
+    ['unitsExactMatchOnly', { unitsExactMatchOnly: true }],
+    ['metadataCc', { metadataCc: ['cc-1'] }],
+    ['onlyWithMetadata', { onlyWithMetadata: true }],
+    ['withoutMetadata', { withoutMetadata: true }],
+    ['orWithoutCoords', { orWithoutCoords: true }],
+  ] as const)('invalidates all option sections for %s changes', (_name, patch) => {
+    expect(filterSectionsToInvalidateForPatch(patch)).toEqual([...ALL_OPTION_SECTIONS]);
   });
 
-  it('invalidates all option sections when tags change', () => {
-    expect(filterSectionsToInvalidateForPatch({ tags: [1] })).toEqual(
-      expect.arrayContaining(['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata']),
-    );
+  it('keeps tag mode fields local to the tags section', () => {
+    expect(filterSectionsToInvalidateForPatch({ filterTagsOption: 'AllTags' })).toEqual(['tags']);
   });
 
-  it('invalidates all option sections for exact-match mode changes', () => {
-    expect(filterSectionsToInvalidateForPatch({ unitsExactMatchOnly: true })).toEqual(
-      expect.arrayContaining(['units', 'metadata', 'tags', 'aors', 'groups', 'senders', 'callsigns', 'locations', 'posts', 'networks']),
-    );
-  });
-
-  it('invalidates loaded option sections for important filter toggles', () => {
-    expect(filterSectionsToInvalidateForPatch({ orImportant: true })).toEqual(
-      expect.arrayContaining(['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata']),
-    );
+  it('keeps peleng location toggles local to the locations section', () => {
+    expect(filterSectionsToInvalidateForPatch({ includePelengLocations: false })).toEqual(['locations']);
   });
 });

@@ -5,7 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { User } from '../../../../Bindings';
+import type { SavedFilter, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
@@ -421,6 +421,32 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
+  });
+
+  it('fully invalidates filter sections before applying a saved filter', async () => {
+    const savedFilters = buildSavedFilters();
+    useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
+
+    renderHook();
+    await flushEffects();
+
+    const analysisData = useAnalysisDataMock.mock.results[useAnalysisDataMock.mock.results.length - 1]?.value as ReturnType<typeof buildAnalysisData>;
+    const savedFilter = {
+      id: 9,
+      name: 'Saved filter',
+      req: {
+        sinceDateInclusiveMs: 1,
+        tillDateNoninclusiveMs: 2,
+      },
+    } as SavedFilter;
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(analysisData.invalidateFilterSectionLoads).toHaveBeenCalledTimes(1);
+    expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(savedFilter);
   });
 
   it('keeps the exact-match query value unset after reset', async () => {
