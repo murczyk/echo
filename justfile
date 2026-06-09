@@ -2207,8 +2207,6 @@ import-unit-to-target:
 # [positional-arguments]
 [arg('server', long='server')]
 setup-iggy server="echo-staging":
-    scp echo-iggy/deploy/config.toml {{ server }}:/var/tmp
-    ssh {{ server }} "sudo mkdir -p /etc/iggy && sudo mv /var/tmp/config.toml /etc/iggy/"
     ssh {{ builder }} "[ -f {{ workspace_echo }}/debian/iggy*.deb ]"
     scp {{ builder }}/{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
     ssh {{ server }} "sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"
@@ -2317,7 +2315,8 @@ iggy-deploy-config server:
     trap "rm -f \"$CONFIG\"" EXIT
     chmod 600 "$CONFIG"
 
-    bw_get_note "iggy-config-$SERVER" > "$CONFIG"
+    bw sync 1>&2
+    bw get notes "iggy-config-$SERVER" > "$CONFIG"
     scp "$CONFIG" "$SERVER:/var/tmp/iggy-config.toml"
     ssh "$SERVER" "sudo install -d -m 755 /etc/iggy && sudo install -m 600 /var/tmp/iggy-config.toml /etc/iggy/config.toml && rm /var/tmp/iggy-config.toml"
 
