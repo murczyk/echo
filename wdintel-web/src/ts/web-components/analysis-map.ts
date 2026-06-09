@@ -13,7 +13,9 @@ import { applyKmzVisibility, loadKmzLayer } from './analysis-map/kmz-layer';
 import { initializeAnalysisMapControls } from './analysis-map/map-controls';
 import { patchMouseDownMapFocus, shouldHandleMapSurfaceContextMenu, suppressNativeContextMenu } from './analysis-map/map-interactions';
 import { openMessagesPopup } from './analysis-map/message-popup';
-import { createPointsMarkersGroup, findPointMarkerByMessageId, replacePointsLayer, updatePelengLabelsPermanent } from './analysis-map/point-markers';
+import { createPointsMarkersGroup, findPointMarkerByMessageId, replacePointsLayer } from './analysis-map/point-markers';
+import { buildPelengLabelGroups } from './analysis-map/peleng-label-groups';
+import { buildPelengLabelTooltipHtml } from './analysis-map/peleng-label-tooltip';
 import { getTileLayers } from './analysis-map/tile-layers';
 import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
 import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
@@ -40,6 +42,7 @@ class AnalysisMap extends HTMLElement {
 
   private _palitraManager: PalitraManager | null = null;
   private _pelengsLayerGroup: L.LayerGroup | null = null;
+  private _pelengLabelsLayerGroup: L.LayerGroup | null = null;
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasLoaded = false;
@@ -68,6 +71,9 @@ class AnalysisMap extends HTMLElement {
   private _messagesPopupOpenFrame: number | null = null;
   private _messagesPopupOpenRetryCount = 0;
   private static readonly _messagesPopupOpenRetryLimit = 3;
+  private _handleMapViewChanged = () => {
+    this._renderPelengLabelGroups();
+  };
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     if (this._isSearchInteractionLocked()) {
       return;
@@ -106,9 +112,12 @@ class AnalysisMap extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
     window.removeEventListener('keydown', this._escapeHandler);
+    this._map?.off('zoomend', this._handleMapViewChanged);
+    this._map?.off('moveend', this._handleMapViewChanged);
     this._closePointContextMenu();
     this._cancelMessagesPopupOpen();
     this._clearMessagesLoadingIndicator();
+    this._clearPelengLabelsLayer();
     this._setFullscreen(false);
   }
 
@@ -416,6 +425,9 @@ class AnalysisMap extends HTMLElement {
       const result = this._initializeControls(map, tileLayers)
       this._switchTimeControl = result.switchTimeControl;
       this._coordMenuController = new AnalysisMapCoordMenuController(map, (target) => this._buildPointContextMenuContent(target));
+      this._pelengLabelsLayerGroup = L.layerGroup();
+      map.on('zoomend', this._handleMapViewChanged);
+      map.on('moveend', this._handleMapViewChanged);
 
      this._palitraManager = new PalitraManager(
        this._map,
@@ -584,6 +596,7 @@ class AnalysisMap extends HTMLElement {
       map: this._map,
       markersGroup: this._markersGroup,
       pelengsLayerGroup: this._pelengsLayerGroup,
+      pelengLabelsLayerGroup: this._pelengLabelsLayerGroup,
       points,
       boundedAlready: this._boundedAlready,
       buildMarkersGroup: (nextPoints) => this._addPointsMarkersGroup(nextPoints),
@@ -591,12 +604,12 @@ class AnalysisMap extends HTMLElement {
     this._markersGroup = result.markersGroup;
     this._boundedAlready = result.boundedAlready;
     this._applyPelengVisibility();
+    this._renderPelengLabelGroups();
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
     return createPointsMarkersGroup({
       points,
-      pelengLabelsPermanent: this._pelengLabelsPermanent,
       onPointClick: (point, circle) => {
         this._clickedPoint = circle;
         this._clickedLatLng = circle.getLatLng();
@@ -617,10 +630,6 @@ class AnalysisMap extends HTMLElement {
         this._emitLoadMessagesDescriptions(messageIds);
       },
     });
-  }
-
-  private _updatePelengLabelsPermanent() {
-    updatePelengLabelsPermanent(this._markersGroup, this._pelengLabelsPermanent);
   }
 
   private _emitLoadMessagesDescriptions(messageIds: number[]) {
@@ -691,16 +700,26 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _applyPelengVisibility() {
-    if (!this._map || !this._pelengsLayerGroup) {
+    if (!this._map || !this._pelengsLayerGroup || !this._pelengLabelsLayerGroup) {
       return;
     }
 
     if (!this._pelengsEnabled) {
       this._map.removeLayer(this._pelengsLayerGroup);
+      this._map.removeLayer(this._pelengLabelsLayerGroup);
+      this._clearPelengLabelsLayer();
       return;
     }
 
     this._pelengsLayerGroup.addTo(this._map);
+    if (this._pelengLabelsPermanent) {
+      this._pelengLabelsLayerGroup.addTo(this._map);
+      this._renderPelengLabelGroups();
+      return;
+    }
+
+    this._map.removeLayer(this._pelengLabelsLayerGroup);
+    this._clearPelengLabelsLayer();
   }
 
   private _applyPalitraVisibility() {
@@ -759,7 +778,68 @@ class AnalysisMap extends HTMLElement {
     } catch {
       // ignore
     }
-    this._updatePelengLabelsPermanent();
+    this._applyPelengVisibility();
+  }
+
+  private _clearPelengLabelsLayer(): void {
+    if (this._map && this._pelengLabelsLayerGroup) {
+      this._map.removeLayer(this._pelengLabelsLayerGroup);
+    }
+    this._pelengLabelsLayerGroup?.clearLayers();
+  }
+
+  private _renderPelengLabelGroups(): void {
+    const map = this._map;
+    const labelsLayerGroup = this._pelengLabelsLayerGroup;
+    if (!map || !labelsLayerGroup) {
+      return;
+    }
+
+    labelsLayerGroup.clearLayers();
+
+    if (!this._pelengsEnabled || !this._pelengLabelsPermanent || this._points.length === 0) {
+      return;
+    }
+
+    const visibleBounds = map.getBounds().pad(0.2);
+    const visiblePoints = this._points.filter((point) => visibleBounds.contains([point.lat, point.lng]));
+    if (visiblePoints.length === 0) {
+      return;
+    }
+
+    const labelGroups = buildPelengLabelGroups(
+      visiblePoints,
+      (point) => map.project([point.lat, point.lng], map.getZoom()),
+      44,
+    );
+
+    labelGroups.forEach((group) => {
+      const marker = L.marker([group.centroid.lat, group.centroid.lng], {
+        interactive: false,
+        keyboard: false,
+        opacity: 0,
+        icon: L.divIcon({
+          className: 'peleng-label-anchor',
+          html: '',
+          iconSize: [1, 1],
+          iconAnchor: [0, 0],
+        }),
+      });
+
+      const tooltipHtml = buildPelengLabelTooltipHtml(group);
+      if (!tooltipHtml) {
+        return;
+      }
+
+      marker.bindTooltip(tooltipHtml, {
+        permanent: true,
+        direction: 'top',
+        offset: [0, -8],
+        className: 'peleng-point-label',
+      });
+
+      labelsLayerGroup.addLayer(marker);
+    });
   }
 
   private _openMessagesPopup(): boolean {

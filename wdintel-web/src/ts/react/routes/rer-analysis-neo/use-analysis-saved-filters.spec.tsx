@@ -24,6 +24,7 @@ type HookResult = ReturnType<typeof useAnalysisSavedFilters>;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
+let currentQueryState: AnalysisQueryState | null = null;
 
 function buildSavedFilter(): SavedFilter {
   const queryState = {
@@ -43,14 +44,21 @@ function buildSavedFilter(): SavedFilter {
   };
 }
 
-function Harness({ allFrequencies, queryState }: { allFrequencies: string[]; queryState: AnalysisQueryState }) {
-  const [currentQueryState, setCurrentQueryState] = useState(queryState);
+function Harness({
+  allFrequencies,
+  queryState,
+}: {
+  allFrequencies: string[];
+  queryState: AnalysisQueryState;
+}) {
+  const [queryStateValue, setQueryStateValue] = useState(queryState);
+  currentQueryState = queryStateValue;
   latest = useAnalysisSavedFilters({
     allFrequencies,
     onError: vi.fn(),
     onUnauthorized: vi.fn(() => false),
-    queryState: currentQueryState,
-    setQueryState: setCurrentQueryState,
+    queryState: queryStateValue,
+    setQueryState: setQueryStateValue,
   });
   return null;
 }
@@ -82,6 +90,7 @@ describe('useAnalysisSavedFilters', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
+    currentQueryState = null;
 
     analysisApiMock.listAnalysisSavedFilters.mockReset();
     analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([buildSavedFilter()]);
@@ -139,5 +148,18 @@ describe('useAnalysisSavedFilters', () => {
 
     expect(latest?.loadedSavedFilter).toBe(null);
     expect(latest?.savedFilterName).toBe('');
+  });
+
+  it('keeps units exact-match unset when applying a saved filter that leaves it unset', async () => {
+    const savedFilter = buildSavedFilter();
+    await renderHook(['100.0000', '100.0030'], emptyQueryState());
+    await flushEffects();
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(currentQueryState?.unitsExactMatchOnly).toBeNull();
   });
 });

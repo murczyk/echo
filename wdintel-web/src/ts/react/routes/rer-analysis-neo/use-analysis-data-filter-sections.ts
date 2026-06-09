@@ -3,9 +3,8 @@ import { useCallback, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
+import { fetchAnalysisNetworks } from '../../services/api/analysis';
 import { buildAnalysisReq } from './helpers';
-import { emptyOptions } from './use-analysis-data.shared';
 import {
   buildAnalysisReqForFilterSection,
   filterSectionCacheKey,
@@ -14,6 +13,42 @@ import {
 } from './use-analysis-data.reload';
 import { toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisAorEntry, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState } from './types';
+
+const OPTION_FILTER_SECTIONS: AnalysisFilterSectionId[] = ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata'];
+const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
+  'fromDateTimeStr',
+  'toDateTimeStr',
+  'tags',
+  'aorsSelected',
+  'groupsSelected',
+  'sendersSelected',
+  'freqsSelected',
+  'callsignsSelected',
+  'unitsSelected',
+  'locationsSelected',
+  'postsSelected',
+  'networksSelected',
+  'withoutNetwork',
+  'search',
+  'includeOnlyNewFreqs',
+  'adjacentFreqsRange',
+  'orWithExtendedForm',
+  'orBookmarked',
+  'orImportant',
+  'orWithCoords',
+  'orWithoutCoords',
+  'filterTagsOption',
+  'withoutModelTags',
+  'reportTagsOnlyThisUnit',
+  'includePelengLocations',
+  'unitsExactMatchOnly',
+  'metadataCc',
+  'metadataSender',
+  'metadataReceiver',
+  'metadataHash',
+  'onlyWithMetadata',
+  'withoutMetadata',
+];
 
 export function buildFilterSectionsToLoad(
   queryState: AnalysisQueryState,
@@ -27,12 +62,22 @@ export function buildFilterSectionsToLoad(
   return Array.from(sections);
 }
 
-export function resetFilterOptionsForForcedReload(prev: AnalysisFilterOptions): AnalysisFilterOptions {
-  return {
-    ...emptyOptions,
-    freqs: prev.freqs,
-    newFreqs: prev.newFreqs,
+export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryState>): AnalysisFilterSectionId[] {
+  if (Object.keys(patch).length === 0) {
+    return [...OPTION_FILTER_SECTIONS];
+  }
+
+  const invalidateSections = new Set<AnalysisFilterSectionId>();
+
+  const invalidateAllOptionSections = () => {
+    OPTION_FILTER_SECTIONS.forEach((section) => invalidateSections.add(section));
   };
+
+  if (GLOBAL_OPTION_QUERY_FIELDS.some((field) => field in patch)) {
+    invalidateAllOptionSections();
+  }
+
+  return Array.from(invalidateSections);
 }
 
 type Params = {
@@ -66,14 +111,45 @@ export function useAnalysisFilterSections({
 }: Params) {
   const filterSectionLoadVersionRef = useRef(0);
   const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>({} as Record<AnalysisFilterSectionId, string>);
+  const reloadFilterSectionsRef = useRef<Set<AnalysisFilterSectionId>>(new Set());
+  const hasTargetedFilterSectionInvalidationRef = useRef(false);
 
   const invalidateFilterSectionLoads = useCallback(() => {
     filterSectionLoadVersionRef.current += 1;
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
+    reloadFilterSectionsRef.current.clear();
+    hasTargetedFilterSectionInvalidationRef.current = false;
   }, []);
+
+  const invalidateFilterSectionLoadsForPatch = useCallback(
+    (patch?: Partial<AnalysisQueryState>) => {
+      if (patch == null) {
+        invalidateFilterSectionLoads();
+        return;
+      }
+
+      const sectionsToInvalidate = filterSectionsToInvalidateForPatch(patch);
+      if (sectionsToInvalidate.length === 0) return;
+
+      filterSectionLoadVersionRef.current += 1;
+      hasTargetedFilterSectionInvalidationRef.current = true;
+      sectionsToInvalidate.forEach((section) => {
+        if (section in loadedFilterSectionKeyRef.current) {
+          reloadFilterSectionsRef.current.add(section);
+        }
+        delete loadedFilterSectionKeyRef.current[section];
+      });
+    },
+    [invalidateFilterSectionLoads],
+  );
 
   const getLoadedFilterSections = useCallback(
     () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
+    [],
+  );
+
+  const getReloadFilterSections = useCallback(
+    () => (hasTargetedFilterSectionInvalidationRef.current ? Array.from(reloadFilterSectionsRef.current) : null),
     [],
   );
 
@@ -102,6 +178,7 @@ export function useAnalysisFilterSections({
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
         loadedFilterSectionKeyRef.current[section] = requestKey;
+        reloadFilterSectionsRef.current.delete(section);
       } catch (loadError) {
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
         if (!onUnauthorized(loadError)) {
@@ -130,15 +207,17 @@ export function useAnalysisFilterSections({
       analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
       forceReload = false,
       loadedSections: AnalysisFilterSectionId[] = [],
+      networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
     ) => {
-      if (forceReload) {
-        // Reset loaded keys and clear non-frequency options, preserving freqs/newFreqs.
-        // Previously loaded lazy sections are reloaded below for the new request.
-        invalidateFilterSectionLoads();
-        setOptions(resetFilterOptionsForForcedReload);
-      }
+      const targetedInvalidationVersion = hasTargetedFilterSectionInvalidationRef.current ? filterSectionLoadVersionRef.current : null;
       const sections = buildFilterSectionsToLoad(queryState, loadedSections, forceReload);
-      if (sections.length === 0) return;
+      if (sections.length === 0) {
+        if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+          hasTargetedFilterSectionInvalidationRef.current = false;
+          reloadFilterSectionsRef.current.clear();
+        }
+        return;
+      }
 
       await Promise.all(
         sections.map(async (section) => {
@@ -157,10 +236,12 @@ export function useAnalysisFilterSections({
               setOptions,
               setProfiles,
               setTagsMap,
+              networkStatsCache,
               unitsMap: unitsMapRef.current,
             });
             if (loadVersion !== filterSectionLoadVersionRef.current) return;
             loadedFilterSectionKeyRef.current[section] = sectionKey;
+            reloadFilterSectionsRef.current.delete(section);
           } catch (loadError) {
             if (loadVersion !== filterSectionLoadVersionRef.current) return;
             if (!onUnauthorized(loadError)) {
@@ -169,9 +250,13 @@ export function useAnalysisFilterSections({
           }
         }),
       );
+
+      if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+        hasTargetedFilterSectionInvalidationRef.current = false;
+        reloadFilterSectionsRef.current.clear();
+      }
     },
     [
-      invalidateFilterSectionLoads,
       onError,
       onUnauthorized,
       queryState,
@@ -188,7 +273,9 @@ export function useAnalysisFilterSections({
 
   return {
     getLoadedFilterSections,
+    getReloadFilterSections,
     invalidateFilterSectionLoads,
+    invalidateFilterSectionLoadsForPatch,
     loadFilterSection,
     loadInitialFilterSections,
   };

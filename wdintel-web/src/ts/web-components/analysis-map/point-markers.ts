@@ -6,29 +6,29 @@ import { CoordinateMenuTarget, DataCircleMarker } from './types';
 
 type CreatePointsMarkersGroupOptions = {
   points: MapPointDetailed[];
-  pelengLabelsPermanent: boolean;
   onPointClick: (point: MapPointDetailed, circle: DataCircleMarker) => void;
   onPointContextMenu: (
     target: CoordinateMenuTarget,
-    latlng: L.LatLng,
+    latlng: Leaflet.LatLng,
     originalEvent?: MouseEvent | PointerEvent | Event,
   ) => void;
-  onClusterClick: (messageIds: number[], latlng: L.LatLng | null, cluster: L.Layer) => void;
+  onClusterClick: (messageIds: number[], latlng: Leaflet.LatLng | null, cluster: Leaflet.Layer) => void;
 };
 
 export function replacePointsLayer(params: {
-  map: L.Map | null;
+  map: Leaflet.Map | null;
   markersGroup: Leaflet.MarkerClusterGroup | null;
-  pelengsLayerGroup: L.LayerGroup | null;
+  pelengsLayerGroup: Leaflet.LayerGroup | null;
+  pelengLabelsLayerGroup: Leaflet.LayerGroup | null;
   points: MapPointDetailed[];
   boundedAlready: boolean;
   buildMarkersGroup: (points: MapPointDetailed[]) => {
-    bounds: L.LatLngBounds;
+    bounds: Leaflet.LatLngBounds;
     markersGroup: Leaflet.MarkerClusterGroup;
   };
 }): { markersGroup: Leaflet.MarkerClusterGroup; boundedAlready: boolean } {
-  const { map, markersGroup, pelengsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
-  cleanupMarkersGroup(markersGroup, pelengsLayerGroup, map);
+  const { map, markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
+  cleanupMarkersGroup(markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, map);
 
   const nextBoundedAlready = fitBoundsOnInitialLowZoom(map, points, boundedAlready);
   const { bounds, markersGroup: nextMarkersGroup } = buildMarkersGroup(points);
@@ -46,12 +46,11 @@ export function replacePointsLayer(params: {
 
 export function createPointsMarkersGroup({
   points,
-  pelengLabelsPermanent,
   onPointClick,
   onPointContextMenu,
   onClusterClick,
 }: CreatePointsMarkersGroupOptions): {
-  bounds: L.LatLngBounds;
+  bounds: Leaflet.LatLngBounds;
   markersGroup: Leaflet.MarkerClusterGroup;
 } {
   const markersGroup = L.markerClusterGroup({
@@ -74,7 +73,7 @@ export function createPointsMarkersGroup({
   const bounds = L.latLngBounds(points);
 
   points.forEach((point) => {
-    const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id }, {
+    const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id, freq: point.freq }, {
       color: '#000',
       fillColor: '#ED1C23',
       fillOpacity: 1,
@@ -82,12 +81,10 @@ export function createPointsMarkersGroup({
       weight: 1,
     });
 
-    bindPelengLabel(circle, point, pelengLabelsPermanent);
-
     circle.on('click', () => {
       onPointClick(point, circle);
     });
-    circle.on('mousedown', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+    circle.on('mousedown', (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
       if (event.originalEvent?.button !== 2) {
         return;
       }
@@ -97,7 +94,7 @@ export function createPointsMarkersGroup({
         event.originalEvent,
       );
     });
-    circle.on('contextmenu', (event: L.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+    circle.on('contextmenu', (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
       event.originalEvent?.preventDefault();
       event.originalEvent?.stopPropagation();
     });
@@ -112,12 +109,12 @@ export function createPointsMarkersGroup({
   });
 
   markersGroup.on('clusterclick', (leafletEvent) => {
-    const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => L.Layer[] };
+    const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => Leaflet.Layer[] };
     const childMarkers = cluster.getAllChildMarkers() as unknown as DataCircleMarker[];
     const latlng =
-      (leafletEvent as L.LeafletMouseEvent).latlng ??
-      (typeof (cluster as unknown as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
-        ? (cluster as unknown as { getLatLng: () => L.LatLng }).getLatLng()
+      (leafletEvent as Leaflet.LeafletMouseEvent).latlng ??
+      (typeof (cluster as unknown as { getLatLng?: () => Leaflet.LatLng }).getLatLng === 'function'
+        ? (cluster as unknown as { getLatLng: () => Leaflet.LatLng }).getLatLng()
         : null);
     onClusterClick(
       childMarkers.map((marker) => marker.data.messageId),
@@ -129,36 +126,6 @@ export function createPointsMarkersGroup({
   return { bounds, markersGroup };
 }
 
-export function updatePelengLabelsPermanent(
-  markersGroup: Leaflet.MarkerClusterGroup | null,
-  pelengLabelsPermanent: boolean,
-): void {
-  if (!markersGroup) {
-    return;
-  }
-
-  const opts = {
-    permanent: pelengLabelsPermanent,
-    direction: 'top' as const,
-    offset: [0, -8] as [number, number],
-    className: 'peleng-point-label',
-  };
-
-  markersGroup.eachLayer((layer: L.Layer) => {
-    getChildLayers(layer).forEach((childLayer) => {
-      if (!(childLayer instanceof DataCircleMarker)) {
-        return;
-      }
-      const label = (childLayer as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel;
-      if (!label) {
-        return;
-      }
-      childLayer.unbindTooltip();
-      childLayer.bindTooltip(label, opts);
-    });
-  });
-}
-
 export function findPointMarkerByMessageId(
   markersGroup: Leaflet.MarkerClusterGroup | null,
   messageId: number,
@@ -168,7 +135,7 @@ export function findPointMarkerByMessageId(
   }
 
   let found: DataCircleMarker | null = null;
-  markersGroup.eachLayer((layer: L.Layer) => {
+  markersGroup.eachLayer((layer: Leaflet.Layer) => {
     if (found) {
       return;
     }
@@ -181,8 +148,9 @@ export function findPointMarkerByMessageId(
 
 function cleanupMarkersGroup(
   markersGroup: Leaflet.MarkerClusterGroup | null,
-  pelengsLayerGroup: L.LayerGroup | null,
-  map: L.Map | null,
+  pelengsLayerGroup: Leaflet.LayerGroup | null,
+  pelengLabelsLayerGroup: Leaflet.LayerGroup | null,
+  map: Leaflet.Map | null,
 ): void {
   if (!markersGroup) {
     return;
@@ -191,18 +159,19 @@ function cleanupMarkersGroup(
   markersGroup.off();
   markersGroup.eachLayer((layer) => {
     layer.off();
-    const maybeTooltipLayer = layer as L.Layer & { unbindTooltip?: () => void };
+    const maybeTooltipLayer = layer as Leaflet.Layer & { unbindTooltip?: () => void };
     if (typeof maybeTooltipLayer.unbindTooltip === 'function') {
       maybeTooltipLayer.unbindTooltip();
     }
   });
   markersGroup.clearLayers();
   pelengsLayerGroup?.removeLayer(markersGroup);
+  pelengLabelsLayerGroup?.clearLayers();
   map?.removeLayer(markersGroup);
 }
 
 function fitBoundsOnInitialLowZoom(
-  map: L.Map | null,
+  map: Leaflet.Map | null,
   points: MapPointDetailed[],
   boundedAlready: boolean,
 ): boolean {
@@ -217,28 +186,4 @@ function fitBoundsOnInitialLowZoom(
 
   map.fitBounds(bounds);
   return true;
-}
-
-function bindPelengLabel(
-  circle: DataCircleMarker,
-  point: MapPointDetailed,
-  pelengLabelsPermanent: boolean,
-): void {
-  const freqLabel = point.freq ?? '';
-  if (!freqLabel) {
-    return;
-  }
-
-  (circle as DataCircleMarker & { _pelengFreqLabel?: string })._pelengFreqLabel = freqLabel;
-  circle.bindTooltip(freqLabel, {
-    permanent: pelengLabelsPermanent,
-    direction: 'top',
-    offset: [0, -8],
-    className: 'peleng-point-label',
-  });
-}
-
-function getChildLayers(layer: L.Layer): L.Layer[] {
-  const withGetChildren = layer as unknown as { getAllChildMarkers?: () => L.Layer[] };
-  return typeof withGetChildren.getAllChildMarkers === 'function' ? withGetChildren.getAllChildMarkers() : [layer];
 }

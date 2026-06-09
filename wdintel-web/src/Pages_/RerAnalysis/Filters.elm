@@ -132,6 +132,11 @@ freshMenuItems remoteData menuItems =
             []
 
 
+rerAnalysisCheckboxLabel : List (Html msg) -> Html msg
+rerAnalysisCheckboxLabel content =
+    span [ class "rer-analysis-checkbox-label" ] content
+
+
 unitsExactMatchCheckboxChipLabel : Model -> Maybe String
 unitsExactMatchCheckboxChipLabel model =
     case model.counts of
@@ -148,8 +153,8 @@ unitsExactMatchCheckboxChipLabel model =
 
 unitsExactMatchCheckboxContent : Model -> List (Html msg)
 unitsExactMatchCheckboxContent model =
-    [ span [ class "inline-flex items-center gap-2" ]
-        (text "точний збіг за еталонкою"
+    [ span [ class "rer-analysis-units-exact-match-content" ]
+        (span [ class "rer-analysis-units-exact-match-label" ] [ text "точний збіг за еталонкою" ]
             :: (case unitsExactMatchCheckboxChipLabel model of
                     Just chipLabel ->
                         [ span
@@ -288,34 +293,34 @@ view isDark _ model =
                                         |> Tag.view tag_.label
                                 )
                                 (List.sortBy (Tuple.second >> .label) model.tags)
-                        , let
-                            checkboxLabel =
-                                [ Html.node
-                                    "sl-tooltip"
-                                    [ attribute "content" "якщо ця опція вимкнена - при виборі 2+ тегів \"x\" і \"y\" знайдуться повідомлення де є \"x\" або \"y\". якщо ввімкнена - при виборі 2+ тегів знайдуться повідомлення де є і \"x\" i \"y\""
-                                    , attribute "placement" "right"
-                                    , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
-                                    ]
-                                    [ text "співпадіння з усіма вибраними вище"
-                                    , sup []
-                                        [ i
-                                            [ class "bi-question-circle" ]
-                                            []
+                        , div [ class "rer-analysis-checkboxes" ]
+                            [ let
+                                checkboxLabel =
+                                    [ rerAnalysisCheckboxLabel
+                                        [ Html.node
+                                            "sl-tooltip"
+                                            [ attribute "content" "якщо ця опція вимкнена - при виборі 2+ тегів \"x\" і \"y\" знайдуться повідомлення де є \"x\" або \"y\". якщо ввімкнена - при виборі 2+ тегів знайдуться повідомлення де є і \"x\" i \"y\""
+                                            , attribute "placement" "right"
+                                            , class "rer-analysis-checkbox-tooltip sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
+                                            ]
+                                            [ text "співпадіння з усіма вибраними вище"
+                                            , sup []
+                                                [ i
+                                                    [ class "bi-question-circle" ]
+                                                    []
+                                                ]
+                                            ]
                                         ]
                                     ]
-                                ]
-                          in
-                          Shared.Components.Checkbox.new { isChecked = model.filterTagsOption == B.AllTags, onToggle = FilterTagsOptionChanged }
-                            |> Shared.Components.Checkbox.withContent checkboxLabel
-                            |> Shared.Components.Checkbox.view
-                        , div [ class "mt-1" ] <|
-                            [ Shared.Components.Checkbox.new { isChecked = model.reportTagsOnlyThisUnit, onToggle = always ReportTagsOnlyThisUnitToggle }
-                                |> Shared.Components.Checkbox.withContent [ text "лише теги мого підрозділу" ]
+                              in
+                              Shared.Components.Checkbox.new { isChecked = model.filterTagsOption == B.AllTags, onToggle = FilterTagsOptionChanged }
+                                |> Shared.Components.Checkbox.withContent checkboxLabel
                                 |> Shared.Components.Checkbox.view
-                            ]
-                        , div [ class "mt-1" ] <|
-                            [ Shared.Components.Checkbox.new { isChecked = model.withoutModelTags, onToggle = always ToggleWithoutModelTags }
-                                |> Shared.Components.Checkbox.withContent [ text "без відміток роботами" ]
+                            , Shared.Components.Checkbox.new { isChecked = model.reportTagsOnlyThisUnit, onToggle = always ReportTagsOnlyThisUnitToggle }
+                                |> Shared.Components.Checkbox.withContent [ rerAnalysisCheckboxLabel [ text "лише теги мого підрозділу" ] ]
+                                |> Shared.Components.Checkbox.view
+                            , Shared.Components.Checkbox.new { isChecked = model.withoutModelTags, onToggle = always ToggleWithoutModelTags }
+                                |> Shared.Components.Checkbox.withContent [ rerAnalysisCheckboxLabel [ text "без відміток роботами" ] ]
                                 |> Shared.Components.Checkbox.view
                             ]
                         , div
@@ -380,22 +385,16 @@ view isDark _ model =
 
                 tabFiltersMetadata =
                     let
-                        metadataToggleCheckbox extraClasses labelText isChecked onToggle isDisabled =
-                            label
-                                [ class ("ml-2 flex items-center gap-2 text-sm text-[var(--color-text)] " ++ extraClasses)
-                                , classList
-                                    [ ( "opacity-50 cursor-not-allowed", isDisabled )
-                                    ]
+                        metadataToggleCheckbox labelText isChecked onToggle isDisabled =
+                            div
+                                [ class "rer-analysis-checkbox-row"
+                                , classList [ ( "opacity-50 cursor-not-allowed", isDisabled ) ]
                                 ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , checked isChecked
-                                    , onCheck onToggle
-                                    , disabled isDisabled
-                                    , class "accent-toggle-selected"
-                                    ]
-                                    []
-                                , text (" " ++ labelText)
+                                [ Shared.Components.Checkbox.new { isChecked = isChecked, onToggle = onToggle }
+                                    |> Shared.Components.Checkbox.withDisabled isDisabled
+                                    |> Shared.Components.Checkbox.withContent
+                                        [ rerAnalysisCheckboxLabel [ text labelText ] ]
+                                    |> Shared.Components.Checkbox.view
                                 ]
                     in
                     div [ class "py-2 px-3" ]
@@ -403,15 +402,13 @@ view isDark _ model =
                         , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg
                         , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg
                         , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg
-                        , div [ class "pt-1" ]
+                        , div [ class "rer-analysis-checkboxes" ]
                             [ metadataToggleCheckbox
-                                ""
                                 "тільки без метаданих"
                                 model.withoutMetadata
                                 WithoutMetadataChanged
                                 model.onlyWithMetadata
                             , metadataToggleCheckbox
-                                "mt-2"
                                 "тільки з метаданими"
                                 model.onlyWithMetadata
                                 OnlyWithMetadataChanged
@@ -759,11 +756,15 @@ view isDark _ model =
                             "всі"
                             { options | loading = isRefreshing model.units }
                     )
-                , div [ class "my-1" ]
-                    [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
-                        |> Shared.Components.Checkbox.withContent (unitsExactMatchCheckboxContent model)
-                        |> Shared.Components.Checkbox.view
-                    ]
+                , if List.isEmpty model.unitsSelected then
+                    text ""
+
+                  else
+                    div [ class "rer-analysis-units-exact-match-row" ]
+                        [ Shared.Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
+                            |> Shared.Components.Checkbox.withContent (unitsExactMatchCheckboxContent model)
+                            |> Shared.Components.Checkbox.view
+                        ]
                 ]
 
         tabFiltersLocations =

@@ -40,6 +40,44 @@ function formatDateTimeInAppTimeZone(value: Dayjs | null): string {
   return (value as Dayjs).tz(APP_TIME_ZONE, true).format('YYYY-MM-DDTHH:mm');
 }
 
+export function getDateTimeRangeControlTextFieldSx(open: boolean) {
+  return {
+    width: '100%',
+    minWidth: 0,
+    '& .MuiOutlinedInput-root': {
+      height: 40,
+      minHeight: 40,
+      cursor: 'pointer',
+      backgroundColor: 'transparent',
+      paddingRight: 0,
+      px: 0,
+      ...(open
+        ? {
+            '& fieldset': {
+              borderColor: 'primary.main',
+            },
+            '&:hover fieldset': {
+              borderColor: 'primary.main',
+            },
+          }
+        : {}),
+      '&.Mui-focused fieldset': {
+        borderColor: 'primary.main',
+        borderWidth: 1,
+      },
+    },
+    '& .MuiInputBase-input': {
+      cursor: 'pointer',
+      fontSize: '0.875rem',
+      fontWeight: 400,
+      color: 'text.primary',
+      py: 0,
+      pl: 1.5,
+      pr: 0,
+    },
+  };
+}
+
 export function DateTimeRangeControl({ value, onChange, className, disabled = false }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -113,36 +151,7 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
             </Box>
           ),
         }}
-        sx={{
-          width: '100%',
-          minWidth: 0,
-          '& .MuiOutlinedInput-root': {
-            height: 40,
-            minHeight: 40,
-            cursor: 'pointer',
-            backgroundColor: 'transparent',
-            paddingRight: 0,
-            px: 0,
-            '& fieldset': {
-              borderColor: 'divider',
-            },
-            '&:hover fieldset': {
-              borderColor: 'text.secondary',
-            },
-            '&.Mui-focused fieldset': {
-              borderColor: 'primary.main',
-            },
-          },
-          '& .MuiInputBase-input': {
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: 400,
-            color: 'text.primary',
-            py: 0,
-            pl: 1.5,
-            pr: 0,
-          },
-        }}
+        sx={getDateTimeRangeControlTextFieldSx(open)}
       />
       <Popover
         open={open}

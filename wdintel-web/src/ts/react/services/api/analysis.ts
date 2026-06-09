@@ -60,6 +60,7 @@ import {
   importantAdd,
   importantRemove,
   inboxMessageTagsAdd,
+  inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from './inbox';
 
@@ -359,6 +360,7 @@ export {
   importantAdd,
   importantRemove,
   inboxMessageTagsAdd,
+  inboxMessageTagsModelError,
   inboxMessageTagsRm,
 };
 

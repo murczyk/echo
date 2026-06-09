@@ -11,7 +11,9 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { MessageCardContent, MessageCardWatermark, type AnalysisCallsignActions } from './MessageCardContent';
+import { MessageCardContent } from './MessageCardContent';
+import { MessageCardWatermark } from './MessageCardWatermark';
+import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
 import { MessageCardDmrMetadataPopover } from './MessageCardDmrMetadataPopover';
 import { hasVisibleDmrMetadata } from './message-card-metadata';
@@ -94,6 +96,9 @@ export type MessageCardProps = {
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   onToggleTag: (tagId: number) => void;
+  botTagAction?: MessageCardBotTagAction | null;
+  onCancelBotTagAction?: () => void;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
 };
@@ -134,6 +139,9 @@ export function MessageCard({
   onEditDetails,
   onExcludeMessageEntity,
   onToggleTag,
+  botTagAction = null,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
   rightHeaderInsetPx = 0,
   analysisCallsignActions,
 }: MessageCardProps) {
@@ -281,6 +289,9 @@ export function MessageCard({
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           tagsLayout={tagsLayout}
+          botTagAction={botTagAction}
+          onCancelBotTagAction={onCancelBotTagAction}
+          onMarkBotTagWrong={onMarkBotTagWrong}
           analysisCallsignActions={analysisCallsignActions}
           callsignInfoMap={callsignInfoMap}
           networks={networks}

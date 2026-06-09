@@ -5,12 +5,15 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { User } from '../../../../Bindings';
+import type { SavedFilter, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
   fetchUserSettings: vi.fn(),
+}));
+const systemSettingsMock = vi.hoisted(() => ({
+  currentSystemSettings: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -20,6 +23,9 @@ const useAnalysisMessageEditorMock = vi.hoisted(() => vi.fn());
 const mediaQueryMock = vi.hoisted(() => ({
   useMediaQuery: vi.fn(),
 }));
+
+let analysisFreqValues = ['111.1'];
+let currentAnalysisData: ReturnType<typeof buildAnalysisData> | null = null;
 
 vi.mock('@mui/material', () => ({
   useMediaQuery: mediaQueryMock.useMediaQuery,
@@ -41,6 +47,10 @@ vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: userSettingsMock.fetchUserSettings,
   saveUserSettings: vi.fn(),
+}));
+
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: systemSettingsMock.currentSystemSettings,
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -80,10 +90,12 @@ const baseAnalysisData = {
   groupsActivityLoading: false,
   hasLoadedInitialMessages: true,
   inboxReq: null,
+  botTagAction: null,
   loadCallsignGraph: vi.fn(),
   loadAllMessages: vi.fn(),
   loadFilterSection: vi.fn(),
   invalidateFilterSectionLoads: vi.fn(),
+  invalidateFilterSectionLoadsForPatch: vi.fn(),
   toggleCallsignGraphNolimit: vi.fn(),
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
@@ -114,6 +126,8 @@ const baseAnalysisData = {
   onUpdateLocalMessage: vi.fn(),
   onDeleteMessage: vi.fn(),
   onSaveMessageComment: vi.fn(),
+  onCancelBotTagAction: vi.fn(),
+  onMarkBotTagWrong: vi.fn(),
   onToggleMessageBookmark: vi.fn(),
   onToggleMessageImportant: vi.fn(),
   onToggleMessageTag: vi.fn(),
@@ -161,6 +175,7 @@ function buildAnalysisData() {
     loadAllMessages: vi.fn(),
     loadFilterSection: vi.fn(),
     invalidateFilterSectionLoads: vi.fn(),
+    invalidateFilterSectionLoadsForPatch: vi.fn(),
     toggleCallsignGraphNolimit: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
@@ -260,9 +275,27 @@ describe('useRerAnalysisNeoPage', () => {
       disableAutoScroll: false,
       analysisMapInSidebar: false,
     });
+    systemSettingsMock.currentSystemSettings.mockReset();
+    systemSettingsMock.currentSystemSettings.mockResolvedValue({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+    });
 
     useAnalysisDataMock.mockReset();
-    useAnalysisDataMock.mockImplementation(() => buildAnalysisData());
+    analysisFreqValues = ['111.1'];
+    currentAnalysisData = buildAnalysisData();
+    useAnalysisDataMock.mockImplementation(() => {
+      if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+      currentAnalysisData.options.freqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
+      currentAnalysisData.options.newFreqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
+      return currentAnalysisData;
+    });
     useAnalysisSavedFiltersMock.mockReset();
     useAnalysisSavedFiltersMock.mockImplementation(() => buildSavedFilters());
     useAnalysisReportMock.mockReset();
@@ -279,6 +312,7 @@ describe('useRerAnalysisNeoPage', () => {
     container?.remove();
     container = null;
     latest = null;
+    currentAnalysisData = null;
   });
 
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -385,6 +419,34 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
   });
 
+  it('syncs include-only-new frequencies through targeted invalidation when the option list changes', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setIncludeOnlyNewFreqs(true);
+    });
+    await flushEffects();
+
+    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
+      includeOnlyNewFreqs: true,
+      freqsSelected: ['111.1'],
+    });
+
+    currentAnalysisData?.invalidateFilterSectionLoadsForPatch.mockClear();
+    analysisFreqValues = ['222.2'];
+
+    await act(async () => {
+      latest?.toggleLeftPanel();
+    });
+    await flushEffects();
+
+    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
+      freqsSelected: ['222.2'],
+    });
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+  });
+
   it('clears the loaded saved filter when filters are reset', async () => {
     const savedFilters = buildSavedFilters();
     useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
@@ -398,6 +460,55 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
+  });
+
+  it('fully invalidates filter sections before applying a saved filter', async () => {
+    const savedFilters = buildSavedFilters();
+    useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);
+
+    renderHook();
+    await flushEffects();
+
+    const analysisData = useAnalysisDataMock.mock.results[useAnalysisDataMock.mock.results.length - 1]?.value as ReturnType<typeof buildAnalysisData>;
+    const savedFilter = {
+      id: 9,
+      name: 'Saved filter',
+      req: {
+        sinceDateInclusiveMs: 1,
+        tillDateNoninclusiveMs: 2,
+      },
+    } as SavedFilter;
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(analysisData.invalidateFilterSectionLoads).toHaveBeenCalledTimes(1);
+    expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(savedFilter);
+  });
+
+  it('keeps the exact-match query value unset after reset', async () => {
+    systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 7,
+      rerAnalysisUnitsExactMatchOnlyDefault: true,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 1,
+      rerDutyPollIntervalSec: 1,
+      rerShortUrlEnabled: false,
+    });
+
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.resetFilters();
+    });
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
   });
 
   it('does not duplicate a frequency already in the analysis filter', async () => {
@@ -432,6 +543,36 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.queryState.unitsSelected).toEqual([]);
+  });
+
+  it('keeps the exact-match query value unset after the system default loads', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', window.location.pathname);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
+    expect(window.location.search).not.toContain('unitsExactMatchOnly');
+    window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('preserves an explicit exact-match setting from the parsed query state', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', `${window.location.pathname}?unitsExactMatchOnly=true`);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.queryState.unitsExactMatchOnly).toBe(true);
+    window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('shows an error when system settings fail to load', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('boom'));
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
   });
 
   it('moves the active map away from the sidebar when the setting turns off', async () => {

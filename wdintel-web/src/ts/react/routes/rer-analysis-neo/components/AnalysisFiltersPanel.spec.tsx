@@ -105,6 +105,10 @@ vi.mock('@mui/icons-material/ExpandMore', () => ({
   default: () => <span>expand</span>,
 }));
 
+vi.mock('@mui/icons-material/InfoOutlined', () => ({
+  default: () => <span>info</span>,
+}));
+
 vi.mock('./AnalysisFilterField', () => ({
   AnalysisFilterField: (props: unknown) => {
     analysisFilterFieldSpy(props);
@@ -199,6 +203,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
       isDirty: false,
       canResetFilters: false,
       counts: null,
+      countsLoading: false,
       aorEntries: [],
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
@@ -207,6 +212,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
       groupInfos: {},
       networks: [],
       queryState: emptyQueryState(),
+      unitsExactMatchOnlyDefault: false,
       saveInFlight: false,
       savedFilterName: '',
       savedFilters: [],
@@ -244,32 +250,11 @@ function findLabelInput(container: HTMLElement, labelText: string): HTMLInputEle
   return input;
 }
 
-function findLabelSelect(container: HTMLElement, labelText: string): HTMLSelectElement {
-  const wrapper = Array.from(container.querySelectorAll('div,label')).find((item) => {
-    if (!item.textContent?.includes(labelText)) return false;
-    const select = item.querySelector('select');
-    if (!(select instanceof HTMLSelectElement)) return false;
-    const optionValues = Array.from(select.options).map((option) => option.value);
-    return optionValues.includes('default') && optionValues.includes('exact') && optionValues.includes('non-exact');
-  });
-  if (!wrapper) throw new Error(`Select label not found: ${labelText}`);
-  const select = wrapper.querySelector('select');
-  if (!(select instanceof HTMLSelectElement)) throw new Error(`Select not found for label: ${labelText}`);
-  return select;
-}
-
 async function setChecked(input: HTMLInputElement, checked: boolean): Promise<void> {
   await act(async () => {
     if (input.checked !== checked) {
       input.click();
     }
-  });
-}
-
-async function setSelectValue(select: HTMLSelectElement, value: string): Promise<void> {
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
 
@@ -628,7 +613,7 @@ describe('AnalysisFiltersPanel', () => {
     expect((resetButton as HTMLButtonElement | undefined)?.disabled ?? true).toBe(false);
   });
 
-  it('reloads an already open section after filter invalidation completes', async () => {
+  it('does not auto-reload an already open section after filter invalidation completes', async () => {
     const loadFilterSection = vi.fn();
     const props = buildProps({
       filtersLoading: true,
@@ -660,7 +645,7 @@ describe('AnalysisFiltersPanel', () => {
       );
     });
 
-    expect(loadFilterSection).toHaveBeenCalledWith('tags');
+    expect(loadFilterSection).not.toHaveBeenCalled();
   });
 
   it('uppercases callsign labels without changing filter values sent to the API state', async () => {
@@ -714,6 +699,31 @@ describe('AnalysisFiltersPanel', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ reportTagsOnlyThisUnit: true });
     expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
 
+    await setChecked(findLabelInput(view.container, 'З пеленгом'), true);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ orWithCoords: true, orWithoutCoords: false });
+  });
+
+  it('maps the metadata mode buttons into the query state updates and helper text', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Усі');
+    expect(view.container.textContent).toContain('З метаданими');
+    expect(view.container.textContent).toContain('Без метаданих');
+    expect(view.container.textContent).toContain('Режим метаданих');
+    expect(view.container.textContent).toContain('Показувати всі записи');
+  });
+
+  it('wires the metadata mode buttons into updateQueryState', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
     const toggleButton = (labelText: string) => {
       const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes(labelText));
       if (!(button instanceof HTMLButtonElement)) {
@@ -723,114 +733,271 @@ describe('AnalysisFiltersPanel', () => {
     };
 
     await act(async () => {
-      toggleButton('Без пеленга').click();
-    });
-    await act(async () => {
-      toggleButton('З пеленгом').click();
-    });
-    await act(async () => {
       toggleButton('Усі').click();
     });
+    await act(async () => {
+      toggleButton('З метаданими').click();
+    });
+    await act(async () => {
+      toggleButton('Без метаданих').click();
+    });
 
-    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: true, orWithCoords: false });
-    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: false, orWithCoords: true });
-    expect(updateQueryState).toHaveBeenCalledWith({ orWithoutCoords: false, orWithCoords: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: false, withoutMetadata: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: true, withoutMetadata: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: false, withoutMetadata: true });
   });
 
-  it('renders the peleng filter as a clear exclusive choice with helper text', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Режим пеленга');
-    expect(view.container.textContent).toContain('Усі');
-    expect(view.container.textContent).toContain('З пеленгом');
-    expect(view.container.textContent).toContain('Без пеленга');
-    expect(view.container.textContent).toContain('Показувати всі записи або лише ті, де є координати пеленга.');
-  });
-
-  it('uses the lighter default label for the units exact-match selector without an extra hint chip', async () => {
-    const view = await renderComponent(
-      buildProps({
-        counts: {
-          countOverall: 0,
-          countSelected: 0,
-          groupsCount: 0,
-          sendersCount: 0,
-          freqsCount: 0,
-          callsignsCount: 0,
-          unitsCount: 0,
-          locationsCount: 0,
-          postsCount: 0,
-          tagsCount: 0,
-          aorsCount: 0,
-          networksCount: 0,
-          unitsExactMatchesCount: 3,
-          unitsNonExactMatchesCount: 7,
-        } as AnalysisPageState['counts'],
-        queryState: {
-          ...emptyQueryState(),
-          unitsExactMatchOnly: null,
-        },
-      }),
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('За замовчуванням');
-    expect(view.container.textContent).not.toContain('режим:');
-  });
-
-  it('does not render the removed exact-match hint chip when count stats are available', async () => {
-    const view = await renderComponent(
-      buildProps({
-        counts: {
-          countOverall: 0,
-          countSelected: 0,
-          groupsCount: 0,
-          sendersCount: 0,
-          freqsCount: 0,
-          callsignsCount: 0,
-          unitsCount: 0,
-          locationsCount: 0,
-          postsCount: 0,
-          tagsCount: 0,
-          aorsCount: 0,
-          networksCount: 0,
-          unitsExactMatchesCount: 3,
-          unitsNonExactMatchesCount: 7,
-        } as AnalysisPageState['counts'],
-        queryState: {
-          ...emptyQueryState(),
-          unitsExactMatchOnly: true,
-        },
-      }),
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('За замовчуванням');
-    expect(view.container.textContent).not.toContain('неточних збігів: 7');
-  });
-
-  it('updates the tri-state units match filter explicitly', async () => {
+  it('clears without-coords when the peleng checkbox is disabled', async () => {
     const updateQueryState = vi.fn();
     const view = await renderComponent(
       buildProps({
         updateQueryState,
         queryState: {
           ...emptyQueryState(),
+          orWithCoords: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'З пеленгом');
+    await setChecked(checkbox, false);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ orWithCoords: false, orWithoutCoords: false });
+  });
+
+  it('maps the tags exact-match checkbox to AllTags', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'Співпадіння з усіма вибраними вище');
+    await setChecked(checkbox, true);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ filterTagsOption: 'AllTags' });
+  });
+
+  it('maps the tags exact-match checkbox back to OneOfTags', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: {
+          ...emptyQueryState(),
+          filterTagsOption: 'AllTags',
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'Співпадіння з усіма вибраними вище');
+    await setChecked(checkbox, false);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ filterTagsOption: 'OneOfTags' });
+  });
+
+  it('hides the exact-match control when no units are selected', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 3,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: [],
           unitsExactMatchOnly: null,
         },
       }),
     );
     rendered.push(view);
 
-    const select = findLabelSelect(view.container, 'Збіг за еталонкою');
-    await setSelectValue(select, 'exact');
-    await setSelectValue(select, 'non-exact');
-    await setSelectValue(select, 'default');
+    expect(view.container.textContent).not.toContain('Точний збіг');
+    expect(view.container.textContent).not.toContain('За замовчуванням');
+  });
+
+  it('renders the exact-match checkbox using the explicit query value when units are selected', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 8,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('неточних збігів: 7');
+    expect(view.container.textContent).not.toContain('За замовчуванням');
+  });
+
+  it('renders the exact-match checkbox from the loaded default when the query value is unset', async () => {
+    const view = await renderComponent(
+      buildProps({
+        unitsExactMatchOnlyDefault: true,
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 8,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('неточних збігів: 7');
+  });
+
+  it('keeps the exact-match count stable while counts are still loading', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: {
+          countOverall: 0,
+          countSelected: 0,
+          groupsCount: 0,
+          sendersCount: 0,
+          freqsCount: 0,
+          callsignsCount: 0,
+          unitsCount: 0,
+          locationsCount: 0,
+          postsCount: 0,
+          tagsCount: 0,
+          aorsCount: 0,
+          networksCount: 0,
+          unitsExactMatchesCount: 8,
+          unitsNonExactMatchesCount: 7,
+        } as AnalysisPageState['counts'],
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('точних збігів: 8');
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisFiltersPanel
+          {...buildProps({
+            counts: {
+              countOverall: 0,
+              countSelected: 0,
+              groupsCount: 0,
+              sendersCount: 0,
+              freqsCount: 0,
+              callsignsCount: 0,
+              unitsCount: 0,
+              locationsCount: 0,
+              postsCount: 0,
+              tagsCount: 0,
+              aorsCount: 0,
+              networksCount: 0,
+              unitsExactMatchesCount: 0,
+              unitsNonExactMatchesCount: 0,
+            } as AnalysisPageState['counts'],
+            countsLoading: true,
+            queryState: {
+              ...emptyQueryState(),
+              unitsSelected: ['u1'],
+              unitsExactMatchOnly: null,
+            },
+          })}
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain('точних збігів: 8');
+  });
+
+  it('sends true when the exact-match checkbox is checked', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: null,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'Точний збіг');
+    await setChecked(checkbox, true);
 
     expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: true });
+  });
+
+  it('sends false when the exact-match checkbox is unchecked', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['u1'],
+          unitsExactMatchOnly: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const checkbox = findLabelInput(view.container, 'Точний збіг');
+    await setChecked(checkbox, false);
+
     expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: false });
-    expect(updateQueryState).toHaveBeenCalledWith({ unitsExactMatchOnly: null });
   });
 
   it('renders reset inside the filters panel and disables it when there is nothing to reset', async () => {

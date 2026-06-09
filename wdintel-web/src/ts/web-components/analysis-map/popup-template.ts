@@ -6,15 +6,7 @@ import {
   normalizeUnknownUnitDisplayValue,
 } from '../../react/routes/shared/analysis-unit-filter';
 import { updateStateUrl } from './url-state';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from '../../utils/html-utils';
 
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];

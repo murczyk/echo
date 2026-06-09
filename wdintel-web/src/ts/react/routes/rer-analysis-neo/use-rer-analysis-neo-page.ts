@@ -4,6 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { fetchCurrentUser } from '../../services/api/user';
+import { currentSystemSettings } from '../../services/api/system-settings';
 import { normalizeUnknownUnitFilterValue, normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import {
   buildAnalysisReq,
@@ -12,6 +13,7 @@ import {
   hasMeaningfulFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
+  normalizeQueryState,
   queryStateComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
@@ -39,6 +41,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
+  const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(null);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
@@ -58,7 +62,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   const data = useAnalysisData({
+    authUserName,
     currentUser,
+    deferInitialLoad: !systemSettingsLoaded,
     centerTab,
     newestFirst,
     onError: setPageError,
@@ -130,6 +136,28 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   useEffect(() => {
     const abortController = new AbortController();
 
+    void currentSystemSettings()
+      .then((settings) => {
+        if (abortController.signal.aborted) return;
+        setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return;
+        setPageError('Не вдалося завантажити системні налаштування.');
+      })
+      .finally(() => {
+        if (abortController.signal.aborted) return;
+        setSystemSettingsLoaded(true);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
     void fetchCurrentUser(abortController.signal)
       .then((user) => {
         if (abortController.signal.aborted) return;
@@ -164,25 +192,29 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [centerTab, dutySettings.analysisMapInSidebar, isMobileLayout, rightPanelOpen, rightSidebarTab, setCenterTab]);
 
   const updateQueryState = useCallback((patch: Partial<AnalysisQueryState>) => {
-    data.invalidateFilterSectionLoads();
-    setQueryState((current) => ({ ...current, ...patch }));
-  }, [data.invalidateFilterSectionLoads]);
+    data.invalidateFilterSectionLoadsForPatch(patch);
+    setQueryState((current) => normalizeQueryState({ ...current, ...patch }));
+  }, [data.invalidateFilterSectionLoadsForPatch]);
 
   const applySavedFilter = useCallback(
     (savedFilter: Parameters<typeof savedFilters.applySavedFilter>[0]) => {
+      if (savedFilter != null) {
+        data.invalidateFilterSectionLoads();
+      }
       savedFilters.applySavedFilter(savedFilter);
     },
-    [savedFilters],
+    [data.invalidateFilterSectionLoads, savedFilters],
   );
 
   useEffect(() => {
+    if (!systemSettingsLoaded) return;
     pushQueryStateToUrl(queryState);
-  }, [queryState]);
+  }, [queryState, systemSettingsLoaded]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (unitName === null) return;
     const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
-    data.invalidateFilterSectionLoads();
+    data.invalidateFilterSectionLoadsForPatch({ unitsSelected: [] });
     setQueryState((current) => ({
       ...current,
       unitsSelected: (() => {
@@ -192,7 +224,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
           : [...normalizedUnits, normalizedUnitName];
       })(),
     }));
-  }, [data.invalidateFilterSectionLoads]);
+  }, [data.invalidateFilterSectionLoadsForPatch]);
 
   const resetFilters = useCallback(() => {
     const nextState = createResetQueryState();
@@ -206,7 +238,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
-      data.invalidateFilterSectionLoads();
+      data.invalidateFilterSectionLoadsForPatch({ includeOnlyNewFreqs: value, freqsSelected: value ? dataNewFreqValues : [] });
       setQueryState((current) => {
         const freqsSelected = value ? dataNewFreqValues : [];
         if (current.includeOnlyNewFreqs === value && stringArraysEqual(current.freqsSelected, freqsSelected)) {
@@ -219,28 +251,31 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         };
       });
     },
-    [data.invalidateFilterSectionLoads, dataNewFreqValues],
+    [data.invalidateFilterSectionLoadsForPatch, dataNewFreqValues],
   );
 
   useEffect(() => {
     if (!queryState.includeOnlyNewFreqs) return;
+    if (stringArraysEqual(queryState.freqsSelected, dataNewFreqValues)) return;
+
+    data.invalidateFilterSectionLoadsForPatch({ freqsSelected: dataNewFreqValues });
     setQueryState((current) => {
       if (!current.includeOnlyNewFreqs || stringArraysEqual(current.freqsSelected, dataNewFreqValues)) {
         return current;
       }
       return { ...current, freqsSelected: dataNewFreqValues };
     });
-  }, [dataNewFreqValues, queryState.includeOnlyNewFreqs]);
+  }, [data.invalidateFilterSectionLoadsForPatch, dataNewFreqValues, queryState.includeOnlyNewFreqs]);
 
   const selectOnlyFreq = useCallback((freq: string) => {
-    data.invalidateFilterSectionLoads();
+    data.invalidateFilterSectionLoadsForPatch({ freqsSelected: [freq], includeOnlyNewFreqs: false });
     setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
-  }, [data.invalidateFilterSectionLoads]);
+  }, [data.invalidateFilterSectionLoadsForPatch]);
 
   const addFrequencyToFilter = useCallback((freq: string) => {
     const trimmed = freq.trim();
     if (trimmed === '') return;
-    data.invalidateFilterSectionLoads();
+    data.invalidateFilterSectionLoadsForPatch({ freqsSelected: [trimmed] });
     setRightPanelOpen(true);
     setRightSidebarTab('stats');
     setQueryState((current) => {
@@ -256,11 +291,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         freqsSelected: nextFreqsSelected,
       };
     });
-  }, [data.invalidateFilterSectionLoads, setRightSidebarTab]);
+  }, [data.invalidateFilterSectionLoadsForPatch, setRightSidebarTab]);
 
   const showFreqOnMap = useCallback((freq: string) => {
     startCenterTabTransition(() => {
-      data.invalidateFilterSectionLoads();
+      data.invalidateFilterSectionLoadsForPatch({ freqsSelected: [freq], includeOnlyNewFreqs: false });
       if (dutySettings.analysisMapInSidebar) {
         setRightPanelOpen(true);
         setRightSidebarTab('map');
@@ -269,7 +304,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       }
       setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false, freqsSelected: [freq] }));
     });
-  }, [data.invalidateFilterSectionLoads, dutySettings.analysisMapInSidebar]);
+  }, [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar]);
 
   const toggleLeftPanel = useCallback(() => {
     leftPanelTouchedRef.current = true;
@@ -334,6 +369,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadedSavedFilter: savedFilters.loadedSavedFilter,
     mapAttrs: data.mapAttrs,
     messageActionLoading: data.messageActionLoading,
+    botTagAction: data.botTagAction,
     messagesLoading: data.messagesLoading,
     messagesPaging: data.messagesPaging,
     messageComments: data.messageComments,
@@ -347,6 +383,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     newestFirst,
     options: data.options,
     onDeleteMessage: data.onDeleteMessage,
+    onCancelBotTagAction: data.onCancelBotTagAction,
+    onMarkBotTagWrong: data.onMarkBotTagWrong,
     onSaveMessageComment: data.onSaveMessageComment,
     onToggleMessageBookmark: data.onToggleMessageBookmark,
     onToggleMessageImportant: data.onToggleMessageImportant,
@@ -419,6 +457,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     repeatReportTaskRun: report.repeatReportTaskRun,
     setReportProgressExpanded: report.setReportProgressExpanded,
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
+    unitsExactMatchOnlyDefault,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

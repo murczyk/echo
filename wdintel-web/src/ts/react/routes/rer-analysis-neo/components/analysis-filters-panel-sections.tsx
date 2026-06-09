@@ -1,5 +1,8 @@
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Typography, type SelectChangeEvent } from '@mui/material';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
+import { useEffect, useRef } from 'react';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
 import { NO_DATA_LABEL } from '../../../utils/misc';
@@ -11,69 +14,98 @@ import {
   type AnalysisFiltersPanelPage,
   type FilterSectionId,
   sectionCountLabel,
-  unitsExactMatchModeFromState,
-  unitsExactMatchStateFromMode,
-  type UnitsExactMatchMode,
 } from './analysis-filters-panel-shared';
 
-type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
+type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'countsLoading' | 'includeOnlyNewFreqs' | 'options' | 'queryState' | 'setIncludeOnlyNewFreqs' | 'updateQueryState'> & {
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
+  countsLoading: boolean;
   filtersLoading: boolean;
+  unitsExactMatchOnlyDefault: boolean | null;
   toggleSection: (section: FilterSectionId) => void;
   isSectionLoading: (section: FilterSectionId) => boolean;
   loadFilterSectionWithSpinner: (section: AnalysisFilterSectionId) => Promise<void>;
 };
 
-type CoordsFilterMode = 'all' | 'with' | 'without';
+type MetadataFilterMode = 'all' | 'with' | 'without';
 
-function coordsFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): CoordsFilterMode {
-  if (queryState.orWithCoords && queryState.orWithoutCoords) return 'all';
-  if (queryState.orWithCoords) return 'with';
-  if (queryState.orWithoutCoords) return 'without';
+function metadataFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): MetadataFilterMode {
+  if (queryState.withoutMetadata) return 'without';
+  if (queryState.onlyWithMetadata) return 'with';
   return 'all';
+}
+
+function metadataFilterModeHint(mode: MetadataFilterMode): string {
+  switch (mode) {
+    case 'with':
+      return 'Показувати лише записи з метаданими';
+    case 'without':
+      return 'Показувати лише записи без метаданих';
+    case 'all':
+    default:
+      return 'Показувати всі записи';
+  }
 }
 
 export function AnalysisFiltersPanelSections({
   counts,
   derived,
   expandedSections,
+  countsLoading,
   includeOnlyNewFreqs,
   filtersLoading,
   isSectionLoading,
   loadFilterSectionWithSpinner,
   options,
   queryState,
+  unitsExactMatchOnlyDefault,
   setIncludeOnlyNewFreqs,
   toggleSection,
   updateQueryState,
 }: Props) {
-  const showInitialLoadingIndicators = filtersLoading;
   const loadingCountLabel = NO_DATA_LABEL;
+  const lastCountsRef = useRef<CountStatsRsp | null>(counts);
+  const countsSnapshot = countsLoading ? lastCountsRef.current : counts;
+
+  useEffect(() => {
+    if (!countsLoading && counts != null) {
+      lastCountsRef.current = counts;
+    }
+  }, [counts, countsLoading]);
+
+  const countLabel = (section: AnalysisFilterSectionId | 'freqs', optionCount: number, selectedCount: number, overallCount: number | null | undefined) =>
+    isSectionLoading(section) || (filtersLoading && optionCount === 0 && selectedCount === 0)
+      ? loadingCountLabel
+      : sectionCountLabel(selectedCount, overallCount);
 
   const loadSection = (section: AnalysisFilterSectionId) => () => {
     void loadFilterSectionWithSpinner(section);
   };
 
-  const handleUnitsExactMatchModeChange = (event: SelectChangeEvent) => {
-    updateQueryState({
-      unitsExactMatchOnly: unitsExactMatchStateFromMode(event.target.value as UnitsExactMatchMode),
-    });
-  };
-
-  const handleCoordsFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: CoordsFilterMode | null) => {
+  const handleMetadataFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: MetadataFilterMode | null) => {
     const mode = nextMode ?? 'all';
     updateQueryState({
-      orWithCoords: mode === 'with',
-      orWithoutCoords: mode === 'without',
+      onlyWithMetadata: mode === 'with',
+      withoutMetadata: mode === 'without',
     });
   };
 
+  const effectiveUnitsExactMatchOnly = queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
+  const unitsExactMatchLabel =
+    queryState.unitsSelected.length > 0
+      ? countsSnapshot != null
+        ? effectiveUnitsExactMatchOnly
+          ? `неточних збігів: ${countsSnapshot.unitsNonExactMatchesCount}`
+          : `точних збігів: ${countsSnapshot.unitsExactMatchesCount}`
+        : 'Точний збіг за еталонкою'
+      : null;
+
+  const metadataFilterMode = metadataFilterModeFromState(queryState);
   return (
     <>
       <FilterSection
         title="Смуги"
-        countLabel={isSectionLoading('aors') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
+        countLabel={countLabel('aors', options.aors.length, derived.aorsSelectedCount, counts?.aorsCount ?? options.aors.length)}
         expanded={expandedSections.aors}
         onToggle={() => toggleSection('aors')}
         onLoad={loadSection('aors')}
@@ -83,12 +115,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.aorOptions}
           loading={isSectionLoading('aors')}
           value={queryState.aorsSelected}
+          deferredCommit
           onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Частоти"
-        countLabel={isSectionLoading('freqs') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
+        countLabel={countLabel('freqs', options.freqs.length, derived.freqsSelectedCount, counts?.freqsCount ?? options.freqs.length)}
         expanded={expandedSections.freqs}
         onToggle={() => toggleSection('freqs')}
       >
@@ -99,6 +132,7 @@ export function AnalysisFiltersPanelSections({
             disabled={includeOnlyNewFreqs}
             loading={isSectionLoading('freqs')}
             value={queryState.freqsSelected}
+            deferredCommit
             onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
           />
           <FormControl size="small" disabled={includeOnlyNewFreqs}>
@@ -125,7 +159,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Позивні"
-        countLabel={isSectionLoading('callsigns') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
+        countLabel={countLabel('callsigns', options.callsigns.length, derived.callsignsSelectedCount, counts?.callsignsCount ?? options.callsigns.length)}
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
         onLoad={loadSection('callsigns')}
@@ -135,12 +169,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.callsignsOptions}
           loading={isSectionLoading('callsigns')}
           value={queryState.callsignsSelected}
+          deferredCommit
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Мережі"
-        countLabel={isSectionLoading('networks') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
+        countLabel={countLabel('networks', options.networks.length, derived.networksSelectedCount, counts?.networksCount ?? options.networks.length)}
         expanded={expandedSections.networks}
         onToggle={() => toggleSection('networks')}
         onLoad={loadSection('networks')}
@@ -151,6 +186,7 @@ export function AnalysisFiltersPanelSections({
           disabled={queryState.withoutNetwork}
           loading={isSectionLoading('networks')}
           value={queryState.networksSelected}
+          deferredCommit
           onChange={(networksSelected) => updateQueryState({ networksSelected })}
         />
         <Stack spacing={0.5}>
@@ -163,7 +199,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Підрозділи"
-        countLabel={isSectionLoading('units') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
+        countLabel={countLabel('units', options.units.length, derived.unitsSelectedCount, counts?.unitsCount ?? options.units.length)}
         expanded={expandedSections.units}
         onToggle={() => toggleSection('units')}
         onLoad={loadSection('units')}
@@ -175,26 +211,21 @@ export function AnalysisFiltersPanelSections({
             loading={isSectionLoading('units')}
             value={queryState.unitsSelected}
             normalizeUnknownAliases
+            deferredCommit
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
-            <InputLabel id="units-exact-match-mode-label">Збіг за еталонкою</InputLabel>
-            <Select
-              labelId="units-exact-match-mode-label"
-              label="Збіг за еталонкою"
-              value={unitsExactMatchModeFromState(queryState.unitsExactMatchOnly)}
-              onChange={handleUnitsExactMatchModeChange}
-            >
-              <MenuItem value="default">За замовчуванням</MenuItem>
-              <MenuItem value="exact">Точний збіг</MenuItem>
-              <MenuItem value="non-exact">Неточний збіг</MenuItem>
-            </Select>
-          </FormControl>
+          {queryState.unitsSelected.length > 0 ? (
+            <FormControlLabel
+              control={<Checkbox checked={effectiveUnitsExactMatchOnly} onChange={(_event, value) => updateQueryState({ unitsExactMatchOnly: value })} />}
+              label={unitsExactMatchLabel}
+              sx={compactCheckboxLabelSx}
+            />
+          ) : null}
         </Stack>
       </FilterSection>
       <FilterSection
         title="Групи"
-        countLabel={isSectionLoading('groups') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
+        countLabel={countLabel('groups', options.groups.length, derived.groupsSelectedCount, counts?.groupsCount ?? options.groups.length)}
         expanded={expandedSections.groups}
         onToggle={() => toggleSection('groups')}
         onLoad={loadSection('groups')}
@@ -204,12 +235,13 @@ export function AnalysisFiltersPanelSections({
           options={derived.groupOptions}
           loading={isSectionLoading('groups')}
           value={queryState.groupsSelected}
+          deferredCommit
           onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Відправники"
-        countLabel={isSectionLoading('senders') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
+        countLabel={countLabel('senders', options.senders.length, derived.sendersSelectedCount, counts?.sendersCount ?? options.senders.length)}
         expanded={expandedSections.senders}
         onToggle={() => toggleSection('senders')}
         onLoad={loadSection('senders')}
@@ -219,12 +251,13 @@ export function AnalysisFiltersPanelSections({
           options={options.senders}
           loading={isSectionLoading('senders')}
           value={queryState.sendersSelected}
+          deferredCommit
           onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
         />
       </FilterSection>
       <FilterSection
         title="Пости"
-        countLabel={isSectionLoading('posts') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
+        countLabel={countLabel('posts', options.posts.length, derived.postsSelectedCount, counts?.postsCount ?? options.posts.length)}
         expanded={expandedSections.posts}
         onToggle={() => toggleSection('posts')}
         onLoad={loadSection('posts')}
@@ -235,13 +268,14 @@ export function AnalysisFiltersPanelSections({
             options={derived.postsOptions}
             loading={isSectionLoading('posts')}
             value={queryState.postsSelected}
+            deferredCommit
             onChange={(postsSelected) => updateQueryState({ postsSelected })}
           />
         </Stack>
       </FilterSection>
       <FilterSection
         title="Локації"
-        countLabel={isSectionLoading('locations') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
+        countLabel={countLabel('locations', options.locations.length, derived.locationsSelectedCount, counts?.locationsCount ?? options.locations.length)}
         expanded={expandedSections.locations}
         onToggle={() => toggleSection('locations')}
         onLoad={loadSection('locations')}
@@ -252,6 +286,7 @@ export function AnalysisFiltersPanelSections({
             options={derived.locationsOptions}
             loading={isSectionLoading('locations')}
             value={queryState.locationsSelected}
+            deferredCommit
             onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
           />
           <FormControlLabel
@@ -279,21 +314,24 @@ export function AnalysisFiltersPanelSections({
         >
           <FormControlLabel
             control={<Checkbox checked={queryState.orWithExtendedForm} onChange={(_event, value) => updateQueryState({ orWithExtendedForm: value })} />}
-            label={
-              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.375, whiteSpace: 'nowrap' }}>
-                З коментарем
-              </Box>
+            label="З коментарем"
+            sx={compactCheckboxLabelSx}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={queryState.orWithCoords}
+                onChange={(_event, value) =>
+                  updateQueryState(
+                    value
+                      ? { orWithCoords: true, orWithoutCoords: false }
+                      : { orWithCoords: false, orWithoutCoords: false },
+                  )
+                }
+              />
             }
-            sx={{
-              ...compactCheckboxLabelSx,
-              gridColumn: '1 / -1',
-              alignSelf: 'start',
-              justifySelf: 'start',
-              '& .MuiFormControlLabel-label': {
-                lineHeight: 1.3,
-                whiteSpace: 'nowrap',
-              },
-            }}
+            label="З пеленгом"
+            sx={compactCheckboxLabelSx}
           />
           <FormControlLabel
             control={<Checkbox checked={queryState.orBookmarked} onChange={(_event, value) => updateQueryState({ orBookmarked: value })} />}
@@ -305,47 +343,11 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
-          <Box
-            sx={{
-              gridColumn: '1 / -1',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.75,
-              minWidth: 0,
-              mt: 0.5,
-            }}
-          >
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Режим пеленга
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              fullWidth
-              size="small"
-              color="primary"
-              value={coordsFilterModeFromState(queryState)}
-              onChange={handleCoordsFilterModeChange}
-              aria-label="Режим пеленга"
-              sx={{
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  py: 0.75,
-                },
-              }}
-            >
-              <ToggleButton value="all">Усі</ToggleButton>
-              <ToggleButton value="with">З пеленгом</ToggleButton>
-              <ToggleButton value="without">Без пеленга</ToggleButton>
-            </ToggleButtonGroup>
-            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
-              Показувати всі записи або лише ті, де є координати пеленга.
-            </Typography>
-          </Box>
         </Box>
       </FilterSection>
       <FilterSection
         title="Теги"
-        countLabel={isSectionLoading('tags') || showInitialLoadingIndicators ? loadingCountLabel : sectionCountLabel(derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
+        countLabel={countLabel('tags', options.tags.length, derived.tagsSelectedCount, counts?.tagsCount ?? options.tags.length)}
         expanded={expandedSections.tags}
         onToggle={() => toggleSection('tags')}
         onLoad={loadSection('tags')}
@@ -358,19 +360,21 @@ export function AnalysisFiltersPanelSections({
             value={queryState.tags.map((tagId) => String(tagId))}
             onChange={(next) => updateQueryState({ tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)) })}
           />
-          <FormControl size="small">
-            <InputLabel id="analysis-tags-mode-label">Збіг тегів</InputLabel>
-            <Select
-              labelId="analysis-tags-mode-label"
-              label="Збіг тегів"
-              value={queryState.filterTagsOption}
-              onChange={(event) => updateQueryState({ filterTagsOption: event.target.value as 'OneOfTags' | 'AllTags' })}
-            >
-              <MenuItem value="OneOfTags">Будь-який з вибраних</MenuItem>
-              <MenuItem value="AllTags">Усі вибрані</MenuItem>
-            </Select>
-          </FormControl>
           <Stack spacing={0.5}>
+            <FormControlLabel
+              control={<Checkbox checked={queryState.filterTagsOption === 'AllTags'} onChange={(_event, value) => updateQueryState({ filterTagsOption: value ? 'AllTags' : 'OneOfTags' })} />}
+              label={
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                  <Box component="span">Співпадіння з усіма вибраними вище</Box>
+                  <Tooltip title="Якщо ввімкнено, запис має збігатися з усіма вибраними вище тегами." placement="top">
+                    <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }} aria-label="Підказка">
+                      <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                    </Box>
+                  </Tooltip>
+                </Box>
+              }
+              sx={compactCheckboxLabelSx}
+            />
             <FormControlLabel
               control={<Checkbox checked={queryState.withoutModelTags} onChange={(_event, value) => updateQueryState({ withoutModelTags: value })} />}
               label="Без відміток роботами"
@@ -386,7 +390,7 @@ export function AnalysisFiltersPanelSections({
       </FilterSection>
       <FilterSection
         title="Метадані"
-        countLabel={isSectionLoading('metadata') ? loadingCountLabel : sectionCountLabel(derived.metadataSelectedCount, null)}
+        countLabel={countLabel('metadata', derived.metadataOptionsCount, derived.metadataSelectedCount, null)}
         expanded={expandedSections.metadata}
         onToggle={() => toggleSection('metadata')}
         onLoad={loadSection('metadata')}
@@ -424,18 +428,40 @@ export function AnalysisFiltersPanelSections({
             value={queryState.metadataHash}
             onChange={(metadataHash) => updateQueryState({ metadataHash })}
           />
-        </Stack>
-        <Stack spacing={0.5}>
-          <FormControlLabel
-            control={<Checkbox checked={queryState.onlyWithMetadata} disabled={queryState.withoutMetadata} onChange={(_event, value) => updateQueryState({ onlyWithMetadata: value })} />}
-            label="Тільки з метаданими"
-            sx={compactCheckboxLabelSx}
-          />
-          <FormControlLabel
-            control={<Checkbox checked={queryState.withoutMetadata} disabled={queryState.onlyWithMetadata} onChange={(_event, value) => updateQueryState({ withoutMetadata: value })} />}
-            label="Тільки без метаданих"
-            sx={compactCheckboxLabelSx}
-          />
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              minWidth: 0,
+            }}
+          >
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              Режим метаданих
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              color="primary"
+              value={metadataFilterMode}
+              onChange={handleMetadataFilterModeChange}
+              aria-label="Режим метаданих"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  py: 0.75,
+                },
+              }}
+            >
+              <ToggleButton value="all">Усі</ToggleButton>
+              <ToggleButton value="with">З метаданими</ToggleButton>
+              <ToggleButton value="without">Без метаданих</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+              {metadataFilterModeHint(metadataFilterMode)}
+            </Typography>
+          </Box>
         </Stack>
       </FilterSection>
     </>

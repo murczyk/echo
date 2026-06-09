@@ -12,7 +12,7 @@ vi.mock('./PowerDateTimePicker', () => ({
   PowerDateTimePicker: (props: { allowEmpty?: boolean; onChange: (value: unknown) => void }) => powerDateTimePickerMock(props),
 }));
 
-import { DateTimeRangeControl } from './DateTimeRangeControl';
+import { DateTimeRangeControl, getDateTimeRangeControlTextFieldSx } from './DateTimeRangeControl';
 
 describe('DateTimeRangeControl', () => {
   afterEach(() => {
@@ -68,6 +68,30 @@ describe('DateTimeRangeControl', () => {
     act(() => {
       root.unmount();
     });
+  });
+
+  it('keeps the shared interval border colors aligned with the search field', () => {
+    const closedSx = getDateTimeRangeControlTextFieldSx(false);
+    const openSx = getDateTimeRangeControlTextFieldSx(true);
+    const rootSx = closedSx['& .MuiOutlinedInput-root'] as {
+      '& fieldset'?: { borderColor?: string };
+      '&:hover fieldset'?: { borderColor?: string };
+      '&.Mui-focused fieldset': { borderColor: string; borderWidth: number };
+    };
+    const openRootSx = openSx['& .MuiOutlinedInput-root'] as {
+      '& fieldset': { borderColor: string };
+      '&:hover fieldset': { borderColor: string };
+      '&.Mui-focused fieldset': { borderColor: string; borderWidth: number };
+    };
+
+    expect(rootSx['& fieldset']?.borderColor).toBeUndefined();
+    expect(rootSx['&:hover fieldset']?.borderColor).toBeUndefined();
+    expect(rootSx['&.Mui-focused fieldset'].borderColor).toBe('primary.main');
+    expect(rootSx['&.Mui-focused fieldset'].borderWidth).toBe(1);
+
+    expect(openRootSx['& fieldset'].borderColor).toBe('primary.main');
+    expect(openRootSx['&:hover fieldset'].borderColor).toBe('primary.main');
+    expect(openRootSx['&.Mui-focused fieldset'].borderColor).toBe('primary.main');
   });
 
 });

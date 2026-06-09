@@ -283,9 +283,10 @@ check-git-hooks:
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
 # One-off migration for Signal bots that still use native signal-cli.
+
 # Safe to rerun: it only targets clients whose DB config is still set to native.
-[arg('server', long='server')]
 [arg('non_interactive', long='non-interactive', value='true')]
+[arg('server', long='server')]
 [arg('yolo', long='yolo', value='true')]
 migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
     #!/usr/bin/env bash

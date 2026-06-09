@@ -99,15 +99,15 @@ export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '') return parsed;
+  if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '') return normalizeQueryState(parsed);
 
   const defaultDateRange = getDefaultAnalysisDateRange(now);
-  return {
+  return normalizeQueryState({
     ...emptyQueryState(),
     ...parsed,
     fromDateTimeStr: parsed.fromDateTimeStr || defaultDateRange.fromDateTimeStr,
     toDateTimeStr: parsed.toDateTimeStr || defaultDateRange.toDateTimeStr,
-  };
+  });
 }
 
 export function createResetQueryState(now: Date = new Date()): AnalysisQueryState {
@@ -153,8 +153,6 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   if (next.orWithCoords && next.orWithoutCoords) {
     next = { ...next, orWithCoords: false, orWithoutCoords: false };
-  } else if (next.orWithoutCoords) {
-    next = { ...next, orWithCoords: false };
   }
 
   return {

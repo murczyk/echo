@@ -2,14 +2,8 @@ import type { SavedFilter } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
-
-
 import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
-import {
-  buildAnalysisReq,
-  queryStateFromSavedFilter,
-  queryStateMatchesSavedFilter,
-} from './helpers';
+import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
 import type { AnalysisQueryState } from './types';
 
 type Props = {
@@ -39,7 +33,13 @@ function toErrorMessage(error: unknown): string {
   return 'Сталася помилка під час роботи зі збереженими фільтрами.';
 }
 
-export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorized, queryState, setQueryState }: Props): Result {
+export function useAnalysisSavedFilters({
+  allFrequencies,
+  onError,
+  onUnauthorized,
+  queryState,
+  setQueryState,
+}: Props): Result {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [loadedSavedFilterId, setLoadedSavedFilterId] = useState<number | null>(null);
   const [savedFilterName, setSavedFilterName] = useState('');
@@ -108,10 +108,9 @@ export function useAnalysisSavedFilters({ allFrequencies, onError, onUnauthorize
       }
 
       const current = queryState;
-      const nextState = queryStateFromSavedFilter(savedFilter, current);
       setLoadedSavedFilterId(savedFilter?.id ?? null);
       setSavedFilterName(savedFilter.name);
-      setQueryState(nextState);
+      setQueryState(queryStateFromSavedFilter(savedFilter, current));
     },
     [queryState, setQueryState],
   );

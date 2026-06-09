@@ -15,6 +15,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { buildInboxReq } from './helpers';
+import type { AnalysisBotTagAction } from './use-analysis-data.message-actions';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
@@ -26,7 +27,9 @@ import type {
 } from './types';
 
 export type UseAnalysisDataProps = {
+  authUserName: string | null;
   currentUser: User | null;
+  deferInitialLoad?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -59,10 +62,13 @@ export type UseAnalysisDataResult = {
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
+  botTagAction: AnalysisBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
+  invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
+  getReloadFilterSections: () => AnalysisFilterSectionId[] | null;
   toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
@@ -84,6 +90,8 @@ export type UseAnalysisDataResult = {
   onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
   onDeleteMessage: (messageId: number) => Promise<void>;
   onSaveMessageComment: (messageId: number, comment: string | null) => Promise<void>;
+  onCancelBotTagAction: () => void;
+  onMarkBotTagWrong: (messageId: number, tagId: number) => Promise<void>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => Promise<void>;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => Promise<void>;
   onToggleMessageTag: (messageId: number, tagId: number) => Promise<void>;

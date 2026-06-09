@@ -311,6 +311,22 @@ body.analysis-map-fullscreen-open {
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
+.peleng-label-anchor {
+	width: 1px;
+	height: 1px;
+	pointer-events: none;
+	background: transparent;
+	border: 0;
+}
+
+.peleng-point-label__freq-icon {
+	display: inline-block;
+	font-size: 1em;
+	line-height: 1;
+	vertical-align: -0.125em;
+	color: currentColor;
+}
+
 .peleng-point-label.leaflet-tooltip-top::before {
 	border-top-color: rgba(220, 53, 69, 0.92);
 }
