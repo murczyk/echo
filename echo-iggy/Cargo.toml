@@ -15,7 +15,7 @@ maintainer = "rickyrepel@gmail.com"
 priority = "optional"
 section = "utils"
 maintainer-scripts = "debian/"
-systemd-units = [{ unit-name = "iggy" }]
+systemd-units = [{ unit-name = "echo-iggy" }]
 # This tells cargo-deb exactly where to pull your existing files
 # and where they should land on the target Debian system.
 assets = [

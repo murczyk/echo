@@ -2207,6 +2207,7 @@ import-unit-to-target:
 # [positional-arguments]
 [arg('server', long='server')]
 setup-iggy server="echo-staging":
+    just builder={{ builder }} _builder-build-iggy
     ssh {{ builder }} "[ -f {{ workspace_echo }}/target/debian/iggy*.deb ]"
     scp {{ builder }}:{{ workspace_echo }}/target/debian/iggy*.deb "{{ server }}:/var/tmp/iggy-server.deb"
     ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/iggy-server.deb && rm /var/tmp/iggy-server.deb"

@@ -78,7 +78,7 @@ pub async fn list_api_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListApiIntegrationsRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    crate::users::ensure_admin(&env.dbx, &user).await?;
 
     let items = api_integration::Entity::find()
         .order_by_desc(api_integration::Column::CreatedAt)
@@ -99,7 +99,7 @@ pub async fn upsert_api_integration(
     env: actix_web::web::Data<Env>,
     req: Json<UpsertApiIntegrationReq>,
 ) -> Result<Json<ApiIntegration>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    crate::users::ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     let values = validate_and_normalize(&env.dbx, &req).await?;
@@ -138,7 +138,7 @@ pub async fn delete_api_integration(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteApiIntegrationReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    crate::users::ensure_admin(&env.dbx, &user).await?;
 
     api_integration::Entity::delete_by_id(req.id)
         .exec(&env.dbx)
@@ -153,7 +153,7 @@ pub async fn test_iggy_connection(
     env: actix_web::web::Data<Env>,
     req: Json<TestIggyConnectionReq>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    crate::users::ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     let url = required_trimmed(&req.url, "Вкажіть Iggy URL")?;
@@ -161,13 +161,6 @@ pub async fn test_iggy_connection(
     let password = required_trimmed(&req.password, "Вкажіть Iggy пароль")?;
     crate::iggy::test_connection(&url, &login, &password).await?;
     Ok(HttpResponse::Ok().finish())
-}
-
-async fn ensure_admin(
-    dbx: &DatabaseConnection,
-    user: &actix_identity::Identity,
-) -> Result<(), AppError> {
-    crate::users::has_role(dbx, &user.id().c(h!())?, "Admin").await
 }
 
 async fn validate_and_normalize(

@@ -252,7 +252,9 @@ fn valid_phone_number(x: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-fn parse_signal_cli_mode(signal_cli_mode: Option<&str>) -> Result<SignalCliMode, AppError> {
+fn parse_signal_cli_mode(
+    signal_cli_mode: Option<&str>,
+) -> Result<SignalCliMode, AppError> {
     match signal_cli_mode.map(str::trim).filter(|x| !x.is_empty()) {
         None => Ok(SignalCliMode::Normal),
         Some("Normal") | Some("normal") => Ok(SignalCliMode::Normal),

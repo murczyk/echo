@@ -329,7 +329,7 @@ export function AdminApiIntegrationsPage() {
               fullWidth
             />
             <TextField
-              label="Тема для надсилання вхідних повідомлень"
+              label="Назва топіку для надсилання вхідних повідомлень"
               value={form.iggyInboxTopic}
               onChange={(event) => setForm((previous) => ({ ...previous, iggyInboxTopic: event.target.value }))}
               disabled={!form.hasIggyConnection}
@@ -337,7 +337,7 @@ export function AdminApiIntegrationsPage() {
               fullWidth
             />
             <TextField
-              label="Тема для отримання аналітичної інформації"
+              label="Назва топіку для отримання аналітичної інформації"
               value={form.iggyAnalyticsTopic}
               onChange={(event) => setForm((previous) => ({ ...previous, iggyAnalyticsTopic: event.target.value }))}
               disabled={!form.hasIggyConnection}

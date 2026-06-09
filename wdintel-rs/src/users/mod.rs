@@ -34,6 +34,13 @@ pub async fn has_role(
     has_any_role(dbx, user_id, vec![role]).await
 }
 
+pub async fn ensure_admin(
+    dbx: &DatabaseConnection,
+    user: &actix_identity::Identity,
+) -> Result<(), AppError> {
+    has_role(dbx, &user.id().c(h!())?, "Admin").await
+}
+
 // WARNING: need to update Auth.elm too
 pub async fn has_any_role(
     dbx: &sea_orm::DatabaseConnection,

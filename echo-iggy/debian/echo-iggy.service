@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=echo
+User=root
 WorkingDirectory=/etc/iggy/data
 Environment=IGGY_CONFIG_PATH=/etc/iggy/config.toml
 ExecStart=/usr/local/bin/iggy-server
