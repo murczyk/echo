@@ -71,7 +71,7 @@
     {
       "label": "start-back-server", // port 8081
       "type": "shell",
-      "command": "just dev-back --verbose=false",
+      "command": "just dev-back --quiet",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "panel": "new" }
