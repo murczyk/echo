@@ -4,6 +4,7 @@ use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
 use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
+use chrono::Utc;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,9 @@ pub struct ApiIntegration {
     pub iggy_password: Option<String>,
     pub iggy_inbox_topic: Option<String>,
     pub iggy_analytics_topic: Option<String>,
+    pub sync_enabled: bool,
+    pub last_sync_at_ms: Option<i64>,
+    pub is_working: bool,
     pub created_at_ms: i64,
 }
 
@@ -44,6 +48,7 @@ pub struct UpsertApiIntegrationReq {
     pub iggy_password: Option<String>,
     pub iggy_inbox_topic: Option<String>,
     pub iggy_analytics_topic: Option<String>,
+    pub sync_enabled: bool,
 }
 
 #[derive(
@@ -71,6 +76,7 @@ struct ApiIntegrationValues {
     iggy_password: Option<String>,
     iggy_inbox_topic: Option<String>,
     iggy_analytics_topic: Option<String>,
+    sync_enabled: bool,
 }
 
 #[post("/api/admin/api-integrations")]
@@ -109,8 +115,18 @@ pub async fn upsert_api_integration(
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)?;
+        let sync_was_enabled = api_integration.sync_enabled;
+        let iggy_connection_changed =
+            has_iggy_connection_changed(&api_integration, &values);
         let mut api_integration = api_integration.into_active_model();
         apply_values(&mut api_integration, values);
+        if api_integration.sync_enabled == Set(true) && !sync_was_enabled {
+            api_integration.last_sync_at = Set(Some(Utc::now().naive_utc()));
+        }
+        if api_integration.sync_enabled == Set(false) || iggy_connection_changed
+        {
+            api_integration.is_working = Set(false);
+        }
         api_integration.update(&env.dbx).await.c(h!())?
     } else {
         let mut api_integration = api_integration::ActiveModel {
@@ -124,6 +140,9 @@ pub async fn upsert_api_integration(
             iggy_inbox_topic: NotSet,
             iggy_analytics_topic: NotSet,
             created_at: NotSet,
+            sync_enabled: Set(false),
+            last_sync_at: NotSet,
+            is_working: NotSet,
         };
         apply_values(&mut api_integration, values);
         api_integration.insert(&env.dbx).await.c(h!())?
@@ -169,6 +188,11 @@ async fn validate_and_normalize(
 ) -> Result<ApiIntegrationValues, AppError> {
     let api_user = required_trimmed(&req.api_user, "Вкажіть API користувача")?;
     ensure_api_user(dbx, &api_user).await?;
+    let sync_enabled = normalize_sync_enabled(
+        req.id,
+        req.sync_enabled,
+        req.has_iggy_connection,
+    )?;
 
     let mut values = ApiIntegrationValues {
         description: normalize_optional_trimmed(req.description.clone()),
@@ -179,6 +203,7 @@ async fn validate_and_normalize(
         iggy_password: None,
         iggy_inbox_topic: None,
         iggy_analytics_topic: None,
+        sync_enabled,
     };
     if req.has_iggy_connection {
         values.iggy_url = Some(required_optional_trimmed(
@@ -203,6 +228,20 @@ async fn validate_and_normalize(
         )?);
     }
     Ok(values)
+}
+
+fn normalize_sync_enabled(
+    id: Option<i64>,
+    sync_enabled: bool,
+    has_iggy_connection: bool,
+) -> Result<bool, AppError> {
+    let sync_enabled = id.is_some() && sync_enabled;
+    if sync_enabled && !has_iggy_connection {
+        return Err(AppError::BL {
+            msg: "Синхронізація потребує підключення до Iggy".to_string(),
+        });
+    }
+    Ok(sync_enabled)
 }
 
 async fn ensure_api_user(
@@ -255,6 +294,19 @@ fn apply_values(
     api_integration.iggy_password = Set(values.iggy_password);
     api_integration.iggy_inbox_topic = Set(values.iggy_inbox_topic);
     api_integration.iggy_analytics_topic = Set(values.iggy_analytics_topic);
+    api_integration.sync_enabled = Set(values.sync_enabled);
+}
+
+fn has_iggy_connection_changed(
+    api_integration: &api_integration::Model,
+    values: &ApiIntegrationValues,
+) -> bool {
+    api_integration.has_iggy_connection != values.has_iggy_connection
+        || api_integration.iggy_url != values.iggy_url
+        || api_integration.iggy_login != values.iggy_login
+        || api_integration.iggy_password != values.iggy_password
+        || api_integration.iggy_inbox_topic != values.iggy_inbox_topic
+        || api_integration.iggy_analytics_topic != values.iggy_analytics_topic
 }
 
 impl From<api_integration::Model> for ApiIntegration {
@@ -269,7 +321,32 @@ impl From<api_integration::Model> for ApiIntegration {
             iggy_password: api_integration.iggy_password,
             iggy_inbox_topic: api_integration.iggy_inbox_topic,
             iggy_analytics_topic: api_integration.iggy_analytics_topic,
+            sync_enabled: api_integration.sync_enabled,
+            last_sync_at_ms: api_integration
+                .last_sync_at
+                .map(|last_sync_at| last_sync_at.and_utc().timestamp_millis()),
+            is_working: api_integration.is_working,
             created_at_ms: api_integration.created_at.timestamp_millis(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synchronization_is_disabled_for_new_integration() {
+        assert!(!normalize_sync_enabled(None, true, true).unwrap());
+    }
+
+    #[test]
+    fn synchronization_requires_iggy_connection() {
+        assert!(normalize_sync_enabled(Some(1), true, false).is_err());
+    }
+
+    #[test]
+    fn synchronization_can_be_enabled_for_existing_integration() {
+        assert!(normalize_sync_enabled(Some(1), true, true).unwrap());
     }
 }

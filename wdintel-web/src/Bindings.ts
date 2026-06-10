@@ -1384,6 +1384,9 @@ export type ApiIntegration = {
   iggyPassword: string | null;
   iggyInboxTopic: string | null;
   iggyAnalyticsTopic: string | null;
+  syncEnabled: boolean;
+  lastSyncAtMs: number | null;
+  isWorking: boolean;
   createdAtMs: number;
 };
 
@@ -1401,6 +1404,7 @@ export type UpsertApiIntegrationReq = {
   iggyPassword: string | null;
   iggyInboxTopic: string | null;
   iggyAnalyticsTopic: string | null;
+  syncEnabled: boolean;
 };
 
 export type DeleteApiIntegrationReq = {

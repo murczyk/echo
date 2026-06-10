@@ -39,6 +39,7 @@ type ApiIntegrationForm = {
   iggyPassword: string;
   iggyInboxTopic: string;
   iggyAnalyticsTopic: string;
+  syncEnabled: boolean;
 };
 
 const emptyForm: ApiIntegrationForm = {
@@ -51,6 +52,7 @@ const emptyForm: ApiIntegrationForm = {
   iggyPassword: '',
   iggyInboxTopic: '',
   iggyAnalyticsTopic: '',
+  syncEnabled: false,
 };
 
 function toForm(integration: ApiIntegration): ApiIntegrationForm {
@@ -64,6 +66,7 @@ function toForm(integration: ApiIntegration): ApiIntegrationForm {
     iggyPassword: integration.iggyPassword ?? '',
     iggyInboxTopic: integration.iggyInboxTopic ?? '',
     iggyAnalyticsTopic: integration.iggyAnalyticsTopic ?? '',
+    syncEnabled: integration.syncEnabled,
   };
 }
 
@@ -79,6 +82,7 @@ function toSaveReq(form: ApiIntegrationForm): UpsertApiIntegrationReq {
     iggyPassword: iggyValue(form.iggyPassword),
     iggyInboxTopic: iggyValue(form.iggyInboxTopic),
     iggyAnalyticsTopic: iggyValue(form.iggyAnalyticsTopic),
+    syncEnabled: form.id !== null && form.syncEnabled,
   };
 }
 
@@ -162,6 +166,7 @@ export function AdminApiIntegrationsPage() {
       iggyPassword: hasIggyConnection ? previous.iggyPassword : '',
       iggyInboxTopic: hasIggyConnection ? previous.iggyInboxTopic : '',
       iggyAnalyticsTopic: hasIggyConnection ? previous.iggyAnalyticsTopic : '',
+      syncEnabled: hasIggyConnection ? previous.syncEnabled : false,
     }));
   }
 
@@ -301,6 +306,22 @@ export function AdminApiIntegrationsPage() {
               )}
               label="Є підключення до Iggy"
             />
+
+            {form.id ? (
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={form.syncEnabled}
+                    onChange={(event) => setForm((previous) => ({
+                      ...previous,
+                      syncEnabled: event.target.checked,
+                    }))}
+                    disabled={!form.hasIggyConnection}
+                  />
+                )}
+                label="Увімкнути синхронізацію"
+              />
+            ) : null}
 
             <TextField
               label="Iggy URL"
