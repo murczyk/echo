@@ -32,7 +32,6 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
-workspace_echo := "/home/ubuntu/workspace/krab/echo-feature/echo"
 workspace_iggy := "~/workspace/iggy"
 local_assets_iggy := "echo-iggy/deploy"
 
@@ -2208,8 +2207,8 @@ import-unit-to-target:
 [arg('server', long='server')]
 setup-iggy server="echo-staging":
     just builder={{ builder }} _builder-build-iggy
-    ssh {{ builder }} "[ -f {{ workspace_echo }}/target/debian/echo-iggy*.deb ]"
-    scp {{ builder }}:{{ workspace_echo }}/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
+    ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
+    scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
     ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
     @echo "==> Pipeline finished successfully!"
 
@@ -2219,8 +2218,8 @@ _builder-build-iggy:
     ssh {{ builder }} "[ -d {{ workspace_iggy }} ]" || (echo "ERROR: Remote folder {{ workspace_iggy }} does not exist on {{ builder }}" && exit 1)
     @echo "==> Building optimized native binary on build server..."
     ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
-    ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server {{ workspace_echo }}/{{ local_assets_iggy }}/"
-    ssh {{ builder }} "cd {{ workspace_echo }}/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+    ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server /home/ubuntu/workspace/echo/{{ local_assets_iggy }}/"
+    ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
 
 # Update UFW firewall rules on a remote server based on local config.toml
 
