@@ -25,7 +25,11 @@ fi
 if [ "$verbose" = "false" ]; then
     server_port="${ECHO_SERVER_PORT:-8081}"
     echo "backend is running in silent mode on port ${server_port}, only 4xx/5xx HTTP responses and build errors will be shown" >&2
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@" 2>&1 | awk '
+    if [ "${#server_args[@]}" -gt 0 ]; then
+        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@" 2>&1 | awk '
+    else
+        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@" 2>&1 | awk '
+    fi
         function is_http_error(line) {
             return line ~ /access_log/ &&
                 line ~ /status=[45][0-9][0-9]/
@@ -67,5 +71,9 @@ if [ "$verbose" = "false" ]; then
         }
     '
 else
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@"
+    if [ "${#server_args[@]}" -gt 0 ]; then
+        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@"
+    else
+        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@"
+    fi
 fi
