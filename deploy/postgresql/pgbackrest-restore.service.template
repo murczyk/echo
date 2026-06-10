@@ -1,10 +1,9 @@
 [Unit]
-Description=Restore latest pgBackRest backup
-Before=postgresql@14-main.service
-Conflicts=postgresql@14-main.service
+Description=Safely restore latest pgBackRest backup
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=oneshot
-User=postgres
-ExecStart=/usr/bin/pgbackrest --stanza=@STANZA@ --delta --log-level-console=info restore
-ExecStopPost=+/usr/bin/systemctl start --no-block postgresql@14-main.service
+TimeoutStartSec=0
+ExecStart=/usr/local/sbin/pgbackrest-safe-restore @STANZA@

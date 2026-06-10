@@ -38,13 +38,17 @@ default:
 
 # setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
 [arg('backup_name', long='backup-name')]
+[arg('daily_restore', long='daily-restore', value='true')]
 [arg('server', long='server')]
-setup-pgbackrest server backup_name="":
+setup-pgbackrest server backup_name="" daily_restore="false":
     #!/bin/bash
     set -euo pipefail
     args=(--server "{{ server }}")
     if [[ "{{ backup_name }}" != "" ]]; then
         args+=(--backup-name "{{ backup_name }}")
+    fi
+    if [[ "{{ daily_restore }}" == "true" ]]; then
+        args+=(--daily-restore)
     fi
     bash deploy/setup-pgbackrest.sh "${args[@]}"
 

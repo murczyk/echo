@@ -284,53 +284,74 @@ REMOTE
 
   rm -f "${TMP_90}"
 
-  if [[ -n "${DAILY_RESTORE}" ]]; then
-    TMP_RESTORE="/tmp/pgbackrest-restore.${BACKUP_NAME}.service"
-    sed -e "s/@STANZA@/${STANZA}/g" "deploy/postgresql/pgbackrest-restore.service.template" > "${TMP_RESTORE}"
-
-    CONF_CHANGED="false"
-    set +e
-    "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_RESTORE}" "${SERVER}:/etc/systemd/system/pgbackrest-restore.service"
-    RC="$?"
-    set -e
-    if [[ "${RC}" -eq 2 ]]; then
-      CONF_CHANGED="true"
-    elif [[ "${RC}" -ne 0 ]]; then
-      echo "ssh-sync-file failed with exit code ${RC}" >&2
-      exit "${RC}"
-    fi
-
-    if [[ "${CONF_CHANGED}" == "true" ]]; then
-      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore service changed, reloading systemd"
-      ssh "${SERVER}" "sudo systemctl daemon-reload"
-    else
-      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore service unchanged, reloading systemd skipped"
-    fi
-
-    rm -f "${TMP_RESTORE}"
-
-    CONF_CHANGED="false"
-    set +e
-    "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "deploy/postgresql/pgbackrest-restore.timer" "${SERVER}:/etc/systemd/system/pgbackrest-restore.timer"
-    RC="$?"
-    set -e
-    if [[ "${RC}" -eq 2 ]]; then
-      CONF_CHANGED="true"
-    elif [[ "${RC}" -ne 0 ]]; then
-      echo "ssh-sync-file failed with exit code ${RC}" >&2
-      exit "${RC}"
-    fi
-    if [[ "${CONF_CHANGED}" == "true" ]]; then
-      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore timer changed, reloading systemd and re-enabling timer"
-      ssh "${SERVER}" "sudo systemctl daemon-reload && sudo systemctl enable --now pgbackrest-restore.timer"
-    else
-      echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore timer unchanged, reloading systemd skipped"
-    fi
-
-  fi
-
 else
   echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] backup-name differs from server; skipping postgres archive_command config and pgbackrest stanza-create/check"
+fi
+
+if [[ -n "${DAILY_RESTORE}" ]]; then
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure /usr/local/sbin/pgbackrest-safe-restore"
+  CONF_CHANGED="false"
+  set +e
+  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "deploy/postgresql/pgbackrest-safe-restore.sh" "${SERVER}:/usr/local/sbin/pgbackrest-safe-restore"
+  RC="$?"
+  set -e
+  if [[ "${RC}" -eq 2 ]]; then
+    CONF_CHANGED="true"
+  elif [[ "${RC}" -ne 0 ]]; then
+    echo "ssh-sync-file failed with exit code ${RC}" >&2
+    exit "${RC}"
+  fi
+  ssh "${SERVER}" "sudo chown root:root /usr/local/sbin/pgbackrest-safe-restore && sudo chmod 0755 /usr/local/sbin/pgbackrest-safe-restore"
+  if [[ "${CONF_CHANGED}" == "true" ]]; then
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] safe restore wrapper changed"
+  else
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] safe restore wrapper unchanged"
+  fi
+
+  TMP_RESTORE="/tmp/pgbackrest-restore.${BACKUP_NAME}.service"
+  sed -e "s/@STANZA@/${STANZA}/g" "deploy/postgresql/pgbackrest-restore.service.template" > "${TMP_RESTORE}"
+
+  CONF_CHANGED="false"
+  set +e
+  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_RESTORE}" "${SERVER}:/etc/systemd/system/pgbackrest-restore.service"
+  RC="$?"
+  set -e
+  if [[ "${RC}" -eq 2 ]]; then
+    CONF_CHANGED="true"
+  elif [[ "${RC}" -ne 0 ]]; then
+    echo "ssh-sync-file failed with exit code ${RC}" >&2
+    exit "${RC}"
+  fi
+
+  if [[ "${CONF_CHANGED}" == "true" ]]; then
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore service changed, reloading systemd"
+    ssh "${SERVER}" "sudo systemctl daemon-reload"
+  else
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore service unchanged, reloading systemd skipped"
+  fi
+
+  rm -f "${TMP_RESTORE}"
+
+  CONF_CHANGED="false"
+  set +e
+  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "deploy/postgresql/pgbackrest-restore.timer" "${SERVER}:/etc/systemd/system/pgbackrest-restore.timer"
+  RC="$?"
+  set -e
+  if [[ "${RC}" -eq 2 ]]; then
+    CONF_CHANGED="true"
+  elif [[ "${RC}" -ne 0 ]]; then
+    echo "ssh-sync-file failed with exit code ${RC}" >&2
+    exit "${RC}"
+  fi
+  if [[ "${CONF_CHANGED}" == "true" ]]; then
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore timer changed, reloading systemd"
+    ssh "${SERVER}" "sudo systemctl daemon-reload"
+  else
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] restore timer unchanged, reloading systemd skipped"
+  fi
+
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure restore timer is enabled"
+  ssh "${SERVER}" "sudo systemctl enable --now pgbackrest-restore.timer"
 fi
 
 echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] done"
