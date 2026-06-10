@@ -15,5 +15,5 @@ systemd-units = [
 ]
 depends = ""
 assets = [
-    [ "../public/*", "usr/share/echo-docs/", "755", ],
+    [ "../public/**/*", "usr/share/echo-docs/", "755", ],
 ]
