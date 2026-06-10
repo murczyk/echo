@@ -26,6 +26,9 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub iggy_analytics_topic: Option<String>,
     pub created_at: DateTimeWithTimeZone,
+    pub sync_enabled: bool,
+    pub last_sync_at: Option<DateTime>,
+    pub is_working: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

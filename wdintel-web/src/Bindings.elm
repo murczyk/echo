@@ -3618,6 +3618,9 @@ type alias ApiIntegration =
     , iggyPassword : Maybe (String)
     , iggyInboxTopic : Maybe (String)
     , iggyAnalyticsTopic : Maybe (String)
+    , syncEnabled : Bool
+    , lastSyncAtMs : Maybe (Int)
+    , isWorking : Bool
     , createdAtMs : Int
     }
 
@@ -3634,6 +3637,9 @@ apiIntegrationEncoder struct =
         , ( "iggy_password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyPassword )
         , ( "iggy_inbox_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyInboxTopic )
         , ( "iggy_analytics_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyAnalyticsTopic )
+        , ( "sync_enabled", (Json.Encode.bool) struct.syncEnabled )
+        , ( "last_sync_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastSyncAtMs )
+        , ( "is_working", (Json.Encode.bool) struct.isWorking )
         , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
         ]
 
@@ -3660,6 +3666,7 @@ type alias UpsertApiIntegrationReq =
     , iggyPassword : Maybe (String)
     , iggyInboxTopic : Maybe (String)
     , iggyAnalyticsTopic : Maybe (String)
+    , syncEnabled : Bool
     }
 
 
@@ -3675,6 +3682,7 @@ upsertApiIntegrationReqEncoder struct =
         , ( "iggy_password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyPassword )
         , ( "iggy_inbox_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyInboxTopic )
         , ( "iggy_analytics_topic", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyAnalyticsTopic )
+        , ( "sync_enabled", (Json.Encode.bool) struct.syncEnabled )
         ]
 
 
