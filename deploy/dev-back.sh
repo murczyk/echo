@@ -27,9 +27,6 @@ if [ "$verbose" = "false" ]; then
     echo "backend is running in silent mode on port ${server_port}, only 4xx/5xx HTTP responses and build errors will be shown" >&2
     if [ "${#server_args[@]}" -gt 0 ]; then
         RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@" 2>&1 | awk '
-    else
-        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@" 2>&1 | awk '
-    fi
         function is_http_error(line) {
             return line ~ /access_log/ &&
                 line ~ /status=[45][0-9][0-9]/
@@ -70,6 +67,49 @@ if [ "$verbose" = "false" ]; then
             build_keep = 0
         }
     '
+    else
+        RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@" 2>&1 | awk '
+        function is_http_error(line) {
+            return line ~ /access_log/ &&
+                line ~ /status=[45][0-9][0-9]/
+        }
+
+        function is_build_error(line) {
+            line = tolower(line)
+            return line ~ /^error(\[[^]]+\])?:/ ||
+                line ~ /^error: /
+        }
+
+        function is_build_continuation(line) {
+            return line ~ /^[[:space:]]/ ||
+                line ~ /^= note:/ ||
+                line ~ /^= help:/ ||
+                line ~ /^note:/ ||
+                line ~ /^help:/
+        }
+
+        {
+            if (is_http_error($0)) {
+                print
+                build_keep = 0
+                next
+            }
+
+            if (is_build_error($0)) {
+                print
+                build_keep = 1
+                next
+            }
+
+            if (build_keep && is_build_continuation($0)) {
+                print
+                next
+            }
+
+            build_keep = 0
+        }
+    '
+    fi
 else
     if [ "${#server_args[@]}" -gt 0 ]; then
         RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "${server_args[@]}" "$@"
