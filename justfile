@@ -74,9 +74,10 @@ build-front:
 
     npm run build
 
-[arg('verbose', long='verbose')]
-dev-back verbose="true":
-    bash deploy/dev-back.sh "{{ verbose }}" "{{ log_sql }}" {{ dev_back_args }}
+[arg('log_sql', long='log-sql', value='true')]
+[arg('quiet', long='quiet', value='true')]
+dev-back quiet="false" log_sql="false" *args:
+    bash deploy/dev-back.sh --quiet="{{ quiet }}" --log-sql="{{ log_sql }}" -- {{ dev_back_args }} {{ args }}
 
 dev-back-noproj:
     # Run backend without `proj` feature for local development
