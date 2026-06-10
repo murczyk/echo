@@ -1,0 +1,37 @@
+{% extends "index.html" %}
+
+{%- block meta %}
+  {%- set g_is_article = true %}
+{%- endblock meta %}
+
+{% block main %}
+{% set docs_section = get_section(path="_index.md") %}
+<div class="docs-layout">
+  <aside class="docs-side-nav not-prose" aria-label="Навігація документації">
+    <a class="docs-side-nav__home" href="{{ _link::rel(dest=_link::get(url=`$BASE_URL/`), cu=_cu, base=_base) }}">Документація</a>
+    <ul>
+      {% for docs_page in docs_section.pages %}
+      {% set docs_page_url = docs_page.permalink | trim_end_matches(pat="/") %}
+      {% set current_page_url = current_url | trim_end_matches(pat="/") %}
+      <li>
+        <a
+          href="{{ _link::rel(dest=docs_page.permalink, cu=_cu, base=_base) }}"
+          {% if current_page_url == docs_page_url %}class="active"{% endif %}
+        >
+          {{ docs_page.title }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <article class="docs-page">
+    <header class="mb-12">
+      <h1 class="my-0! pb-2.5">{{ page.title }}</h1>
+      {% include "partials/page_info.html" %}
+    </header>
+    {% include "partials/toc.html" %}
+    <section>{{ page.content | safe }}</section>
+  </article>
+</div>
+{% endblock main %}

@@ -111,7 +111,7 @@ update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
         OpenDocsDodatki ->
-            ( model, E.loadExternalUrl "/docs/#dodatki" )
+            ( model, E.loadExternalUrl "/docs/delta-geotiff/" )
 
         UploadAlpinequestKmzFile ->
             ( model
@@ -395,10 +395,10 @@ view _ _ _ model =
                         , description =
                             [ text "Радимо конвертувати файли .pgd у формат .tif (Cloud-Optimized GeoTIFF, відповідає вимогам Delta до ортознімків), щоб використовувати їх як підкладку в шарах Delta. Інструкція з додавання ортофото в Delta: "
                             , a
-                                [ href "/docs/#dodatki"
+                                [ href "/docs/delta-geotiff/"
                                 , preventDefaultOn "click" (Decode.succeed ( OpenDocsDodatki, True ))
                                 ]
-                                [ text "/docs/#dodatki" ]
+                                [ text "/docs/delta-geotiff/" ]
                             ]
                         , conversionModel = model.geotiff
                         , onUpload = UploadAlpinequestGeotiffFile

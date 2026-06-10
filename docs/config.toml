@@ -1,21 +1,49 @@
-# The URL the site will be built for
 base_url = "/docs/"
-
-# Whether to automatically compile all Sass files in the sass directory
+title = "Аналітичне ПЗ обробки даних РЕР ЕХО"
+description = "Аналітичне ПЗ обробки даних РЕР"
+theme = "linkita"
 compile_sass = false
-default_language = "ua"
-
-
-# Whether to build a search index to be used later on by a JavaScript library
+default_language = "uk"
 build_search_index = false
 
 [markdown]
+external_links_target_blank = true
+smart_punctuation = true
+bottom_footnotes = true
 
 [extra]
-# Put all your custom variables here
-list_pages = true
+disable_default_favicon = true
+disable_javascript = false
+header_buttons = ["site_title", "theme_button"]
+header_menu_name = ""
+menu_i18n = false
+page_info = []
+page_info_on_paginator = []
+page_summary_on_paginator = false
+relative_urls = false
 toc = true
-## suffix for sakura-css theme name. default is "", falls back to sakura.css
-## possible values are "-ink", "-dark", "-vader" etc.
-## full list here: https://github.com/oxalorg/sakura/tree/master/css
-sakura_theme="-ink"
+title_separator = " | "
+
+[extra.style]
+bg_color = "#eff0f1"
+bg_dark_color = "#1f1f1f"
+header_color = "#9c7a54"
+header_dark_color = "#9c7a54"
+header_blur = false
+
+[extra.languages.uk]
+date_format = "%d.%m.%Y"
+hreflang = "uk"
+locale = "uk_UA"
+
+[extra.footer]
+copyright = "&copy; $YEAR ECHO"
+
+[extra.goatcounter]
+
+[extra.vercel_analytics]
+
+[extra.menus]
+main = [
+  { url = "$BASE_URL/", name = "Документація" },
+]

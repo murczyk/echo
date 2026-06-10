@@ -1,5 +1,7 @@
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LaunchIcon from '@mui/icons-material/Launch';
 import {
+  Button,
   Card,
   CardContent,
   CircularProgress,
@@ -27,7 +29,7 @@ import {
   unlinkCurrentUserGoiWhatsapp,
 } from '../../services/api/goi-settings';
 
-const ECHO_MESSENGERS_DOC_URL = '/docs/#goi-messengers';
+const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
 
 type ActionStatus = {
   kind: 'success' | 'error';
@@ -89,6 +91,11 @@ type IntegrationCardProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
 };
 
+type ShowMoreTableRowProps = {
+  expanded: boolean;
+  onToggle: () => void;
+};
+
 type ServiceTableRowProps = {
   integrationId: number;
   label: string;
@@ -106,6 +113,32 @@ type ServiceTableRowProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
 };
 
+function ShowMoreTableRow(props: ShowMoreTableRowProps) {
+  return (
+    <TableRow>
+      <TableCell colSpan={3} sx={{ py: 1.25 }}>
+        <Button
+          size="small"
+          variant="text"
+          onClick={props.onToggle}
+          endIcon={
+            <ExpandMoreIcon
+              fontSize="small"
+              sx={{
+                transform: props.expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 150ms ease',
+              }}
+            />
+          }
+          aria-expanded={props.expanded}
+        >
+          {props.expanded ? 'Показати менше' : 'Показати більше'}
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function ServiceTableRow(props: ServiceTableRowProps) {
   const url = props.url;
   const unlinkService = props.unlinkService;
@@ -122,9 +155,8 @@ function ServiceTableRow(props: ServiceTableRowProps) {
           </Typography>
           {props.docsUrl ? (
             <Typography variant="caption" color="text.secondary">
-              детальніше{' '}
               <Link href={props.docsUrl} target="_blank" rel="noopener noreferrer">
-                тут
+                документація з налаштування
               </Link>
             </Typography>
           ) : null}
@@ -178,6 +210,7 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 
 function IntegrationCard(props: IntegrationCardProps) {
   const { integration } = props;
+  const [showLegacySwappRows, setShowLegacySwappRows] = React.useState(false);
   const integrationSwappAltUrl = swappAltUrl(integration.swappUrl);
   const integrationEchoSwappUrl = echoSwappUrl(integration.goiUrl);
   const goiKey = `${integration.id}:restart:goi`;
@@ -238,36 +271,44 @@ function IntegrationCard(props: IntegrationCardProps) {
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
                 />
-                <ServiceTableRow
-                  integrationId={integration.id}
-                  label="Swapp"
-                  openLabel="Відкрити Swapp"
-                  url={integration.swappUrl}
-                  unavailableLabel="URL Swapp не вказано"
-                  restartService="swapp"
-                  unlinkService="swapp"
-                  pendingKey={props.pendingKey}
-                  restartPendingKey={swappKey}
-                  unlinkPendingKey={swappUnlinkKey}
-                  disabled={disabled}
-                  onRestart={props.onRestart}
-                  onUnlink={props.onUnlink}
+                <ShowMoreTableRow
+                  expanded={showLegacySwappRows}
+                  onToggle={() => setShowLegacySwappRows((prev) => !prev)}
                 />
-                <ServiceTableRow
-                  integrationId={integration.id}
-                  label="Swapp Додатковий"
-                  openLabel="Відкрити Swapp Додатковий"
-                  url={integrationSwappAltUrl}
-                  unavailableLabel="URL Swapp Додатковий не вказано"
-                  restartService="swapp_alt"
-                  unlinkService="swapp_alt"
-                  pendingKey={props.pendingKey}
-                  restartPendingKey={swappAltKey}
-                  unlinkPendingKey={swappAltUnlinkKey}
-                  disabled={disabled}
-                  onRestart={props.onRestart}
-                  onUnlink={props.onUnlink}
-                />
+                {showLegacySwappRows ? (
+                  <>
+                    <ServiceTableRow
+                      integrationId={integration.id}
+                      label="Swapp"
+                      openLabel="Відкрити Swapp"
+                      url={integration.swappUrl}
+                      unavailableLabel="URL Swapp не вказано"
+                      restartService="swapp"
+                      unlinkService="swapp"
+                      pendingKey={props.pendingKey}
+                      restartPendingKey={swappKey}
+                      unlinkPendingKey={swappUnlinkKey}
+                      disabled={disabled}
+                      onRestart={props.onRestart}
+                      onUnlink={props.onUnlink}
+                    />
+                    <ServiceTableRow
+                      integrationId={integration.id}
+                      label="Swapp Додатковий"
+                      openLabel="Відкрити Swapp Додатковий"
+                      url={integrationSwappAltUrl}
+                      unavailableLabel="URL Swapp Додатковий не вказано"
+                      restartService="swapp_alt"
+                      unlinkService="swapp_alt"
+                      pendingKey={props.pendingKey}
+                      restartPendingKey={swappAltKey}
+                      unlinkPendingKey={swappAltUnlinkKey}
+                      disabled={disabled}
+                      onRestart={props.onRestart}
+                      onUnlink={props.onUnlink}
+                    />
+                  </>
+                ) : null}
               </TableBody>
             </Table>
           </TableContainer>
