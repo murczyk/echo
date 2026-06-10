@@ -3525,6 +3525,42 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
 
 #[tokio::test]
 #[serial]
+async fn summary_table_uses_message_groups_for_access() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "summary-accessible-secondary-group",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.secret_hidden, &fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+
+    let ids = build_summary_table_filtered_messages_query(
+        &login,
+        &analysis_stats_req0(&fixture),
+        &master_keys,
+    )
+    .unwrap()
+    .select_only()
+    .column(signal_message::Column::Id)
+    .filter(signal_message::Column::Id.eq(message.id))
+    .into_tuple::<i64>()
+    .all(db)
+    .await
+    .unwrap();
+
+    assert_eq!(ids, vec![message.id]);
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());

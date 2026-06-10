@@ -1897,10 +1897,11 @@ pub async fn summary_table_freq_1(
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
             .c(h!())?;
+    let login = user.id().c(h!())?;
 
     let dedup_key_alias = Alias::new("dedup_key");
     let dedup_subquery =
-        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
             .select_only()
             .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
             .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
@@ -2176,7 +2177,7 @@ pub async fn summary_table_freq_1(
 }
 
 pub(crate) fn build_summary_table_filtered_messages_query(
-    user: &Identity,
+    login: &str,
     req: &AnalysisStatsReq,
     master_keys: &[String],
 ) -> Result<Select<signal_message::Entity>, AppError> {
@@ -2191,17 +2192,10 @@ pub(crate) fn build_summary_table_filtered_messages_query(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(master_keys.to_vec()),
-        )
+        .filter(message_in_groups_exists(master_keys.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
@@ -2234,7 +2228,7 @@ pub(crate) fn build_summary_table_filtered_messages_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().c(h!())?,
+        login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
@@ -2263,8 +2257,9 @@ async fn summary_table_last_datetime_by_freq(
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
             .c(h!())?;
+    let login = user.id().c(h!())?;
     let rows =
-        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
             .select_only()
             .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
             .expr_as(
@@ -2308,6 +2303,7 @@ async fn summary_table_related_networks_by_freq(
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
             .c(h!())?;
+    let login = user.id().c(h!())?;
 
     let filtered_messages_alias = Alias::new("filtered_messages");
     let inbox_network_alias = Alias::new("summary_inbox_network");
@@ -2316,7 +2312,7 @@ async fn summary_table_related_networks_by_freq(
     let unit_alias = Alias::new("summary_unit");
 
     let filtered_messages_query =
-        build_summary_table_filtered_messages_query(user, req, &master_keys)?
+        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
             .select_only()
             .column_as(
                 Expr::col((
