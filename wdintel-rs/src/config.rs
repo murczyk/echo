@@ -27,6 +27,7 @@ pub const SIGNAL_CLIENT_ADDR: &str = "http://localhost:8083";
 pub const SIGNAL_CLIENT_PORT: i32 = 8083;
 pub const SIGNAL_MAX_MESSAGES: usize = 40;
 pub const RQ_TIMEOUT_SIGNAL_API: u64 = 600;
+pub const API_INTEGRATION_IGGY_TEST_TIMEOUT_SEC: u64 = 10;
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const RQ_TIMEOUT_LAUNCH_SUBPROCESS: u64 = 60;
 pub const SERVER_JSON_PAYLOAD_MAX_BYTES: usize = 20 * 1024 * 1024;

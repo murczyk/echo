@@ -1374,6 +1374,45 @@ export type DeactivationReasonType =
   | 'Inactive'
 ;
 
+export type ApiIntegration = {
+  id: number;
+  description: string | null;
+  apiUser: string;
+  hasIggyConnection: boolean;
+  iggyUrl: string | null;
+  iggyLogin: string | null;
+  iggyPassword: string | null;
+  iggyInboxTopic: string | null;
+  iggyAnalyticsTopic: string | null;
+  createdAtMs: number;
+};
+
+export type ListApiIntegrationsRsp = {
+  items: Array<ApiIntegration>;
+};
+
+export type UpsertApiIntegrationReq = {
+  id: number | null;
+  description: string | null;
+  apiUser: string;
+  hasIggyConnection: boolean;
+  iggyUrl: string | null;
+  iggyLogin: string | null;
+  iggyPassword: string | null;
+  iggyInboxTopic: string | null;
+  iggyAnalyticsTopic: string | null;
+};
+
+export type DeleteApiIntegrationReq = {
+  id: number;
+};
+
+export type TestIggyConnectionReq = {
+  url: string;
+  login: string;
+  password: string;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;

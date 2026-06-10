@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2519](https://github.com/echoua/echo/issues/2519) ✅👷 Адмін: додано керування API-інтеграціями та перевірку з'єднання з Apache Iggy. При деплої на Північ необхідні команди: deploy-config-iggy, setup-iggy.
 - [#2445](https://github.com/echoua/echo/issues/2445) ✅ Аналіз (нова): покращення швидкодії.
 - [#2483](https://github.com/echoua/echo/issues/2483) ✅ Аналіз (нова): косметичні UX/UI покращення.
 - [#2434](https://github.com/echoua/echo/issues/2434) ✅ Аналіз (нова): відновлено можливість маркування помилки бота при знятті відмітки тега.

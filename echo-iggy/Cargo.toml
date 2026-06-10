@@ -1,0 +1,24 @@
+[package]
+name = "echo-iggy"
+version = "1.0.0"
+edition = "2021"
+authors = ["rickyrepel@gmail.com"]
+license = "AllRightsReserved"
+description = "ЕХО - Apache Iggy deb"
+autobins = false
+
+[lib]
+path = "src/lib.rs"
+
+[package.metadata.deb]
+maintainer = "rickyrepel@gmail.com"
+priority = "optional"
+section = "utils"
+maintainer-scripts = "debian/"
+systemd-units = [{ unit-name = "echo-iggy" }]
+# This tells cargo-deb exactly where to pull your existing files
+# and where they should land on the target Debian system.
+assets = [
+    ["deploy/iggy-server", "usr/local/bin/iggy-server", "755"],
+    # ["deploy/config.toml", "etc/iggy/config.toml", "644"],
+]

@@ -32,6 +32,8 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
+workspace_iggy := "~/workspace/iggy"
+local_assets_iggy := "echo-iggy/deploy"
 
 default:
     @just --list
@@ -1538,7 +1540,6 @@ setup-echo-ai-train server='echo-ai-train':
     ssh -t "$SERVER" echo-ai/deploy.sh
 
 # [positional-arguments]
-[arg('branch', long='branch')]
 [arg('builder', long='builder')]
 [arg('server', long='server')]
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
@@ -2205,6 +2206,125 @@ import-unit-to-target:
     ask_yes_no
     scp {{ server }}:/tmp/unit_export_{{ dt1 }}.json {{ target }}:/tmp/unit_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live import-unit --src-path /tmp/unit_import_{{ dt1 }}.json --origin {{ origin }}'
+
+# [positional-arguments]
+[arg('server', long='server')]
+setup-iggy server="echo-staging":
+    just builder={{ builder }} _builder-build-iggy
+    ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
+    scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
+    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
+    @echo "==> Pipeline finished successfully!"
+
+# [positional-arguments]
+_builder-build-iggy:
+    @echo "==> Checking workspace existence on build server..."
+    ssh {{ builder }} "[ -d {{ workspace_iggy }} ]" || (echo "ERROR: Remote folder {{ workspace_iggy }} does not exist on {{ builder }}" && exit 1)
+    @echo "==> Building optimized native binary on build server..."
+    ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
+    ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server /home/ubuntu/workspace/echo/{{ local_assets_iggy }}/"
+    ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+
+# Update UFW firewall rules on a remote server based on local config.toml
+
+# Usage: just update-firewall user@remote-server-ip [config]
+update-firewall remote_host config="config.toml":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CONFIG="{{ config }}"
+
+    if [ ! -f "$CONFIG" ]; then
+        echo "Error: $CONFIG not found locally."
+        exit 1
+    fi
+
+    # 1. Parse the local config.toml details first
+    get_port() {
+        local section=$1
+        if awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /enabled = false/{p=0; exit} p && /address =/{print $0; exit}' "$CONFIG" | grep -q "true" || \
+           awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /enabled = true/{print "enabled"; exit}' "$CONFIG" | grep -q "enabled"; then
+            awk -v sec="\\[$section\\]" 'BEGIN{p=0} $0~sec{p=1} p && /address =/{gsub(/.*:/,""); gsub(/"/,""); print $1; exit}' "$CONFIG"
+        fi
+    }
+
+    WHITELIST_IPS=$(awk '/whitelist =/{gsub(/[^0-9.,]/,""); print}' "$CONFIG" | tr ',' ' ')
+    PORTS=""
+    TCP_PORT=$(get_port "tcp")
+    HTTP_PORT=$(get_port "http")
+
+    [ -n "$TCP_PORT" ] && PORTS="$PORTS $TCP_PORT"
+    [ -n "$HTTP_PORT" ] && PORTS="$PORTS $HTTP_PORT"
+
+    if [ -z "$PORTS" ]; then
+        echo "No enabled TCP or HTTP ports found in $CONFIG. Nothing to do."
+        exit 0
+    fi
+
+    echo "Connecting to {{ remote_host }} to update firewall for ports: $PORTS..."
+
+    # 2. Stream the execution script to the remote server over SSH
+    # We pass the local variables downstream into the SSH environment using 'EOF'
+    ssh -T "{{ remote_host }}" bash -s << EOF
+        set -euo pipefail
+
+        PORTS="$PORTS"
+        WHITELIST_IPS="$WHITELIST_IPS"
+
+        # --- IDEMPOTENCY: Reset existing rules for these specific ports ---
+        for port in \$PORTS; do
+            echo "Remote: Resetting existing UFW rules for port \$port..."
+            while sudo ufw status numbered | grep -E "\b\$port\b" >/dev/null; do
+                NUM=\$(sudo ufw status numbered | grep -E "\b\$port\b" | head -n1 | awk -F'[][]' '{print \$2}')
+                sudo ufw --force delete "\$NUM" > /dev/null
+            done
+        done
+
+        # --- APPLY NEW RULES ---
+        for port in \$PORTS; do
+            echo "Remote: Configuring rules for port \$port..."
+
+            # 1. Localhost
+            sudo ufw allow from 127.0.0.1 to any port "\$port" proto tcp > /dev/null
+            sudo ufw allow from ::1 to any port "\$port" proto tcp > /dev/null
+
+            # 2. Whitelisted IPs passed downstream
+            for ip in \$WHITELIST_IPS; do
+                if [ -n "\$ip" ]; then
+                    echo "  Allowing IP: \$ip"
+                    sudo ufw allow from "\$ip" to any port "\$port" proto tcp > /dev/null
+                fi
+            done
+
+            # 3. Deny all fallback
+            sudo ufw deny "\$port"/tcp > /dev/null
+        done
+
+        echo "✓ Remote firewall updated successfully."
+        echo "Current UFW Status:"
+        sudo ufw status verbose
+    EOF
+
+[arg("server", long="server")]
+deploy-config-iggy server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    . deploy/utils.sh
+
+    SERVER="{{ server }}"
+    ensure_nonempty "server" "$SERVER"
+
+    CONFIG="$(mktemp)"
+    trap "rm -f \"$CONFIG\"" EXIT
+    chmod 600 "$CONFIG"
+
+    bw sync 1>&2
+    bw get notes "iggy-config-$SERVER" > "$CONFIG"
+    scp "$CONFIG" "$SERVER:/var/tmp/iggy-config.toml"
+    ssh "$SERVER" "sudo install -d -m 755 /etc/iggy && sudo install -o echo -g echo -m 600 /var/tmp/iggy-config.toml /etc/iggy/config.toml && rm /var/tmp/iggy-config.toml"
+
+    just update-firewall "$SERVER" "$CONFIG"
 
 ## Version bump helpers (similar to echo-operator)
 

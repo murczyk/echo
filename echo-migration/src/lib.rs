@@ -248,6 +248,7 @@ mod m20260529_110000_add_short_url_to_admin_config;
 mod m20260601_000000_add_release_news_viewed;
 mod m20260602_153344_add_signal_group_admin;
 mod m20260605_162305_echo_swapp_sync_state;
+mod m20260609_115925_add_api_integration;
 
 pub struct Migrator;
 
@@ -505,6 +506,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260601_000000_add_release_news_viewed::Migration),
             Box::new(m20260605_162305_echo_swapp_sync_state::Migration),
+            Box::new(m20260609_115925_add_api_integration::Migration),
         ]
     }
 }

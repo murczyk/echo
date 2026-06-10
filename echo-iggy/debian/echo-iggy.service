@@ -1,0 +1,16 @@
+[Unit]
+Description=Iggy Streaming Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/iggy/data
+Environment=IGGY_CONFIG_PATH=/etc/iggy/config.toml
+ExecStart=/usr/local/bin/iggy-server
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
