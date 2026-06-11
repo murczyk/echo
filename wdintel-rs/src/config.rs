@@ -56,7 +56,8 @@ pub const RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES: i64 = 10;
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;
 pub const FEATURE_DESKTOP_YOUTUBE_KEYS: bool = true;
-pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA";
+pub const DISCORD_WEBHOOK_INFRA: &str = "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA";
+pub const DISCORD_WEBHOOK_ALERT: &str = "https://discord.com/api/webhooks/1417520789720141864/W6VARE0qARyP6XKdTs1mwh8zpO8nDosI-fHCAhn-6UtW0PyXx_M5890M3WAc7a76s_Nm";
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
