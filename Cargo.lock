@@ -2694,9 +2694,35 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im-migration",
- "echo-im-signal",
- "echo-im-whatsapp",
+ "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df)",
+ "echo-im-signal 0.1.1-rc.202605031438",
+ "echo-im-whatsapp 0.1.1-rc.202605031438",
+ "lazy_static",
+ "libc",
+ "log",
+ "qrcode",
+ "regex",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "xshell",
+]
+
+[[package]]
+name = "echo-im"
+version = "0.1.1-rc.202606111013"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5#f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5)",
+ "echo-im-signal 0.1.1-rc.202606111013",
+ "echo-im-whatsapp 0.1.1-rc.202606111013",
  "lazy_static",
  "libc",
  "log",
@@ -2724,14 +2750,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "echo-im-migration"
+version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5#f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5"
+dependencies = [
+ "async-std",
+ "clap",
+ "sea-orm-migration",
+ "tokio",
+]
+
+[[package]]
 name = "echo-im-signal"
 version = "0.1.1-rc.202605031438"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df#3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df"
 
 [[package]]
+name = "echo-im-signal"
+version = "0.1.1-rc.202606111013"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5#f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5"
+
+[[package]]
 name = "echo-im-whatsapp"
 version = "0.1.1-rc.202605031438"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df#3d2dd40f6bff4eb62b7cd9c2e52acb13d09e99df"
+
+[[package]]
+name = "echo-im-whatsapp"
+version = "0.1.1-rc.202606111013"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5#f4c9b11e6f797ae5a6ca2c108355dc5e687f85b5"
 
 [[package]]
 name = "echo-install"
@@ -2792,7 +2839,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "chrono",
- "echo-im",
+ "echo-im 0.1.1-rc.202605031438",
  "env_logger 0.11.9",
  "log",
  "regex",
@@ -8820,7 +8867,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "docx-rs",
- "echo-im",
+ "echo-im 0.1.1-rc.202606111013",
  "echo-install-utils",
  "echo-migration",
  "elm_rs",
