@@ -298,6 +298,7 @@ deploy-echo-swapp server:
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       sudo apt-get update
+      sudo apt-get install -y openjdk-21-jdk
       cd /var/tmp
       sudo apt-get install -y --reinstall --allow-downgrades \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
       rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
