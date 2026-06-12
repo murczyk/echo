@@ -697,6 +697,7 @@ where
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
+        .column_as(signal_message::Column::CreatedAt, "created_at")
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(preferred_sender_expr(None), "sender")
         .column_as(sigint_inbox_item::Column::Freq, "freq")

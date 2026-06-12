@@ -1,6 +1,6 @@
 use crate::entities::api_integration;
 use crate::error::AppError;
-use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
+use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
 use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
@@ -90,6 +90,13 @@ async fn sync_integration(
     let inbox_messages = load_inbox_messages(env, &api_integration, started_at)
         .await
         .c(h!())?;
+    if !inbox_messages.is_empty() {
+        info!(
+            "Iggy integration {} publishing {} inbox messages",
+            api_integration.id,
+            inbox_messages.len()
+        );
+    }
     let client = crate::iggy::connect(url, iggy_login, password).await?;
     let sync_result = sync_connected_integration(
         env,
@@ -147,13 +154,8 @@ async fn load_inbox_messages(
 ) -> Result<Vec<(i64, crate::rer_importer::types::InboxMessage)>, AppError> {
     let last_sync_at = api_integration.last_sync_at.unwrap_or(started_at);
     let req = InboxMessagesReq {
-        since_date_inclusive_ms: Some(
-            last_sync_at.and_utc().timestamp_millis(),
-        ),
-        till_date_inclusive_ms: Some(started_at.and_utc().timestamp_millis()),
         nolimit: Some(true),
         newest_first: Some(false),
-        sort_by: Some(InboxMessagesSortBy::IMSDatetime),
         ..Default::default()
     };
     let logins = crate::users::get_organism_logins_by_login(
@@ -162,11 +164,13 @@ async fn load_inbox_messages(
     )
     .await
     .c(h!())?;
-    crate::rer_importer::inbox::get_inbox_messages(
+    crate::rer_importer::inbox::get_inbox_messages_created_between(
         &api_integration.api_user,
         &logins,
         env,
         &req,
+        last_sync_at,
+        started_at,
     )
     .await
 }
