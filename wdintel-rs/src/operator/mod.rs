@@ -193,12 +193,21 @@ async fn ensure_group(
 
     let exact_group = signal_group::Entity::find_by_id(echo_id.clone())
         .filter(signal_group::Column::DatasourceId.eq(datasource_id))
-        .filter(signal_group::Column::Deleted.eq(false))
         .one(txn)
         .await
         .c(h!())?;
 
     if let Some(exact_group) = exact_group {
+        let should_update_last_sync_at = exact_group.deleted
+            || exact_group.name.as_ref() != Some(&group.name);
+
+        if should_update_last_sync_at {
+            let mut model = exact_group.into_active_model();
+            model.name = Set(Some(group.name.clone()));
+            model.deleted = Set(false);
+            model.update(txn).await.c(h!())?;
+        }
+
         let datasource_group = datasource_group::Entity::find()
             .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(
@@ -210,11 +219,7 @@ async fn ensure_group(
             .c(h!())?;
 
         if let Some(d) = datasource_group {
-            if exact_group.name.as_ref() != Some(&group.name) {
-                let mut model = exact_group.into_active_model();
-                model.name = Set(Some(group.name.clone()));
-                model.update(txn).await.c(h!())?;
-
+            if should_update_last_sync_at {
                 let mut rec = d.into_active_model();
                 rec.last_sync_at = Set(Utc::now().naive_utc());
                 rec.update(txn).await.c(h!())?;
@@ -255,8 +260,8 @@ async fn ensure_group(
 
             let group_master_key = match signal_groups_by_name.as_slice() {
                 [single] => {
-                    log::warn!(
-                        "found a single group with name '{}', attaching group {} to datasource {}",
+                    log::info!(
+                        "attaching single group with name '{}', {} to datasource {}",
                         &group.name,
                         &single.master_key,
                         datasource_id
@@ -265,7 +270,7 @@ async fn ensure_group(
                 }
                 _ => {
                     log::warn!(
-                        "found {} groups with name '{}', creating a new group {} to datasource {}",
+                        "found {} groups with name '{}', attaching a new group {} to datasource {}",
                         signal_groups_by_name.len(),
                         &group.name,
                         &echo_id,
