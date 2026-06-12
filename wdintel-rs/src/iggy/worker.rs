@@ -91,6 +91,26 @@ async fn sync_integration(
         .await
         .c(h!())?;
     let client = crate::iggy::connect(url, iggy_login, password).await?;
+    let sync_result = sync_connected_integration(
+        env,
+        &api_integration,
+        started_at,
+        inbox_messages,
+        &client,
+    )
+    .await;
+    let shutdown_result = crate::iggy::shutdown(&client).await;
+    sync_result?;
+    shutdown_result
+}
+
+async fn sync_connected_integration(
+    env: &Env,
+    api_integration: &api_integration::Model,
+    started_at: NaiveDateTime,
+    inbox_messages: Vec<(i64, crate::rer_importer::types::InboxMessage)>,
+    client: &iggy::prelude::IggyClient,
+) -> Result<(), AppError> {
     let inbox_topic = api_integration.iggy_inbox_topic.as_deref().c(h!())?;
     let (stream, topic) = crate::iggy::stream_and_topic(inbox_topic);
     let producer = client
@@ -110,7 +130,6 @@ async fn sync_integration(
             set_is_working(&env.dbx, api_integration.id, false)
                 .await
                 .c(h!())?;
-            crate::iggy::shutdown(&client).await?;
             return Ok(());
         }
     }
@@ -118,9 +137,7 @@ async fn sync_integration(
     set_sync_completed(&env.dbx, api_integration.id, started_at)
         .await
         .c(h!())?;
-    log_analytics_entries(&client, &api_integration).await?;
-    crate::iggy::shutdown(&client).await?;
-    Ok(())
+    log_analytics_entries(client, api_integration).await
 }
 
 async fn load_inbox_messages(
