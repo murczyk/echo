@@ -40,4 +40,24 @@ just test-inbox
 just test-analytics
 ```
 
-The publish checks add one small JSON test event to their target topic.
+The publish checks add one small JSON test event to their target topic and
+print both the sent and received payloads.
+
+## Topic commands
+
+Send a random JSON test event to any existing topic:
+
+```sh
+just send test-inbox-01
+```
+
+Print messages not previously read by this CLI's consumer for a topic:
+
+```sh
+just print-new test-inbox-01
+```
+
+`print-new` keeps a stable Iggy consumer ID for each stream/topic pair and
+commits its offset. The first run may print existing topic messages; later
+runs print only messages after the last committed offset. JSON and UTF-8
+payloads are decoded for display, while binary payloads are printed as base64.

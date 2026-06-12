@@ -146,7 +146,7 @@ class IggyHttpClient:
         if response.get("name") != topic:
             raise TestError(f"Iggy returned unexpected topic data for {topic}")
 
-    def publish_and_verify(self, topic: str) -> None:
+    def publish_random(self, topic: str):
         marker = str(uuid.uuid4())
         event = {
             "test_id": marker,
@@ -154,6 +154,7 @@ class IggyHttpClient:
             "sent_at": datetime.now(timezone.utc).isoformat(),
             "source": "echo-iggy/test-cli",
         }
+        print(f"Sent payload: {json.dumps(event, ensure_ascii=False)}")
         payload = base64.b64encode(
             json.dumps(event, separators=(",", ":")).encode("utf-8")
         ).decode("ascii")
@@ -165,7 +166,11 @@ class IggyHttpClient:
                 "messages": [{"id": marker, "payload": payload}],
             },
         )
+        return event
 
+    def publish_and_verify(self, topic: str) -> None:
+        event = self.publish_random(topic)
+        marker = event["test_id"]
         for attempt in range(self.poll_attempts):
             response = self.request(
                 "GET",
@@ -180,7 +185,12 @@ class IggyHttpClient:
                 },
             )
             messages = response.get("messages", [])
-            if any(self.message_has_marker(message, marker) for message in messages):
+            received_event = self.find_event(messages, marker)
+            if received_event is not None:
+                print(
+                    "Received payload: "
+                    f"{json.dumps(received_event, ensure_ascii=False)}"
+                )
                 print(f"PASS: published and read test event from {self.stream}/{topic}")
                 return
             if attempt + 1 < self.poll_attempts:
@@ -190,15 +200,73 @@ class IggyHttpClient:
             f"Published test event was not found in {self.stream}/{topic}"
         )
 
+    def print_new(self, topic: str) -> None:
+        self.require_topic(topic)
+        consumer_id = uuid.uuid5(
+            uuid.NAMESPACE_URL, f"echo-iggy/test-cli/{self.stream}/{topic}"
+        )
+        printed = 0
+        while True:
+            response = self.request(
+                "GET",
+                f"{self.topic_path(topic)}/messages",
+                query={
+                    "consumer_id": f"echo-test-cli-{consumer_id}",
+                    "partition_id": 0,
+                    "kind": "next",
+                    "value": 0,
+                    "count": 100,
+                    "auto_commit": "true",
+                },
+            )
+            messages = response.get("messages", [])
+            if not messages:
+                break
+            for message in messages:
+                print(f"Received payload: {self.format_payload(message)}")
+                printed += 1
+
+        print(f"Read {printed} new message(s) from {self.stream}/{topic}")
+
     @staticmethod
-    def message_has_marker(message, marker: str) -> bool:
-        encoded_payload = message.get("payload", "")
+    def find_event(messages, marker: str):
+        for message in messages:
+            event = IggyHttpClient.decode_event(message)
+            if isinstance(event, dict) and event.get("test_id") == marker:
+                return event
+        return None
+
+    @staticmethod
+    def decode_payload(message):
         try:
-            payload = base64.b64decode(encoded_payload).decode("utf-8")
-            event = json.loads(payload)
-        except (binascii.Error, ValueError, UnicodeDecodeError, json.JSONDecodeError):
-            return False
-        return isinstance(event, dict) and event.get("test_id") == marker
+            return base64.b64decode(message.get("payload", ""), validate=True)
+        except (binascii.Error, ValueError):
+            return None
+
+    @staticmethod
+    def decode_event(message):
+        payload = IggyHttpClient.decode_payload(message)
+        if payload is None:
+            return None
+        try:
+            return json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+
+    @staticmethod
+    def format_payload(message) -> str:
+        payload = IggyHttpClient.decode_payload(message)
+        if payload is None:
+            return "<invalid base64 payload>"
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return f"<base64:{base64.b64encode(payload).decode('ascii')}>"
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+        return json.dumps(value, ensure_ascii=False)
 
 
 def connected_client() -> IggyHttpClient:
@@ -224,21 +292,38 @@ def test_analytics() -> None:
     connected_client().publish_and_verify(required_env("IGGY_ANALYTICS_TOPIC"))
 
 
+def send(topic: str) -> None:
+    connected_client().publish_random(topic)
+
+
+def print_new(topic: str) -> None:
+    connected_client().print_new(topic)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Test an Apache Iggy HTTP server")
     parser.add_argument(
         "command",
-        choices=("check", "test-inbox", "test-analytics"),
+        choices=("check", "test-inbox", "test-analytics", "send", "print-new"),
     )
+    parser.add_argument("topic", nargs="?")
     args = parser.parse_args()
+    topic_commands = {"send", "print-new"}
+    if args.command in topic_commands and not args.topic:
+        parser.error(f"{args.command} requires a topic name")
+    if args.command not in topic_commands and args.topic:
+        parser.error(f"{args.command} does not accept a topic name")
 
     try:
         load_env()
-        {
+        commands = {
             "check": check,
             "test-inbox": test_inbox,
             "test-analytics": test_analytics,
-        }[args.command]()
+            "send": lambda: send(args.topic),
+            "print-new": lambda: print_new(args.topic),
+        }
+        commands[args.command]()
     except TestError as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1

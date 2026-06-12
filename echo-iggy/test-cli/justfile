@@ -14,3 +14,9 @@ test-all:
     just check
     just test-inbox
     just test-analytics
+
+send topic:
+    python3 test_iggy.py send "{{ topic }}"
+
+print-new topic:
+    python3 test_iggy.py print-new "{{ topic }}"
