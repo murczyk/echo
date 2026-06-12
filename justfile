@@ -22,7 +22,7 @@ app := "echo"
 interactive_setup := "true"
 origin := ""
 echo_bin := "wdintel-rs"
-discord_webhook := "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA"
+discord_webhook_infra := "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA"
 since_ts := "1645664400000"
 till_ts := "1961204400000"
 datasource_id := "1"
@@ -687,7 +687,7 @@ deploy _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -844,7 +844,7 @@ deploy _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
 [arg('server', long='server')]
 deploy-from-local _server_pos="" server:
@@ -1882,7 +1882,7 @@ deploy-docs _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying docs $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
     echo "CI: https://github.com/echoua/echo/actions"
 
@@ -1931,7 +1931,7 @@ deploy-docs _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"✅ Deployed docs $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
 fmt:
     just --fmt --unstable
@@ -2007,7 +2007,7 @@ config-deploy server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying config for {{ server }} from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
     # bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
     echo-install-utils bw-sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
 

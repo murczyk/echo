@@ -72,7 +72,9 @@ async fn monitoring(
     for d in data {
         datasources.push(MonitoringDatasource {
             display_name: d.display_name,
-            latest_signal_message_created_at_ms: d.last_inbox_at_ms.unwrap_or(d.last_sync_at_ms),
+            latest_signal_message_created_at_ms: d
+                .last_inbox_at_ms
+                .unwrap_or(d.last_sync_at_ms),
         });
     }
     Ok(Json(Monitoring {

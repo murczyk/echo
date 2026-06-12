@@ -506,7 +506,11 @@ async fn send_unlinked_datasource_notification(
     );
     tokio::time::timeout(
         Duration::from_secs(MESSENGER_UNLINKED_DISCORD_ALERT_TIMEOUT_SEC),
-        crate::server::discord::discord_notify(config, &content),
+        crate::server::discord::discord_notify(
+            config,
+            DISCORD_WEBHOOK_ALERT,
+            &content,
+        ),
     )
     .await
     .map_err(|e| anyhow::Error::new(e).c(h!()))??;
@@ -717,7 +721,11 @@ async fn notify_private_messages(
             Duration::from_secs(
                 MESSENGER_PRIVATE_MESSAGE_DISCORD_ALERT_TIMEOUT_SEC,
             ),
-            crate::server::discord::discord_notify(config, &content),
+            crate::server::discord::discord_notify(
+                config,
+                DISCORD_WEBHOOK_ALERT,
+                &content,
+            ),
         )
         .await;
         match result {
