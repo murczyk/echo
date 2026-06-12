@@ -190,49 +190,36 @@ async fn ensure_group(
     group: types::Group,
 ) -> anyhow::Result<String> {
     let echo_id = mk_echo_id(group.id);
-    let old_name = signal_group::Entity::find_by_id(echo_id.clone())
+
+    let exact_group = signal_group::Entity::find_by_id(echo_id.clone())
         .filter(signal_group::Column::DatasourceId.eq(datasource_id))
-        .select_only()
-        .column(signal_group::Column::Name)
-        .into_tuple::<String>()
+        .filter(signal_group::Column::Deleted.eq(false))
         .one(txn)
         .await
         .c(h!())?;
-    let already_exists = old_name.is_some();
-    let up_to_date = match &old_name {
-        None => false,
-        Some(nm) => group.name.eq(nm),
-    };
-    if already_exists && up_to_date {
-        return Ok(echo_id);
-    }
-    let model = signal_group::ActiveModel {
-        master_key: Set(echo_id.clone()),
-        name: Set(Some(group.name.clone())),
-        datasource_id: Set(Some(datasource_id)),
-        created_at: NotSet,
-        ignore_operativny: NotSet,
-        is_secret: NotSet,
-        deleted: NotSet,
-    };
-    if already_exists {
-        model.update(txn).await.c(h!())?;
-    } else {
-        model.insert(txn).await.c(h!())?;
-    }
-    let datasource_groups = datasource_group::Entity::find()
-        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
-        .filter(datasource_group::Column::GroupMasterKey.eq(echo_id.clone()))
-        .one(txn)
-        .await
-        .c(h!())?;
-    match datasource_groups {
-        Some(d) => {
-            let mut rec = d.into_active_model();
-            rec.last_sync_at = Set(Utc::now().naive_utc());
-            rec.update(txn).await.c(h!())?;
-        }
-        None => {
+
+    if let Some(exact_group) = exact_group {
+        let datasource_group = datasource_group::Entity::find()
+            .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+            .filter(
+                datasource_group::Column::GroupMasterKey.eq(echo_id.clone()),
+            )
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .one(txn)
+            .await
+            .c(h!())?;
+
+        if let Some(d) = datasource_group {
+            if exact_group.name.as_ref() != Some(&group.name) {
+                let mut model = exact_group.into_active_model();
+                model.name = Set(Some(group.name.clone()));
+                model.update(txn).await.c(h!())?;
+
+                let mut rec = d.into_active_model();
+                rec.last_sync_at = Set(Utc::now().naive_utc());
+                rec.update(txn).await.c(h!())?;
+            }
+        } else {
             datasource_group::ActiveModel {
                 id: NotSet,
                 group_master_key: Set(echo_id.clone()),
@@ -246,8 +233,74 @@ async fn ensure_group(
             .await
             .c(h!())?;
         }
+        Ok(echo_id)
+    } else {
+        let related_group_by_name = datasource_group::Entity::find()
+            .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+            .filter(datasource_group::Column::Name.eq(group.name.clone()))
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .one(txn)
+            .await
+            .c(h!())?;
+
+        if let Some(g) = related_group_by_name {
+            Ok(g.group_master_key)
+        } else {
+            let signal_groups_by_name = signal_group::Entity::find()
+                .filter(signal_group::Column::Name.eq(group.name.clone()))
+                .filter(signal_group::Column::Deleted.eq(false))
+                .all(txn)
+                .await
+                .c(h!())?;
+
+            let group_master_key = match signal_groups_by_name.as_slice() {
+                [single] => {
+                    log::warn!(
+                        "found a single group with name '{}', attaching group {} to datasource {}",
+                        &group.name,
+                        &single.master_key,
+                        datasource_id
+                    );
+                    single.master_key.clone()
+                }
+                _ => {
+                    log::warn!(
+                        "found {} groups with name '{}', creating a new group {} to datasource {}",
+                        signal_groups_by_name.len(),
+                        &group.name,
+                        &echo_id,
+                        datasource_id
+                    );
+                    let model = signal_group::ActiveModel {
+                        master_key: Set(echo_id.clone()),
+                        name: Set(Some(group.name.clone())),
+                        datasource_id: Set(Some(datasource_id)),
+                        created_at: NotSet,
+                        ignore_operativny: NotSet,
+                        is_secret: NotSet,
+                        deleted: NotSet,
+                    };
+                    model.insert(txn).await.c(h!())?;
+                    echo_id
+                }
+            };
+
+            datasource_group::ActiveModel {
+                id: NotSet,
+                group_master_key: Set(group_master_key.clone()),
+                datasource_id: Set(datasource_id),
+                last_sync_at: NotSet,
+                created_at: NotSet,
+                name: Set(group.name),
+                deleted: NotSet,
+            }
+            .insert(txn)
+            .await
+            .c(h!())?;
+
+            Ok(group_master_key)
+        }
     }
-    Ok(echo_id)
 }
 
 fn mk_echo_id(id: String) -> String {
