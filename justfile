@@ -2214,8 +2214,15 @@ setup-iggy server="echo-staging":
     just builder={{ builder }} _builder-build-iggy
     ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
     scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
-    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
+    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y python3-toml /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
+    just _ensure-iggy-users --server {{ server }}
     @echo "==> Pipeline finished successfully!"
+
+[arg('server', long='server')]
+_ensure-iggy-users server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh -T "{{ server }}" sudo /usr/bin/python3 - /etc/iggy/config.toml < deploy/ensure_iggy_users.py
 
 # [positional-arguments]
 _builder-build-iggy:
@@ -2225,11 +2232,11 @@ _builder-build-iggy:
     ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
     ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server /home/ubuntu/workspace/echo/{{ local_assets_iggy }}/"
     ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
-    
+
 # [positional-arguments]
-[arg('tag', long='tag')]    
+[arg('tag', long='tag')]
 switch-version-iggy tag="0.8.0":
-    ssh {{ builder }} 'cd workspace/iggy && git checkout master && git fetch --tags && git pull && git checkout -b release-{{tag}} tags/iggy-{{tag}}'
+    ssh {{ builder }} 'cd workspace/iggy && git checkout master && git fetch --tags && git pull && git checkout -b release-{{ tag }} tags/iggy-{{ tag }}'
 
 # Update UFW firewall rules on a remote server based on local config.toml
 

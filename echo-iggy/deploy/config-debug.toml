@@ -26,10 +26,10 @@ authentication_enabled = true
 username = "echo"
 password = "1qazZAQ!"
 status = "active"
-permissions = { global = { manage_servers = true, read_servers = true } }
+permissions = { global = { manage_servers = true, read_servers = true, read_topics = true, poll_messages = true } }
 
 [[system.security.initial_users]]
 username = "promin"
 password = "1qazxXZAQ!"
 status = "active"
-permissions = { global = { manage_servers = false, read_servers = true } }
+permissions = { global = { manage_servers = false, read_servers = true, read_topics = true, poll_messages = true } }
