@@ -213,14 +213,14 @@ async fn ensure_group(
             .filter(
                 datasource_group::Column::GroupMasterKey.eq(echo_id.clone()),
             )
-            .filter(datasource_group::Column::Deleted.eq(false))
             .one(txn)
             .await
             .c(h!())?;
 
         if let Some(d) = datasource_group {
-            if should_update_last_sync_at {
+            if d.deleted || should_update_last_sync_at {
                 let mut rec = d.into_active_model();
+                rec.deleted = Set(false);
                 rec.last_sync_at = Set(Utc::now().naive_utc());
                 rec.update(txn).await.c(h!())?;
             }
