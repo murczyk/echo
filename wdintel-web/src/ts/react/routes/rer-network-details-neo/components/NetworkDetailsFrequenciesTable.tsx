@@ -11,7 +11,7 @@ import {
 } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
-import type { ModulationRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
+import type { EncryptionRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
@@ -137,8 +137,8 @@ function buildLoadingRows(): NetworkFreqTableRow[] {
     freq: {
       networkFreqId: -(index + 1),
       freq: '',
-      modulationId: null,
-      modulation: null,
+      encryptionId: null,
+      encryption: null,
       encryptionKeyIds: [],
       encryptionKeys: [],
       messageCount: 0,
@@ -149,7 +149,7 @@ function buildLoadingRows(): NetworkFreqTableRow[] {
       isActive: true,
       activeFrom: 0,
       activeTo: null,
-      kind: null,
+      modulation: null,
     } as NetworkFreqsRes,
     displayFreq: '',
     typeLabel: '',
@@ -169,7 +169,7 @@ export type NetworkDetailsFrequenciesTableProps = {
   freqsError: string | null;
   freqCallsignsById: Map<number, string[]>;
   freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
-  modulations: ModulationRec[];
+  encryptions: EncryptionRec[];
   expandedFrequencyGroupIds: string[];
   onToggleFrequencyGroupExpanded: (groupId: string) => void;
   onOpenFreqCreateWizard: () => void;
@@ -197,7 +197,7 @@ function buildColumns(
       Cell: ({ row }) => renderFrequencyCell(row.original),
     },
     {
-      header: 'Тип',
+      header: 'Модуляція',
       accessorKey: 'typeLabel',
       id: 'typeLabel',
       size: 120,
@@ -270,9 +270,9 @@ function NetworkDetailsFrequenciesTableContent({
   freqsLoaded,
   freqsLoading,
   freqsError,
+  encryptions,
   freqCallsignsById,
   freqCallsignsStatus,
-  modulations,
   expandedFrequencyGroupIds,
   onToggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
@@ -286,16 +286,16 @@ function NetworkDetailsFrequenciesTableContent({
   onReloadFrequencies,
 }: NetworkDetailsFrequenciesTableProps) {
   const tableStateContext = useTableStateContext();
-  const modulationsById = useMemo(() => new Map(modulations.map((modulation) => [modulation.id, modulation.name])), [modulations]);
+  const encryptionsById = useMemo(() => new Map(encryptions.map((enc) => [enc.id, enc.name])), [encryptions]);
   const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
   const rows = useMemo(() => {
     const filteredFreqs =
       statusFilterValue === 'Усі'
         ? freqs
         : freqs.filter((freq) => (statusFilterValue === 'active' ? freq.isActive : !freq.isActive));
-    const groupedRows = buildNetworkFreqRows(filteredFreqs, modulationsById, freqCallsignsById, expandedFrequencyGroupIds);
+    const groupedRows = buildNetworkFreqRows(filteredFreqs, encryptionsById, freqCallsignsById, expandedFrequencyGroupIds);
     return sortNetworkFreqRowsByTableOrder(groupedRows, tableStateContext.sorting, statusFilterValue);
-  }, [expandedFrequencyGroupIds, freqs, freqCallsignsById, modulationsById, statusFilterValue, tableStateContext.sorting]);
+  }, [expandedFrequencyGroupIds, freqs, freqCallsignsById, encryptionsById, statusFilterValue, tableStateContext.sorting]);
   const loadingRows = useMemo(() => buildLoadingRows(), []);
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;

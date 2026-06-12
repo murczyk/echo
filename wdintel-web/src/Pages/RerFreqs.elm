@@ -114,7 +114,7 @@ init _ =
                                     , label = NetworksUtils.networkKindToLabel kind
                                     }
                             )
-                , selected = NetworksUtils.VHF
+                , selected = NetworksUtils.NFM
                 }
             , networkDialogUnitSelect =
                 { state =
@@ -145,7 +145,7 @@ init _ =
                                     , label = NetworksUtils.networkKindToLabel kind
                                     }
                             )
-                , selected = NetworksUtils.VHF
+                , selected = NetworksUtils.NFM
                 }
             , addExistingActiveFrom = Nothing
             , addExistingActiveTo = Nothing
@@ -160,14 +160,14 @@ init _ =
                                     , label = NetworksUtils.networkKindToLabel kind
                                     }
                             )
-                , selected = NetworksUtils.VHF
+                , selected = NetworksUtils.NFM
                 }
             , editModulationSelect =
                 { state = Select.initState (Select.selectIdentifier "edit-network-transtype-state")
                 , items = []
                 , selected = Nothing
                 }
-            , modulations = NotAsked
+            , encryptions = NotAsked
             , freqGroupsActivityForNetworkAdd = NotAsked
             , addPostsSelect =
                 { state = Select.initState (Select.selectIdentifier "add-network-posts-state")
@@ -199,7 +199,7 @@ init _ =
         [ E.sendCmd <|
             Task.perform GotTime Time.now
         , initLoad m2
-        , E.getModulations ModulationsReturnedByApi
+        , E.getEncryptions EncryptionsReturnedByApi
         , E.loadPostsFromShared { sortBy = Nothing }
         ]
     )
@@ -1198,8 +1198,8 @@ update shared msg model =
                         { networkId = network.id
                         , freqRec =
                             { freq = freq
-                            , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
-                            , modulationId = model.addExistingModulationSelect.selected
+                            , modulation = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
+                            , encryptionId = model.addExistingModulationSelect.selected
                             , encryptionKeyIds = []
                             , activeFrom = model.addExistingActiveFrom
                             , activeTo = model.addExistingActiveTo
@@ -1319,12 +1319,12 @@ update shared msg model =
             , E.none
             )
 
-        ModulationsReturnedByApi (Err e) ->
+        EncryptionsReturnedByApi (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
-        ModulationsReturnedByApi (Ok modulations) ->
+        EncryptionsReturnedByApi (Ok modulations) ->
             let
                 addModulationSelect =
                     model.addModulationSelect
@@ -1375,7 +1375,7 @@ update shared msg model =
                     }
             in
             ( { model
-                | modulations = Success modulations
+                | encryptions = Success modulations
                 , addModulationSelect = ams
                 , editModulationSelect = ems
                 , addExistingModulationSelect = aems

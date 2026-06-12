@@ -96,8 +96,8 @@ update _ msg model =
                                     , { networkId = network.id
                                       , networkFreqId = f.networkFreqId
                                       , freq = f.freq
-                                      , kind = Maybe.withDefault "VHF" f.kind
-                                      , modulationId = f.modulationId
+                                      , modulation = Maybe.withDefault "NFM" f.modulation
+                                      , encryptionId = f.encryptionId
                                       , encryptionKeyIds = f.encryptionKeyIds
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
@@ -220,13 +220,13 @@ update _ msg model =
                     model.freqEditKindSelect
 
                 updatedKindSelect =
-                    { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.kind }
+                    { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.modulation }
 
                 modulationSelect =
                     model.freqEditModulationSelect
 
                 updatedModulationSelect =
-                    { modulationSelect | selected = updateReq.modulationId }
+                    { modulationSelect | selected = updateReq.encryptionId }
 
                 -- Встановлюємо freqEditShowActiveTo на основі того, чи є activeTo
                 showActiveTo =
@@ -298,7 +298,7 @@ update _ msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
+                            Just ( freqId, { updateReq | modulation = NetworksUtils.networkKindToString updatedNetworkKind } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -333,7 +333,7 @@ update _ msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+                            Just ( freqId, { updateReq | encryptionId = updatedModulationId } )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -422,8 +422,8 @@ update _ msg model =
                 , freqCreateShowActiveTo = False
                 , freqCreateState =
                     { freq = ""
-                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-                    , modulationId = Nothing
+                    , modulation = NetworksUtils.networkKindToString NetworksUtils.NFM
+                    , encryptionId = Nothing
                     , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
@@ -473,7 +473,7 @@ update _ msg model =
                     model.freqCreateState
 
                 newFreqState =
-                    { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
+                    { oldFreqState | modulation = NetworksUtils.networkKindToString updatedKind }
             in
             ( { model | freqCreateKindSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateKindSelectMsg selectCmd
@@ -497,7 +497,7 @@ update _ msg model =
                     model.freqCreateState
 
                 newFreqState =
-                    { oldFreqState | modulationId = updatedModulation }
+                    { oldFreqState | encryptionId = updatedModulation }
             in
             ( { model | freqCreateModulationSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateModulationSelectMsg selectCmd
@@ -552,8 +552,8 @@ update _ msg model =
                             { networkId = network.id
                             , freqRec =
                                 { freq = model.freqCreateState.freq
-                                , kind = model.freqCreateState.kind
-                                , modulationId = model.freqCreateState.modulationId
+                                , modulation = model.freqCreateState.modulation
+                                , encryptionId = model.freqCreateState.encryptionId
                                 , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
@@ -584,8 +584,8 @@ update _ msg model =
                 , freqCreateShowActiveTo = False
                 , freqCreateState =
                     { freq = ""
-                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-                    , modulationId = Nothing
+                    , modulation = NetworksUtils.networkKindToString NetworksUtils.NFM
+                    , encryptionId = Nothing
                     , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
@@ -831,7 +831,7 @@ freqsTableConfig shared model user =
         , columns =
             [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "9%"
             , Table.customColumn
-                { name = "Модуляція"
+                { name = "Шифрування"
                 , viewData =
                     \freq ->
                         Maybe.withDefault "" freq.modulation
@@ -853,10 +853,10 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "16%"
             , Table.customColumn
-                { name = "Тип"
+                { name = "Шифрування"
                 , viewData =
                     \freq ->
-                        Maybe.withDefault "" freq.kind
+                        Maybe.withDefault "" freq.modulation
                             |> NetworksUtils.networkKindFromString
                             |> NetworksUtils.networkKindToLabel
                 , sorter = TableSorter.unsortable
@@ -1024,8 +1024,8 @@ freqsTableConfig shared model user =
                                                             { networkId = network.id
                                                             , networkFreqId = freq.networkFreqId
                                                             , freq = freq.freq
-                                                            , kind = Maybe.withDefault "VHF" freq.kind
-                                                            , modulationId = freq.modulationId
+                                                            , modulation = Maybe.withDefault "NFM" freq.modulation
+                                                            , encryptionId = freq.encryptionId
                                                                 , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
@@ -1138,7 +1138,7 @@ freqEditSidebarContent shared model _ freqId updateReq =
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
                 [ div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція" ]
                     , let
                         selectedItem =
                             Just <|
@@ -1160,18 +1160,18 @@ freqEditSidebarContent shared model _ freqId updateReq =
                                 defaultOptions
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Шифрування" ]
                     , let
                         selectedItem =
                             Maybe.map
-                                (\modulationId ->
+                                (\encryptionId ->
                                     Select.basicMenuItem
-                                        { item = modulationId
+                                        { item = encryptionId
                                         , label =
-                                            case model.modulations of
+                                            case model.encryptions of
                                                 Success modulations ->
                                                     modulations
-                                                        |> List.filter (\mod -> mod.id == modulationId)
+                                                        |> List.filter (\mod -> mod.id == encryptionId)
                                                         |> List.head
                                                         |> Maybe.map (.name >> Modulations.displayModulationName)
                                                         |> Maybe.withDefault ""
@@ -1309,7 +1309,7 @@ freqCreateSidebarContent shared model _ =
                     ]
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
                 , let
                     selectedItem =
                         Select.basicMenuItem
@@ -1330,8 +1330,8 @@ freqCreateSidebarContent shared model _ =
                             defaultOptions
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
-                , case model.modulations of
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Шифрування" ]
+                , case model.encryptions of
                     Success modulations ->
                         let
                             selectedItem =

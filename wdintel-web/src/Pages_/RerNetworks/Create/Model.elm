@@ -80,7 +80,7 @@ type alias Model =
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , freqEditShowActiveTo : Bool
-    , modulations : RemoteData ApiError (List B.ModulationRec)
+    , encryptions : RemoteData ApiError (List B.EncryptionRec)
     , addConfirmationFreqSelect : Utils.Select.SelectTypeSingle String
 
     -- CALLSIGNS

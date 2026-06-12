@@ -98,7 +98,7 @@ type alias Model =
     , deleteKeyLoading : Bool
     , freqEditSidebar : Maybe ( Int, String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
-    , modulations : RemoteData ApiError (List B.ModulationRec)
+    , encryptions : RemoteData ApiError (List B.EncryptionRec)
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , freqEditKeySelect : Utils.Select.SelectType Int

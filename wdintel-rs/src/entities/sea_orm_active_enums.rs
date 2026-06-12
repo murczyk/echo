@@ -213,29 +213,6 @@ pub enum SettlementKind {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
-    enum_name = "sigint_network_kind"
-)]
-pub enum SigintNetworkKind {
-    #[sea_orm(string_value = "DMR")]
-    Dmr,
-    #[sea_orm(string_value = "DMRe")]
-    DmRe,
-    #[sea_orm(string_value = "VHF")]
-    Vhf,
-}
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    EnumIter,
-    DeriveActiveEnum,
-    Serialize,
-    Deserialize,
-)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
     enum_name = "sigint_saved_filter_type_enum"
 )]
 pub enum SigintSavedFilterTypeEnum {

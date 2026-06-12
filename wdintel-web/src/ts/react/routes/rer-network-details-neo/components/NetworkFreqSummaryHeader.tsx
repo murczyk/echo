@@ -32,8 +32,8 @@ export function NetworkFreqSummaryHeader({ freq }: Props) {
           <Typography variant="h4" fontWeight={800} sx={{ lineHeight: 1 }}>
             {formatNetworkFreqValue(freq.freq)}
           </Typography>
-          <Chip size="small" label={typeLabelFromKind(freq.kind)} />
-          <Chip size="small" label={freq.modulation ?? '—'} />
+          <Chip size="small" label={typeLabelFromKind(freq.modulation)} />
+          <Chip size="small" label={freq.encryption ?? '—'} />
         </Stack>
         <Typography variant="body2" color="text.secondary" noWrap title={formatCallsigns(freq.callsigns)}>
           {formatCallsigns(freq.callsigns)}

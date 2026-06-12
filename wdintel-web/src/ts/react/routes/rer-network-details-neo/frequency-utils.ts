@@ -91,8 +91,8 @@ function collectUniqueLabels(values: string[]): string | null {
 
 export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
   const normalized = normalizeText(kind).toUpperCase();
-  if (normalized === 'DMR') return 'DMR';
-  if (normalized === 'DMRE') return 'DMRe';
+  if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  if (normalized === 'AM') return 'AM';
   return 'NFM';
 }
 
@@ -108,10 +108,10 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
 
 export function encryptionLabelFromKey(
   key: EncryptionKeyData,
-  modulationsById: Map<number, string>,
+  encryptionsById: Map<number, string>,
 ): string | null {
   const candidates = [
-    key.modulationId ? modulationsById.get(key.modulationId) ?? null : null,
+    key.encryptionId ? encryptionsById.get(key.encryptionId) ?? null : null,
     key.description,
     key.key,
     key.keyHash,
@@ -128,31 +128,31 @@ export function encryptionLabelFromKey(
 
 export function encryptionLabelFromKeys(
   keys: Array<EncryptionKeyData | string>,
-  modulationsById: Map<number, string>,
-  modulationId: number | null | undefined,
-  modulation: string | null | undefined,
+  encryptionsById: Map<number, string>,
+  encryptionId: number | null | undefined,
+  encryption: string | null | undefined,
 ): string {
   const labels = keys
     .map((key) =>
-      typeof key === 'string' ? encryptionLabelFromCandidate(key) : encryptionLabelFromKey(key, modulationsById),
+      typeof key === 'string' ? encryptionLabelFromCandidate(key) : encryptionLabelFromKey(key, encryptionsById),
     )
     .filter((label): label is string => label !== null);
 
-  if (labels.length === 0 && modulationId !== null && modulationId !== undefined) {
-    const modulationName = modulationsById.get(modulationId) ?? null;
-    if (modulationName) {
-      const modulationLabel = encryptionLabelFromCandidate(modulationName) ?? modulationName;
-      const normalizedLabel = encryptionLabelFromCandidate(modulationLabel) ?? modulationLabel;
+  if (labels.length === 0 && encryptionId !== null && encryptionId !== undefined) {
+    const encryptionName = encryptionsById.get(encryptionId) ?? null;
+    if (encryptionName) {
+      const encryptionLabel = encryptionLabelFromCandidate(encryptionName) ?? encryptionName;
+      const normalizedLabel = encryptionLabelFromCandidate(encryptionLabel) ?? encryptionLabel;
       if (normalizedLabel) {
         labels.push(normalizedLabel);
       }
     }
   }
 
-  if (labels.length === 0 && modulation) {
-    const modulationLabel = encryptionLabelFromCandidate(modulation);
-    if (modulationLabel) {
-      labels.push(modulationLabel);
+  if (labels.length === 0 && encryption) {
+    const encryptionLabel = encryptionLabelFromCandidate(encryption);
+    if (encryptionLabel) {
+      labels.push(encryptionLabel);
     }
   }
 
@@ -378,13 +378,13 @@ function buildGroupId(freqs: NetworkFreqsRes[]): string {
 
 function buildGroupRow(
   freqs: NetworkFreqsRes[],
-  modulationsById: Map<number, string>,
+  encryptionsById: Map<number, string>,
   callsignsById: Map<number, string[]>,
 ): NetworkFreqGroupRow {
   const firstFreq = freqs[0] ?? null;
-  const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.kind));
+  const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.modulation));
   const encryptionLabels = freqs.map((freq) =>
-    encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
+    encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
   );
   const counts = freqs.map((freq) => freq.messageCount);
   const lastDatetime = freqs.reduce<number | null>((current, freq) => {
@@ -412,7 +412,7 @@ function buildGroupRow(
 
 function buildFreqRow(
   freq: NetworkFreqsRes,
-  modulationsById: Map<number, string>,
+  encryptionsById: Map<number, string>,
   callsignsById: Map<number, string[]>,
   parentGroupId: string | null = null,
 ): NetworkFreqRow {
@@ -422,8 +422,8 @@ function buildFreqRow(
     parentGroupId,
     freq,
     displayFreq: normalizeFrequencyLabel(freq.freq),
-    typeLabel: typeLabelFromKind(freq.kind),
-    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
+    typeLabel: typeLabelFromKind(freq.modulation),
+    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionsById, freq.encryption),
     callsignLabel: joinCallsignsByFreqIds([freq.networkFreqId], callsignsById),
     sortFreqUnits: parseNetworkFreqUnits(freq.freq),
     sortNetworkFreqId: freq.networkFreqId,
@@ -432,7 +432,7 @@ function buildFreqRow(
 
 export function buildNetworkFreqRows(
   freqs: NetworkFreqsRes[],
-  modulationsById: Map<number, string>,
+  encryptionsById: Map<number, string>,
   callsignsById: Map<number, string[]>,
   expandedGroupIds: string[],
 ): NetworkFreqTableRow[] {
@@ -445,7 +445,7 @@ export function buildNetworkFreqRows(
     const startUnits = parseNetworkFreqUnits(startFreq.freq);
 
     if (startUnits === null) {
-      rows.push(buildFreqRow(startFreq, modulationsById, callsignsById));
+      rows.push(buildFreqRow(startFreq, encryptionsById, callsignsById));
       continue;
     }
 
@@ -462,16 +462,16 @@ export function buildNetworkFreqRows(
     }
 
     if (cluster.length === 1) {
-      rows.push(buildFreqRow(startFreq, modulationsById, callsignsById));
+      rows.push(buildFreqRow(startFreq, encryptionsById, callsignsById));
       continue;
     }
 
-    const groupRow = buildGroupRow(cluster, modulationsById, callsignsById);
+    const groupRow = buildGroupRow(cluster, encryptionsById, callsignsById);
     rows.push(groupRow);
 
     if (expandedGroupIdSet.has(groupRow.groupId)) {
       for (const freq of cluster) {
-        rows.push(buildFreqRow(freq, modulationsById, callsignsById, groupRow.groupId));
+        rows.push(buildFreqRow(freq, encryptionsById, callsignsById, groupRow.groupId));
       }
     }
 

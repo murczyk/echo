@@ -171,7 +171,7 @@ pub async fn run_merge_network_freq_tui(mode: Mode) -> Result<(), AppError> {
 async fn collect_duplicate_network_freqs(
     db: &DatabaseConnection,
 ) -> Result<(Vec<Vec<i64>>, HashMap<i64, DataRecDetailed>), AppError> {
-    let modulation_map = load_modulation_map(db).await?;
+    let modulation_map = load_encryption_map(db).await?;
     let network_names = load_network_name_map(db).await?;
 
     let freqs = sigint_network_freq::Entity::find()
@@ -215,10 +215,10 @@ async fn collect_duplicate_network_freqs(
     Ok((records_to_merge, details))
 }
 
-async fn load_modulation_map(
+async fn load_encryption_map(
     db: &DatabaseConnection,
-) -> Result<HashMap<i32, modulation::Model>, AppError> {
-    let map = modulation::Entity::find()
+) -> Result<HashMap<i32, encryption::Model>, AppError> {
+    let map = encryption::Entity::find()
         .all(db)
         .await
         .c(h!())?
@@ -247,11 +247,11 @@ async fn load_network_name_map(
 fn network_freq_details(
     network_freq: sigint_network_freq::Model,
     network_name: &str,
-    modulation_map: &HashMap<i32, modulation::Model>,
+    encryption_map: &HashMap<i32, encryption::Model>,
 ) -> DataRecDetailed {
-    let modulation = network_freq
-        .modulation_id
-        .and_then(|id| modulation_map.get(&id))
+    let encryption = network_freq
+        .encryption_id
+        .and_then(|id| encryption_map.get(&id))
         .map(|rec| rec.name.clone())
         .unwrap_or("-".to_string());
     let full_name = format!("{} {}", network_freq.freq.trim(), network_name);
@@ -259,12 +259,12 @@ fn network_freq_details(
     details.insert("freq".to_string(), network_freq.freq.clone());
     details.insert("network".to_string(), network_name.to_string());
     details.insert("deleted".to_string(), format!("{}", network_freq.deleted));
-    details.insert("kind".to_string(), format!("{:?}", network_freq.kind));
+    details.insert("modulation".to_string(), network_freq.modulation.clone());
     details.insert(
         "network_id".to_string(),
         network_freq.network_id.to_string(),
     );
-    details.insert("modulation".to_string(), modulation);
+    details.insert("encryption".to_string(), encryption);
     details.insert(
         "active_from".to_string(),
         format!("{:?}", network_freq.active_from),
@@ -415,7 +415,7 @@ pub async fn oneoff_import_network_details(
     import_network_freqs(
         network_matches.clone(),
         etalon_full.sigint_network_freq,
-        etalon_full.modulation,
+        etalon_full.encryption,
         &db,
     )
     .await
@@ -1018,21 +1018,21 @@ async fn import_sigint_network_descriptions(
 async fn import_network_freqs(
     network_matches: HashMap<i64, i64>,
     import_sigint_network_freqs: Vec<sigint_network_freq::Model>,
-    modulation: Vec<modulation::Model>,
+    encryption: Vec<encryption::Model>,
     db: &DatabaseConnection,
 ) -> anyhow::Result<()> {
-    let local_modulation_map = modulation::Entity::find()
+    let local_encryption_map = encryption::Entity::find()
         .all(db)
         .await
         .c(h!())?
         .into_iter()
         .map(|m| (m.name.clone(), m))
         .collect::<HashMap<_, _>>();
-    let import_to_local_modulation_map: HashMap<i32, modulation::Model> =
-        modulation
+    let import_to_local_encryption_map: HashMap<i32, encryption::Model> =
+        encryption
             .into_iter()
             .flat_map(|m| {
-                local_modulation_map
+                local_encryption_map
                     .get(&m.name)
                     .map(|m2| (m.id, m2.clone()))
             })
@@ -1064,9 +1064,9 @@ async fn import_network_freqs(
             //TODO update
             continue;
         }
-        let modulation_id = import_freq
-            .modulation_id
-            .and_then(|id| import_to_local_modulation_map.get(&id))
+        let encryption_id = import_freq
+            .encryption_id
+            .and_then(|id| import_to_local_encryption_map.get(&id))
             .map(|m| m.id);
         freqs_to_create.push(sigint_network_freq::ActiveModel {
             id: NotSet,
@@ -1074,8 +1074,8 @@ async fn import_network_freqs(
             freq: Set(import_freq.freq),
             created_at: Set(import_freq.created_at),
             last_seen_dt: Set(import_freq.last_seen_dt),
-            kind: Set(import_freq.kind),
-            modulation_id: Set(modulation_id),
+            modulation: Set(import_freq.modulation),
+            encryption_id: Set(encryption_id),
             active_from: Set(import_freq.active_from),
             active_to: Set(import_freq.active_to),
             sigint_origin_id: Set(import_freq.sigint_origin_id),

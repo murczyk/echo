@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { EncryptionKeyData, ModulationRec } from '../../../../../Bindings';
+import type { EncryptionKeyData, EncryptionRec, NetworkFreqsRes } from '../../../../../Bindings';
 import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -24,7 +24,7 @@ type Props = {
   saving: boolean;
   error: string | null;
   networkId: number | null;
-  modulations: ModulationRec[];
+  encryptions: EncryptionRec[];
   onClose: () => void;
   onChange: (next: NetworkFreqEditForm | null) => void;
   onSave: () => void;
@@ -34,7 +34,7 @@ type Props = {
 type NewKeyForm = {
   key: string;
   description: string;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 function formatKeyLabel(key: EncryptionKeyData): string {
@@ -57,7 +57,7 @@ function NetworkFreqEditDrawerComponent({
   saving,
   error,
   networkId,
-  modulations,
+  encryptions,
   onClose,
   onChange,
   onSave,
@@ -75,7 +75,7 @@ function NetworkFreqEditDrawerComponent({
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
     key: '',
     description: '',
-    modulationId: null,
+    encryptionId: null,
   });
 
   const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
@@ -159,7 +159,7 @@ function NetworkFreqEditDrawerComponent({
         key: newKeyForm.key.trim() === '' ? null : newKeyForm.key.trim(),
         keyHash: null,
         description: newKeyForm.description.trim() === '' ? null : newKeyForm.description.trim(),
-        modulationId: newKeyForm.modulationId,
+        encryptionId: newKeyForm.encryptionId,
       });
 
       setKeys((current) => {
@@ -176,7 +176,7 @@ function NetworkFreqEditDrawerComponent({
       }
 
       closeNewKeyDialog();
-      setNewKeyForm({ key: '', description: '', modulationId: null });
+      setNewKeyForm({ key: '', description: '', encryptionId: null });
     } catch (createError) {
       setKeysError(formatErrorMessage(createError));
     } finally {
@@ -230,20 +230,20 @@ function NetworkFreqEditDrawerComponent({
             <NetworkFreqFormFields
               mode="edit"
               saving={saving}
-              kind={form.kind}
-              modulationId={form.modulationId}
+              modulation={form.modulation}
+              encryptionId={form.encryptionId}
               freq={form.freq}
               activeFrom={form.activeFrom}
               activeTo={form.activeTo}
               activeFromError={activeFromError}
               activeToError={activeToError}
-              onKindChange={(nextKind) => onChange({ ...form, kind: nextKind })}
-              onModulationChange={(modulationId) => onChange({ ...form, modulationId })}
+              onModulationChange={(nextModulation) => onChange({ ...form, modulation: nextModulation })}
+              onEncryptionChange={(encryptionId) => onChange({ ...form, encryptionId })}
               onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
               onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
               onActiveFromBlur={() => setActivePeriodTouched(true)}
               onActiveToBlur={() => setActivePeriodTouched(true)}
-              modulations={modulations}
+              encryptions={encryptions}
               keysSection={(
                 <NetworkFreqKeysSection
                   canManageKeys={Boolean(networkId)}
@@ -288,8 +288,8 @@ function NetworkFreqEditDrawerComponent({
         saving={newKeySaving}
         keyValue={newKeyForm.key}
         descriptionValue={newKeyForm.description}
-        modulationId={newKeyForm.modulationId}
-        modulationOptions={modulations}
+        encryptionId={newKeyForm.encryptionId}
+        encryptionOptions={encryptions}
         keyError={newKeyError}
         onClose={() => {
           closeNewKeyDialog();
@@ -299,7 +299,7 @@ function NetworkFreqEditDrawerComponent({
         }}
         onKeyBlur={() => setNewKeyTouched(true)}
         onDescriptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, description: nextValue }))}
-        onModulationChange={(nextValue) => setNewKeyForm((current) => ({ ...current, modulationId: nextValue }))}
+        onEncryptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, encryptionId: nextValue }))}
         onCreate={handleCreateKey}
         createDisabled={newKeyValidationError !== null}
         disableRestoreFocus

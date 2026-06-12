@@ -499,7 +499,7 @@ pub struct NetworkFreqCallsignsBatchRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ModulationRec {
+pub struct EncryptionRec {
     pub id: i32,
     pub name: String,
     pub left: i32,
@@ -622,8 +622,8 @@ pub struct NetworkFreq {
     pub active_from: i64,
     pub active_to: Option<i64>,
     pub created_at: i64,
-    pub kind: String,
-    pub modulation_id: Option<i32>,
+    pub modulation: String,
+    pub encryption_id: Option<i32>,
     pub encryption_keys: Vec<EncryptionKeyData>,
 }
 
@@ -632,8 +632,8 @@ pub struct NetworkFreq {
 )]
 pub struct AddNetworkFreq {
     pub freq: String,
-    pub kind: String,
-    pub modulation_id: Option<i32>,
+    pub modulation: String,
+    pub encryption_id: Option<i32>,
     pub encryption_key_ids: Vec<i64>,
     pub description: Option<AddNetworkFrequencyDescription>,
     pub active_from: Option<i64>,
@@ -647,8 +647,8 @@ pub struct UpdateNetworkFreqReq {
     pub network_id: i64,
     pub network_freq_id: i64,
     pub freq: String,
-    pub kind: String,
-    pub modulation_id: Option<i32>,
+    pub modulation: String,
+    pub encryption_id: Option<i32>,
     pub encryption_key_ids: Vec<i64>,
     pub active_from: i64,
     pub active_to: Option<i64>,

@@ -713,7 +713,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::network_signals_list)
             .service(crate::sigint::network::list_network_points)
             .service(crate::sigint::network::merge_network)
-            .service(crate::sigint::network::modulations_list)
+            .service(crate::sigint::network::encryptions_list)
             .service(crate::sigint::network::update_network_posts)
             .service(crate::sigint::network::update_network_units)
             .service(crate::sigint::post::post_list)

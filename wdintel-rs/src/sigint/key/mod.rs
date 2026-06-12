@@ -22,7 +22,7 @@ pub struct EncryptionKeyData {
     pub key: Option<String>,
     pub key_hash: Option<String>,
     pub description: Option<String>,
-    pub modulation_id: Option<i64>,
+    pub encryption_id: Option<i64>,
 }
 
 #[derive(
@@ -48,7 +48,7 @@ pub struct CreateEncryptionKeyReq {
     pub key: Option<String>,
     pub key_hash: Option<String>,
     pub description: Option<String>,
-    pub modulation_id: Option<i64>,
+    pub encryption_id: Option<i64>,
 }
 
 #[derive(
@@ -60,7 +60,7 @@ pub struct UpdateEncryptionKeyReq {
     pub key: Option<String>,
     pub key_hash: Option<String>,
     pub description: Option<String>,
-    pub modulation_id: Option<i64>,
+    pub encryption_id: Option<i64>,
 }
 
 #[derive(
@@ -119,7 +119,7 @@ pub async fn create_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_modulation_id(req.modulation_id),
+        normalize_encryption_id(req.encryption_id),
         organism_id,
     )
     .await
@@ -172,7 +172,7 @@ pub async fn update_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_modulation_id(req.modulation_id),
+        normalize_encryption_id(req.encryption_id),
         key.organism_id,
     )
     .await
@@ -383,7 +383,7 @@ fn map_key_for_list(
             key: e.key,
             key_hash: e.key_hash,
             description: e.description,
-            modulation_id: e.modulation_id,
+            encryption_id: e.encryption_id,
         }
     } else {
         EncryptionKeyData {
@@ -397,7 +397,7 @@ fn map_key_for_list(
             } else {
                 None
             },
-            modulation_id: None,
+            encryption_id: None,
         }
     }
 }
@@ -409,7 +409,7 @@ pub async fn update_network_encryption_key(
     encryption_key: Option<String>,
     encryption_key_hash: Option<String>,
     description: Option<String>,
-    modulation_id: Option<i64>,
+    encryption_id: Option<i64>,
     organism_id: i64,
 ) -> Result<EncryptionKeyData, AppError> {
     let old_key =
@@ -440,7 +440,7 @@ pub async fn update_network_encryption_key(
         let mut key_am = old_key.into_active_model();
         key_am.description = Set(updated_description);
         key_am.key_hash = Set(encryption_key_hash);
-        key_am.modulation_id = Set(modulation_id);
+        key_am.encryption_id = Set(encryption_id);
         let key = key_am.update(txn).await.c(h!())?;
         replace_key_freq_links(txn, key.id, &network_freq_ids)
             .await
@@ -460,7 +460,7 @@ pub async fn update_network_encryption_key(
         sigint_network_id: Set(Some(network_id)),
         description: Set(updated_description),
         organism_id: Set(organism_id),
-        modulation_id: Set(modulation_id),
+        encryption_id: Set(encryption_id),
         deleted: NotSet,
         created_at: NotSet,
     }
@@ -482,7 +482,7 @@ pub async fn insert_new_key(
     encryption_key: Option<String>,
     encryption_key_hash: Option<String>,
     description: Option<String>,
-    modulation_id: Option<i64>,
+    encryption_id: Option<i64>,
     organism_id: i64,
 ) -> anyhow::Result<sigint_network_encryption_key::Model> {
     let key = sigint_network_encryption_key::ActiveModel {
@@ -493,7 +493,7 @@ pub async fn insert_new_key(
         sigint_network_id: Set(Some(network_id)),
         description: Set(description),
         organism_id: Set(organism_id),
-        modulation_id: Set(modulation_id),
+        encryption_id: Set(encryption_id),
         deleted: NotSet,
         created_at: NotSet,
     }
@@ -662,10 +662,10 @@ where
     Ok(by_key)
 }
 
-fn normalize_modulation_id(modulation_id: Option<i64>) -> Option<i64> {
-    match modulation_id {
+fn normalize_encryption_id(encryption_id: Option<i64>) -> Option<i64> {
+    match encryption_id {
         Some(-1) => None,
-        _ => modulation_id,
+        _ => encryption_id,
     }
 }
 

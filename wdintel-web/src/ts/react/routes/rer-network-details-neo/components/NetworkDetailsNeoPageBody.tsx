@@ -148,7 +148,7 @@ export function NetworkDetailsNeoPageBody({
       pelengPointsLoading={page.pelengPointsLoading}
       pelengPointsError={page.pelengPointsError}
       onReloadPelengPoints={pelengReload}
-      modulations={page.modulations}
+      encryptions={page.encryptions}
       expandedFrequencyGroupIds={page.expandedFrequencyGroupIds}
       toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}
       onOpenFreqCreateWizard={page.openFreqCreateWizard}

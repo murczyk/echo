@@ -418,8 +418,8 @@ pub async fn create_network(
                 last_seen_dt: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
-                kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
-                modulation_id: Set(frequency.modulation_id),
+                modulation: Set(frequency.modulation.clone()),
+                encryption_id: Set(frequency.encryption_id),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
                 original_id: NotSet,
@@ -1637,8 +1637,8 @@ pub async fn add_network_freq(
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
-            modulation_id: Set(req.freq_rec.modulation_id),
+            modulation: Set(req.freq_rec.modulation.clone()),
+            encryption_id: Set(req.freq_rec.encryption_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
@@ -2069,8 +2069,8 @@ pub async fn update_network_freq(
         invalidation_freq = freq;
 
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
-        model.modulation_id = Set(req.modulation_id);
+        model.modulation = Set(req.modulation.clone());
+        model.encryption_id = Set(req.encryption_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
@@ -3086,29 +3086,29 @@ pub async fn network_freq_callsigns_batch(
     }))
 }
 
-#[post("/api/sigint/modulations-list")]
-pub async fn modulations_list(
+#[post("/api/sigint/encryptions-list")]
+pub async fn encryptions_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
-) -> Result<Json<Vec<ModulationRec>>, AppError> {
+) -> Result<Json<Vec<EncryptionRec>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let modulations = modulation::Entity::find()
+    let encryptions = encryption::Entity::find()
         .all(&env.dbx)
         .await
         .context(h!())?;
-    let mut res: Vec<ModulationRec> = vec![];
-    for modulation in modulations {
-        res.push(ModulationRec {
-            id: modulation.id,
-            name: modulation.name.clone(),
-            left: modulation.lft,
-            right: modulation.rgt,
-            enabled: modulation.enabled,
+    let mut res: Vec<EncryptionRec> = vec![];
+    for enc in encryptions {
+        res.push(EncryptionRec {
+            id: enc.id,
+            name: enc.name.clone(),
+            left: enc.lft,
+            right: enc.rgt,
+            enabled: enc.enabled,
         });
     }
     Ok(Json(res))
@@ -3786,9 +3786,10 @@ fn merge_invalidation_range(
 
 pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
     match input {
-        Some("VHF") => Ok("УКХ".to_string()),
+        Some("NFM") => Ok("УКХ".to_string()),
         Some("DMRe") => Ok("DMRe".to_string()),
         Some("DMR") => Ok("DMR".to_string()),
+        Some("AM") => Ok("AM".to_string()),
         _ => Err(AppError::BL {
             msg: "Unknown network type!".to_string(),
         }),

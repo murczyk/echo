@@ -231,7 +231,7 @@ pub struct EtalonkaEntryKey {
 pub struct EtalonkaEntry {
     pub network_unit_signals: Vec<NetworkSignalsRes>,
     correspondents_number: String,
-    unique_modulation: String,
+    unique_encryption: String,
     network_descriptions: Vec<NetworkDescription>,
     net_callsigns: Vec<NetworkCallsign>,
     freqs: Vec<NetworkFreqsRes>,
@@ -449,12 +449,12 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             .await
             .context(h!())?;
 
-            let modulations = freqs
+            let encryptions = freqs
                 .iter()
-                .filter_map(|f| f.modulation.clone())
+                .filter_map(|f| f.encryption.clone())
                 .collect::<Vec<String>>();
-            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
-            entry.unique_modulation = unique_modulation;
+            let unique_encryption = uniq_via_btreeset(&encryptions).join(", ");
+            entry.unique_encryption = unique_encryption;
             entry.freqs = freqs;
             if include_sigint_signs || include_confirmation {
                 let network_descriptions = network_descriptions_by_id
@@ -579,7 +579,7 @@ pub async fn etalonka_due_form(
             // Add Section 7-10 with general information
             doc = add_network_report_section_7_10(
                 doc,
-                &etalonka_data_entry.unique_modulation,
+                &etalonka_data_entry.unique_encryption,
                 &network.operation_mode,
                 &network.operation_type,
                 &network.operation_period,
@@ -676,11 +676,11 @@ pub async fn etalonka_extended(
 
             let freqs = &etalonka_data_entry.freqs;
 
-            let modulations = freqs
+            let encryptions = freqs
                 .iter()
-                .filter_map(|f| f.modulation.clone())
+                .filter_map(|f| f.encryption.clone())
                 .collect::<Vec<String>>();
-            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
+            let unique_encryption = uniq_via_btreeset(&encryptions).join(", ");
 
             // Add Section 1-4 with general information
             doc = add_network_report_section_1_4(
@@ -717,7 +717,7 @@ pub async fn etalonka_extended(
             // Add Section 7-10 with general information
             doc = add_network_report_section_7_10(
                 doc,
-                &unique_modulation,
+                &unique_encryption,
                 &network.operation_mode,
                 &network.operation_type,
                 &network.operation_period,
@@ -867,12 +867,12 @@ fn add_network_report_section_1_4(
 // Add section 7-10 to the report
 fn add_network_report_section_7_10(
     mut doc: Docx,
-    unique_modulation: &String,
+    unique_encryption: &String,
     network_operation_mode: &Option<String>,
     network_operation_type: &Option<String>,
     network_operation_period: &Option<String>,
 ) -> Docx {
-    doc = add_field(doc, "7. Вид передачі: ", unique_modulation);
+    doc = add_field(doc, "7. Вид передачі: ", unique_encryption);
     doc = add_field(
         doc,
         "8. Режим роботи радіомережі: ",
@@ -1672,7 +1672,7 @@ fn build_basic_freqs_table(
             create_table_data_cell(
                 width_unit * 16,
                 &freq
-                    .modulation
+                    .encryption
                     .clone()
                     .unwrap_or(DEFAULT_MODULATION.to_string()),
                 None,
@@ -1766,7 +1766,7 @@ fn build_extended_freqs_table(
             create_table_data_cell(
                 width_unit * 5,
                 &freq
-                    .modulation
+                    .encryption
                     .clone()
                     .unwrap_or(DEFAULT_MODULATION.to_string()),
                 None,
@@ -2006,8 +2006,8 @@ mod tests {
             network_id: Set(network.id),
             freq: Set(freq.clone()),
             created_at: Set(now),
-            kind: Set(sea_orm_active_enums::SigintNetworkKind::Vhf),
-            modulation_id: Set(None),
+            modulation: Set("NFM".to_string()),
+            encryption_id: Set(None),
             active_from: Set(now - chrono::Duration::days(1)),
             active_to: Set(None),
             sigint_origin_id: Set(None),

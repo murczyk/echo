@@ -134,8 +134,8 @@ where
                     .map(|d| d.and_utc().timestamp_millis()),
                 active_from: freq.active_from.and_utc().timestamp_millis(),
                 created_at: freq.created_at.and_utc().timestamp_millis(),
-                kind: freq.kind.to_value(),
-                modulation_id: freq.modulation_id,
+                modulation: freq.modulation.clone(),
+                encryption_id: freq.encryption_id,
                 encryption_keys: keys,
             });
     }

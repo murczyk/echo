@@ -57,18 +57,14 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
     networkId,
     freqRec: {
       freq: freqForm.freq.trim(),
-      kind: toBackendNetworkFreqKind(freqForm.kind),
-      modulationId: freqForm.modulationId,
+      modulation: freqForm.modulation,
+      encryptionId: freqForm.encryptionId,
       encryptionKeyIds: [...freqForm.encryptionKeyIds],
       description: null,
       activeFrom: parseNetworkDetailsDateInput(freqForm.activeFrom),
       activeTo: parseNetworkDetailsDateInput(freqForm.activeTo),
     },
   };
-}
-
-function toBackendNetworkFreqKind(kind: NetworkFreqCreateWizardForm['kind'] | NetworkFreqEditForm['kind']): string {
-  return kind === 'NFM' ? 'VHF' : kind;
 }
 
 function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: number): NetworkFreqsRes | null {
@@ -445,8 +441,8 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         networkId: network.id,
         networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
-        kind: toBackendNetworkFreqKind(form.kind),
-        modulationId: form.modulationId,
+        modulation: form.modulation,
+        encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
         activeTo: parseNetworkDetailsDateInput(form.activeTo),

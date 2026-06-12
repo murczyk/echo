@@ -54,16 +54,18 @@ export function networkStatusDisplay(network: Network | null): DisplayNetworkSta
     : { label: 'Неактивна', tone: 'warning' };
 }
 
-export function displayNetworkType(kind: string | null | undefined): string {
-  switch (kind) {
-    case 'VHF':
+export function displayNetworkType(modulation: string | null | undefined): string {
+  switch (modulation) {
+    case 'NFM':
       return 'УКХ';
     case 'DMR':
       return 'DMR';
     case 'DMRe':
       return 'DMRe';
+    case 'AM':
+      return 'AM';
     default:
-      return normalizeLookupName(kind);
+      return normalizeLookupName(modulation);
   }
 }
 
@@ -86,15 +88,15 @@ export function getFrequencyFormatError(freq: string): string | null {
 }
 
 export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
-  const kinds = [...new Set(freqs.map((freq) => displayNetworkType(freq.kind)).filter((kind) => kind !== NO_DATA_LABEL))];
-  return kinds.length === 0 ? NO_DATA_LABEL : kinds.join(', ');
+  const modulations = [...new Set(freqs.map((freq) => displayNetworkType(freq.modulation)).filter((m) => m !== NO_DATA_LABEL))];
+  return modulations.length === 0 ? NO_DATA_LABEL : modulations.join(', ');
 }
 
-export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, modulationsById: Map<number, string>): string {
+export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, encryptionsById: Map<number, string>): string {
   const labels = freqs
-    .map((freq) => freq.modulationId)
-    .filter((modulationId): modulationId is number => modulationId !== null && modulationId !== undefined)
-    .map((modulationId) => modulationsById.get(modulationId) ?? `#${modulationId}`)
+    .map((freq) => freq.encryptionId)
+    .filter((encryptionId): encryptionId is number => encryptionId !== null && encryptionId !== undefined)
+    .map((encryptionId) => encryptionsById.get(encryptionId) ?? `#${encryptionId}`)
     .filter((label) => label.trim() !== '');
 
   const uniqueLabels = [...new Set(labels)];

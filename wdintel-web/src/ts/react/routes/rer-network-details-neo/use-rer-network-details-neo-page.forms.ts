@@ -60,18 +60,18 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
 export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   return {
     freq: '',
-    kind: 'DMR',
-    modulationId: null,
+    modulation: 'DMR',
+    encryptionId: null,
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMRe' | 'NFM' {
   const normalized = kind?.trim().toUpperCase() ?? '';
-  if (normalized === 'DMR') return 'DMR';
-  if (normalized === 'DMRE') return 'DMRe';
+  if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  if (normalized === 'AM') return 'AM';
   return 'NFM';
 }
 
@@ -86,8 +86,8 @@ export function toNetworkFreqEditForm(freq: NetworkFreqsRes): NetworkFreqEditFor
   return {
     networkFreqId: freq.networkFreqId,
     freq: freq.freq,
-    kind: typeLabelFromKind(freq.kind),
-    modulationId: freq.modulationId,
+    modulation: typeLabelFromKind(freq.modulation),
+    encryptionId: freq.encryptionId,
     activeFrom: formatDateInputValue(freq.activeFrom),
     activeTo: formatDateInputValue(freq.activeTo),
     encryptionKeyIds: [...freq.encryptionKeyIds],

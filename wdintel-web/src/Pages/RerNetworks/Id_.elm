@@ -116,7 +116,7 @@ init route shared () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , editPostsSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
@@ -185,7 +185,7 @@ init route shared () =
       , deleteKeyLoading = False
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
-      , modulations = NotAsked
+      , encryptions = NotAsked
       , freqEditKindSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
             , items =
@@ -197,7 +197,7 @@ init route shared () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , freqEditModulationSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-modulation-state")
@@ -223,8 +223,8 @@ init route shared () =
       , freqCreateSidebar = False
       , freqCreateState =
             { freq = ""
-            , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-            , modulationId = Nothing
+            , modulation = NetworksUtils.networkKindToString NetworksUtils.NFM
+            , encryptionId = Nothing
             , encryptionKeyIds = []
             , description = Nothing
             , activeFrom = Nothing
@@ -241,7 +241,7 @@ init route shared () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , freqCreateModulationSelect =
             { state = Select.initState (Select.selectIdentifier "add-freq-modulation-state")
@@ -984,12 +984,12 @@ update shared msg model =
                     SharedMsg.SetRerNetworkDetailsPreferredView Neo
                 )
 
-        ModulationsReturnedByApi (Err e) ->
-            ( { model | modulations = Failure e }
+        EncryptionsReturnedByApi (Err e) ->
+            ( { model | encryptions = Failure e }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
-        ModulationsReturnedByApi (Ok res) ->
+        EncryptionsReturnedByApi (Ok res) ->
             let
                 keyModulationNames =
                     [ "DMR (ARC40)"
@@ -1060,7 +1060,7 @@ update shared msg model =
                     }
             in
             ( { model
-                | modulations = Success res
+                | encryptions = Success res
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
                 , keyCreateModulationSelect = updatedKeyCreateModulationSelect
@@ -1332,7 +1332,7 @@ loadClassicNetworkData networkId =
         Just id ->
             E.batch
                 [ E.getSingleNetwork NetworkReturnedByApi id
-                , E.getModulations ModulationsReturnedByApi
+                , E.getEncryptions EncryptionsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 , E.map Callsigns CallsignsTables.initLoad
                 , E.map Keys (KeysTable.initLoad id)
@@ -1340,6 +1340,6 @@ loadClassicNetworkData networkId =
 
         Nothing ->
             E.batch
-                [ E.getModulations ModulationsReturnedByApi
+                [ E.getEncryptions EncryptionsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 ]

@@ -4,7 +4,7 @@ import type { NetworkCallsignRelationsRsp, NetworkCallsignRes } from '../../../.
 
 import { listAors } from '../../services/api/aor';
 import { getNetworkById, getNetworkCallsignRelations, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
-import { getModulations } from '../../services/api/modulations';
+import { getEncryptions } from '../../services/api/modulations';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
@@ -786,11 +786,11 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     const loadReferences = async () => {
       try {
-        const [units, posts, aors, modulations] = await Promise.all([
+        const [units, posts, aors, encryptions] = await Promise.all([
           getUnitsList(),
           listPosts(),
           listAors({ sortBy: null }),
-          getModulations(),
+          getEncryptions(),
         ]);
         if (!isCurrent()) return;
         setState((current) => ({
@@ -798,7 +798,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           units,
           posts,
           aors,
-          modulations,
+          encryptions,
           referenceLoading: false,
           referenceWarning: null,
         }));

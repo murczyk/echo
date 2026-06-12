@@ -21,7 +21,6 @@
 
 #[cfg(test)]
 pub mod tests {
-    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
     use crate::entities::*;
     use crate::types::*;
     use sea_orm::*;
@@ -1620,11 +1619,11 @@ pub mod tests {
         if out.created_at == NotSet {
             out.created_at = Set(chrono::Utc::now().naive_utc());
         }
-        if out.kind == NotSet {
-            out.kind = Set(SigintNetworkKind::Vhf);
+        if out.modulation == NotSet {
+            out.modulation = Set("NFM".to_string());
         }
-        if out.modulation_id == NotSet {
-            out.modulation_id = Set(None);
+        if out.encryption_id == NotSet {
+            out.encryption_id = Set(None);
         }
         if out.active_from == NotSet {
             out.active_from = Set(chrono::Utc::now().naive_utc());

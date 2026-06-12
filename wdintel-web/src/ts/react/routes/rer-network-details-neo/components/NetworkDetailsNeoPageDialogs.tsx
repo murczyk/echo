@@ -146,7 +146,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         error={page.freqCreateWizardError}
         networkId={page.network?.id ?? null}
         canManageKeys={page.canEdit}
-        modulations={page.modulations}
+        encryptions={page.encryptions}
         onClose={page.closeFreqCreateWizard}
         onChange={page.setFreqCreateWizardForm}
         onSave={page.saveFreqCreateWizard}
@@ -158,7 +158,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         saving={page.freqEditDrawerSaving}
         error={page.freqEditDrawerError}
         networkId={page.network?.id ?? null}
-        modulations={page.modulations}
+        encryptions={page.encryptions}
         onClose={page.closeFreqEditDrawer}
         onChange={page.setFreqEditDrawerForm}
         onSave={page.saveFreqEditDrawer}

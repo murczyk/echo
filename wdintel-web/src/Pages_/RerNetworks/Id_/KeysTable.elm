@@ -217,14 +217,14 @@ update _ msg networkModel =
             case networkModel.network of
                 Success network ->
                     let
-                        modulationId =
+                        encryptionId =
                             networkModel.keyCreateModulationSelect.selected
 
                         isModulationSelected =
-                            modulationId /= Nothing
+                            encryptionId /= Nothing
 
                         keyRules =
-                            keyRulesFromModulationId networkModel modulationId
+                            keyRulesFromEncryptionId networkModel encryptionId
 
                         keyAllowed =
                             keyRules.keyAllowed
@@ -287,8 +287,8 @@ update _ msg networkModel =
                                     else
                                         Just hashValue
                                 , description = description
-                                , modulationId =
-                                    normalizeModulationId
+                                , encryptionId =
+                                    normalizeEncryptionId
                                         networkModel.keyCreateModulationSelect.selected
                                 }
                         in
@@ -340,7 +340,7 @@ update _ msg networkModel =
                             , key = keyData.key
                             , keyHash = keyData.keyHash
                             , description = keyData.description
-                            , modulationId = keyData.modulationId
+                            , encryptionId = keyData.encryptionId
                             }
 
                         keyEditFreqSelect =
@@ -355,7 +355,7 @@ update _ msg networkModel =
                         keyEditModulationSelect =
                             let
                                 selectedModulation =
-                                    keyData.modulationId
+                                    keyData.encryptionId
 
                                 select =
                                     networkModel.keyEditModulationSelect
@@ -514,14 +514,14 @@ update _ msg networkModel =
             case networkModel.keyEditSidebar of
                 Just req ->
                     let
-                        modulationId =
+                        encryptionId =
                             networkModel.keyEditModulationSelect.selected
 
                         isModulationSelected =
-                            modulationId /= Nothing
+                            encryptionId /= Nothing
 
                         keyRules =
-                            keyRulesFromModulationId networkModel modulationId
+                            keyRulesFromEncryptionId networkModel encryptionId
 
                         keyAllowed =
                             keyRules.keyAllowed
@@ -570,7 +570,7 @@ update _ msg networkModel =
 
                                     else
                                         Just hashValue
-                                , modulationId = normalizeModulationId modulationId
+                                , encryptionId = normalizeEncryptionId encryptionId
                             }
                     in
                     if not isModulationSelected then
@@ -734,14 +734,14 @@ createSidebar model user shared =
 keyEditSidebarContent : Shared.Model -> Model -> B.UpdateEncryptionKeyReq -> List (Html KeysMsg)
 keyEditSidebarContent shared model updateReq =
     let
-        modulationId =
+        encryptionId =
             model.keyEditModulationSelect.selected
 
         isModulationSelected =
-            modulationId /= Nothing
+            encryptionId /= Nothing
 
         keyRules =
-            keyRulesFromModulationId model modulationId
+            keyRulesFromEncryptionId model encryptionId
 
         keyAllowed =
             keyRules.keyAllowed
@@ -797,7 +797,7 @@ keyEditSidebarContent shared model updateReq =
                 , Html.map KeyEditModulationSelMsg <|
                     Styled.toUnstyled <|
                         Utils.Select.renderSelectSingle
-                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = modulationLabelById model item }) model.keyEditModulationSelect.selected)
+                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = encryptionLabelById model item }) model.keyEditModulationSelect.selected)
                             model.keyEditModulationSelect.state
                             model.keyEditModulationSelect.items
                             "Оберіть модуляцію"
@@ -917,14 +917,14 @@ keyEditSidebarContent shared model updateReq =
 keyCreateSidebarContent : Shared.Model -> Model -> List (Html KeysMsg)
 keyCreateSidebarContent shared model =
     let
-        modulationId =
+        encryptionId =
             model.keyCreateModulationSelect.selected
 
         isModulationSelected =
-            modulationId /= Nothing
+            encryptionId /= Nothing
 
         keyRules =
-            keyRulesFromModulationId model modulationId
+            keyRulesFromEncryptionId model encryptionId
 
         keyAllowed =
             keyRules.keyAllowed
@@ -981,7 +981,7 @@ keyCreateSidebarContent shared model =
                 , Html.map KeyCreateModulationSelMsg <|
                     Styled.toUnstyled <|
                         Utils.Select.renderSelectSingle
-                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = modulationLabelById model item }) model.keyCreateModulationSelect.selected)
+                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = encryptionLabelById model item }) model.keyCreateModulationSelect.selected)
                             model.keyCreateModulationSelect.state
                             model.keyCreateModulationSelect.items
                             "Оберіть модуляцію"
@@ -1352,16 +1352,16 @@ keyDisplay key hash =
         displayKey ++ separator ++ displayHash
 
 
-modulationLabelById : Model -> Int -> String
-modulationLabelById model modulationId =
-    case model.modulations of
-        Success modulations ->
-            if modulationId == Modulations.undefinedModulationId then
+encryptionLabelById : Model -> Int -> String
+encryptionLabelById model encryptionId =
+    case model.encryptions of
+        Success encryptions ->
+            if encryptionId == Modulations.undefinedModulationId then
                 Modulations.undefinedModulationLabel
 
             else
-                modulations
-                    |> ListX.find (\modulation -> modulation.id == modulationId)
+                encryptions
+                    |> ListX.find (\modulation -> modulation.id == encryptionId)
                     |> Maybe.map (.name >> Modulations.displayModulationName)
                     |> Maybe.withDefault Modulations.undefinedModulationLabel
 
@@ -1369,15 +1369,15 @@ modulationLabelById model modulationId =
             Modulations.undefinedModulationLabel
 
 
-normalizeModulationId : Maybe Int -> Maybe Int
-normalizeModulationId selectedId =
+normalizeEncryptionId : Maybe Int -> Maybe Int
+normalizeEncryptionId selectedId =
     Maybe.andThen
-        (\modulationId ->
-            if modulationId == Modulations.undefinedModulationId then
+        (\encryptionId ->
+            if encryptionId == Modulations.undefinedModulationId then
                 Nothing
 
             else
-                Just modulationId
+                Just encryptionId
         )
         selectedId
 
@@ -1388,17 +1388,17 @@ type alias KeyRules =
     }
 
 
-keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
-keyRulesFromModulationId model modulationId =
+keyRulesFromEncryptionId : Model -> Maybe Int -> KeyRules
+keyRulesFromEncryptionId model encryptionId =
     let
         modulationName =
-            case ( model.modulations, modulationId ) of
-                ( Success modulations, Just selectedId ) ->
+            case ( model.encryptions, encryptionId ) of
+                ( Success encryptions, Just selectedId ) ->
                     if selectedId == Modulations.undefinedModulationId then
                         Nothing
 
                     else
-                        modulations
+                        encryptions
                             |> ListX.find (\modulation -> modulation.id == selectedId)
                             |> Maybe.map .name
 

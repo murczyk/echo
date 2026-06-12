@@ -52,7 +52,7 @@ pub use super::goi_knowledge::Entity as GoiKnowledge;
 pub use super::group_admin_data::Entity as GroupAdminData;
 pub use super::log_users_report_generation::Entity as LogUsersReportGeneration;
 pub use super::login::Entity as Login;
-pub use super::modulation::Entity as Modulation;
+pub use super::encryption::Entity as Encryption;
 pub use super::network_callsign::Entity as NetworkCallsign;
 pub use super::network_invalidation_task::Entity as NetworkInvalidationTask;
 pub use super::network_invalidation_worker::Entity as NetworkInvalidationWorker;
