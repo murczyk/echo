@@ -1,0 +1,16 @@
+default:
+    @just --list
+
+check:
+    python3 test_iggy.py check
+
+test-inbox:
+    python3 test_iggy.py test-inbox
+
+test-analytics:
+    python3 test_iggy.py test-analytics
+
+test-all:
+    just check
+    just test-inbox
+    just test-analytics
