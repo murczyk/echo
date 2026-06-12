@@ -5,6 +5,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { postJson } from './client';
+import { transformCamelToSnake } from '../../../snake-to-camel';
 
 /** Fetch all units (for network display text). Single request, backend limit is 100k. */
 export async function getUnitsList(): Promise<Unit[]> {
@@ -13,7 +14,7 @@ export async function getUnitsList(): Promise<Unit[]> {
     afterUnitId: null,
     beforeUnitId: null,
   };
-  const data = await postJson<ListUnitsRsp>('/api/sigint/units', req);
+  const data = await postJson<ListUnitsRsp>('/api/sigint/units', transformCamelToSnake(req));
   return data?.units ?? [];
 }
 

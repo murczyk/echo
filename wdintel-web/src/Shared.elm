@@ -48,12 +48,57 @@ decoder =
         (Json.Decode.field "now" Json.Decode.int)
 
 
+shouldLoadSharedUnits : Route.Path.Path -> Bool
+shouldLoadSharedUnits path =
+    path /= Route.Path.RerNetworksNeo
+
+
+shouldLoadSharedNetworks : Route.Path.Path -> Bool
+shouldLoadSharedNetworks path =
+    path /= Route.Path.RerNetworksNeo
+
+
+loadSharedLookupData : Route.Path.Path -> Effect Msg
+loadSharedLookupData path =
+    E.batch
+        [ if shouldLoadSharedUnits path then
+            E.getUnits MasterUnitsLoadedByApi
+                { sortBy = Nothing
+                , afterUnitId = Nothing
+                , beforeUnitId = Nothing
+                }
+
+          else
+            E.none
+        , if shouldLoadSharedNetworks path then
+            E.getNetworksList NetworksLoadedByApi
+                { sortBy = Nothing
+                , filterFreq = Nothing
+                , filterUnit = Nothing
+                , filterText = Nothing
+                , filterName = Nothing
+                , filterLocation = Nothing
+                , showOnlyFurtherInverstigation = Nothing
+                , showInactive = Nothing
+                , showOnlyDeleted = Nothing
+                , statusFilter = Nothing
+                , aorIds = Nothing
+                , ids = Nothing
+                , limit = Nothing
+                , offset = Nothing
+                }
+
+          else
+            E.none
+        ]
+
+
 type alias Model =
     Shared.Model.Model
 
 
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
-init flagsResult _ =
+init flagsResult route =
     let
         flags =
             case flagsResult of
@@ -78,6 +123,7 @@ init flagsResult _ =
                 , goiIntegrations = []
                 , lastReleaseSeen = Nothing
                 }
+      , userLoaded = False
       , themeMode =
             if flags.isDark then
                 Shared.Model.Dark
@@ -88,6 +134,7 @@ init flagsResult _ =
       , location = Nothing
       , serverInfo = Nothing
       , changelogPreview = Nothing
+      , changelogLastSeenLoaded = False
       , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
@@ -104,11 +151,7 @@ init flagsResult _ =
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
         , E.sendCmd <| Api.changelog_index GotChangelogIndex
-        , E.getUnits MasterUnitsLoadedByApi
-            { sortBy = Nothing
-            , afterUnitId = Nothing
-            , beforeUnitId = Nothing
-            }
+        , loadSharedLookupData route.path
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
         , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
@@ -125,7 +168,12 @@ update : Route () -> Msg -> Model -> ( Model, Effect Msg )
 update req msg model =
     case msg of
         SignIn user ->
-            ( { model | user = Just user }
+            ( { model
+                | user = Just user
+                , userLoaded = True
+                , changelogLastSeenLoaded = True
+                , changelogLastSeen = user.lastReleaseSeen
+              }
             , E.pushRoute { path = Route.Path.Home_, query = Dict.empty, hash = Nothing }
             )
 
@@ -143,7 +191,12 @@ update req msg model =
                 ( model, E.none )
 
         GotUser (Ok user) ->
-            ( { model | user = Just user, changelogLastSeen = user.lastReleaseSeen }
+            ( { model
+                | user = Just user
+                , userLoaded = True
+                , changelogLastSeenLoaded = True
+                , changelogLastSeen = user.lastReleaseSeen
+              }
             , E.batch
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_
@@ -153,18 +206,7 @@ update req msg model =
 
                   else
                     E.none
-                , E.getNetworksList NetworksLoadedByApi
-                    { sortBy = Nothing
-                    , filterFreq = Nothing
-                    , filterUnit = Nothing
-                    , showOnlyFurtherInverstigation = Nothing
-                    , showInactive = Nothing
-                    , showOnlyDeleted = Nothing
-                    , aorIds = Nothing
-                    , ids = Nothing
-                    , limit = Nothing
-                    , offset = Nothing
-                    }
+                , loadSharedLookupData req.path
                 ]
             )
 
@@ -227,29 +269,32 @@ update req msg model =
             )
 
         LastSeenChangelogLoaded value ->
-            case model.user of
-                Just _ ->
-                    -- Server value (set by GotUser) takes precedence over localStorage
-                    ( model, E.none )
+            if model.userLoaded then
+                -- Server value (set by GotUser) takes precedence over localStorage
+                ( model, E.none )
 
-                Nothing ->
-                    let
-                        trimmedValue =
-                            String.trim value
-                    in
-                    ( { model
-                        | changelogLastSeen =
-                            if String.isEmpty trimmedValue then
-                                Nothing
+            else
+                let
+                    trimmedValue =
+                        String.trim value
+                in
+                ( { model
+                    | changelogLastSeen =
+                        if String.isEmpty trimmedValue then
+                            Nothing
 
-                            else
-                                Just trimmedValue
-                      }
-                    , E.none
-                    )
+                        else
+                            Just trimmedValue
+                    , changelogLastSeenLoaded = True
+                  }
+                , E.none
+                )
 
         SaveChangelogLastSeen version ->
-            ( { model | changelogLastSeen = Just version }
+            ( { model
+                | changelogLastSeen = Just version
+                , changelogLastSeenLoaded = True
+              }
             , E.batch
                 [ E.sendCmd <| Ports.shared_saveLastSeenChangelog version
                 , E.sendCmd <| Api.api_mark_release_seen version ReleaseSeenApiSaved
@@ -270,7 +315,7 @@ update req msg model =
             )
 
         SignOut ->
-            ( { model | user = Nothing }
+            ( { model | user = Nothing, userLoaded = False }
             , E.sendCmd <| Api.logout SignOutDone
             )
 
@@ -336,7 +381,7 @@ update req msg model =
         NetworksLoadedByApi (Ok rsp) ->
             ( { model
                 | networks =
-                    rsp
+                    rsp.list
                         |> List.map (\x -> ( x.id, x ))
                         |> Dict.fromList
                         |> Success
@@ -519,27 +564,39 @@ update req msg model =
             case event.eventType of
                 B.EtUnitChanged ->
                     ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.getUnits MasterUnitsLoadedByApi
-                        { sortBy = Nothing
-                        , afterUnitId = Nothing
-                        , beforeUnitId = Nothing
-                        }
+                    , if shouldLoadSharedUnits req.path then
+                        E.getUnits MasterUnitsLoadedByApi
+                            { sortBy = Nothing
+                            , afterUnitId = Nothing
+                            , beforeUnitId = Nothing
+                            }
+
+                      else
+                        E.none
                     )
 
                 B.EtNetworkChanged ->
                     ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.getNetworksList NetworksLoadedByApi
-                        { sortBy = Nothing
-                        , filterFreq = Nothing
-                        , filterUnit = Nothing
-                        , showOnlyFurtherInverstigation = Nothing
-                        , showInactive = Nothing
-                        , showOnlyDeleted = Nothing
-                        , aorIds = Nothing
-                        , ids = Nothing
-                        , limit = Nothing
-                        , offset = Nothing
-                        }
+                    , if shouldLoadSharedNetworks req.path then
+                        E.getNetworksList NetworksLoadedByApi
+                            { sortBy = Nothing
+                            , filterFreq = Nothing
+                            , filterUnit = Nothing
+                            , filterText = Nothing
+                            , filterName = Nothing
+                            , filterLocation = Nothing
+                            , showOnlyFurtherInverstigation = Nothing
+                            , showInactive = Nothing
+                            , showOnlyDeleted = Nothing
+                            , statusFilter = Nothing
+                            , aorIds = Nothing
+                            , ids = Nothing
+                            , limit = Nothing
+                            , offset = Nothing
+                            }
+
+                      else
+                        E.none
                     )
 
                 _ ->
@@ -565,6 +622,9 @@ isRerNetworkDetailsPath : String -> Bool
 isRerNetworkDetailsPath path =
     case String.split "/" path of
         [ "", "rer-networks", id ] ->
+            String.toInt id /= Nothing
+
+        [ "", "rer-networks-neo", id ] ->
             String.toInt id /= Nothing
 
         _ ->

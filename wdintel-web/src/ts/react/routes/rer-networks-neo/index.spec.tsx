@@ -1,0 +1,637 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act, createElement } from 'react';
+import type { ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
+import {
+  FREQUENCY_HOVER_POPPER_MODIFIERS,
+  FREQUENCY_HOVER_POPPER_PLACEMENT,
+  RerNetworksNeoPage,
+  buildFrequencyMetadataLabels,
+  getLocationParts,
+  useHoverPopoverState,
+} from './index';
+import { NO_AOR_FILTER_VALUE } from './helpers';
+
+const tableStateMock = vi.hoisted(() => ({
+  globalFilter: '',
+  columnFilters: [],
+  sorting: [],
+  columnOrder: ['mrt-row-numbers', 'mrt-row-actions', 'network', 'aors', 'freqs', 'location', 'activity', 'lastActivity'],
+  columnSizing: {},
+  columnVisibility: {},
+  enableColumnOrdering: true,
+  enableColumnResizing: true,
+  onChangeGlobalFilter: vi.fn(),
+  onColumnFiltersChange: vi.fn(),
+  onSortingChange: vi.fn(),
+  onColumnOrderChange: vi.fn(),
+  onColumnSizingChange: vi.fn(),
+  onColumnVisibilityChange: vi.fn(),
+  onTableInitialized: vi.fn(),
+}));
+
+const pageMock = vi.hoisted(() => ({
+  useRerNetworksNeoPage: vi.fn(),
+}));
+
+const mrtMock = vi.hoisted(() => ({
+  useMaterialReactTable: vi.fn(),
+  MaterialReactTable: vi.fn(() => null),
+  MRT_ToggleFullScreenButton: vi.fn(() => createElement('button', { 'data-testid': 'fullscreen-toggle' }, 'fullscreen')),
+}));
+
+let capturedOptions: Record<string, unknown> | null = null;
+let capturedToolbarProps: Record<string, unknown> | null = null;
+let capturedInternalActionsProps: Record<string, unknown> | null = null;
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+let defaultPageReturn: Record<string, unknown> | null = null;
+
+vi.mock('../../components/mui-customized/table/table-state-provider', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/mui-customized/table/table-state-provider')>();
+  return {
+    ...actual,
+    TableStateProvider: ({ children }: { children: ReactNode }) => children,
+    useTableStateContext: () => tableStateMock,
+  };
+});
+
+vi.mock('@mui/material', async () => {
+  const actual = await vi.importActual<typeof import('@mui/material')>('@mui/material');
+  return {
+    ...actual,
+    useMediaQuery: () => true,
+  };
+});
+
+vi.mock('../../components/TablePageToolbar', () => ({
+  TablePageToolbar: (props: Record<string, unknown>) => {
+    capturedToolbarProps = props;
+    return createElement('div', null, props.actions as never);
+  },
+}));
+
+vi.mock('../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
+  InternalTableActions: (props: Record<string, unknown>) => {
+    capturedInternalActionsProps = props;
+    return createElement('div', null, props.children as never);
+  },
+}));
+
+vi.mock('./use-rer-networks-neo-page', () => ({
+  useRerNetworksNeoPage: pageMock.useRerNetworksNeoPage,
+}));
+
+vi.mock('material-react-table', () => ({
+  MaterialReactTable: mrtMock.MaterialReactTable,
+  MRT_ToggleFullScreenButton: mrtMock.MRT_ToggleFullScreenButton,
+  useMaterialReactTable: (options: Record<string, unknown>) => {
+    capturedOptions = options;
+    return { options };
+  },
+}));
+
+function buildNetwork(id: number): Network {
+  return {
+    id,
+    freqs: [],
+    unitIds: [],
+    aorIds: [],
+    name: `Network ${id}`,
+    location: `Location ${id}`,
+    radioStation: null,
+    createdAt: 0,
+    purpose: null,
+    operationMode: null,
+    operationType: null,
+    operationPeriod: null,
+    lastUpdatedAt: 0,
+    lastUpdatedBy: 'tester',
+    activeFrom: null,
+    activeTo: null,
+    postIds: [],
+    descriptions: [],
+    deleted: false,
+    status: 'NetworkActive',
+  };
+}
+
+function buildUnit(id: number, name: string): Unit {
+  return { id, name, army: '', division: '', regiment: '', battalion: '' } as Unit;
+}
+
+function buildAor(id: number, name: string): AreaOfResponsibility {
+  return { id, name } as AreaOfResponsibility;
+}
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  capturedOptions = null;
+  capturedToolbarProps = null;
+  capturedInternalActionsProps = null;
+  tableStateMock.globalFilter = '';
+  tableStateMock.columnFilters = [];
+  tableStateMock.sorting = [];
+  tableStateMock.onTableInitialized.mockReset();
+  const setReportsMenuAnchorEl = vi.fn((value: unknown) => {
+    if (!defaultPageReturn) return;
+    const current = defaultPageReturn.reportsMenuAnchorEl as HTMLElement | null;
+    defaultPageReturn.reportsMenuAnchorEl = typeof value === 'function' ? (value as (current: HTMLElement | null) => HTMLElement | null)(current) : (value as HTMLElement | null);
+  });
+  defaultPageReturn = {
+    loading: false,
+    refreshing: false,
+    loadingMore: false,
+    noMoreToLoad: true,
+    sidebarOpen: false,
+    setSidebarOpen: vi.fn(),
+    rows: [buildNetwork(1)],
+    allRows: [buildNetwork(1)],
+    filters: { searchText: '', unitText: '', status: 'all', showOnlyInvestigating: false },
+    setFilters: vi.fn(),
+    posts: [],
+    unitOptions: [buildUnit(1, 'Unit 1')],
+    postOptions: [],
+    unitStatsView: [],
+    selectedSidebarUnitFilter: null,
+    onPickUnitFilter: vi.fn(),
+    onToggleInvestigating: vi.fn(),
+    onClearUnitFilter: vi.fn(),
+    onClearInvestigatingFilter: vi.fn(),
+    openReportDialog: vi.fn(),
+    openTopReportDialog: vi.fn(),
+    closeReportDialog: vi.fn(),
+    downloadEtalonkaReport: vi.fn(),
+    etalonkaReport: { dialogOpen: false, downloading: false, error: null, reportType: 'StandardReport', activeFreqsOnly: true, includeSigintSigns: true, includeConfirmation: true, includeUnitCallsigns: true, includePelengsMap: true, fromDateTimeStr: '', toDateTimeStr: '' },
+    setEtalonkaReport: vi.fn(),
+    status: null,
+    setStatus: vi.fn(),
+    statusCounts: null,
+    aorOptions: [buildAor(1, 'AOR 1')],
+    permissions: { canEdit: true, canExport: true, canDelete: true },
+    reportsMenuAnchorEl: null,
+    setReportsMenuAnchorEl,
+    rowMenuAnchorEl: null,
+    rowMenuNetworkId: null,
+    setRowMenuAnchorEl: vi.fn(),
+    setRowMenuNetworkId: vi.fn(),
+    downloadInFlight: null,
+    runDownload: vi.fn(),
+    loadMoreNetworks: vi.fn(),
+    editDialog: null,
+    editSubmitting: false,
+    editError: null,
+    openEditDialog: vi.fn(),
+    closeEditDialog: vi.fn(),
+    setEditDialog: vi.fn(),
+    saveNetworkEdit: vi.fn(),
+    deleteDialogNetwork: null,
+    deleteSubmitting: false,
+    openDeleteDialog: vi.fn(),
+    closeDeleteDialog: vi.fn(),
+    confirmDeleteNetwork: vi.fn(),
+    setNetworks: vi.fn(),
+  };
+  pageMock.useRerNetworksNeoPage.mockReturnValue(defaultPageReturn);
+});
+
+afterEach(() => {
+  root?.unmount();
+  root = null;
+  container?.remove();
+  container = null;
+});
+
+it('keeps MRT filter modes disabled on the networks table', () => {
+  if (!container) throw new Error('container not initialized');
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  expect(capturedOptions).not.toBeNull();
+  expect(capturedToolbarProps).not.toBeNull();
+  expect(capturedToolbarProps?.internalActionsHidden).toBe(true);
+  expect(container?.textContent).toContain('Створити мережу');
+  expect(container?.textContent).toContain('Звіти');
+  expect(container?.textContent).toContain('Активні');
+  expect(container?.textContent).toContain('Неактивні');
+  expect(container?.textContent).toContain('Архівні');
+  expect(capturedOptions?.enableColumnFilterModes).toBe(false);
+  expect(capturedOptions?.columnFilterDisplayMode).toBe('popover');
+  expect(capturedOptions?.enableColumnOrdering).toBe(true);
+  expect(capturedOptions?.enableColumnResizing).toBe(true);
+  expect((capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+    expect.objectContaining({
+      backgroundColor: 'var(--bs-body-bg)',
+      '& .Mui-TableHeadCell-ResizeHandle-Wrapper': expect.objectContaining({
+        mr: '-8px',
+      }),
+    }),
+  );
+  expect((capturedOptions?.initialState as { columnOrder?: string[] } | undefined)?.columnOrder).toEqual([
+    'mrt-row-numbers',
+    'mrt-row-actions',
+    'network',
+    'aors',
+    'freqs',
+    'location',
+    'activity',
+    'lastActivity',
+  ]);
+  expect(
+    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string; text?: string }> }>).find((column) => column.id === 'aors')
+      ?.filterSelectOptions,
+  ).toEqual([
+    { label: '—', value: '__no_aor__' },
+    { label: 'AOR 1', value: '1' },
+  ]);
+  const columnsById = new Map(
+    (capturedOptions?.columns as Array<{ id?: string; enableColumnFilter?: boolean; enableSorting?: boolean }>).map((column) => [column.id, column]),
+  );
+  expect(columnsById.get('network')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
+  expect(columnsById.get('aors')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
+  expect((columnsById.get('aors') as { meta?: { activeFilterValueFormatter?: unknown } } | undefined)?.meta?.activeFilterValueFormatter).toEqual(expect.any(Function));
+  expect(columnsById.get('freqs')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
+  expect(columnsById.get('location')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
+  expect(columnsById.get('activity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: true }));
+  expect(columnsById.get('lastActivity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: true }));
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnOrder).toEqual(tableStateMock.columnOrder);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnSizing).toEqual(tableStateMock.columnSizing);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnVisibility).toEqual(tableStateMock.columnVisibility);
+  expect(container?.querySelector('[data-testid="fullscreen-toggle"]')).toBeNull();
+  const displayOptions = capturedOptions?.displayColumnDefOptions as Record<string, { enableResizing?: boolean; size?: number }> | undefined;
+  expect(displayOptions?.['mrt-row-numbers']?.enableResizing).toBe(false);
+  expect(displayOptions?.['mrt-row-actions']?.enableResizing).toBe(false);
+  expect(displayOptions?.['mrt-row-actions']?.size).toBeGreaterThan(0);
+  expect((capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+    expect.objectContaining({
+      '& .Mui-TableHeadCell-ResizeHandle-Wrapper': expect.objectContaining({
+        mr: '-8px',
+      }),
+      backgroundColor: 'var(--bs-body-bg)',
+    }),
+  );
+  const networkCell = (capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>).find((column) => column.id === 'network');
+  const renderedNetworkCell = ((networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any)?.type as (
+    props: any,
+  ) => any)?.(
+    (networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any).props,
+  );
+  const networkAnchor = renderedNetworkCell.props.children[1];
+  expect(networkAnchor.props.href).toBe('/rer-networks-neo/42');
+  expect(networkAnchor.props.title).toContain('р/м Network 1');
+  expect(networkAnchor.props.title).toContain('1 АК');
+  expect(networkAnchor.props.title).toContain('в дорозвідці');
+  expect(networkAnchor.props.target).toBeUndefined();
+  expect(networkAnchor.props.rel).toBeUndefined();
+  expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
+  expect(networkAnchor.props.children.props.text).toContain('р/м Network 1');
+
+});
+
+it('refreshes AOR filter options after lookup data loads', () => {
+  if (!container) throw new Error('container not initialized');
+  if (defaultPageReturn === null) throw new Error('default page mock not initialized');
+
+  defaultPageReturn.aorOptions = [];
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  expect(
+    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string }> }>).find((column) => column.id === 'aors')
+      ?.filterSelectOptions,
+  ).toEqual([{ label: '—', value: '__no_aor__' }]);
+
+  defaultPageReturn.aorOptions = [buildAor(1, 'AOR 1')];
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  expect(
+    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string }> }>).find((column) => column.id === 'aors')
+      ?.filterSelectOptions,
+  ).toEqual([
+    { label: '—', value: '__no_aor__' },
+    { label: 'AOR 1', value: '1' },
+  ]);
+});
+
+it('does not duplicate the AOR column filter in the active filter list', () => {
+  if (!container) throw new Error('container not initialized');
+  if (defaultPageReturn === null) throw new Error('default page mock not initialized');
+
+  tableStateMock.columnFilters = [{ id: 'aors', value: ['6'] }];
+  tableStateMock.globalFilter = 'alpha';
+  defaultPageReturn.aorOptions = [buildAor(6, '14 АК')];
+  defaultPageReturn.filters = { ...defaultPageReturn.filters, status: 'active', unitText: '3 АК' };
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  const aorsColumn = (capturedOptions?.columns as Array<{ id?: string; meta?: { activeFilterValueFormatter?: (value: unknown) => string } }>).find((column) => column.id === 'aors');
+  expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['6'])).toBe('14 АК');
+  expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['6', NO_AOR_FILTER_VALUE])).toBe('14 АК, —');
+  expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['999'])).toBe('#999');
+  expect(capturedInternalActionsProps?.additionalActiveFilters).toEqual([
+    expect.objectContaining({ id: 'page-unit', label: 'Підрозділ' }),
+    expect.objectContaining({ id: 'page-status', label: 'Статус' }),
+  ]);
+  expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === '__global_filter__')).toBe(false);
+  expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === 'aors')).toBe(false);
+});
+
+it('uses skeleton rows only for the initial load state', () => {
+  if (!container) throw new Error('container not initialized');
+  if (defaultPageReturn === null) throw new Error('default page mock not initialized');
+
+  pageMock.useRerNetworksNeoPage.mockReturnValueOnce({
+    ...defaultPageReturn,
+    loading: false,
+    refreshing: true,
+    loadingMore: false,
+  });
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(false);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(false);
+});
+
+it('keeps the empty-result table from adding a second vertical scrollbar', () => {
+  if (!container) throw new Error('container not initialized');
+  if (defaultPageReturn === null) throw new Error('default page mock not initialized');
+
+  pageMock.useRerNetworksNeoPage.mockReturnValueOnce({
+    ...defaultPageReturn,
+    rows: [],
+    allRows: [],
+    noMoreToLoad: true,
+  });
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  const paperProps =
+    typeof capturedOptions?.muiTablePaperProps === 'function'
+      ? (capturedOptions.muiTablePaperProps as (args: { table: { getState: () => { isFullScreen: boolean } } }) => { sx?: Record<string, unknown> })({
+          table: {
+            getState: () => ({ isFullScreen: false }),
+          },
+        })
+      : (capturedOptions?.muiTablePaperProps as { sx?: Record<string, unknown> } | undefined);
+
+  expect(paperProps?.sx).toEqual(
+    expect.objectContaining({
+      height: '100%',
+      minHeight: '100%',
+      overflow: 'hidden',
+    }),
+  );
+  expect((capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+    expect.objectContaining({
+      minHeight: '100%',
+      overflowY: 'hidden',
+      overflow: 'hidden',
+    }),
+  );
+  expect((capturedOptions?.muiTableBodyProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+    expect.objectContaining({
+      minHeight: '100%',
+    }),
+  );
+});
+
+it('hides load more and expands the first-load frame to full height', () => {
+  if (!container) throw new Error('container not initialized');
+  if (defaultPageReturn === null) throw new Error('default page mock not initialized');
+
+  pageMock.useRerNetworksNeoPage.mockReturnValueOnce({
+    ...defaultPageReturn,
+    loading: true,
+    refreshing: false,
+    loadingMore: false,
+    rows: [],
+    noMoreToLoad: false,
+  });
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  expect(container.textContent).not.toContain('Завантажити ще');
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(true);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showLoadingOverlay).toBe(false);
+  expect((capturedOptions?.initialState as Record<string, unknown> | undefined)?.pagination).toEqual({
+    pageIndex: 0,
+    pageSize: 24,
+  });
+  expect((capturedOptions?.muiTablePaperProps as (args: { table: { getState: () => { isFullScreen: boolean } } }) => { sx?: Record<string, unknown> } | undefined)?.({
+    table: { getState: () => ({ isFullScreen: false }) },
+  })?.sx).toEqual(
+    expect.objectContaining({
+      height: '100%',
+      minHeight: '100%',
+    }),
+  );
+  expect((capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+    expect.objectContaining({
+      minHeight: '100%',
+      overflowX: 'auto',
+      overflowY: 'auto',
+    }),
+  );
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(false);
+});
+
+it('splits location text into visible lines', () => {
+  expect(getLocationParts('Пункт зв’язку, Місто, Район')).toEqual(['Пункт зв’язку', 'Місто', 'Район']);
+});
+
+it('keeps only short frequency metadata labels', () => {
+  expect(
+    buildFrequencyMetadataLabels({
+      id: 1,
+      networkId: 2,
+      freq: '123.45',
+      deleted: false,
+      activeFrom: 0,
+      activeTo: null,
+      createdAt: 0,
+      kind: 'VHF',
+      modulationId: null,
+      encryptionKeys: [
+        { id: 1, sigintNetworkFreqIds: [], sigintNetworkId: null, key: 'ABC', keyHash: null, description: 'AES', modulationId: null },
+        {
+          id: 2,
+          sigintNetworkFreqIds: [],
+          sigintNetworkId: null,
+          key: 'LONG-RAW-KEY',
+          keyHash: 'HASH-123',
+          description: 'Very long free-form description that should be dropped',
+          modulationId: null,
+        },
+        {
+          id: 3,
+          sigintNetworkFreqIds: [],
+          sigintNetworkId: null,
+          key: null,
+          keyHash: null,
+          description: 'RX/TX long description',
+          modulationId: null,
+        },
+      ],
+    } as never),
+  ).toEqual(['VHF', 'AES']);
+});
+
+it('uses top-first placement for the frequency hover popper', () => {
+  expect(FREQUENCY_HOVER_POPPER_PLACEMENT).toBe('top-start');
+  expect(FREQUENCY_HOVER_POPPER_MODIFIERS).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'flip' }),
+      expect.objectContaining({ name: 'preventOverflow' }),
+    ]),
+  );
+});
+
+it('replaces the hovered popover when moving from location to frequency', () => {
+  let latest: ReturnType<typeof useHoverPopoverState> | null = null;
+
+  function Harness() {
+    latest = useHoverPopoverState();
+    return null;
+  }
+
+  const harnessContainer = document.createElement('div');
+  document.body.appendChild(harnessContainer);
+  const harnessRoot = createRoot(harnessContainer);
+  const anchor = document.createElement('div');
+  const row = buildNetwork(1) as never;
+
+  act(() => {
+    harnessRoot.render(createElement(Harness));
+  });
+
+  act(() => {
+    latest?.onHoverLocationPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('location');
+
+  act(() => {
+    latest?.onHoverAnchorPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.closeHoverPopover();
+  });
+  expect(latest?.hoverPopover).toBeNull();
+
+  act(() => {
+    harnessRoot.unmount();
+  });
+  harnessContainer.remove();
+});
+
+it('keeps the hover popover open when moving from anchor to popper', () => {
+  vi.useFakeTimers();
+  let latest: ReturnType<typeof useHoverPopoverState> | null = null;
+
+  function Harness() {
+    latest = useHoverPopoverState();
+    return null;
+  }
+
+  const harnessContainer = document.createElement('div');
+  document.body.appendChild(harnessContainer);
+  const harnessRoot = createRoot(harnessContainer);
+  const anchor = document.createElement('div');
+  const row = buildNetwork(1) as never;
+
+  act(() => {
+    harnessRoot.render(createElement(Harness));
+  });
+
+  act(() => {
+    latest?.onHoverAnchorPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverAnchorPointerLeave();
+    latest?.onHoverPopperPointerEnter();
+  });
+  act(() => {
+    vi.advanceTimersByTime(100);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverPopperPointerLeave();
+  });
+  act(() => {
+    vi.advanceTimersByTime(100);
+  });
+  expect(latest?.hoverPopover).toBeNull();
+
+  act(() => {
+    harnessRoot.unmount();
+  });
+  harnessContainer.remove();
+  vi.useRealTimers();
+});
+
+it('toggles and closes the reports menu', () => {
+  if (!container) throw new Error('container not initialized');
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  const reportsButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Звіти'));
+  if (!reportsButton) throw new Error('reports button not found');
+
+  act(() => {
+    reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+  expect(document.body.textContent).toContain('Зведений звіт');
+  expect(document.body.textContent).toContain('ГОІ');
+
+  act(() => {
+    reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+  expect(document.body.textContent).not.toContain('Зведений звіт');
+
+  act(() => {
+    reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+  expect(document.body.textContent).toContain('Зведений звіт');
+
+  act(() => {
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+  expect(document.body.textContent).not.toContain('Зведений звіт');
+});

@@ -10,6 +10,7 @@ const ENTRYPOINTS = [
   { modulePath: './rer-callsigns-neo-element', tag: 'rer-callsigns-neo' },
   { modulePath: './rer-analysis-neo-element', tag: 'rer-analysis-neo' },
   { modulePath: './rer-network-details-neo-element', tag: 'rer-network-details-neo' },
+  { modulePath: './rer-networks-neo-element', tag: 'rer-networks-neo' },
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-directions-neo-element', tag: 'admin-directions-neo' },
   { modulePath: './goi-knowledge-element', tag: 'goi-knowledge' },

@@ -34,6 +34,32 @@ pub enum NetworkStatus {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum ListNetworksStatusFilter {
+    ListNetworksActive,
+    ListNetworksInactive,
+    ListNetworksArchived,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworksStatusCountsRsp {
+    pub active: i64,
+    pub inactive: i64,
+    pub archived: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworksRsp {
+    pub list: Vec<Network>,
+    pub status_counts: ListNetworksStatusCountsRsp,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Network {
     pub id: i64,
     pub freqs: Vec<NetworkFreq>,
@@ -314,10 +340,14 @@ pub struct UpdFreqNetwork {
 pub struct ListNetworksReq {
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
+    pub filter_text: Option<String>,
+    pub filter_name: Option<String>,
+    pub filter_location: Option<String>,
     /// show_only_further_inverstigation - to filter networks that does not have any unit assigned to them yet
     pub show_only_further_inverstigation: Option<bool>,
     pub show_inactive: Option<bool>,
     pub show_only_deleted: Option<bool>,
+    pub status_filter: Option<ListNetworksStatusFilter>,
     /// Optional filter by Areas of Responsibility (AOR) IDs
     pub aor_ids: Option<Vec<i64>>,
     /// Optional list of network IDs to fetch
@@ -335,6 +365,18 @@ pub struct ListNetworksReq {
 pub enum ListNetworksSortBy {
     NameAsc,
     NameDesc,
+    LastActivityAsc,
+    LastActivityDesc,
+    HasRecentActivityAsc,
+    HasRecentActivityDesc,
+    AorAsc,
+    AorDesc,
+    #[serde(rename = "FreqAsc")]
+    NetworkFreqAsc,
+    #[serde(rename = "FreqDesc")]
+    NetworkFreqDesc,
+    LocationAsc,
+    LocationDesc,
 }
 
 #[derive(

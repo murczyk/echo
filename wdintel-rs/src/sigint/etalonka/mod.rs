@@ -2177,9 +2177,13 @@ mod tests {
             req: ListNetworksReq {
                 filter_freq: None,
                 filter_unit: None,
+                filter_text: None,
+                filter_name: None,
+                filter_location: None,
                 show_only_further_inverstigation: None,
                 show_inactive: None,
                 show_only_deleted: None,
+                status_filter: None,
                 aor_ids: None,
                 ids: None,
                 limit: None,

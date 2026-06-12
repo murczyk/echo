@@ -204,6 +204,7 @@ view user activeName shared route { toContentMsg, model, content } =
                 == "/rer-palitra-neo"
                 || route.url.path
                 == "/rer-callsigns-neo"
+                || route.url.path == "/rer-networks-neo"
 
         usesFixedViewportLayout =
             usesShellContentGap

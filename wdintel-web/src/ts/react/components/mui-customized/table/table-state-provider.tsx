@@ -234,6 +234,7 @@ type TableStateProviderProps = {
   defaultSorting?: MRT_SortingState;
   defaultDate?: Dayjs;
   disableSavingOfColumnsVisibility?: boolean;
+  sanitizeColumnFilters?: (value: MRT_ColumnFiltersState) => MRT_ColumnFiltersState;
   tableId: string;
 };
 
@@ -263,6 +264,7 @@ function useSearchParamsState(): [URLSearchParams, (value: SearchParams) => void
 export function TableStateProvider(props: PropsWithChildren<TableStateProviderProps>) {
   const localStorage = useLocalStorage();
   const [searchParams, setSearchParams] = useSearchParamsState();
+  const sanitizeColumnFilters = props.sanitizeColumnFilters;
 
   const tableInstanceRef = useRef<MRT_TableInstance<any> | null>(null);
   const [tableInstanceReady, setTableInstanceReady] = useState(false);
@@ -271,9 +273,10 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     return parseDateFromSearchParams(searchParams, props.defaultDate);
   });
 
-  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>(() =>
-    parseColumnFiltersFromSearchParams(searchParams),
-  );
+  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>(() => {
+    const parsedColumnFilters = parseColumnFiltersFromSearchParams(searchParams);
+    return sanitizeColumnFilters?.(parsedColumnFilters) ?? parsedColumnFilters;
+  });
   const [sorting, setSorting] = useState<MRT_SortingState>(() =>
     parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []),
   );
@@ -345,7 +348,17 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     const value = localStorage.getItem(`enableColumnResizing-${props.tableId}`);
     if (value) {
       try {
-        return JSON.parse(value);
+        const parsed = JSON.parse(value);
+        if (
+          props.tableId === 'rer-networks-neo' &&
+          parsed === false &&
+          localStorage.getItem(`enableColumnResizing-reset-${props.tableId}`) !== 'true'
+        ) {
+          localStorage.setItem(`enableColumnResizing-${props.tableId}`, JSON.stringify(true));
+          localStorage.setItem(`enableColumnResizing-reset-${props.tableId}`, 'true');
+          return true;
+        }
+        return parsed;
       } catch (error) {}
     }
     return true;
@@ -491,11 +504,12 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       newFilters = updaterOrValue;
     }
 
+    const sanitizedFilters = sanitizeColumnFilters?.(newFilters) ?? newFilters;
     const existingParams = getCurrentSearchParamsObject();
     const newSearchParams = updatedSearchParams || Object.assign({}, existingParams);
 
-    if (newFilters.length > 0) {
-      const columnFilters = JSON.stringify(newFilters);
+    if (sanitizedFilters.length > 0) {
+      const columnFilters = JSON.stringify(sanitizedFilters);
 
       Object.assign(newSearchParams, { columnFilters });
     } else {
@@ -505,7 +519,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     if (!objectsEqual(existingParams, newSearchParams)) {
       setSearchParams(newSearchParams);
     }
-    setColumnFilters(newFilters);
+    setColumnFilters(sanitizedFilters);
 
     return newSearchParams;
   }

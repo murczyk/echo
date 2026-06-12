@@ -122,7 +122,7 @@ type Effect msg
     | AddFreqToNetwork (Result ApiError B.Network -> msg) B.AddNetworkFreqReq
     | ReactivateNetworkFreq (Result ApiError B.Network -> msg) B.ReactivateNetworkFreqReq
     | RemoveFreqFromNetwork (Result ApiError B.Network -> msg) B.DeleteNetworkFreqReq
-    | GetNetworksList (Result ApiError (List B.Network) -> msg) B.ListNetworksReq
+    | GetNetworksList (Result ApiError B.ListNetworksRsp -> msg) B.ListNetworksReq
     | GetNetworksGroupsActivity (Result ApiError GroupsActivityPerDayRsp -> msg) B.NetworkGroupsActivityReq
     | GetNetworksCallsigns (Result ApiError CallsignsByNetwork -> msg) B.NetworkCallsignsReq
     | GetNetworkPoints (Result ApiError B.ListNetworkPointsRsp -> msg) B.ListNetworkPointsReq
@@ -551,7 +551,7 @@ getInboxGroupsActivityStats toMsg =
     GetInboxGroupsActivityStats toMsg
 
 
-getNetworksList : (Result ApiError (List B.Network) -> msg) -> B.ListNetworksReq -> Effect msg
+getNetworksList : (Result ApiError B.ListNetworksRsp -> msg) -> B.ListNetworksReq -> Effect msg
 getNetworksList toMsg payload =
     GetNetworksList toMsg payload
 
@@ -1481,7 +1481,7 @@ toCmd options effect =
             Http.post
                 { url = "/api/sigint/network-list"
                 , body = Http.jsonBody (B.listNetworksReqEncoder payload)
-                , expect = leExpectJson toMsg (Decode.list B.networkDecoder)
+                , expect = leExpectJson toMsg B.listNetworksRspDecoder
                 }
 
         GetNetworksGroupsActivity toMsg payload ->

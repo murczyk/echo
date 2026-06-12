@@ -27,13 +27,20 @@ import {
   parseDateInputInTimeZone,
 } from '../../utils/misc';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
+import { readRequestedNetworkDetailsTab, resolveRequestedNetworkDetailsTab } from './network-details-tab-url';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
 }
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
-  const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
+  const initialRequestedTab = typeof window === 'undefined' ? null : readRequestedNetworkDetailsTab(window.location.search);
+  const [state, setState] = useState<NetworkDetailsNeoPageState>(() => ({
+    ...EMPTY_STATE,
+    activeNetworkDetailsTab: initialRequestedTab === null
+      ? EMPTY_STATE.activeNetworkDetailsTab
+      : resolveRequestedNetworkDetailsTab(initialRequestedTab, true, true),
+  }));
   const pageReloadGeneration = useRef(0);
   const frequencyReloadGeneration = useRef(0);
   const currentNetworkIdRef = useRef<number | null>(null);
@@ -292,6 +299,17 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const transferTypeLabel = useMemo(() => {
     return formatTransferTypeLabel(state.network?.freqs ?? [], modulationsById);
   }, [modulationsById, state.network?.freqs]);
+
+  const requestedTab = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return readRequestedNetworkDetailsTab(window.location.search);
+  }, []);
+
+  useEffect(() => {
+    if (!requestedTab) return;
+    const nextTab = resolveRequestedNetworkDetailsTab(requestedTab, canViewActivityTab, canViewRelationsTab);
+    setState((current) => (current.activeNetworkDetailsTab === nextTab ? current : { ...current, activeNetworkDetailsTab: nextTab }));
+  }, [canViewActivityTab, canViewRelationsTab, requestedTab]);
 
   return {
     ...state,

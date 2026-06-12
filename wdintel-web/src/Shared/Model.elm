@@ -98,11 +98,13 @@ rerNetworkDetailsPreferredViewToString preferredView =
 
 type alias Model =
     { user : Maybe B.User
+    , userLoaded : Bool
     , themeMode : ThemeMode
     , rerNetworkDetailsPreferredView : RerNetworkDetailsPreferredView
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
     , changelogPreview : Maybe ChangelogPreview
+    , changelogLastSeenLoaded : Bool
     , changelogLastSeen : Maybe String
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
     , networks : RemoteData ApiError (Dict Int B.Network)

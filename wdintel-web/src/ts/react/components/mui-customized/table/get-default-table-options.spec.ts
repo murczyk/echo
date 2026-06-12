@@ -223,6 +223,23 @@ describe('renderDefaultMrtEmptyRowsFallback', () => {
     expect(element.props.children.props.message).toBe(EMPTY_STATE_NO_RESULTS_TEXT);
   });
 
+  it('keeps the empty-state wrapper stretchable inside the table body', () => {
+    const element = renderDefaultMrtEmptyRowsFallback({
+      table: {
+        getState: () => ({ globalFilter: '', columnFilters: [] }),
+        setColumnFilters: () => {},
+        setGlobalFilter: () => {},
+      } as any,
+    });
+
+    expect(element.props.sx).toMatchObject({
+      py: 6,
+      minHeight: '100%',
+      display: 'flex',
+      flex: 1,
+    });
+  });
+
   it('honors an explicit external hasFilters override', () => {
     const element = renderDefaultMrtEmptyRowsFallback({
       table: {

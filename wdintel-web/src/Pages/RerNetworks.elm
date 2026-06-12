@@ -256,6 +256,9 @@ listNetworksReq : Model -> B.ListNetworksReq
 listNetworksReq model =
     { filterFreq = emptySToNothing model.filterState.freq
     , filterUnit = emptySToNothing model.filterState.unit
+    , filterText = Nothing
+    , filterName = Nothing
+    , filterLocation = Nothing
     , sortBy = Nothing
     , showOnlyFurtherInverstigation =
         if model.showOnlyInvestigating then
@@ -265,6 +268,7 @@ listNetworksReq model =
             Nothing
     , showInactive = Just (not model.showOnlyActive)
     , showOnlyDeleted = Just model.showArchived
+    , statusFilter = Nothing
     , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
     , ids = Nothing
     , limit = Just networkListPageSize
@@ -318,7 +322,7 @@ loadMoreNetworks model =
 
 type Msg
     = GotTime Posix
-    | NetworksReturnedByApi (Result ApiError (List B.Network))
+    | NetworksReturnedByApi (Result ApiError B.ListNetworksRsp)
     | NetworksLoadMore
     | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
     | NetworkPointsReturnedByApi Int (Result ApiError B.ListNetworkPointsRsp)
@@ -484,14 +488,14 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
             )
 
-        NetworksReturnedByApi (Ok networks) ->
+        NetworksReturnedByApi (Ok rsp) ->
             let
                 mergedNetworks =
                     if model.loadingMore then
-                        RD.withDefault [] model.networks ++ networks
+                        RD.withDefault [] model.networks ++ rsp.list
 
                     else
-                        networks
+                        rsp.list
 
                 nextOffset =
                     List.length mergedNetworks
@@ -500,7 +504,7 @@ update shared msg model =
                 | networks =
                     Success mergedNetworks
                 , loadingMore = False
-                , noMoreToLoad = List.length networks < networkListPageSize
+                , noMoreToLoad = List.length rsp.list < networkListPageSize
                 , networksOffset = nextOffset
                 , currentRequestTracker = Nothing
                 , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks mergedNetworks)
@@ -709,6 +713,9 @@ update shared msg model =
                 req =
                     { filterFreq = emptySToNothing model.filterState.freq
                     , filterUnit = emptySToNothing model.filterState.unit
+                    , filterText = Nothing
+                    , filterName = Nothing
+                    , filterLocation = Nothing
                     , sortBy = Nothing
                     , showOnlyFurtherInverstigation =
                         if model.showOnlyInvestigating then
@@ -718,6 +725,7 @@ update shared msg model =
                             Nothing
                     , showInactive = Just (not model.showOnlyActive)
                     , showOnlyDeleted = Just model.showArchived
+                    , statusFilter = Nothing
                     , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
                     , ids = Nothing
                     , limit = Nothing

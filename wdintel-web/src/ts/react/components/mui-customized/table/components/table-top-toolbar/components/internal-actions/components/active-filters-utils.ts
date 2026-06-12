@@ -13,6 +13,7 @@ export type ActiveFilterDescriptor = {
 
 type ActiveFilterMeta = {
   activeFilterDefaultValue?: unknown;
+  activeFilterValueFormatter?: (value: unknown) => string;
 };
 
 function areFilterValuesEqual(left: unknown, right: unknown): boolean {
@@ -99,6 +100,20 @@ function shouldSkipActiveFilter<TData extends MRT_RowData>(
   return areFilterValuesEqual(defaultValue, value);
 }
 
+function resolveActiveFilterValuePreview<TData extends MRT_RowData>(
+  table: MRT_TableInstance<TData> | null | undefined,
+  filterId: string,
+  value: unknown,
+): string {
+  const column = table?.getColumn(filterId);
+  const formatter = (column?.columnDef.meta as ActiveFilterMeta | undefined)?.activeFilterValueFormatter;
+  if (typeof formatter === 'function') {
+    return formatter(value);
+  }
+
+  return formatFilterValuePreview(value);
+}
+
 export function getActiveTableFilters<TData extends MRT_RowData>(
   table: MRT_TableInstance<TData> | null | undefined,
   columnFilters: MRT_ColumnFiltersState,
@@ -135,7 +150,7 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
       id: filter.id,
       label: resolveFilterLabel(table, filter.id),
       value: filter.value,
-      valuePreview: formatFilterValuePreview(filter.value),
+      valuePreview: resolveActiveFilterValuePreview(table, filter.id, filter.value),
       isGlobalFilter: false,
     }));
 

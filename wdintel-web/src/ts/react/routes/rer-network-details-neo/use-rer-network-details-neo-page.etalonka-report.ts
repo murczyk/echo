@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 
-import type { EtalonkaNetworkBatchReq, EtalonkaReportType } from '../../../../Bindings';
+import type { EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType, ListNetworksReq } from '../../../../Bindings';
 import { APP_TIME_ZONE, combineDateTimeInputToMs } from '../../utils/misc';
 
 export type NetworkEtalonkaReportType = 'AccordingToTheForm' | 'ExtendedReport';
@@ -66,9 +66,20 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
 }
 
 export function buildEtalonkaNetworkBatchReq(networkId: number, report: NetworkEtalonkaReportState): EtalonkaNetworkBatchReq {
+  return buildEtalonkaNetworksBatchReq([networkId], report);
+}
+
+export function buildEtalonkaNetworksBatchReq(networkIds: number[], report: NetworkEtalonkaReportState): EtalonkaNetworkBatchReq {
   return {
-    networkIds: [networkId],
+    networkIds,
     sortBy: null,
+    etalonkaType: toEtalonkaReportType(report),
+  };
+}
+
+export function buildEtalonkaNetworksReportReq(req: ListNetworksReq, report: NetworkEtalonkaReportState): EtalonkaJimForksReq {
+  return {
+    req,
     etalonkaType: toEtalonkaReportType(report),
   };
 }

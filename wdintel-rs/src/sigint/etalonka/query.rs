@@ -2173,6 +2173,7 @@ pub async fn load_networks(
                 ListNetworksSortBy::NameDesc => {
                     networks.order_by_desc(sigint_network::Column::Name)
                 }
+                _ => networks.order_by_asc(sigint_network::Column::Name),
             })
     } else {
         networks.order_by_asc(sigint_network::Column::Name)
@@ -2271,6 +2272,7 @@ pub async fn load_networks_by_id(
                 ListNetworksSortBy::NameDesc => {
                     networks.order_by_desc(sigint_network::Column::Name)
                 }
+                _ => networks.order_by_asc(sigint_network::Column::Name),
             })
     } else {
         networks.order_by_asc(sigint_network::Column::Name)

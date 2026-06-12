@@ -14,11 +14,16 @@ const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
-      {children}
-    </button>
-  ),
+  Button: ({ children, onClick, href }: { children: ReactNode; onClick?: () => void; href?: string }) =>
+    href ? (
+      <a href={href} onClick={onClick as any}>
+        {children}
+      </a>
+    ) : (
+      <button type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
   IconButton: ({ children, onClick, disabled }: { children: ReactNode; onClick?: (event: MouseEvent) => void; disabled?: boolean }) => (
     <button type="button" onClick={onClick as any} disabled={disabled}>
       {children}
@@ -427,17 +432,20 @@ describe('RerNetworkDetailsNeoPage', () => {
     const view = await renderPage();
     rendered.push(view);
 
-    const button = Array.from(view.container.querySelectorAll('button')).find((element) =>
-      element.textContent?.includes('Повернутись до класичної версії'),
+    const listLink = view.container.querySelector('a[href="/rer-networks-neo"]');
+    const classicButton = Array.from(view.container.querySelectorAll('button, a')).find((element) =>
+      element.textContent?.includes('До старої версії'),
     );
-    if (!(button instanceof HTMLButtonElement)) throw new Error('button not found');
+    if (!(classicButton instanceof HTMLButtonElement)) throw new Error('button not found');
 
     await act(async () => {
-      button.click();
+      classicButton.click();
     });
 
     expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('classic');
     expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
+    expect(listLink?.textContent).toBe('До списку мереж');
+    expect(listLink?.getAttribute('href')).toBe('/rer-networks-neo');
   });
 
 });

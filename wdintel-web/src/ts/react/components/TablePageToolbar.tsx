@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { PageHeader } from './PageHeader';
 import { TableToolbarControls } from './TableToolbarControls';
 import { InternalTableActions } from './mui-customized/table/components/table-top-toolbar/components/internal-actions';
+import type { ActiveFilterDescriptor } from './mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
 import { useTableStateContext } from './mui-customized/table/table-state-provider';
 
 type Props = {
@@ -29,6 +30,9 @@ type Props = {
   filtersDisabled?: boolean;
   columnsVisibilityDisabled?: boolean;
   additionalInternalActions?: ReactNode;
+  additionalActiveFilters?: ActiveFilterDescriptor[];
+  onClearAdditionalActiveFilter?: (filterId: string) => void;
+  onClearAdditionalActiveFilters?: () => void;
   trailingActionsAfterInternal?: ReactNode;
   rowNumberAppearanceControl?: boolean;
 };
@@ -47,6 +51,9 @@ export function TablePageToolbar(props: Props) {
         columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}
         colOrderDisabled={props.internalActionsDisabled || props.colOrderDisabled}
         filtersDisabled={props.internalActionsDisabled || props.filtersDisabled}
+        additionalActiveFilters={props.additionalActiveFilters}
+        onClearAdditionalActiveFilter={props.onClearAdditionalActiveFilter}
+        onClearAdditionalActiveFilters={props.onClearAdditionalActiveFilters}
         rowNumberAppearanceControl={props.rowNumberAppearanceControl}
       >
         {props.additionalInternalActions}

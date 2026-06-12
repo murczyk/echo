@@ -1226,7 +1226,7 @@ rer_freqs_callsigns toMsg req =
 
 
 get_networks_list_with_tracker :
-    (Result ApiError (List Network) -> msg)
+    (Result ApiError ListNetworksRsp -> msg)
     -> String
     -> ListNetworksReq
     -> Cmd msg
@@ -1236,7 +1236,7 @@ get_networks_list_with_tracker toMsg tracker req =
         , headers = []
         , url = "/api/sigint/network-list"
         , body = Http.jsonBody (listNetworksReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list networkDecoder)
+        , expect = leExpectJson toMsg listNetworksRspDecoder
         , timeout = Nothing
         , tracker = Just tracker
         }

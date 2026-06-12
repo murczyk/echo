@@ -156,6 +156,7 @@ afterEach(() => {
   }
   latestPage = null;
   loadMockState.loaded = false;
+  window.history.replaceState({}, '', '/rer-networks/42');
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
@@ -165,5 +166,17 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     const page = renderHookHarness();
 
     expect(page.unitOptions).toEqual([{ id: 1, label: '11 АК' }]);
+  });
+
+  it('honors the direction-finding tab URL override', async () => {
+    window.history.replaceState({}, '', '/rer-networks/42?tab=direction-finding');
+
+    renderHookHarness();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(latestPage?.activeNetworkDetailsTab).toBe('pelengation');
   });
 });

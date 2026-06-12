@@ -13,6 +13,15 @@ const tableStateMock = vi.hoisted(() => ({
   onColumnSizingChange: vi.fn(),
   setEnableColumnOrdering: vi.fn(),
   setEnableColumnResizing: vi.fn(),
+  columnVisibility: {
+    freq: true,
+    locationSearchText: true,
+  } as Record<string, boolean>,
+  tableColumns: [
+    { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' } },
+    { id: 'freq', columnDef: { id: 'freq', header: 'Частота' } },
+    { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' } },
+  ],
 }));
 
 vi.mock('@mui/material', () => ({
@@ -61,10 +70,7 @@ vi.mock('../../../../../table-state-provider', () => ({
     columnSizeTouched: false,
     columnVisibilityTouched: false,
     columnOrder: ['mrt-row-numbers', 'freq', 'locationSearchText'],
-    columnVisibility: {
-      freq: true,
-      locationSearchText: true,
-    },
+    columnVisibility: tableStateMock.columnVisibility,
     density: 'compact',
     enableColumnOrdering: false,
     enableColumnResizing: true,
@@ -75,11 +81,7 @@ vi.mock('../../../../../table-state-provider', () => ({
     setEnableColumnOrdering: tableStateMock.setEnableColumnOrdering,
     setEnableColumnResizing: tableStateMock.setEnableColumnResizing,
     tableInstance: {
-      getAllColumns: () => [
-        { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' } },
-        { id: 'freq', columnDef: { id: 'freq', header: 'Частота' } },
-        { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' } },
-      ],
+      getAllColumns: () => tableStateMock.tableColumns,
     },
   }),
 }));
@@ -117,6 +119,10 @@ describe('ColumnsVisibilityButton', () => {
       });
       item.container.remove();
     }
+    tableStateMock.columnVisibility = {
+      freq: true,
+      locationSearchText: true,
+    };
     vi.clearAllMocks();
   });
 
@@ -134,5 +140,24 @@ describe('ColumnsVisibilityButton', () => {
     expect(labels).toEqual(expect.arrayContaining(['Зміна порядку стовпців', 'Зміна розміру стовпців', 'Частота', 'Локації']));
     expect(labels).not.toContain('');
     expect(labels).not.toContain('mrt-row-actions');
+  });
+
+  it('treats default-visible columns as checked when visibility is empty', async () => {
+    tableStateMock.columnVisibility = {};
+
+    const view = await renderComponent();
+    rendered.push(view);
+
+    const trigger = view.container.querySelector('button');
+    expect(trigger).toBeTruthy();
+
+    await click(trigger as HTMLButtonElement);
+
+    const labels = Array.from(view.container.querySelectorAll('label'));
+    const columnLabels = labels.filter((label) => ['Частота', 'Локації'].includes(label.textContent?.trim() ?? ''));
+    expect(columnLabels).toHaveLength(2);
+    expect(
+      columnLabels.map((label) => (label.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked),
+    ).toEqual([true, true]);
   });
 });
