@@ -2225,6 +2225,11 @@ _builder-build-iggy:
     ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
     ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server /home/ubuntu/workspace/echo/{{ local_assets_iggy }}/"
     ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+    
+# [positional-arguments]
+[arg('tag', long='tag')]    
+switch-version-iggy tag="0.8.0":
+    ssh {{ builder }} 'cd workspace/iggy && git checkout master && git fetch --tags && git pull && git checkout -b release-{{tag}} tags/iggy-{{tag}}'
 
 # Update UFW firewall rules on a remote server based on local config.toml
 

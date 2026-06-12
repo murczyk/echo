@@ -2,7 +2,8 @@
 
 This project is a thin wrapper on top of [Apache Iggy](https://github.com/apache/iggy), it
 configures `iggy-server` binary wrapped in a debian package.
-check out `../justfile` for commands `deploy-config-iggy`, `builder-build-iggy` and `setup-iggy`.
+check out `../justfile` for commands `deploy-config-iggy`, `builder-build-iggy`, `switch-version-iggy` and `setup-iggy`.
+- `switch-version-iggy` is if you want to start building different version of Apache Iggy (for example, after updating rust client to a different version).
 
 ## future plans:
 - move echo-iggy to a dedicated github project echoua-info/iggy-wrapper
