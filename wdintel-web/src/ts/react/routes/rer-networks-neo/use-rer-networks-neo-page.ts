@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
-import type { AreaOfResponsibility, ListNetworksReq, Network, Unit } from '../../../../Bindings';
+import type { AreaOfResponsibility, ListNetworksReq, ModulationRec, Network, Unit } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
 import { downloadBlob } from '../../utils/download-blob';
+import { getModulations } from '../../services/api/modulations';
 import { getUnitsList } from '../../services/api/units';
 import {
   buildNetworkRowView,
@@ -16,12 +17,14 @@ import {
   NETWORK_LIST_PAGE_SIZE,
   mergeNetworkUnitStatsWithUnits,
   sanitizeNetworkColumnFilters,
+  sortNetworkAorsForDisplay,
   sortNetworkRows,
   type NetworkRowView,
   type NetworksFilterState,
 } from './helpers';
 import {
   deleteNetwork,
+  createNetwork,
   downloadNetworkEtalonkaReport,
   downloadNetworksEtalonkaReport,
   downloadNetworkGoiReport,
@@ -35,8 +38,13 @@ import {
 import { isUnauthorizedError } from '../../services/api/client';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import { listPosts } from '../../services/api/posts';
-import type { NetworkEditForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
-import { toNetworkEditForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.forms';
+import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
+import {
+  createDefaultNetworkUpsertForm,
+  getNetworkUpsertValidationError,
+  toCreateNetworkReq,
+  toNetworkEditForm,
+} from '../rer-network-details-neo/use-rer-network-details-neo-page.forms';
 import {
   buildEtalonkaNetworksBatchReq,
   buildEtalonkaNetworksReportReq,
@@ -44,6 +52,7 @@ import {
   createDefaultNetworkEtalonkaReportState,
   type NetworkEtalonkaReportState,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
+import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 
 type UiMessage = { kind: 'info' | 'success' | 'error'; text: string } | null;
 
@@ -128,6 +137,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [networks, setNetworks] = useState<Network[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [modulations, setModulations] = useState<ModulationRec[]>([]);
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
@@ -143,9 +153,12 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [reportTargetNetworkIds, setReportTargetNetworkIds] = useState<number[] | null>(null);
   const [reportTargetRequest, setReportTargetRequest] = useState<ListNetworksReq | null>(null);
   const [etalonkaReport, setEtalonkaReport] = useState<NetworkEtalonkaReportState>(() => createDefaultNetworkEtalonkaReportState());
-  const [editDialog, setEditDialog] = useState<NetworkEditForm | null>(null);
+  const [editDialog, setEditDialog] = useState<NetworkUpsertForm | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [createDialog, setCreateDialog] = useState<NetworkUpsertForm | null>(null);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [deleteDialogNetwork, setDeleteDialogNetwork] = useState<Network | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
@@ -165,13 +178,24 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const unitsById = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
   const aorsById = useMemo(() => new Map(aors.map((aor) => [aor.id, aor])), [aors]);
   const unitStatsView = useMemo(() => mergeNetworkUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
-  const unitOptions = useMemo(() => units.slice().sort((left, right) => left.name.localeCompare(right.name, 'uk')).map((unit) => ({ id: unit.id, label: unit.name })), [units]);
-  const postOptions = useMemo(() => posts.slice().sort((left, right) => left.name.localeCompare(right.name, 'uk')).map((post) => ({ id: post.id, label: post.name })), [posts]);
+  const unitOptions = useMemo(
+    () => buildSelectableUnitOptions(units).map((unit) => ({ id: unit.id, label: getUnitDisplayLabel(unit) })),
+    [units],
+  );
+  const postOptions = useMemo(
+    () =>
+      posts
+        .filter((post) => post.name.trim() !== '')
+        .slice()
+        .sort((left, right) => left.name.localeCompare(right.name, 'uk'))
+        .map((post) => ({ id: post.id, label: post.name })),
+    [posts],
+  );
   const rows = useMemo(
     () => sortNetworkRows(networks.map((network) => buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId))),
     [activityByNetworkId, aorsById, networks, unitsById],
   );
-  const aorOptions = useMemo(() => aors.slice().sort((left, right) => left.name.localeCompare(right.name, 'uk')), [aors]);
+  const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const immediateQueryKey = useMemo(
     () =>
       JSON.stringify({
@@ -226,12 +250,13 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   }, [querySnapshot]);
 
   const loadNetworks = useCallback(
-    async (snapshot: NetworksQuerySnapshot, options?: { includeLookups?: boolean; append?: boolean }) => {
+    async (snapshot: NetworksQuerySnapshot, options?: { includeLookups?: boolean; append?: boolean; force?: boolean }) => {
       const seq = ++requestSeqRef.current;
       const includeLookups = options?.includeLookups ?? false;
       const append = options?.append ?? false;
+      const force = options?.force ?? false;
       const controller = new AbortController();
-      if (lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey && !append && !includeLookups) {
+      if (lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey && !append && !includeLookups && !force) {
         return;
       }
       if (!append) {
@@ -259,7 +284,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
 
       try {
         const lookupsPromise = includeLookups
-          ? Promise.all([getUnitsList(), listAors({ sortBy: null }), getNetworkUnitStats(), listPosts()])
+          ? Promise.all([getUnitsList(), listAors({ sortBy: null }), getNetworkUnitStats(), listPosts(), getModulations()])
           : null;
         const networksPromise = listNetworks(req, { signal: controller.signal });
 
@@ -278,11 +303,12 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         if (requestSeqRef.current !== seq) return;
 
         if (nextLookups !== null) {
-          const [unitsList, aorList, unitStatsList, postsList] = nextLookups;
+          const [unitsList, aorList, unitStatsList, postsList, modulationList] = nextLookups;
           setUnits(unitsList);
           setAors(aorList);
           setUnitStats(unitStatsList);
           setPosts(postsList);
+          setModulations(modulationList);
           bootstrapLoadedRef.current = true;
         }
         setStatusCounts(statusCounts);
@@ -526,26 +552,48 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     setRowMenuNetworkId(null);
   }
 
+  function openCreateDialog() {
+    setCreateError(null);
+    setCreateDialog(createDefaultNetworkUpsertForm());
+  }
+
+  function closeCreateDialog() {
+    if (createSubmitting) return;
+    setCreateDialog(null);
+    setCreateError(null);
+  }
+
   function closeEditDialog() {
     if (editSubmitting) return;
     setEditDialog(null);
     setEditError(null);
   }
 
-  function syncNetworkRelations(editForm: NetworkEditForm) {
+  function syncNetworkRelations(editForm: NetworkUpsertForm) {
+    const networkId = editForm.id;
+    if (networkId === null) {
+      return Promise.resolve();
+    }
+
     return updateNetworkPosts({
-      networkId: editForm.id,
+      networkId,
       postIds: [...editForm.postIds],
     }).then(() =>
       updateNetworkUnits({
-        networkId: editForm.id,
+        networkId,
         unitIds: [...editForm.unitIds],
       }),
     );
   }
 
   async function saveNetworkEdit() {
-    if (!editDialog) return;
+    if (!editDialog || editDialog.id === null) return;
+
+    const validationError = getNetworkUpsertValidationError(editDialog, { includeFrequency: false });
+    if (validationError !== null) {
+      setEditError(validationError.name ?? validationError.location ?? validationError.aorIds ?? 'Перевірте форму');
+      return;
+    }
 
     setEditSubmitting(true);
     setEditError(null);
@@ -579,6 +627,35 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       setEditError(formatErrorMessage(error));
     } finally {
       setEditSubmitting(false);
+    }
+  }
+
+  async function saveNetworkCreate() {
+    if (!createDialog) return;
+
+    const validationError = getNetworkUpsertValidationError(createDialog);
+    if (validationError !== null) {
+      setCreateError(validationError.name ?? validationError.location ?? validationError.aorIds ?? validationError.freq ?? validationError.modulationId ?? validationError.activeFrom ?? 'Перевірте форму');
+      return;
+    }
+
+    setCreateSubmitting(true);
+    setCreateError(null);
+
+    try {
+      await createNetwork(toCreateNetworkReq(createDialog));
+      setCreateDialog(null);
+      lastExecutedFullQueryKeyRef.current = null;
+      void loadNetworks(latestQuerySnapshotRef.current ?? querySnapshot, { includeLookups: false, append: false, force: true });
+      setStatus({ kind: 'success', text: 'Мережу створено.' });
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        redirectToLogin();
+        return;
+      }
+      setCreateError(formatErrorMessage(error));
+    } finally {
+      setCreateSubmitting(false);
     }
   }
 
@@ -752,6 +829,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     downloadInFlight,
     runDownload,
     loadMoreNetworks,
+    modulations,
     editDialog,
     editSubmitting,
     editError,
@@ -759,6 +837,13 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     closeEditDialog,
     setEditDialog,
     saveNetworkEdit,
+    createDialog,
+    createSubmitting,
+    createError,
+    openCreateDialog,
+    closeCreateDialog,
+    setCreateDialog,
+    saveNetworkCreate,
     deleteDialogNetwork,
     deleteSubmitting,
     openDeleteDialog: (network: Network) => setDeleteDialogNetwork(network),

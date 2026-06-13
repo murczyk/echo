@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2496](https://github.com/echoua/echo/issues/2496) ✅ Мережі (нова): додано можливість створення мережі.
 - [#2506](https://github.com/echoua/echo/issues/2506) ✅ Мережі (нова): міграція сторінки мереж на новий рушій з покращеним дизайном.
 - [#2519](https://github.com/echoua/echo/issues/2519) ✅👷 Адмін: додано керування API-інтеграціями та перевірку з'єднання з Apache Iggy. При деплої на Північ необхідні команди: deploy-config-iggy, setup-iggy.
 - [#2445](https://github.com/echoua/echo/issues/2445) ✅ Аналіз (нова): покращення швидкодії.

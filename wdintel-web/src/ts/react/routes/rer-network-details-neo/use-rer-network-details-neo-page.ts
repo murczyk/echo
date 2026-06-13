@@ -21,6 +21,7 @@ import {
   type NetworkDetailsNeoPageState,
   type NetworkOption,
 } from './use-rer-network-details-neo-page.shared';
+import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
 import {
   parseDateInputExclusiveEndInTimeZone,
@@ -69,10 +70,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
 
-  const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
+  const aorOptions = useMemo(() => buildOptions(sortNetworkAorsForDisplay(state.aors)), [state.aors]);
   const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
   const unitOptions = useMemo(() => buildOptions(selectableUnits), [selectableUnits]);
-  const postOptions = useMemo(() => buildOptions(state.posts), [state.posts]);
+  const postOptions = useMemo(() => buildOptions(state.posts.filter((post) => post.name.trim() !== '')), [state.posts]);
 
   const confirmationDescriptions = useMemo(() => {
     const descriptions = state.network?.descriptions ?? [];

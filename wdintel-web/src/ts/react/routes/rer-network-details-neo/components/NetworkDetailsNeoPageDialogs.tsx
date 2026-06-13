@@ -112,6 +112,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
 
       <NetworkEditDrawer
         open={page.editDrawerOpen}
+        mode="edit"
         form={page.editForm}
         saving={page.editInProgress}
         error={page.editError}
@@ -119,6 +120,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         aorOptions={page.aorOptions}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
+        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}

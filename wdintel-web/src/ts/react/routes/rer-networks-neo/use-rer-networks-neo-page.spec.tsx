@@ -12,12 +12,14 @@ import { HttpRequestError } from '../../services/api/client';
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 
 const apiMock = vi.hoisted(() => ({
+  createNetwork: vi.fn(),
   deleteNetwork: vi.fn(),
   downloadNetworkEtalonkaReport: vi.fn(),
   downloadNetworksEtalonkaReport: vi.fn(),
   downloadNetworkGoiReport: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
+  getModulations: vi.fn(),
   listAors: vi.fn(),
   listNetworks: vi.fn(),
   listPosts: vi.fn(),
@@ -31,6 +33,7 @@ const tableStateMock = vi.hoisted(() => ({
   globalFilter: '',
   columnFilters: [],
   sorting: [],
+  columnSizing: {},
   onChangeGlobalFilter: vi.fn(),
   onColumnFiltersChange: vi.fn(),
   onSortingChange: vi.fn(),
@@ -57,6 +60,7 @@ vi.mock('../../services/api/posts', () => ({
 }));
 
 vi.mock('../../services/api/networks', () => ({
+  createNetwork: apiMock.createNetwork,
   deleteNetwork: apiMock.deleteNetwork,
   downloadNetworkEtalonkaReport: apiMock.downloadNetworkEtalonkaReport,
   downloadNetworksEtalonkaReport: apiMock.downloadNetworksEtalonkaReport,
@@ -67,6 +71,10 @@ vi.mock('../../services/api/networks', () => ({
   updateNetwork: apiMock.updateNetwork,
   updateNetworkPosts: apiMock.updateNetworkPosts,
   updateNetworkUnits: apiMock.updateNetworkUnits,
+}));
+
+vi.mock('../../services/api/modulations', () => ({
+  getModulations: apiMock.getModulations,
 }));
 
 vi.mock('../../utils/download-blob', () => ({
@@ -154,11 +162,13 @@ describe('useRerNetworksNeoPage', () => {
     latest = null;
 
     apiMock.deleteNetwork.mockReset();
+    apiMock.createNetwork.mockReset();
     apiMock.downloadNetworkEtalonkaReport.mockReset();
     apiMock.downloadNetworksEtalonkaReport.mockReset();
     apiMock.downloadNetworkGoiReport.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
+    apiMock.getModulations.mockReset();
     apiMock.listAors.mockReset();
     apiMock.listNetworks.mockReset();
     apiMock.listPosts.mockReset();
@@ -172,9 +182,11 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getModulations.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.downloadNetworkEtalonkaReport.mockResolvedValue(new Blob(['report']));
     apiMock.downloadNetworksEtalonkaReport.mockResolvedValue(new Blob(['report']));
     apiMock.downloadNetworkGoiReport.mockResolvedValue(new Blob(['goi']));
+    apiMock.createNetwork.mockResolvedValue(buildNetwork(3));
     apiMock.updateNetwork.mockResolvedValue(buildNetwork(1));
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork(1));
     apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork(1));
@@ -187,6 +199,7 @@ describe('useRerNetworksNeoPage', () => {
     tableStateMock.globalFilter = '';
     tableStateMock.columnFilters = [];
     tableStateMock.sorting = [];
+    tableStateMock.columnSizing = {};
     tableStateMock.onChangeGlobalFilter.mockReset();
     tableStateMock.onColumnFiltersChange.mockReset();
     tableStateMock.onSortingChange.mockReset();
@@ -217,6 +230,160 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.sidebarOpen).toBe(false);
   });
 
+  it('opens the create drawer with the classic defaults', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    expect(latest?.createDialog).toEqual({
+      id: null,
+      name: 'управління',
+      location: '',
+      radioStation: '',
+      purpose: 'для управління підлеглим особовим складом',
+      operationMode: 'дуплекс',
+      operationType: 'ведення службового радіообміну',
+      operationPeriod: 'цілодобово',
+      status: 'NetworkActive',
+      aorIds: [],
+      unitIds: [],
+      postIds: [],
+      freq: '',
+      kind: 'DMR',
+      modulationId: null,
+      activeFrom: '',
+      activeTo: '',
+      encryptionKeyIds: [],
+    });
+  });
+
+  it('filters blank posts from create drawer options', async () => {
+    apiMock.listPosts.mockResolvedValueOnce([
+      { id: 1, name: '   ' } as never,
+      { id: 2, name: '_stihl_XN Пост' } as never,
+    ]);
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.postOptions).toEqual([{ id: 2, label: '_stihl_XN Пост' }]);
+  });
+
+  it('creates a network and refreshes the list with the create request mapping', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа 1',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        status: 'NetworkActive',
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [1],
+        freq: '123.4500',
+        kind: 'DMR',
+        modulationId: 11,
+        activeFrom: '2026-06-01',
+        activeTo: '2026-06-30',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+    expect(latest?.createDialog?.name).toBe('Радіомережа 1');
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(latest?.createError).toBeNull();
+    expect(apiMock.createNetwork).toHaveBeenCalledWith({
+      freqs: [
+        {
+          freq: '123.4500',
+          kind: 'DMR',
+          modulationId: 11,
+          encryptionKeyIds: [],
+          description: null,
+          activeFrom: expect.any(Number),
+          activeTo: expect.any(Number),
+        },
+      ],
+      unitIds: [1],
+      areaOfResponsibilityIds: [1],
+      name: 'Радіомережа 1',
+      location: 'Київ',
+      radioStation: null,
+      purpose: 'для управління підлеглим особовим складом',
+      operationMode: 'дуплекс',
+      operationType: 'ведення службового радіообміну',
+      operationPeriod: 'цілодобово',
+      postIds: [1],
+      descriptions: [],
+    });
+    expect(latest?.createDialog).toBeNull();
+    expect(latest?.status).toEqual({ kind: 'success', text: 'Мережу створено.' });
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks create submission when the first frequency is invalid', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа 1',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        status: 'NetworkActive',
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '123.45',
+        kind: 'DMR',
+        modulationId: 11,
+        activeFrom: '2026-06-01',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(apiMock.createNetwork).not.toHaveBeenCalled();
+    expect(latest?.createError).toBe('Невірний формат частоти (наприклад: 146.5000)');
+  });
+
   it('keeps status counts when only the status chip changes', async () => {
     await renderHook();
     await flushEffects();
@@ -229,6 +396,21 @@ describe('useRerNetworksNeoPage', () => {
     await flushEffects();
 
     expect(latest?.statusCounts).toEqual({ active: 7, inactive: 1, archived: 1 });
+  });
+
+  it('does not reload networks when only column sizing changes', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+
+    tableStateMock.columnSizing = { network: 320 };
+    await act(async () => {
+      root?.render(createElement(Harness));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
   });
 
   it('redirects to login on unauthorized network load', async () => {

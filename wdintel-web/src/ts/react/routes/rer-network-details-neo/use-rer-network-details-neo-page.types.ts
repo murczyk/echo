@@ -31,8 +31,8 @@ import type {
 export type { NetworkEtalonkaReportState, NetworkEtalonkaReportType };
 export { createDefaultNetworkEtalonkaReportState };
 
-export type NetworkEditForm = {
-  id: number;
+export type NetworkUpsertForm = {
+  id: number | null;
   name: string;
   location: string;
   radioStation: string;
@@ -44,7 +44,15 @@ export type NetworkEditForm = {
   aorIds: number[];
   unitIds: number[];
   postIds: number[];
+  freq: string;
+  kind: 'DMR' | 'DMRe' | 'NFM';
+  modulationId: number | null;
+  activeFrom: string;
+  activeTo: string;
+  encryptionKeyIds: number[];
 };
+
+export type NetworkEditForm = NetworkUpsertForm;
 
 export type NetworkDescriptionForm = {
   topic: string;

@@ -8,6 +8,7 @@ import {
   formatAorSummaryText,
   formatClassicNetworkHeaderName,
   formatErrorMessage,
+  getNetworkUpsertValidationError,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
@@ -31,12 +32,17 @@ type Args = {
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
+  const networkId = editForm.id;
+  if (networkId === null) {
+    return Promise.resolve();
+  }
+
   return updateNetworkPosts({
-    networkId: editForm.id,
+    networkId,
     postIds: [...editForm.postIds],
   }).then(() =>
     updateNetworkUnits({
-      networkId: editForm.id,
+      networkId,
       unitIds: [...editForm.unitIds],
     }),
   );
@@ -148,8 +154,18 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
   const saveNetworkEdit = useCallback(async () => {
     const network = state.network;
     const editForm = state.editForm;
+    const networkId = editForm?.id ?? null;
 
-    if (!network || !editForm || state.editInProgress) return;
+    if (!network || !editForm || networkId === null || state.editInProgress) return;
+
+    const validationError = getNetworkUpsertValidationError(editForm, { includeFrequency: false });
+    if (validationError !== null) {
+      setState((current) => ({
+        ...current,
+        editError: validationError.name ?? validationError.location ?? validationError.aorIds ?? 'Перевірте форму',
+      }));
+      return;
+    }
 
     setState((current) => ({
       ...current,
@@ -160,7 +176,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
 
     try {
       const updatedNetwork = await updateNetwork({
-        id: editForm.id,
+        id: networkId,
         restoreNetwork: network.deleted && editForm.status === 'NetworkActive' ? true : null,
         areaOfResponsibilityIds: [...editForm.aorIds],
         name: editForm.name,

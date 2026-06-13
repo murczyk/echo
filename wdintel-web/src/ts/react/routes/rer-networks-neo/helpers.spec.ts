@@ -23,6 +23,7 @@ import {
   NETWORK_STATUS_INACTIVE_COLOR,
   sanitizeNetworkColumnFilters,
   resolveAorFilterSelectOptions,
+  sortNetworkAorsForDisplay,
 } from './helpers';
 
 dayjs.extend(utc);
@@ -42,6 +43,16 @@ describe('rer-networks-neo AOR filters', () => {
       { label: 'Бета', value: '2' },
     ]);
     expect(new Set(options.map((option) => option.value)).size).toBe(options.length);
+  });
+
+  it('orders drawer and filter AORs with all-band first and regular bands by Ukrainian locale', () => {
+    expect(
+      sortNetworkAorsForDisplay([
+        { id: 2, name: 'Бета' } as any,
+        { id: 1, name: 'Альфа' } as any,
+        { id: 3, name: 'Вся смуга' } as any,
+      ]).map((aor) => aor.name),
+    ).toEqual(['Вся смуга', 'Альфа', 'Бета']);
   });
 
   it('matches no-AOR rows and regular AOR rows the same way as the classic filter', () => {
@@ -64,6 +75,18 @@ describe('rer-networks-neo AOR filters', () => {
         true,
       ),
     ).toBe('р/м Alpha 1 АК, 2 ОМБр в дорозвідці');
+  });
+
+  it('keeps the row label separate from the developing marker', () => {
+    const row = buildNetworkRowView(
+      { id: 1, name: 'Alpha', unitIds: [1], freqs: [], aorIds: [], location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, activeTo: null, postIds: [], descriptions: [], deleted: false, status: 'NetworkActive' } as Network,
+      new Map([[1, { id: 1, name: '1 АК', army: '', division: '', regiment: '', battalion: '' } as any]]),
+      new Map(),
+      new Map(),
+    );
+
+    expect(row.networkLabel).toBe('р/м Alpha 1 АК');
+    expect(row.developing).toBe(false);
   });
 
   it('maps the active network list request to classic active-only flags', () => {

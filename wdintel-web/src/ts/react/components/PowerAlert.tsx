@@ -24,7 +24,7 @@ function defaultAutoHideDurationForSeverity(severity: AlertProps['severity']): n
 export function PowerAlert(props: PowerAlertProps) {
   const { autoHideDuration, dismissible, onClose, severity = 'success', children, ...rest } = props;
   const [open, setOpen] = React.useState(true);
-  const isDismissible = dismissible ?? severity !== 'success';
+  const isDismissible = dismissible ?? (severity !== 'success' && severity !== 'info');
 
   React.useEffect(() => {
     setOpen(true);
@@ -62,7 +62,7 @@ export function PowerAlert(props: PowerAlertProps) {
     return null;
   }
 
-  const alertOnClose = isDismissible || onClose
+  const alertOnClose = isDismissible || (severity !== 'info' && onClose)
     ? (event: React.SyntheticEvent) => {
         handleClose(event);
       }

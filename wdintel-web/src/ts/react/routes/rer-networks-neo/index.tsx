@@ -2,7 +2,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandLessOutlinedIcon from '@mui/icons-material/ExpandLessOutlined';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import EditIcon from '@mui/icons-material/Edit';
 import FileCopyOutlinedIcon from '@mui/icons-material/FileCopyOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import {
@@ -139,12 +139,14 @@ function formatAorActiveFilterValue(value: unknown, aorOptions: Array<{ id: numb
 
 function NetworkPageHeaderActions({
   reportsMenuAnchorEl,
+  canEdit,
   canExport,
   onCreate,
   onOpenReportsMenu,
   loading,
 }: {
   reportsMenuAnchorEl: HTMLElement | null;
+  canEdit: boolean;
   canExport: boolean;
   onCreate: () => void;
   onOpenReportsMenu: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -152,7 +154,7 @@ function NetworkPageHeaderActions({
 }) {
   return (
     <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap' }}>
-      <Button variant="contained" disabled onClick={onCreate}>
+      <Button variant="contained" disabled={loading || !canEdit} onClick={onCreate}>
         Створити мережу
       </Button>
       <Button
@@ -324,9 +326,6 @@ export function getLocationParts(location: string): string[] {
 }
 
 function NetworkCell({ network }: { network: NetworkRowView }) {
-  const href = `/rer-networks-neo/${network.id}`;
-  const label = buildNetworkLabel(network.network, network.unitLabels, network.developing);
-
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
       <Tooltip title={network.statusLabel}>
@@ -342,11 +341,12 @@ function NetworkCell({ network }: { network: NetworkRowView }) {
       </Tooltip>
       <Box
         component="a"
-        href={href}
-        title={label}
-        aria-label={label}
+        href={`/rer-networks-neo/${network.id}`}
+        title={network.networkLabel}
+        aria-label={network.networkLabel}
         sx={{
           minWidth: 0,
+          flex: 1,
           display: 'inline-flex',
           alignItems: 'center',
           color: 'primary.main',
@@ -356,8 +356,20 @@ function NetworkCell({ network }: { network: NetworkRowView }) {
           },
         }}
       >
-        <RowLabel text={label} />
+        <RowLabel text={network.networkLabel} />
       </Box>
+      {network.developing ? (
+        <PowerChip
+          label="В дорозвідці"
+          interactive={false}
+          size="small"
+          fontWeight={700}
+          unselectedOpacity={1}
+          unselectedBackgroundColor="warning.main"
+          unselectedTextColor="warning.contrastText"
+          unselectedBorderColor="warning.main"
+        />
+      ) : null}
     </Stack>
   );
 }
@@ -495,7 +507,7 @@ function NetworkRowActions({
           label="Редагувати"
           onClick={() => onOpenEditDialog(network.network)}
           disabled={!canEdit}
-          icon={<EditOutlinedIcon fontSize="small" />}
+          icon={<EditIcon fontSize="small" />}
         />
         <MrtRowActionButton
           label="Видалити"
@@ -1030,10 +1042,21 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
                 label: 'Підрозділ',
                 value: page.filters.unitText.trim(),
                 valuePreview: page.filters.unitText.trim(),
-                isGlobalFilter: false,
-              },
-            ]
-          : []),
+              isGlobalFilter: false,
+            },
+          ]
+        : []),
+      ...(page.filters.showOnlyInvestigating
+        ? [
+            {
+              id: 'page-investigating',
+              label: 'Статус',
+              value: 'В дорозвідці',
+              valuePreview: 'В дорозвідці',
+              isGlobalFilter: false,
+            },
+          ]
+        : []),
       ...(page.filters.status !== 'all'
         ? [
             {
@@ -1054,6 +1077,7 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
     [
       page.filters.status,
       page.filters.unitText,
+      page.filters.showOnlyInvestigating,
       page.selectedSidebarUnitFilter,
     ],
   );
@@ -1077,10 +1101,11 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
           internalActionsHidden
           actions={
             <NetworkPageHeaderActions
+              canEdit={page.permissions.canEdit}
               canExport={page.permissions.canExport}
               reportsMenuAnchorEl={page.reportsMenuAnchorEl}
-              loading={page.downloadInFlight !== null}
-              onCreate={() => {}}
+              loading={page.loading || page.refreshing || page.loadingMore || page.downloadInFlight !== null}
+              onCreate={page.openCreateDialog}
               onOpenReportsMenu={onToggleReportsMenu}
             />
           }
@@ -1213,12 +1238,16 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
                     if (filterId === 'page-unit') {
                       page.onClearUnitFilter();
                     }
+                    if (filterId === 'page-investigating') {
+                      page.onClearInvestigatingFilter();
+                    }
                     if (filterId === 'page-status') {
                       page.setFilters((current) => ({ ...current, status: 'all' }));
                     }
                   }}
                   onClearAdditionalActiveFilters={() => {
                     page.onClearUnitFilter();
+                    page.onClearInvestigatingFilter();
                     page.setFilters((current) => ({ ...current, status: 'all' }));
                   }}
                   fullScreenEnabled={false}
@@ -1362,14 +1391,32 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
       />
 
       <NetworkEditDrawer
-        open={page.editDialog !== null}
-        form={page.editDialog}
-        saving={page.editSubmitting}
-        error={page.editError}
-        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0}
+        open={page.createDialog !== null}
+        mode="create"
+        form={page.createDialog}
+        saving={page.createSubmitting}
+        error={page.createError}
+        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.modulations.length === 0}
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
+        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
+        onClose={page.closeCreateDialog}
+        onChange={page.setCreateDialog}
+        onSave={() => void page.saveNetworkCreate()}
+      />
+
+      <NetworkEditDrawer
+        open={page.editDialog !== null}
+        mode="edit"
+        form={page.editDialog}
+        saving={page.editSubmitting}
+        error={page.editError}
+        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.modulations.length === 0}
+        aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
+        unitOptions={page.unitOptions}
+        postOptions={page.postOptions}
+        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
         onClose={page.closeEditDialog}
         onChange={page.setEditDialog}
         onSave={() => void page.saveNetworkEdit()}

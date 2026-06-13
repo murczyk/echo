@@ -163,6 +163,7 @@ beforeEach(() => {
     posts: [],
     unitOptions: [buildUnit(1, 'Unit 1')],
     postOptions: [],
+    modulations: [{ id: 11, label: 'FM' }],
     unitStatsView: [],
     selectedSidebarUnitFilter: null,
     onPickUnitFilter: vi.fn(),
@@ -189,6 +190,13 @@ beforeEach(() => {
     downloadInFlight: null,
     runDownload: vi.fn(),
     loadMoreNetworks: vi.fn(),
+    createDialog: null,
+    createSubmitting: false,
+    createError: null,
+    openCreateDialog: vi.fn(),
+    closeCreateDialog: vi.fn(),
+    setCreateDialog: vi.fn(),
+    saveNetworkCreate: vi.fn(),
     editDialog: null,
     editSubmitting: false,
     editError: null,
@@ -288,17 +296,39 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   const renderedNetworkCell = ((networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any)?.type as (
     props: any,
   ) => any)?.(
-    (networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any).props,
+    (networkCell?.Cell?.({
+      row: {
+        original: {
+          id: 42,
+          network: { name: 'Network 1' },
+          networkLabel: 'р/м Network 1 1 АК',
+          unitLabels: ['1 АК'],
+          developing: true,
+          statusLabel: 'Активна',
+          statusColor: '#54c06c',
+          statusKey: 'active',
+          aorLabels: [],
+          activeFrequencies: [],
+          inactiveFrequencies: [],
+          activityBars: [],
+          lastActivityLabel: '—',
+          lastActivityDetail: 'невідомий',
+          lastActivityTooltip: '—',
+          createdAtLabel: '—',
+        },
+      },
+    } as never) as any).props,
   );
   const networkAnchor = renderedNetworkCell.props.children[1];
+  const developingChip = renderedNetworkCell.props.children[2];
   expect(networkAnchor.props.href).toBe('/rer-networks-neo/42');
-  expect(networkAnchor.props.title).toContain('р/м Network 1');
-  expect(networkAnchor.props.title).toContain('1 АК');
-  expect(networkAnchor.props.title).toContain('в дорозвідці');
+  expect(networkAnchor.props.title).toBe('р/м Network 1 1 АК');
+  expect(networkAnchor.props.title).not.toContain('в дорозвідці');
   expect(networkAnchor.props.target).toBeUndefined();
   expect(networkAnchor.props.rel).toBeUndefined();
   expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
-  expect(networkAnchor.props.children.props.text).toContain('р/м Network 1');
+  expect(networkAnchor.props.children.props.text).toBe('р/м Network 1 1 АК');
+  expect(developingChip.props.label).toBe('В дорозвідці');
   expect(capturedTableStateProviderProps?.defaultSorting).toEqual([{ id: 'network', desc: false }]);
 
 });
@@ -341,7 +371,7 @@ it('does not duplicate the AOR column filter in the active filter list', () => {
   tableStateMock.columnFilters = [{ id: 'aors', value: ['6'] }];
   tableStateMock.globalFilter = 'alpha';
   defaultPageReturn.aorOptions = [buildAor(6, '14 АК')];
-  defaultPageReturn.filters = { ...defaultPageReturn.filters, status: 'active', unitText: '3 АК' };
+  defaultPageReturn.filters = { ...defaultPageReturn.filters, status: 'active', unitText: '3 АК', showOnlyInvestigating: true };
 
   root = createRoot(container);
   act(() => {
@@ -354,10 +384,23 @@ it('does not duplicate the AOR column filter in the active filter list', () => {
   expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['999'])).toBe('#999');
   expect(capturedInternalActionsProps?.additionalActiveFilters).toEqual([
     expect.objectContaining({ id: 'page-unit', label: 'Підрозділ' }),
+    expect.objectContaining({ id: 'page-investigating', label: 'Статус', value: 'В дорозвідці' }),
     expect.objectContaining({ id: 'page-status', label: 'Статус' }),
   ]);
   expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === '__global_filter__')).toBe(false);
   expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === 'aors')).toBe(false);
+
+  act(() => {
+    (capturedInternalActionsProps?.onClearAdditionalActiveFilter as ((filterId: string) => void) | undefined)?.('page-investigating');
+  });
+  expect(defaultPageReturn.onClearInvestigatingFilter).toHaveBeenCalled();
+
+  act(() => {
+    (capturedInternalActionsProps?.onClearAdditionalActiveFilters as (() => void) | undefined)?.();
+  });
+  expect(defaultPageReturn.onClearUnitFilter).toHaveBeenCalled();
+  expect(defaultPageReturn.onClearInvestigatingFilter).toHaveBeenCalledTimes(2);
+  expect(defaultPageReturn.setFilters).toHaveBeenCalledWith(expect.any(Function));
 });
 
 it('uses skeleton rows only for the initial load state', () => {

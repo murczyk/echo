@@ -293,6 +293,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     getInitialColumnsVisibility(),
   );
   const [columnOrder, setColumnOrder] = useState<MRT_ColumnOrderState>(() => getInitialColumnOrder());
+  const columnSizingPersistedOnceRef = useRef(false);
 
   const columnOrderTouched = !strArraysEqual(
     columnOrder.filter((c) => columnVisibility[c]),
@@ -306,6 +307,19 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     ensureTableWatermarkObserver();
     syncTableWatermarks();
   }, []);
+
+  useEffect(() => {
+    if (!columnSizingPersistedOnceRef.current) {
+      columnSizingPersistedOnceRef.current = true;
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      localStorage.setItem(`columnSizing-${props.tableId}`, JSON.stringify(columnSizing));
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [columnSizing, localStorage, props.tableId]);
 
   function getInitialColumnOrder() {
     const columnOrderFromStorage = localStorage.getItem(`columnOrder-${props.tableId}`);
@@ -571,7 +585,6 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       newColumnSizing = updaterOrValue;
     }
 
-    localStorage.setItem(`columnSizing-${props.tableId}`, JSON.stringify(newColumnSizing));
     setColumnSizing(newColumnSizing);
   }
 

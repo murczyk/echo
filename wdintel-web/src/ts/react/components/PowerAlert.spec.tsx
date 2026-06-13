@@ -69,6 +69,17 @@ describe('PowerAlert', () => {
     expect(view.container.textContent).not.toContain('done');
   });
 
+  it('shows a close button for success alerts with onClose', () => {
+    const view = renderComponent(
+      <PowerAlert severity="success" onClose={() => {}}>
+        done
+      </PowerAlert>,
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Close"]')).not.toBeNull();
+  });
+
   it('does not auto-hide info alerts by default', () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
@@ -86,6 +97,39 @@ describe('PowerAlert', () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Close"]')).toBeNull();
+  });
+
+  it('auto-hides timed info alerts and calls onClose', () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+
+    const view = renderComponent(
+      <PowerAlert severity="info" autoHideDuration={10} onClose={onClose}>
+        info
+      </PowerAlert>,
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Close"]')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).not.toContain('info');
+  });
+
+  it('shows a close button for explicitly dismissible info alerts', () => {
+    const view = renderComponent(
+      <PowerAlert severity="info" dismissible>
+        info
+      </PowerAlert>,
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Close"]')).not.toBeNull();
   });
 
   it('shows close button for warning and error alerts', () => {

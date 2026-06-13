@@ -1,6 +1,7 @@
 import type {
   AddNetworkFreqReq,
   CreateEncryptionKeyReq,
+  CreateNetworkReq,
   AddNetworkDescriptionsReq,
   DeleteNetworkDescriptionReq,
   DeleteNetworkFreqReq,
@@ -196,6 +197,11 @@ export async function createKey(req: CreateEncryptionKeyReq): Promise<Encryption
 
 export async function deleteNetwork(networkId: number): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/delete-network', { network_id: networkId });
+  return transformSnakeToCamel<Network>(data);
+}
+
+export async function createNetwork(req: CreateNetworkReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/create-network', transformCamelToSnake(req));
   return transformSnakeToCamel<Network>(data);
 }
 
