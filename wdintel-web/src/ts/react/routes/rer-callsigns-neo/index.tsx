@@ -96,7 +96,6 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   ) : null;
   const whiteActions = (
     <InternalTableActions
-      densityDisabled={page.loading}
       columnsVisibilityDisabled={page.loading}
       filtersDisabled={page.loading}
       additionalActiveFilters={[

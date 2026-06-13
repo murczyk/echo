@@ -16,7 +16,7 @@ import {
   Tooltip,
   useMediaQuery,
 } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
+import type { MRT_ColumnDef, MRT_SortingState } from 'material-react-table';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent, ReactNode } from 'react';
@@ -65,6 +65,7 @@ import {
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 
 const defaultMrtOptions = getDefaultMRTOptions<NetworkRowView>();
+const DEFAULT_NETWORKS_SORTING: MRT_SortingState = [{ id: 'network', desc: false }];
 const columnOrder = buildDefaultColumnOrder({
   dataColumnIds: ['network', 'aors', 'freqs', 'location', 'activity', 'lastActivity'],
   withRowNumbers: true,
@@ -1205,7 +1206,6 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
               <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
                 <InternalTableActions
                   table={tableStateContext.tableInstance}
-                  densityDisabled={page.loading}
                   columnsVisibilityDisabled={page.loading}
                   filtersDisabled={page.loading}
                   additionalActiveFilters={additionalActiveFilters}
@@ -1290,12 +1290,6 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
             </MenuItem>
             <MenuItem onClick={() => { page.setReportsMenuAnchorEl(null); void page.runDownload('goi'); }} disabled={page.downloadInFlight !== null || !page.permissions.canExport}>
               ГОІ
-            </MenuItem>
-            <MenuItem onClick={() => { page.setReportsMenuAnchorEl(null); page.setStatus({ kind: 'info', text: 'Експорт PDF ще не реалізовано.' }); }} disabled={page.downloadInFlight !== null || !page.permissions.canExport}>
-              Експорт PDF
-            </MenuItem>
-            <MenuItem onClick={() => { page.setReportsMenuAnchorEl(null); page.setStatus({ kind: 'info', text: 'Експорт CSV ще не реалізовано.' }); }} disabled={page.downloadInFlight !== null || !page.permissions.canExport}>
-              Експорт CSV
             </MenuItem>
           </Stack>
         </Paper>
@@ -1401,6 +1395,7 @@ export function RerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: str
       defaultColumnOrder={columnOrder}
       defaultColumnVisibility={{}}
       defaultEnableColumnOrdering={false}
+      defaultSorting={DEFAULT_NETWORKS_SORTING}
       sanitizeColumnFilters={sanitizeNetworkColumnFilters}
     >
       <RerNetworksNeoPageBody authUserRoles={authUserRoles} />

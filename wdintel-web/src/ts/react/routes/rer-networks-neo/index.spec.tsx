@@ -48,6 +48,7 @@ const mrtMock = vi.hoisted(() => ({
 let capturedOptions: Record<string, unknown> | null = null;
 let capturedToolbarProps: Record<string, unknown> | null = null;
 let capturedInternalActionsProps: Record<string, unknown> | null = null;
+let capturedTableStateProviderProps: Record<string, unknown> | null = null;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let defaultPageReturn: Record<string, unknown> | null = null;
@@ -56,7 +57,10 @@ vi.mock('../../components/mui-customized/table/table-state-provider', async (imp
   const actual = await importOriginal<typeof import('../../components/mui-customized/table/table-state-provider')>();
   return {
     ...actual,
-    TableStateProvider: ({ children }: { children: ReactNode }) => children,
+    TableStateProvider: (props: { children: ReactNode }) => {
+      capturedTableStateProviderProps = props as Record<string, unknown>;
+      return props.children;
+    },
     useTableStateContext: () => tableStateMock,
   };
 });
@@ -135,6 +139,7 @@ beforeEach(() => {
   capturedOptions = null;
   capturedToolbarProps = null;
   capturedInternalActionsProps = null;
+  capturedTableStateProviderProps = null;
   tableStateMock.globalFilter = '';
   tableStateMock.columnFilters = [];
   tableStateMock.sorting = [];
@@ -294,6 +299,7 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   expect(networkAnchor.props.rel).toBeUndefined();
   expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
   expect(networkAnchor.props.children.props.text).toContain('р/м Network 1');
+  expect(capturedTableStateProviderProps?.defaultSorting).toEqual([{ id: 'network', desc: false }]);
 
 });
 

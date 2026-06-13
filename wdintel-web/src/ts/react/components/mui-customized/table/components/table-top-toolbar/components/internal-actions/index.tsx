@@ -3,15 +3,12 @@ import type { ReactNode } from 'react';
 
 import { ActiveFiltersButton } from './components/active-filters-button';
 import { ColumnsVisibilityButton } from './components/columns-visibility-button';
-import { DensityToggleButton } from './components/density-toggle-button';
 import { useTableStateContext } from '../../../../table-state-provider';
 import type { ActiveFilterDescriptor } from './components/active-filters-utils';
 
 type IntrernalTableActionsProps<T extends MRT_RowData> = {
   table?: MRT_TableInstance<T> | null;
   children?: ReactNode;
-  densityDisabled?: boolean;
-  densityHidden?: boolean;
   filtersHidden?: boolean;
   colOrderHidden?: boolean;
   columnsVisibilityDisabled?: boolean;
@@ -49,7 +46,6 @@ export function InternalTableActions<T extends MRT_RowData>(props: IntrernalTabl
         disabled={props.columnsVisibilityDisabled || tableControlsDisabled}
         rowNumberAppearanceControl={props.rowNumberAppearanceControl}
       />
-      {!props.densityHidden && <DensityToggleButton disabled={props.densityDisabled || tableControlsDisabled} />}
     </div>
   );
 }

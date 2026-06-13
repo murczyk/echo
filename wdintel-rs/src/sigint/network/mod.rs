@@ -233,9 +233,15 @@ fn network_aor_exists_for_token(token: &str) -> SimpleExpr {
             sigint_network_aor::Relation::AreaOfResponsibility.def(),
             Alias::new("sigint_aor"),
         )
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(
+            Expr::col((
+                Alias::new("sigint_aor"),
+                area_of_responsibility::Column::Deleted,
+            ))
+            .eq(false),
+        )
         .filter(token_like_expr(
-            "lower(area_of_responsibility.name collate \"ru-x-icu\") ilike $1",
+            "lower(sigint_aor.name collate \"ru-x-icu\") ilike $1",
             token,
         ))
         .into_query();
@@ -511,7 +517,7 @@ fn network_recent_activity_exists_expr() -> SimpleExpr {
         "EXISTS (SELECT 1 \
          FROM sigint_inbox_item_network \
          INNER JOIN sigint_inbox_item ON sigint_inbox_item.id = sigint_inbox_item_network.sigint_inbox_item_id \
-         INNER JOIN signal_message ON signal_message.id = sigint_inbox_item.signal_message_id \
+         INNER JOIN signal_message ON signal_message.id = sigint_inbox_item.id \
          WHERE sigint_inbox_item_network.sigint_network_id = sigint_network.id \
            AND sigint_inbox_item.datetime >= CURRENT_TIMESTAMP - INTERVAL '10 days' \
            AND signal_message.deleted = false)",
@@ -4106,10 +4112,43 @@ mod tests {
         assert!(sql.contains(
             "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
         ));
+        assert!(
+            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(!sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn list_query_with_numeric_global_text_filter_uses_valid_aor_alias() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("336".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql
+            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
         assert!(sql.contains(
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+        ));
+        assert!(sql.contains(
+            "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(sql.contains(
+            "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(sql.contains("sigint_aor.deleted = false"));
+        assert!(!sql.contains(
             "lower(area_of_responsibility.name collate \"ru-x-icu\") ilike"
         ));
-        assert!(!sql.contains("LIMIT"));
+        assert!(!sql.contains("area_of_responsibility.deleted = false"));
     }
 
     #[test]
@@ -4141,18 +4180,25 @@ mod tests {
 
     #[test]
     fn list_query_sorts_by_recent_activity_with_exists_expression() {
-        let mut req = empty_list_networks_req();
-        req.sort_by = Some(vec![ListNetworksSortBy::HasRecentActivityDesc]);
+        for sort_by in [
+            ListNetworksSortBy::HasRecentActivityAsc,
+            ListNetworksSortBy::HasRecentActivityDesc,
+        ] {
+            let mut req = empty_list_networks_req();
+            req.sort_by = Some(vec![sort_by]);
 
-        let sql = build_networks_query(&req, NetworkQueryKind::List)
-            .build(DbBackend::Postgres)
-            .to_string();
+            let sql = build_networks_query(&req, NetworkQueryKind::List)
+                .build(DbBackend::Postgres)
+                .to_string();
 
-        assert!(sql.contains("EXISTS (SELECT 1"));
-        assert!(sql.contains(
-            "sigint_inbox_item_network.sigint_network_id = sigint_network.id"
-        ));
-        assert!(sql.contains("CURRENT_TIMESTAMP - INTERVAL '10 days'"));
+            assert!(sql.contains("EXISTS (SELECT 1"));
+            assert!(sql.contains(
+                "sigint_inbox_item_network.sigint_network_id = sigint_network.id"
+            ));
+            assert!(sql.contains("signal_message.id = sigint_inbox_item.id"));
+            assert!(!sql.contains("sigint_inbox_item.signal_message_id"));
+            assert!(sql.contains("CURRENT_TIMESTAMP - INTERVAL '10 days'"));
+        }
     }
 
     #[test]

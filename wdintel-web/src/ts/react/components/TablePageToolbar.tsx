@@ -22,8 +22,6 @@ type Props = {
   trailingActionsBeforeInternal?: ReactNode;
   internalActionsHidden?: boolean;
   internalActionsDisabled?: boolean;
-  densityDisabled?: boolean;
-  densityHidden?: boolean;
   filtersHidden?: boolean;
   colOrderHidden?: boolean;
   colOrderDisabled?: boolean;
@@ -44,8 +42,6 @@ export function TablePageToolbar(props: Props) {
     shouldRenderInternalActions ? (
       <InternalTableActions
         table={tableStateContext.tableInstance}
-        densityDisabled={props.internalActionsDisabled || props.densityDisabled}
-        densityHidden={props.densityHidden}
         filtersHidden={props.filtersHidden}
         colOrderHidden={props.colOrderHidden}
         columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}

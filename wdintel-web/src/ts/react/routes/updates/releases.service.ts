@@ -17,7 +17,7 @@ function isAbsoluteUrl(href: string): boolean {
 }
 
 function getReleasesRoot(): string {
-  const envBase = (import.meta.env as Record<string, string | undefined>).VITE_RELEASES_BASE_URL;
+  const envBase = (import.meta.env as unknown as Record<string, string | undefined>).VITE_RELEASES_BASE_URL;
   return stripTrailingSlash(envBase && envBase.trim().length > 0 ? envBase : '/releases');
 }
 
