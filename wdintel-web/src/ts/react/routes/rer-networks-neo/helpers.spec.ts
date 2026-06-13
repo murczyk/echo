@@ -28,17 +28,20 @@ import {
 dayjs.extend(utc);
 
 describe('rer-networks-neo AOR filters', () => {
-  it('keeps the no-AOR option first in the filter menu', () => {
+  it('keeps the no-AOR option first and the all-band option second in the filter menu', () => {
     const options = resolveAorFilterSelectOptions([
+      { id: 3, name: 'Вся смуга' } as any,
       { id: 2, name: 'Бета' } as any,
       { id: 1, name: 'Альфа' } as any,
     ]);
 
     expect(options).toEqual([
       { label: '—', value: NO_AOR_FILTER_VALUE },
+      { label: 'Вся смуга', value: '3' },
       { label: 'Альфа', value: '1' },
       { label: 'Бета', value: '2' },
     ]);
+    expect(new Set(options.map((option) => option.value)).size).toBe(options.length);
   });
 
   it('matches no-AOR rows and regular AOR rows the same way as the classic filter', () => {

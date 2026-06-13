@@ -318,7 +318,7 @@ it('refreshes AOR filter options after lookup data loads', () => {
       ?.filterSelectOptions,
   ).toEqual([{ label: '—', value: '__no_aor__' }]);
 
-  defaultPageReturn.aorOptions = [buildAor(1, 'AOR 1')];
+  defaultPageReturn.aorOptions = [buildAor(2, 'Бета'), buildAor(3, 'Вся смуга'), buildAor(1, 'Альфа')];
   act(() => {
     root?.render(createElement(RerNetworksNeoPage));
   });
@@ -328,7 +328,9 @@ it('refreshes AOR filter options after lookup data loads', () => {
       ?.filterSelectOptions,
   ).toEqual([
     { label: '—', value: '__no_aor__' },
-    { label: 'AOR 1', value: '1' },
+    { label: 'Вся смуга', value: '3' },
+    { label: 'Альфа', value: '1' },
+    { label: 'Бета', value: '2' },
   ]);
 });
 

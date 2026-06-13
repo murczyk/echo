@@ -59,6 +59,7 @@ export type NetworkUnitStatView = {
 };
 
 export const NO_AOR_FILTER_VALUE = '__no_aor__';
+const ALL_BAND_AOR_LABEL = 'Вся смуга';
 export const NETWORK_COLUMN_FILTER_IDS = ['network', 'aors', 'freqs', 'location'] as const;
 type NetworkColumnFilterId = (typeof NETWORK_COLUMN_FILTER_IDS)[number];
 export const ACTIVITY_BAR_MIN_HEIGHT = 6;
@@ -445,13 +446,32 @@ export function buildNetworksStatusCountsReq(params: {
 }
 
 export function resolveAorFilterSelectOptions(aors: AreaOfResponsibility[]) {
-  return [
-    { label: '—', value: NO_AOR_FILTER_VALUE },
-    ...aors
-      .slice()
-      .sort((left, right) => left.name.localeCompare(right.name, 'uk'))
-      .map((aor) => ({ label: aor.name, value: String(aor.id) })),
-  ];
+  const seenValues = new Set<string>();
+  const addOption = (options: Array<{ label: string; value: string }>, option: { label: string; value: string }) => {
+    if (seenValues.has(option.value)) {
+      return;
+    }
+    seenValues.add(option.value);
+    options.push(option);
+  };
+
+  const options: Array<{ label: string; value: string }> = [];
+  addOption(options, { label: '—', value: NO_AOR_FILTER_VALUE });
+
+  const allBandAors = aors.filter((aor) => aor.name === ALL_BAND_AOR_LABEL);
+  const regularAors = aors
+    .filter((aor) => aor.name !== ALL_BAND_AOR_LABEL)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name, 'uk'));
+
+  for (const aor of allBandAors) {
+    addOption(options, { label: aor.name, value: String(aor.id) });
+  }
+  for (const aor of regularAors) {
+    addOption(options, { label: aor.name, value: String(aor.id) });
+  }
+
+  return options;
 }
 
 export function matchesAorFilter(network: Network, selectedValues: string[]) {
