@@ -492,6 +492,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
             .service(crate::messenger::group::handlers::orphan_signal_groups)
+            .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
             .service(crate::rer_importer::signal_profile_info_batch)
             .service(crate::rer_importer::signal_profile_save)

@@ -61,6 +61,37 @@ pub struct SignalGroupStats {
 }
 
 #[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalGroupStatsTimelineReq {
+    pub master_keys: Vec<String>,
+    pub period_hours: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalGroupStatsTimelinePoint {
+    pub timestamp: i64,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalGroupStatsTimelineEntry {
+    pub master_key: String,
+    pub points: Vec<SignalGroupStatsTimelinePoint>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalGroupStatsTimelineRsp {
+    pub data: Vec<SignalGroupStatsTimelineEntry>,
+}
+
+#[derive(
     Elm,
     ElmEncode,
     ElmDecode,

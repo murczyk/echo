@@ -1405,6 +1405,60 @@ signalGroupStatsEncoder struct =
         ]
 
 
+type alias SignalGroupStatsTimelineReq =
+    { masterKeys : List (String)
+    , periodHours : Maybe (Int)
+    }
+
+
+signalGroupStatsTimelineReqEncoder : SignalGroupStatsTimelineReq -> Json.Encode.Value
+signalGroupStatsTimelineReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_keys", (Json.Encode.list (Json.Encode.string)) struct.masterKeys )
+        , ( "period_hours", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.periodHours )
+        ]
+
+
+type alias SignalGroupStatsTimelinePoint =
+    { timestamp : Int
+    , count : Int
+    }
+
+
+signalGroupStatsTimelinePointEncoder : SignalGroupStatsTimelinePoint -> Json.Encode.Value
+signalGroupStatsTimelinePointEncoder struct =
+    Json.Encode.object
+        [ ( "timestamp", (Json.Encode.int) struct.timestamp )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias SignalGroupStatsTimelineEntry =
+    { masterKey : String
+    , points : List (SignalGroupStatsTimelinePoint)
+    }
+
+
+signalGroupStatsTimelineEntryEncoder : SignalGroupStatsTimelineEntry -> Json.Encode.Value
+signalGroupStatsTimelineEntryEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "points", (Json.Encode.list (signalGroupStatsTimelinePointEncoder)) struct.points )
+        ]
+
+
+type alias SignalGroupStatsTimelineRsp =
+    { data : List (SignalGroupStatsTimelineEntry)
+    }
+
+
+signalGroupStatsTimelineRspEncoder : SignalGroupStatsTimelineRsp -> Json.Encode.Value
+signalGroupStatsTimelineRspEncoder struct =
+    Json.Encode.object
+        [ ( "data", (Json.Encode.list (signalGroupStatsTimelineEntryEncoder)) struct.data )
+        ]
+
+
 type alias SignalGroupRsp =
     { name : Maybe (String)
     }
@@ -8894,6 +8948,33 @@ signalGroupStatsDecoder =
     Json.Decode.succeed SignalGroupStats
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_day" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_week" (Json.Decode.int)))
+
+
+signalGroupStatsTimelineReqDecoder : Json.Decode.Decoder SignalGroupStatsTimelineReq
+signalGroupStatsTimelineReqDecoder =
+    Json.Decode.succeed SignalGroupStatsTimelineReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_keys" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period_hours" (Json.Decode.nullable (Json.Decode.int))))
+
+
+signalGroupStatsTimelinePointDecoder : Json.Decode.Decoder SignalGroupStatsTimelinePoint
+signalGroupStatsTimelinePointDecoder =
+    Json.Decode.succeed SignalGroupStatsTimelinePoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+signalGroupStatsTimelineEntryDecoder : Json.Decode.Decoder SignalGroupStatsTimelineEntry
+signalGroupStatsTimelineEntryDecoder =
+    Json.Decode.succeed SignalGroupStatsTimelineEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (signalGroupStatsTimelinePointDecoder))))
+
+
+signalGroupStatsTimelineRspDecoder : Json.Decode.Decoder SignalGroupStatsTimelineRsp
+signalGroupStatsTimelineRspDecoder =
+    Json.Decode.succeed SignalGroupStatsTimelineRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "data" (Json.Decode.list (signalGroupStatsTimelineEntryDecoder))))
 
 
 signalGroupRspDecoder : Json.Decode.Decoder SignalGroupRsp

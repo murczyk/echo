@@ -531,6 +531,25 @@ export type SignalGroupStats = {
   activityLastWeek: number;
 };
 
+export type SignalGroupStatsTimelineReq = {
+  masterKeys: Array<string>;
+  periodHours: number | null;
+};
+
+export type SignalGroupStatsTimelinePoint = {
+  timestamp: number;
+  count: number;
+};
+
+export type SignalGroupStatsTimelineEntry = {
+  masterKey: string;
+  points: Array<SignalGroupStatsTimelinePoint>;
+};
+
+export type SignalGroupStatsTimelineRsp = {
+  data: Array<SignalGroupStatsTimelineEntry>;
+};
+
 export type SignalGroupRsp = {
   name: string | null;
 };

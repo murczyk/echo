@@ -5,11 +5,13 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use chrono::{Duration, Utc};
 use echo_migration::JoinType;
+use itertools::Itertools;
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Отримує список груп, які не прив'язані до жодного напрямку
 ///
@@ -94,4 +96,54 @@ pub async fn orphan_signal_groups(
         .collect();
 
     Ok(Json(data))
+}
+
+#[post("/api/rer-importer/group-stats-timeline")]
+pub async fn group_stats_timeline(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SignalGroupStatsTimelineReq>,
+) -> Result<Json<SignalGroupStatsTimelineRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .context(h!())?;
+
+    let req = req.into_inner();
+    let master_keys = req
+        .master_keys
+        .into_iter()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+        .unique()
+        .collect_vec();
+    let period_hours = req.period_hours.unwrap_or(24 * 90).clamp(1, 24 * 90);
+    let dt_till = Utc::now().naive_utc();
+    let dt_since = dt_till - Duration::hours(period_hours);
+
+    let mut data = crate::stats::read_group_stats_timeline_cached(
+        &env.dbx,
+        master_keys.clone(),
+        dt_since,
+        dt_till,
+    )
+    .await
+    .context(h!())?;
+
+    let mut data_by_key = data
+        .drain(..)
+        .map(|entry| (entry.master_key.clone(), entry))
+        .collect::<HashMap<_, _>>();
+    let data = master_keys
+        .into_iter()
+        .map(|master_key| {
+            data_by_key.remove(&master_key).unwrap_or(
+                SignalGroupStatsTimelineEntry {
+                    master_key,
+                    points: vec![],
+                },
+            )
+        })
+        .collect_vec();
+
+    Ok(Json(SignalGroupStatsTimelineRsp { data }))
 }
