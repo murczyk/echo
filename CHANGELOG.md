@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2538](https://github.com/echoua/echo/issues/2538) 🐞 Випралено підтримку формату дати HH:MI:SS DD.MM.YYYY. 
 - [#2536](https://github.com/echoua/echo/issues/2536) 🐞 Звіти: виправлено помилку при формуванні звіту з перехоплень отриманих від інтеграції ЕХО-Оператора.
 - [#2519](https://github.com/echoua/echo/issues/2519) ✅👷 Адмін: додано керування API-інтеграціями та перевірку з'єднання з Apache Iggy. При деплої на Північ необхідні команди: deploy-config-iggy, setup-iggy.
 - [#2445](https://github.com/echoua/echo/issues/2445) ✅ Аналіз (нова): покращення швидкодії.
