@@ -23,7 +23,7 @@ pub async fn oneoff_merge_datasource_group(
         return Err(AppError::NotFound);
     };
 
-    let group_name = target_signal_group.name.clone().unwrap();
+    let group_name = target_signal_group.name.clone().unwrap_or_default();
 
     let datasource_groups = datasource_group::Entity::find()
         .find_also_related(signal_group::Entity)

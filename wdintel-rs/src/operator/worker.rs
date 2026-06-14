@@ -55,6 +55,10 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
                 println!("> echo_operator::receive_thread_nofail error: {e:?}");
             }
         }
+        if let Err(e) = import_sigint_inbox_message_metadata(&dbx).await.c(h!())
+        {
+            println!("> echo_operator::import_sigint_inbox_message_metadata error: {e:?}");
+        }
     }
 }
 
@@ -107,7 +111,6 @@ async fn receive_once(
             .c(h!())?;
         txn.commit().await.c(h!())?;
     }
-    import_sigint_inbox_message_metadata(dbx).await.c(h!())?;
     Ok(())
 }
 
