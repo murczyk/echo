@@ -235,7 +235,7 @@ async fn ensure_group(
 
     let signal_group_by_echo_id = signal_group_candidates
         .iter()
-        .find(|x| &x.master_key == &echo_id);
+        .find(|x| x.master_key == echo_id);
 
     let datasource_group_by_group_master_key =
         if let Some(group_master_key) = &group_master_key {
@@ -248,7 +248,7 @@ async fn ensure_group(
 
     let datasource_group_by_echo_id = datasource_group_candidates
         .iter()
-        .find(|x| &x.group_master_key == &echo_id);
+        .find(|x| x.group_master_key == echo_id);
 
     let signal_group_by_name = signal_group_candidates
         .iter()
@@ -256,14 +256,14 @@ async fn ensure_group(
 
     let datasource_group_by_name = datasource_group_candidates
         .iter()
-        .find(|x| &x.name == &group.name);
+        .find(|x| x.name == group.name);
 
     let result = if let Some(datasource_group_by_group_master_key) =
         datasource_group_by_group_master_key
     {
         sync_datasource_group(
             &txn,
-            &datasource_group_by_group_master_key,
+            datasource_group_by_group_master_key,
             signal_group_by_master_key,
             &group.name,
         )
@@ -273,8 +273,8 @@ async fn ensure_group(
         datasource_group_by_echo_id
     {
         sync_datasource_group(
-            &txn,
-            &datasource_group_by_echo_id,
+            txn,
+            datasource_group_by_echo_id,
             signal_group_by_echo_id,
             &group.name,
         )
@@ -330,7 +330,7 @@ async fn sync_signal_group(
     signal_group: &signal_group::Model,
     group_name: &str,
 ) -> anyhow::Result<signal_group::Model> {
-    let signal_group_name = signal_group.name.as_ref().map(|s| s.as_str());
+    let signal_group_name = signal_group.name.as_deref();
 
     if signal_group.datasource_id == Some(datasource_id)
         && (signal_group.deleted || signal_group_name != Some(group_name))
