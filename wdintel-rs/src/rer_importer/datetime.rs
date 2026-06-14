@@ -658,7 +658,7 @@ mod tests {
 .
 Коментар: ( запит на зв'язок );"#;
         let tz = crate::config::get_tz();
-        let lnow = tz.with_ymd_and_hms(2026, 06, 14, 13, 56, 30).unwrap();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 14, 13, 56, 30).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2026, 6, 14)
