@@ -262,7 +262,7 @@ async fn ensure_group(
         datasource_group_by_group_master_key
     {
         sync_datasource_group(
-            &txn,
+            txn,
             datasource_group_by_group_master_key,
             signal_group_by_master_key,
             &group.name,

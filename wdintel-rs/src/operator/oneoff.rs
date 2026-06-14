@@ -15,6 +15,7 @@ pub async fn oneoff_merge_datasource_group(
     let source_signal_group =
         signal_group::Entity::find_by_id(ps.source_group_key)
             .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::DatasourceId.eq(ps.datasource_id))
             .one(&txn)
             .await
             .c(h!())?;
@@ -34,11 +35,46 @@ pub async fn oneoff_merge_datasource_group(
         return Err(AppError::NotFound);
     };
 
+    let datasource_group = datasource_group::Entity::find()
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq(source_signal_group.master_key.clone()),
+        )
+        .filter(datasource_group::Column::DatasourceId.eq(ps.datasource_id))
+        .one(&txn)
+        .await
+        .c(h!())?;
+
+    if let Some(group) = datasource_group {
+        let datasource_group_id = group.id;
+        let mut model = group.into_active_model();
+        model.group_master_key = Set(target_signal_group.master_key.clone());
+        model.update(&txn).await.c(h!())?;
+
+        signal_message_group::Entity::update_many()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(source_signal_group.master_key.clone()),
+            )
+            .filter(
+                signal_message_group::Column::DatasourceGroupId
+                    .eq(datasource_group_id),
+            )
+            .col_expr(
+                signal_message_group::Column::GroupMasterKey,
+                Expr::value(target_signal_group.master_key.clone()),
+            )
+            .exec(&txn)
+            .await
+            .c(h!())?;
+    }
+
     datasource_group::Entity::update_many()
         .filter(
             datasource_group::Column::GroupMasterKey
                 .eq(source_signal_group.master_key.clone()),
         )
+        .filter(datasource_group::Column::DatasourceId.eq(ps.datasource_id))
         .col_expr(
             datasource_group::Column::GroupMasterKey,
             Expr::value(target_signal_group.master_key.clone()),
@@ -87,19 +123,6 @@ pub async fn oneoff_merge_datasource_group(
         .filter(
             signal_group_aor::Column::MasterKey
                 .eq(source_signal_group.master_key.clone()),
-        )
-        .exec(&txn)
-        .await
-        .c(h!())?;
-
-    signal_message_group::Entity::update_many()
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq(source_signal_group.master_key.clone()),
-        )
-        .col_expr(
-            signal_message_group::Column::GroupMasterKey,
-            Expr::value(target_signal_group.master_key.clone()),
         )
         .exec(&txn)
         .await
