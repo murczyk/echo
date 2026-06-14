@@ -13,7 +13,7 @@ pub async fn oneoff_merge_datasource_group(
     let txn = dbx.begin().await.c(h!())?;
 
     let target_signal_group =
-        signal_group::Entity::find_by_id(ps.target_group_key)
+        signal_group::Entity::find_by_id(ps.target_group_key.clone())
             .filter(signal_group::Column::Deleted.eq(false))
             .one(&txn)
             .await
@@ -32,6 +32,10 @@ pub async fn oneoff_merge_datasource_group(
             datasource_group::Relation::Datasource.def(),
         )
         .filter(datasource::Column::Kind.eq("echo_operator"))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .ne(ps.target_group_key.clone()),
+        )
         .filter(datasource_group::Column::Name.eq(group_name.clone()))
         .all(&txn)
         .await
