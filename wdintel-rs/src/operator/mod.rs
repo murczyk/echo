@@ -281,6 +281,20 @@ async fn ensure_group(
         .await
         .c(h!())?
     } else if let Some(datasource_group_by_name) = datasource_group_by_name {
+        let owned_signal_group = signal_group::Entity::find()
+            .filter(
+                signal_group::Column::MasterKey
+                    .eq(datasource_group_by_name.group_master_key.clone()),
+            )
+            .filter(signal_group::Column::DatasourceId.eq(datasource_id))
+            .one(txn)
+            .await
+            .c(h!())?;
+        if let Some(signal_group) = owned_signal_group {
+            sync_signal_group(txn, datasource_id, &signal_group, &group.name)
+                .await
+                .c(h!())?;
+        }
         datasource_group_by_name.clone()
     } else {
         insert_datasource_group(

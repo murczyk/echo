@@ -568,8 +568,6 @@ pub struct ImportTuiPs {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffMergeDatasourceGroupPs {
     #[arg(long)]
-    pub datasource_id: i64,
-    #[arg(long)]
     pub source_group_key: String,
     #[arg(long)]
     pub target_group_key: String,
