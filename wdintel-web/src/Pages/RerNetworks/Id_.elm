@@ -1008,7 +1008,7 @@ update shared msg model =
                         (\mod ->
                             Select.basicMenuItem
                                 { item = mod.id
-                                , label = Modulations.displayModulationName mod.name
+                                , label = mod.name
                                 }
                         )
                         res
@@ -1022,7 +1022,7 @@ update shared msg model =
                             (\mod ->
                                 Select.basicMenuItem
                                     { item = mod.id
-                                    , label = Modulations.displayModulationName mod.name
+                                    , label = mod.name
                                     }
                             )
                             keyModulations

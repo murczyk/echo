@@ -101,7 +101,6 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
 
   if (normalized.includes('ARC40')) return 'ARC40';
   if (normalized.includes('AES256') || normalized.includes('AES-256') || normalized.includes('AES 256')) return 'AES256';
-  if (normalized.includes('VEDA')) return 'VEDA';
 
   return null;
 }

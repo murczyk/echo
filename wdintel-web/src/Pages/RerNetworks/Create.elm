@@ -687,7 +687,7 @@ update shared route msg model =
                                 (\mod ->
                                     Select.basicMenuItem
                                         { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
+                                        , label = mod.name
                                         }
                                 )
                                 res
@@ -703,7 +703,7 @@ update shared route msg model =
                                 (\mod ->
                                     Select.basicMenuItem
                                         { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
+                                        , label = mod.name
                                         }
                                 )
                                 res

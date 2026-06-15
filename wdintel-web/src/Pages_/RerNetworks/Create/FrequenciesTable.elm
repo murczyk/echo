@@ -834,8 +834,7 @@ freqsTableConfig shared model user =
                 { name = "Шифрування"
                 , viewData =
                     \freq ->
-                        Maybe.withDefault "" freq.modulation
-                            |> Modulations.displayModulationName
+                        Maybe.withDefault "" freq.encryption
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
@@ -853,7 +852,7 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "16%"
             , Table.customColumn
-                { name = "Шифрування"
+                { name = "Модуляція"
                 , viewData =
                     \freq ->
                         Maybe.withDefault "" freq.modulation
@@ -1173,7 +1172,7 @@ freqEditSidebarContent shared model _ freqId updateReq =
                                                     modulations
                                                         |> List.filter (\mod -> mod.id == encryptionId)
                                                         |> List.head
-                                                        |> Maybe.map (.name >> Modulations.displayModulationName)
+                                                        |> Maybe.map .name
                                                         |> Maybe.withDefault ""
 
                                                 _ ->
@@ -1343,7 +1342,7 @@ freqCreateSidebarContent shared model _ =
                                                 modulations
                                                     |> List.filter (\mod -> mod.id == item)
                                                     |> List.head
-                                                    |> Maybe.map (.name >> Modulations.displayModulationName)
+                                                    |> Maybe.map .name
                                                     |> Maybe.withDefault ""
                                             }
                                     )

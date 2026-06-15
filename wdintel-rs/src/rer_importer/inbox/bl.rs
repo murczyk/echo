@@ -264,7 +264,7 @@ pub async fn aggregate_to_inbox_messages(
             .filter(|m| m.content_type.to_lowercase().starts_with("image/"))
             .map(mk_media_url)
             .collect_vec();
-        let body = message.body.unwrap_or("".to_string());
+        let body = message.body.clone().unwrap_or("".to_string());
         let no_headers_body =
             crate::rer_importer::body_noheader::extract_text(&body)?;
         let freq = message.freq.clone();
@@ -340,7 +340,7 @@ pub async fn aggregate_to_inbox_messages(
                     .flatten()
             }
         };
-        let text_marked = crate::rer_importer::highlight::highlight(
+        let text_marked = highlight(
             &body,
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
@@ -348,7 +348,7 @@ pub async fn aggregate_to_inbox_messages(
             &m_keyword_tokens,
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
-            crate::rer_importer::highlight::HighlightOpts {
+            HighlightOpts {
                 highlight_callsigns: req.highlight_callsigns,
                 highlight_keywords: req.highlight_keywords,
                 highlight_points: req.highlight_points,
@@ -356,12 +356,10 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
+        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
+            &env, message.id, &logins,
+        )
+        .await?;
         let location_v2 = match message.location_v2.clone() {
             None => None,
             Some(location) => Some(to_location_list(&location).join(", ")),
@@ -424,6 +422,21 @@ pub async fn aggregate_to_inbox_messages(
     }
 
     Ok(res)
+}
+
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+    env: &Env,
+    item_id: i64,
+    logins: &Vec<String>,
+) -> Result<Option<sigint_comment::Model>, AppError> {
+    let m_comment = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
+        .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+
+    Ok(m_comment)
 }
 
 pub async fn fill_callsigns(
@@ -595,7 +608,7 @@ pub async fn load_inbox_callsigns(
                 .callsigns
                 .clone()
                 .into_iter()
-                .chain(item.callsigns_alg2.clone().into_iter())
+                .chain(item.callsigns_alg2.clone())
                 .unique()
                 .collect_vec();
             (item.network_ids.clone(), callsigns)

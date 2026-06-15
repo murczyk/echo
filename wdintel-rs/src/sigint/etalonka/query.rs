@@ -410,7 +410,10 @@ fn build_network_freqs_query(
             Alias::new("last_datetime"),
         )
         .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Modulation)),
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::Modulation,
+            )),
             Alias::new("modulation"),
         )
         .expr_as(
@@ -550,7 +553,10 @@ fn build_network_freqs_base_query(
             Alias::new("last_datetime"),
         )
         .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Modulation)),
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::Modulation,
+            )),
             Alias::new("modulation"),
         )
         .expr_as(Expr::cust("0"), Alias::new("message_count"))

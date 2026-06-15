@@ -9,7 +9,8 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
 
         // Save original (kind, modulation_id) before any transformation — used by down()
-        db.execute_unprepared("
+        db.execute_unprepared(
+            "
             CREATE TABLE _mig_freq_backup AS
                 SELECT id, kind::text AS kind, modulation_id
                 FROM sigint_network_freq;
@@ -17,7 +18,9 @@ impl MigrationTrait for Migration {
             CREATE TABLE _mig_enc_key_backup AS
                 SELECT id, modulation_id
                 FROM sigint_network_encryption_key;
-        ").await?;
+        ",
+        )
+        .await?;
 
         // Insert new encryption target records and add modulation text column
         db.execute_unprepared("

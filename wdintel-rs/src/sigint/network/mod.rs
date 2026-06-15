@@ -3098,6 +3098,7 @@ pub async fn encryptions_list(
     )
     .await?;
     let encryptions = encryption::Entity::find()
+        .filter(encryption::Column::Enabled.eq(true))
         .all(&env.dbx)
         .await
         .context(h!())?;

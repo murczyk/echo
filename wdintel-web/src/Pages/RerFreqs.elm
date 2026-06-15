@@ -1343,7 +1343,7 @@ update shared msg model =
                                     (\modulation ->
                                         Select.basicMenuItem
                                             { item = modulation.id
-                                            , label = Modulations.displayModulationName modulation.name
+                                            , label = modulation.name
                                             }
                                     )
                     }
@@ -1356,7 +1356,7 @@ update shared msg model =
                                     (\modulation ->
                                         Select.basicMenuItem
                                             { item = modulation.id
-                                            , label = Modulations.displayModulationName modulation.name
+                                            , label = modulation.name
                                             }
                                     )
                     }
@@ -1369,7 +1369,7 @@ update shared msg model =
                                     (\modulation ->
                                         Select.basicMenuItem
                                             { item = modulation.id
-                                            , label = Modulations.displayModulationName modulation.name
+                                            , label = modulation.name
                                             }
                                     )
                     }

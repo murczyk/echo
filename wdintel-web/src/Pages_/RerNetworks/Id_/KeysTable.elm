@@ -1362,7 +1362,7 @@ encryptionLabelById model encryptionId =
             else
                 encryptions
                     |> ListX.find (\modulation -> modulation.id == encryptionId)
-                    |> Maybe.map (.name >> Modulations.displayModulationName)
+                    |> Maybe.map .name
                     |> Maybe.withDefault Modulations.undefinedModulationLabel
 
         _ ->
@@ -1411,13 +1411,10 @@ keyRulesFromEncryptionId model encryptionId =
 keyRulesFromModulationName : Maybe String -> KeyRules
 keyRulesFromModulationName modulationName =
     case modulationName of
-        Just "DMR (ARC40)" ->
+        Just "ARC40" ->
             { keyAllowed = True, requiredLen = Just 4 }
 
-        Just "DMR (AES256)" ->
-            { keyAllowed = True, requiredLen = Just 64 }
-
-        Just "HYTERA (256 bit)" ->
+        Just "AES256" ->
             { keyAllowed = True, requiredLen = Just 64 }
 
         Just "TYT (16 bit)" ->
@@ -1426,34 +1423,7 @@ keyRulesFromModulationName modulationName =
         Just "TYT (128 bit)" ->
             { keyAllowed = True, requiredLen = Just 32 }
 
-        Just "NFM" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "AM" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "АМ" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "DMR" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "HYTERA" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "TYT" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "TETRA" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "Гранит" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "GSM" ->
-            { keyAllowed = False, requiredLen = Nothing }
-
-        Just "Умовна" ->
+        Just "Без шифрування" ->
             { keyAllowed = False, requiredLen = Nothing }
 
         _ ->
