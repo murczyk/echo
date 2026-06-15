@@ -79,26 +79,8 @@ vi.mock('../../../components/SearchableMultiOptionAutocomplete', () => ({
   }) => <div data-testid="unit-options">{options.map((option) => getOptionLabel(option)).join('|')}</div>,
 }));
 
-vi.mock('./NetworkFreqActivityControl', () => ({
-  NetworkFreqActivityControl: () => <div data-testid="freq-activity-control" />,
-}));
-
-vi.mock('./NetworkFreqDatePickerField', () => ({
-  NetworkFreqDatePickerField: ({
-    label,
-    helperText,
-    onBlur,
-  }: {
-    label: string;
-    helperText?: ReactNode;
-    onBlur?: () => void;
-  }) => (
-    <label>
-      <span>{label}</span>
-      <input aria-label={label} onBlur={onBlur} />
-      {helperText ? <span>{helperText}</span> : null}
-    </label>
-  ),
+vi.mock('./NetworkFreqActivityPeriodControl', () => ({
+  NetworkFreqActivityPeriodControl: () => <div data-testid="freq-activity-period-control" />,
 }));
 
 import { NetworkEditDrawer } from './NetworkEditDrawer';
@@ -229,6 +211,7 @@ describe('NetworkEditDrawer', () => {
 
     const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Створити') as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
+    expect(view.container.querySelector('[data-testid="freq-activity-period-control"]')).not.toBeNull();
   });
 
   it('disables edit save while required metadata is invalid', () => {

@@ -6,6 +6,7 @@
     '/@id/',
     '/node_modules/.vite/',
   ];
+  const devModuleExtensions = ['.ts', '.tsx'];
   const lastReloadAtStorageKey = 'echo.dev-module-reload-recovery.last-reload-at';
   const autoReloadCooldownMs = 8000;
   const readyProbeUrl = '/.elm-land/server/main.js';
@@ -96,7 +97,11 @@
     }
 
     const pathname = toPathname(url);
-    return Boolean(pathname && devAssetPrefixes.some((prefix) => pathname.startsWith(prefix)));
+    return Boolean(
+      pathname &&
+        (devAssetPrefixes.some((prefix) => pathname.startsWith(prefix)) ||
+          devModuleExtensions.some((extension) => pathname.endsWith(extension))),
+    );
   }
 
   function isRecoverableMessage(message) {

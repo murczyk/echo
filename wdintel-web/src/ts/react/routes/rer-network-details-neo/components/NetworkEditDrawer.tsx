@@ -21,8 +21,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
 import { ELLIPSIS } from '../../../utils/misc';
-import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
-import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
+import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS, NEO_SELECT_MENU_PROPS } from './dropdownProps';
 import type { NetworkEditLookupOption as LookupOption } from './network-edit-autocomplete';
 import { networkEditLookupFilterOptions } from './network-edit-autocomplete';
@@ -449,22 +448,15 @@ function NetworkEditDrawerComponent({
                         )}
                       />
 
-                      <NetworkFreqDatePickerField
-                        label="Активна з"
-                        value={form.activeFrom}
-                        onChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
-                        disabled={formBlocked}
-                        textFieldSx={{ width: '100%' }}
-                        onBlur={() => markTouched('activeFrom')}
-                        error={fieldError('activeFrom') !== undefined}
-                        helperText={fieldError('activeFrom')}
-                        required
-                      />
-
-                      <NetworkFreqActivityControl
+                      <NetworkFreqActivityPeriodControl
+                        activeFrom={form.activeFrom}
                         activeTo={form.activeTo}
-                        onChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
+                        onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
+                        onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
                         disabled={formBlocked}
+                        required
+                        activeFromError={fieldError('activeFrom') !== undefined}
+                        activeFromHelperText={fieldError('activeFrom')}
                       />
                     </Stack>
                   </Box>
