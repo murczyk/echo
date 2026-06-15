@@ -57,6 +57,12 @@ pub fn extract_datetime(
                 Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
+            // Work with formats like HH:MI:SS DD.MM.YYYY
+            // Order here is important, see https://github.com/echoua/echo/issues/2538
+            (
+                Regex::new(r"(?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
+            ),
             // Work with formats like HH:MI DD.MM.YYYY
             (
                 Regex::new(r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
@@ -629,6 +635,35 @@ mod tests {
             NaiveDate::from_ymd_opt(2024, 2, 21)
                 .unwrap()
                 .and_hms_opt(17, 28, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_kupyansk_hms_before_date() {
+        // https://github.com/echoua/echo/issues/2538
+
+        let input = r#"13:17:14 14.06.2026
+Частота: 408.500;
+Локація: Авдіївка (йм. в напрямку Ласточкине);
+Підрозділ: УКХ р/м невизначеного підрозділу;
+Час: 17:28;
+Хто: Змей;
+Кому: Чёрный;
+Текст:
+- Чёрный я Змей ответь по керосину
+- ..
+- 3 мсб? правильно?;
+.
+Коментар: ( запит на зв'язок );"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 14, 13, 56, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 14)
+                .unwrap()
+                .and_hms_opt(13, 17, 14)
                 .unwrap(),
         );
         assert_eq!(res, expected);

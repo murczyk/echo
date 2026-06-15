@@ -5,6 +5,7 @@ use serde::Serialize;
 
 pub async fn discord_notify(
     config: &crate::config::Config,
+    webhook: &str,
     content: &str,
 ) -> Result<(), AppError> {
     if config.skip_discord_notifications == Some(true) {
@@ -16,7 +17,7 @@ pub async fn discord_notify(
     }
     let rq = reqwest::Client::new();
 
-    rq.post(crate::config::DISCORD_WEBHOOK)
+    rq.post(webhook)
         .header("content-type", "application/json")
         .json(&DiscordReq {
             content: content.to_string(),

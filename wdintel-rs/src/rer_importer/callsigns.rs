@@ -577,7 +577,7 @@ fn extract_kazhanchik_callsigns(
     // CALLSING must have capital letters and possibly numbers as a suffix
     // also allowed digital callsing in format 1-Й, 34-Й (i.e. numbers dash Й)
     // for digitall calllins only there is a extract_digital_callsigns function
-    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)??(?P<callsign>(([A-ZА-ЯЁ]+(\s*(-|—)?\s*[0-9]{1,3})?)|([0-9]{1,3}\s*(-|—)?\s*Й)))(\s?\([^\s]+\))?";
+    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)??(?P<callsign>(([A-ZА-ЯЁ]+(\s*(-|—)\s*[A-ZА-ЯЁ]+)*(\s*(-|—)?\s*[0-9]{1,3})?)|([0-9]{1,3}\s*(-|—)?\s*Й)))(\s?\([^\s]+\))?";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -2281,6 +2281,19 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, vec!["КОЛАК11"])
+    }
+
+    #[test]
+    fn extract_callsigns_kazhanchik_regular_callsign_with_dash() {
+        let body = r#"02.04.2023_21:40 F=450,7250(МГц)
+-
+САКСОФОН-КОНТРОЛЬ
+НВ (НВ)
+"- Саксофон-Контроль, прием."
+"#;
+        let res = extract_kazhanchik_callsigns(body).unwrap();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+        assert_eq!(ress, vec!["САКСОФОН-КОНТРОЛЬ"])
     }
 
     #[test]

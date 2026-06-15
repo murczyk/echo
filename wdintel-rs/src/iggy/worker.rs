@@ -1,26 +1,22 @@
 use crate::entities::api_integration;
 use crate::error::AppError;
-use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
+use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
 use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
-use futures_util::{future::join_all, StreamExt};
+use futures_util::StreamExt;
 use iggy::prelude::{IggyMessage, IggyProducer};
 use sea_orm::*;
 use std::time::Duration;
 use tokio::time::{sleep, timeout, Instant};
-use tokio_util::sync::CancellationToken;
 
-pub async fn run_nofail(env: Arc<Env>, cancel_token: CancellationToken) {
+pub async fn run_nofail(env: Arc<Env>) {
     loop {
-        let has_active_integrations = match sync_active_integrations(&env).await
-        {
-            Ok(has_active_integrations) => has_active_integrations,
-            Err(err) => {
+        let has_active_integrations =
+            sync_active_integrations(&env).await.unwrap_or_else(|err| {
                 error!("Iggy integration worker cycle failed: {err:#?}");
                 false
-            }
-        };
+            });
         let sleep_duration = if has_active_integrations {
             Duration::from_millis(
                 crate::config::API_INTEGRATION_IGGY_WORKER_ACTIVE_SLEEP_MS,
@@ -30,10 +26,7 @@ pub async fn run_nofail(env: Arc<Env>, cancel_token: CancellationToken) {
                 crate::config::API_INTEGRATION_IGGY_WORKER_IDLE_SLEEP_SEC,
             )
         };
-        tokio::select! {
-            _ = cancel_token.cancelled() => return,
-            _ = sleep(sleep_duration) => {}
-        }
+        sleep(sleep_duration).await;
     }
 }
 
@@ -46,7 +39,7 @@ async fn sync_active_integrations(env: &Env) -> Result<bool, AppError> {
         .await
         .c(h!())?;
     let has_active_integrations = !integrations.is_empty();
-    let syncs = integrations.into_iter().map(|api_integration| async move {
+    for api_integration in integrations {
         let id = api_integration.id;
         if let Err(err) = sync_integration(env, api_integration).await {
             error!("Iggy integration {id} sync failed: {err:#?}");
@@ -55,9 +48,10 @@ async fn sync_active_integrations(env: &Env) -> Result<bool, AppError> {
                     "Iggy integration {id} status update failed: {status_err:#?}"
                 );
             }
+        } else {
+            info!("Iggy integration {id} sync succeeded");
         }
-    });
-    join_all(syncs).await;
+    }
     Ok(has_active_integrations)
 }
 
@@ -90,7 +84,40 @@ async fn sync_integration(
     let inbox_messages = load_inbox_messages(env, &api_integration, started_at)
         .await
         .c(h!())?;
+    if !inbox_messages.is_empty() {
+        info!(
+            "Iggy integration {} publishing {} inbox messages",
+            api_integration.id,
+            inbox_messages.len()
+        );
+    } else {
+        info!(
+            "Iggy integration {} did not publish any messages",
+            api_integration.id,
+        );
+        return Ok(());
+    }
     let client = crate::iggy::connect(url, iggy_login, password).await?;
+    let sync_result = sync_connected_integration(
+        env,
+        &api_integration,
+        started_at,
+        inbox_messages,
+        &client,
+    )
+    .await;
+    let shutdown_result = crate::iggy::shutdown(&client).await;
+    sync_result?;
+    shutdown_result
+}
+
+async fn sync_connected_integration(
+    env: &Env,
+    api_integration: &api_integration::Model,
+    started_at: NaiveDateTime,
+    inbox_messages: Vec<(i64, crate::rer_importer::types::InboxMessage)>,
+    client: &iggy::prelude::IggyClient,
+) -> Result<(), AppError> {
     let inbox_topic = api_integration.iggy_inbox_topic.as_deref().c(h!())?;
     let (stream, topic) = crate::iggy::stream_and_topic(inbox_topic);
     let producer = client
@@ -110,7 +137,6 @@ async fn sync_integration(
             set_is_working(&env.dbx, api_integration.id, false)
                 .await
                 .c(h!())?;
-            crate::iggy::shutdown(&client).await?;
             return Ok(());
         }
     }
@@ -118,9 +144,7 @@ async fn sync_integration(
     set_sync_completed(&env.dbx, api_integration.id, started_at)
         .await
         .c(h!())?;
-    log_analytics_entries(&client, &api_integration).await?;
-    crate::iggy::shutdown(&client).await?;
-    Ok(())
+    log_analytics_entries(client, api_integration).await
 }
 
 async fn load_inbox_messages(
@@ -130,13 +154,8 @@ async fn load_inbox_messages(
 ) -> Result<Vec<(i64, crate::rer_importer::types::InboxMessage)>, AppError> {
     let last_sync_at = api_integration.last_sync_at.unwrap_or(started_at);
     let req = InboxMessagesReq {
-        since_date_inclusive_ms: Some(
-            last_sync_at.and_utc().timestamp_millis(),
-        ),
-        till_date_inclusive_ms: Some(started_at.and_utc().timestamp_millis()),
         nolimit: Some(true),
         newest_first: Some(false),
-        sort_by: Some(InboxMessagesSortBy::IMSDatetime),
         ..Default::default()
     };
     let logins = crate::users::get_organism_logins_by_login(
@@ -145,11 +164,13 @@ async fn load_inbox_messages(
     )
     .await
     .c(h!())?;
-    crate::rer_importer::inbox::get_inbox_messages(
+    crate::rer_importer::inbox::get_inbox_messages_created_between(
         &api_integration.api_user,
         &logins,
         env,
         &req,
+        last_sync_at,
+        started_at,
     )
     .await
 }

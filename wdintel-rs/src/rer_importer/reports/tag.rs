@@ -282,7 +282,10 @@ fn message_full_text_nocomments(
     inbox: &sigint_inbox_item::Model,
     datasource: &datasource::Model,
 ) -> Result<String, AppError> {
-    if datasource.kind == "signal" || datasource.kind == "whatsapp" {
+    if datasource.kind == "signal"
+        || datasource.kind == "whatsapp"
+        || datasource.kind == "echo_operator"
+    {
         Ok(message.body.clone().unwrap_or("".to_string()).to_string())
     } else if datasource.kind == "api" {
         let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {

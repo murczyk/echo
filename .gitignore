@@ -49,3 +49,4 @@ goi/swapp/pnpm-debug.log*
 goi/goi/
 echo-iggy/deploy/config.toml
 echo-iggy/deploy/iggy-server
+echo-iggy/test-cli/.env

@@ -57,15 +57,30 @@ pub async fn connect(
     let connection_string = connection_string(url, login, password)?;
     let client =
         IggyClient::from_connection_string(&connection_string).c(h!())?;
-    timeout(timeout_duration(), client.connect())
-        .await
-        .map_err(|_| timeout_error("підключення"))?
-        .c(h!())?;
-    timeout(timeout_duration(), client.get_me())
-        .await
-        .map_err(|_| timeout_error("автентифікації"))?
-        .c(h!())?;
+    let connect_result =
+        match timeout(timeout_duration(), client.connect()).await {
+            Ok(result) => result.c(h!()).map_err(AppError::from),
+            Err(_) => Err(timeout_error("підключення")),
+        };
+    if let Err(err) = connect_result {
+        shutdown_after_error(&client).await;
+        return Err(err);
+    }
+    let auth_result = match timeout(timeout_duration(), client.get_me()).await {
+        Ok(result) => result.c(h!()).map(|_| ()).map_err(AppError::from),
+        Err(_) => Err(timeout_error("автентифікації")),
+    };
+    if let Err(err) = auth_result {
+        shutdown_after_error(&client).await;
+        return Err(err);
+    }
     Ok(client)
+}
+
+async fn shutdown_after_error(client: &IggyClient) {
+    if let Err(err) = shutdown(client).await {
+        warn!("Failed to close Iggy connection after error: {err:#?}");
+    }
 }
 
 pub fn stream_and_topic(topic: &str) -> (&str, &str) {

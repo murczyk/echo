@@ -1,6 +1,9 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::messenger::group::types::{
+    SignalGroupStatsTimelineEntry, SignalGroupStatsTimelinePoint,
+};
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::*;
@@ -292,6 +295,73 @@ pub async fn get_last_hour_stats(
         result.push((ts, group_stats));
     }
     Ok(result)
+}
+
+pub async fn read_group_stats_timeline_cached(
+    dbx: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Vec<SignalGroupStatsTimelineEntry>> {
+    let master_keys = master_keys.into_iter().unique().collect_vec();
+    if master_keys.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let allowed_keys = master_keys.iter().cloned().collect::<HashSet<_>>();
+    let batches = collect_signal_group_batches(master_keys.clone(), dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect_vec();
+    let batches_map = batches
+        .into_iter()
+        .map(|b| (b.id, batch_key_to_group_keys(b.group_master_keys)))
+        .collect::<HashMap<i64, Vec<_>>>();
+
+    let mut grouped_points = master_keys
+        .iter()
+        .map(|key| (key.clone(), BTreeMap::<NaiveDateTime, i64>::new()))
+        .collect::<BTreeMap<_, _>>();
+
+    if !batch_ids.is_empty() {
+        let stats = stats_group_5min::Entity::find()
+            .filter(
+                stats_group_5min::Column::SignalGroupBatchId.eq_any(batch_ids),
+            )
+            .filter(stats_group_5min::Column::Dt.gte(dt_since))
+            .filter(stats_group_5min::Column::Dt.lt(dt_till))
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+        for stat in stats {
+            let group_keys = batches_map
+                .get(&stat.signal_group_batch_id)
+                .cloned()
+                .unwrap_or_default();
+            for key in group_keys {
+                if !allowed_keys.contains(&key) {
+                    continue;
+                }
+                let points = grouped_points.entry(key).or_default();
+                *points.entry(stat.dt).or_insert(0) += stat.quantity as i64;
+            }
+        }
+    }
+
+    Ok(grouped_points
+        .into_iter()
+        .map(|(master_key, points)| SignalGroupStatsTimelineEntry {
+            master_key,
+            points: points
+                .into_iter()
+                .map(|(ts, count)| SignalGroupStatsTimelinePoint {
+                    timestamp: ts.and_utc().timestamp_millis(),
+                    count,
+                })
+                .collect(),
+        })
+        .collect())
 }
 
 pub(crate) async fn collect_signal_group_batches(

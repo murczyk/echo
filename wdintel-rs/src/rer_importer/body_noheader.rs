@@ -86,6 +86,9 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
             r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}\s*$"#
         )
         .unwrap();
+        static ref RE29: Regex = Regex::new(
+            r#"^[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+        ).unwrap();
         // Remove unit line from Mouse
         static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
         // Remove freq line from Mouse
@@ -113,6 +116,7 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
         .filter(|l| !RE26.is_match(l))
         .filter(|l| !RE27.is_match(l))
         .filter(|l| !RE28.is_match(l))
+        .filter(|l| !RE29.is_match(l))
         .filter(|l| !RE3.is_match(l))
         .filter(|l| !RE4.is_match(l))
         .filter(|l| !RE5.is_match(l))

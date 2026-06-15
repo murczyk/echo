@@ -9,6 +9,8 @@ import {
   SigintZone,
   SignalGroupEntry,
   SignalGroupStats,
+  SignalGroupStatsTimelineReq,
+  SignalGroupStatsTimelineRsp,
   ZoneDatasourceGroup,
   ZoneDatasourceGroupAddReq,
   ZoneDatasourceGroupAddRsp,
@@ -45,6 +47,21 @@ type SignalGroupStatsLike = {
   activity_last_day?: number;
   activityLastWeek?: number;
   activity_last_week?: number;
+};
+
+type SignalGroupStatsTimelinePointLike = {
+  timestamp?: number | string;
+  count?: number | string;
+};
+
+type SignalGroupStatsTimelineEntryLike = {
+  masterKey?: string;
+  master_key?: string;
+  points?: SignalGroupStatsTimelinePointLike[] | null;
+};
+
+type SignalGroupStatsTimelineRspLike = {
+  data?: SignalGroupStatsTimelineEntryLike[] | null;
 };
 
 type SignalGroupEntryLike = {
@@ -211,6 +228,11 @@ type BatchSignalGroupReqBody = {
   skip_group_stats: boolean | null;
 };
 
+type SignalGroupStatsTimelineReqBody = {
+  master_keys: string[];
+  period_hours: number | null;
+};
+
 function normalizeNumber(value: number | string | null | undefined): number {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim() !== '') return Number(value);
@@ -245,6 +267,18 @@ function normalizeSignalGroupStats(raw: SignalGroupStatsLike | null | undefined)
   return {
     activityLastDay: raw?.activityLastDay ?? raw?.activity_last_day ?? 0,
     activityLastWeek: raw?.activityLastWeek ?? raw?.activity_last_week ?? 0,
+  };
+}
+
+function normalizeSignalGroupStatsTimelineRsp(raw: SignalGroupStatsTimelineRspLike): SignalGroupStatsTimelineRsp {
+  return {
+    data: (raw.data ?? []).map((entry) => ({
+      masterKey: entry.masterKey ?? entry.master_key ?? '',
+      points: (entry.points ?? []).map((point) => ({
+        timestamp: normalizeNumber(point.timestamp),
+        count: normalizeNumber(point.count),
+      })),
+    })),
   };
 }
 
@@ -384,6 +418,13 @@ function toBatchSignalGroupReqBody(req: BatchSignalGroupReq): BatchSignalGroupRe
   };
 }
 
+function toSignalGroupStatsTimelineReqBody(req: SignalGroupStatsTimelineReq): SignalGroupStatsTimelineReqBody {
+  return {
+    master_keys: req.masterKeys,
+    period_hours: req.periodHours ?? null,
+  };
+}
+
 function normalizeSignalGroupsRsp(raw: SignalGroupsRspLike): SignalGroupEntry[] {
   return (raw.data ?? []).map(normalizeSignalGroupEntry);
 }
@@ -494,4 +535,17 @@ export async function fetchSignalGroupInfoBatch(keys: string[]): Promise<SignalG
   };
   const data = await postJson<SignalGroupsRspLike>('/api/rer-importer/signal-group-batch', toBatchSignalGroupReqBody(req));
   return normalizeSignalGroupsRsp(data ?? {});
+}
+
+export async function fetchSignalGroupStatsTimeline(
+  req: SignalGroupStatsTimelineReq,
+  signal?: AbortSignal,
+): Promise<SignalGroupStatsTimelineRsp> {
+  if (req.masterKeys.length === 0) return { data: [] };
+  const data = await postJson<SignalGroupStatsTimelineRspLike>(
+    '/api/rer-importer/group-stats-timeline',
+    toSignalGroupStatsTimelineReqBody(req),
+    { signal },
+  );
+  return normalizeSignalGroupStatsTimelineRsp(data ?? {});
 }

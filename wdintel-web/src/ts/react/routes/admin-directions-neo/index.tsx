@@ -21,6 +21,7 @@ import {
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupEntry,
+  SignalGroupStatsTimelinePoint,
   ZoneDatasourceGroup,
   ZoneDatasourceGroupAddReq,
   ZoneDatasourceGroupUpdateReq,
@@ -55,6 +56,7 @@ import {
   addZoneDatasourceGroup,
   deleteZoneDatasourceGroup,
   fetchSignalGroupInfoBatch,
+  fetchSignalGroupStatsTimeline,
   listDatasources,
   listOrphanSignalGroups,
   listSigintZones,
@@ -65,6 +67,7 @@ import {
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
 import { PowerAlert } from '../../components/PowerAlert';
 import { DatasourceKindIcon } from '../../components/icons';
+import { GroupStatsTimelineCell } from './GroupStatsTimelineCell';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -126,6 +129,7 @@ const DEFAULT_ORPHAN_COLUMNS_VISIBILITY = {
   datasource: true,
   activityDay: true,
   activityWeek: true,
+  activityTimeline: false,
   aors: true,
   notes: true,
   createdAt: true,
@@ -138,6 +142,7 @@ const DEFAULT_ORPHAN_COLUMN_ORDER = [
   'datasource',
   'activityDay',
   'activityWeek',
+  'activityTimeline',
   'aors',
   'notes',
   'createdAt',
@@ -148,6 +153,7 @@ const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
   datasource: true,
   activityDay: true,
   activityWeek: true,
+  activityTimeline: false,
   access: true,
   admins: true,
   aors: true,
@@ -161,6 +167,7 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'datasource',
   'activityDay',
   'activityWeek',
+  'activityTimeline',
   'access',
   'admins',
   'aors',
@@ -170,6 +177,9 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
 const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
   { id: 'activityDay', desc: true },
 ];
+const GROUP_ACTIVITY_TIMELINE_COLUMN_ID = 'activityTimeline';
+const GROUP_ACTIVITY_PERIOD_HOURS = 24 * 90;
+const GROUP_ACTIVITY_DEFAULT_WINDOW_HOURS = 24 * 7;
 const EMPTY_AOR_FILTER_VALUE = NO_DATA_LABEL;
 const EMPTY_AOR_FILTER_LABEL = NO_DATA_LABEL;
 
@@ -205,6 +215,66 @@ function formatErrorMessage(error: unknown): string {
 function formatOptionalText(value: string | null | undefined): string {
   if (!value || !value.trim()) return NO_DATA_LABEL;
   return value;
+}
+
+function buildTimelineMasterKeys(keys: (string | null | undefined)[]): string[] {
+  return Array.from(
+    new Set(keys.map((key) => key?.trim() ?? '').filter(Boolean))
+  ).sort();
+}
+
+function sumTimelinePoints(points: SignalGroupStatsTimelinePoint[] | undefined): number | null {
+  if (!points || points.length === 0) return null;
+  return points.reduce((sum, point) => sum + point.count, 0);
+}
+
+function useGroupStatsTimeline(
+  masterKeys: string[],
+  enabled: boolean
+) {
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<Map<string, SignalGroupStatsTimelinePoint[]>>(
+    new Map()
+  );
+  const requestKey = masterKeys.join('|');
+
+  useEffect(() => {
+    if (!enabled) {
+      setStatus('idle');
+      setError(null);
+      return;
+    }
+
+    if (masterKeys.length === 0) {
+      setStatus('success');
+      setError(null);
+      setData(new Map());
+      return;
+    }
+
+    const controller = new AbortController();
+    setStatus('loading');
+    setError(null);
+
+    fetchSignalGroupStatsTimeline(
+      { masterKeys, periodHours: GROUP_ACTIVITY_PERIOD_HOURS },
+      controller.signal
+    )
+      .then((rsp) => {
+        setData(new Map(rsp.data.map((entry) => [entry.masterKey, entry.points])));
+        setStatus('success');
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setStatus('error');
+        setError(formatErrorMessage(err));
+      });
+
+    return () => controller.abort();
+  }, [enabled, requestKey]);
+
+  return { status, error, data };
 }
 
 function buildGroupKey(zoneId: number, datasourceId: number): string {
@@ -410,6 +480,16 @@ function OrphanGroupsTable(props: {
 }) {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
+  const isActivityTimelineVisible =
+    tableStateContext.columnVisibility[GROUP_ACTIVITY_TIMELINE_COLUMN_ID] === true;
+  const timelineMasterKeys = useMemo(
+    () => buildTimelineMasterKeys(props.data.map((group) => group.masterKey)),
+    [props.data]
+  );
+  const timeline = useGroupStatsTimeline(
+    timelineMasterKeys,
+    isActivityTimelineVisible && !isLoading
+  );
 
   const columns = useMemo<MRT_ColumnDef<OrphanSignalGroupEntry>[]>(
     () => [
@@ -460,6 +540,28 @@ function OrphanGroupsTable(props: {
           <span>{row.original?.groupStats?.activityLastWeek ?? NO_DATA_LABEL}</span>
         ),
         size: 140,
+      },
+      {
+        header: 'Активність (час)',
+        id: GROUP_ACTIVITY_TIMELINE_COLUMN_ID,
+        accessorFn: (row) =>
+          sumTimelinePoints(timeline.data.get(row?.masterKey ?? '')),
+        Cell: ({ row }) => {
+          if (isLoading || !row.original?.masterKey) {
+            return <span>{NO_DATA_LABEL}</span>;
+          }
+          return (
+            <GroupStatsTimelineCell
+              points={timeline.data.get(row.original.masterKey) ?? []}
+              status={timeline.status}
+              error={timeline.error}
+              periodHours={GROUP_ACTIVITY_PERIOD_HOURS}
+              defaultWindowHours={GROUP_ACTIVITY_DEFAULT_WINDOW_HOURS}
+            />
+          );
+        },
+        enableColumnFilter: false,
+        size: 260,
       },
       {
         header: 'Смуги',
@@ -517,7 +619,14 @@ function OrphanGroupsTable(props: {
         size: 140,
       },
     ],
-    [isLoading, props.datasourceById, props.aorFilterOptions]
+    [
+      isLoading,
+      props.datasourceById,
+      props.aorFilterOptions,
+      timeline.data,
+      timeline.status,
+      timeline.error,
+    ]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -690,6 +799,19 @@ function ZoneGroupsTable(props: {
 }) {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
+  const isActivityTimelineVisible =
+    tableStateContext.columnVisibility[GROUP_ACTIVITY_TIMELINE_COLUMN_ID] === true;
+  const timelineMasterKeys = useMemo(
+    () =>
+      buildTimelineMasterKeys(
+        props.rows.map((row) => row.group.groupMasterKey)
+      ),
+    [props.rows]
+  );
+  const timeline = useGroupStatsTimeline(
+    timelineMasterKeys,
+    isActivityTimelineVisible && !isLoading
+  );
 
   const columns = useMemo<MRT_ColumnDef<ZoneGroupRow>[]>(
     () => [
@@ -774,6 +896,31 @@ function ZoneGroupsTable(props: {
           return <span>{stats.activityLastWeek}</span>;
         },
         size: 140,
+      },
+      {
+        header: 'Активність (час)',
+        id: GROUP_ACTIVITY_TIMELINE_COLUMN_ID,
+        accessorFn: (row) =>
+          sumTimelinePoints(
+            timeline.data.get(row?.group?.groupMasterKey ?? '')
+          ),
+        Cell: ({ row }) => {
+          const masterKey = row.original?.group?.groupMasterKey;
+          if (isLoading || !masterKey) {
+            return <span>{NO_DATA_LABEL}</span>;
+          }
+          return (
+            <GroupStatsTimelineCell
+              points={timeline.data.get(masterKey) ?? []}
+              status={timeline.status}
+              error={timeline.error}
+              periodHours={GROUP_ACTIVITY_PERIOD_HOURS}
+              defaultWindowHours={GROUP_ACTIVITY_DEFAULT_WINDOW_HOURS}
+            />
+          );
+        },
+        enableColumnFilter: false,
+        size: 260,
       },
       {
         header: 'Доступ',
@@ -875,7 +1022,15 @@ function ZoneGroupsTable(props: {
         size: 260,
       },
     ],
-    [isLoading, props.datasourceById, props.groupInfos, props.aorFilterOptions]
+    [
+      isLoading,
+      props.datasourceById,
+      props.groupInfos,
+      props.aorFilterOptions,
+      timeline.data,
+      timeline.status,
+      timeline.error,
+    ]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;

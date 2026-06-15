@@ -237,16 +237,6 @@ fn spawn_palitra_goi_sync_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     });
 }
 
-fn spawn_iggy_worker(
-    bg_set: &mut JoinSet<()>,
-    env: Arc<Env>,
-    cancel_token: CancellationToken,
-) {
-    spawn_named_worker("iggy_integration_worker", bg_set, async move {
-        crate::iggy::worker::run_nofail(env, cancel_token).await;
-    });
-}
-
 fn spawn_group_stats_worker_after_startup_recalc(
     bg_set: &mut JoinSet<()>,
     dbx: DatabaseConnection,
@@ -283,7 +273,6 @@ fn spawn_background_workers(
     bg_set: &mut JoinSet<()>,
 ) {
     let config = env.config.clone();
-    spawn_iggy_worker(bg_set, env.clone(), cancel_token.clone());
     let config1 = config.clone();
     let dbx4 = env.dbx.clone();
     let dbx6 = env.dbx.clone();
@@ -332,6 +321,10 @@ fn spawn_background_workers(
         });
     }
 
+    let env2 = env.clone();
+    spawn_named_worker("iggy_integration_worker", bg_set, async move {
+        crate::iggy::worker::run_nofail(env2).await;
+    });
     spawn_named_worker("aor_assignments_worker", bg_set, async move {
         crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
     });
@@ -499,6 +492,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
             .service(crate::messenger::group::handlers::orphan_signal_groups)
+            .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
             .service(crate::rer_importer::signal_profile_info_batch)
             .service(crate::rer_importer::signal_profile_save)

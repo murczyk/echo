@@ -781,6 +781,32 @@ pub async fn get_inbox_messages(
     get_inbox_messages_with_conn(&env.dbx, login, logins, env, req).await
 }
 
+pub async fn get_inbox_messages_created_between(
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    created_after: NaiveDateTime,
+    created_till: NaiveDateTime,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut req = req.clone();
+    req.since_id_noninclusive = Some(0);
+    let q = build_inbox_query(login, env, &req).await.c(h!())?;
+    let statement = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT * FROM ({q}) q \
+             WHERE created_at > $1 AND created_at <= $2 \
+             ORDER BY created_at ASC, id ASC"
+        ),
+        [created_after.into(), created_till.into()],
+    );
+    fetch_inbox_messages_with_statement(
+        &env.dbx, login, logins, env, &req, statement,
+    )
+    .await
+}
+
 pub async fn get_inbox_messages_with_conn(
     dbx: &DatabaseConnection,
     login: &str,
@@ -819,10 +845,26 @@ async fn fetch_inbox_messages_with_query(
     req: &InboxMessagesReq,
     q: &str,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let results = dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
-        .await
-        .context(h!())?;
+    fetch_inbox_messages_with_statement(
+        dbx,
+        login,
+        logins,
+        env,
+        req,
+        Statement::from_string(DatabaseBackend::Postgres, q),
+    )
+    .await
+}
+
+async fn fetch_inbox_messages_with_statement(
+    dbx: &DatabaseConnection,
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    statement: Statement,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let results = dbx.query_all(statement).await.context(h!())?;
 
     let messages: Vec<InboxMessageDesc> = results
         .iter()

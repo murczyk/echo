@@ -22,7 +22,7 @@ app := "echo"
 interactive_setup := "true"
 origin := ""
 echo_bin := "wdintel-rs"
-discord_webhook := "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA"
+discord_webhook_infra := "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA"
 since_ts := "1645664400000"
 till_ts := "1961204400000"
 datasource_id := "1"
@@ -687,7 +687,7 @@ deploy _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -844,7 +844,7 @@ deploy _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
 [arg('server', long='server')]
 deploy-from-local _server_pos="" server:
@@ -1882,7 +1882,7 @@ deploy-docs _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying docs $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
     echo "CI: https://github.com/echoua/echo/actions"
 
@@ -1931,7 +1931,7 @@ deploy-docs _server_pos="" server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"✅ Deployed docs $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
 
 fmt:
     just --fmt --unstable
@@ -2007,7 +2007,7 @@ config-deploy server:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying config for {{ server }} from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
+      '{{ discord_webhook_infra }}' || true
     # bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
     echo-install-utils bw-sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
 
@@ -2214,8 +2214,15 @@ setup-iggy server="echo-staging":
     just builder={{ builder }} _builder-build-iggy
     ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
     scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
-    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
+    ssh {{ server }} "sudo mkdir -p /etc/iggy/data && sudo apt-get install -y python3-toml /var/tmp/echo-iggy-server.deb && rm /var/tmp/echo-iggy-server.deb"
+    just _ensure-iggy-users --server {{ server }}
     @echo "==> Pipeline finished successfully!"
+
+[arg('server', long='server')]
+_ensure-iggy-users server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh -T "{{ server }}" sudo /usr/bin/python3 - /etc/iggy/config.toml < deploy/ensure_iggy_users.py
 
 # [positional-arguments]
 _builder-build-iggy:
@@ -2225,6 +2232,11 @@ _builder-build-iggy:
     ssh {{ builder }} "cd {{ workspace_iggy }} && RUSTFLAGS='-C target-cpu=native' /home/ubuntu/.cargo/bin/cargo build --release --bin iggy-server"
     ssh {{ builder }} "cp {{ workspace_iggy }}/target/release/iggy-server /home/ubuntu/workspace/echo/{{ local_assets_iggy }}/"
     ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
+
+# [positional-arguments]
+[arg('tag', long='tag')]
+switch-version-iggy tag="0.8.0":
+    ssh {{ builder }} 'cd workspace/iggy && git checkout master && git fetch --tags && git pull && git checkout -b release-{{ tag }} tags/iggy-{{ tag }}'
 
 # Update UFW firewall rules on a remote server based on local config.toml
 
