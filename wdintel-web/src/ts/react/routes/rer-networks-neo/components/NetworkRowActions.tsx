@@ -1,7 +1,7 @@
 import DeleteIcon from '@mui/icons-material/Delete';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
 import { Box } from '@mui/material';
 
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
@@ -36,10 +36,11 @@ export function NetworkRowActions({
     <Box sx={{ display: 'flex', justifyContent: 'center' }}>
       <MrtRowActions>
         <MrtRowActionButton
-          label="Зведений звіт"
+          label="Еталонний опис"
           onClick={() => onOpenReportDialog(network.network)}
           disabled={!canExport}
-          icon={<DescriptionOutlinedIcon fontSize="small" />}
+          icon={<SummarizeOutlinedIcon fontSize="small" />}
+          opensModal
         />
         <MrtRowActionButton
           label="Пеленгація"
@@ -51,6 +52,7 @@ export function NetworkRowActions({
           onClick={() => onOpenEditDialog(network.network)}
           disabled={!canEdit}
           icon={<EditIcon fontSize="small" />}
+          opensModal
         />
         <MrtRowActionButton
           label="Видалити"
@@ -58,6 +60,7 @@ export function NetworkRowActions({
           disabled={!canDelete}
           icon={<DeleteIcon fontSize="small" />}
           tone="danger"
+          opensModal
         />
       </MrtRowActions>
     </Box>

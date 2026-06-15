@@ -659,8 +659,9 @@ function EditUserDialog(props: {
   onClose: () => void;
   onUserUpdated: (login: Login) => void;
   lookups: UserLookups;
+  disableRestoreFocus?: boolean;
 }) {
-  const { open, login, onClose, onUserUpdated, lookups } = props;
+  const { open, login, onClose, onUserUpdated, lookups, disableRestoreFocus = false } = props;
   const [form, setForm] = useState<EditUserForm | null>(null);
   const [errors, setErrors] = useState<EditUserErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -753,7 +754,7 @@ function EditUserDialog(props: {
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth disableRestoreFocus={disableRestoreFocus}>
       <DialogTitle>Редагувати користувача</DialogTitle>
       <DialogContent className="space-y-4">
         {lookups.zonesError ? (
@@ -904,6 +905,7 @@ function RowActions(props: { login: Login; onEdit: (login: Login) => void }) {
       label="Редагувати"
       onClick={() => props.onEdit(props.login)}
       icon={<EditIcon fontSize="small" />}
+      opensModal
     />
   );
 }
@@ -1133,6 +1135,7 @@ function AdminUsersNeoPageBody() {
           setLogins((prev) => prev.map((item) => (item.login === login.login ? login : item)))
         }
         lookups={lookups}
+        disableRestoreFocus
       />
       </Stack>
     </Box>

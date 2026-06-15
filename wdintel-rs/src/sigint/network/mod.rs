@@ -4144,7 +4144,7 @@ mod tests {
         assert!(
             sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike")
         );
-        assert!(sql.contains("sigint_aor.deleted = false"));
+        assert!(sql.contains("\"sigint_aor\".\"deleted\" = false"));
         assert!(!sql.contains(
             "lower(area_of_responsibility.name collate \"ru-x-icu\") ilike"
         ));

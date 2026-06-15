@@ -39,6 +39,7 @@ type Props = {
   onChange: (next: NetworkFreqTechDataForm | null) => void;
   onSave: () => void;
   onReloadFrequencies: () => void;
+  disableRestoreFocus?: boolean;
 };
 
 type NewKeyForm = {
@@ -96,6 +97,7 @@ function NetworkFreqTechDataDrawerComponent({
   onChange,
   onSave,
   onReloadFrequencies,
+  disableRestoreFocus = false,
 }: Props) {
   const titleId = 'network-freq-tech-drawer-title';
   const formBlocked = saving;
@@ -203,6 +205,7 @@ function NetworkFreqTechDataDrawerComponent({
       open={open}
       onClose={saving ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

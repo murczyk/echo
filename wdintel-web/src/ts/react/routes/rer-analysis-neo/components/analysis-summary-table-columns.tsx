@@ -63,6 +63,7 @@ export function buildAnalysisSummaryTableColumns({
               onClick={() => onRenameUnit(row.original)}
               disabled={row.original.editableUnits.length === 0}
               icon={<EditIcon fontSize="small" />}
+              opensModal
             />
           </MrtRowActions>
         </Box>

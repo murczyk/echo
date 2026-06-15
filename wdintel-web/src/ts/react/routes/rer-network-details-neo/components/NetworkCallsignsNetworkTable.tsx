@@ -293,6 +293,7 @@ function NetworkCallsignsNetworkTableContent({
             disabled={editDisabled}
             icon={<EditIcon fontSize="small" />}
             label="Редагувати позивний"
+            opensModal
           />
           <MrtRowActionButton
             label={getMainMarkerActionLabel(networkCallsign)}
@@ -318,6 +319,7 @@ function NetworkCallsignsNetworkTableContent({
             disabled={inFlightDeleteIds.includes(networkCallsign.id)}
             icon={<DeleteIcon fontSize="small" />}
             tone="danger"
+            opensModal
           />
         </MrtRowActions>
       );

@@ -374,6 +374,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     openTopReportDialog: reportActions.openTopReportDialog,
     closeReportDialog: reportActions.closeReportDialog,
     downloadEtalonkaReport: reportActions.downloadEtalonkaReport,
+    reportTargetNetworkIds,
+    reportTargetRequest,
     etalonkaReport,
     setEtalonkaReport,
     status,

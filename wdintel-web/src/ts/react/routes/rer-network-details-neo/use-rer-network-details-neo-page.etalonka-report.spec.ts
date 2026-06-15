@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { combineDateTimeInputToMs } from '../../utils/misc';
 import {
   buildEtalonkaNetworkBatchReq,
+  buildEtalonkaNetworksReportFilename,
   buildEtalonkaReportFilename,
   createDefaultNetworkEtalonkaReportState,
 } from './use-rer-network-details-neo-page.etalonka-report';
@@ -23,6 +24,7 @@ describe('rer-network-details etalonka report helpers', () => {
       },
     });
     expect(buildEtalonkaReportFilename(77, report)).toBe('etalonka_network_77.docx');
+    expect(buildEtalonkaNetworksReportFilename(report)).toBe('etalonka.docx');
   });
 
   it('builds the extended payload and filename with date suffixes', () => {
@@ -52,5 +54,6 @@ describe('rer-network-details etalonka report helpers', () => {
       },
     });
     expect(buildEtalonkaReportFilename(12, report)).toBe('etalonka_network_12_2026-01-15T12-34_2026-01-16T09-05.docx');
+    expect(buildEtalonkaNetworksReportFilename(report)).toBe('etalonka_2026-01-15T12-34_2026-01-16T09-05.docx');
   });
 });

@@ -16,6 +16,7 @@ const apiMock = vi.hoisted(() => ({
   deleteNetwork: vi.fn(),
   downloadNetworkEtalonkaReport: vi.fn(),
   downloadNetworksEtalonkaReport: vi.fn(),
+  downloadNetworkEtalonkaReportTaskResult: vi.fn(),
   downloadNetworkGoiReport: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
@@ -23,10 +24,16 @@ const apiMock = vi.hoisted(() => ({
   listAors: vi.fn(),
   listNetworks: vi.fn(),
   listPosts: vi.fn(),
+  launchNetworkEtalonkaBatchReportTask: vi.fn(),
+  launchNetworksEtalonkaReportTask: vi.fn(),
   getUnitsList: vi.fn(),
   updateNetwork: vi.fn(),
   updateNetworkPosts: vi.fn(),
   updateNetworkUnits: vi.fn(),
+}));
+
+const bgtaskMock = vi.hoisted(() => ({
+  fetchBgtaskStatusAndLogs: vi.fn(),
 }));
 
 const tableStateMock = vi.hoisted(() => ({
@@ -64,13 +71,24 @@ vi.mock('../../services/api/networks', () => ({
   deleteNetwork: apiMock.deleteNetwork,
   downloadNetworkEtalonkaReport: apiMock.downloadNetworkEtalonkaReport,
   downloadNetworksEtalonkaReport: apiMock.downloadNetworksEtalonkaReport,
+  downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
   downloadNetworkGoiReport: apiMock.downloadNetworkGoiReport,
   getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
   getNetworkUnitStats: apiMock.getNetworkUnitStats,
   listNetworks: apiMock.listNetworks,
+  launchNetworkEtalonkaBatchReportTask: apiMock.launchNetworkEtalonkaBatchReportTask,
+  launchNetworksEtalonkaReportTask: apiMock.launchNetworksEtalonkaReportTask,
   updateNetwork: apiMock.updateNetwork,
   updateNetworkPosts: apiMock.updateNetworkPosts,
   updateNetworkUnits: apiMock.updateNetworkUnits,
+}));
+
+vi.mock('../../services/api/bgtask', () => ({
+  fetchBgtaskStatusAndLogs: bgtaskMock.fetchBgtaskStatusAndLogs,
+  getBgtaskProgress: (loglines: string[]) => ({
+    curr: loglines.length > 0 ? 1 : 1,
+    overall: 4,
+  }),
 }));
 
 vi.mock('../../services/api/modulations', () => ({
@@ -165,7 +183,11 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.createNetwork.mockReset();
     apiMock.downloadNetworkEtalonkaReport.mockReset();
     apiMock.downloadNetworksEtalonkaReport.mockReset();
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
     apiMock.downloadNetworkGoiReport.mockReset();
+    apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
+    apiMock.launchNetworksEtalonkaReportTask.mockReset();
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getModulations.mockReset();
@@ -185,7 +207,16 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getModulations.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.downloadNetworkEtalonkaReport.mockResolvedValue(new Blob(['report']));
     apiMock.downloadNetworksEtalonkaReport.mockResolvedValue(new Blob(['report']));
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
     apiMock.downloadNetworkGoiReport.mockResolvedValue(new Blob(['goi']));
+    apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(123);
+    apiMock.launchNetworksEtalonkaReportTask.mockResolvedValue(456);
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValue({
+      running: false,
+      loglines: [],
+      finishedWithError: null,
+      finishedWithErrorCode: null,
+    });
     apiMock.createNetwork.mockResolvedValue(buildNetwork(3));
     apiMock.updateNetwork.mockResolvedValue(buildNetwork(1));
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork(1));
@@ -553,6 +584,21 @@ describe('useRerNetworksNeoPage', () => {
     await renderHook();
     await flushEffects();
 
+    vi.useFakeTimers();
+    bgtaskMock.fetchBgtaskStatusAndLogs
+      .mockResolvedValueOnce({
+        running: true,
+        loglines: ['backend step'],
+        finishedWithError: null,
+        finishedWithErrorCode: null,
+      })
+      .mockResolvedValueOnce({
+        running: false,
+        loglines: [],
+        finishedWithError: null,
+        finishedWithErrorCode: null,
+      });
+
     await act(async () => {
       latest?.setEtalonkaReport((current) => ({
         ...current,
@@ -570,10 +616,13 @@ describe('useRerNetworksNeoPage', () => {
     await flushEffects();
 
     await act(async () => {
-      await latest?.downloadEtalonkaReport();
+      const downloadPromise = latest?.downloadEtalonkaReport();
+      await vi.advanceTimersByTimeAsync(1000);
+      await downloadPromise;
     });
+    vi.useRealTimers();
 
-    expect(apiMock.downloadNetworksEtalonkaReport).toHaveBeenCalledWith({
+    expect(apiMock.launchNetworksEtalonkaReportTask).toHaveBeenCalledWith({
       req: {
         filterFreq: null,
         filterUnit: null,
@@ -602,7 +651,10 @@ describe('useRerNetworksNeoPage', () => {
         },
       },
     });
-    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_networks.docx');
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 456, 0);
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(2, 456, 1);
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
   });
 
   it('uses the backend status counts', async () => {

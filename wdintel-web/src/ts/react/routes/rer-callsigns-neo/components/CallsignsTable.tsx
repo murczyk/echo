@@ -432,6 +432,7 @@ function CallsignsTableComponent({
             onClick={() => onEdit(row.original)}
             disabled={!canEdit || inFlightDeleteId === row.original.id || bulkDeleteInFlight}
             icon={<EditIcon fontSize="small" />}
+            opensModal
           />
           <MrtRowActionButton
             label="Видалити"
@@ -439,6 +440,7 @@ function CallsignsTableComponent({
             disabled={!canEdit || inFlightDeleteId === row.original.id || bulkDeleteInFlight}
             icon={<DeleteIcon fontSize="small" />}
             tone="danger"
+            opensModal
           />
         </MrtRowActions>
       </Box>

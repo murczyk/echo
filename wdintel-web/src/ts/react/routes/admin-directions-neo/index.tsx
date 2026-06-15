@@ -683,11 +683,13 @@ function OrphanGroupsTable(props: {
             label="Додати до напрямку"
             onClick={() => props.onAssign(row.original)}
             icon={<AddCircleOutlineIcon fontSize="small" />}
+            opensModal
           />
           <MrtRowActionButton
             label="Редагувати"
             onClick={() => props.onEdit(row.original)}
             icon={<EditIcon fontSize="small" />}
+            opensModal
           />
         </MrtRowActions>
       ),
@@ -1093,6 +1095,7 @@ function ZoneGroupsTable(props: {
               )
             }
             icon={<EditIcon fontSize="small" />}
+            opensModal
           />
           <MrtRowActionButton
             label="Видалити"
@@ -1105,6 +1108,7 @@ function ZoneGroupsTable(props: {
             }
             icon={<DeleteIcon fontSize="small" />}
             tone="danger"
+            opensModal
           />
         </MrtRowActions>
       ),
@@ -1910,6 +1914,7 @@ function AdminDirectionsNeoPageBody() {
         onClose={() => setEditDialog(null)}
         maxWidth="md"
         fullWidth
+        disableRestoreFocus
       >
         <DialogTitle>Редагувати групу</DialogTitle>
         <DialogContent className="space-y-4">
@@ -2033,6 +2038,7 @@ function AdminDirectionsNeoPageBody() {
         onClose={() => setOrphanEditDialog(null)}
         maxWidth="md"
         fullWidth
+        disableRestoreFocus
       >
         <DialogTitle>Редагувати орфан групу</DialogTitle>
         <DialogContent className="space-y-4">
@@ -2121,6 +2127,7 @@ function AdminDirectionsNeoPageBody() {
         onClose={() => setAssignDialog(null)}
         maxWidth="md"
         fullWidth
+        disableRestoreFocus
       >
         <DialogTitle>Додати орфан групу до напрямків</DialogTitle>
         <DialogContent className="space-y-4">
@@ -2218,6 +2225,7 @@ function AdminDirectionsNeoPageBody() {
         onConfirm={handleDeleteGroup}
         submitting={Boolean(deleteDialog?.isDeleting)}
         disabled={!deleteDialog}
+        disableRestoreFocus
       >
           {deleteDialog?.error ? (
             <PowerAlert severity="error">{deleteDialog.error}</PowerAlert>

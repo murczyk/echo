@@ -32,9 +32,21 @@ type Props = {
   onClose: () => void;
   onChange: (next: NetworkFreqEditForm | null) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
-function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modulations, onClose, onChange, onSave }: Props) {
+function NetworkFreqEditDrawerComponent({
+  open,
+  form,
+  freq,
+  saving,
+  error,
+  modulations,
+  onClose,
+  onChange,
+  onSave,
+  disableRestoreFocus = false,
+}: Props) {
   const titleId = 'network-freq-edit-drawer-title';
   const [activePeriodTouched, setActivePeriodTouched] = useState(false);
 
@@ -72,6 +84,7 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
       open={open}
       onClose={saving ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

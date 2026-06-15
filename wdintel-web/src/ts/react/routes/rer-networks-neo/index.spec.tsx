@@ -174,7 +174,28 @@ beforeEach(() => {
     openTopReportDialog: vi.fn(),
     closeReportDialog: vi.fn(),
     downloadEtalonkaReport: vi.fn(),
-    etalonkaReport: { dialogOpen: false, downloading: false, error: null, reportType: 'StandardReport', activeFreqsOnly: true, includeSigintSigns: true, includeConfirmation: true, includeUnitCallsigns: true, includePelengsMap: true, fromDateTimeStr: '', toDateTimeStr: '' },
+    etalonkaReport: {
+      dialogOpen: false,
+      taskRunId: 0,
+      taskId: null,
+      startedAtMs: null,
+      running: false,
+      curr: 0,
+      overall: 4,
+      logs: [],
+      error: null,
+      reportType: 'AccordingToTheForm',
+      activeFreqsOnly: true,
+      includeSigintSigns: true,
+      includeConfirmation: true,
+      includeUnitCallsigns: true,
+      includePelengsMap: true,
+      fromDateTimeStr: '',
+      toDateTimeStr: '',
+      downloadFileName: null,
+      finishedAt: null,
+      progressExpanded: false,
+    },
     setEtalonkaReport: vi.fn(),
     status: null,
     setStatus: vi.fn(),
@@ -665,24 +686,24 @@ it('toggles and closes the reports menu', () => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     root?.render(createElement(RerNetworksNeoPage));
   });
-  expect(document.body.textContent).toContain('Зведений звіт');
+  expect(document.body.textContent).toContain('Еталонний опис');
   expect(document.body.textContent).toContain('ГОІ');
 
   act(() => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     root?.render(createElement(RerNetworksNeoPage));
   });
-  expect(document.body.textContent).not.toContain('Зведений звіт');
+  expect(document.body.textContent).not.toContain('Еталонний опис');
 
   act(() => {
     reportsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     root?.render(createElement(RerNetworksNeoPage));
   });
-  expect(document.body.textContent).toContain('Зведений звіт');
+  expect(document.body.textContent).toContain('Еталонний опис');
 
   act(() => {
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     root?.render(createElement(RerNetworksNeoPage));
   });
-  expect(document.body.textContent).not.toContain('Зведений звіт');
+  expect(document.body.textContent).not.toContain('Еталонний опис');
 });

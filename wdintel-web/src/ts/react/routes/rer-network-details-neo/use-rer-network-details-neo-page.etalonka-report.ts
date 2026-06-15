@@ -7,7 +7,13 @@ export type NetworkEtalonkaReportType = 'AccordingToTheForm' | 'ExtendedReport';
 
 export type NetworkEtalonkaReportState = {
   dialogOpen: boolean;
-  downloading: boolean;
+  taskRunId: number;
+  taskId: number | null;
+  startedAtMs: number | null;
+  running: boolean;
+  curr: number;
+  overall: number;
+  logs: string[];
   reportType: NetworkEtalonkaReportType;
   activeFreqsOnly: boolean;
   includeSigintSigns: boolean;
@@ -16,13 +22,22 @@ export type NetworkEtalonkaReportState = {
   includePelengsMap: boolean;
   fromDateTimeStr: string;
   toDateTimeStr: string;
+  downloadFileName: string | null;
   error: string | null;
+  finishedAt: string | null;
+  progressExpanded: boolean;
 };
 
 export function createDefaultNetworkEtalonkaReportState(): NetworkEtalonkaReportState {
   return {
     dialogOpen: false,
-    downloading: false,
+    taskRunId: 0,
+    taskId: null,
+    startedAtMs: null,
+    running: false,
+    curr: 0,
+    overall: 4,
+    logs: [],
     reportType: 'AccordingToTheForm',
     activeFreqsOnly: true,
     includeSigintSigns: true,
@@ -31,7 +46,10 @@ export function createDefaultNetworkEtalonkaReportState(): NetworkEtalonkaReport
     includePelengsMap: true,
     fromDateTimeStr: '',
     toDateTimeStr: '',
+    downloadFileName: null,
     error: null,
+    finishedAt: null,
+    progressExpanded: false,
   };
 }
 
@@ -84,9 +102,7 @@ export function buildEtalonkaNetworksReportReq(req: ListNetworksReq, report: Net
   };
 }
 
-export function buildEtalonkaReportFilename(networkId: number, report: NetworkEtalonkaReportState): string {
-  const baseFileName = `etalonka_network_${networkId}`;
-
+function buildEtalonkaFilename(baseFileName: string, report: NetworkEtalonkaReportState): string {
   if (report.reportType !== 'ExtendedReport') {
     return `${baseFileName}.docx`;
   }
@@ -96,4 +112,12 @@ export function buildEtalonkaReportFilename(networkId: number, report: NetworkEt
     .filter((value): value is string => value !== null);
 
   return `${[baseFileName, ...dateParts].join('_')}.docx`;
+}
+
+export function buildEtalonkaReportFilename(networkId: number, report: NetworkEtalonkaReportState): string {
+  return buildEtalonkaFilename(`etalonka_network_${networkId}`, report);
+}
+
+export function buildEtalonkaNetworksReportFilename(report: NetworkEtalonkaReportState): string {
+  return buildEtalonkaFilename('etalonka', report);
 }

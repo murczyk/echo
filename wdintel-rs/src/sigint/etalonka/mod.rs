@@ -37,6 +37,7 @@ const PARAGRAPH_2_STYLE_NAME: &str = "Paragraph 2";
 const TABLE_HEADER_STYLE_NAME: &str = "Table Header";
 
 pub mod query;
+pub mod task;
 pub mod types;
 pub mod util;
 

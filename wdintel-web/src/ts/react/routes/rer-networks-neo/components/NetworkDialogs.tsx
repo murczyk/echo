@@ -1,7 +1,10 @@
+import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { MenuItem, Paper, Popper, Stack } from '@mui/material';
 import { useEffect } from 'react';
 
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
+import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
 import type { useRerNetworksNeoPage } from '../use-rer-networks-neo-page';
 import { NetworkEditDrawer } from '../../rer-network-details-neo/components/NetworkEditDrawer';
 import { NetworkEtalonkaReportDialog } from '../../rer-network-details-neo/components/NetworkEtalonkaReportDialog';
@@ -59,7 +62,10 @@ export function NetworkDialogs({ page }: Props) {
               }}
               disabled={page.downloadInFlight !== null || !page.permissions.canExport}
             >
-              Зведений звіт
+              <Stack direction="row" spacing={1} alignItems="center">
+                <SummarizeOutlinedIcon fontSize="small" />
+                <span>Еталонний опис</span>
+              </Stack>
             </MenuItem>
             <MenuItem
               onClick={() => {
@@ -68,7 +74,10 @@ export function NetworkDialogs({ page }: Props) {
               }}
               disabled={page.downloadInFlight !== null || !page.permissions.canExport}
             >
-              ГОІ
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TableChartOutlinedIcon fontSize="small" />
+                <span>ГОІ</span>
+              </Stack>
             </MenuItem>
           </Stack>
         </Paper>
@@ -76,8 +85,16 @@ export function NetworkDialogs({ page }: Props) {
 
       <NetworkEtalonkaReportDialog
         report={page.etalonkaReport}
+        description={
+          page.reportTargetRequest !== null
+            ? 'Для мереж з поточними фільтрами'
+            : page.reportTargetNetworkIds !== null && page.reportTargetNetworkIds.length > 1
+              ? 'Для вибраних мереж'
+              : 'Для поточної радіомережі'
+        }
         onClose={page.closeReportDialog}
         onDownload={() => void page.downloadEtalonkaReport()}
+        onSetProgressExpanded={(expanded) => page.setEtalonkaReport((current) => ({ ...current, progressExpanded: expanded }))}
         onTypeChange={(reportType) => page.setEtalonkaReport((current) => ({ ...current, reportType }))}
         onActiveFreqsOnlyChange={(activeFreqsOnly) => page.setEtalonkaReport((current) => ({ ...current, activeFreqsOnly }))}
         onIncludeSigintSignsChange={(includeSigintSigns) => page.setEtalonkaReport((current) => ({ ...current, includeSigintSigns }))}
@@ -86,6 +103,7 @@ export function NetworkDialogs({ page }: Props) {
         onIncludePelengsMapChange={(includePelengsMap) => page.setEtalonkaReport((current) => ({ ...current, includePelengsMap }))}
         onFromDateTimeStrChange={(fromDateTimeStr) => page.setEtalonkaReport((current) => ({ ...current, fromDateTimeStr }))}
         onToDateTimeStrChange={(toDateTimeStr) => page.setEtalonkaReport((current) => ({ ...current, toDateTimeStr }))}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <NetworkEditDrawer
@@ -118,6 +136,7 @@ export function NetworkDialogs({ page }: Props) {
         onClose={page.closeEditDialog}
         onChange={page.setEditDialog}
         onSave={() => void page.saveNetworkEdit()}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <ConfirmDangerDialog
@@ -128,6 +147,7 @@ export function NetworkDialogs({ page }: Props) {
         description={`Ви дійсно хочете видалити мережу «${page.deleteDialogNetwork?.name ?? ''}»?`}
         submitting={page.deleteSubmitting}
         disabled={page.deleteDialogNetwork === null}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
     </>
   );

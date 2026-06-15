@@ -118,6 +118,7 @@ vi.mock('./use-rer-network-details-neo-page.actions', () => ({
     setEtalonkaReportIncludePelengsMap: vi.fn(),
     setEtalonkaReportFromDateTimeStr: vi.fn(),
     setEtalonkaReportToDateTimeStr: vi.fn(),
+    setEtalonkaReportProgressExpanded: vi.fn(),
     downloadEtalonkaReport: vi.fn(),
     openDeleteDialog: vi.fn(),
     closeDeleteDialog: vi.fn(),

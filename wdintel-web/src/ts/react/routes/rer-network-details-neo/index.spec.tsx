@@ -243,6 +243,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     setEtalonkaReportIncludePelengsMap: noop,
     setEtalonkaReportFromDateTimeStr: noop,
     setEtalonkaReportToDateTimeStr: noop,
+    setEtalonkaReportProgressExpanded: noop,
     downloadEtalonkaReport: noop,
     openDeleteDialog: noop,
     closeDeleteDialog: noop,
@@ -309,8 +310,15 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     freqDeleteSubmitting: false,
     freqDeleteError: null,
     etalonkaReport: {
-      open: false,
-      reportType: 'full',
+      dialogOpen: false,
+      taskRunId: 0,
+      taskId: null,
+      startedAtMs: null,
+      running: false,
+      curr: 0,
+      overall: 4,
+      logs: [],
+      reportType: 'AccordingToTheForm',
       activeFreqsOnly: false,
       includeSigintSigns: false,
       includeConfirmation: false,
@@ -318,7 +326,10 @@ function buildPage(overrides: Record<string, unknown> = {}) {
       includePelengsMap: false,
       fromDateTimeStr: '',
       toDateTimeStr: '',
+      downloadFileName: null,
       error: null,
+      finishedAt: null,
+      progressExpanded: false,
     },
     deleteDialogOpen: false,
     deleteInProgress: false,
@@ -434,7 +445,7 @@ describe('RerNetworkDetailsNeoPage', () => {
 
     const listLink = view.container.querySelector('a[href="/rer-networks-neo"]');
     const classicButton = Array.from(view.container.querySelectorAll('button, a')).find((element) =>
-      element.textContent?.includes('До старої версії'),
+      element.textContent?.includes('До класичної версії'),
     );
     if (!(classicButton instanceof HTMLButtonElement)) throw new Error('button not found');
 

@@ -1,5 +1,6 @@
 import { Checkbox, FormControlLabel } from '@mui/material';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
+import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDescriptionDrawer } from './NetworkDescriptionDrawer';
 import { NetworkEditDrawer } from './NetworkEditDrawer';
@@ -124,6 +125,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <NetworkCallsignDrawer
@@ -137,6 +139,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         onClose={page.closeCallsignDrawer}
         onChange={page.setCallsignDrawerForm}
         onSave={page.saveCallsignDrawer}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <NetworkFreqCreateWizard
@@ -164,6 +167,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         onClose={page.closeFreqEditDrawer}
         onChange={page.setFreqEditDrawerForm}
         onSave={page.saveFreqEditDrawer}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <NetworkFreqTechDataDrawer
@@ -179,6 +183,7 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         onChange={page.setFreqTechDrawerForm}
         onSave={page.saveFreqTechDrawer}
         onReloadFrequencies={page.loadFrequencies}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <ConfirmDangerDialog
@@ -189,14 +194,17 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         description={`Видалити частоту «${page.freqDeleteTarget?.freq ?? '—'}»?`}
         submitting={page.freqDeleteSubmitting}
         disabled={!page.canEdit || page.freqDeleteTarget === null}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       >
         {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
       </ConfirmDangerDialog>
 
       <NetworkEtalonkaReportDialog
         report={page.etalonkaReport}
+        description="Для поточної радіомережі"
         onClose={page.closeEtalonkaReportDialog}
         onDownload={page.downloadEtalonkaReport}
+        onSetProgressExpanded={page.setEtalonkaReportProgressExpanded}
         onTypeChange={page.setEtalonkaReportType}
         onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
         onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}

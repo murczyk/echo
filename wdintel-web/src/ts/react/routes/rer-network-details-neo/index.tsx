@@ -162,7 +162,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
                 navigateWithinSpa(classicHref);
               }}
             >
-              До старої версії
+              До класичної версії
             </Button>
             <Tooltip title="Скопіювати назву і район">
               <span>
@@ -200,7 +200,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
               <MenuItem onClick={page.openEtalonkaReportDialog} disabled={!page.network}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <SummarizeOutlinedIcon fontSize="small" />
-                  <span>Завантажити еталонний опис</span>
+                  <span>Еталонний опис</span>
                 </Stack>
               </MenuItem>
               <MenuItem onClick={page.openDeleteDialog} disabled={!page.canDelete || !page.network} sx={{ color: 'error.main' }}>

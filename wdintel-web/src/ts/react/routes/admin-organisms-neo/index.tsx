@@ -371,12 +371,13 @@ function RowActions(props: { organism: Organism; onEdit: (organism: Organism) =>
         onClick={() => props.onEdit(props.organism)}
         icon={<EditIcon fontSize="small" />}
       />
-      <MrtRowActionButton
-        label="Видалити"
-        onClick={() => props.onDelete(props.organism)}
-        icon={<DeleteIcon fontSize="small" />}
-        tone="danger"
-      />
+    <MrtRowActionButton
+      label="Видалити"
+      onClick={() => props.onDelete(props.organism)}
+      icon={<DeleteIcon fontSize="small" />}
+      tone="danger"
+      opensModal
+    />
     </MrtRowActions>
   );
 }
@@ -564,7 +565,7 @@ function DeleteOrganismDialog(props: {
   }
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} maxWidth="sm" fullWidth>
+    <Dialog open={props.open} onClose={props.onClose} maxWidth="sm" fullWidth disableRestoreFocus>
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent className="space-y-3">
         {status ? (

@@ -48,6 +48,7 @@ type Props = {
   onClose: () => void;
   onChange: (next: NetworkUpsertForm | null) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
 type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'modulationId' | 'activeFrom'>;
@@ -113,6 +114,7 @@ function NetworkEditDrawerComponent({
   onClose,
   onChange,
   onSave,
+  disableRestoreFocus = false,
 }: Props) {
   const titleId = 'network-edit-drawer-title';
   const validation = getNetworkUpsertValidationError(form, { includeFrequency: mode === 'create' });
@@ -194,6 +196,7 @@ function NetworkEditDrawerComponent({
       open={open}
       onClose={saving ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

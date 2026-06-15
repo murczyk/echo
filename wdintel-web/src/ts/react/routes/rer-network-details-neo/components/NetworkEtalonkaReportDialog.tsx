@@ -1,4 +1,6 @@
 import DownloadIcon from '@mui/icons-material/Download';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import {
   Box,
   Button,
@@ -9,6 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  LinearProgress,
   Paper,
   Radio,
   RadioGroup,
@@ -22,13 +25,16 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
+import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
 
 type Props = {
   report: NetworkEtalonkaReportState;
+  description: string;
   onClose: () => void;
   onDownload: () => void;
+  onSetProgressExpanded: (expanded: boolean) => void;
   onTypeChange: (reportType: NetworkEtalonkaReportType) => void;
   onActiveFreqsOnlyChange: (activeFreqsOnly: boolean) => void;
   onIncludeSigintSignsChange: (includeSigintSigns: boolean) => void;
@@ -37,6 +43,7 @@ type Props = {
   onIncludePelengsMapChange: (includePelengsMap: boolean) => void;
   onFromDateTimeStrChange: (fromDateTimeStr: string) => void;
   onToDateTimeStrChange: (toDateTimeStr: string) => void;
+  disableRestoreFocus?: boolean;
 };
 
 function parseDateTime(value: string): Dayjs | null {
@@ -96,8 +103,10 @@ function ReportSectionCard({
 
 export function NetworkEtalonkaReportDialog({
   report,
+  description,
   onClose,
   onDownload,
+  onSetProgressExpanded,
   onTypeChange,
   onActiveFreqsOnlyChange,
   onIncludeSigintSignsChange,
@@ -106,11 +115,14 @@ export function NetworkEtalonkaReportDialog({
   onIncludePelengsMapChange,
   onFromDateTimeStrChange,
   onToDateTimeStrChange,
+  disableRestoreFocus = false,
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
-  const dateTimeDisabled = report.downloading || !isExtended;
+  const dateTimeDisabled = report.running || !isExtended;
   const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
   const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
+  const progressStages = parseBgtaskProgressStages(report.logs);
+  const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -127,13 +139,16 @@ export function NetworkEtalonkaReportDialog({
     onClose();
   };
 
+  const hasProgress = report.taskId !== null || report.running || report.logs.length > 0;
+  const progressPercent = Math.max(1, Math.min(100, Math.round((report.curr / Math.max(1, report.overall)) * 100)));
+
   return (
     <Dialog
       open={report.dialogOpen}
-      onClose={report.downloading ? undefined : handleClose}
+      onClose={handleClose}
       fullWidth
       maxWidth={false}
-      disableEscapeKeyDown={report.downloading}
+      disableRestoreFocus={disableRestoreFocus}
       PaperProps={{
         sx: {
           borderRadius: 1,
@@ -145,7 +160,10 @@ export function NetworkEtalonkaReportDialog({
     >
       <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1.5 }}>
         <Typography variant="h6" component="div" sx={{ fontWeight: 500 }}>
-          Звіт &laquo;Еталонний опис&raquo;
+          Еталонний опис
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {description}
         </Typography>
       </DialogTitle>
 
@@ -154,8 +172,8 @@ export function NetworkEtalonkaReportDialog({
           {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
 
           <RadioGroup row value={report.reportType} onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)} sx={{ gap: 2 }}>
-            <FormControlLabel value="AccordingToTheForm" control={<Radio />} label="Згідно форми" disabled={report.downloading} />
-            <FormControlLabel value="ExtendedReport" control={<Radio />} label="Розширений" disabled={report.downloading} />
+            <FormControlLabel value="AccordingToTheForm" control={<Radio />} label="Згідно форми" disabled={report.running} />
+            <FormControlLabel value="ExtendedReport" control={<Radio />} label="Розширений" disabled={report.running} />
           </RadioGroup>
 
           <Box
@@ -174,7 +192,7 @@ export function NetworkEtalonkaReportDialog({
                       size="small"
                       checked={report.activeFreqsOnly}
                       onChange={(_event, checked) => onActiveFreqsOnlyChange(checked)}
-                      disabled={report.downloading}
+                      disabled={report.running}
                       sx={{ p: 0.5 }}
                     />
                   }
@@ -186,7 +204,7 @@ export function NetworkEtalonkaReportDialog({
                       size="small"
                       checked={report.includeSigintSigns}
                       onChange={(_event, checked) => onIncludeSigintSignsChange(checked)}
-                      disabled={report.downloading}
+                      disabled={report.running}
                       sx={{ p: 0.5 }}
                     />
                   }
@@ -198,7 +216,7 @@ export function NetworkEtalonkaReportDialog({
                       size="small"
                       checked={report.includeConfirmation}
                       onChange={(_event, checked) => onIncludeConfirmationChange(checked)}
-                      disabled={report.downloading}
+                      disabled={report.running}
                       sx={{ p: 0.5 }}
                     />
                   }
@@ -261,7 +279,7 @@ export function NetworkEtalonkaReportDialog({
                           size="small"
                           checked={report.includeUnitCallsigns}
                           onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
-                          disabled={report.downloading}
+                          disabled={report.running}
                           sx={{ p: 0.5 }}
                         />
                       }
@@ -273,7 +291,7 @@ export function NetworkEtalonkaReportDialog({
                           size="small"
                           checked={report.includePelengsMap}
                           onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
-                          disabled={report.downloading}
+                          disabled={report.running}
                           sx={{ p: 0.5 }}
                         />
                       }
@@ -284,6 +302,77 @@ export function NetworkEtalonkaReportDialog({
               ) : null}
             </ReportSectionCard>
           </Box>
+
+          {hasProgress ? (
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, borderColor: 'divider' }}>
+              <Stack spacing={1.5}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                    {report.running ? 'Формування' : report.error ? 'Помилка' : 'Готово'}
+                  </Typography>
+                </Stack>
+
+                <LinearProgress
+                  variant="determinate"
+                  color={report.error ? 'error' : report.running ? 'primary' : 'success'}
+                  value={progressPercent}
+                  sx={report.running ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                />
+
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    {report.curr} / {report.overall}
+                  </Typography>
+                  <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
+                    {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
+                  </Button>
+                </Stack>
+
+                {report.progressExpanded ? (
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
+                    <Stack spacing={0.75}>
+                      {progressStages.map((stage) => {
+                        const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
+                        const stageCurrent = report.running && report.curr === stage.index;
+                        return (
+                          <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
+                            {stageDone ? (
+                              <CheckCircleIcon color="success" fontSize="small" />
+                            ) : stageCurrent ? (
+                              <CircularProgress size={14} />
+                            ) : report.error ? (
+                              <HighlightOffIcon color="error" fontSize="small" />
+                            ) : (
+                              <Typography variant="caption" color="text.disabled">
+                                ○
+                              </Typography>
+                            )}
+                            <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
+                              [{stage.index}/{stage.overall}] {stage.text}
+                            </Typography>
+                          </Stack>
+                        );
+                      })}
+                      {report.logs
+                        .filter((line) => !/^\[\d+\/\d+\]/.test(line))
+                        .map((line) => (
+                          <Typography key={line} variant="caption" color="text.secondary">
+                            {line}
+                          </Typography>
+                        ))}
+                    </Stack>
+                  </Paper>
+                ) : null}
+
+                {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
+                {showLongRunningHint ? (
+                  <PowerAlert severity="info">
+                    Формування може тривати кілька хвилин. Можна закрити вікно, звіт завантажиться автоматично після завершення.
+                  </PowerAlert>
+                ) : null}
+              </Stack>
+            </Paper>
+          ) : null}
         </Stack>
       </DialogContent>
 
@@ -297,19 +386,17 @@ export function NetworkEtalonkaReportDialog({
         }}
       >
         <Typography variant="caption" color="text.secondary" sx={{ flex: '1 1 320px', minWidth: 0 }}>
-          Еталонний опис для мережі
+          {description}
         </Typography>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
-          <Button onClick={handleClose} disabled={report.downloading}>
-            Закрити
-          </Button>
+          <Button onClick={handleClose}>Закрити</Button>
           <Button
             onClick={onDownload}
-            disabled={report.downloading}
+            disabled={report.running}
             variant="contained"
-            startIcon={report.downloading ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />}
+            startIcon={report.running ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />}
           >
-            Згенерувати
+            {report.running ? 'Формування...' : 'Завантажити'}
           </Button>
         </Stack>
       </DialogActions>

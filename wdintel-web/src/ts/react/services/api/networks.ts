@@ -241,6 +241,22 @@ export async function downloadNetworksEtalonkaReport(req: EtalonkaJimForksReq): 
   return postBytes('/api/sigint/etalonka/report-networks', body as any);
 }
 
+export async function launchNetworksEtalonkaReportTask(req: EtalonkaJimForksReq): Promise<number> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postJson<number>('/api/sigint/etalonka/report-networks-task-launch', body as any);
+}
+
+export async function launchNetworkEtalonkaBatchReportTask(req: EtalonkaNetworkBatchReq): Promise<number> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postJson<number>('/api/sigint/etalonka/report-networks-batch-id-task-launch', body as any);
+}
+
+export async function downloadNetworkEtalonkaReportTaskResult(taskId: number): Promise<Blob> {
+  return postBytes('/api/sigint/etalonka/report-networks-task-download', transformCamelToSnake({ bgtaskId: taskId }));
+}
+
 export async function downloadNetworkGoiReport(): Promise<Blob> {
   return postBytes('/api/sigint/network/report-networks-goi');
 }
