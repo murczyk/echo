@@ -262,13 +262,6 @@ export function mergeNetworkUnitStatsWithUnits(
     .sort((left, right) => right.count - left.count || left.unitName.localeCompare(right.unitName, 'uk'));
 }
 
-export function sortNetworkRows(rows: NetworkRowView[]): NetworkRowView[] {
-  return [...rows].sort((left, right) => {
-    const statusRank = (row: NetworkRowView) => (row.network.deleted ? 3 : row.network.activeTo === null ? 1 : 2);
-    return statusRank(left) - statusRank(right) || left.network.name.localeCompare(right.network.name, 'uk');
-  });
-}
-
 export function resolveAorFilterValues(aorIds: number[]): string[] {
   if (aorIds.length === 0) {
     return [NO_AOR_FILTER_VALUE];

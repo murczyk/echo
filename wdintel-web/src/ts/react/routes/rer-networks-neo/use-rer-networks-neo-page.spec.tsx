@@ -342,6 +342,133 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps backend row order when the server returns a custom sort', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(2), buildNetwork(1)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.rows.map((row) => row.id)).toEqual([2, 1]);
+  });
+
+  it('refreshes an edited row with updated relations from the server', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: 'NetworkActive',
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [2],
+        freq: '',
+        kind: 'DMR',
+        modulationId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { unitIds: [1], postIds: [2] }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        areaOfResponsibilityIds: [1],
+        status: 'NetworkActive',
+      }),
+    );
+    expect(apiMock.updateNetworkPosts).toHaveBeenCalledWith({
+      networkId: 1,
+      postIds: [2],
+    });
+    expect(apiMock.updateNetworkUnits).toHaveBeenCalledWith({
+      networkId: 1,
+      unitIds: [1],
+    });
+    expect(latest?.rows.find((row) => row.id === 1)?.network.unitIds).toEqual([1]);
+    expect(latest?.rows.find((row) => row.id === 1)?.network.postIds).toEqual([2]);
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
+  });
+
+  it('drops an edited row when it no longer matches the active filter', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: 'NetworkInactive',
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        kind: 'DMR',
+        modulationId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(2)],
+      statusCounts: { active: 1, inactive: 1, archived: 1 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 1, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(latest?.rows.map((row) => row.id)).toEqual([2]);
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(4);
+  });
+
   it('blocks create submission when the first frequency is invalid', async () => {
     await renderHook();
     await flushEffects();

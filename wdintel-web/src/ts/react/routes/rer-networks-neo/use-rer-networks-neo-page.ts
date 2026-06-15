@@ -18,8 +18,6 @@ import {
   mergeNetworkUnitStatsWithUnits,
   sanitizeNetworkColumnFilters,
   sortNetworkAorsForDisplay,
-  sortNetworkRows,
-  type NetworkRowView,
   type NetworksFilterState,
 } from './helpers';
 import {
@@ -192,7 +190,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     [posts],
   );
   const rows = useMemo(
-    () => sortNetworkRows(networks.map((network) => buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId))),
+    () => networks.map((network) => buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId)),
     [activityByNetworkId, aorsById, networks, unitsById],
   );
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
@@ -600,7 +598,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
 
     try {
       const network = networks.find((item) => item.id === editDialog.id) ?? null;
-      const updated = await updateNetwork({
+      await updateNetwork({
         id: editDialog.id,
         restoreNetwork: network?.deleted && editDialog.status === 'NetworkActive' ? true : null,
         areaOfResponsibilityIds: [...editDialog.aorIds],
@@ -615,7 +613,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         status: editDialog.status,
       });
       await syncNetworkRelations(editDialog);
-      setNetworks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      lastExecutedFullQueryKeyRef.current = null;
+      void loadNetworks(latestQuerySnapshotRef.current ?? querySnapshot, { includeLookups: false, append: false, force: true });
       void refreshStatusCounts();
       setStatus({ kind: 'success', text: 'Мережу оновлено.' });
       setEditDialog(null);
