@@ -34,6 +34,8 @@ pub struct SubmitMessageRsp {
 pub struct Group {
     pub id: String,
     pub name: String,
+    pub source_signal_group_id: Option<String>,
+    pub source_whatsapp_group_jid: Option<String>,
 }
 
 #[derive(

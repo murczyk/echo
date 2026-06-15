@@ -7,12 +7,14 @@ use crate::h;
 use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
 
+pub mod oneoff;
 mod types;
 pub mod worker;
 
@@ -190,64 +192,216 @@ async fn ensure_group(
     group: types::Group,
 ) -> anyhow::Result<String> {
     let echo_id = mk_echo_id(group.id);
-    let old_name = signal_group::Entity::find_by_id(echo_id.clone())
-        .filter(signal_group::Column::DatasourceId.eq(datasource_id))
-        .select_only()
-        .column(signal_group::Column::Name)
-        .into_tuple::<String>()
-        .one(txn)
-        .await
-        .c(h!())?;
-    let already_exists = old_name.is_some();
-    let up_to_date = match &old_name {
-        None => false,
-        Some(nm) => group.name.eq(nm),
-    };
-    if already_exists && up_to_date {
-        return Ok(echo_id);
-    }
-    let model = signal_group::ActiveModel {
-        master_key: Set(echo_id.clone()),
-        name: Set(Some(group.name.clone())),
-        datasource_id: Set(Some(datasource_id)),
-        created_at: NotSet,
-        ignore_operativny: NotSet,
-        is_secret: NotSet,
-        deleted: NotSet,
-    };
-    if already_exists {
-        model.update(txn).await.c(h!())?;
+
+    let group_master_key = group
+        .source_signal_group_id
+        .or(group.source_whatsapp_group_jid);
+
+    let keys = if let Some(master_key) = &group_master_key {
+        vec![echo_id.clone(), master_key.clone()]
     } else {
-        model.insert(txn).await.c(h!())?;
-    }
-    let datasource_groups = datasource_group::Entity::find()
-        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
-        .filter(datasource_group::Column::GroupMasterKey.eq(echo_id.clone()))
-        .one(txn)
+        vec![echo_id.clone()]
+    };
+
+    let signal_group_candidates = signal_group::Entity::find()
+        .filter(
+            Condition::any()
+                .add(signal_group::Column::Name.eq(group.name.clone()))
+                .add(signal_group::Column::MasterKey.eq_any(keys.clone())),
+        )
+        .all(txn)
         .await
         .c(h!())?;
-    match datasource_groups {
-        Some(d) => {
-            let mut rec = d.into_active_model();
-            rec.last_sync_at = Set(Utc::now().naive_utc());
-            rec.update(txn).await.c(h!())?;
-        }
-        None => {
-            datasource_group::ActiveModel {
-                id: NotSet,
-                group_master_key: Set(echo_id.clone()),
-                datasource_id: Set(datasource_id),
-                last_sync_at: NotSet,
-                created_at: NotSet,
-                name: Set(group.name),
-                deleted: NotSet,
-            }
-            .insert(txn)
+
+    let datasource_group_candidates = datasource_group::Entity::find()
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            Condition::any()
+                .add(datasource_group::Column::Name.eq(group.name.clone()))
+                .add(datasource_group::Column::GroupMasterKey.eq_any(keys)),
+        )
+        .all(txn)
+        .await
+        .c(h!())?;
+
+    let signal_group_by_master_key =
+        if let Some(group_master_key) = &group_master_key {
+            signal_group_candidates
+                .iter()
+                .find(|x| &x.master_key == group_master_key)
+        } else {
+            None
+        };
+
+    let signal_group_by_echo_id = signal_group_candidates
+        .iter()
+        .find(|x| x.master_key == echo_id);
+
+    let datasource_group_by_group_master_key =
+        if let Some(group_master_key) = &group_master_key {
+            datasource_group_candidates
+                .iter()
+                .find(|x| &x.group_master_key == group_master_key)
+        } else {
+            None
+        };
+
+    let datasource_group_by_echo_id = datasource_group_candidates
+        .iter()
+        .find(|x| x.group_master_key == echo_id);
+
+    let signal_group_by_name = signal_group_candidates
+        .iter()
+        .find(|x| x.name.as_ref() == Some(&group.name));
+
+    let datasource_group_by_name = datasource_group_candidates
+        .iter()
+        .find(|x| x.name == group.name);
+
+    let result = if let Some(datasource_group_by_group_master_key) =
+        datasource_group_by_group_master_key
+    {
+        sync_datasource_group(
+            txn,
+            datasource_group_by_group_master_key,
+            signal_group_by_master_key,
+            &group.name,
+        )
+        .await
+        .c(h!())?
+    } else if let Some(datasource_group_by_echo_id) =
+        datasource_group_by_echo_id
+    {
+        sync_datasource_group(
+            txn,
+            datasource_group_by_echo_id,
+            signal_group_by_echo_id,
+            &group.name,
+        )
+        .await
+        .c(h!())?
+    } else if let Some(datasource_group_by_name) = datasource_group_by_name {
+        let owned_signal_group = signal_group::Entity::find()
+            .filter(
+                signal_group::Column::MasterKey
+                    .eq(datasource_group_by_name.group_master_key.clone()),
+            )
+            .filter(signal_group::Column::DatasourceId.eq(datasource_id))
+            .one(txn)
             .await
             .c(h!())?;
+        if let Some(signal_group) = owned_signal_group {
+            sync_signal_group(txn, datasource_id, &signal_group, &group.name)
+                .await
+                .c(h!())?;
         }
+        datasource_group_by_name.clone()
+    } else {
+        insert_datasource_group(
+            txn,
+            datasource_id,
+            echo_id,
+            &group.name,
+            group_master_key,
+            signal_group_by_master_key,
+            signal_group_by_echo_id,
+            signal_group_by_name,
+        )
+        .await
+        .c(h!())?
+    };
+
+    Ok(result.group_master_key)
+}
+
+async fn sync_datasource_group(
+    txn: &DatabaseTransaction,
+    model: &datasource_group::Model,
+    signal_group: Option<&signal_group::Model>,
+    group_name: &str,
+) -> anyhow::Result<datasource_group::Model> {
+    if let Some(signal_group) = signal_group {
+        sync_signal_group(txn, model.datasource_id, signal_group, group_name)
+            .await
+            .c(h!())?;
     }
-    Ok(echo_id)
+
+    if model.deleted || model.name != group_name {
+        let mut active_model = model.clone().into_active_model();
+        active_model.deleted = Set(false);
+        active_model.name = Set(group_name.to_string());
+        active_model.last_sync_at = Set(Utc::now().naive_utc());
+        let model = active_model.update(txn).await.c(h!())?;
+        Ok(model)
+    } else {
+        Ok(model.clone())
+    }
+}
+
+async fn sync_signal_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    signal_group: &signal_group::Model,
+    group_name: &str,
+) -> anyhow::Result<signal_group::Model> {
+    let signal_group_name = signal_group.name.as_deref();
+
+    if signal_group.datasource_id == Some(datasource_id)
+        && (signal_group.deleted || signal_group_name != Some(group_name))
+    {
+        let mut active_model = signal_group.clone().into_active_model();
+        active_model.deleted = Set(false);
+        active_model.name = Set(Some(group_name.to_string()));
+        let model = active_model.update(txn).await.c(h!())?;
+        Ok(model)
+    } else {
+        Ok(signal_group.clone())
+    }
+}
+
+async fn insert_datasource_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    echo_id: String,
+    group_name: &str,
+    group_master_key: Option<String>,
+    signal_group_by_master_key: Option<&signal_group::Model>,
+    signal_group_by_echo_id: Option<&signal_group::Model>,
+    signal_group_by_name: Option<&signal_group::Model>,
+) -> anyhow::Result<datasource_group::Model> {
+    let signal_group = if let Some(by_master_key) = signal_group_by_master_key {
+        sync_signal_group(txn, datasource_id, by_master_key, group_name)
+            .await
+            .c(h!())?
+    } else if let Some(by_echo_id) = signal_group_by_echo_id {
+        sync_signal_group(txn, datasource_id, by_echo_id, group_name)
+            .await
+            .c(h!())?
+    } else if let Some(by_name) = signal_group_by_name {
+        sync_signal_group(txn, datasource_id, by_name, group_name)
+            .await
+            .c(h!())?
+    } else {
+        let master_key = group_master_key.unwrap_or(echo_id);
+        let model = signal_group::ActiveModel {
+            master_key: Set(master_key),
+            name: Set(Some(group_name.to_string())),
+            datasource_id: Set(Some(datasource_id)),
+            ..Default::default()
+        };
+        model.insert(txn).await.c(h!())?
+    };
+
+    let model = datasource_group::ActiveModel {
+        datasource_id: Set(datasource_id),
+        group_master_key: Set(signal_group.master_key),
+        name: Set(group_name.to_string()),
+        ..Default::default()
+    };
+
+    let datasource_group = model.insert(txn).await.c(h!())?;
+
+    Ok(datasource_group)
 }
 
 fn mk_echo_id(id: String) -> String {

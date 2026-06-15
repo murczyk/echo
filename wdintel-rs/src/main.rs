@@ -565,6 +565,14 @@ pub struct ImportTuiPs {
     pub path: String,
 }
 
+#[derive(clap::Parser, Debug, Clone)]
+pub struct OneoffMergeDatasourceGroupPs {
+    #[arg(long)]
+    pub target_group_key: String,
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -659,6 +667,7 @@ enum Cmd {
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffRefreshAiModels,
+    OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1153,5 +1162,8 @@ async fn async_main(
             palitra::oneoff::oneoff_backup_palitras(mode).await
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
+        Cmd::OneoffMergeDatasourceGroup(ps) => {
+            operator::oneoff::oneoff_merge_datasource_group(mode, ps).await
+        }
     }
 }
