@@ -233,13 +233,7 @@ fn network_aor_exists_for_token(token: &str) -> SimpleExpr {
             sigint_network_aor::Relation::AreaOfResponsibility.def(),
             Alias::new("sigint_aor"),
         )
-        .filter(
-            Expr::col((
-                Alias::new("sigint_aor"),
-                area_of_responsibility::Column::Deleted,
-            ))
-            .eq(false),
-        )
+        .filter(Expr::cust("\"sigint_aor\".\"deleted\" = false"))
         .filter(token_like_expr(
             "lower(sigint_aor.name collate \"ru-x-icu\") ilike $1",
             token,
