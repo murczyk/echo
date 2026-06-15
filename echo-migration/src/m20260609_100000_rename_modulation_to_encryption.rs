@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
         // Save original (kind, modulation_id) before any transformation — used by down()
         db.execute_unprepared("
             CREATE TABLE _mig_freq_backup AS
-                SELECT id, kind::text AS kind, modulation_i
+                SELECT id, kind::text AS kind, modulation_id
                 FROM sigint_network_freq;
 
             CREATE TABLE _mig_enc_key_backup AS
