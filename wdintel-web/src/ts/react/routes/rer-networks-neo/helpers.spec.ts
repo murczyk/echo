@@ -3,6 +3,7 @@ import utc from 'dayjs/plugin/utc';
 import { describe, expect, it } from 'vitest';
 
 import type { Network } from '../../../../Bindings';
+import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
 import {
   buildActivityBars,
   buildNetworkRowView,
@@ -79,7 +80,7 @@ describe('rer-networks-neo AOR filters', () => {
 
   it('keeps the row label separate from the developing marker', () => {
     const row = buildNetworkRowView(
-      { id: 1, name: 'Alpha', unitIds: [1], freqs: [], aorIds: [], location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, activeTo: null, postIds: [], descriptions: [], deleted: false, status: 'NetworkActive' } as Network,
+      { id: 1, name: 'Alpha', unitIds: [1], freqs: [], aorIds: [], location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, activeTo: null, postIds: [], descriptions: [], deleted: false, status: NETWORK_STATUS_ACTIVE } as Network,
       new Map([[1, { id: 1, name: '1 АК', army: '', division: '', regiment: '', battalion: '' } as any]]),
       new Map(),
       new Map(),
@@ -341,19 +342,19 @@ describe('rer-networks-neo AOR filters', () => {
   });
 
   it('derives network status descriptors from deleted and active-to state', () => {
-    expect(getNetworkStatusDescriptor({ deleted: false, activeTo: null, status: 'NetworkActive' } as Network)).toEqual({
+    expect(getNetworkStatusDescriptor({ deleted: false, activeTo: null, status: NETWORK_STATUS_ACTIVE } as Network)).toEqual({
       label: 'Активна',
       color: NETWORK_STATUS_ACTIVE_COLOR,
       key: 'active',
     });
 
-    expect(getNetworkStatusDescriptor({ deleted: false, activeTo: 1, status: 'NetworkActive' } as Network)).toEqual({
+    expect(getNetworkStatusDescriptor({ deleted: false, activeTo: 1, status: NETWORK_STATUS_ACTIVE } as Network)).toEqual({
       label: 'Неактивна',
       color: NETWORK_STATUS_INACTIVE_COLOR,
       key: 'inactive',
     });
 
-    expect(getNetworkStatusDescriptor({ deleted: true, activeTo: null, status: 'NetworkActive' } as Network)).toEqual({
+    expect(getNetworkStatusDescriptor({ deleted: true, activeTo: null, status: NETWORK_STATUS_ACTIVE } as Network)).toEqual({
       label: 'Архівна',
       color: NETWORK_STATUS_ARCHIVED_COLOR,
       key: 'archived',
@@ -361,15 +362,15 @@ describe('rer-networks-neo AOR filters', () => {
   });
 
   it('keeps the status label helper aligned with the descriptor labels', () => {
-    expect(getNetworkStatusLabel({ deleted: false, activeTo: null, status: 'NetworkActive' } as Network)).toBe('Активна');
-    expect(getNetworkStatusLabel({ deleted: false, activeTo: 1, status: 'NetworkActive' } as Network)).toBe('Неактивна');
-    expect(getNetworkStatusLabel({ deleted: true, activeTo: null, status: 'NetworkActive' } as Network)).toBe('Архівна');
+    expect(getNetworkStatusLabel({ deleted: false, activeTo: null, status: NETWORK_STATUS_ACTIVE } as Network)).toBe('Активна');
+    expect(getNetworkStatusLabel({ deleted: false, activeTo: 1, status: NETWORK_STATUS_ACTIVE } as Network)).toBe('Неактивна');
+    expect(getNetworkStatusLabel({ deleted: true, activeTo: null, status: NETWORK_STATUS_ACTIVE } as Network)).toBe('Архівна');
   });
 
   it('projects the row status color and key from the same descriptor', () => {
     expect(
       buildNetworkRowView(
-        { id: 1, deleted: false, activeTo: null, unitIds: [], freqs: [], aorIds: [], name: '', location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, postIds: [], descriptions: [], status: 'NetworkActive' } as Network,
+        { id: 1, deleted: false, activeTo: null, unitIds: [], freqs: [], aorIds: [], name: '', location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, postIds: [], descriptions: [], status: NETWORK_STATUS_ACTIVE } as Network,
         new Map(),
         new Map(),
         new Map(),
@@ -378,7 +379,7 @@ describe('rer-networks-neo AOR filters', () => {
 
     expect(
       buildNetworkRowView(
-        { id: 1, deleted: false, activeTo: 1, unitIds: [], freqs: [], aorIds: [], name: '', location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, postIds: [], descriptions: [], status: 'NetworkActive' } as Network,
+        { id: 1, deleted: false, activeTo: 1, unitIds: [], freqs: [], aorIds: [], name: '', location: '', radioStation: null, createdAt: 0, purpose: null, operationMode: null, operationType: null, operationPeriod: null, lastUpdatedAt: 0, lastUpdatedBy: null, activeFrom: null, postIds: [], descriptions: [], status: NETWORK_STATUS_ACTIVE } as Network,
         new Map(),
         new Map(),
         new Map(),

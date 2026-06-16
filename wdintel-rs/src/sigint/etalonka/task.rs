@@ -31,6 +31,7 @@ const DOCX_CONTENT_TYPE: &str =
 struct EtalonkaReportTaskResultMeta {
     filename: String,
     content_type: String,
+    user_login: String,
 }
 
 async fn create_running_bgtask(
@@ -115,6 +116,7 @@ async fn launch_networks_report_task_go(
     let meta = EtalonkaReportTaskResultMeta {
         filename: format!("etalonka_networks_{}.docx", bgtask_id),
         content_type: DOCX_CONTENT_TYPE.to_string(),
+        user_login: user_login.clone(),
     };
     store_report_result_bytes(env.as_ref(), bgtask_id, &meta, bytes)
         .await
@@ -172,6 +174,7 @@ async fn launch_networks_batch_report_task_go(
     let meta = EtalonkaReportTaskResultMeta {
         filename: format!("etalonka_networks_{}.docx", bgtask_id),
         content_type: DOCX_CONTENT_TYPE.to_string(),
+        user_login: user_login.clone(),
     };
     store_report_result_bytes(env.as_ref(), bgtask_id, &meta, bytes)
         .await
@@ -221,6 +224,7 @@ fn parse_report_meta(
 async fn load_report_task_result(
     env: &Env,
     bgtask_id: i64,
+    user_login: &str,
 ) -> Result<(EtalonkaReportTaskResultMeta, Vec<u8>), AppError> {
     let bgtask_res = BgtaskRes::find_by_id(bgtask_id)
         .one(&env.dbx)
@@ -231,6 +235,11 @@ async fn load_report_task_result(
         "res_json must be non empty for task id: {bgtask_id}"
     ))?;
     let meta = parse_report_meta(res_json)?;
+    if meta.user_login != user_login {
+        return Err(AppError::Forbidden(
+            "Task result belongs to another user".to_string(),
+        ));
+    }
     let bytes = bgtask_res.res_bytes.clone().ok_or(format!(
         "res_bytes must be non empty for task id: {bgtask_id}"
     ))?;
@@ -301,11 +310,13 @@ pub async fn report_networks_task_download(
     _http_req: HttpRequest,
     req: Json<EtalonkaReportTaskDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
     let (meta, bytes) =
-        load_report_task_result(env.as_ref(), req.bgtask_id).await?;
+        load_report_task_result(env.as_ref(), req.bgtask_id, &user_login)
+            .await?;
     Ok(make_download_response(
         meta.filename,
         meta.content_type,
@@ -351,6 +362,7 @@ mod tests {
         let meta = EtalonkaReportTaskResultMeta {
             filename: "etalonka_networks_1.docx".to_string(),
             content_type: DOCX_CONTENT_TYPE.to_string(),
+            user_login: "user-1".to_string(),
         };
 
         store_report_result_bytes(&env, bgtask.id, &meta, vec![1, 2, 3, 4])
@@ -358,9 +370,12 @@ mod tests {
             .unwrap();
 
         let (loaded_meta, loaded_bytes) =
-            load_report_task_result(&env, bgtask.id).await.unwrap();
+            load_report_task_result(&env, bgtask.id, "user-1")
+                .await
+                .unwrap();
         assert_eq!(loaded_meta.filename, meta.filename);
         assert_eq!(loaded_meta.content_type, meta.content_type);
+        assert_eq!(loaded_meta.user_login, meta.user_login);
         assert_eq!(loaded_bytes, vec![1, 2, 3, 4]);
     }
 
@@ -398,6 +413,7 @@ mod tests {
                 serde_json::to_value(EtalonkaReportTaskResultMeta {
                     filename: "etalonka_networks_1.docx".to_string(),
                     content_type: DOCX_CONTENT_TYPE.to_string(),
+                    user_login: "user-1".to_string(),
                 })
                 .unwrap(),
             )),
@@ -406,9 +422,36 @@ mod tests {
         };
         result_row.insert(&env.dbx).await.unwrap();
 
-        let (meta, bytes) =
-            load_report_task_result(&env, bgtask.id).await.unwrap();
+        let (meta, bytes) = load_report_task_result(&env, bgtask.id, "user-1")
+            .await
+            .unwrap();
         assert_eq!(meta.filename, "etalonka_networks_1.docx");
         assert_eq!(bytes, vec![5, 6, 7]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn download_result_for_other_user_is_forbidden() {
+        let env = cleanup().await.unwrap();
+        let bgtask = create_running_bgtask(&env.dbx).await.unwrap();
+        let result_row = bgtask_res::ActiveModel {
+            id: Set(bgtask.id),
+            res_json: Set(Some(
+                serde_json::to_value(EtalonkaReportTaskResultMeta {
+                    filename: "etalonka_networks_1.docx".to_string(),
+                    content_type: DOCX_CONTENT_TYPE.to_string(),
+                    user_login: "owner-user".to_string(),
+                })
+                .unwrap(),
+            )),
+            res_bytes: Set(Some(vec![5, 6, 7])),
+            res_s3_id: Set(None),
+        };
+        result_row.insert(&env.dbx).await.unwrap();
+
+        let err = load_report_task_result(&env, bgtask.id, "other-user")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Forbidden(_)));
     }
 }

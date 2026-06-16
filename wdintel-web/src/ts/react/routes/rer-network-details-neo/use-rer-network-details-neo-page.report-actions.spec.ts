@@ -9,6 +9,7 @@ import type { Network } from '../../../../Bindings';
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { createDefaultNetworkEtalonkaReportState } from './use-rer-network-details-neo-page.etalonka-report';
 import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 const apiMock = vi.hoisted(() => ({
   launchNetworkEtalonkaBatchReportTask: vi.fn(),
@@ -73,7 +74,7 @@ function buildNetwork(id: number): Network {
     postIds: [],
     descriptions: [],
     deleted: false,
-    status: 'NetworkActive',
+    status: NETWORK_STATUS_ACTIVE,
   } as Network;
 }
 

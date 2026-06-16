@@ -6,6 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -410,7 +411,7 @@ describe('RerNetworkDetailsNeoPage', () => {
   it('shows the empty-network fallback for loaded unnamed networks', async () => {
     useRerNetworkDetailsNeoPageMock.mockReturnValue(
       buildPage({
-        network: { name: '', status: 'NetworkActive', deleted: false },
+        network: { name: '', status: NETWORK_STATUS_ACTIVE, deleted: false },
         unitNames: [],
         currentUserLoaded: true,
       }),
@@ -425,7 +426,7 @@ describe('RerNetworkDetailsNeoPage', () => {
   it('keeps the tab area gated until permissions are loaded', async () => {
     useRerNetworkDetailsNeoPageMock.mockReturnValue(
       buildPage({
-        network: { name: 'Тестова', status: 'NetworkActive', deleted: false },
+        network: { name: 'Тестова', status: NETWORK_STATUS_ACTIVE, deleted: false },
         unitNames: [],
         currentUserLoaded: false,
       }),

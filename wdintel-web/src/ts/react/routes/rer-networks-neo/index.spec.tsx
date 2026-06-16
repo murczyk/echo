@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
+import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
@@ -121,7 +122,7 @@ function buildNetwork(id: number): Network {
     postIds: [],
     descriptions: [],
     deleted: false,
-    status: 'NetworkActive',
+    status: NETWORK_STATUS_ACTIVE,
   };
 }
 

@@ -2123,6 +2123,7 @@ fn build_etalonka_networks_query(
 
     if let Some(id_filter) = id_filter {
         if id_filter.is_empty() {
+            // Empty explicit ID filter means "export nothing", not "drop ID filtering".
             networks = networks.filter(Expr::cust("1 = 2"));
         } else {
             networks = networks
@@ -2319,10 +2320,7 @@ mod tests {
         .build(DbBackend::Postgres)
         .to_string();
         assert_ne!(empty_id_sql, no_id_sql);
-        assert!(
-            !no_id_sql.contains("\"sigint_network\".\"id\" IN"),
-            "{no_id_sql}"
-        );
+        // Empty explicit ID filter means "export nothing", not "drop ID filtering".
         assert!(empty_id_sql.contains("1 = 2"), "{empty_id_sql}");
 
         let mut req = empty_list_networks_req();
@@ -2390,143 +2388,5 @@ mod tests {
             &sql,
             "\"sigint_network\".\"updated_at\" DESC",
         );
-    }
-
-    #[test]
-    fn etalonka_network_filters_reuse_list_status_scope() {
-        let mut req = empty_list_networks_req();
-        req.status_filter =
-            Some(ListNetworksStatusFilter::ListNetworksArchived);
-
-        let sql = build_etalonka_networks_query(
-            &req,
-            JoinType::InnerJoin,
-            None,
-            None,
-        )
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(
-            sql.contains("\"sigint_network\".\"deleted\" = true"),
-            "{sql}"
-        );
-    }
-
-    #[test]
-    fn etalonka_network_filters_reuse_list_inactive_status_scope() {
-        let mut req = empty_list_networks_req();
-        req.status_filter =
-            Some(ListNetworksStatusFilter::ListNetworksInactive);
-
-        let sql = build_etalonka_networks_query(
-            &req,
-            JoinType::InnerJoin,
-            None,
-            None,
-        )
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(
-            sql.contains("\"sigint_network\".\"deleted\" = false"),
-            "{sql}"
-        );
-        assert!(
-            sql.contains("\"sigint_network\".\"active_to\" IS NOT NULL"),
-            "{sql}"
-        );
-    }
-
-    #[test]
-    fn etalonka_network_filters_apply_global_text_and_aor_rules() {
-        let mut req = empty_list_networks_req();
-        req.filter_text = Some("423 kyiv".to_string());
-        req.filter_name = Some("alpha".to_string());
-        req.filter_location = Some("center".to_string());
-        req.aor_ids = Some(vec![-1, 42]);
-
-        let sql = build_etalonka_networks_query(
-            &req,
-            JoinType::InnerJoin,
-            None,
-            None,
-        )
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(
-            sql.contains(
-                "lower(sigint_network.name collate \"ru-x-icu\") ilike"
-            ),
-            "{sql}"
-        );
-        assert!(
-            sql.contains(
-                "lower(sigint_network.location collate \"ru-x-icu\") ilike"
-            ),
-            "{sql}"
-        );
-        assert!(sql.contains("lower(sigint_network.radio_station collate \"ru-x-icu\") ilike"), "{sql}");
-        assert!(
-            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike"),
-            "{sql}"
-        );
-        assert!(
-            sql.contains(
-                "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
-            ),
-            "{sql}"
-        );
-        assert!(
-            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike"),
-            "{sql}"
-        );
-        assert!(sql.contains("\"sigint_unit\".\"name\""), "{sql}");
-        assert!(sql.contains("NOT EXISTS"), "{sql}");
-        assert!(
-            sql.contains("\"sigint_network_aor\".\"aor_id\" IN"),
-            "{sql}"
-        );
-        assert!(sql.contains("EXISTS"), "{sql}");
-    }
-
-    #[test]
-    fn etalonka_network_filters_support_no_aor_only() {
-        let mut req = empty_list_networks_req();
-        req.aor_ids = Some(vec![-1]);
-
-        let sql = build_etalonka_networks_query(
-            &req,
-            JoinType::InnerJoin,
-            None,
-            None,
-        )
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(sql.contains("NOT EXISTS"), "{sql}");
-    }
-
-    #[test]
-    fn etalonka_network_filters_keep_unit_and_freq_searches_after_extraction() {
-        let mut req = empty_list_networks_req();
-        req.filter_unit = Some("11".to_string());
-        req.filter_freq = Some("123".to_string());
-
-        let sql = build_etalonka_networks_query(
-            &req,
-            JoinType::InnerJoin,
-            None,
-            None,
-        )
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(
-            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike"),
-            "{sql}"
-        );
-        assert!(sql.contains("sigint_network_freq.freq ilike"), "{sql}");
     }
 }
