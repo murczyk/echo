@@ -7,5 +7,5 @@ export function getRestoreNetworkOnEditValue(
   network: Pick<Network, 'deleted' | 'activeTo'> | null | undefined,
   status: NetworkStatus,
 ): boolean | null {
-  return network?.deleted === true && network.activeTo !== null && status === NETWORK_STATUS_ACTIVE ? true : null;
+  return network?.deleted === true && status === NETWORK_STATUS_ACTIVE ? true : null;
 }

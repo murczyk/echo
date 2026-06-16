@@ -158,7 +158,7 @@ describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
     });
 
     expect(apiMock.updateNetwork).toHaveBeenCalledWith(
-      expect.objectContaining({ restoreNetwork: null }),
+      expect.objectContaining({ restoreNetwork: true }),
     );
   });
 

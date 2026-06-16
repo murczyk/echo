@@ -496,7 +496,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.updateNetwork).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 1,
-        restoreNetwork: null,
+        restoreNetwork: true,
       }),
     );
   });
