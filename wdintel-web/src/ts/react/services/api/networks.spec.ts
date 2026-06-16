@@ -8,6 +8,7 @@ import {
   downloadNetworkEtalonkaReportTaskResult,
   downloadNetworkEtalonkaReport,
   downloadNetworksEtalonkaReport,
+  getNetworksList,
   getNetworkCallsignRelationMessages,
   getNetworksGroupsActivity,
   listNetworks,
@@ -383,6 +384,31 @@ describe('networks API etalonka report download', () => {
         limit: 24,
       }),
       { signal: controller.signal },
+    );
+  });
+});
+
+describe('networks API list helper', () => {
+  beforeEach(() => {
+    postJsonMock.mockReset();
+    postBytesMock.mockReset();
+  });
+
+  it('uses an empty text filter to avoid the default limit cap', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 0, inactive: 0, archived: 0 },
+    });
+
+    await getNetworksList();
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-list',
+      expect.objectContaining({
+        filter_text: '',
+        limit: null,
+      }),
+      undefined,
     );
   });
 });

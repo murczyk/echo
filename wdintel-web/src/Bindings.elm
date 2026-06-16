@@ -12080,7 +12080,7 @@ networkStatusDecoder =
         ]
 
 listNetworksStatusFilterDecoder : Json.Decode.Decoder ListNetworksStatusFilter
-listNetworksStatusFilterDecoder = 
+listNetworksStatusFilterDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -13314,5 +13314,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

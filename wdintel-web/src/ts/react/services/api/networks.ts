@@ -55,7 +55,7 @@ export async function getNetworksList(options?: RequestOptions): Promise<Network
     filterUnitDivision: null,
     filterUnitRegiment: null,
     filterUnitBattalion: null,
-    filterText: null,
+    filterText: '',
     filterName: null,
     filterLocation: null,
     showOnlyFurtherInverstigation: null,
