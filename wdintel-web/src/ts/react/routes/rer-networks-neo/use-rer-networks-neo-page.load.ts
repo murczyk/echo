@@ -101,24 +101,34 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         : null;
       const networksPromise = listNetworks(req, { signal: controller.signal });
 
-      const nextLookups = lookupsPromise === null ? null : await lookupsPromise;
       const { list: networksList, statusCounts } = await networksPromise;
 
       if (args.requestSeqRef.current !== seq) return;
 
-      if (nextLookups !== null) {
-        const [unitsList, aorList, unitStatsList, postsList, modulationList] = nextLookups;
-        args.setUnits(unitsList);
-        args.setAors(aorList);
-        args.setUnitStats(unitStatsList);
-        args.setPosts(postsList);
-        args.setModulations(modulationList);
-        args.bootstrapLoadedRef.current = true;
-        args.setBootstrapLoaded(true);
-      }
       args.setStatusCounts(statusCounts);
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
       args.setNetworks((current) => (append ? [...current, ...networksList] : networksList));
+
+      if (lookupsPromise !== null) {
+        (async () => {
+          try {
+            const [unitsList, aorList, unitStatsList, postsList, modulationList] = await lookupsPromise;
+            if (args.requestSeqRef.current !== seq) return;
+            args.setUnits(unitsList);
+            args.setAors(aorList);
+            args.setUnitStats(unitStatsList);
+            args.setPosts(postsList);
+            args.setModulations(modulationList);
+            args.bootstrapLoadedRef.current = true;
+            args.setBootstrapLoaded(true);
+          } catch (error) {
+            if (isUnauthorizedError(error)) {
+              redirectToLogin();
+              return;
+            }
+          }
+        })();
+      }
       if (networksList.length === 0) {
         args.setActivityByNetworkId((current) => (append ? new Map(current) : new Map()));
       } else {
@@ -140,7 +150,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
               }
               return nextActivity;
             });
-          } catch (e) {}
+          } catch (error) {
+            if (controller.signal.aborted || isAbortError(error)) return;
+            if (isUnauthorizedError(error)) {
+              redirectToLogin();
+              return;
+            }
+          }
         })();
       }
       if (!append) {
@@ -237,30 +253,45 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         offset: args.networksLengthRef.current,
       });
       const { list: networksList, statusCounts } = await listNetworks(req, { signal: args.loadMoreAbortRef.current.signal });
-      const activityRsp =
-        networksList.length === 0
-          ? {}
-          : await getNetworksGroupsActivity(
-              {
-                networkIds: networksList.map((network) => network.id),
-                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
-              },
-              { signal: args.loadMoreAbortRef.current.signal },
-            );
 
       if (args.requestSeqRef.current !== seq) return;
 
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
       args.setStatusCounts(statusCounts);
       args.setNetworks((current) => [...current, ...networksList]);
-      args.setActivityByNetworkId((current) => {
-        const nextActivity = new Map(current);
-        const normalized = normalizeActivityMap(activityRsp);
-        for (const [networkId, activity] of normalized.entries()) {
-          nextActivity.set(networkId, activity);
-        }
-        return nextActivity;
-      });
+      if (networksList.length === 0) {
+        args.setActivityByNetworkId((current) => new Map(current));
+      } else {
+        const activityController = args.loadMoreAbortRef.current;
+        (async () => {
+          try {
+            if (!activityController) return;
+            const activityRsp = await getNetworksGroupsActivity(
+              {
+                networkIds: networksList.map((network) => network.id),
+                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
+              },
+              { signal: activityController.signal },
+            );
+            if (args.requestSeqRef.current !== seq) return;
+            args.setActivityByNetworkId((current) => {
+              const nextActivity = new Map(current);
+              const normalized = normalizeActivityMap(activityRsp);
+              for (const [networkId, activity] of normalized.entries()) {
+                nextActivity.set(networkId, activity);
+              }
+              return nextActivity;
+            });
+          } catch (error) {
+            if (!activityController) return;
+            if (activityController.signal.aborted || isAbortError(error)) return;
+            if (isUnauthorizedError(error)) {
+              redirectToLogin();
+              return;
+            }
+          }
+        })();
+      }
     } catch (error) {
       if (args.requestSeqRef.current !== seq) return;
       if (isUnauthorizedError(error)) {
