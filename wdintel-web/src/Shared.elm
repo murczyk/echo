@@ -137,7 +137,6 @@ init flagsResult route =
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
         , E.sendCmd <| Api.changelog_index GotChangelogIndex
-        , loadSharedLookupData route.path
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
         , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()

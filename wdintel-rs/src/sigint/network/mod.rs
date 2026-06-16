@@ -3657,6 +3657,7 @@ mod tests {
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
     }
 
+    #[test]
     fn list_query_sorts_by_location_with_stable_secondary_keys() {
         let mut req = empty_list_networks_req();
         req.sort_by = Some(vec![ListNetworksSortBy::LocationAsc]);

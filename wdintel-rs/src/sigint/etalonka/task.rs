@@ -317,11 +317,16 @@ pub async fn report_networks_task_download(
     let (meta, bytes) =
         load_report_task_result(env.as_ref(), req.bgtask_id, &user_login)
             .await?;
-    Ok(make_download_response(
-        meta.filename,
-        meta.content_type,
-        bytes,
-    ))
+    // Clear stored bytes after download to avoid unbounded DB growth.
+    let result_row = bgtask_res::ActiveModel {
+        id: Set(req.bgtask_id),
+        res_json: NotSet,
+        res_bytes: Set(None),
+        res_s3_id: NotSet,
+    };
+    result_row.update(&env.dbx).await.c(h!())?;
+
+    Ok(make_download_response(meta.filename, meta.content_type, bytes))
 }
 
 #[cfg(test)]
