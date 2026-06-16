@@ -48,7 +48,7 @@ type Props = {
   modulationOptions: LookupOption[];
   onClose: () => void;
   onChange: (next: NetworkUpsertForm | null) => void;
-  onSave: () => void;
+  onSave: (form?: NetworkUpsertForm | null) => void;
   disableRestoreFocus?: boolean;
 };
 
@@ -188,7 +188,11 @@ function NetworkEditDrawerComponent({
       return;
     }
 
-    onSave();
+    // Drop dead/missing unit ids before saving.
+    const filteredUnitIds = form.unitIds.filter((id) => unitOptions.some((o) => o.id === id));
+    const filteredForm = filteredUnitIds.length !== form.unitIds.length ? { ...form, unitIds: filteredUnitIds } : form;
+
+    onSave(filteredForm);
   };
 
   return (

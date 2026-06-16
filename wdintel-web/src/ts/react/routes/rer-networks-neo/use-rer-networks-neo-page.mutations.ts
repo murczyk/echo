@@ -84,10 +84,11 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     );
   }
 
-  async function saveNetworkEdit() {
-    if (!args.editDialog || args.editDialog.id === null) return;
+  async function saveNetworkEdit(formArg?: NetworkUpsertForm | null) {
+    const editDialog = formArg ?? args.editDialog;
+    if (!editDialog || editDialog.id === null) return;
 
-    const validationError = getNetworkUpsertValidationError(args.editDialog, { includeFrequency: false });
+    const validationError = getNetworkUpsertValidationError(editDialog, { includeFrequency: false });
     if (validationError !== null) {
       args.setEditError(validationError.name ?? validationError.location ?? validationError.aorIds ?? 'Перевірте форму');
       return;
@@ -97,22 +98,22 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     args.setEditError(null);
 
     try {
-      const network = args.networks.find((item) => item.id === args.editDialog!.id) ?? null;
+      const network = args.networks.find((item) => item.id === editDialog.id) ?? null;
       await updateNetwork({
-        id: args.editDialog.id,
-        restoreNetwork: getRestoreNetworkOnEditValue(network, args.editDialog.status),
-        areaOfResponsibilityIds: [...args.editDialog.aorIds],
-        name: args.editDialog.name.trim(),
-        location: args.editDialog.location.trim(),
-        radioStation: args.editDialog.radioStation.trim() === '' ? null : args.editDialog.radioStation.trim(),
-        purpose: args.editDialog.purpose.trim() === '' ? null : args.editDialog.purpose.trim(),
-        operationMode: args.editDialog.operationMode.trim() === '' ? null : args.editDialog.operationMode.trim(),
-        operationType: args.editDialog.operationType.trim() === '' ? null : args.editDialog.operationType.trim(),
-        operationPeriod: args.editDialog.operationPeriod.trim() === '' ? null : args.editDialog.operationPeriod.trim(),
+        id: editDialog.id,
+        restoreNetwork: getRestoreNetworkOnEditValue(network, editDialog.status),
+        areaOfResponsibilityIds: [...editDialog.aorIds],
+        name: editDialog.name.trim(),
+        location: editDialog.location.trim(),
+        radioStation: editDialog.radioStation.trim() === '' ? null : editDialog.radioStation.trim(),
+        purpose: editDialog.purpose.trim() === '' ? null : editDialog.purpose.trim(),
+        operationMode: editDialog.operationMode.trim() === '' ? null : editDialog.operationMode.trim(),
+        operationType: editDialog.operationType.trim() === '' ? null : editDialog.operationType.trim(),
+        operationPeriod: editDialog.operationPeriod.trim() === '' ? null : editDialog.operationPeriod.trim(),
         descriptions: null,
-        status: args.editDialog.status,
+        status: editDialog.status,
       });
-      await syncNetworkRelations(args.editDialog);
+      await syncNetworkRelations(editDialog);
       args.lastExecutedFullQueryKeyRef.current = null;
       void args.loadNetworks(args.latestQuerySnapshotRef.current ?? args.querySnapshot, {
         includeLookups: false,

@@ -2244,7 +2244,7 @@ pub async fn load_networks_by_id(
         &sort_req,
         JoinType::LeftJoin,
         Some(&req.network_ids),
-        Some(false),
+        None,
     );
     let networks = networks
         .clone()
