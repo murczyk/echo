@@ -7,6 +7,7 @@ import {
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgress } from '../../services/api/bgtask';
 import { isUnauthorizedError } from '../../services/api/client';
+import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
 import {
@@ -114,7 +115,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           startedAtMs: current.startedAtMs,
         }));
         if (isUnauthorizedError(error)) {
-          window.location.assign('/login');
+          redirectToLogin();
           return;
         }
         throw error;
@@ -212,7 +213,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
       await runEtalonkaReportTask(report);
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        window.location.assign('/login');
+        redirectToLogin();
       }
     }
   }, [runEtalonkaReportTask, state.etalonkaReport, state.network, setState]);

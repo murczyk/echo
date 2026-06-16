@@ -19,9 +19,9 @@ import {
   getActivityRequestUpperBoundMs,
   isAbortError,
   normalizeActivityMap,
-  redirectToLogin,
 } from './use-rer-networks-neo-page.shared';
 import type { ActivityByNetworkId, NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
+import { redirectToLogin } from '../../auth-redirect';
 
 type LoadArgs = {
   tableStateContext: {

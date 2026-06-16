@@ -198,6 +198,6 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
       await Promise.resolve();
     });
 
-    expect(latestPage?.activeNetworkDetailsTab).toBe('pelengation');
+    expect(latestPage?.activeNetworkDetailsTab).toBe('direction-finding');
   });
 });

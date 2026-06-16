@@ -270,7 +270,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   useEffect(() => {
     if (state.network === null) return;
-    if (state.activeNetworkDetailsTab !== 'pelengation') return;
+    if (state.activeNetworkDetailsTab !== 'direction-finding') return;
 
     const pelengWindowMatched =
       state.pelengPointsRequestedFrom === pelengSinceMs &&

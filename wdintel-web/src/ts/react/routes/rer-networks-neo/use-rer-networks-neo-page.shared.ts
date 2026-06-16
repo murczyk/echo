@@ -12,10 +12,6 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-export function redirectToLogin() {
-  window.location.assign('/login');
-}
-
 export function getActivityRequestUpperBoundMs(): number {
   return dayjs().startOf('day').add(1, 'day').valueOf();
 }

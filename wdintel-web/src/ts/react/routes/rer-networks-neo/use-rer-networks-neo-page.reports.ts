@@ -21,7 +21,8 @@ import {
   createDefaultNetworkEtalonkaReportState,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import { buildNetworksReportReq } from './helpers';
-import { formatErrorMessage, redirectToLogin } from './use-rer-networks-neo-page.shared';
+import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
+import { redirectToLogin } from '../../auth-redirect';
 
 type ReportArgs = {
   rows: Array<{ id: number }>;

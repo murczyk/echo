@@ -12,7 +12,8 @@ import {
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.forms';
 import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
 import type { NetworksFilterState } from './helpers';
-import { formatErrorMessage, redirectToLogin } from './use-rer-networks-neo-page.shared';
+import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
+import { redirectToLogin } from '../../auth-redirect';
 import type { NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
 
 type MutationArgs = {

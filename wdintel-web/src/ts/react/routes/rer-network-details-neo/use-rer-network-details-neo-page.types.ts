@@ -45,7 +45,7 @@ export type NetworkUpsertForm = {
   unitIds: number[];
   postIds: number[];
   freq: string;
-  kind: 'DMR' | 'DMRe' | 'NFM';
+  kind: NetworkFreqKind;
   modulationId: number | null;
   activeFrom: string;
   activeTo: string;
@@ -53,6 +53,8 @@ export type NetworkUpsertForm = {
 };
 
 export type NetworkEditForm = NetworkUpsertForm;
+
+export type NetworkFreqKind = 'DMR' | 'DMRe' | 'NFM';
 
 export type NetworkDescriptionForm = {
   topic: string;
@@ -67,11 +69,11 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'pelengation';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'direction-finding';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
-  kind: 'DMR' | 'DMRe' | 'NFM';
+  kind: NetworkFreqKind;
   modulationId: number | null;
   description: string;
   activeFrom: string;
@@ -81,7 +83,7 @@ export type NetworkFreqCreateWizardForm = {
 
 export type NetworkFreqEditForm = {
   networkFreqId: number;
-  kind: 'DMR' | 'DMRe' | 'NFM';
+  kind: NetworkFreqKind;
   modulationId: number | null;
   activeFrom: string;
   activeTo: string;

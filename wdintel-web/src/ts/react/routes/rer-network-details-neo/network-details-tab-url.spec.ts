@@ -4,7 +4,8 @@ import { readRequestedNetworkDetailsTab, resolveRequestedNetworkDetailsTab } fro
 
 describe('network-details tab url mapping', () => {
   it('maps public tab names to internal tabs', () => {
-    expect(resolveRequestedNetworkDetailsTab('direction-finding', true, true)).toBe('pelengation');
+    expect(resolveRequestedNetworkDetailsTab('direction-finding', true, true)).toBe('direction-finding');
+    expect(resolveRequestedNetworkDetailsTab('pelengation', true, true)).toBe('direction-finding');
     expect(resolveRequestedNetworkDetailsTab('justifications', true, true)).toBe('descriptions');
     expect(resolveRequestedNetworkDetailsTab('connections-graph', true, true)).toBe('relations');
   });

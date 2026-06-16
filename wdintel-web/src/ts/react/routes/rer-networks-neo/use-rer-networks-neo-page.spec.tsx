@@ -104,7 +104,7 @@ type HookResult = ReturnType<typeof useRerNetworksNeoPage>;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
-let locationAssignSpy: any = null;
+let locationReplaceSpy: any = null;
 let authUserRoles: string[] = ['Rer', 'Full'];
 
 function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
@@ -238,7 +238,7 @@ describe('useRerNetworksNeoPage', () => {
     downloadBlobMock.mockReset();
     authUserRoles = ['Rer', 'Full'];
 
-    locationAssignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+    locationReplaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -249,8 +249,8 @@ describe('useRerNetworksNeoPage', () => {
     container?.remove();
     container = null;
     latest = null;
-    locationAssignSpy?.mockRestore();
-    locationAssignSpy = null;
+    locationReplaceSpy?.mockRestore();
+    locationReplaceSpy = null;
     vi.useRealTimers();
   });
 
@@ -577,7 +577,8 @@ describe('useRerNetworksNeoPage', () => {
     await renderHook();
     await flushEffects();
 
-    expect(locationAssignSpy).toHaveBeenCalledWith('/login');
+    expect(locationReplaceSpy).toHaveBeenCalled();
+    expect(String(locationReplaceSpy.mock.calls[0]?.[0] ?? '')).toContain('/login');
   });
 
   it('opens the top report with the current settings and loaded network ids', async () => {

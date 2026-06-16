@@ -211,7 +211,7 @@ export function NetworkDetailsTabPanel({
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
           {canViewActivityTab ? <Tab value="activity" label="Активність" /> : null}
-          <Tab value="pelengation" label="Пеленгація" />
+          <Tab value="direction-finding" label="Пеленгація" />
           {canViewRelationsTab ? <Tab value="relations" label="Граф зв'язків" /> : null}
         </Tabs>
       </Box>
@@ -288,7 +288,7 @@ export function NetworkDetailsTabPanel({
               />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'pelengation' ? (
+        ) : activeNetworkDetailsTab === 'direction-finding' ? (
           <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsPelengationPanel

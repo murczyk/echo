@@ -6,7 +6,8 @@ const PUBLIC_TAB_TO_INTERNAL_TAB: Record<string, NetworkDetailsTab> = {
   frequencies: 'frequencies',
   callsigns: 'callsigns',
   activity: 'activity',
-  'direction-finding': 'pelengation',
+  'direction-finding': 'direction-finding',
+  pelengation: 'direction-finding',
   'connections-graph': 'relations',
 };
 

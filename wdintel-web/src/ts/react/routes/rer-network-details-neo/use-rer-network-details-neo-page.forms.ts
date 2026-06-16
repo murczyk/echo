@@ -12,6 +12,7 @@ import type {
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
   NetworkFreqTechDataForm,
+  NetworkFreqKind,
   NetworkUpsertForm,
   NetworkPelengDateRange,
   NetworkRelationsDateRange,
@@ -68,7 +69,7 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMRe' | 'NFM' {
+export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
   const normalized = kind?.trim().toUpperCase() ?? '';
   if (normalized === 'DMR') return 'DMR';
   if (normalized === 'DMRE') return 'DMRe';
@@ -166,11 +167,7 @@ export function getNetworkUpsertValidationError(
   const modulationId = options.includeFrequency && form.modulationId === null ? 'Потрібно вибрати модуляцію' : null;
   const activeFrom = options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
 
-  if (name === null && location === null && aorIds === null && freq === null && modulationId === null && activeFrom === null) {
-    return null;
-  }
-
-  return {
+  const error = {
     name,
     location,
     aorIds,
@@ -178,6 +175,8 @@ export function getNetworkUpsertValidationError(
     modulationId,
     activeFrom,
   };
+
+  return Object.values(error).every((value) => value === null) ? null : error;
 }
 
 export function parseNetworkDetailsDateInput(value: string): number | null {
