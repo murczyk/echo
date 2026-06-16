@@ -2237,9 +2237,7 @@ pub async fn load_networks_by_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sigint::network::types::{
-        ListNetworksSortBy, ListNetworksStatusFilter,
-    };
+    use crate::sigint::network::types::ListNetworksSortBy;
 
     fn empty_list_networks_req() -> ListNetworksReq {
         ListNetworksReq {
