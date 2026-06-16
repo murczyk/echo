@@ -220,7 +220,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     setState((current) => ({ ...current, deleteInProgress: true }));
     try {
       await deleteNetwork(state.network.id);
-      navigateWithinSpa('/rer-networks');
+      navigateWithinSpa('/rer-networks-neo');
     } catch (error) {
       setState((current) => ({
         ...current,
