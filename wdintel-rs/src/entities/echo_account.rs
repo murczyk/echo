@@ -17,6 +17,7 @@ pub struct Model {
     pub created_at: DateTime,
     pub synced_at: Option<DateTime>,
     pub last_trusted_at: Option<DateTime>,
+    pub linked_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -43,6 +44,8 @@ pub enum Relation {
     EchoSender,
     #[sea_orm(has_many = "super::echo_signal_identities::Entity")]
     EchoSignalIdentities,
+    #[sea_orm(has_many = "super::echo_signal_rate_limit_challenge::Entity")]
+    EchoSignalRateLimitChallenge,
     #[sea_orm(has_many = "super::echo_whatsapp_group::Entity")]
     EchoWhatsappGroup,
     #[sea_orm(has_many = "super::echo_whatsapp_profile::Entity")]
@@ -116,6 +119,12 @@ impl Related<super::echo_sender::Entity> for Entity {
 impl Related<super::echo_signal_identities::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoSignalIdentities.def()
+    }
+}
+
+impl Related<super::echo_signal_rate_limit_challenge::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoSignalRateLimitChallenge.def()
     }
 }
 
