@@ -48,52 +48,34 @@ decoder =
         (Json.Decode.field "now" Json.Decode.int)
 
 
-shouldLoadSharedUnits : Route.Path.Path -> Bool
-shouldLoadSharedUnits path =
-    path /= Route.Path.RerNetworksNeo
-
-
-shouldLoadSharedNetworks : Route.Path.Path -> Bool
-shouldLoadSharedNetworks path =
-    path /= Route.Path.RerNetworksNeo
-
-
 loadSharedLookupData : Route.Path.Path -> Effect Msg
 loadSharedLookupData path =
     E.batch
-        [ if shouldLoadSharedUnits path then
-            E.getUnits MasterUnitsLoadedByApi
-                { sortBy = Nothing
-                , afterUnitId = Nothing
-                , beforeUnitId = Nothing
-                }
-
-          else
-            E.none
-        , if shouldLoadSharedNetworks path then
-            E.getNetworksList NetworksLoadedByApi
-                { sortBy = Nothing
-                , filterFreq = Nothing
-                , filterUnit = Nothing
-                , filterUnitArmy = Nothing
-                , filterUnitDivision = Nothing
-                , filterUnitRegiment = Nothing
-                , filterUnitBattalion = Nothing
-                , filterText = Nothing
-                , filterName = Nothing
-                , filterLocation = Nothing
-                , showOnlyFurtherInverstigation = Nothing
-                , showInactive = Nothing
-                , showOnlyDeleted = Nothing
-                , statusFilter = Nothing
-                , aorIds = Nothing
-                , ids = Nothing
-                , limit = Nothing
-                , offset = Nothing
-                }
-
-          else
-            E.none
+        [ E.getUnits MasterUnitsLoadedByApi
+            { sortBy = Nothing
+            , afterUnitId = Nothing
+            , beforeUnitId = Nothing
+            }
+        , E.getNetworksList NetworksLoadedByApi
+            { sortBy = Nothing
+            , filterFreq = Nothing
+            , filterUnit = Nothing
+            , filterUnitArmy = Nothing
+            , filterUnitDivision = Nothing
+            , filterUnitRegiment = Nothing
+            , filterUnitBattalion = Nothing
+            , filterText = Nothing
+            , filterName = Nothing
+            , filterLocation = Nothing
+            , showOnlyFurtherInverstigation = Nothing
+            , showInactive = Nothing
+            , showOnlyDeleted = Nothing
+            , statusFilter = Nothing
+            , aorIds = Nothing
+            , ids = Nothing
+            , limit = Nothing
+            , offset = Nothing
+            }
         ]
 
 
@@ -568,43 +550,35 @@ update req msg model =
             case event.eventType of
                 B.EtUnitChanged ->
                     ( { model | pendingEvents = event :: model.pendingEvents }
-                    , if shouldLoadSharedUnits req.path then
-                        E.getUnits MasterUnitsLoadedByApi
-                            { sortBy = Nothing
-                            , afterUnitId = Nothing
-                            , beforeUnitId = Nothing
-                            }
-
-                      else
-                        E.none
+                    , E.getUnits MasterUnitsLoadedByApi
+                        { sortBy = Nothing
+                        , afterUnitId = Nothing
+                        , beforeUnitId = Nothing
+                        }
                     )
 
                 B.EtNetworkChanged ->
                     ( { model | pendingEvents = event :: model.pendingEvents }
-                    , if shouldLoadSharedNetworks req.path then
-                        E.getNetworksList NetworksLoadedByApi
-                            { sortBy = Nothing
-                            , filterFreq = Nothing
-                            , filterUnit = Nothing
-                            , filterUnitArmy = Nothing
-                            , filterUnitDivision = Nothing
-                            , filterUnitRegiment = Nothing
-                            , filterUnitBattalion = Nothing
-                            , filterText = Nothing
-                            , filterName = Nothing
-                            , filterLocation = Nothing
-                            , showOnlyFurtherInverstigation = Nothing
-                            , showInactive = Nothing
-                            , showOnlyDeleted = Nothing
-                            , statusFilter = Nothing
-                            , aorIds = Nothing
-                            , ids = Nothing
-                            , limit = Nothing
-                            , offset = Nothing
-                            }
-
-                      else
-                        E.none
+                    , E.getNetworksList NetworksLoadedByApi
+                        { sortBy = Nothing
+                        , filterFreq = Nothing
+                        , filterUnit = Nothing
+                        , filterUnitArmy = Nothing
+                        , filterUnitDivision = Nothing
+                        , filterUnitRegiment = Nothing
+                        , filterUnitBattalion = Nothing
+                        , filterText = Nothing
+                        , filterName = Nothing
+                        , filterLocation = Nothing
+                        , showOnlyFurtherInverstigation = Nothing
+                        , showInactive = Nothing
+                        , showOnlyDeleted = Nothing
+                        , statusFilter = Nothing
+                        , aorIds = Nothing
+                        , ids = Nothing
+                        , limit = Nothing
+                        , offset = Nothing
+                        }
                     )
 
                 _ ->
