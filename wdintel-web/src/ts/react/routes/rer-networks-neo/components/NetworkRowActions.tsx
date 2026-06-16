@@ -5,7 +5,6 @@ import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
 import { Box } from '@mui/material';
 
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
-import { buildRerNetworkDetailsHref } from '../../rer-network-details-neo/network-details-preference';
 import type { NetworkRowView } from '../helpers';
 
 type Props = {
@@ -19,8 +18,7 @@ type Props = {
 };
 
 function buildDirectionFindingHref(networkId: number): string {
-  const href = buildRerNetworkDetailsHref(networkId);
-  return href.includes('?') ? `${href}&tab=direction-finding` : `${href}?tab=direction-finding`;
+  return `/rer-networks/${networkId}?tab=direction-finding`;
 }
 
 export function NetworkRowActions({

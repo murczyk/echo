@@ -35,11 +35,13 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
   MrtRowActionButton: ({
     label,
     opensModal,
+    onClick,
   }: {
     label: string;
     opensModal?: boolean;
+    onClick?: () => void;
   }) => (
-    <button type="button" data-label={label} data-opens-modal={opensModal === true ? 'true' : 'false'}>
+    <button type="button" data-label={label} data-opens-modal={opensModal === true ? 'true' : 'false'} onClick={onClick}>
       {label}
     </button>
   ),
@@ -100,6 +102,42 @@ describe('NetworkRowActions', () => {
     expect(buttons.map((button) => button.getAttribute('data-label'))).toEqual(['Еталонний опис', 'Пеленгація', 'Редагувати', 'Видалити']);
     expect(buttons.map((button) => button.getAttribute('data-opens-modal'))).toEqual(['true', 'false', 'true', 'true']);
 
+    root.unmount();
+    container.remove();
+  });
+
+  it('opens direction finding in the neo details route even when classic is preferred', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const network = buildNetworkRowView(buildNetwork(7), new Map(), new Map(), new Map());
+
+    act(() => {
+      root.render(
+        createElement(NetworkRowActions, {
+          network,
+          canEdit: true,
+          canExport: true,
+          canDelete: true,
+          onOpenReportDialog: vi.fn(),
+          onOpenEditDialog: vi.fn(),
+          onOpenDeleteDialog: vi.fn(),
+        }),
+      );
+    });
+
+    const directionButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Пеленгація');
+    expect(directionButton).toBeDefined();
+
+    act(() => {
+      directionButton?.click();
+    });
+
+    expect(openSpy).toHaveBeenCalledWith('/rer-networks/7?tab=direction-finding', '_blank', 'noreferrer');
+
+    openSpy.mockRestore();
     root.unmount();
     container.remove();
   });
