@@ -5,6 +5,7 @@ use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
 use crate::sigint::etalonka::types::*;
+use crate::sigint::network::filter::apply_network_list_filters;
 use crate::sigint::network::sort as network_sort;
 use crate::sigint::network::types::ListNetworksReq;
 use crate::sigint::signal::types::Signal;
@@ -2112,65 +2113,21 @@ fn build_etalonka_networks_query(
         .column(sigint_network::Column::ActiveTo);
 
     if let Some(deleted_only) = deleted_only {
+        // Batch-id reports intentionally lock deleted scope to the explicit ID set
+        // and skip the generic list filters. The caller controls the report slice.
         networks =
             networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
     } else {
-        networks = networks.filter(
-            sigint_network::Column::Deleted
-                .eq(req.show_only_deleted.unwrap_or(false)),
-        );
-
-        if !req.show_inactive.unwrap_or(false) {
-            networks =
-                networks.filter(sigint_network::Column::ActiveTo.is_null());
-        }
-    }
-
-    if let Some(filter_unit) = &req.filter_unit {
-        networks = networks.filter(Expr::cust_with_values(
-            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-            vec![format!("%{}%", filter_unit.to_lowercase())],
-        ))
-    };
-
-    if req.show_only_further_inverstigation.unwrap_or(false) {
-        networks = networks.filter(sigint_network_unit::Column::Id.is_null());
-    }
-
-    if let Some(aor_ids) = &req.aor_ids {
-        if !aor_ids.is_empty() {
-            networks = networks
-                .join_as(
-                    JoinType::InnerJoin,
-                    sigint_network::Relation::SigintNetworkAor.def(),
-                    Alias::new("sigint_network_aor"),
-                )
-                .filter(
-                    sigint_network_aor::Column::AorId.eq_any(aor_ids.clone()),
-                );
-        }
-    }
-
-    if let Some(filter_freq) = &req.filter_freq {
-        let subquery = sigint_network_freq::Entity::find()
-            .select_only()
-            .column(sigint_network_freq::Column::Freq)
-            .filter(
-                sigint_network_freq::Column::NetworkId
-                    .into_simple_expr()
-                    .eq(sigint_network::Column::Id.into_simple_expr()),
-            )
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .filter(Expr::cust_with_values(
-                "sigint_network_freq.freq ilike $1",
-                vec![format!("{filter_freq}%").as_str()],
-            ));
-        networks = networks.filter(Expr::exists(subquery.into_query()));
+        networks = apply_network_list_filters(networks, req, true);
     }
 
     if let Some(id_filter) = id_filter {
-        networks = networks
-            .filter(sigint_network::Column::Id.is_in(id_filter.clone()));
+        if id_filter.is_empty() {
+            networks = networks.filter(Expr::cust("1 = 2"));
+        } else {
+            networks = networks
+                .filter(sigint_network::Column::Id.is_in(id_filter.clone()));
+        }
     }
 
     network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
@@ -2279,7 +2236,9 @@ pub async fn load_networks_by_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sigint::network::types::ListNetworksSortBy;
+    use crate::sigint::network::types::{
+        ListNetworksSortBy, ListNetworksStatusFilter,
+    };
 
     fn empty_list_networks_req() -> ListNetworksReq {
         ListNetworksReq {
@@ -2364,10 +2323,7 @@ mod tests {
             !no_id_sql.contains("\"sigint_network\".\"id\" IN"),
             "{no_id_sql}"
         );
-        assert!(
-            empty_id_sql.contains("\"sigint_network\".\"id\" IN"),
-            "{empty_id_sql}"
-        );
+        assert!(empty_id_sql.contains("1 = 2"), "{empty_id_sql}");
 
         let mut req = empty_list_networks_req();
         req.sort_by = Some(vec![
@@ -2434,5 +2390,143 @@ mod tests {
             &sql,
             "\"sigint_network\".\"updated_at\" DESC",
         );
+    }
+
+    #[test]
+    fn etalonka_network_filters_reuse_list_status_scope() {
+        let mut req = empty_list_networks_req();
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains("\"sigint_network\".\"deleted\" = true"),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn etalonka_network_filters_reuse_list_inactive_status_scope() {
+        let mut req = empty_list_networks_req();
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksInactive);
+
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains("\"sigint_network\".\"deleted\" = false"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("\"sigint_network\".\"active_to\" IS NOT NULL"),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn etalonka_network_filters_apply_global_text_and_aor_rules() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("423 kyiv".to_string());
+        req.filter_name = Some("alpha".to_string());
+        req.filter_location = Some("center".to_string());
+        req.aor_ids = Some(vec![-1, 42]);
+
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains(
+                "lower(sigint_network.name collate \"ru-x-icu\") ilike"
+            ),
+            "{sql}"
+        );
+        assert!(
+            sql.contains(
+                "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+            ),
+            "{sql}"
+        );
+        assert!(sql.contains("lower(sigint_network.radio_station collate \"ru-x-icu\") ilike"), "{sql}");
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains(
+                "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
+            ),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike"),
+            "{sql}"
+        );
+        assert!(sql.contains("\"sigint_unit\".\"name\""), "{sql}");
+        assert!(sql.contains("NOT EXISTS"), "{sql}");
+        assert!(
+            sql.contains("\"sigint_network_aor\".\"aor_id\" IN"),
+            "{sql}"
+        );
+        assert!(sql.contains("EXISTS"), "{sql}");
+    }
+
+    #[test]
+    fn etalonka_network_filters_support_no_aor_only() {
+        let mut req = empty_list_networks_req();
+        req.aor_ids = Some(vec![-1]);
+
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(sql.contains("NOT EXISTS"), "{sql}");
+    }
+
+    #[test]
+    fn etalonka_network_filters_keep_unit_and_freq_searches_after_extraction() {
+        let mut req = empty_list_networks_req();
+        req.filter_unit = Some("11".to_string());
+        req.filter_freq = Some("123".to_string());
+
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike"),
+            "{sql}"
+        );
+        assert!(sql.contains("sigint_network_freq.freq ilike"), "{sql}");
     }
 }

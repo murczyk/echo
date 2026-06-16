@@ -22,6 +22,7 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
 import { ELLIPSIS } from '../../../utils/misc';
 import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
+import { NETWORK_STATUS_ACTIVE, NETWORK_STATUS_INACTIVE } from '../network-status';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS, NEO_SELECT_MENU_PROPS } from './dropdownProps';
 import type { NetworkEditLookupOption as LookupOption } from './network-edit-autocomplete';
 import { networkEditLookupFilterOptions } from './network-edit-autocomplete';
@@ -380,8 +381,8 @@ function NetworkEditDrawerComponent({
                         onChange={(event) => handleStatusChange(String(event.target.value))}
                         MenuProps={NEO_SELECT_MENU_PROPS}
                       >
-                        <MenuItem value="NetworkActive">Активна</MenuItem>
-                        <MenuItem value="NetworkInactive">Неактивна</MenuItem>
+                        <MenuItem value={NETWORK_STATUS_ACTIVE}>Активна</MenuItem>
+                        <MenuItem value={NETWORK_STATUS_INACTIVE}>Неактивна</MenuItem>
                       </Select>
                     </FormControl>
                   ) : null}

@@ -18,6 +18,7 @@ import type {
   NetworkRelationsDateRange,
 } from './use-rer-network-details-neo-page.types';
 import { getFrequencyFormatError } from './use-rer-network-details-neo-page.helpers';
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -44,7 +45,7 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     operationMode: 'дуплекс',
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
-    status: 'NetworkActive',
+    status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
     postIds: [],

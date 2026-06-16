@@ -86,6 +86,7 @@ vi.mock('./NetworkFreqActivityPeriodControl', () => ({
 import { NetworkEditDrawer } from './NetworkEditDrawer';
 import type { NetworkEditLookupOption } from './network-edit-autocomplete';
 import type { NetworkUpsertForm } from '../use-rer-network-details-neo-page.shared';
+import { NETWORK_STATUS_ACTIVE } from '../network-status';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -106,7 +107,7 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
     operationMode: 'дуплекс',
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
-    status: 'NetworkActive',
+    status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
     postIds: [],

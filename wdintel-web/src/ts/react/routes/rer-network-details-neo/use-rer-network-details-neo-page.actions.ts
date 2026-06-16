@@ -19,6 +19,7 @@ import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-deta
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 import { useRerNetworkDetailsNeoPageCallsignActions } from './use-rer-network-details-neo-page.callsign-actions';
 import { useRerNetworkDetailsNeoPageCallsignMutations } from './use-rer-network-details-neo-page.callsign-mutations';
+import { getRestoreNetworkOnEditValue } from './network-status';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -177,7 +178,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     try {
       const updatedNetwork = await updateNetwork({
         id: networkId,
-        restoreNetwork: network.deleted && editForm.status === 'NetworkActive' ? true : null,
+        restoreNetwork: getRestoreNetworkOnEditValue(network, editForm.status),
         areaOfResponsibilityIds: [...editForm.aorIds],
         name: editForm.name,
         location: editForm.location,

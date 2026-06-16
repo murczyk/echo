@@ -4,6 +4,7 @@ import type { ListNetworksReq, Network } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
 import { createNetwork, deleteNetwork, updateNetwork, updateNetworkPosts, updateNetworkUnits } from '../../services/api/networks';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
+import { getRestoreNetworkOnEditValue } from '../rer-network-details-neo/network-status';
 import {
   createDefaultNetworkUpsertForm,
   getNetworkUpsertValidationError,
@@ -99,7 +100,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
       const network = args.networks.find((item) => item.id === args.editDialog!.id) ?? null;
       await updateNetwork({
         id: args.editDialog.id,
-        restoreNetwork: network?.deleted && args.editDialog.status === 'NetworkActive' ? true : null,
+        restoreNetwork: getRestoreNetworkOnEditValue(network, args.editDialog.status),
         areaOfResponsibilityIds: [...args.editDialog.aorIds],
         name: args.editDialog.name.trim(),
         location: args.editDialog.location.trim(),

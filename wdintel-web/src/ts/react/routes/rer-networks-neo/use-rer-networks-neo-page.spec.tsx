@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { HttpRequestError } from '../../services/api/client';
+import { NETWORK_STATUS_ACTIVE, NETWORK_STATUS_INACTIVE } from '../rer-network-details-neo/network-status';
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 
 const apiMock = vi.hoisted(() => ({
@@ -129,7 +130,7 @@ function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
     postIds: [],
     descriptions: [],
     deleted: false,
-    status: 'NetworkActive',
+    status: NETWORK_STATUS_ACTIVE,
     ...overrides,
   };
 }
@@ -279,7 +280,7 @@ describe('useRerNetworksNeoPage', () => {
       operationMode: 'дуплекс',
       operationType: 'ведення службового радіообміну',
       operationPeriod: 'цілодобово',
-      status: 'NetworkActive',
+      status: NETWORK_STATUS_ACTIVE,
       aorIds: [],
       unitIds: [],
       postIds: [],
@@ -323,7 +324,7 @@ describe('useRerNetworksNeoPage', () => {
         operationMode: 'дуплекс',
         operationType: 'ведення службового радіообміну',
         operationPeriod: 'цілодобово',
-        status: 'NetworkActive',
+        status: NETWORK_STATUS_ACTIVE,
         aorIds: [1],
         unitIds: [1],
         postIds: [1],
@@ -399,7 +400,7 @@ describe('useRerNetworksNeoPage', () => {
         operationMode: '',
         operationType: '',
         operationPeriod: '',
-        status: 'NetworkActive',
+        status: NETWORK_STATUS_ACTIVE,
         aorIds: [1],
         unitIds: [1],
         postIds: [2],
@@ -433,7 +434,7 @@ describe('useRerNetworksNeoPage', () => {
         name: 'Network 1',
         location: 'Location 1',
         areaOfResponsibilityIds: [1],
-        status: 'NetworkActive',
+        status: NETWORK_STATUS_ACTIVE,
       }),
     );
     expect(apiMock.updateNetworkPosts).toHaveBeenCalledWith({
@@ -447,6 +448,108 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows.find((row) => row.id === 1)?.network.unitIds).toEqual([1]);
     expect(latest?.rows.find((row) => row.id === 1)?.network.postIds).toEqual([2]);
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not request a restore for archived rows without an active window', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: null }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        kind: 'DMR',
+        modulationId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: null }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: null,
+      }),
+    );
+  });
+
+  it('requests a restore when an archived row still has an active window', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        kind: 'DMR',
+        modulationId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: true,
+      }),
+    );
   });
 
   it('drops an edited row when it no longer matches the active filter', async () => {
@@ -468,7 +571,7 @@ describe('useRerNetworksNeoPage', () => {
         operationMode: '',
         operationType: '',
         operationPeriod: '',
-        status: 'NetworkInactive',
+        status: NETWORK_STATUS_INACTIVE,
         aorIds: [1],
         unitIds: [],
         postIds: [],
@@ -519,7 +622,7 @@ describe('useRerNetworksNeoPage', () => {
         operationMode: 'дуплекс',
         operationType: 'ведення службового радіообміну',
         operationPeriod: 'цілодобово',
-        status: 'NetworkActive',
+        status: NETWORK_STATUS_ACTIVE,
         aorIds: [1],
         unitIds: [],
         postIds: [],
