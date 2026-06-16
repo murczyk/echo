@@ -103,16 +103,6 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
       const nextLookups = lookupsPromise === null ? null : await lookupsPromise;
       const { list: networksList, statusCounts } = await networksPromise;
-      const activityRsp =
-        networksList.length === 0
-          ? {}
-          : await getNetworksGroupsActivity(
-              {
-                networkIds: networksList.map((network) => network.id),
-                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
-              },
-              { signal: controller.signal },
-            );
 
       if (args.requestSeqRef.current !== seq) return;
 
@@ -129,14 +119,30 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       args.setStatusCounts(statusCounts);
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
       args.setNetworks((current) => (append ? [...current, ...networksList] : networksList));
-      args.setActivityByNetworkId((current) => {
-        const nextActivity = append ? new Map(current) : new Map();
-        const normalized = normalizeActivityMap(activityRsp);
-        for (const [networkId, activity] of normalized.entries()) {
-          nextActivity.set(networkId, activity);
-        }
-        return nextActivity;
-      });
+      if (networksList.length === 0) {
+        args.setActivityByNetworkId((current) => (append ? new Map(current) : new Map()));
+      } else {
+        (async () => {
+          try {
+            const activityRsp = await getNetworksGroupsActivity(
+              {
+                networkIds: networksList.map((network) => network.id),
+                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
+              },
+              { signal: controller.signal },
+            );
+            if (args.requestSeqRef.current !== seq) return;
+            args.setActivityByNetworkId((current) => {
+              const nextActivity = append ? new Map(current) : new Map();
+              const normalized = normalizeActivityMap(activityRsp);
+              for (const [networkId, activity] of normalized.entries()) {
+                nextActivity.set(networkId, activity);
+              }
+              return nextActivity;
+            });
+          } catch (e) {}
+        })();
+      }
       if (!append) {
         args.lastExecutedFullQueryKeyRef.current = snapshot.fullQueryKey;
       }
