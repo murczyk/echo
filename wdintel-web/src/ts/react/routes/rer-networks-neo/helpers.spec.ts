@@ -359,8 +359,7 @@ describe('rer-networks-neo AOR filters', () => {
     expect(buildNetworksSortBy([{ id: 'network', desc: true }])).toEqual(['NameDesc']);
     expect(buildNetworksSortBy([{ id: 'lastActivity', desc: false }])).toEqual(['LastActivityAsc']);
     expect(buildNetworksSortBy([{ id: 'lastActivity', desc: true }])).toEqual(['LastActivityDesc']);
-    expect(buildNetworksSortBy([{ id: 'activity', desc: false }])).toEqual(['HasRecentActivityAsc']);
-    expect(buildNetworksSortBy([{ id: 'activity', desc: true }])).toEqual(['HasRecentActivityDesc']);
+    expect(buildNetworksSortBy([{ id: 'activity', desc: false }])).toEqual(['NameAsc']);
     expect(buildNetworksSortBy([{ id: 'unknown', desc: false } as never])).toEqual(['NameAsc']);
     expect(buildNetworksSortBy([])).toEqual(['NameAsc']);
   });

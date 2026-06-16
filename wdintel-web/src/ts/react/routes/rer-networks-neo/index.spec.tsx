@@ -296,7 +296,7 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   expect((columnsById.get('aors') as { meta?: { activeFilterValueFormatter?: unknown } } | undefined)?.meta?.activeFilterValueFormatter).toEqual(expect.any(Function));
   expect(columnsById.get('freqs')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
   expect(columnsById.get('location')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
-  expect(columnsById.get('activity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: true }));
+  expect(columnsById.get('activity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: false }));
   expect(columnsById.get('lastActivity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: true }));
   expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnOrder).toEqual(tableStateMock.columnOrder);
   expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnSizing).toEqual(tableStateMock.columnSizing);

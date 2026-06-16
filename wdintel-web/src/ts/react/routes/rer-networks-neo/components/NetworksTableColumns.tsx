@@ -129,7 +129,7 @@ export function useNetworksTableColumns({
         header: 'Активність',
         accessorFn: (row) => row.activityBars.reduce((sum, item) => sum + item.value, 0),
         enableColumnFilter: false,
-        enableSorting: true,
+        enableSorting: false,
         Cell: ({ row }) => (
           <Box>
             {row.original.activityBars.some((bar) => bar.value > 0) ? <ActivityBars bars={row.original.activityBars} /> : <Box sx={{ color: 'text.secondary' }}>Не активна останні 10 днів</Box>}

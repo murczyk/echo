@@ -371,8 +371,6 @@ pub enum ListNetworksSortBy {
     NameDesc,
     LastActivityAsc,
     LastActivityDesc,
-    HasRecentActivityAsc,
-    HasRecentActivityDesc,
     AorAsc,
     AorDesc,
     #[serde(rename = "FreqAsc")]

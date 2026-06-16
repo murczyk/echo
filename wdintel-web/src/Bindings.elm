@@ -6990,8 +6990,6 @@ type ListNetworksSortBy
     | NameDesc
     | LastActivityAsc
     | LastActivityDesc
-    | HasRecentActivityAsc
-    | HasRecentActivityDesc
     | AorAsc
     | AorDesc
     | NetworkFreqAsc
@@ -7011,10 +7009,6 @@ listNetworksSortByEncoder enum =
             Json.Encode.string "LastActivityAsc"
         LastActivityDesc ->
             Json.Encode.string "LastActivityDesc"
-        HasRecentActivityAsc ->
-            Json.Encode.string "HasRecentActivityAsc"
-        HasRecentActivityDesc ->
-            Json.Encode.string "HasRecentActivityDesc"
         AorAsc ->
             Json.Encode.string "AorAsc"
         AorDesc ->
@@ -12401,24 +12395,6 @@ listNetworksSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
-                        "HasRecentActivityAsc" ->
-                            Json.Decode.succeed HasRecentActivityAsc
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "HasRecentActivityDesc" ->
-                            Json.Decode.succeed HasRecentActivityDesc
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
                         "AorAsc" ->
                             Json.Decode.succeed AorAsc
                         unexpected ->
@@ -13314,4 +13290,3 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-

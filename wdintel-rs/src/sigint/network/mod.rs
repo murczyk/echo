@@ -3657,30 +3657,6 @@ mod tests {
         assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
     }
 
-    #[test]
-    fn list_query_sorts_by_recent_activity_with_exists_expression() {
-        for sort_by in [
-            ListNetworksSortBy::HasRecentActivityAsc,
-            ListNetworksSortBy::HasRecentActivityDesc,
-        ] {
-            let mut req = empty_list_networks_req();
-            req.sort_by = Some(vec![sort_by]);
-
-            let sql = build_networks_query(&req, NetworkQueryKind::List)
-                .build(DbBackend::Postgres)
-                .to_string();
-
-            assert!(sql.contains("EXISTS (SELECT 1"));
-            assert!(sql.contains(
-                "sigint_inbox_item_network.sigint_network_id = sigint_network.id"
-            ));
-            assert!(sql.contains("signal_message.id = sigint_inbox_item.id"));
-            assert!(!sql.contains("sigint_inbox_item.signal_message_id"));
-            assert!(sql.contains("CURRENT_TIMESTAMP - INTERVAL '10 days'"));
-        }
-    }
-
-    #[test]
     fn list_query_sorts_by_location_with_stable_secondary_keys() {
         let mut req = empty_list_networks_req();
         req.sort_by = Some(vec![ListNetworksSortBy::LocationAsc]);

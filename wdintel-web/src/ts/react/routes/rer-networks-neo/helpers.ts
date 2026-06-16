@@ -294,8 +294,6 @@ export function buildNetworksSortBy(sorting: MRT_SortingState): ListNetworksSort
       return [current.desc ? 'NameDesc' : 'NameAsc'];
     case 'lastActivity':
       return [current.desc ? 'LastActivityDesc' : 'LastActivityAsc'];
-    case 'activity':
-      return [current.desc ? 'HasRecentActivityDesc' : 'HasRecentActivityAsc'];
     default:
       return ['NameAsc'];
   }

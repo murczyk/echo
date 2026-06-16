@@ -2696,8 +2696,6 @@ export type ListNetworksSortBy =
   | 'NameDesc'
   | 'LastActivityAsc'
   | 'LastActivityDesc'
-  | 'HasRecentActivityAsc'
-  | 'HasRecentActivityDesc'
   | 'AorAsc'
   | 'AorDesc'
   | 'FreqAsc'

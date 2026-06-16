@@ -1,4 +1,4 @@
-use crate::entities::*;
+use crate::entities::sigint_network;
 use crate::sigint::network::types::ListNetworksSortBy;
 use sea_orm::sea_query::*;
 use sea_orm::*;
@@ -17,18 +17,6 @@ pub(crate) fn network_first_aor_sort_sql() -> &'static str {
       INNER JOIN area_of_responsibility ON area_of_responsibility.id = sigint_network_aor.aor_id \
       WHERE sigint_network_aor.network_id = sigint_network.id \
         AND area_of_responsibility.deleted = false)"
-}
-
-fn network_recent_activity_exists_expr() -> SimpleExpr {
-    Expr::cust(
-        "EXISTS (SELECT 1 \
-         FROM sigint_inbox_item_network \
-         INNER JOIN sigint_inbox_item ON sigint_inbox_item.id = sigint_inbox_item_network.sigint_inbox_item_id \
-         INNER JOIN signal_message ON signal_message.id = sigint_inbox_item.id \
-         WHERE sigint_inbox_item_network.sigint_network_id = sigint_network.id \
-           AND sigint_inbox_item.datetime >= CURRENT_TIMESTAMP - INTERVAL '10 days' \
-           AND signal_message.deleted = false)",
-    )
 }
 
 fn order_by_nulls_last(
@@ -62,16 +50,6 @@ pub(crate) fn apply_network_sort(
             .order_by_asc(sigint_network::Column::Name)
             .order_by_asc(sigint_network::Column::Id),
         ListNetworksSortBy::LastActivityDesc => query
-            .order_by_desc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::HasRecentActivityAsc => query
-            .order_by_asc(network_recent_activity_exists_expr())
-            .order_by_desc(sigint_network::Column::UpdatedAt)
-            .order_by_asc(sigint_network::Column::Name)
-            .order_by_asc(sigint_network::Column::Id),
-        ListNetworksSortBy::HasRecentActivityDesc => query
-            .order_by_desc(network_recent_activity_exists_expr())
             .order_by_desc(sigint_network::Column::UpdatedAt)
             .order_by_asc(sigint_network::Column::Name)
             .order_by_asc(sigint_network::Column::Id),
