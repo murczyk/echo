@@ -11,8 +11,8 @@ describe('getRestoreNetworkOnEditValue', () => {
     expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: null }, NETWORK_STATUS_ACTIVE)).toBe(true);
   });
 
-  it('returns null for inactive status', () => {
-    expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_INACTIVE)).toBeNull();
+  it('returns true for inactive status when the row is deleted', () => {
+    expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_INACTIVE)).toBe(true);
   });
 
   it('returns null for non-deleted networks', () => {

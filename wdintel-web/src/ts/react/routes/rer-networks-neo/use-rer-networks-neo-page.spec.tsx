@@ -562,6 +562,52 @@ describe('useRerNetworksNeoPage', () => {
     );
   });
 
+  it('requests a restore when an archived row is inactive', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_INACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        kind: 'DMR',
+        modulationId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: true,
+      }),
+    );
+  });
+
   it('drops an edited row when it no longer matches the active filter', async () => {
     await renderHook();
     await flushEffects();

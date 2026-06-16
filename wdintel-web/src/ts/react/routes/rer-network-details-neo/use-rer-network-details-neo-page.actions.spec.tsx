@@ -143,7 +143,7 @@ afterEach(() => {
 });
 
 describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
-  it('does not request restore for deleted rows without an active window', async () => {
+  it('requests restore for deleted rows without an active window', async () => {
     apiMock.updateNetwork.mockResolvedValue(buildNetwork({ deleted: true, activeTo: null }));
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
     apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());

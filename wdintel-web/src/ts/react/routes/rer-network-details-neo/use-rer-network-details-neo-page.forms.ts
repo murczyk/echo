@@ -124,7 +124,7 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     freqs: [
       {
         freq: form.freq.trim(),
-        kind: form.kind,
+        kind: toBackendNetworkFreqKind(form.kind),
         modulationId: form.modulationId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         description: null,
@@ -144,6 +144,10 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     postIds: [...form.postIds],
     descriptions: [],
   };
+}
+
+function toBackendNetworkFreqKind(kind: NetworkFreqKind): 'DMR' | 'DMRe' | 'VHF' {
+  return kind === 'NFM' ? 'VHF' : kind;
 }
 
 export type NetworkUpsertValidationError = {
