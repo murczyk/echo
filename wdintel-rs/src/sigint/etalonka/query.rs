@@ -2072,6 +2072,10 @@ fn build_etalonka_networks_query(
     id_filter: Option<&Vec<i64>>,
     deleted_only: Option<bool>,
 ) -> Select<sigint_network::Entity> {
+    let filter_unit = req.filter_unit.clone();
+    let mut report_req = req.clone();
+    report_req.filter_unit = None;
+
     let mut networks = sigint_network::Entity::find()
         .join_as(
             join_type,
@@ -2118,7 +2122,7 @@ fn build_etalonka_networks_query(
         networks =
             networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
     } else {
-        networks = apply_network_list_filters(networks, req, true);
+        networks = apply_network_list_filters(networks, &report_req, true);
     }
 
     if let Some(id_filter) = id_filter {
@@ -2129,6 +2133,14 @@ fn build_etalonka_networks_query(
             networks = networks
                 .filter(sigint_network::Column::Id.is_in(id_filter.clone()));
         }
+    }
+
+    if let Some(filter_unit) = filter_unit.as_deref() {
+        let pattern = format!("%{}%", filter_unit.to_lowercase());
+        networks = networks.filter(Expr::cust_with_values(
+            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
+            vec![pattern],
+        ));
     }
 
     network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
