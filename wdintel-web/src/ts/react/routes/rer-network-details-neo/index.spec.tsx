@@ -6,6 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 import { EMPTY_STATE } from './use-rer-network-details-neo-page.types';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -14,11 +15,16 @@ const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
-      {children}
-    </button>
-  ),
+  Button: ({ children, onClick, href }: { children: ReactNode; onClick?: () => void; href?: string }) =>
+    href ? (
+      <a href={href} onClick={onClick as any}>
+        {children}
+      </a>
+    ) : (
+      <button type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
   IconButton: ({ children, onClick, disabled }: { children: ReactNode; onClick?: (event: MouseEvent) => void; disabled?: boolean }) => (
     <button type="button" onClick={onClick as any} disabled={disabled}>
       {children}
@@ -238,6 +244,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     setEtalonkaReportIncludePelengsMap: noop,
     setEtalonkaReportFromDateTimeStr: noop,
     setEtalonkaReportToDateTimeStr: noop,
+    setEtalonkaReportProgressExpanded: noop,
     downloadEtalonkaReport: noop,
     openDeleteDialog: noop,
     closeDeleteDialog: noop,
@@ -304,8 +311,15 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     freqDeleteSubmitting: false,
     freqDeleteError: null,
     etalonkaReport: {
-      open: false,
-      reportType: 'full',
+      dialogOpen: false,
+      taskRunId: 0,
+      taskId: null,
+      startedAtMs: null,
+      running: false,
+      curr: 0,
+      overall: 4,
+      logs: [],
+      reportType: 'AccordingToTheForm',
       activeFreqsOnly: false,
       includeSigintSigns: false,
       includeConfirmation: false,
@@ -313,7 +327,10 @@ function buildPage(overrides: Record<string, unknown> = {}) {
       includePelengsMap: false,
       fromDateTimeStr: '',
       toDateTimeStr: '',
+      downloadFileName: null,
       error: null,
+      finishedAt: null,
+      progressExpanded: false,
     },
     deleteDialogOpen: false,
     deleteInProgress: false,
@@ -394,7 +411,7 @@ describe('RerNetworkDetailsNeoPage', () => {
   it('shows the empty-network fallback for loaded unnamed networks', async () => {
     useRerNetworkDetailsNeoPageMock.mockReturnValue(
       buildPage({
-        network: { name: '', status: 'NetworkActive', deleted: false },
+        network: { name: '', status: NETWORK_STATUS_ACTIVE, deleted: false },
         unitNames: [],
         currentUserLoaded: true,
       }),
@@ -409,7 +426,7 @@ describe('RerNetworkDetailsNeoPage', () => {
   it('keeps the tab area gated until permissions are loaded', async () => {
     useRerNetworkDetailsNeoPageMock.mockReturnValue(
       buildPage({
-        network: { name: 'Тестова', status: 'NetworkActive', deleted: false },
+        network: { name: 'Тестова', status: NETWORK_STATUS_ACTIVE, deleted: false },
         unitNames: [],
         currentUserLoaded: false,
       }),
@@ -427,17 +444,20 @@ describe('RerNetworkDetailsNeoPage', () => {
     const view = await renderPage();
     rendered.push(view);
 
-    const button = Array.from(view.container.querySelectorAll('button')).find((element) =>
-      element.textContent?.includes('Повернутись до класичної версії'),
+    const listLink = view.container.querySelector('a[href="/rer-networks-neo"]');
+    const classicButton = Array.from(view.container.querySelectorAll('button, a')).find((element) =>
+      element.textContent?.includes('До класичної версії'),
     );
-    if (!(button instanceof HTMLButtonElement)) throw new Error('button not found');
+    if (!(classicButton instanceof HTMLButtonElement)) throw new Error('button not found');
 
     await act(async () => {
-      button.click();
+      classicButton.click();
     });
 
     expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('classic');
     expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
+    expect(listLink?.textContent).toBe('До списку мереж');
+    expect(listLink?.getAttribute('href')).toBe('/rer-networks-neo');
   });
 
 });

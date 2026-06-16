@@ -6,6 +6,8 @@ import { act, useEffect, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { NETWORK_STATUS_ACTIVE } from '../network-status';
+
 vi.mock('@mui/icons-material/ContentCopyOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/KeyboardArrowLeftOutlined', () => ({ default: () => <span data-testid="arrow-left" /> }));
 vi.mock('@mui/icons-material/KeyboardArrowDownOutlined', () => ({ default: () => <span /> }));
@@ -113,7 +115,7 @@ function baseProps(overrides: Partial<ComponentProps<typeof NetworkDetailsLeftPa
       lastUpdatedAt: '2024-02-01T00:00:00Z',
       lastUpdatedBy: 'Оператор',
       activeFrom: '2022-02-24T00:00:00Z',
-      status: 'NetworkActive',
+      status: NETWORK_STATUS_ACTIVE,
       deleted: false,
     } as any,
     aorVisible: [{ id: 1, label: 'АОР 1' }],

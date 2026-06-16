@@ -2,6 +2,7 @@ import { Box, Button, CircularProgress, Stack, useMediaQuery } from '@mui/materi
 import DownloadIcon from '@mui/icons-material/Download';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
+import { MRT_ROW_ACTION_MODAL_PROPS } from '../../components/MrtRowActionButton';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
@@ -96,7 +97,6 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   ) : null;
   const whiteActions = (
     <InternalTableActions
-      densityDisabled={page.loading}
       columnsVisibilityDisabled={page.loading}
       filtersDisabled={page.loading}
       additionalActiveFilters={[
@@ -413,6 +413,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         onClose={page.onCloseEdit}
         onChange={page.setEditForm}
         onSave={page.onSaveEdit}
+        {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
       <DeleteCallsignDialog

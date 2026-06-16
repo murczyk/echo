@@ -5,7 +5,9 @@ use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
 use crate::sigint::etalonka::types::*;
-use crate::sigint::network::types::ListNetworksSortBy;
+use crate::sigint::network::filter::apply_network_list_filters;
+use crate::sigint::network::sort as network_sort;
+use crate::sigint::network::types::ListNetworksReq;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -2064,21 +2066,32 @@ async fn get_map_image(
     Ok(buffer)
 }
 
-pub async fn load_networks(
-    db: &DatabaseConnection,
-    req: &EtalonkaJimForksReq,
-) -> Result<
-    BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
-    AppError,
-> {
+fn build_etalonka_networks_query(
+    req: &ListNetworksReq,
+    join_type: JoinType,
+    id_filter: Option<&Vec<i64>>,
+    deleted_only: Option<bool>,
+) -> Select<sigint_network::Entity> {
+    let filter_unit = req.filter_unit.clone();
+    let filter_unit_army = req.filter_unit_army.clone();
+    let filter_unit_division = req.filter_unit_division.clone();
+    let filter_unit_regiment = req.filter_unit_regiment.clone();
+    let filter_unit_battalion = req.filter_unit_battalion.clone();
+    let mut report_req = req.clone();
+    report_req.filter_unit = None;
+    report_req.filter_unit_army = None;
+    report_req.filter_unit_division = None;
+    report_req.filter_unit_regiment = None;
+    report_req.filter_unit_battalion = None;
+
     let mut networks = sigint_network::Entity::find()
         .join_as(
-            JoinType::InnerJoin,
+            join_type,
             sigint_network::Relation::SigintNetworkUnit.def(),
             Alias::new("sigint_network_unit"),
         )
         .join_as(
-            JoinType::InnerJoin,
+            join_type,
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
@@ -2111,78 +2124,63 @@ pub async fn load_networks(
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo);
 
-    networks = networks.filter(
-        sigint_network::Column::Deleted
-            .eq(req.req.show_only_deleted.unwrap_or(false)),
-    );
-
-    if !req.req.show_inactive.unwrap_or(false) {
-        networks = networks.filter(sigint_network::Column::ActiveTo.is_null());
+    if let Some(deleted_only) = deleted_only {
+        networks = networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
+    } else if id_filter.is_none() {
+        networks = apply_network_list_filters(networks, &report_req, true);
     }
 
-    if let Some(filter_unit) = &req.req.filter_unit {
-        networks = networks.filter(Expr::cust_with_values(
-            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-            vec![format!("%{}%", filter_unit.to_lowercase())],
-        ))
-    };
-
-    if req.req.show_only_further_inverstigation.unwrap_or(false) {
-        networks = networks.filter(sigint_network_unit::Column::Id.is_null());
-    }
-
-    // Optional filter by Areas of Responsibility (AOR) IDs
-    if let Some(aor_ids) = &req.req.aor_ids {
-        if !aor_ids.is_empty() {
+    if let Some(id_filter) = id_filter {
+        if id_filter.is_empty() {
+            // Empty explicit ID filter means "export nothing", not "drop ID filtering".
+            networks = networks.filter(Expr::cust("1 = 2"));
+        } else {
             networks = networks
-                .join_as(
-                    JoinType::InnerJoin,
-                    sigint_network::Relation::SigintNetworkAor.def(),
-                    Alias::new("sigint_network_aor"),
-                )
-                .filter(
-                    sigint_network_aor::Column::AorId.eq_any(aor_ids.clone()),
-                );
+                .filter(sigint_network::Column::Id.is_in(id_filter.clone()));
         }
     }
 
-    if let Some(filter_freq) = &req.req.filter_freq {
-        let subquery = sigint_network_freq::Entity::find()
-            .select_only()
-            .column(sigint_network_freq::Column::Freq)
-            .filter(
-                sigint_network_freq::Column::NetworkId
-                    .into_simple_expr()
-                    .eq(sigint_network::Column::Id.into_simple_expr()),
-            )
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .filter(Expr::cust_with_values(
-                "sigint_network_freq.freq ilike $1",
-                vec![format!("{filter_freq}%").as_str()],
-            ));
-        networks = networks.filter(Expr::exists(subquery.into_query()));
+    if let Some(filter_unit) = filter_unit.as_deref() {
+        let pattern = format!("%{}%", filter_unit.to_lowercase());
+        networks = networks.filter(Expr::cust_with_values(
+            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
+            vec![pattern],
+        ));
     }
 
-    networks = if let Some(sort_by) = &req.req.sort_by {
-        sort_by
-            .iter()
-            .fold(networks, |networks, sort_by| match sort_by {
-                ListNetworksSortBy::NameAsc => {
-                    networks.order_by_asc(sigint_network::Column::Name)
-                }
-                ListNetworksSortBy::NameDesc => {
-                    networks.order_by_desc(sigint_network::Column::Name)
-                }
-            })
-    } else {
-        networks.order_by_asc(sigint_network::Column::Name)
-    };
+    if let Some(filter_unit_army) = filter_unit_army.as_deref() {
+        networks =
+            networks.filter(sigint_unit::Column::Army.eq(filter_unit_army));
+    }
+    if let Some(filter_unit_division) = filter_unit_division.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Division.eq(filter_unit_division));
+    }
+    if let Some(filter_unit_regiment) = filter_unit_regiment.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Regiment.eq(filter_unit_regiment));
+    }
+    if let Some(filter_unit_battalion) = filter_unit_battalion.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
+    }
 
-    // debug!(
-    //     "> sql networks: {}",
-    //     networks.clone().build(DbBackend::Postgres).to_string()
-    // );
+    network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
+}
 
+pub async fn load_networks(
+    db: &DatabaseConnection,
+    req: &EtalonkaJimForksReq,
+) -> Result<
+    BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
+    AppError,
+> {
+    let networks = build_etalonka_networks_query(
+        &req.req,
+        JoinType::InnerJoin,
+        None,
+        None,
+    );
     let networks = networks
         .clone()
         .into_model::<NetworkEtalonkaResult>()
@@ -2219,68 +2217,27 @@ pub async fn load_networks_by_id(
     BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     AppError,
 > {
-    let mut networks = sigint_network::Entity::find()
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-            Alias::new("sigint_network_unit"),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-            Alias::new("sigint_unit"),
-        )
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .expr_as(
-            Expr::cust(r#"CONCAT('р/м ', "sigint_network"."name", ' ', "sigint_unit"."name")"#.to_string()),
-            "network_full_name",
-        )
-        .column(sigint_network::Column::Location)
-        .column(sigint_network::Column::Purpose)
-        //sklad
-        .expr_as(
-            Expr::cust(r#"(select string_agg(snf.freq, ', ')
-                            from sigint_network_freq snf
-                            where snf.network_id = "sigint_network"."id"
-                            and snf.active_to is null
-                            and snf.deleted = false)"#.to_string()),
-            "freqs",
-        )
-        .column(sigint_network::Column::OperationMode)
-        .column(sigint_network::Column::OperationType)
-        .column(sigint_network::Column::OperationPeriod)
-        .column_as(sigint_unit::Column::Army, "unit_army")
-        .column_as(sigint_unit::Column::Division, "unit_division")
-        .column_as(sigint_unit::Column::Regiment, "unit_regiment")
-        .column_as(sigint_unit::Column::Battalion, "unit_battalion")
-        .column_as(sigint_unit::Column::Company, "unit_company")
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .column(sigint_network::Column::ActiveFrom)
-        .column(sigint_network::Column::ActiveTo)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Id.eq_any(req.network_ids.clone()));
-
-    networks = if let Some(sort_by) = &req.sort_by {
-        sort_by
-            .iter()
-            .fold(networks, |networks, sort_by| match sort_by {
-                ListNetworksSortBy::NameAsc => {
-                    networks.order_by_asc(sigint_network::Column::Name)
-                }
-                ListNetworksSortBy::NameDesc => {
-                    networks.order_by_desc(sigint_network::Column::Name)
-                }
-            })
-    } else {
-        networks.order_by_asc(sigint_network::Column::Name)
+    let sort_req = ListNetworksReq {
+        filter_freq: None,
+        filter_unit: None,
+        filter_unit_army: None,
+        filter_unit_division: None,
+        filter_unit_regiment: None,
+        filter_unit_battalion: None,
+        filter_text: None,
+        filter_name: None,
+        filter_location: None,
+        show_only_further_inverstigation: None,
+        show_inactive: None,
+        show_only_deleted: None,
+        status_filter: None,
+        aor_ids: None,
+        ids: None,
+        limit: None,
+        offset: None,
+        sort_by: req.sort_by.clone(),
     };
-
-    // debug!(
-    //     "> sql networks by id: {}",
-    //     networks.clone().build(DbBackend::Postgres).to_string()
-    // );
-
+    let networks = build_etalonka_networks_query(&sort_req, JoinType::LeftJoin, Some(&req.network_ids), None);
     let networks = networks
         .clone()
         .into_model::<NetworkEtalonkaResult>()
@@ -2313,6 +2270,43 @@ pub async fn load_networks_by_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sigint::network::types::ListNetworksSortBy;
+
+    fn empty_list_networks_req() -> ListNetworksReq {
+        ListNetworksReq {
+            filter_freq: None,
+            filter_unit: None,
+            filter_unit_army: None,
+            filter_unit_division: None,
+            filter_unit_regiment: None,
+            filter_unit_battalion: None,
+            filter_text: None,
+            filter_name: None,
+            filter_location: None,
+            show_only_further_inverstigation: None,
+            show_inactive: None,
+            show_only_deleted: None,
+            status_filter: None,
+            aor_ids: None,
+            ids: None,
+            limit: None,
+            offset: None,
+            sort_by: None,
+        }
+    }
+
+    fn assert_primary_sort_before_name(sql: &str, primary_fragment: &str) {
+        let primary_index = sql.find(primary_fragment).unwrap_or_else(|| {
+            panic!("missing primary sort fragment: {primary_fragment}\n{sql}")
+        });
+        let name_index = sql
+            .find("\"sigint_network\".\"name\" ASC")
+            .unwrap_or_else(|| panic!("missing name sort fragment\n{sql}"));
+        assert!(
+            primary_index < name_index,
+            "expected primary sort before name sort:\n{sql}"
+        );
+    }
 
     #[test]
     fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
@@ -2338,5 +2332,96 @@ mod tests {
         assert!(exclusive_sql.contains(" < "), "{exclusive_sql}");
         assert!(!exclusive_sql.contains(" <= "), "{exclusive_sql}");
         assert!(inclusive_sql.contains(" <= "), "{inclusive_sql}");
+    }
+
+    #[test]
+    fn etalonka_network_sorting_uses_requested_sort_variants() {
+        let no_id_sql = build_etalonka_networks_query(
+            &empty_list_networks_req(),
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        let empty_ids: Vec<i64> = vec![];
+        let empty_id_sql = build_etalonka_networks_query(
+            &empty_list_networks_req(),
+            JoinType::InnerJoin,
+            Some(&empty_ids),
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert_ne!(empty_id_sql, no_id_sql);
+        // Empty explicit ID filter means "export nothing", not "drop ID filtering".
+        assert!(empty_id_sql.contains("1 = 2"), "{empty_id_sql}");
+
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![
+            ListNetworksSortBy::LocationAsc,
+            ListNetworksSortBy::NameDesc,
+        ]);
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert_primary_sort_before_name(
+            &sql,
+            "\"sigint_network\".\"location\" ASC",
+        );
+        assert!(!sql.contains("\"sigint_network\".\"name\" DESC"), "{sql}");
+        assert!(sql.contains("\"sigint_network\".\"name\" ASC"), "{sql}");
+        assert!(sql.contains("\"sigint_network\".\"id\" ASC"), "{sql}");
+
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::NetworkFreqAsc]);
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert_primary_sort_before_name(
+            &sql,
+            network_sort::network_first_freq_sort_sql(),
+        );
+
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::AorDesc]);
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert_primary_sort_before_name(
+            &sql,
+            network_sort::network_first_aor_sort_sql(),
+        );
+
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::LastActivityDesc]);
+        let sql = build_etalonka_networks_query(
+            &req,
+            JoinType::InnerJoin,
+            None,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert_primary_sort_before_name(
+            &sql,
+            "\"sigint_network\".\"updated_at\" DESC",
+        );
     }
 }

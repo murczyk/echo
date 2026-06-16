@@ -2467,6 +2467,23 @@ export type NetworkStatus =
   | 'NetworkInactive'
 ;
 
+export type ListNetworksStatusFilter =
+  | 'ListNetworksActive'
+  | 'ListNetworksInactive'
+  | 'ListNetworksArchived'
+;
+
+export type ListNetworksStatusCountsRsp = {
+  active: number;
+  inactive: number;
+  archived: number;
+};
+
+export type ListNetworksRsp = {
+  list: Array<Network>;
+  statusCounts: ListNetworksStatusCountsRsp;
+};
+
 export type UpdateFreqNetworksReq = {
   freq: string;
   networks: Array<UpdFreqNetwork>;
@@ -2656,9 +2673,17 @@ export type UpdFreqNetwork = {
 export type ListNetworksReq = {
   filterFreq: string | null;
   filterUnit: string | null;
+  filterUnitArmy: string | null;
+  filterUnitDivision: string | null;
+  filterUnitRegiment: string | null;
+  filterUnitBattalion: string | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterLocation: string | null;
   showOnlyFurtherInverstigation: boolean | null;
   showInactive: boolean | null;
   showOnlyDeleted: boolean | null;
+  statusFilter: ListNetworksStatusFilter | null;
   aorIds: Array<number> | null;
   ids: Array<number> | null;
   limit: number | null;
@@ -2669,6 +2694,14 @@ export type ListNetworksReq = {
 export type ListNetworksSortBy =
   | 'NameAsc'
   | 'NameDesc'
+  | 'LastActivityAsc'
+  | 'LastActivityDesc'
+  | 'AorAsc'
+  | 'AorDesc'
+  | 'FreqAsc'
+  | 'FreqDesc'
+  | 'LocationAsc'
+  | 'LocationDesc'
 ;
 
 export type NetworkUnitStatRow = {

@@ -211,14 +211,14 @@ export function NetworkDetailsTabPanel({
           <Tab value="frequencies" label="Частоти" />
           <Tab value="callsigns" label="Позивні" />
           {canViewActivityTab ? <Tab value="activity" label="Активність" /> : null}
-          <Tab value="pelengation" label="Пеленгація" />
+          <Tab value="direction-finding" label="Пеленгація" />
           {canViewRelationsTab ? <Tab value="relations" label="Граф зв'язків" /> : null}
         </Tabs>
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
         {activeNetworkDetailsTab === 'frequencies' ? (
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%' }}>
+          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%' }}>
             <NetworkDetailsFrequenciesPanel
               network={network}
               loading={loading}
@@ -248,7 +248,7 @@ export function NetworkDetailsTabPanel({
             </Box>
           </Box>
         ) : activeNetworkDetailsTab === 'relations' && canViewRelationsTab ? (
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkCallsignRelationsPanel
                 networkId={network?.id ?? null}
@@ -277,7 +277,7 @@ export function NetworkDetailsTabPanel({
             </Box>
           </Box>
         ) : activeNetworkDetailsTab === 'activity' && canViewActivityTab ? (
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsActivityPanel
                 networkActivity={networkActivity}
@@ -288,8 +288,8 @@ export function NetworkDetailsTabPanel({
               />
             </Box>
           </Box>
-        ) : activeNetworkDetailsTab === 'pelengation' ? (
-          <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+        ) : activeNetworkDetailsTab === 'direction-finding' ? (
+          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsPelengationPanel
                 pelengPoints={pelengPoints}

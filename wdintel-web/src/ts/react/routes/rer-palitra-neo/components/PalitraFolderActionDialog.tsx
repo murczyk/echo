@@ -28,6 +28,7 @@ type Props = {
   onClose: () => void;
   onConfirm: () => void;
   onNextFolderPathChange: (value: string) => void;
+  disableRestoreFocus?: boolean;
 };
 
 const FOLDER_ACTION_DIALOG_TITLES: Record<FolderActionKind, string> = {
@@ -81,6 +82,7 @@ export function PalitraFolderActionDialog({
   onClose,
   onConfirm,
   onNextFolderPathChange,
+  disableRestoreFocus = false,
 }: Props) {
   const [nameTouched, setNameTouched] = useState(false);
 
@@ -110,7 +112,7 @@ export function PalitraFolderActionDialog({
   const assignMetaLines = state.kind === 'assign' ? previewLines.filter((line) => !line.startsWith('Обрано палітр:')) : previewLines;
 
   return (
-    <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth='sm'>
+    <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth='sm' disableRestoreFocus={disableRestoreFocus}>
       <DialogTitle>{getDialogTitle(state)}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>

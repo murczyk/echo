@@ -67,8 +67,6 @@ type TableTopToolbarProps = {
   additionalActions?: ReactNode;
   additionalNoTableActions?: ReactNode;
   // Internal table actions
-  densityDisabled?: boolean;
-  densityHidden?: boolean;
   filtersHidden?: boolean;
   colOrderHidden?: boolean;
   colOrderDisabled?: boolean;
@@ -87,8 +85,6 @@ export function TableTopToolbar(props: TableTopToolbarProps) {
     (
       <InternalTableActions
         table={tableStateContext.tableInstance}
-        densityDisabled={props.densityDisabled}
-        densityHidden={props.densityHidden}
         filtersHidden={props.filtersHidden}
         colOrderHidden={props.colOrderHidden}
         columnsVisibilityDisabled={props.columnsVisibilityDisabled}

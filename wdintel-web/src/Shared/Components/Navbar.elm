@@ -173,7 +173,7 @@ navBar user shared activeName props =
             ]
 
         databaseSubs =
-            [ internalMenu Route.Path.RerNetworks "networks" "Мережі"
+            [ internalMenu Route.Path.RerNetworksNeo "networks-neo" "Мережі"
             , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
             , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
             , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
@@ -284,12 +284,16 @@ navBar user shared activeName props =
                     else
                         let
                             unseen =
-                                case shared.changelogLastSeen of
-                                    Just lastSeen ->
-                                        lastSeen /= preview.version
+                                if not (shared.userLoaded && shared.changelogLastSeenLoaded) then
+                                    False
 
-                                    Nothing ->
-                                        True
+                                else
+                                    case shared.changelogLastSeen of
+                                        Just lastSeen ->
+                                            lastSeen /= preview.version
+
+                                        Nothing ->
+                                            True
                         in
                         Just
                             { preview = preview.preview

@@ -26,6 +26,15 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
           { id: 2, name: ' 11 АК ' } as Unit,
           { id: 3, name: '' } as Unit,
         ],
+        aors: [
+          { id: 2, name: 'Бета' } as never,
+          { id: 3, name: 'Вся смуга' } as never,
+          { id: 1, name: 'Альфа' } as never,
+        ],
+        posts: [
+          { id: 10, name: '   ' } as never,
+          { id: 11, name: 'Пост A' } as never,
+        ],
       }));
     }
 
@@ -109,6 +118,7 @@ vi.mock('./use-rer-network-details-neo-page.actions', () => ({
     setEtalonkaReportIncludePelengsMap: vi.fn(),
     setEtalonkaReportFromDateTimeStr: vi.fn(),
     setEtalonkaReportToDateTimeStr: vi.fn(),
+    setEtalonkaReportProgressExpanded: vi.fn(),
     downloadEtalonkaReport: vi.fn(),
     openDeleteDialog: vi.fn(),
     closeDeleteDialog: vi.fn(),
@@ -156,6 +166,7 @@ afterEach(() => {
   }
   latestPage = null;
   loadMockState.loaded = false;
+  window.history.replaceState({}, '', '/rer-networks/42');
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
@@ -165,5 +176,28 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     const page = renderHookHarness();
 
     expect(page.unitOptions).toEqual([{ id: 1, label: '11 АК' }]);
+  });
+
+  it('puts all-band AOR first and filters blank posts', () => {
+    const page = renderHookHarness();
+
+    expect(page.aorOptions).toEqual([
+      { id: 3, label: 'Вся смуга' },
+      { id: 1, label: 'Альфа' },
+      { id: 2, label: 'Бета' },
+    ]);
+    expect(page.postOptions).toEqual([{ id: 11, label: 'Пост A' }]);
+  });
+
+  it('honors the direction-finding tab URL override', async () => {
+    window.history.replaceState({}, '', '/rer-networks/42?tab=direction-finding');
+
+    renderHookHarness();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(latestPage?.activeNetworkDetailsTab).toBe('direction-finding');
   });
 });

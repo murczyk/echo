@@ -314,9 +314,9 @@ function NetworkDetailsFrequenciesTableContent({
       const freqRow = row.original.freq;
       return (
         <MrtRowActions>
-          <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} />
-          <MrtRowActionButton label="Редагувати тех. дані" onClick={() => onOpenFreqTechDrawer(freqRow)} icon={<BuildIcon fontSize="small" />} />
-          <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" />
+          <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} opensModal />
+          <MrtRowActionButton label="Редагувати тех. дані" onClick={() => onOpenFreqTechDrawer(freqRow)} icon={<BuildIcon fontSize="small" />} opensModal />
+          <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" opensModal />
         </MrtRowActions>
       );
     },

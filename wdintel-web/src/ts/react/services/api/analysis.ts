@@ -47,7 +47,8 @@ import type {
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined } from '../../utils/misc';
-import { getJson, postBytes, postJson, postVoid } from './client';
+import { postBytes, postJson, postVoid } from './client';
+import { fetchBgtaskStatusAndLogs, type BgtaskStatusAndLogsRsp } from './bgtask';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -75,13 +76,6 @@ type NetworkStatsRsp = { networks: AnalysisStatsNetwork[]; networkNames: Array<{
 type AreaOfResponsibilityStatsRsp = { aors: AnalysisStatsAor[]; aorNames: AreaOfResponsibilityEntry[] };
 type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
-type BgtaskStatusAndLogsRsp = {
-  running: boolean;
-  loglines: string[];
-  finishedWithError: string | null;
-  finishedWithErrorCode: string | null;
-};
-
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_text_c: 'CNTextC',
   _c_n_newline_c: 'CNNewlineC',
@@ -305,12 +299,7 @@ export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<n
 }
 
 export async function fetchAnalysisReportTaskStatus(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
-  const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
-  const rsp = transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
-  return {
-    ...rsp,
-    finishedWithErrorCode: rsp.finishedWithErrorCode ?? null,
-  };
+  return fetchBgtaskStatusAndLogs(taskId, skip);
 }
 
 export async function downloadAnalysisReportTaskResult(taskId: number): Promise<Blob> {

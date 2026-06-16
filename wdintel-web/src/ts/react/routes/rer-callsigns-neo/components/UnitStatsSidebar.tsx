@@ -19,7 +19,10 @@ type Props = {
   isDesktopLayout: boolean;
   loading: boolean;
   onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
+  onToggleInvestigating?: (next: boolean) => void;
   onToggleOpen?: () => void;
+  showInvestigatingFilter?: boolean;
+  isInvestigating?: boolean;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
 };
 
@@ -298,7 +301,10 @@ export function UnitStatsSidebar({
   isDesktopLayout,
   loading,
   onPickUnitFilter,
+  onToggleInvestigating,
   onToggleOpen,
+  showInvestigatingFilter = false,
+  isInvestigating = false,
   selectedUnitFilter,
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
@@ -388,19 +394,33 @@ export function UnitStatsSidebar({
       <Stack spacing={1.5} sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
-          {onToggleOpen ? (
-            <IconButton
-              onClick={onToggleOpen}
-              aria-label="Сховати панель підрозділів"
-              title="Сховати панель підрозділів"
-              sx={{
-                display: isDesktopLayout ? 'none' : 'inline-flex',
-                color: 'text.primary',
-              }}
-            >
-              <KeyboardArrowUpIcon />
-            </IconButton>
-          ) : null}
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap' }}>
+            {showInvestigatingFilter && onToggleInvestigating ? (
+              <PowerChip
+                size="small"
+                selected={isInvestigating}
+                onClick={() => onToggleInvestigating(!isInvestigating)}
+                label="В дорозвідці"
+                selectedBorderColor="#b58c2f"
+                selectedBackgroundColor="#3a2d11"
+                selectedTextColor="#f5c84c"
+                sx={{ width: 'fit-content' }}
+              />
+            ) : null}
+            {onToggleOpen ? (
+              <IconButton
+                onClick={onToggleOpen}
+                aria-label="Сховати панель підрозділів"
+                title="Сховати панель підрозділів"
+                sx={{
+                  display: isDesktopLayout ? 'none' : 'inline-flex',
+                  color: 'text.primary',
+                }}
+              >
+                <KeyboardArrowUpIcon />
+              </IconButton>
+            ) : null}
+          </Stack>
         </Stack>
         {selectedUnitFilter ? (
           <Stack spacing={0.75}>

@@ -183,12 +183,13 @@ function KeyPoliciesTable(props: {
     enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-      <MrtRowActionButton
-        label="Видалити"
-        onClick={() => props.onDelete(row.original)}
-        icon={<DeleteIcon fontSize="small" />}
-        tone="danger"
-      />
+    <MrtRowActionButton
+      label="Видалити"
+      onClick={() => props.onDelete(row.original)}
+      icon={<DeleteIcon fontSize="small" />}
+      tone="danger"
+      opensModal
+    />
     ),
     defaultColumn: {
       size: 200,
@@ -466,6 +467,7 @@ function AdminKeysNeoPageBody() {
         onConfirm={handleDelete}
         submitting={Boolean(deleteState?.isDeleting)}
         disabled={!deleteState}
+        disableRestoreFocus
       >
           {deleteState?.error ? <PowerAlert severity="error">{deleteState.error}</PowerAlert> : null}
           <Typography variant="body2" className="text-muted-foreground">

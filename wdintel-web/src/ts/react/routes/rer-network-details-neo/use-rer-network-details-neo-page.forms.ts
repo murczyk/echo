@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
-import type { Network, NetworkFreqsRes } from '../../../../Bindings';
+import type { CreateNetworkReq, Network, NetworkFreqsRes } from '../../../../Bindings';
 import {
   APP_TIME_ZONE,
   formatUtcDateInputValue,
@@ -12,9 +12,13 @@ import type {
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
   NetworkFreqTechDataForm,
+  NetworkFreqKind,
+  NetworkUpsertForm,
   NetworkPelengDateRange,
   NetworkRelationsDateRange,
 } from './use-rer-network-details-neo-page.types';
+import { getFrequencyFormatError } from './use-rer-network-details-neo-page.helpers';
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -31,6 +35,29 @@ export function toNetworkDescriptionForm(topic: string, description: string, net
   };
 }
 
+export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
+  return {
+    id: null,
+    name: 'управління',
+    location: '',
+    radioStation: '',
+    purpose: 'для управління підлеглим особовим складом',
+    operationMode: 'дуплекс',
+    operationType: 'ведення службового радіообміну',
+    operationPeriod: 'цілодобово',
+    status: NETWORK_STATUS_ACTIVE,
+    aorIds: [],
+    unitIds: [],
+    postIds: [],
+    freq: '',
+    kind: 'DMR',
+    modulationId: null,
+    activeFrom: '',
+    activeTo: '',
+    encryptionKeyIds: [],
+  };
+}
+
 export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   return {
     freq: '',
@@ -43,7 +70,7 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMRe' | 'NFM' {
+export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
   const normalized = kind?.trim().toUpperCase() ?? '';
   if (normalized === 'DMR') return 'DMR';
   if (normalized === 'DMRE') return 'DMRe';
@@ -76,6 +103,7 @@ export function toNetworkFreqTechDataForm(freq: NetworkFreqsRes): NetworkFreqTec
 
 export function toNetworkEditForm(network: Network): NetworkEditForm {
   return {
+    ...createDefaultNetworkUpsertForm(),
     id: network.id,
     name: network.name,
     location: network.location,
@@ -89,6 +117,71 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
     unitIds: [...(network.unitIds ?? [])],
     postIds: [...network.postIds],
   };
+}
+
+export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
+  return {
+    freqs: [
+      {
+        freq: form.freq.trim(),
+        kind: toBackendNetworkFreqKind(form.kind),
+        modulationId: form.modulationId,
+        encryptionKeyIds: [...form.encryptionKeyIds],
+        description: null,
+        activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
+        activeTo: parseNetworkDetailsDateInputExclusiveEnd(form.activeTo),
+      },
+    ],
+    unitIds: form.unitIds.length === 0 ? null : [...form.unitIds],
+    areaOfResponsibilityIds: form.aorIds.length === 0 ? null : [...form.aorIds],
+    name: form.name.trim(),
+    location: form.location.trim(),
+    radioStation: form.radioStation.trim() === '' ? null : form.radioStation.trim(),
+    purpose: form.purpose.trim() === '' ? null : form.purpose.trim(),
+    operationMode: form.operationMode.trim() === '' ? null : form.operationMode.trim(),
+    operationType: form.operationType.trim() === '' ? null : form.operationType.trim(),
+    operationPeriod: form.operationPeriod.trim() === '' ? null : form.operationPeriod.trim(),
+    postIds: [...form.postIds],
+    descriptions: [],
+  };
+}
+
+function toBackendNetworkFreqKind(kind: NetworkFreqKind): 'DMR' | 'DMRe' | 'VHF' {
+  return kind === 'NFM' ? 'VHF' : kind;
+}
+
+export type NetworkUpsertValidationError = {
+  name: string | null;
+  location: string | null;
+  aorIds: string | null;
+  freq: string | null;
+  modulationId: string | null;
+  activeFrom: string | null;
+};
+
+export function getNetworkUpsertValidationError(
+  form: NetworkUpsertForm | null,
+  options: { includeFrequency: boolean } = { includeFrequency: true },
+): NetworkUpsertValidationError | null {
+  if (!form) return null;
+
+  const name = form.name.trim() === '' ? 'Назва є обовʼязковою' : null;
+  const location = form.location.trim() === '' ? 'Район функціонування/розгортання є обовʼязковим' : null;
+  const aorIds = form.aorIds.length === 0 ? 'Потрібно вибрати принаймні одну смугу' : null;
+  const freq = options.includeFrequency ? getFrequencyFormatError(form.freq) : null;
+  const modulationId = options.includeFrequency && form.modulationId === null ? 'Потрібно вибрати модуляцію' : null;
+  const activeFrom = options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
+
+  const error = {
+    name,
+    location,
+    aorIds,
+    freq,
+    modulationId,
+    activeFrom,
+  };
+
+  return Object.values(error).every((value) => value === null) ? null : error;
 }
 
 export function parseNetworkDetailsDateInput(value: string): number | null {

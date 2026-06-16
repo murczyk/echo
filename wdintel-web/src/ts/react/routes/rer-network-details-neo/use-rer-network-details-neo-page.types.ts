@@ -31,8 +31,8 @@ import type {
 export type { NetworkEtalonkaReportState, NetworkEtalonkaReportType };
 export { createDefaultNetworkEtalonkaReportState };
 
-export type NetworkEditForm = {
-  id: number;
+export type NetworkUpsertForm = {
+  id: number | null;
   name: string;
   location: string;
   radioStation: string;
@@ -44,7 +44,17 @@ export type NetworkEditForm = {
   aorIds: number[];
   unitIds: number[];
   postIds: number[];
+  freq: string;
+  kind: NetworkFreqKind;
+  modulationId: number | null;
+  activeFrom: string;
+  activeTo: string;
+  encryptionKeyIds: number[];
 };
+
+export type NetworkEditForm = NetworkUpsertForm;
+
+export type NetworkFreqKind = 'DMR' | 'DMRe' | 'NFM';
 
 export type NetworkDescriptionForm = {
   topic: string;
@@ -59,11 +69,11 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'pelengation';
+export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'direction-finding';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
-  kind: 'DMR' | 'DMRe' | 'NFM';
+  kind: NetworkFreqKind;
   modulationId: number | null;
   description: string;
   activeFrom: string;
@@ -73,7 +83,7 @@ export type NetworkFreqCreateWizardForm = {
 
 export type NetworkFreqEditForm = {
   networkFreqId: number;
-  kind: 'DMR' | 'DMRe' | 'NFM';
+  kind: NetworkFreqKind;
   modulationId: number | null;
   activeFrom: string;
   activeTo: string;

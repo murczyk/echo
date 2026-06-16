@@ -2,6 +2,7 @@ import type { Network, User } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { FREQUENCY_FORMAT_ERROR } from './use-rer-network-details-neo-page.constants';
 import type { DisplayNetworkStatus } from './use-rer-network-details-neo-page.types';
+import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== '') return error.message;
@@ -48,7 +49,7 @@ export function networkStatusDisplay(network: Network | null): DisplayNetworkSta
     return { label: 'Видалена', tone: 'warning' };
   }
 
-  return network.status === 'NetworkActive'
+  return network.status === NETWORK_STATUS_ACTIVE
     ? { label: 'Активна', tone: 'success' }
     : { label: 'Неактивна', tone: 'warning' };
 }

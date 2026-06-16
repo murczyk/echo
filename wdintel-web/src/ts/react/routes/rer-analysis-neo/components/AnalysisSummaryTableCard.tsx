@@ -33,6 +33,7 @@ import { TableStateProvider, useTableStateContext } from '../../../components/mu
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
+import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
 import {
   buildAnalysisSummaryTableColumns,
   DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER,
@@ -384,7 +385,7 @@ function AnalysisSummaryTableCardInner({
         </Box>
       </Box>
 
-      <Dialog open={isPresent(renameDialog)} onClose={closeRenameDialog}>
+      <Dialog open={isPresent(renameDialog)} onClose={closeRenameDialog} disableRestoreFocus={MRT_ROW_ACTION_MODAL_PROPS.disableRestoreFocus}>
         <DialogTitle>Редагувати підрозділ</DialogTitle>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>

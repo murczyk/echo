@@ -1,5 +1,6 @@
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { Dayjs } from 'dayjs';
+import type { ReactNode } from 'react';
 import { PowerDatePicker } from '../../../components/PowerDateTimePicker';
 
 import { formatNetworkDateValue, parseNetworkDateValue } from './network-date-picker.utils';
@@ -14,6 +15,10 @@ type Props = {
   allowEmpty?: boolean;
   width?: number | string;
   textFieldSx?: SxProps<Theme>;
+  error?: boolean;
+  helperText?: ReactNode;
+  onBlur?: () => void;
+  required?: boolean;
 };
 
 export function NetworkDatePickerField({
@@ -26,6 +31,10 @@ export function NetworkDatePickerField({
   allowEmpty = true,
   width = 162,
   textFieldSx,
+  error,
+  helperText,
+  onBlur,
+  required,
 }: Props) {
   return (
     <PowerDatePicker
@@ -48,7 +57,11 @@ export function NetworkDatePickerField({
         textField: {
           fullWidth: true,
           size: 'small',
+          error,
+          helperText,
+          required,
           InputLabelProps: { shrink: true },
+          onBlur,
           sx: {
             width,
             cursor: 'pointer',

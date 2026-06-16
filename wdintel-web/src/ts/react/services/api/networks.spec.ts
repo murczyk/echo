@@ -4,7 +4,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { postBytes, postJson } from './client';
-import { downloadNetworkEtalonkaReport, getNetworkCallsignRelationMessages } from './networks';
+import {
+  downloadNetworkEtalonkaReportTaskResult,
+  downloadNetworkEtalonkaReport,
+  downloadNetworksEtalonkaReport,
+  getNetworksList,
+  getNetworkCallsignRelationMessages,
+  getNetworksGroupsActivity,
+  listNetworks,
+  launchNetworkEtalonkaBatchReportTask,
+  launchNetworksEtalonkaReportTask,
+} from './networks';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
@@ -90,6 +100,259 @@ describe('networks API etalonka report download', () => {
     );
   });
 
+  it('encodes the filtered report request with the classic report endpoint', async () => {
+    postBytesMock.mockResolvedValueOnce(new Blob(['ok']));
+
+    await downloadNetworksEtalonkaReport({
+      req: {
+        filterFreq: null,
+        filterUnit: '3 АК',
+        filterText: 'alpha',
+        filterName: 'Alpha',
+        filterLocation: 'Kyiv',
+        showOnlyFurtherInverstigation: true,
+        showInactive: null,
+        showOnlyDeleted: null,
+        statusFilter: 'ListNetworksActive',
+        aorIds: [1, -1],
+        ids: null,
+        limit: null,
+        offset: null,
+        sortBy: ['NameAsc'],
+      },
+      etalonkaType: {
+        AccordingToTheForm: {
+          activeFreqsOnly: true,
+          includeSigintSigns: true,
+          includeConfirmation: false,
+        },
+      },
+    });
+
+    expect(postBytesMock).toHaveBeenCalledWith(
+      '/api/sigint/etalonka/report-networks',
+      expect.objectContaining({
+        req: expect.objectContaining({
+          filter_text: 'alpha',
+          filter_unit: '3 АК',
+          filter_name: 'Alpha',
+          filter_location: 'Kyiv',
+          show_only_further_inverstigation: true,
+          status_filter: 'ListNetworksActive',
+          aor_ids: [1, -1],
+          sort_by: ['NameAsc'],
+        }),
+        etalonka_type: {
+          AccordingToTheForm: {
+            active_freqs_only: true,
+            include_sigint_signs: true,
+            include_confirmation: false,
+          },
+        },
+      }),
+    );
+  });
+
+  it('launches the filtered etalonka report task with the same payload as the classic endpoint', async () => {
+    postJsonMock.mockResolvedValueOnce(42);
+
+    await launchNetworksEtalonkaReportTask({
+      req: {
+        filterFreq: null,
+        filterUnit: '3 АК',
+        filterText: 'alpha',
+        filterName: 'Alpha',
+        filterLocation: 'Kyiv',
+        showOnlyFurtherInverstigation: true,
+        showInactive: null,
+        showOnlyDeleted: null,
+        statusFilter: 'ListNetworksActive',
+        aorIds: [1, -1],
+        ids: null,
+        limit: null,
+        offset: null,
+        sortBy: ['NameAsc'],
+      },
+      etalonkaType: {
+        AccordingToTheForm: {
+          activeFreqsOnly: true,
+          includeSigintSigns: true,
+          includeConfirmation: false,
+        },
+      },
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/etalonka/report-networks-task-launch',
+      expect.objectContaining({
+        req: expect.objectContaining({
+          filter_text: 'alpha',
+          filter_unit: '3 АК',
+          filter_name: 'Alpha',
+          filter_location: 'Kyiv',
+          show_only_further_inverstigation: true,
+          status_filter: 'ListNetworksActive',
+          aor_ids: [1, -1],
+          sort_by: ['NameAsc'],
+        }),
+        etalonka_type: {
+          AccordingToTheForm: {
+            active_freqs_only: true,
+            include_sigint_signs: true,
+            include_confirmation: false,
+          },
+        },
+      }),
+    );
+  });
+
+  it('launches the batch etalonka report task with the same payload as the classic endpoint', async () => {
+    postJsonMock.mockResolvedValueOnce(99);
+
+    await launchNetworkEtalonkaBatchReportTask({
+      networkIds: [5],
+      sortBy: null,
+      etalonkaType: {
+        ExtendedReport: {
+          sinceDateInclusiveMs: 1,
+          tillDateInclusiveMs: 2,
+          activeFreqsOnly: false,
+          includeUnitCallsigns: true,
+          includeSigintSigns: false,
+          includeConfirmation: true,
+          includePelengsMap: false,
+        },
+      },
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/etalonka/report-networks-batch-id-task-launch',
+      expect.objectContaining({
+        network_ids: [5],
+        sort_by: null,
+        etalonka_type: {
+          ExtendedReport: {
+            since_date_inclusive_ms: 1,
+            till_date_inclusive_ms: 2,
+            active_freqs_only: false,
+            include_unit_callsigns: true,
+            include_sigint_signs: false,
+            include_confirmation: true,
+            include_pelengs_map: false,
+          },
+        },
+      }),
+    );
+  });
+
+  it('downloads an async etalonka report result by task id', async () => {
+    postBytesMock.mockResolvedValueOnce(new Blob(['ok']));
+
+    await downloadNetworkEtalonkaReportTaskResult(77);
+
+    expect(postBytesMock).toHaveBeenCalledWith(
+      '/api/sigint/etalonka/report-networks-task-download',
+      expect.objectContaining({ bgtask_id: 77 }),
+    );
+  });
+
+  it('encodes the network list request in snake_case and normalizes the combined response', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      list: [{ id: 1, name: 'Alpha', freqs: [], unit_ids: [], aor_ids: [], location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' }],
+      status_counts: { active: 7, inactive: 1, archived: 2 },
+    });
+
+    const response = await listNetworks({
+      filterFreq: null,
+      filterUnit: 'Unit 1',
+      filterText: 'alpha',
+      filterName: 'Alpha',
+      filterLocation: 'Kyiv',
+      showOnlyFurtherInverstigation: null,
+      showInactive: true,
+      showOnlyDeleted: false,
+      statusFilter: 'ListNetworksInactive',
+      aorIds: [1, 9],
+      ids: null,
+      limit: 50,
+      offset: 100,
+      sortBy: ['NameDesc'],
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-list',
+      expect.objectContaining({
+        filter_freq: null,
+        filter_unit: 'Unit 1',
+        filter_text: 'alpha',
+        filter_name: 'Alpha',
+        filter_location: 'Kyiv',
+        show_inactive: true,
+        show_only_deleted: false,
+        status_filter: 'ListNetworksInactive',
+        aor_ids: [1, 9],
+        limit: 50,
+        offset: 100,
+        sort_by: ['NameDesc'],
+      }),
+      undefined,
+    );
+    expect(response.list).toHaveLength(1);
+    expect(response.statusCounts).toEqual({ active: 7, inactive: 1, archived: 2 });
+  });
+
+  it('encodes the default network list request with classic non-archived flags', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      list: [],
+      status_counts: { active: 0, inactive: 0, archived: 0 },
+    });
+
+    await listNetworks({
+      filterFreq: null,
+      filterUnit: null,
+      filterText: null,
+      filterName: null,
+      filterLocation: null,
+      showOnlyFurtherInverstigation: null,
+      showInactive: true,
+      showOnlyDeleted: false,
+      statusFilter: null,
+      aorIds: null,
+      ids: null,
+      limit: null,
+      offset: null,
+      sortBy: ['NameAsc'],
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-list',
+      expect.objectContaining({
+        show_inactive: true,
+        show_only_deleted: false,
+        sort_by: ['NameAsc'],
+      }),
+      undefined,
+    );
+  });
+
+  it('encodes the grouped activity request using snake_case', async () => {
+    postJsonMock.mockResolvedValueOnce({});
+
+    await getNetworksGroupsActivity({
+      networkIds: [1, 2],
+      tillDateNoninclusiveMs: 123,
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-group-activity',
+      expect.objectContaining({
+        network_ids: [1, 2],
+        till_date_noninclusive_ms: 123,
+      }),
+      undefined,
+    );
+  });
+
   it('encodes the relation messages request with snake_case body and passes abort signal through', async () => {
     const controller = new AbortController();
     postJsonMock.mockResolvedValueOnce({ messages: [] });
@@ -121,6 +384,31 @@ describe('networks API etalonka report download', () => {
         limit: 24,
       }),
       { signal: controller.signal },
+    );
+  });
+});
+
+describe('networks API list helper', () => {
+  beforeEach(() => {
+    postJsonMock.mockReset();
+    postBytesMock.mockReset();
+  });
+
+  it('uses an empty text filter to avoid the default limit cap', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 0, inactive: 0, archived: 0 },
+    });
+
+    await getNetworksList();
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-list',
+      expect.objectContaining({
+        filter_text: '',
+        limit: null,
+      }),
+      undefined,
     );
   });
 });

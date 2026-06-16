@@ -30,6 +30,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Throw/handle `HttpRequestError`.
 - Handle 401 with `isUnauthorizedError(error)` and redirect:
 - `window.location.assign('/login')`
+- Prefer the shared auth redirect helper in `src/ts/react/auth-redirect.ts` over route-local login redirects when the page already uses the shared auth flow.
 - Keep UI errors visible via `PowerAlert` (or the established UI messaging pattern on the page).
 - Prefer existing styling mix:
 - MUI `sx` for component-level styles.
@@ -50,6 +51,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `use-*-page.actions.ts` plus focused `*.actions.ts`: mutations, drawers/dialogs, in-flight/error state.
 - `helpers*.ts`: pure row/form/filter/search mapping with colocated specs.
 - Keep pure helpers outside components/hooks when they can be unit-tested.
+- Prefer shared custom-element mount helpers or route entry wrappers over duplicating mount boilerplate when a reusable helper already exists.
 - In async effects, use `AbortController` for request cancellation or a generation ref for stale route/page reloads; never set state after abort/stale generation.
 - Load independent reference data with `Promise.all`; keep noncritical follow-up loads from blocking primary page readiness.
 - Use central nullish helpers from `utils/misc.ts` (`isNullOrUndefined`, `isPresent`, `isNullish`) instead of manual `value === null || value === undefined` checks.
@@ -68,6 +70,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
   | `Chip` (selectable/filter tags) | `PowerChip` or `CompactPowerChip` |
   | `Menu` | `PowerMenu` — Escape does not bubble to parent drawers |
   | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI.
+- Avoid MUI `Menu` for hover-only popups when it can focus or `aria-hide` surrounding content; prefer non-modal `Popper`/`Tooltip`-style patterns there.
 - For React pages that need date selection, prefer MUI X `DatePicker` / `DateTimePicker` with the app locale/theme conventions.
 - Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
 - Reuse the existing date-picker patterns in `DateTimeRangeControl.tsx` and `NetworkFreqDatePickerField.tsx` instead of adding ad hoc native inputs.
@@ -101,6 +104,7 @@ if (isUnauthorizedError(error)) {
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
+- Check public URL tab values against internal ids; keep aliases only for intentional legacy compatibility.
 - Confirm mobile/tablet/desktop layout still works for touched route.
 
 ## Assumptions

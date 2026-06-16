@@ -55,6 +55,7 @@ import './ts/react/rer-analysis-neo-element'
 import './ts/react/rer-network-details-neo-element'
 import './ts/react/rer-palitra-neo-element'
 import './ts/react/rer-callsigns-neo-element'
+import './ts/react/rer-networks-neo-element'
 import './ts/react/importer-beta-element'
 import './ts/react/updates-neo-element'
 import { saveLegacyRerAnalysisQueryState } from "./ts/rer-analysis-query-state-legacy"

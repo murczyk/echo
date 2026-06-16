@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
 import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
+const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
+
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
 vi.mock('@mui/icons-material/FilterAltOutlined', () => ({ default: () => <span>filter</span> }));
@@ -29,7 +31,8 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
-  Dialog: (props: { children: ReactNode; open: boolean }) => (props.open ? <div data-testid="rename-dialog">{props.children}</div> : null),
+  Dialog: (props: { children: ReactNode; open: boolean; disableRestoreFocus?: boolean }) =>
+    (props.open ? <div data-testid="rename-dialog" data-disable-restore-focus={String(props.disableRestoreFocus ?? false)}>{props.children}</div> : null),
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
@@ -86,6 +89,7 @@ vi.mock('material-react-table', () => ({
         <div data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</div>
         <div data-testid="default-head-bg">{table.defaultColumn?.muiTableHeadCellProps?.sx?.backgroundColor ?? ''}</div>
         <div data-testid="row-actions-enable-resizing">{String(rowActionsColumn?.enableResizing ?? '')}</div>
+        <div data-testid="row-actions">{table.renderRowActions?.({ row: { original: data[0] } })}</div>
         <table aria-label={table.muiTableProps?.['aria-label']}>
           <thead>
             <tr>
@@ -123,12 +127,16 @@ vi.mock('../../../components/PowerButton', () => ({
 
 vi.mock('../../../components/MrtRowActionButton', () => ({
   MrtRowActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  MrtRowActionButton: (props: { label: string; onClick: () => void; disabled?: boolean }) => (
-    <button type="button" aria-label={props.label} onClick={props.onClick} disabled={props.disabled}>
-      {props.label}
-    </button>
-  ),
+  MrtRowActionButton: (props: { label: string; onClick: () => void; disabled?: boolean; opensModal?: boolean }) => {
+    capturedRowActionProps.push({ label: props.label, opensModal: props.opensModal });
+    return (
+      <button type="button" aria-label={props.label} onClick={props.onClick} disabled={props.disabled} data-opens-modal={props.opensModal ? 'true' : 'false'}>
+        {props.label}
+      </button>
+    );
+  },
   mrtRowActionsColumnSize: () => 96,
+  MRT_ROW_ACTION_MODAL_PROPS: { disableRestoreFocus: true },
 }));
 
 vi.mock('../../../components/SectionLoadingOverlay', () => ({
@@ -296,6 +304,7 @@ describe('AnalysisSummaryTableCard', () => {
       });
       item.container.remove();
     }
+    capturedRowActionProps.splice(0);
   });
 
   it('renders the MRT frequency columns and keeps export actions', async () => {
@@ -371,6 +380,20 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(onSelectFreq).toHaveBeenCalledWith('100.100');
     expect(onShowFreqOnMap).toHaveBeenCalledWith('100.100');
+  });
+
+  it('marks rename unit as modal and disables restore focus on the dialog', async () => {
+    const view = await renderComponent(buildProps());
+    rendered.push(view);
+
+    expect(capturedRowActionProps).toEqual([
+      { label: 'У фільтр', opensModal: undefined },
+      { label: 'На мапі', opensModal: undefined },
+      { label: 'Редагувати підрозділ', opensModal: true },
+    ]);
+
+    await click(getButton(view.container, 'Редагувати підрозділ'));
+    expect(view.container.querySelector('[data-testid="rename-dialog"]')?.getAttribute('data-disable-restore-focus')).toBe('true');
   });
 
   it('opens and closes the rename dialog from the actions column', async () => {
