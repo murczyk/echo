@@ -2073,8 +2073,16 @@ fn build_etalonka_networks_query(
     deleted_only: Option<bool>,
 ) -> Select<sigint_network::Entity> {
     let filter_unit = req.filter_unit.clone();
+    let filter_unit_army = req.filter_unit_army.clone();
+    let filter_unit_division = req.filter_unit_division.clone();
+    let filter_unit_regiment = req.filter_unit_regiment.clone();
+    let filter_unit_battalion = req.filter_unit_battalion.clone();
     let mut report_req = req.clone();
     report_req.filter_unit = None;
+    report_req.filter_unit_army = None;
+    report_req.filter_unit_division = None;
+    report_req.filter_unit_regiment = None;
+    report_req.filter_unit_battalion = None;
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -2143,6 +2151,23 @@ fn build_etalonka_networks_query(
         ));
     }
 
+    if let Some(filter_unit_army) = filter_unit_army.as_deref() {
+        networks =
+            networks.filter(sigint_unit::Column::Army.eq(filter_unit_army));
+    }
+    if let Some(filter_unit_division) = filter_unit_division.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Division.eq(filter_unit_division));
+    }
+    if let Some(filter_unit_regiment) = filter_unit_regiment.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Regiment.eq(filter_unit_regiment));
+    }
+    if let Some(filter_unit_battalion) = filter_unit_battalion.as_deref() {
+        networks = networks
+            .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
+    }
+
     network_sort::apply_network_sorts(networks, req.sort_by.as_ref())
 }
 
@@ -2198,6 +2223,10 @@ pub async fn load_networks_by_id(
     let sort_req = ListNetworksReq {
         filter_freq: None,
         filter_unit: None,
+        filter_unit_army: None,
+        filter_unit_division: None,
+        filter_unit_regiment: None,
+        filter_unit_battalion: None,
         filter_text: None,
         filter_name: None,
         filter_location: None,
@@ -2255,6 +2284,10 @@ mod tests {
         ListNetworksReq {
             filter_freq: None,
             filter_unit: None,
+            filter_unit_army: None,
+            filter_unit_division: None,
+            filter_unit_regiment: None,
+            filter_unit_battalion: None,
             filter_text: None,
             filter_name: None,
             filter_location: None,

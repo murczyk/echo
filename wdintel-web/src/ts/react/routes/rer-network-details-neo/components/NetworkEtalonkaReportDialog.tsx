@@ -25,6 +25,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
+import type { BgtaskProgressStage } from '../../../services/api/bgtask';
 import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
@@ -55,6 +56,23 @@ function parseDateTime(value: string): Dayjs | null {
 function formatDateTime(value: Dayjs | null): string {
   if (!value) return '';
   return (value as Dayjs).tz(APP_TIME_ZONE, true).format('YYYY-MM-DDTHH:mm');
+}
+
+function formatElapsedTime(startedAtMs: number | null): string | null {
+  if (startedAtMs === null) return null;
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds} с`;
+  }
+
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes} хв ${seconds} с`;
+}
+
+function getLatestProgressStage(stages: BgtaskProgressStage[]): BgtaskProgressStage | null {
+  return stages.at(-1) ?? null;
 }
 
 function ReportSectionCard({
@@ -122,6 +140,8 @@ export function NetworkEtalonkaReportDialog({
   const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
   const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
   const progressStages = parseBgtaskProgressStages(report.logs);
+  const latestProgressStage = getLatestProgressStage(progressStages);
+  const elapsedTime = formatElapsedTime(report.startedAtMs);
   const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
 
   useEffect(() => {
@@ -327,6 +347,60 @@ export function NetworkEtalonkaReportDialog({
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
                   </Button>
                 </Stack>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                    gap: 1,
+                    p: 1.5,
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: 'background.default',
+                  }}
+                >
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Завдання
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {report.taskId !== null ? `#${report.taskId}` : 'очікує запуску'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Триває
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {elapsedTime ?? '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Етап
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {latestProgressStage?.text ?? 'Підготовка'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Логи
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {report.logs.length}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Файл
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                      {report.downloadFileName ?? '—'}
+                    </Typography>
+                  </Stack>
+                </Box>
 
                 {report.progressExpanded ? (
                   <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>

@@ -11,6 +11,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { isPresent } from '../../utils/misc';
+import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 dayjs.extend(utc);
 
@@ -69,6 +70,14 @@ export const ACTIVITY_BAR_MAX_HEIGHT = 34;
 export const NETWORK_STATUS_ACTIVE_COLOR = '#54c06c';
 export const NETWORK_STATUS_INACTIVE_COLOR = '#bfbfbf';
 export const NETWORK_STATUS_ARCHIVED_COLOR = '#6b6b6b';
+
+type NetworkUnitFilterFields = {
+  filterUnit: string | null;
+  filterUnitArmy: string | null;
+  filterUnitDivision: string | null;
+  filterUnitRegiment: string | null;
+  filterUnitBattalion: string | null;
+};
 
 export type NetworkStatusDescriptor = {
   label: 'Активна' | 'Неактивна' | 'Архівна';
@@ -319,6 +328,43 @@ function normalizeTextColumnFilterValue(value: unknown): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+function normalizeUnitFilterValue(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
+}
+
+function normalizeUnitHierarchyFilterValue(value: string | null | undefined): string | null {
+  return value ?? null;
+}
+
+export function buildNetworkUnitFilterFields(params: {
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
+  selectedUnitLabel: string | null;
+}): NetworkUnitFilterFields {
+  if (params.selectedSidebarUnitFilter?.kind === 'group') {
+    return {
+      filterUnit: null,
+      filterUnitArmy: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.army),
+      filterUnitDivision: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.division),
+      filterUnitRegiment: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.regiment),
+      filterUnitBattalion: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.battalion),
+    };
+  }
+
+  const selectedUnitLabel =
+    params.selectedSidebarUnitFilter?.kind === 'leaf'
+      ? params.selectedSidebarUnitFilter.unitName
+      : params.selectedUnitLabel;
+
+  return {
+    filterUnit: normalizeUnitFilterValue(selectedUnitLabel),
+    filterUnitArmy: null,
+    filterUnitDivision: null,
+    filterUnitRegiment: null,
+    filterUnitBattalion: null,
+  };
+}
+
 function normalizeAorColumnFilterValue(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
 
@@ -362,6 +408,7 @@ export function sanitizeNetworkColumnFilters(columnFilters: MRT_ColumnFiltersSta
 
 export function buildNetworksListReq(params: {
   searchText: string;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
   showOnlyInvestigating: boolean;
   status: NetworksFilterState['status'];
@@ -379,10 +426,14 @@ export function buildNetworksListReq(params: {
   const filterName = getNetworkTextColumnFilterValue(params.columnFilters, 'network');
   const filterFreq = getNetworkTextColumnFilterValue(params.columnFilters, 'freqs');
   const filterLocation = getNetworkTextColumnFilterValue(params.columnFilters, 'location');
+  const unitFilterFields = buildNetworkUnitFilterFields({
+    selectedSidebarUnitFilter: params.selectedSidebarUnitFilter,
+    selectedUnitLabel: params.selectedUnitLabel,
+  });
 
   return {
     filterFreq,
-    filterUnit: params.selectedUnitLabel,
+    ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,
     filterLocation,
@@ -400,6 +451,7 @@ export function buildNetworksListReq(params: {
 
 export function buildNetworksReportReq(params: {
   searchText: string;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
   showOnlyInvestigating: boolean;
   status: NetworksFilterState['status'];
@@ -415,6 +467,7 @@ export function buildNetworksReportReq(params: {
 
 export function buildNetworksStatusCountsReq(params: {
   searchText: string;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   selectedUnitLabel: string | null;
   showOnlyInvestigating: boolean;
   columnFilters: MRT_ColumnFiltersState;
@@ -422,9 +475,13 @@ export function buildNetworksStatusCountsReq(params: {
   const filterName = getNetworkTextColumnFilterValue(params.columnFilters, 'network');
   const filterFreq = getNetworkTextColumnFilterValue(params.columnFilters, 'freqs');
   const filterLocation = getNetworkTextColumnFilterValue(params.columnFilters, 'location');
+  const unitFilterFields = buildNetworkUnitFilterFields({
+    selectedSidebarUnitFilter: params.selectedSidebarUnitFilter,
+    selectedUnitLabel: params.selectedUnitLabel,
+  });
   return {
     filterFreq,
-    filterUnit: params.selectedUnitLabel,
+    ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,
     filterLocation,

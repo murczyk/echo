@@ -23,10 +23,12 @@ import {
 import { buildNetworksReportReq } from './helpers';
 import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
 import { redirectToLogin } from '../../auth-redirect';
+import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 type ReportArgs = {
   rows: Array<{ id: number }>;
   filters: Pick<NetworksFilterState, 'status' | 'unitText' | 'showOnlyInvestigating'>;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
   columnFilters: MRT_ColumnFiltersState;
   sorting: MRT_SortingState;
   tableGlobalFilter: string;
@@ -143,6 +145,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
     args.setReportTargetRequest(
       buildNetworksReportReq({
         searchText: args.tableGlobalFilter,
+        selectedSidebarUnitFilter: args.selectedSidebarUnitFilter,
         selectedUnitLabel: args.filters.unitText.trim() === '' ? null : args.filters.unitText.trim(),
         showOnlyInvestigating: args.filters.showOnlyInvestigating,
         status: args.filters.status,

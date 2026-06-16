@@ -47,6 +47,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [statusCounts, setStatusCounts] = useState<{ active: number; inactive: number; archived: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = useState<SelectedSidebarUnitFilter | null>(null);
+  const [bootstrapLoaded, setBootstrapLoaded] = useState(false);
   const [reportsMenuAnchorEl, setReportsMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuNetworkId, setRowMenuNetworkId] = useState<number | null>(null);
@@ -71,6 +72,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const networksLengthRef = useRef(0);
   const latestQuerySnapshotRef = useRef<NetworksQuerySnapshot | null>(null);
   const lastExecutedFullQueryKeyRef = useRef<string | null>(null);
+  const selectedSidebarUnitFilterRef = useRef<SelectedSidebarUnitFilter | null>(selectedSidebarUnitFilter);
   const tableStateContextRef = useRef({
     globalFilter: tableStateContext.globalFilter,
     columnFilters: tableStateContext.columnFilters,
@@ -94,6 +96,10 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  useEffect(() => {
+    selectedSidebarUnitFilterRef.current = selectedSidebarUnitFilter;
+  }, [selectedSidebarUnitFilter]);
 
   useEffect(() => {
     columnFiltersRef.current = columnFilters;
@@ -129,6 +135,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         ...filters,
         searchText: tableStateContext.globalFilter,
       },
+      selectedSidebarUnitFilter,
       fullQueryKey: JSON.stringify({
         globalFilter: tableStateContext.globalFilter,
         columnFilters,
@@ -139,9 +146,10 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
           status: filters.status,
           showOnlyInvestigating: filters.showOnlyInvestigating,
         },
+        selectedSidebarUnitFilter,
       }),
     }),
-    [columnFilters, filters, tableStateContext.globalFilter, tableStateContext.sorting],
+    [columnFilters, filters, selectedSidebarUnitFilter, tableStateContext.globalFilter, tableStateContext.sorting],
   );
   const immediateQueryKey = useMemo(
     () =>
@@ -151,8 +159,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         status: filters.status,
         unitText: filters.unitText,
         showOnlyInvestigating: filters.showOnlyInvestigating,
+        selectedSidebarUnitFilter,
       }),
-    [columnFilters, filters.showOnlyInvestigating, filters.status, filters.unitText, tableStateContext.sorting],
+    [columnFilters, filters.showOnlyInvestigating, filters.status, filters.unitText, selectedSidebarUnitFilter, tableStateContext.sorting],
   );
 
   useEffect(() => {
@@ -173,6 +182,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         loadMoreAbortRef,
         networksLengthRef,
         lastExecutedFullQueryKeyRef,
+        selectedSidebarUnitFilterRef,
         setLoading,
         setRefreshing,
         setLoadingMore,
@@ -186,6 +196,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setNoMoreToLoad,
         setNetworks,
         setActivityByNetworkId,
+        setBootstrapLoaded,
       }),
     [],
   );
@@ -199,6 +210,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
           unitText: filters.unitText,
           showOnlyInvestigating: filters.showOnlyInvestigating,
         },
+        selectedSidebarUnitFilter,
         columnFilters,
         sorting: tableStateContext.sorting,
         tableGlobalFilter: tableStateContext.globalFilter,
@@ -220,6 +232,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       filters.showOnlyInvestigating,
       filters.status,
       filters.unitText,
+      selectedSidebarUnitFilter,
       reportTargetNetworkIds,
       reportTargetRequest,
       rows,
@@ -268,6 +281,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       filters.showOnlyInvestigating,
       filters.status,
       filters.unitText,
+      selectedSidebarUnitFilter,
       loadActions.loadNetworks,
       loadActions.refreshStatusCounts,
       networks,
@@ -281,15 +295,15 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   }, []);
 
   useEffect(() => {
-    if (!bootstrapLoadedRef.current) return;
+    if (!bootstrapLoaded) return;
     const snapshot = latestQuerySnapshotRef.current;
     if (snapshot) {
       void loadActions.loadNetworks(snapshot, { includeLookups: false, append: false });
     }
-  }, [immediateQueryKey, loadActions.loadNetworks]);
+  }, [bootstrapLoaded, immediateQueryKey, loadActions.loadNetworks]);
 
   useEffect(() => {
-    if (!bootstrapLoadedRef.current) return;
+    if (!bootstrapLoaded) return;
 
     const timeoutId = window.setTimeout(() => {
       const snapshot = latestQuerySnapshotRef.current;
@@ -299,7 +313,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loadActions.loadNetworks, tableStateContext.globalFilter]);
+  }, [bootstrapLoaded, loadActions.loadNetworks, tableStateContext.globalFilter]);
 
   const loadMoreNetworks = useCallback(async () => {
     if (loading || refreshing || loadingMore || noMoreToLoad) return;
@@ -317,7 +331,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       setSelectedSidebarUnitFilter(filter);
       setFilters((previous) => ({
         ...previous,
-        unitText: filter.label,
+        unitText: filter.kind === 'leaf' ? filter.unitName : '',
         showOnlyInvestigating: false,
       }));
     },

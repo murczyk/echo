@@ -49,6 +49,16 @@ const tableStateMock = vi.hoisted(() => ({
 
 const downloadBlobMock = vi.hoisted(() => vi.fn());
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 dayjs.extend(utc);
 
 vi.mock('../../components/mui-customized/table/table-state-provider', () => ({
@@ -645,6 +655,36 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.createError).toBe('Невірний формат частоти (наприклад: 146.5000)');
   });
 
+  it('replays a filter change after bootstrap completes', async () => {
+    const firstLoad = deferred<{ list: Network[]; statusCounts: { active: number; inactive: number; archived: number } }>();
+    apiMock.listNetworks.mockImplementationOnce(() => firstLoad.promise);
+    apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    firstLoad.resolve({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+    expect(apiMock.listNetworks).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        showInactive: false,
+        showOnlyDeleted: false,
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('keeps status counts when only the status chip changes', async () => {
     await renderHook();
     await flushEffects();
@@ -730,6 +770,10 @@ describe('useRerNetworksNeoPage', () => {
       req: {
         filterFreq: null,
         filterUnit: null,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
         filterText: null,
         filterName: null,
         filterLocation: null,
@@ -768,6 +812,10 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.listNetworks).toHaveBeenCalledWith({
       filterFreq: null,
       filterUnit: null,
+      filterUnitArmy: null,
+      filterUnitDivision: null,
+      filterUnitRegiment: null,
+      filterUnitBattalion: null,
       filterText: null,
       filterName: null,
       filterLocation: null,
@@ -798,6 +846,10 @@ describe('useRerNetworksNeoPage', () => {
         statusFilter: null,
         showInactive: false,
         showOnlyDeleted: false,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
       }),
       expect.any(Object),
     );

@@ -195,7 +195,7 @@ describe('NetworkEtalonkaReportDialog', () => {
 
   it('keeps technical task ids out of the visible header and shows the long-running hint', () => {
     const originalNow = Date.now;
-    Date.now = () => 30_000 + 1;
+    Date.now = () => 192_000 + 1;
 
     try {
       const view = renderDialog({
@@ -224,6 +224,11 @@ describe('NetworkEtalonkaReportDialog', () => {
       });
 
       expect(document.body.textContent).not.toContain('task 42');
+      expect(document.body.textContent).toContain('#42');
+      expect(document.body.textContent).toContain('3 хв 12 с');
+      expect(document.body.textContent).toContain('Етап');
+      expect(document.body.textContent).toContain('Логи');
+      expect(document.body.textContent).toContain('Файл');
       expect(document.body.textContent).toContain('Формування може тривати кілька хвилин');
 
       act(() => {

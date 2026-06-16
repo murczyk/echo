@@ -2673,6 +2673,10 @@ export type UpdFreqNetwork = {
 export type ListNetworksReq = {
   filterFreq: string | null;
   filterUnit: string | null;
+  filterUnitArmy: string | null;
+  filterUnitDivision: string | null;
+  filterUnitRegiment: string | null;
+  filterUnitBattalion: string | null;
   filterText: string | null;
   filterName: string | null;
   filterLocation: string | null;

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Network } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
+import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import {
   buildActivityBars,
   buildNetworkRowView,
@@ -94,6 +95,7 @@ describe('rer-networks-neo AOR filters', () => {
     expect(
       buildNetworksListReq({
         searchText: '  alpha  ',
+        selectedSidebarUnitFilter: null,
         selectedUnitLabel: '  3 АК  ',
         showOnlyInvestigating: true,
         status: 'active',
@@ -109,7 +111,11 @@ describe('rer-networks-neo AOR filters', () => {
       }),
     ).toEqual({
       filterFreq: '128.5',
-      filterUnit: '  3 АК  ',
+      filterUnit: '3 АК',
+      filterUnitArmy: null,
+      filterUnitDivision: null,
+      filterUnitRegiment: null,
+      filterUnitBattalion: null,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -125,6 +131,106 @@ describe('rer-networks-neo AOR filters', () => {
     });
   });
 
+  it('maps the sidebar leaf filter to a unit-name-only request', () => {
+    const selectedSidebarUnitFilter: SelectedSidebarUnitFilter = {
+      kind: 'leaf',
+      label: '1 АК',
+      unitName: '1 АК',
+    };
+
+    expect(
+      buildNetworksListReq({
+        searchText: '',
+        selectedSidebarUnitFilter,
+        selectedUnitLabel: 'ignored',
+        showOnlyInvestigating: false,
+        status: 'all',
+        columnFilters: [],
+        sorting: [],
+        limit: null,
+        offset: null,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        filterUnit: '1 АК',
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
+      }),
+    );
+  });
+
+  it('maps the sidebar group filter to hierarchy-only request fields', () => {
+    const selectedSidebarUnitFilter: SelectedSidebarUnitFilter = {
+      kind: 'group',
+      label: '1 АК',
+      hierarchy: {
+        army: '1',
+        division: '2',
+        regiment: '3',
+        battalion: '4',
+      },
+    };
+
+    expect(
+      buildNetworksListReq({
+        searchText: '',
+        selectedSidebarUnitFilter,
+        selectedUnitLabel: 'ignored',
+        showOnlyInvestigating: false,
+        status: 'all',
+        columnFilters: [],
+        sorting: [],
+        limit: null,
+        offset: null,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        filterUnit: null,
+        filterUnitArmy: '1',
+        filterUnitDivision: '2',
+        filterUnitRegiment: '3',
+        filterUnitBattalion: '4',
+      }),
+    );
+  });
+
+  it('preserves empty group hierarchy values', () => {
+    const selectedSidebarUnitFilter: SelectedSidebarUnitFilter = {
+      kind: 'group',
+      label: '1 АК',
+      hierarchy: {
+        army: '',
+        division: null,
+        regiment: undefined,
+        battalion: '4',
+      },
+    };
+
+    expect(
+      buildNetworksListReq({
+        searchText: '',
+        selectedSidebarUnitFilter,
+        selectedUnitLabel: 'ignored',
+        showOnlyInvestigating: false,
+        status: 'all',
+        columnFilters: [],
+        sorting: [],
+        limit: null,
+        offset: null,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        filterUnit: null,
+        filterUnitArmy: '',
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: '4',
+      }),
+    );
+  });
+
   it('maps the AOR, frequency, and location sorts to backend variants', () => {
     expect(buildNetworksSortBy([{ id: 'aors', desc: false }])).toEqual(['AorAsc']);
     expect(buildNetworksSortBy([{ id: 'aors', desc: true }])).toEqual(['AorDesc']);
@@ -138,6 +244,7 @@ describe('rer-networks-neo AOR filters', () => {
     expect(
       buildNetworksListReq({
         searchText: '',
+        selectedSidebarUnitFilter: null,
         selectedUnitLabel: null,
         showOnlyInvestigating: false,
         status: 'all',
@@ -153,6 +260,10 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: null,
+      filterUnitArmy: null,
+      filterUnitDivision: null,
+      filterUnitRegiment: null,
+      filterUnitBattalion: null,
       filterText: null,
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -172,6 +283,7 @@ describe('rer-networks-neo AOR filters', () => {
     expect(
       buildNetworksReportReq({
         searchText: 'alpha',
+        selectedSidebarUnitFilter: null,
         selectedUnitLabel: '3 АК',
         showOnlyInvestigating: false,
         status: 'active',
@@ -185,6 +297,10 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
+      filterUnitArmy: null,
+      filterUnitDivision: null,
+      filterUnitRegiment: null,
+      filterUnitBattalion: null,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',
@@ -204,6 +320,7 @@ describe('rer-networks-neo AOR filters', () => {
     expect(
       buildNetworksStatusCountsReq({
         searchText: 'alpha',
+        selectedSidebarUnitFilter: null,
         selectedUnitLabel: '3 АК',
         showOnlyInvestigating: true,
         columnFilters: [
@@ -218,6 +335,10 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
+      filterUnitArmy: null,
+      filterUnitDivision: null,
+      filterUnitRegiment: null,
+      filterUnitBattalion: null,
       filterText: 'alpha',
       filterName: 'Alpha',
       filterLocation: 'Kyiv',

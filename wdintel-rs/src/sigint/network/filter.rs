@@ -281,6 +281,52 @@ fn network_unit_filter(
     query.filter(Expr::exists(unit_exists))
 }
 
+fn network_unit_hierarchy_filter(
+    query: Select<sigint_network::Entity>,
+    req: &ListNetworksReq,
+) -> Select<sigint_network::Entity> {
+    let has_unit_hierarchy_filter = req.filter_unit_army.is_some()
+        || req.filter_unit_division.is_some()
+        || req.filter_unit_regiment.is_some()
+        || req.filter_unit_battalion.is_some();
+    if !has_unit_hierarchy_filter {
+        return query;
+    }
+
+    let mut unit_exists = sigint_network_unit::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            sigint_network_unit::Column::NetworkId
+                .into_simple_expr()
+                .eq(sigint_network::Column::Id.into_simple_expr()),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+            Alias::new("sigint_unit"),
+        );
+
+    if let Some(filter_unit_army) = req.filter_unit_army.as_deref() {
+        unit_exists =
+            unit_exists.filter(sigint_unit::Column::Army.eq(filter_unit_army));
+    }
+    if let Some(filter_unit_division) = req.filter_unit_division.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Division.eq(filter_unit_division));
+    }
+    if let Some(filter_unit_regiment) = req.filter_unit_regiment.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Regiment.eq(filter_unit_regiment));
+    }
+    if let Some(filter_unit_battalion) = req.filter_unit_battalion.as_deref() {
+        unit_exists = unit_exists
+            .filter(sigint_unit::Column::Battalion.eq(filter_unit_battalion));
+    }
+
+    query.filter(Expr::exists(unit_exists.into_query()))
+}
+
 fn network_further_investigation_filter(
     query: Select<sigint_network::Entity>,
     show_only_further_inverstigation: bool,
@@ -423,6 +469,7 @@ pub(crate) fn apply_network_list_filters(
     query = network_status_filter(query, req, include_status_filter);
     query = network_ids_filter(query, req.ids.as_ref());
     query = network_unit_filter(query, req.filter_unit.as_deref());
+    query = network_unit_hierarchy_filter(query, req);
     query = network_further_investigation_filter(
         query,
         req.show_only_further_inverstigation.unwrap_or(false),

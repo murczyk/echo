@@ -22,6 +22,7 @@ import {
 } from './use-rer-networks-neo-page.shared';
 import type { ActivityByNetworkId, NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
 import { redirectToLogin } from '../../auth-redirect';
+import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 type LoadArgs = {
   tableStateContext: {
@@ -30,6 +31,7 @@ type LoadArgs = {
     sorting: MRT_SortingState;
   };
   filtersRef: MutableRefObject<NetworksFilterState>;
+  selectedSidebarUnitFilterRef: MutableRefObject<SelectedSidebarUnitFilter | null>;
   tableStateContextRef: MutableRefObject<{
     globalFilter: string;
     columnFilters: MRT_ColumnFiltersState;
@@ -56,6 +58,7 @@ type LoadArgs = {
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setActivityByNetworkId: Dispatch<SetStateAction<ActivityByNetworkId>>;
+  setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
 
 export function createRerNetworksNeoLoadActions(args: LoadArgs) {
@@ -74,6 +77,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
     }
     const req = buildNetworksListReq({
       searchText: snapshot.globalFilter,
+      selectedSidebarUnitFilter: snapshot.selectedSidebarUnitFilter,
       selectedUnitLabel: snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
       showOnlyInvestigating: snapshot.filters.showOnlyInvestigating,
       status: snapshot.filters.status,
@@ -120,6 +124,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         args.setPosts(postsList);
         args.setModulations(modulationList);
         args.bootstrapLoadedRef.current = true;
+        args.setBootstrapLoaded(true);
       }
       args.setStatusCounts(statusCounts);
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
@@ -162,6 +167,8 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
     try {
       const countsReq = buildNetworksStatusCountsReq({
         searchText: args.latestQuerySnapshotRef.current?.globalFilter ?? args.tableStateContextRef.current.globalFilter,
+        selectedSidebarUnitFilter:
+          args.latestQuerySnapshotRef.current?.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,
         selectedUnitLabel:
           (args.latestQuerySnapshotRef.current?.filters.unitText ?? args.filtersRef.current.unitText).trim() === ''
             ? null
@@ -203,6 +210,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         globalFilter: args.tableStateContextRef.current.globalFilter,
         columnFilters: args.columnFiltersRef.current,
         sorting: args.tableStateContextRef.current.sorting,
+        selectedSidebarUnitFilter: args.selectedSidebarUnitFilterRef.current,
         filters: {
           ...args.filtersRef.current,
           searchText: args.tableStateContextRef.current.globalFilter,
@@ -211,6 +219,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       };
       const req = buildNetworksListReq({
         searchText: snapshot.globalFilter,
+        selectedSidebarUnitFilter: snapshot.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,
         selectedUnitLabel: snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
         showOnlyInvestigating: snapshot.filters.showOnlyInvestigating,
         status: snapshot.filters.status,

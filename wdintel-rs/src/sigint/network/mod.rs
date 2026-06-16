@@ -131,6 +131,10 @@ fn build_networks_query(
             || req.filter_location.is_some()
             || req.status_filter.is_some()
             || req.filter_unit.is_some()
+            || req.filter_unit_army.is_some()
+            || req.filter_unit_division.is_some()
+            || req.filter_unit_regiment.is_some()
+            || req.filter_unit_battalion.is_some()
             || req
                 .aor_ids
                 .as_ref()
@@ -3431,6 +3435,10 @@ mod tests {
         ListNetworksReq {
             filter_freq: None,
             filter_unit: None,
+            filter_unit_army: None,
+            filter_unit_division: None,
+            filter_unit_regiment: None,
+            filter_unit_battalion: None,
             filter_text: None,
             filter_name: None,
             filter_location: None,
