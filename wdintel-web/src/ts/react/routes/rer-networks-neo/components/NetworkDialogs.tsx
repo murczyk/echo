@@ -135,7 +135,7 @@ export function NetworkDialogs({ page }: Props) {
         modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
         onClose={page.closeEditDialog}
         onChange={page.setEditDialog}
-        onSave={() => void page.saveNetworkEdit()}
+        onSave={(form) => void page.saveNetworkEdit(form)}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 

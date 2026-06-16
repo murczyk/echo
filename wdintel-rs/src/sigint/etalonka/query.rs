@@ -2125,11 +2125,8 @@ fn build_etalonka_networks_query(
         .column(sigint_network::Column::ActiveTo);
 
     if let Some(deleted_only) = deleted_only {
-        // Batch-id reports intentionally lock deleted scope to the explicit ID set
-        // and skip the generic list filters. The caller controls the report slice.
-        networks =
-            networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
-    } else {
+        networks = networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
+    } else if id_filter.is_none() {
         networks = apply_network_list_filters(networks, &report_req, true);
     }
 
@@ -2240,12 +2237,7 @@ pub async fn load_networks_by_id(
         offset: None,
         sort_by: req.sort_by.clone(),
     };
-    let networks = build_etalonka_networks_query(
-        &sort_req,
-        JoinType::LeftJoin,
-        Some(&req.network_ids),
-        None,
-    );
+    let networks = build_etalonka_networks_query(&sort_req, JoinType::LeftJoin, Some(&req.network_ids), None);
     let networks = networks
         .clone()
         .into_model::<NetworkEtalonkaResult>()
