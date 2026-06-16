@@ -164,6 +164,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
   };
 
   const refreshStatusCounts = async () => {
+    const seq = args.requestSeqRef.current;
     try {
       const countsReq = buildNetworksStatusCountsReq({
         searchText: args.latestQuerySnapshotRef.current?.globalFilter ?? args.tableStateContextRef.current.globalFilter,
@@ -181,6 +182,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         limit: 0,
         offset: 0,
       });
+      if (args.requestSeqRef.current !== seq) return;
       args.setStatusCounts(statusCounts);
     } catch (error) {
       if (isUnauthorizedError(error)) {

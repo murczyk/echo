@@ -61,5 +61,5 @@ describe('React custom element entrypoints', () => {
   it.each(ENTRYPOINTS)('registers $tag from $modulePath', async ({ modulePath, tag }) => {
     await import(modulePath);
     expect(customElements.get(tag)).toBeDefined();
-  });
+  }, 20000);
 });

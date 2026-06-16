@@ -143,7 +143,7 @@ impl EchoApiClient {
     }
 
     fn frequency_networks(&self, freq: &str) -> Result<Value> {
-        self.post_json(
+        let raw = self.post_json(
             "/api/sigint/network-list",
             &json!({
                 "filter_freq": freq,
@@ -157,7 +157,15 @@ impl EchoApiClient {
                 "offset": 0,
                 "sort_by": ["NameAsc"],
             }),
-        )
+        )?;
+
+        // New server shape returns { list, status_counts }. Unwrap `list` for
+        // backward-compatible downstream usage inside the agent.
+        if let Some(list) = raw.get("list") {
+            Ok(list.clone())
+        } else {
+            Ok(raw)
+        }
     }
 
     fn fetch_same_frequency_messages(
