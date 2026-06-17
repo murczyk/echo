@@ -35,6 +35,7 @@ import type {
   EncryptionKeyData,
 } from '../../../../Bindings';
 import { postBytes, postJson } from './client';
+import { downloadReportHistory } from './report-history';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 type RequestOptions = {
@@ -258,11 +259,15 @@ export async function launchNetworkEtalonkaBatchReportTask(req: EtalonkaNetworkB
 }
 
 export async function downloadNetworkEtalonkaReportTaskResult(taskId: number): Promise<Blob> {
-  return postBytes('/api/sigint/etalonka/report-networks-task-download', transformCamelToSnake({ bgtaskId: taskId }));
+  return downloadReportHistory(taskId);
 }
 
 export async function downloadNetworkGoiReport(): Promise<Blob> {
   return postBytes('/api/sigint/network/report-networks-goi');
+}
+
+export async function launchNetworkGoiReportTask(): Promise<number> {
+  return postJson<number>('/api/sigint/network/report-networks-goi-task-launch');
 }
 
 export async function updateNetworkPosts(req: UpdateNetworkPostsReq): Promise<Network> {

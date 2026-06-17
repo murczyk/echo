@@ -30,6 +30,8 @@ import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
 
+const REPORT_HISTORY_URL = "/settings-neo?section=myReports";
+
 type Props = {
   report: NetworkEtalonkaReportState;
   description: string;
@@ -184,6 +186,9 @@ export function NetworkEtalonkaReportDialog({
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {description}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування -&gt; Мої Звіти</Box>
         </Typography>
       </DialogTitle>
 

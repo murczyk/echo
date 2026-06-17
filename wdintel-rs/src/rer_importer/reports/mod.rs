@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::config::CLEANUP_REPORT_DAYS;
-use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -115,9 +114,10 @@ struct ReportTaskResultMeta {
 }
 
 #[derive(Debug, Clone)]
-struct ReportTaskGenerated {
-    filename: String,
-    content_type: String,
+pub(crate) struct ReportTaskGenerated {
+    pub filename: String,
+    pub content_type: String,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,10 +170,11 @@ async fn ensure_report_launch_permissions(
     Ok(())
 }
 
-async fn report_docx_generate_for_task(
+pub(crate) async fn report_docx_generate_file(
     user_login: String,
     env: &Env,
     mut req: types::ReportPreviewReq,
+    save_legacy_log: bool,
 ) -> Result<ReportTaskGenerated, AppError> {
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     req.req.nolimit = Some(true);
@@ -296,19 +297,22 @@ async fn report_docx_generate_for_task(
         return Err(format!("Unknown report kind {}", req.kind).into());
     }
 
-    let request_json = serde_json::to_string(&req).context(h!())?;
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &request_json,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
+    if save_legacy_log {
+        let request_json = serde_json::to_string(&req).context(h!())?;
+        save_report_log(
+            &env.dbx,
+            format!("reports_log/{filename}"),
+            &request_json,
+            &user_login,
+        )
+        .await
+        .context(h!())?;
+    }
 
     Ok(ReportTaskGenerated {
         filename,
         content_type,
+        path: outpath,
     })
 }
 
@@ -323,69 +327,23 @@ pub async fn report_docx_task_launch(
         .c(h!())?;
     let user_login = user.id().c(h!())?;
     let req_inner = req.into_inner();
-    ensure_report_launch_permissions(&env.dbx, &user_login, &req_inner.kind)
+    let report_kind = req_inner.kind.clone();
+    ensure_report_launch_permissions(&env.dbx, &user_login, &report_kind)
         .await
         .c(h!())?;
-    let loglines: Vec<String> = vec![];
-    let bgtask = bgtask::ActiveModel {
-        id: NotSet,
-        progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).c(h!())?),
-        running: Set(true),
-        finished_with_error: Set(None),
-    }
-    .insert(&env.dbx)
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_login,
+        &report_kind,
+        crate::report_history::ReportHistoryRequest::AnalysisReport {
+            payload: Box::new(req_inner),
+        },
+        None,
+        None,
+    )
     .await
     .c(h!())?;
-    let bgtask_id = bgtask.id;
-    let env_inner = env.get_ref().clone();
-    let task_owner_login = user_login.clone();
-    actix_web::rt::spawn(async move {
-        let dbx = env_inner.dbx.clone();
-        let res = async {
-            bgtask_log(Some(bgtask_id), "[1/4] Формування звіту", &dbx)
-                .await
-                .c(h!())?;
-            let generated = report_docx_generate_for_task(
-                user_login.clone(),
-                &env_inner,
-                req_inner,
-            )
-            .await
-            .c(h!())?;
-            bgtask_log(Some(bgtask_id), "[2/4] Звіт сформовано", &dbx)
-                .await
-                .c(h!())?;
-            bgtask_log(
-                Some(bgtask_id),
-                "[3/4] Збереження сформованого звіту",
-                &dbx,
-            )
-            .await
-            .c(h!())?;
-            let result_meta = ReportTaskResultMeta {
-                filename: generated.filename,
-                content_type: generated.content_type,
-                user_login: task_owner_login.clone(),
-            };
-            bgtask_res::ActiveModel {
-                id: Set(bgtask_id),
-                res_json: Set(Some(serde_json::to_value(result_meta).c(h!())?)),
-                res_bytes: Set(None),
-                res_s3_id: Set(None),
-            }
-            .insert(&dbx)
-            .await
-            .c(h!())?;
-            bgtask_log(Some(bgtask_id), "[4/4] Готово до завантаження", &dbx)
-                .await
-                .c(h!())?;
-            Ok::<(), AppError>(())
-        }
-        .await;
-        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
-    });
-    Ok(Json(bgtask_id))
+    Ok(Json(report_history.id))
 }
 
 #[post("/api/rer/report-docx-task-download")]
@@ -505,16 +463,8 @@ pub async fn report_docx(
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
-    let file_extension = match req.kind.as_str() {
-        "interception" | "pelengs" | "senders" | "posts" => "xlsx",
-        "reo" => match req.report_type {
-            Some(types::ReportType::Reo(_, types::ReoReportFileType::Xlsx)) => {
-                "xlsx"
-            }
-            _ => "docx",
-        },
-        _ => "docx",
-    };
+    let file_extension = report_file_extension(&req);
+    let content_type = report_content_type(file_extension).to_string();
     let filename = format!(
         "report_{}.{}",
         Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
@@ -651,6 +601,19 @@ pub async fn report_docx(
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }
+    let bytes = tokio::fs::read(&outpath).await.c(h!())?;
+    crate::report_history::record_completed_report_nofail(
+        &env,
+        &user_login,
+        &req.kind,
+        crate::report_history::ReportHistoryRequest::AnalysisReport {
+            payload: Box::new(req.clone()),
+        },
+        filename.clone(),
+        content_type,
+        &bytes,
+    )
+    .await;
     let file = actix_files::NamedFile::open(&outpath)?;
     save_report_log(
         &env.dbx,

@@ -6,11 +6,12 @@ import { downloadBlob } from '../../utils/download-blob';
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   downloadNetworkEtalonkaReportTaskResult,
-  downloadNetworkGoiReport,
+  launchNetworkGoiReportTask,
   launchNetworkEtalonkaBatchReportTask,
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
-import { fetchBgtaskStatusAndLogs, getBgtaskProgress } from '../../services/api/bgtask';
+import { getBgtaskProgress } from '../../services/api/bgtask';
+import { downloadReportHistory, fetchReportHistoryTaskStatus } from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
 import {
@@ -70,7 +71,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
       let logs: string[] = ['[1/5] Підготовка даних'];
 
       while (running) {
-        const rsp = await fetchBgtaskStatusAndLogs(taskId, serverLogSkip);
+        const rsp = await fetchReportHistoryTaskStatus(taskId, serverLogSkip);
         if (rsp.loglines.length > 0) {
           logs = logs.concat(rsp.loglines);
           serverLogSkip += rsp.loglines.length;
@@ -226,7 +227,20 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           buildEtalonkaNetworksReportFilename(createDefaultNetworkEtalonkaReportState()),
         );
       } else {
-        const blob = await downloadNetworkGoiReport();
+        const reportHistoryId = await launchNetworkGoiReportTask();
+        let running = true;
+        while (running) {
+          const rsp = await fetchReportHistoryTaskStatus(reportHistoryId, 0);
+          if (!rsp.running) {
+            if (rsp.finishedWithError) {
+              throw new Error(rsp.finishedWithError);
+            }
+            running = false;
+            break;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        const blob = await downloadReportHistory(reportHistoryId);
         downloadBlob(blob, 'goi_report.xlsx');
       }
       args.setStatus({ kind: 'success', text: kind === 'etalonka' ? 'Еталонний опис завантажено.' : 'Звіт ГОІ завантажено.' });

@@ -3,12 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import {
-  downloadAnalysisGeojson,
-  downloadAnalysisKmz,
-  downloadAnalysisSummaryTableXlsx,
   downloadAnalysisReportTaskResult,
   fetchAnalysisReportTaskStatus,
+  launchAnalysisGeojsonTask,
+  launchAnalysisKmzTask,
   launchAnalysisReportTask,
+  launchAnalysisSummaryTableTask,
 } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download-blob';
 import {
@@ -193,12 +193,33 @@ export function useAnalysisReport({
         setReportDownloadInFlight(true);
         onError('');
         try {
-          const blob =
+          const taskId =
             state.template === 'summary_table'
-              ? await downloadAnalysisSummaryTableXlsx(runSnapshot.analysisReq)
+              ? await launchAnalysisSummaryTableTask(runSnapshot.analysisReq)
               : state.template === 'kmz'
-                ? await downloadAnalysisKmz(runSnapshot.analysisReq)
-                : await downloadAnalysisGeojson(runSnapshot.analysisReq);
+                ? await launchAnalysisKmzTask(runSnapshot.analysisReq)
+                : await launchAnalysisGeojsonTask(runSnapshot.analysisReq);
+          let running = true;
+          let skip = 0;
+          while (running) {
+            if (shouldStopRun()) {
+              return;
+            }
+            const rsp = await fetchAnalysisReportTaskStatus(taskId, skip);
+            skip += rsp.loglines.length;
+            if (!rsp.running) {
+              if (rsp.finishedWithError) {
+                throw new ReportTaskError(
+                  rsp.finishedWithError,
+                  normalizeReportTaskErrorCode(rsp.finishedWithErrorCode),
+                );
+              }
+              running = false;
+              break;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          }
+          const blob = await downloadAnalysisReportTaskResult(taskId);
           if (shouldStopRun()) {
             return;
           }

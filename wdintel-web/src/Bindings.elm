@@ -873,6 +873,46 @@ bgtaskStatusAndLogsQueryEncoder struct =
         ]
 
 
+type alias ReportHistoryRow =
+    { id : Int
+    , reportKind : String
+    , createdAt : String
+    , status : String
+    , completedAt : Maybe (String)
+    , hasFile : Bool
+    , fileName : Maybe (String)
+    , contentType : Maybe (String)
+    , bgtaskId : Maybe (Int)
+    }
+
+
+reportHistoryRowEncoder : ReportHistoryRow -> Json.Encode.Value
+reportHistoryRowEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "report_kind", (Json.Encode.string) struct.reportKind )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
+        , ( "has_file", (Json.Encode.bool) struct.hasFile )
+        , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
+        , ( "content_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentType )
+        , ( "bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.bgtaskId )
+        ]
+
+
+type alias ReportHistoryIdReq =
+    { id : Int
+    }
+
+
+reportHistoryIdReqEncoder : ReportHistoryIdReq -> Json.Encode.Value
+reportHistoryIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
 type alias DownloadLayerResultReq =
     { bgtaskId : Int
     }

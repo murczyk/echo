@@ -44,6 +44,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::delta::BgtaskErrorCode,
             crate::delta::BgtaskStatusAndLogsRsp,
             crate::delta::BgtaskStatusAndLogsQuery,
+            crate::report_history::ReportHistoryRow,
+            crate::report_history::ReportHistoryIdReq,
             crate::delta::DownloadLayerResultReq,
             crate::delta::RadiosDownloadResultReq,
             crate::alpine::AlpineDownloadResultReq,

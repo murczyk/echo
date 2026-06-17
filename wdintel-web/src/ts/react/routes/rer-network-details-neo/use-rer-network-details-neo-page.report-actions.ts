@@ -5,7 +5,8 @@ import {
   downloadNetworkEtalonkaReportTaskResult,
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
-import { fetchBgtaskStatusAndLogs, getBgtaskProgress } from '../../services/api/bgtask';
+import { getBgtaskProgress } from '../../services/api/bgtask';
+import { fetchReportHistoryTaskStatus } from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
@@ -62,7 +63,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
         let logs: string[] = ['[1/5] Підготовка даних'];
 
         while (running) {
-          const rsp = await fetchBgtaskStatusAndLogs(taskId, serverLogSkip);
+          const rsp = await fetchReportHistoryTaskStatus(taskId, serverLogSkip);
           if (rsp.loglines.length > 0) {
             logs = logs.concat(rsp.loglines);
             serverLogSkip += rsp.loglines.length;

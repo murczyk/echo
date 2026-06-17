@@ -312,6 +312,22 @@ export type BgtaskStatusAndLogsQuery = {
   skip: number;
 };
 
+export type ReportHistoryRow = {
+  id: number;
+  reportKind: string;
+  createdAt: string;
+  status: string;
+  completedAt: string | null;
+  hasFile: boolean;
+  fileName: string | null;
+  contentType: string | null;
+  bgtaskId: number | null;
+};
+
+export type ReportHistoryIdReq = {
+  id: number;
+};
+
 export type DownloadLayerResultReq = {
   bgtaskId: number;
 };
