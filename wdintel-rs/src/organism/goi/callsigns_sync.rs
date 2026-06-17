@@ -189,6 +189,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         "[goi-sync] Rebuilt GOI knowledge workbook for {integration_label}: {} bytes",
         knowledge_xlsx.len()
     );
+    validate_knowledge_xlsx_bytes(&knowledge_xlsx).c(h!())?;
     info!(
         "[goi-sync] Uploading GOI knowledge workbook for {integration_label} to {}",
         remote_paths.knowledge_xlsx
@@ -1085,6 +1086,22 @@ impl XlsxArchive {
     }
 }
 
+fn validate_knowledge_xlsx_bytes(file_data: &[u8]) -> Result<(), AppError> {
+    validate_zip_archive_bytes(file_data).c(h!())?;
+    KnowledgeWorkbookData::from_xlsx_bytes(file_data).c(h!())?;
+    Ok(())
+}
+
+fn validate_zip_archive_bytes(file_data: &[u8]) -> Result<(), AppError> {
+    let mut archive =
+        ZipArchive::new(Cursor::new(file_data.to_vec())).c(h!())?;
+    for idx in 0..archive.len() {
+        let mut file = archive.by_index(idx).c(h!())?;
+        std::io::copy(&mut file, &mut std::io::sink()).c(h!())?;
+    }
+    Ok(())
+}
+
 fn parse_workbook_rel_targets(
     rels_xml: &str,
 ) -> Result<BTreeMap<String, String>, AppError> {
@@ -1477,6 +1494,7 @@ impl From<&Data> for WorkbookCellValue {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::io::Write as _;
 
     fn sample_callsign(
         id: i64,
@@ -1632,6 +1650,23 @@ mod tests {
             effective_live_callsign_frequency(&callsign, &network_freqs);
 
         assert_eq!(frequency, Some("111.111".to_string()));
+    }
+
+    #[test]
+    fn validate_zip_archive_bytes_rejects_local_header_size_mismatch() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored);
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .expect("start_file");
+        writer.write_all(b"abc").expect("write_all");
+        let mut data = writer.finish().expect("finish").into_inner();
+        assert!(validate_zip_archive_bytes(&data).is_ok());
+
+        data[18..22].copy_from_slice(&4_u32.to_le_bytes());
+
+        assert!(validate_zip_archive_bytes(&data).is_err());
     }
 
     #[test]
