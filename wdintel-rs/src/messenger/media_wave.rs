@@ -1,10 +1,13 @@
+use std::path::{Path, PathBuf};
+
+use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::media::{
     ensure_media_access, fetch_media_bytes, is_audio_media,
 };
-use crate::types::{Env, ShortContext, warn};
+use crate::types::{warn, Env, ShortContext};
 use actix_web::http::header;
 use actix_web::{get, HttpResponse};
 use milgeo_audio_wave::{
@@ -55,6 +58,18 @@ fn audio_temp_suffix(media: &signal_message_media::Model) -> &'static str {
     ".mp3"
 }
 
+fn wave_png_path(media_id: Uuid) -> PathBuf {
+    PathBuf::from(format!(
+        "{MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR}/wave-{media_id}.png"
+    ))
+}
+
+fn spectrogram_png_path(media_id: Uuid) -> PathBuf {
+    PathBuf::from(format!(
+        "{MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR}/spectrogram-{media_id}.png"
+    ))
+}
+
 fn png_http_response(bytes: Vec<u8>) -> HttpResponse {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, PNG_CONTENT_TYPE))
@@ -62,7 +77,11 @@ fn png_http_response(bytes: Vec<u8>) -> HttpResponse {
         .body(bytes)
 }
 
-fn png_gen_or_err(label: &str, media_id: Uuid, png: PngGenResult) -> Result<HttpResponse, AppError> {
+fn png_gen_or_err(
+    label: &str,
+    media_id: Uuid,
+    png: PngGenResult,
+) -> Result<HttpResponse, AppError> {
     if png.used_fallback {
         warn!(
             "{label} generation failed for media {media_id}; ensure ffmpeg is installed and on PATH"
@@ -76,11 +95,19 @@ fn png_gen_or_err(label: &str, media_id: Uuid, png: PngGenResult) -> Result<Http
     Ok(png_http_response(png.bytes))
 }
 
-async fn load_authorized_audio_media(
+async fn read_cached_png(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
+    if !tokio::fs::try_exists(path).await.c(h!())? {
+        return Ok(None);
+    }
+    let bytes = tokio::fs::read(path).await.c(h!())?;
+    Ok(Some(bytes))
+}
+
+async fn load_authorized_audio_media_meta(
     env: &Env,
     login: &str,
     media_id: Uuid,
-) -> Result<(signal_message_media::Model, Vec<u8>), AppError> {
+) -> Result<signal_message_media::Model, AppError> {
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)
         .await
@@ -90,8 +117,7 @@ async fn load_authorized_audio_media(
         return Err(AppError::NotFound);
     }
     ensure_media_access(&env.dbx, login, media.signal_message_id).await?;
-    let data = fetch_media_bytes(env, &media).await?;
-    Ok((media, data))
+    Ok(media)
 }
 
 async fn write_audio_temp_file(
@@ -109,14 +135,34 @@ async fn write_audio_temp_file(
     Ok(temp_file)
 }
 
-fn png_output_temp_file(prefix: &str) -> Result<tempfile::NamedTempFile, AppError> {
-    let file = tempfile::Builder::new()
-        .prefix(prefix)
-        .suffix(".png")
-        .rand_bytes(5)
-        .tempfile()
-        .c(h!())?;
-    Ok(file)
+enum AudioPngKind {
+    Wave,
+    Spectrogram,
+}
+
+async fn serve_cached_or_generate_png(
+    env: &Env,
+    login: &str,
+    media_id: Uuid,
+    output_path: &Path,
+    kind: AudioPngKind,
+) -> Result<HttpResponse, AppError> {
+    let label = match kind {
+        AudioPngKind::Wave => "waveform",
+        AudioPngKind::Spectrogram => "spectrogram",
+    };
+    let media = load_authorized_audio_media_meta(env, login, media_id).await?;
+    if let Some(bytes) = read_cached_png(output_path).await? {
+        return Ok(png_http_response(bytes));
+    }
+    let data = fetch_media_bytes(env, &media).await?;
+    let audio_file = write_audio_temp_file(&media, &data).await?;
+    let req = PngGenRequest::new(audio_file.path(), output_path);
+    let png = match kind {
+        AudioPngKind::Wave => generate_wave_png(&req).await,
+        AudioPngKind::Spectrogram => generate_spectrogram_png(&req).await,
+    };
+    png_gen_or_err(label, media_id, png)
 }
 
 #[get("/api/messenger/media/{media_id}/wave")]
@@ -130,13 +176,14 @@ pub async fn messenger_media_wave(
         .await
         .c(h!())?;
     let media_id = path.0;
-    let (media, data) =
-        load_authorized_audio_media(env.as_ref(), &login, media_id).await?;
-    let audio_file = write_audio_temp_file(&media, &data).await?;
-    let output_file = png_output_temp_file("echo-inbox-wave-")?;
-    let req = PngGenRequest::new(audio_file.path(), output_file.path());
-    let png = generate_wave_png(&req).await;
-    png_gen_or_err("waveform", media_id, png)
+    serve_cached_or_generate_png(
+        env.as_ref(),
+        &login,
+        media_id,
+        &wave_png_path(media_id),
+        AudioPngKind::Wave,
+    )
+    .await
 }
 
 #[get("/api/messenger/media/{media_id}/spectrogram")]
@@ -150,20 +197,23 @@ pub async fn messenger_media_spectrogram(
         .await
         .c(h!())?;
     let media_id = path.0;
-    let (media, data) =
-        load_authorized_audio_media(env.as_ref(), &login, media_id).await?;
-    let audio_file = write_audio_temp_file(&media, &data).await?;
-    let output_file = png_output_temp_file("echo-inbox-spectrogram-")?;
-    let req = PngGenRequest::new(audio_file.path(), output_file.path());
-    let png = generate_spectrogram_png(&req).await;
-    png_gen_or_err("spectrogram", media_id, png)
+    serve_cached_or_generate_png(
+        env.as_ref(),
+        &login,
+        media_id,
+        &spectrogram_png_path(media_id),
+        AudioPngKind::Spectrogram,
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::audio_temp_suffix;
+    use super::{audio_temp_suffix, spectrogram_png_path, wave_png_path};
+    use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
     use crate::entities::signal_message_media;
     use sea_orm::prelude::DateTimeUtc;
+    use std::path::PathBuf;
 
     fn media(
         content_type: &str,
@@ -191,6 +241,32 @@ mod tests {
         assert_eq!(
             audio_temp_suffix(&media("audio/ogg", Some("ogg"), None)),
             ".ogg"
+        );
+    }
+
+    #[test]
+    fn wave_png_path_uses_tmp_dir_and_media_id() {
+        let media_id =
+            uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap();
+        assert_eq!(
+            wave_png_path(media_id),
+            PathBuf::from(format!(
+                "{MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR}/wave-{media_id}.png"
+            ))
+        );
+    }
+
+    #[test]
+    fn spectrogram_png_path_uses_tmp_dir_and_media_id() {
+        let media_id =
+            uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap();
+        assert_eq!(
+            spectrogram_png_path(media_id),
+            PathBuf::from(format!(
+                "{MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR}/spectrogram-{media_id}.png"
+            ))
         );
     }
 }

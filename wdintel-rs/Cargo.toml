@@ -118,7 +118,8 @@ git = "ssh://git@github.com/echoua/milgeo-rs.git"
 rev = "0d3f161016ed67ceaf64e92f53db9966855f2c84"
 
 [dependencies.milgeo-audio-wave]
-path = "../../milgeo-rs/audio-wave"
+git = "ssh://git@github.com/echoua/milgeo-rs.git"
+rev = "7b0c5bc6c98c118871713f88daaf4ef787ec2f80"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"
