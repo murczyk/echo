@@ -62,6 +62,13 @@
         margin: 0;
       }
 
+      .page-support {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: -14px 0 0;
+      }
+
       .toolbar {
         align-items: center;
         display: flex;
@@ -342,7 +349,15 @@
         font-weight: 500;
         line-height: 1.6;
         margin: 0;
-        padding: 16px 24px;
+        padding: 16px 24px 2px;
+      }
+
+      .dialog-subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0 24px 12px;
       }
 
       .dialog-content {
@@ -364,7 +379,7 @@
       .field-grid {
         display: grid;
         gap: 16px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
       }
 
       .field-grid .field-wide {
@@ -381,6 +396,12 @@
       .check-field {
         color: var(--muted);
         font-size: 13px;
+      }
+
+      .label-with-hint {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
       }
 
       .field input,
@@ -420,10 +441,63 @@
         gap: 8px;
       }
 
+      .check-with-hint {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+      }
+
       .check-field input {
         accent-color: var(--primary-strong);
         height: 18px;
         width: 18px;
+      }
+
+      .hint-symbol {
+        align-items: center;
+        border: 1px solid var(--field-border);
+        border-radius: 50%;
+        color: var(--primary);
+        cursor: help;
+        display: inline-flex;
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 700;
+        height: 16px;
+        justify-content: center;
+        line-height: 1;
+        position: relative;
+        width: 16px;
+      }
+
+      .hint-symbol::after {
+        background: #111318;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        bottom: calc(100% + 8px);
+        box-shadow: var(--shadow-dialog);
+        color: var(--body-color);
+        content: attr(data-hint);
+        font-size: 12px;
+        font-weight: 400;
+        left: 0;
+        line-height: 1.4;
+        max-width: calc(100vw - 64px);
+        opacity: 0;
+        padding: 8px 10px;
+        pointer-events: none;
+        position: absolute;
+        text-align: left;
+        transition: opacity 0.15s ease;
+        white-space: normal;
+        width: 420px;
+        z-index: 5;
+      }
+
+      .hint-symbol:hover::after,
+      .hint-symbol:focus::after,
+      .hint-symbol:focus-visible::after {
+        opacity: 1;
       }
 
       .helper {
@@ -468,6 +542,32 @@
         color: var(--primary);
       }
 
+      .screen-header {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: space-between;
+      }
+
+      .screen-title {
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      .info-banner {
+        background: rgba(144, 202, 249, 0.11);
+        border: 1px solid rgba(144, 202, 249, 0.32);
+        border-radius: 4px;
+        color: var(--muted-strong);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0 0 14px;
+        padding: 10px 12px;
+      }
+
       .group-editor {
         border: 1px solid var(--border-color);
         display: grid;
@@ -481,6 +581,18 @@
         flex-wrap: wrap;
         gap: 8px;
         justify-content: flex-end;
+      }
+
+      .group-form-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .group-form-actions .btn-danger {
+        margin-right: auto;
       }
 
       .hidden {
@@ -515,12 +627,28 @@
         .dialog-actions {
           justify-content: stretch;
         }
+
+        .screen-header,
+        .group-form-actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .screen-header .btn,
+        .group-form-actions .btn {
+          width: 100%;
+        }
+
+        .group-form-actions .btn-danger {
+          margin-right: 0;
+        }
       }
     </style>
   </head>
   <body>
     <main class="page">
       <h1 class="page-title">ЕХО інтеграції</h1>
+      <p class="page-support">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
 
       <section aria-label="ЕХО інтеграції">
         <div class="toolbar">
@@ -571,6 +699,7 @@
     <dialog id="createDialog" aria-labelledby="createDialogTitle">
       <form id="createDetailsForm" method="dialog">
         <h2 class="dialog-title" id="createDialogTitle">Додати ЕХО інтеграцію</h2>
+        <p class="dialog-subtitle">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
         <div class="dialog-content" id="createDetailsStep">
           <div class="field-grid">
             <div class="field">
@@ -578,7 +707,10 @@
               <input id="createName" name="name" required autocomplete="off">
             </div>
             <div class="field">
-              <label for="createSender">Відправник</label>
+              <label class="label-with-hint" for="createSender">
+                Відправник
+                <span class="hint-symbol" tabindex="0" title="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp." data-hint="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp.">?</span>
+              </label>
               <input id="createSender" name="sender" autocomplete="off">
             </div>
             <div class="field field-wide">
@@ -600,51 +732,68 @@
       </form>
 
       <div class="dialog-content hidden" id="createGroupsStep">
-        <div class="group-editor">
-          <div class="field-grid">
-            <div class="field">
-              <label for="createGroupName">Назва групи</label>
-              <input id="createGroupName" autocomplete="off">
-            </div>
-            <div class="field field-wide">
-              <label for="createGroupDescription">Опис</label>
-              <textarea id="createGroupDescription" placeholder="Опціонально"></textarea>
-            </div>
-          </div>
-          <div class="check-row">
-            <label class="check-field">
-              <input id="createGroupPrimary" type="checkbox">
-              Чи є групою за замовчуванням
-            </label>
-            <label class="check-field">
-              <input id="createGroupEnabled" type="checkbox" checked>
-              Увімкнено
-            </label>
-          </div>
-          <div class="group-editor-actions">
-            <button class="icon-btn danger hidden" type="button" title="Видалити" aria-label="Видалити" id="createGroupDeleteButton">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V7H6v12ZM8 9h8v10H8V9Zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5Z"></path></svg>
+        <div class="info-banner">
+          Виберіть назви груп, під якими повідомлення попадатиме в ЕХО Аналіз. Назви можуть бути довільними, аналогічно до груп Signal/WhatsApp що використовуються для обміну повідомленнями. Саме під цими назвами користувачі бачитимуть ваші перехоплення.
+        </div>
+        <div id="createGroupsListScreen">
+          <div class="screen-header">
+            <h3 class="screen-title">Групи</h3>
+            <button class="btn btn-outlined" type="button" id="createGroupCreateButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"></path>
+              </svg>
+              Створити
             </button>
-            <button class="icon-btn confirm" type="button" title="Підтвердити" aria-label="Підтвердити" id="createGroupConfirmButton">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m9 16.17-4.17-4.17-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z"></path></svg>
-            </button>
+          </div>
+          <div class="table-wrap groups-table">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-number">#</th>
+                  <th class="col-actions"></th>
+                  <th class="col-name">Назва</th>
+                  <th class="col-description">Опис</th>
+                  <th class="col-state">За замовчуванням</th>
+                  <th class="col-state">Увімкнено</th>
+                </tr>
+              </thead>
+              <tbody id="createGroupsBody"></tbody>
+            </table>
+            <div class="empty-state hidden" id="createGroupsEmpty">Групи відсутні</div>
           </div>
         </div>
-        <div class="table-wrap groups-table">
-          <table>
-            <thead>
-              <tr>
-                <th class="col-number">#</th>
-                <th class="col-actions"></th>
-                <th class="col-name">Назва</th>
-                <th class="col-description">Опис</th>
-                <th class="col-state">За замовчуванням</th>
-                <th class="col-state">Увімкнено</th>
-              </tr>
-            </thead>
-            <tbody id="createGroupsBody"></tbody>
-          </table>
-          <div class="empty-state hidden" id="createGroupsEmpty">Групи відсутні</div>
+        <div class="hidden" id="createGroupEditorScreen">
+          <h3 class="screen-title" id="createGroupEditorTitle">Створити групу</h3>
+          <div class="group-editor">
+            <div class="field-grid">
+              <div class="field">
+                <label for="createGroupName">Назва групи</label>
+                <input id="createGroupName" autocomplete="off">
+              </div>
+              <div class="field field-wide">
+                <label for="createGroupDescription">Опис</label>
+                <textarea id="createGroupDescription" placeholder="Опціонально"></textarea>
+              </div>
+            </div>
+            <div class="check-row">
+              <span class="check-with-hint">
+                <label class="check-field">
+                  <input id="createGroupPrimary" type="checkbox" checked>
+                  Чи є групою за замовчуванням
+                </label>
+                <span class="hint-symbol" tabindex="0" title="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну" data-hint="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну">?</span>
+              </span>
+              <label class="check-field">
+                <input id="createGroupEnabled" type="checkbox" checked>
+                Увімкнено
+              </label>
+            </div>
+          </div>
+          <div class="group-form-actions">
+            <button class="btn btn-outlined btn-danger hidden" type="button" id="createGroupDeleteButton">Видалити</button>
+            <button class="btn btn-text" type="button" id="createGroupCancelButton">Скасувати</button>
+            <button class="btn btn-contained" type="button" id="createGroupConfirmButton">Зберегти</button>
+          </div>
         </div>
       </div>
 
@@ -662,6 +811,7 @@
 
     <dialog id="editDialog" aria-labelledby="editDialogTitle">
       <h2 class="dialog-title" id="editDialogTitle">Редагувати ЕХО інтеграцію</h2>
+      <p class="dialog-subtitle">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
       <div class="dialog-content">
         <div class="tabs" role="tablist" aria-label="Редагування інтеграції">
           <button class="tab-btn active" type="button" id="editDetailsTab" data-edit-tab="details">Details</button>
@@ -676,7 +826,10 @@
               <input id="editName" name="name" required autocomplete="off">
             </div>
             <div class="field">
-              <label for="editSender">Відправник</label>
+              <label class="label-with-hint" for="editSender">
+                Відправник
+                <span class="hint-symbol" tabindex="0" title="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp." data-hint="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp.">?</span>
+              </label>
               <input id="editSender" name="sender" autocomplete="off">
             </div>
             <div class="field field-wide">
@@ -697,55 +850,72 @@
         </form>
 
         <div class="hidden" id="editGroupsPanel">
-          <div class="group-editor">
-            <div class="field-grid">
-              <div class="field">
-                <label for="editGroupName">Назва групи</label>
-                <input id="editGroupName" autocomplete="off">
-              </div>
-              <div class="field field-wide">
-                <label for="editGroupDescription">Опис</label>
-                <textarea id="editGroupDescription" placeholder="Опціонально"></textarea>
-              </div>
-            </div>
-            <div class="check-row">
-              <label class="check-field">
-                <input id="editGroupPrimary" type="checkbox">
-                Чи є групою за замовчуванням
-              </label>
-              <label class="check-field">
-                <input id="editGroupEnabled" type="checkbox" checked>
-                Увімкнено
-              </label>
-            </div>
-            <div class="group-editor-actions">
-              <button class="icon-btn danger hidden" type="button" title="Видалити" aria-label="Видалити" id="editGroupDeleteButton">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V7H6v12ZM8 9h8v10H8V9Zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5Z"></path></svg>
+          <div class="info-banner">
+            Виберіть назви груп, під якими повідомлення попадатиме в ЕХО Аналіз. Назви можуть бути довільними, аналогічно до груп Signal/WhatsApp що використовуються для обміну повідомленнями. Саме під цими назвами користувачі бачитимуть ваші перехоплення.
+          </div>
+          <div id="editGroupsListScreen">
+            <div class="screen-header">
+              <h3 class="screen-title">Групи</h3>
+              <button class="btn btn-outlined" type="button" id="editGroupCreateButton">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"></path>
+                </svg>
+                Створити
               </button>
-              <button class="icon-btn confirm" type="button" title="Підтвердити" aria-label="Підтвердити" id="editGroupConfirmButton">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m9 16.17-4.17-4.17-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z"></path></svg>
-              </button>
+            </div>
+            <div class="table-wrap groups-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="col-number">#</th>
+                    <th class="col-actions"></th>
+                    <th class="col-name">Назва</th>
+                    <th class="col-description">Опис</th>
+                    <th class="col-state">За замовчуванням</th>
+                    <th class="col-state">Увімкнено</th>
+                  </tr>
+                </thead>
+                <tbody id="editGroupsBody"></tbody>
+              </table>
+              <div class="empty-state hidden" id="editGroupsEmpty">Групи відсутні</div>
             </div>
           </div>
-          <div class="table-wrap groups-table">
-            <table>
-              <thead>
-                <tr>
-                  <th class="col-number">#</th>
-                  <th class="col-actions"></th>
-                  <th class="col-name">Назва</th>
-                  <th class="col-description">Опис</th>
-                  <th class="col-state">За замовчуванням</th>
-                  <th class="col-state">Увімкнено</th>
-                </tr>
-              </thead>
-              <tbody id="editGroupsBody"></tbody>
-            </table>
-            <div class="empty-state hidden" id="editGroupsEmpty">Групи відсутні</div>
+          <div class="hidden" id="editGroupEditorScreen">
+            <h3 class="screen-title" id="editGroupEditorTitle">Створити групу</h3>
+            <div class="group-editor">
+              <div class="field-grid">
+                <div class="field">
+                  <label for="editGroupName">Назва групи</label>
+                  <input id="editGroupName" autocomplete="off">
+                </div>
+                <div class="field field-wide">
+                  <label for="editGroupDescription">Опис</label>
+                  <textarea id="editGroupDescription" placeholder="Опціонально"></textarea>
+                </div>
+              </div>
+              <div class="check-row">
+                <span class="check-with-hint">
+                  <label class="check-field">
+                    <input id="editGroupPrimary" type="checkbox" checked>
+                    Чи є групою за замовчуванням
+                  </label>
+                  <span class="hint-symbol" tabindex="0" title="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну" data-hint="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну">?</span>
+                </span>
+                <label class="check-field">
+                  <input id="editGroupEnabled" type="checkbox" checked>
+                  Увімкнено
+                </label>
+              </div>
+            </div>
+            <div class="group-form-actions">
+              <button class="btn btn-outlined btn-danger hidden" type="button" id="editGroupDeleteButton">Видалити</button>
+              <button class="btn btn-text" type="button" id="editGroupCancelButton">Скасувати</button>
+              <button class="btn btn-contained" type="button" id="editGroupConfirmButton">Зберегти</button>
+            </div>
           </div>
         </div>
       </div>
-      <div class="dialog-actions">
+      <div class="dialog-actions" id="editDialogActions">
         <button class="btn btn-outlined" type="button" id="editTestButton">Перевірити</button>
         <button class="btn btn-text" type="button" data-close-dialog="editDialog">Скасувати</button>
         <button class="btn btn-contained" type="button" id="editSaveButton">Зберегти</button>
@@ -757,40 +927,19 @@
         {
           "id": "1",
           "name": "Північ",
-          "sender": "north-echo",
+          "sender": "Черешня",
           "echoApi": "https://echo-api.example.local/north",
           "login": "north.operator",
           "groups": [
-            { "id": "g-101", "name": "Оперативна", "description": "Основна група сповіщень", "isPrimary": true, "isEnabled": true },
-            { "id": "g-102", "name": "Архів", "description": "Резервний канал", "isPrimary": false, "isEnabled": false }
-          ]
-        },
-        {
-          "id": "2",
-          "name": "Схід",
-          "sender": "east-echo",
-          "echoApi": "https://echo-api.example.local/east",
-          "login": "east.operator",
-          "groups": [
-            { "id": "g-201", "name": "Чергові", "description": "Зміна чергових", "isPrimary": true, "isEnabled": true },
-            { "id": "g-202", "name": "Технічна", "description": "Технічні повідомлення", "isPrimary": false, "isEnabled": true }
-          ]
-        },
-        {
-          "id": "3",
-          "name": "Південь",
-          "sender": "south-echo",
-          "echoApi": "https://echo-api.example.local/south",
-          "login": "south.operator",
-          "groups": [
-            { "id": "g-301", "name": "Основна", "description": "Група за замовчуванням", "isPrimary": true, "isEnabled": true }
+            { "id": "g-101", "name": "ВИШНЕВЕ ВУХО", "description": "Основна група сповіщень", "isPrimary": true, "isEnabled": true },
+            { "id": "g-102", "name": "Черешня резерв", "description": "Резервний канал", "isPrimary": false, "isEnabled": false }
           ]
         }
       ]
     </script>
 
     <script>
-      const STORAGE_KEY = 'echo-integrations-mockup';
+      const STORAGE_KEY = 'echo-integrations-mockup-v4';
 
       const state = {
         integrations: loadIntegrations(),
@@ -819,21 +968,32 @@
         createBackButton: document.getElementById('createBackButton'),
         createSaveButton: document.getElementById('createSaveButton'),
         createConnectionStatus: document.getElementById('createConnectionStatus'),
+        createGroupsListScreen: document.getElementById('createGroupsListScreen'),
         createGroupsBody: document.getElementById('createGroupsBody'),
         createGroupsEmpty: document.getElementById('createGroupsEmpty'),
+        createGroupCreateButton: document.getElementById('createGroupCreateButton'),
+        createGroupEditorScreen: document.getElementById('createGroupEditorScreen'),
+        createGroupEditorTitle: document.getElementById('createGroupEditorTitle'),
         createGroupConfirmButton: document.getElementById('createGroupConfirmButton'),
+        createGroupCancelButton: document.getElementById('createGroupCancelButton'),
         createGroupDeleteButton: document.getElementById('createGroupDeleteButton'),
         editDialog: document.getElementById('editDialog'),
         editDetailsForm: document.getElementById('editDetailsForm'),
+        editDialogActions: document.getElementById('editDialogActions'),
         editDetailsTab: document.getElementById('editDetailsTab'),
         editGroupsTab: document.getElementById('editGroupsTab'),
         editGroupsPanel: document.getElementById('editGroupsPanel'),
         editTestButton: document.getElementById('editTestButton'),
         editSaveButton: document.getElementById('editSaveButton'),
         editConnectionStatus: document.getElementById('editConnectionStatus'),
+        editGroupsListScreen: document.getElementById('editGroupsListScreen'),
         editGroupsBody: document.getElementById('editGroupsBody'),
         editGroupsEmpty: document.getElementById('editGroupsEmpty'),
+        editGroupCreateButton: document.getElementById('editGroupCreateButton'),
+        editGroupEditorScreen: document.getElementById('editGroupEditorScreen'),
+        editGroupEditorTitle: document.getElementById('editGroupEditorTitle'),
         editGroupConfirmButton: document.getElementById('editGroupConfirmButton'),
+        editGroupCancelButton: document.getElementById('editGroupCancelButton'),
         editGroupDeleteButton: document.getElementById('editGroupDeleteButton'),
       };
 
@@ -975,7 +1135,7 @@
         els.createGroupsActions.classList.toggle('hidden', !isGroups);
         els.createDialogTitle.textContent = isGroups ? 'Додати групи' : 'Додати ЕХО інтеграцію';
         if (isGroups) {
-          renderCreateGroupsTable();
+          showCreateGroupsList();
         }
       }
 
@@ -995,7 +1155,7 @@
           groups: state.createDraft?.groups || [],
         };
         showCreateStep('groups');
-        document.getElementById('createGroupName').focus();
+        els.createGroupCreateButton.focus();
       }
 
       function saveCreatedIntegration() {
@@ -1044,10 +1204,13 @@
         els.editDetailsForm.classList.toggle('hidden', isGroups);
         els.editGroupsPanel.classList.toggle('hidden', !isGroups);
         els.editTestButton.classList.toggle('hidden', isGroups);
+        els.editDialogActions.classList.remove('hidden');
         els.editDetailsTab.classList.toggle('active', !isGroups);
         els.editGroupsTab.classList.toggle('active', isGroups);
         if (isGroups) {
-          renderEditGroupsTable();
+          showEditGroupsList();
+        } else {
+          resetEditGroupForm();
         }
       }
 
@@ -1137,7 +1300,7 @@
       function resetGroupForm(prefix) {
         document.getElementById(`${prefix}GroupName`).value = '';
         document.getElementById(`${prefix}GroupDescription`).value = '';
-        document.getElementById(`${prefix}GroupPrimary`).checked = false;
+        document.getElementById(`${prefix}GroupPrimary`).checked = true;
         document.getElementById(`${prefix}GroupEnabled`).checked = true;
       }
 
@@ -1160,6 +1323,60 @@
         els.editGroupDeleteButton.classList.add('hidden');
       }
 
+      function showCreateGroupsList() {
+        resetCreateGroupForm();
+        els.createGroupsListScreen.classList.remove('hidden');
+        els.createGroupEditorScreen.classList.add('hidden');
+        els.createGroupsActions.classList.remove('hidden');
+        renderCreateGroupsTable();
+      }
+
+      function showEditGroupsList() {
+        resetEditGroupForm();
+        els.editGroupsListScreen.classList.remove('hidden');
+        els.editGroupEditorScreen.classList.add('hidden');
+        els.editDialogActions.classList.remove('hidden');
+        renderEditGroupsTable();
+      }
+
+      function openCreateGroupEditor(id = null) {
+        const group = id ? state.createDraft?.groups.find((item) => item.id === id) : null;
+        if (id && !group) {
+          return;
+        }
+
+        resetGroupForm('create');
+        state.createEditingGroupId = id;
+        if (group) {
+          fillGroupForm('create', group);
+        }
+        els.createGroupEditorTitle.textContent = id ? 'Редагувати групу' : 'Створити групу';
+        els.createGroupDeleteButton.classList.toggle('hidden', !id);
+        els.createGroupsListScreen.classList.add('hidden');
+        els.createGroupEditorScreen.classList.remove('hidden');
+        els.createGroupsActions.classList.add('hidden');
+        document.getElementById('createGroupName').focus();
+      }
+
+      function openEditGroupEditor(id = null) {
+        const group = id ? state.editDraft?.groups.find((item) => item.id === id) : null;
+        if (id && !group) {
+          return;
+        }
+
+        resetGroupForm('edit');
+        state.editEditingGroupId = id;
+        if (group) {
+          fillGroupForm('edit', group);
+        }
+        els.editGroupEditorTitle.textContent = id ? 'Редагувати групу' : 'Створити групу';
+        els.editGroupDeleteButton.classList.toggle('hidden', !id);
+        els.editGroupsListScreen.classList.add('hidden');
+        els.editGroupEditorScreen.classList.remove('hidden');
+        els.editDialogActions.classList.add('hidden');
+        document.getElementById('editGroupName').focus();
+      }
+
       function confirmCreateGroup() {
         if (!state.createDraft) {
           return;
@@ -1170,8 +1387,7 @@
         }
 
         state.createDraft.groups = upsertGroup(state.createDraft.groups, group, state.createEditingGroupId);
-        resetCreateGroupForm();
-        renderCreateGroupsTable();
+        showCreateGroupsList();
       }
 
       function confirmEditGroup() {
@@ -1184,8 +1400,7 @@
         }
 
         state.editDraft.groups = upsertGroup(state.editDraft.groups, group, state.editEditingGroupId);
-        resetEditGroupForm();
-        renderEditGroupsTable();
+        showEditGroupsList();
       }
 
       function upsertGroup(groups, group, editingGroupId) {
@@ -1197,23 +1412,11 @@
       }
 
       function editCreateGroup(id) {
-        const group = state.createDraft?.groups.find((item) => item.id === id);
-        if (!group) {
-          return;
-        }
-        state.createEditingGroupId = id;
-        fillGroupForm('create', group);
-        els.createGroupDeleteButton.classList.remove('hidden');
+        openCreateGroupEditor(id);
       }
 
       function editEditGroup(id) {
-        const group = state.editDraft?.groups.find((item) => item.id === id);
-        if (!group) {
-          return;
-        }
-        state.editEditingGroupId = id;
-        fillGroupForm('edit', group);
-        els.editGroupDeleteButton.classList.remove('hidden');
+        openEditGroupEditor(id);
       }
 
       function deleteCreateGroup() {
@@ -1221,8 +1424,7 @@
           return;
         }
         state.createDraft.groups = state.createDraft.groups.filter((group) => group.id !== state.createEditingGroupId);
-        resetCreateGroupForm();
-        renderCreateGroupsTable();
+        showCreateGroupsList();
       }
 
       function deleteEditGroup() {
@@ -1230,8 +1432,7 @@
           return;
         }
         state.editDraft.groups = state.editDraft.groups.filter((group) => group.id !== state.editEditingGroupId);
-        resetEditGroupForm();
-        renderEditGroupsTable();
+        showEditGroupsList();
       }
 
       function testConnection(form, statusElement, button) {
@@ -1282,11 +1483,15 @@
       els.createDetailsForm.addEventListener('submit', handleCreateNext);
       els.createBackButton.addEventListener('click', () => showCreateStep('details'));
       els.createSaveButton.addEventListener('click', saveCreatedIntegration);
+      els.createGroupCreateButton.addEventListener('click', () => openCreateGroupEditor());
+      els.createGroupCancelButton.addEventListener('click', showCreateGroupsList);
       els.createGroupConfirmButton.addEventListener('click', confirmCreateGroup);
       els.createGroupDeleteButton.addEventListener('click', deleteCreateGroup);
       els.createTestButton.addEventListener('click', () => testConnection(els.createDetailsForm, els.createConnectionStatus, els.createTestButton));
 
       els.editSaveButton.addEventListener('click', saveEditedIntegration);
+      els.editGroupCreateButton.addEventListener('click', () => openEditGroupEditor());
+      els.editGroupCancelButton.addEventListener('click', showEditGroupsList);
       els.editGroupConfirmButton.addEventListener('click', confirmEditGroup);
       els.editGroupDeleteButton.addEventListener('click', deleteEditGroup);
       els.editTestButton.addEventListener('click', () => testConnection(els.editDetailsForm, els.editConnectionStatus, els.editTestButton));
