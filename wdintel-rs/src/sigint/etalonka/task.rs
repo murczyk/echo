@@ -2,9 +2,10 @@ use super::types::{
     EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType,
 };
 use super::{generate_networks_docx_report_to_path, EtalonkaData};
-use crate::entities::prelude::*;
 #[cfg(test)]
-use crate::entities::{bgtask, bgtask_res};
+use crate::entities::bgtask;
+use crate::entities::bgtask_res;
+use crate::entities::prelude::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::Env;
@@ -13,11 +14,10 @@ use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
-#[cfg(test)]
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::EntityTrait;
 #[cfg(test)]
-use sea_orm::{ActiveModelTrait, DatabaseConnection};
+use sea_orm::DatabaseConnection;
+use sea_orm::{ActiveModelTrait, EntityTrait};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -213,7 +213,11 @@ pub async fn report_networks_task_download(
     };
     result_row.update(&env.dbx).await.c(h!())?;
 
-    Ok(make_download_response(meta.filename, meta.content_type, bytes))
+    Ok(make_download_response(
+        meta.filename,
+        meta.content_type,
+        bytes,
+    ))
 }
 
 #[cfg(test)]
