@@ -20,6 +20,10 @@ const bgtaskMock = vi.hoisted(() => ({
   fetchBgtaskStatusAndLogs: vi.fn(),
 }));
 
+const reportHistoryMock = vi.hoisted(() => ({
+  fetchReportHistoryTaskStatus: vi.fn(),
+}));
+
 const downloadBlobMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/api/networks', () => ({
@@ -40,6 +44,10 @@ vi.mock('../../services/api/bgtask', () => ({
     const match = stage ? /^\[(\d+)\/(\d+)\]/.exec(stage) : null;
     return match ? { curr: Number(match[1]), overall: Number(match[2]) } : { curr: 1, overall: 4 };
   },
+}));
+
+vi.mock('../../services/api/report-history', () => ({
+  fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
 }));
 
 vi.mock('../../utils/download-blob', () => ({
@@ -102,10 +110,11 @@ beforeEach(() => {
   apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
   apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
   bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+  reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
   downloadBlobMock.mockReset();
   apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(555);
   apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
-  bgtaskMock.fetchBgtaskStatusAndLogs
+  reportHistoryMock.fetchReportHistoryTaskStatus
     .mockResolvedValueOnce({
       running: true,
       loglines: ['backend step'],
@@ -178,8 +187,8 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
         },
       },
     });
-    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 555, 0);
-    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(2, 555, 1);
+    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(1, 555, 0);
+    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(2, 555, 1);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(555);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_network_77.docx');
     expect(latestState?.etalonkaReport.progressExpanded).toBe(false);

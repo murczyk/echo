@@ -3,18 +3,41 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import { Box, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
+import { type MRT_ColumnDef } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
 import { downloadReportHistory, listReportHistory, retryReportHistory } from '../../services/api/report-history';
+import { PowerAlert } from '../../components/PowerAlert';
+import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
+import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { SettingsNeoTable } from './SettingsNeoTable';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
 type Props = {
   active: boolean;
 };
+
+const DEFAULT_MY_REPORTS_COLUMNS_VISIBILITY = {
+  reportKind: true,
+  createdAt: true,
+  status: true,
+  completedAt: true,
+  actions: true,
+};
+
+const DEFAULT_MY_REPORTS_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'reportKind',
+  'createdAt',
+  'status',
+  'completedAt',
+  'actions',
+];
+
+const DEFAULT_MY_REPORTS_SORTING = [{ id: 'createdAt', desc: true }];
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   planned: 'В черзі',
@@ -65,6 +88,20 @@ function statusColor(status: string): 'default' | 'primary' | 'success' | 'error
   if (status === 'in_progress') return 'primary';
   if (status === 'planned') return 'warning';
   return 'default';
+}
+
+function buildReportLoadingRows(): ReportHistoryRow[] {
+  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: -index - 1,
+    reportKind: '',
+    createdAt: '',
+    status: 'planned',
+    completedAt: null,
+    hasFile: false,
+    fileName: null,
+    contentType: null,
+    bgtaskId: null,
+  }));
 }
 
 export function SettingsMyReportsSection({ active }: Props) {
@@ -168,6 +205,8 @@ export function SettingsMyReportsSection({ active }: Props) {
         id: 'actions',
         header: '',
         enableSorting: false,
+        enableColumnActions: false,
+        enableColumnFilter: false,
         size: 88,
         Cell: ({ row }) => {
           const report = row.original;
@@ -202,29 +241,6 @@ export function SettingsMyReportsSection({ active }: Props) {
     [actionInFlight],
   );
 
-  const table = useMaterialReactTable({
-    columns,
-    data: rows,
-    enableColumnActions: false,
-    enableDensityToggle: false,
-    enableFullScreenToggle: false,
-    enableHiding: false,
-    enablePagination: false,
-    enableTopToolbar: false,
-    initialState: {
-      density: 'compact',
-      sorting: [{ id: 'createdAt', desc: true }],
-    },
-    state: {
-      isLoading: loadState === 'loading',
-      showAlertBanner: error !== null,
-    },
-    muiToolbarAlertBannerProps: error === null ? undefined : { color: 'error', children: error },
-    muiTablePaperProps: {
-      variant: 'outlined',
-      sx: { boxShadow: 'none', borderRadius: 0 },
-    },
-  });
 
   return (
     <Box id="settings-neo-panel-my-reports" role="tabpanel" aria-labelledby="settings-neo-tab-my-reports">
@@ -242,7 +258,24 @@ export function SettingsMyReportsSection({ active }: Props) {
               </span>
             </Tooltip>
           </Stack>
-          <MaterialReactTable table={table} />
+          {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+
+          <TableStateProvider
+            tableId="settings-neo-my-reports-v1"
+            defaultColumnOrder={DEFAULT_MY_REPORTS_COLUMN_ORDER}
+            defaultColumnVisibility={DEFAULT_MY_REPORTS_COLUMNS_VISIBILITY}
+            defaultEnableColumnOrdering={false}
+            defaultSorting={DEFAULT_MY_REPORTS_SORTING}
+          >
+            <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+              <SettingsNeoTable
+                columns={columns}
+                data={rows}
+                loading={loadState === 'loading'}
+                loadingRows={buildReportLoadingRows()}
+              />
+            </Box>
+          </TableStateProvider>
         </Stack>
       </Box>
     </Box>

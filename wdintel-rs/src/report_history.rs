@@ -14,7 +14,7 @@ use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
 use chrono::{Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
-use log::error;
+use log::{error, warn};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseBackend, DatabaseConnection,
@@ -38,7 +38,7 @@ pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
 
-const MAX_RETRY_COUNT: i32 = 3;
+const MAX_RETRY_COUNT: i32 = 0;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
 const REPORT_OBJECT_PREFIX: &str = "reports";
 
@@ -85,6 +85,19 @@ struct GeneratedReport {
     file_name: String,
     content_type: String,
     bytes: Vec<u8>,
+}
+
+async fn read_and_remove_generated_report_file(
+    path: &Path,
+) -> Result<Vec<u8>, AppError> {
+    let bytes = tokio::fs::read(path).await.c(h!())?;
+    if let Err(err) = tokio::fs::remove_file(path).await {
+        warn!(
+            "failed to remove generated queued report file {:?}: {err:?}",
+            path
+        );
+    }
+    Ok(bytes)
 }
 
 impl From<report_history::Model> for ReportHistoryRow {
@@ -575,7 +588,8 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            let bytes = tokio::fs::read(&generated.path).await.c(h!())?;
+            let bytes =
+                read_and_remove_generated_report_file(&generated.path).await?;
             Ok(GeneratedReport {
                 file_name: generated.filename,
                 content_type: generated.content_type,
