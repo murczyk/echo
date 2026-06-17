@@ -4656,6 +4656,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "milgeo-audio-wave"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "tokio",
+]
+
+[[package]]
 name = "milgeo-rs"
 version = "0.1.0"
 source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=0d3f161016ed67ceaf64e92f53db9966855f2c84#0d3f161016ed67ceaf64e92f53db9966855f2c84"
@@ -8886,6 +8894,7 @@ dependencies = [
  "lazy_static",
  "levenshtein",
  "log",
+ "milgeo-audio-wave",
  "milgeo-rs",
  "mime_guess",
  "nipper",
