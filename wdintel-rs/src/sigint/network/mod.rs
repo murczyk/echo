@@ -3251,6 +3251,37 @@ pub async fn report_networks_goi(
     Ok(file.into_response(&http_req))
 }
 
+#[post("/api/sigint/network/report-networks-goi-task-launch")]
+pub async fn report_networks_goi_task_launch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<i64>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    let filename = format!(
+        "goi_report_{}.xlsx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
+    );
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_id,
+        crate::report_history::KIND_GOI,
+        crate::report_history::ReportHistoryRequest::GoiReport {
+            payload: serde_json::json!({}),
+        },
+        Some(filename),
+        Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string(),
+        ),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
+}
+
 fn map_add_network_description(
     user_id: String,
     network: &sigint_network::Model,

@@ -939,7 +939,7 @@ view user model shared route =
 
                 _ ->
                     HtmlX.nothing
-            , div [ class "flex justify-center items-center mb-4" ]
+            , div [ class "flex flex-col justify-center items-center mb-4 gap-2" ]
                 [ Button.new
                     { label =
                         if model.reportTemplate == RTSummaryTable then
@@ -960,6 +960,11 @@ view user model shared route =
                             i [ class "bi bi-filetype-docx" ] []
                         ]
                     |> Button.view
+                , a
+                    [ href "/settings-neo?section=myReports"
+                    , class "text-sm"
+                    ]
+                    [ text "Переглядайте свої звіти в Налаштування -> Мої Звіти" ]
                 ]
             ]
 

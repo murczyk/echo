@@ -250,10 +250,7 @@ describe('networks API etalonka report download', () => {
 
     await downloadNetworkEtalonkaReportTaskResult(77);
 
-    expect(postBytesMock).toHaveBeenCalledWith(
-      '/api/sigint/etalonka/report-networks-task-download',
-      expect.objectContaining({ bgtask_id: 77 }),
-    );
+    expect(postBytesMock).toHaveBeenCalledWith('/api/report-history/download', { id: 77 });
   });
 
   it('encodes the network list request in snake_case and normalizes the combined response', async () => {

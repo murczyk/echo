@@ -37,6 +37,10 @@ const bgtaskMock = vi.hoisted(() => ({
   fetchBgtaskStatusAndLogs: vi.fn(),
 }));
 
+const reportHistoryMock = vi.hoisted(() => ({
+  fetchReportHistoryTaskStatus: vi.fn(),
+}));
+
 const tableStateMock = vi.hoisted(() => ({
   globalFilter: '',
   columnFilters: [],
@@ -100,6 +104,10 @@ vi.mock('../../services/api/bgtask', () => ({
     curr: loglines.length > 0 ? 1 : 1,
     overall: 4,
   }),
+}));
+
+vi.mock('../../services/api/report-history', () => ({
+  fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
 }));
 
 vi.mock('../../services/api/modulations', () => ({
@@ -199,6 +207,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
     apiMock.launchNetworksEtalonkaReportTask.mockReset();
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getModulations.mockReset();
@@ -775,7 +784,7 @@ describe('useRerNetworksNeoPage', () => {
     await flushEffects();
 
     vi.useFakeTimers();
-    bgtaskMock.fetchBgtaskStatusAndLogs
+    reportHistoryMock.fetchReportHistoryTaskStatus
       .mockResolvedValueOnce({
         running: true,
         loglines: ['backend step'],
@@ -845,8 +854,8 @@ describe('useRerNetworksNeoPage', () => {
         },
       },
     });
-    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 456, 0);
-    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(2, 456, 1);
+    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(1, 456, 0);
+    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(2, 456, 1);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
   });
@@ -998,7 +1007,7 @@ describe('useRerNetworksNeoPage', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-12T15:34:56Z'));
 
-    const todayKey = dayjs.utc().startOf('day').valueOf();
+    const todayKey = dayjs().startOf('day').valueOf();
     apiMock.getNetworksGroupsActivity.mockResolvedValueOnce({
       1: {
         [todayKey]: { alpha: 3 },
@@ -1011,7 +1020,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(apiMock.getNetworksGroupsActivity).toHaveBeenCalledWith(
       {
         networkIds: [1, 2],
-        tillDateNoninclusiveMs: dayjs.utc().startOf('day').add(1, 'day').valueOf(),
+        tillDateNoninclusiveMs: dayjs().startOf('day').add(1, 'day').valueOf(),
       },
       expect.any(Object),
     );

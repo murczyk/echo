@@ -1,30 +1,27 @@
 use super::types::{
     EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType,
 };
-use super::{
-    bl_etalonka_report_networks_batch_id_data,
-    bl_etalonka_report_networks_data, generate_networks_docx_report_to_path,
-    EtalonkaData,
-};
-use crate::delta::{bgtask_log, finish_bgtask};
-use crate::entities::{bgtask, bgtask_res, prelude::*};
+use super::{generate_networks_docx_report_to_path, EtalonkaData};
+#[cfg(test)]
+use crate::entities::bgtask;
+use crate::entities::bgtask_res;
+use crate::entities::prelude::*;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, save_report_log,
-};
+use crate::types::Env;
 use crate::types::ShortContext;
-use crate::types::{Env, Uuid};
 use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait};
+#[cfg(test)]
+use sea_orm::DatabaseConnection;
+use sea_orm::{ActiveModelTrait, EntityTrait};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-const DOCX_CONTENT_TYPE: &str =
+pub(crate) const DOCX_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +31,7 @@ struct EtalonkaReportTaskResultMeta {
     user_login: String,
 }
 
+#[cfg(test)]
 async fn create_running_bgtask(
     dbx: &DatabaseConnection,
 ) -> Result<bgtask::Model, AppError> {
@@ -50,7 +48,7 @@ async fn create_running_bgtask(
     Ok(bgtask)
 }
 
-async fn render_networks_docx_report_bytes(
+pub(crate) async fn render_networks_docx_report_bytes(
     etalonka_type: &EtalonkaReportType,
     etalonka_data: EtalonkaData,
 ) -> Result<Vec<u8>, AppError> {
@@ -65,6 +63,7 @@ async fn render_networks_docx_report_bytes(
     Ok(std::fs::read(temp.path()).c(h!())?)
 }
 
+#[cfg(test)]
 async fn store_report_result_bytes(
     env: &Env,
     bgtask_id: i64,
@@ -78,118 +77,6 @@ async fn store_report_result_bytes(
         res_s3_id: Set(None),
     };
     result.insert(&env.dbx).await.c(h!())?;
-    Ok(())
-}
-
-async fn launch_networks_report_task_go(
-    env: actix_web::web::Data<Env>,
-    user_login: String,
-    trace_id: Uuid,
-    req: EtalonkaJimForksReq,
-    bgtask_id: i64,
-) -> Result<(), AppError> {
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    bgtask_log(Some(bgtask_id), "[1/5] Підготовка даних", &env.dbx)
-        .await
-        .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[2/5] Пошук мереж", &env.dbx)
-        .await
-        .c(h!())?;
-    let etalonka_data =
-        bl_etalonka_report_networks_data(&env.dbx, &user_login, &req, trace_id)
-            .await
-            .c(h!())?;
-    bgtask_log(
-        Some(bgtask_id),
-        "[3/5] Формування еталонного опису",
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
-    let bytes =
-        render_networks_docx_report_bytes(&req.etalonka_type, etalonka_data)
-            .await
-            .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[4/5] Збереження результату", &env.dbx)
-        .await
-        .c(h!())?;
-    let meta = EtalonkaReportTaskResultMeta {
-        filename: format!("etalonka_networks_{}.docx", bgtask_id),
-        content_type: DOCX_CONTENT_TYPE.to_string(),
-        user_login: user_login.clone(),
-    };
-    store_report_result_bytes(env.as_ref(), bgtask_id, &meta, bytes)
-        .await
-        .c(h!())?;
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{}", meta.filename),
-        &serde_json::to_string(&req).c(h!())?,
-        &user_login,
-    )
-    .await
-    .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[5/5] Готово до завантаження", &env.dbx)
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
-async fn launch_networks_batch_report_task_go(
-    env: actix_web::web::Data<Env>,
-    user_login: String,
-    trace_id: Uuid,
-    req: EtalonkaNetworkBatchReq,
-    bgtask_id: i64,
-) -> Result<(), AppError> {
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    bgtask_log(Some(bgtask_id), "[1/5] Підготовка даних", &env.dbx)
-        .await
-        .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[2/5] Пошук мереж", &env.dbx)
-        .await
-        .c(h!())?;
-    let etalonka_data = bl_etalonka_report_networks_batch_id_data(
-        &env.dbx,
-        &user_login,
-        &req,
-        trace_id,
-    )
-    .await
-    .c(h!())?;
-    bgtask_log(
-        Some(bgtask_id),
-        "[3/5] Формування еталонного опису",
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
-    let bytes =
-        render_networks_docx_report_bytes(&req.etalonka_type, etalonka_data)
-            .await
-            .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[4/5] Збереження результату", &env.dbx)
-        .await
-        .c(h!())?;
-    let meta = EtalonkaReportTaskResultMeta {
-        filename: format!("etalonka_networks_{}.docx", bgtask_id),
-        content_type: DOCX_CONTENT_TYPE.to_string(),
-        user_login: user_login.clone(),
-    };
-    store_report_result_bytes(env.as_ref(), bgtask_id, &meta, bytes)
-        .await
-        .c(h!())?;
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{}", meta.filename),
-        &serde_json::to_string(&req).c(h!())?,
-        &user_login,
-    )
-    .await
-    .c(h!())?;
-    bgtask_log(Some(bgtask_id), "[5/5] Готово до завантаження", &env.dbx)
-        .await
-        .c(h!())?;
     Ok(())
 }
 
@@ -257,19 +144,19 @@ pub async fn report_networks_task_launch(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let bgtask = create_running_bgtask(&env.dbx).await?;
-    let bgtask_id = bgtask.id;
-    let env_spawn = env.clone();
-    let dbx = env.dbx.clone();
-    tokio::spawn(async move {
-        let trace_id = Uuid::new_v4();
-        let res = launch_networks_report_task_go(
-            env_spawn, user_login, trace_id, req, bgtask_id,
-        )
-        .await;
-        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
-    });
-    Ok(Json(bgtask_id))
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_login,
+        crate::report_history::KIND_ETALONKA,
+        crate::report_history::ReportHistoryRequest::EtalonkaFilter {
+            payload: Box::new(req),
+        },
+        None,
+        Some(DOCX_CONTENT_TYPE.to_string()),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
 }
 
 #[post("/api/sigint/etalonka/report-networks-batch-id-task-launch")]
@@ -283,19 +170,19 @@ pub async fn report_networks_batch_id_task_launch(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let bgtask = create_running_bgtask(&env.dbx).await?;
-    let bgtask_id = bgtask.id;
-    let env_spawn = env.clone();
-    let dbx = env.dbx.clone();
-    tokio::spawn(async move {
-        let trace_id = Uuid::new_v4();
-        let res = launch_networks_batch_report_task_go(
-            env_spawn, user_login, trace_id, req, bgtask_id,
-        )
-        .await;
-        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
-    });
-    Ok(Json(bgtask_id))
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_login,
+        crate::report_history::KIND_ETALONKA,
+        crate::report_history::ReportHistoryRequest::EtalonkaBatch {
+            payload: Box::new(req),
+        },
+        None,
+        Some(DOCX_CONTENT_TYPE.to_string()),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,7 +213,11 @@ pub async fn report_networks_task_download(
     };
     result_row.update(&env.dbx).await.c(h!())?;
 
-    Ok(make_download_response(meta.filename, meta.content_type, bytes))
+    Ok(make_download_response(
+        meta.filename,
+        meta.content_type,
+        bytes,
+    ))
 }
 
 #[cfg(test)]

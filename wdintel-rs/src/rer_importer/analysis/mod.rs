@@ -17,7 +17,6 @@ use crate::utils::*;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
-use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
@@ -1881,6 +1880,20 @@ pub async fn summary_table_freq_1(
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<SummaryTableFreq, AppError> {
+    let master_keys =
+        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
+            .await
+            .c(h!())?;
+    let login = user.id().c(h!())?;
+    summary_table_freq_by_login(&login, env, req, &master_keys).await
+}
+
+async fn summary_table_freq_by_login(
+    login: &str,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+) -> Result<SummaryTableFreq, AppError> {
     #[derive(FromQueryResult)]
     struct Row {
         freq: Option<String>,
@@ -1893,15 +1906,9 @@ pub async fn summary_table_freq_1(
         locations: Vec<String>,
     }
 
-    let master_keys =
-        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
-            .await
-            .c(h!())?;
-    let login = user.id().c(h!())?;
-
     let dedup_key_alias = Alias::new("dedup_key");
     let dedup_subquery =
-        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
+        build_summary_table_filtered_messages_query(login, req, master_keys)?
             .select_only()
             .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
             .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
@@ -2242,10 +2249,11 @@ pub(crate) fn build_summary_table_filtered_messages_query(
     filter_search(q, &req.search)
 }
 
-async fn summary_table_last_datetime_by_freq(
-    user: &Identity,
+async fn summary_table_last_datetime_by_freq_by_login(
+    login: &str,
     env: &Env,
     req: &AnalysisStatsReq,
+    master_keys: &[String],
 ) -> Result<BTreeMap<String, NaiveDateTime>, AppError> {
     #[derive(FromQueryResult)]
     struct Row {
@@ -2253,13 +2261,8 @@ async fn summary_table_last_datetime_by_freq(
         last_datetime: Option<NaiveDateTime>,
     }
 
-    let master_keys =
-        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
-            .await
-            .c(h!())?;
-    let login = user.id().c(h!())?;
     let rows =
-        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
+        build_summary_table_filtered_messages_query(login, req, master_keys)?
             .select_only()
             .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
             .expr_as(
@@ -2283,10 +2286,11 @@ async fn summary_table_last_datetime_by_freq(
     Ok(result)
 }
 
-async fn summary_table_related_networks_by_freq(
-    user: &Identity,
+async fn summary_table_related_networks_by_freq_by_login(
+    login: &str,
     env: &Env,
     req: &AnalysisStatsReq,
+    master_keys: &[String],
 ) -> Result<BTreeMap<String, Vec<String>>, AppError> {
     #[derive(FromQueryResult)]
     struct NetworkFreqRow {
@@ -2299,12 +2303,6 @@ async fn summary_table_related_networks_by_freq(
         return Ok(BTreeMap::new());
     }
 
-    let master_keys =
-        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
-            .await
-            .c(h!())?;
-    let login = user.id().c(h!())?;
-
     let filtered_messages_alias = Alias::new("filtered_messages");
     let inbox_network_alias = Alias::new("summary_inbox_network");
     let network_alias = Alias::new("summary_network");
@@ -2312,7 +2310,7 @@ async fn summary_table_related_networks_by_freq(
     let unit_alias = Alias::new("summary_unit");
 
     let filtered_messages_query =
-        build_summary_table_filtered_messages_query(&login, req, &master_keys)?
+        build_summary_table_filtered_messages_query(login, req, master_keys)?
             .select_only()
             .column_as(
                 Expr::col((
@@ -2445,22 +2443,67 @@ async fn summary_table_related_networks_by_freq(
 async fn summary_table_xlsx(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
     req: Json<AnalysisStatsReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
+    let req = req.into_inner();
+    let bytes = summary_table_xlsx_bytes(&login, &env, req.clone())
+        .await
+        .c(h!())?;
+    crate::report_history::record_completed_report_nofail(
+        &env,
+        &login,
+        crate::report_history::KIND_SUMMARY_TABLE,
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req),
+        },
+        "summary-table.xlsx".to_string(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            .to_string(),
+        &bytes,
+    )
+    .await;
+    Ok(HttpResponse::Ok()
+        .insert_header((
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ))
+        .body(bytes))
+}
+
+pub(crate) async fn summary_table_xlsx_bytes(
+    login: &str,
+    env: &Env,
+    req: AnalysisStatsReq,
+) -> Result<Vec<u8>, AppError> {
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
     let summary_table: SummaryTableFreq =
-        summary_table_freq_1(&user, &env, &req).await.c(h!())?;
-    let last_datetime_by_freq =
-        summary_table_last_datetime_by_freq(&user, &env, &req)
+        summary_table_freq_by_login(login, env, &req, &master_keys)
             .await
             .c(h!())?;
+    let last_datetime_by_freq = summary_table_last_datetime_by_freq_by_login(
+        login,
+        env,
+        &req,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
     let related_networks_by_freq =
-        summary_table_related_networks_by_freq(&user, &env, &req)
-            .await
-            .c(h!())?;
+        summary_table_related_networks_by_freq_by_login(
+            login,
+            env,
+            &req,
+            &master_keys,
+        )
+        .await
+        .c(h!())?;
 
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
@@ -2476,7 +2519,7 @@ async fn summary_table_xlsx(
 
     // Write data and apply formats
     sheet1
-        .write_string(0, 0, &describe_analysis_stats_req(req.into_inner())?)
+        .write_string(0, 0, &describe_analysis_stats_req(req.clone())?)
         .context(h!())?;
 
     sheet1
@@ -2563,8 +2606,89 @@ async fn summary_table_xlsx(
 
     // Save the workbook to the specified path
     workbook.save(&outpath).context(h!())?;
-    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    let bytes = tokio::fs::read(&outpath).await.c(h!())?;
+    Ok(bytes)
+}
+
+#[post("/api/rer/analysis/summary-table-task-launch")]
+async fn summary_table_task_launch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    launch_analysis_export_task(
+        user,
+        env,
+        req.into_inner(),
+        crate::report_history::KIND_SUMMARY_TABLE,
+        Some("summary-table.xlsx".to_string()),
+        Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string(),
+        ),
+    )
+    .await
+}
+
+#[post("/api/rer/analysis/kmz-task-launch")]
+pub async fn kmz_task_launch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    launch_analysis_export_task(
+        user,
+        env,
+        req.into_inner(),
+        crate::report_history::KIND_KMZ,
+        Some("analysis.kmz".to_string()),
+        Some("application/vnd.google-earth.kmz".to_string()),
+    )
+    .await
+}
+
+#[post("/api/rer/analysis/geojson-task-launch")]
+pub async fn geojson_task_launch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    launch_analysis_export_task(
+        user,
+        env,
+        req.into_inner(),
+        crate::report_history::KIND_GEOJSON,
+        Some("analysis.geojson".to_string()),
+        Some("application/geo+json".to_string()),
+    )
+    .await
+}
+
+async fn launch_analysis_export_task(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: AnalysisStatsReq,
+    report_kind: &str,
+    file_name: Option<String>,
+    content_type: Option<String>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &login,
+        report_kind,
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req),
+        },
+        file_name,
+        content_type,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
 }
 
 fn describe_analysis_stats_req(

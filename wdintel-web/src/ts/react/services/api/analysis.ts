@@ -48,7 +48,8 @@ import type {
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined } from '../../utils/misc';
 import { postBytes, postJson, postVoid } from './client';
-import { fetchBgtaskStatusAndLogs, type BgtaskStatusAndLogsRsp } from './bgtask';
+import type { BgtaskStatusAndLogsRsp } from './bgtask';
+import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -299,11 +300,11 @@ export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<n
 }
 
 export async function fetchAnalysisReportTaskStatus(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
-  return fetchBgtaskStatusAndLogs(taskId, skip);
+  return fetchReportHistoryTaskStatus(taskId, skip);
 }
 
 export async function downloadAnalysisReportTaskResult(taskId: number): Promise<Blob> {
-  return postBytes('/api/rer/report-docx-task-download', transformCamelToSnake({ bgtaskId: taskId }));
+  return downloadReportHistory(taskId);
 }
 
 export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<void> {
@@ -319,12 +320,24 @@ export async function downloadAnalysisSummaryTableXlsx(req: AnalysisStatsReq): P
   return postBytes('/api/rer/analysis/summary-table.xlsx', analysisStatsReqBody(req) as JsonValue);
 }
 
+export async function launchAnalysisSummaryTableTask(req: AnalysisStatsReq): Promise<number> {
+  return postJson<number>('/api/rer/analysis/summary-table-task-launch', analysisStatsReqBody(req) as JsonValue);
+}
+
 export async function downloadAnalysisKmz(req: AnalysisStatsReq): Promise<Blob> {
   return postBytes('/api/rer/analysis/download-kmz', analysisStatsReqBody(req) as JsonValue);
 }
 
+export async function launchAnalysisKmzTask(req: AnalysisStatsReq): Promise<number> {
+  return postJson<number>('/api/rer/analysis/kmz-task-launch', analysisStatsReqBody(req) as JsonValue);
+}
+
 export async function downloadAnalysisGeojson(req: AnalysisStatsReq): Promise<Blob> {
   return postBytes('/api/rer/analysis/download-geojson', analysisStatsReqBody(req) as JsonValue);
+}
+
+export async function launchAnalysisGeojsonTask(req: AnalysisStatsReq): Promise<number> {
+  return postJson<number>('/api/rer/analysis/geojson-task-launch', analysisStatsReqBody(req) as JsonValue);
 }
 
 export async function fetchUnitsByIds(req: ListUnitsByIdReq): Promise<ListUnitsByIdRsp> {
