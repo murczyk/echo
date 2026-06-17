@@ -1885,7 +1885,13 @@ pub async fn load_pelengs_map(
         return Ok(None);
     }
 
-    let res = get_map_image(map_points).await.c(h!())?;
+    let res = match get_map_image(map_points).await {
+        Ok(res) => res,
+        Err(err) => {
+            error!("failed to generate pelengs map image for network {network_id}: {err:?}");
+            return Ok(None);
+        }
+    };
 
     Ok(Some(res))
 }

@@ -10,6 +10,9 @@ pub mod oneoff;
 pub mod tui;
 pub mod worker;
 
+pub(super) const ETALON_CALC_QUERY_PARAM_CHUNK_SIZE: usize = 20_000;
+const ETALON_CALC_NETWORK_INSERT_CHUNK_SIZE: usize = 5_000;
+
 pub async fn invalidate_network_inbox_for_group_with_key<'a, 'async_trait, C>(
     db: &'a C,
     master_key: &str,
@@ -168,14 +171,18 @@ where
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
-    sigint_inbox_item_network::Entity::delete_many()
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId
-                .is_in(sigint_inbox_item_ids),
-        )
-        .exec(dbx)
-        .await
-        .c(h!())?;
+    for sigint_inbox_item_ids in
+        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+    {
+        sigint_inbox_item_network::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(sigint_inbox_item_ids.to_vec()),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
     let items_to_process = sigint_inbox_items
         .into_iter()
         .map(|i| InboxItem {
@@ -203,11 +210,15 @@ where
             result.entry(item_id).or_default().push(network_id);
         }
     }
-    if !networks_to_insert.is_empty() {
-        sigint_inbox_item_network::Entity::insert_many(networks_to_insert)
-            .exec_without_returning(dbx)
-            .await
-            .c(h!())?;
+    for networks_to_insert in
+        networks_to_insert.chunks(ETALON_CALC_NETWORK_INSERT_CHUNK_SIZE)
+    {
+        sigint_inbox_item_network::Entity::insert_many(
+            networks_to_insert.to_vec(),
+        )
+        .exec_without_returning(dbx)
+        .await
+        .c(h!())?;
     }
     Ok(result)
 }
