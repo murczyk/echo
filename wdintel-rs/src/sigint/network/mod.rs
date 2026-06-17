@@ -1631,6 +1631,13 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        let encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.freq_rec.modulation,
+            req.freq_rec.encryption_id,
+        )
+        .await
+        .context(h!())?;
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
@@ -1638,7 +1645,7 @@ pub async fn add_network_freq(
             created_at: NotSet,
             last_seen_dt: NotSet,
             modulation: Set(req.freq_rec.modulation.clone()),
-            encryption_id: Set(req.freq_rec.encryption_id),
+            encryption_id: Set(encryption_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
@@ -2068,9 +2075,16 @@ pub async fn update_network_freq(
         );
         invalidation_freq = freq;
 
+        let encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.modulation,
+            req.encryption_id,
+        )
+        .await
+        .context(h!())?;
         let mut model = network_freq_model.into_active_model();
         model.modulation = Set(req.modulation.clone());
-        model.encryption_id = Set(req.encryption_id);
+        model.encryption_id = Set(encryption_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
@@ -2254,6 +2268,26 @@ pub async fn update_network_freq_v2(
 
 fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
     dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
+}
+
+/// For NFM/AM modulations, always use "Без шифрування" encryption regardless of what the client sent.
+async fn normalize_encryption_id_for_modulation(
+    db: &impl ConnectionTrait,
+    modulation: &str,
+    requested_id: Option<i32>,
+) -> Result<Option<i32>, AppError> {
+    if modulation.eq_ignore_ascii_case("DMR") {
+        return Ok(requested_id);
+    }
+    let enc_id = encryption::Entity::find()
+        .filter(encryption::Column::Name.eq("Без шифрування"))
+        .select_only()
+        .column(encryption::Column::Id)
+        .into_tuple::<i32>()
+        .one(db)
+        .await
+        .context(h!())?;
+    Ok(enc_id)
 }
 
 #[post("/api/sigint/network/delete-freq")]
