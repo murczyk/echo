@@ -1,3 +1,4 @@
+use super::ETALON_CALC_QUERY_PARAM_CHUNK_SIZE;
 use crate::entities::*;
 use crate::h;
 use crate::types::ShortContext;
@@ -132,21 +133,23 @@ where
     if message_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let group_rows = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(message_ids.to_vec()),
-        )
-        .all(db)
-        .await
-        .c(h!())?;
     let mut groups_map: HashMap<i64, Vec<signal_message_group::Model>> =
         HashMap::new();
-    for entry in group_rows {
-        groups_map
-            .entry(entry.signal_message_id)
-            .or_default()
-            .push(entry);
+    for message_ids in message_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        let group_rows = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .is_in(message_ids.to_vec()),
+            )
+            .all(db)
+            .await
+            .c(h!())?;
+        for entry in group_rows {
+            groups_map
+                .entry(entry.signal_message_id)
+                .or_default()
+                .push(entry);
+        }
     }
     Ok(groups_map)
 }
@@ -590,20 +593,22 @@ where
     if message_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let existing = sigint_inbox_item_network::Entity::find()
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId
-                .is_in(message_ids.to_vec()),
-        )
-        .all(db)
-        .await
-        .c(h!())?;
     let mut actual_map: HashMap<i64, BTreeSet<i64>> = HashMap::new();
-    for entry in existing {
-        actual_map
-            .entry(entry.sigint_inbox_item_id)
-            .or_default()
-            .insert(entry.sigint_network_id);
+    for message_ids in message_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        let existing = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(message_ids.to_vec()),
+            )
+            .all(db)
+            .await
+            .c(h!())?;
+        for entry in existing {
+            actual_map
+                .entry(entry.sigint_inbox_item_id)
+                .or_default()
+                .insert(entry.sigint_network_id);
+        }
     }
     Ok(actual_map)
 }
