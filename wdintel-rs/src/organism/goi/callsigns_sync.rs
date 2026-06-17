@@ -1097,9 +1097,123 @@ fn validate_zip_archive_bytes(file_data: &[u8]) -> Result<(), AppError> {
         ZipArchive::new(Cursor::new(file_data.to_vec())).c(h!())?;
     for idx in 0..archive.len() {
         let mut file = archive.by_index(idx).c(h!())?;
+        validate_zip_entry_local_header(file_data, &file).c(h!())?;
         std::io::copy(&mut file, &mut std::io::sink()).c(h!())?;
     }
     Ok(())
+}
+
+fn validate_zip_entry_local_header<R: Read>(
+    file_data: &[u8],
+    file: &zip::read::ZipFile<'_, R>,
+) -> Result<(), AppError> {
+    let header_start = file.header_start() as usize;
+    let signature =
+        zip_u32_at(file_data, header_start).ok_or_else(|| AppError::BL {
+            msg: format!(
+                "GOI workbook ZIP entry {} has truncated local header",
+                file.name()
+            ),
+        })?;
+    if signature != 0x0403_4b50 {
+        return Err(AppError::BL {
+            msg: format!(
+                "GOI workbook ZIP entry {} has invalid local header signature",
+                file.name()
+            ),
+        });
+    }
+
+    let flags = zip_u16_at(file_data, header_start + 6).ok_or_else(|| {
+        AppError::BL {
+            msg: format!(
+                "GOI workbook ZIP entry {} has truncated local header flags",
+                file.name()
+            ),
+        }
+    })?;
+    if flags & 0x08 != 0 {
+        return Ok(());
+    }
+
+    let local_crc32 =
+        zip_u32_at(file_data, header_start + 14).ok_or_else(|| {
+            AppError::BL {
+                msg: format!(
+                    "GOI workbook ZIP entry {} has truncated local header CRC",
+                    file.name()
+                ),
+            }
+        })?;
+    let local_compressed_size = zip_u32_at(file_data, header_start + 18)
+        .ok_or_else(|| AppError::BL {
+            msg: format!(
+                "GOI workbook ZIP entry {} has truncated local compressed size",
+                file.name()
+            ),
+        })?;
+    let local_uncompressed_size =
+        zip_u32_at(file_data, header_start + 22).ok_or_else(|| {
+            AppError::BL {
+                msg: format!(
+                    "GOI workbook ZIP entry {} has truncated local uncompressed size",
+                    file.name()
+                ),
+            }
+        })?;
+
+    validate_zip_entry_local_u32(
+        file.name(),
+        "CRC32",
+        u64::from(local_crc32),
+        u64::from(file.crc32()),
+    )?;
+    validate_zip_entry_local_u32(
+        file.name(),
+        "compressed size",
+        u64::from(local_compressed_size),
+        file.compressed_size(),
+    )?;
+    validate_zip_entry_local_u32(
+        file.name(),
+        "uncompressed size",
+        u64::from(local_uncompressed_size),
+        file.size(),
+    )?;
+    Ok(())
+}
+
+fn validate_zip_entry_local_u32(
+    name: &str,
+    field: &str,
+    local_value: u64,
+    central_value: u64,
+) -> Result<(), AppError> {
+    if local_value == u64::from(u32::MAX)
+        || central_value == u64::from(u32::MAX)
+    {
+        return Ok(());
+    }
+    if local_value != central_value {
+        return Err(AppError::BL {
+            msg: format!(
+                "GOI workbook ZIP entry {name} has mismatched local header {field}: local={local_value}, central={central_value}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn zip_u16_at(data: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(
+        data.get(offset..offset + 2)?.try_into().ok()?,
+    ))
+}
+
+fn zip_u32_at(data: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        data.get(offset..offset + 4)?.try_into().ok()?,
+    ))
 }
 
 fn parse_workbook_rel_targets(
@@ -1494,7 +1608,6 @@ impl From<&Data> for WorkbookCellValue {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::io::Write as _;
 
     fn sample_callsign(
         id: i64,
