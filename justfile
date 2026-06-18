@@ -2214,6 +2214,7 @@ import-unit-to-target:
 [arg('builder', long='builder')]
 [arg('server', long='server')]
 setup-iggy server="echo-staging" builder="echo-build-main":
+    just deploy-config-iggy --server {{ server }}
     just builder={{ builder }} _builder-build-iggy
     ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
     scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
