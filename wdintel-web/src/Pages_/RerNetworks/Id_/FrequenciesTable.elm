@@ -395,16 +395,7 @@ update _ msg model =
                         , selected = updatedNetworkKind
                     }
 
-                bezShyfruvId =
-                    case model.encryptions of
-                        Success encList ->
-                            encList
-                                |> List.filter (\e -> e.name == "Без шифрування")
-                                |> List.head
-                                |> Maybe.map .id
-                        _ ->
-                            Nothing
-
+                -- For NFM/AM we send Nothing; backend normalizes to Без шифрування
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( networkFreqId, freqId, updateReq ) ->
@@ -417,7 +408,7 @@ update _ msg model =
                                                 NetworksUtils.DMR ->
                                                     updateReq.encryptionId
                                                 _ ->
-                                                    bezShyfruvId
+                                                    Nothing
                                     }
                             in
                             Just ( networkFreqId, freqId, newReq )
@@ -433,7 +424,7 @@ update _ msg model =
                         NetworksUtils.DMR ->
                             editModSel
                         _ ->
-                            { editModSel | selected = bezShyfruvId }
+                            { editModSel | selected = Nothing }
             in
             ( { model
                 | freqEditKindSelect = kindSelect2
@@ -660,16 +651,7 @@ update _ msg model =
                 oldFreqState =
                     model.freqCreateState
 
-                bezShyfruvId =
-                    case model.encryptions of
-                        Success encList ->
-                            encList
-                                |> List.filter (\e -> e.name == "Без шифрування")
-                                |> List.head
-                                |> Maybe.map .id
-                        _ ->
-                            Nothing
-
+                -- For NFM/AM we send Nothing; backend normalizes to Без шифрування
                 newFreqState =
                     { oldFreqState
                         | modulation = NetworksUtils.networkKindToString updatedKind
@@ -678,7 +660,7 @@ update _ msg model =
                                 NetworksUtils.DMR ->
                                     oldFreqState.encryptionId
                                 _ ->
-                                    bezShyfruvId
+                                    Nothing
                     }
 
                 createModSel =
@@ -689,7 +671,7 @@ update _ msg model =
                         NetworksUtils.DMR ->
                             createModSel
                         _ ->
-                            { createModSel | selected = bezShyfruvId }
+                            { createModSel | selected = Nothing }
             in
             ( { model
                 | freqCreateKindSelect = newSelect

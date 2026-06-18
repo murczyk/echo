@@ -410,6 +410,13 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
+            let encryption_id = normalize_encryption_id_for_modulation(
+                &txn,
+                &frequency.modulation,
+                frequency.encryption_id,
+            )
+            .await
+            .context(h!())?;
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
                 network_id: Set(network.id),
@@ -419,7 +426,7 @@ pub async fn create_network(
                 active_from: Set(active_from),
                 active_to: Set(active_to),
                 modulation: Set(frequency.modulation.clone()),
-                encryption_id: Set(frequency.encryption_id),
+                encryption_id: Set(encryption_id),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
                 original_id: NotSet,
