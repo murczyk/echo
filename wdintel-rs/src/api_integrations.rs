@@ -186,6 +186,43 @@ pub async fn test_iggy_connection(
     Ok(HttpResponse::Ok().finish())
 }
 
+pub async fn oneoff_ensure_iggy_topics(mode: Mode) -> Result<(), AppError> {
+    info!("oneoff_ensure_iggy_topics started");
+    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let api_integrations = api_integration::Entity::find()
+        .filter(api_integration::Column::HasIggyConnection.eq(true))
+        .order_by_asc(api_integration::Column::Id)
+        .all(&dbx)
+        .await
+        .c(h!())?;
+
+    for api_integration in api_integrations {
+        ensure_iggy_topics_for_api_integration(&api_integration).await?;
+    }
+
+    info!("oneoff_ensure_iggy_topics completed");
+    Ok(())
+}
+
+async fn ensure_iggy_topics_for_api_integration(
+    api_integration: &api_integration::Model,
+) -> Result<(), AppError> {
+    info!(
+        "Ensuring Iggy topics for API integration {}",
+        api_integration.id
+    );
+    crate::iggy::ensure_topics(
+        api_integration.iggy_url.as_deref().c(h!())?,
+        api_integration.iggy_login.as_deref().c(h!())?,
+        api_integration.iggy_password.as_deref().c(h!())?,
+        &[
+            api_integration.iggy_inbox_topic.as_deref().c(h!())?,
+            api_integration.iggy_analytics_topic.as_deref().c(h!())?,
+        ],
+    )
+    .await
+}
+
 async fn validate_and_normalize(
     dbx: &DatabaseConnection,
     req: &UpsertApiIntegrationReq,
