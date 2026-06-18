@@ -34,6 +34,8 @@ ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 workspace_iggy := "~/workspace/iggy"
 local_assets_iggy := "echo-iggy/deploy"
+iggy_fork_remote := "https://github.com/k-bx/iggy.git"
+iggy_default_rev := "k-bx/2026-06-18-poll-option"
 
 default:
     @just --list
@@ -2209,8 +2211,9 @@ import-unit-to-target:
     ssh -t {{ target }} '{{ echo_bin }} --mode=live import-unit --src-path /tmp/unit_import_{{ dt1 }}.json --origin {{ origin }}'
 
 # [positional-arguments]
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-setup-iggy server="echo-staging":
+setup-iggy server="echo-staging" builder="echo-build-main":
     just builder={{ builder }} _builder-build-iggy
     ssh {{ builder }} "[ -f /home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb ]"
     scp {{ builder }}:/home/ubuntu/workspace/echo/target/debian/echo-iggy*.deb "{{ server }}:/var/tmp/echo-iggy-server.deb"
@@ -2234,9 +2237,33 @@ _builder-build-iggy:
     ssh {{ builder }} "cd /home/ubuntu/workspace/echo/{{ local_assets_iggy }} && /home/ubuntu/.cargo/bin/cargo deb --no-build"
 
 # [positional-arguments]
-[arg('tag', long='tag')]
-switch-version-iggy tag="0.8.0":
-    ssh {{ builder }} 'cd workspace/iggy && git checkout master && git fetch --tags && git pull && git checkout -b release-{{ tag }} tags/iggy-{{ tag }}'
+[arg('builder', long='builder')]
+[arg('rev', long='rev')]
+switch-version-iggy rev=iggy_default_rev builder="echo-build-main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh "{{ builder }}" bash -s -- "{{ rev }}" "{{ iggy_fork_remote }}" <<'REMOTE'
+    set -euo pipefail
+    rev="$1"
+    fork_remote="$2"
+    cd workspace/iggy
+    git fetch --tags origin "+refs/heads/*:refs/remotes/origin/*"
+    git fetch --tags "$fork_remote" "+refs/heads/*:refs/remotes/k-bx/*"
+    if git rev-parse --verify --quiet "$rev^{commit}" >/dev/null; then
+        git checkout --detach "$rev"
+    elif git rev-parse --verify --quiet "origin/$rev^{commit}" >/dev/null; then
+        git checkout --detach "origin/$rev"
+    elif git rev-parse --verify --quiet "k-bx/$rev^{commit}" >/dev/null; then
+        git checkout --detach "k-bx/$rev"
+    elif git rev-parse --verify --quiet "tags/iggy-$rev^{commit}" >/dev/null; then
+        git checkout --detach "tags/iggy-$rev"
+    else
+        git checkout --detach "$rev"
+    fi
+    REMOTE
+    echo
+    echo "🚀 run setup-iggy now"
+    echo
 
 # Update UFW firewall rules on a remote server based on local config.toml
 
