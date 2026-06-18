@@ -115,11 +115,11 @@ rev = "6dfff37705e99133b7475162b7b46329985f0c92"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "0d3f161016ed67ceaf64e92f53db9966855f2c84"
+rev = "a94bda974c1af3f31362c10965dda066c602cf30"
 
 [dependencies.milgeo-audio-wave]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "7b0c5bc6c98c118871713f88daaf4ef787ec2f80"
+rev = "a94bda974c1af3f31362c10965dda066c602cf30"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"
