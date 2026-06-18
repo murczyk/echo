@@ -68,7 +68,7 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'DMRe' | 'NFM' {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' | 'AM' {
   const normalized = kind?.trim().toUpperCase() ?? '';
   if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
   if (normalized === 'AM') return 'AM';
@@ -117,8 +117,8 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     freqs: [
       {
         freq: form.freq.trim(),
-        kind: toBackendNetworkFreqKind(form.kind),
-        modulationId: form.modulationId,
+        modulation: toModulationString(form.kind),
+        encryptionId: form.modulationId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         description: null,
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
@@ -139,8 +139,8 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
   };
 }
 
-function toBackendNetworkFreqKind(kind: NetworkFreqKind): 'DMR' | 'DMRe' | 'VHF' {
-  return kind === 'NFM' ? 'VHF' : kind;
+function toModulationString(kind: NetworkFreqKind): string {
+  return kind === 'DMRe' ? 'DMR' : kind;
 }
 
 export type NetworkUpsertValidationError = {

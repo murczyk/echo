@@ -1,11 +1,11 @@
 import { type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 
-import type { AreaOfResponsibility, ModulationRec, Network, Unit } from '../../../../Bindings';
+import type { AreaOfResponsibility, EncryptionRec, Network, Unit } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
 import { listAors } from '../../services/api/aor';
 import { listPosts } from '../../services/api/posts';
-import { getModulations } from '../../services/api/modulations';
+import { getEncryptions } from '../../services/api/modulations';
 import { getUnitsList } from '../../services/api/units';
 import { getNetworkUnitStats, getNetworksGroupsActivity, listNetworks } from '../../services/api/networks';
 import {
@@ -52,7 +52,7 @@ type LoadArgs = {
   setAors: Dispatch<SetStateAction<AreaOfResponsibility[]>>;
   setUnitStats: Dispatch<SetStateAction<Array<{ unitId: number; count: number }>>>;
   setPosts: Dispatch<SetStateAction<Array<{ id: number; name: string }>>>;
-  setModulations: Dispatch<SetStateAction<ModulationRec[]>>;
+  setModulations: Dispatch<SetStateAction<EncryptionRec[]>>;
   setStatus: Dispatch<SetStateAction<UiMessage>>;
   setStatusCounts: Dispatch<SetStateAction<{ active: number; inactive: number; archived: number } | null>>;
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
@@ -97,7 +97,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
     try {
       const lookupsPromise = includeLookups
-        ? Promise.all([getUnitsList(), listAors({ sortBy: null }), getNetworkUnitStats(), listPosts(), getModulations()])
+        ? Promise.all([getUnitsList(), listAors({ sortBy: null }), getNetworkUnitStats(), listPosts(), getEncryptions()])
         : null;
       const networksPromise = listNetworks(req, { signal: controller.signal });
 

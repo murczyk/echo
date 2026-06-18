@@ -118,7 +118,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         aorOptions={page.aorOptions}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
-        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
+        modulationOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}

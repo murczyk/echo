@@ -89,7 +89,7 @@ function collectUniqueLabels(values: string[]): string | null {
   return uniqueValues.join(', ');
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' | 'AM' {
   const normalized = normalizeText(kind).toUpperCase();
   if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
   if (normalized === 'AM') return 'AM';

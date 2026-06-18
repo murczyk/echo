@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
-import type { AreaOfResponsibility, ListNetworksReq, ModulationRec, Network, Unit } from '../../../../Bindings';
+import type { AreaOfResponsibility, EncryptionRec, ListNetworksReq, Network, Unit } from '../../../../Bindings';
 import {
   buildNetworkRowView,
   createDefaultNetworksFilterState,
@@ -38,7 +38,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [networks, setNetworks] = useState<Network[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
-  const [modulations, setModulations] = useState<ModulationRec[]>([]);
+  const [modulations, setModulations] = useState<EncryptionRec[]>([]);
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());

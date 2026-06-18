@@ -472,10 +472,42 @@ update _ msg model =
                 oldFreqState =
                     model.freqCreateState
 
+                bezShyfruvId =
+                    case model.encryptions of
+                        Success encList ->
+                            encList
+                                |> List.filter (\e -> e.name == "Без шифрування")
+                                |> List.head
+                                |> Maybe.map .id
+                        _ ->
+                            Nothing
+
                 newFreqState =
-                    { oldFreqState | modulation = NetworksUtils.networkKindToString updatedKind }
+                    { oldFreqState
+                        | modulation = NetworksUtils.networkKindToString updatedKind
+                        , encryptionId =
+                            case updatedKind of
+                                NetworksUtils.DMR ->
+                                    oldFreqState.encryptionId
+                                _ ->
+                                    bezShyfruvId
+                    }
+
+                createModSel =
+                    model.freqCreateModulationSelect
+
+                newCreateModulationSelect =
+                    case updatedKind of
+                        NetworksUtils.DMR ->
+                            createModSel
+                        _ ->
+                            { createModSel | selected = bezShyfruvId }
             in
-            ( { model | freqCreateKindSelect = newSelect, freqCreateState = newFreqState }
+            ( { model
+                | freqCreateKindSelect = newSelect
+                , freqCreateState = newFreqState
+                , freqCreateModulationSelect = newCreateModulationSelect
+              }
             , E.sendCmd <| Cmd.map FreqCreateKindSelectMsg selectCmd
             )
 
@@ -1158,41 +1190,44 @@ freqEditSidebarContent shared model _ freqId updateReq =
                                 "Виберіть тип"
                                 defaultOptions
                     ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Шифрування" ]
-                    , let
-                        selectedItem =
-                            Maybe.map
-                                (\encryptionId ->
-                                    Select.basicMenuItem
-                                        { item = encryptionId
-                                        , label =
-                                            case model.encryptions of
-                                                Success modulations ->
-                                                    modulations
-                                                        |> List.filter (\mod -> mod.id == encryptionId)
-                                                        |> List.head
-                                                        |> Maybe.map .name
-                                                        |> Maybe.withDefault ""
+                , if model.freqEditKindSelect.selected == NetworksUtils.DMR then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Шифрування" ]
+                        , let
+                            selectedItem =
+                                Maybe.map
+                                    (\encryptionId ->
+                                        Select.basicMenuItem
+                                            { item = encryptionId
+                                            , label =
+                                                case model.encryptions of
+                                                    Success modulations ->
+                                                        modulations
+                                                            |> List.filter (\mod -> mod.id == encryptionId)
+                                                            |> List.head
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault ""
 
-                                                _ ->
-                                                    ""
-                                        }
-                                )
-                                model.freqEditModulationSelect.selected
+                                                    _ ->
+                                                        ""
+                                            }
+                                    )
+                                    model.freqEditModulationSelect.selected
 
-                        defaultOptions =
-                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-                      in
-                      Html.map FreqModulationSelectMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelectSingle
-                                selectedItem
-                                model.freqEditModulationSelect.state
-                                model.freqEditModulationSelect.items
-                                "Не вибрано"
-                                defaultOptions
-                    ]
+                            defaultOptions =
+                                Utils.Select.defaultOptions (isDarkMode shared.themeMode)
+                          in
+                          Html.map FreqModulationSelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelectSingle
+                                    selectedItem
+                                    model.freqEditModulationSelect.state
+                                    model.freqEditModulationSelect.items
+                                    "Не вибрано"
+                                    defaultOptions
+                        ]
+                  else
+                    text ""
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
                     , input
@@ -1328,41 +1363,44 @@ freqCreateSidebarContent shared model _ =
                             "Виберіть тип"
                             defaultOptions
                 ]
-            , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Шифрування" ]
-                , case model.encryptions of
-                    Success modulations ->
-                        let
-                            selectedItem =
-                                Maybe.map
-                                    (\item ->
-                                        Select.basicMenuItem
-                                            { item = item
-                                            , label =
-                                                modulations
-                                                    |> List.filter (\mod -> mod.id == item)
-                                                    |> List.head
-                                                    |> Maybe.map .name
-                                                    |> Maybe.withDefault ""
-                                            }
-                                    )
-                                    model.freqCreateModulationSelect.selected
+            , if model.freqCreateKindSelect.selected == NetworksUtils.DMR then
+                div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Шифрування" ]
+                    , case model.encryptions of
+                        Success modulations ->
+                            let
+                                selectedItem =
+                                    Maybe.map
+                                        (\item ->
+                                            Select.basicMenuItem
+                                                { item = item
+                                                , label =
+                                                    modulations
+                                                        |> List.filter (\mod -> mod.id == item)
+                                                        |> List.head
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault ""
+                                                }
+                                        )
+                                        model.freqCreateModulationSelect.selected
 
-                            defaultOptions =
-                                Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-                        in
-                        Html.map FreqCreateModulationSelectMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelectSingle
-                                    selectedItem
-                                    model.freqCreateModulationSelect.state
-                                    model.freqCreateModulationSelect.items
-                                    "Не вибрано"
-                                    defaultOptions
+                                defaultOptions =
+                                    Utils.Select.defaultOptions (isDarkMode shared.themeMode)
+                            in
+                            Html.map FreqCreateModulationSelectMsg <|
+                                Styled.toUnstyled <|
+                                    Utils.Select.renderSelectSingle
+                                        selectedItem
+                                        model.freqCreateModulationSelect.state
+                                        model.freqCreateModulationSelect.items
+                                        "Не вибрано"
+                                        defaultOptions
 
-                    _ ->
-                        div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
-                ]
+                        _ ->
+                            div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
+                    ]
+              else
+                text ""
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
                 , textarea
