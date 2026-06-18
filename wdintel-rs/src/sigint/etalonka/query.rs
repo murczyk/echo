@@ -642,7 +642,15 @@ struct NetworkFreqStatsDayRow {
     quantity: i64,
 }
 
-#[derive(FromQueryResult)]
+#[derive(Debug)]
+struct ExactNetworkFreqCountRequest {
+    frequency: String,
+    day_since_ts: NaiveDateTime,
+    day_till_ts: NaiveDateTime,
+    network_freq_ids: Vec<i64>,
+}
+
+#[derive(sqlx::FromRow)]
 struct ExactNetworkFreqCountRow {
     network_freq_id: i64,
     quantity: i64,
@@ -693,124 +701,98 @@ fn should_use_exact_counts_for_day(
     )
 }
 
-async fn load_exact_network_freq_counts_for_day(
+async fn load_exact_network_freq_counts(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    frequency: &str,
-    dt: NaiveDate,
-    network_freq_ids: Vec<i64>,
+    requests: Vec<ExactNetworkFreqCountRequest>,
 ) -> Result<HashMap<i64, i64>, AppError> {
+    if requests.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut request_ids = Vec::with_capacity(requests.len());
+    let mut frequencies = Vec::with_capacity(requests.len());
+    let mut day_since_tss = Vec::with_capacity(requests.len());
+    let mut day_till_tss = Vec::with_capacity(requests.len());
+    let mut freq_request_ids = vec![];
+    let mut network_freq_ids = vec![];
+
+    for (request_index, request) in requests.into_iter().enumerate() {
+        let request_id = request_index as i64;
+        request_ids.push(request_id);
+        frequencies.push(request.frequency);
+        day_since_tss.push(request.day_since_ts);
+        day_till_tss.push(request.day_till_ts);
+        for network_freq_id in request.network_freq_ids {
+            freq_request_ids.push(request_id);
+            network_freq_ids.push(network_freq_id);
+        }
+    }
     if network_freq_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let day_since_ts = crate::stats::start_of_day(dt).c(h!())?;
-    let day_till_ts =
-        crate::stats::start_of_day(dt + chrono::Duration::days(1)).c(h!())?;
-    let nf = Alias::new("network_freqs");
-    let ts_expr = Expr::cust(
-        "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
-    );
-    let join_condition = Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
-        .equals((
-            SigintInboxItemNetwork::Table,
-            SigintInboxItemNetwork::SigintInboxItemId,
-        ))
-        .and(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .equals((nf.clone(), SigintNetworkFreq::NetworkId)),
-        )
-        .and(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                .equals((nf.clone(), SigintNetworkFreq::Freq)),
-        )
-        .and(
-            ts_expr
-                .clone()
-                .gte(Expr::col((nf.clone(), SigintNetworkFreq::ActiveFrom))),
-        )
-        .and(ts_expr.clone().lte(Expr::cust(
-            "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
-        )));
 
-    let mut query: SelectStatement = Query::select();
-    query
-        .expr_as(
-            Expr::col((nf.clone(), SigintNetworkFreq::Id)),
-            Alias::new("network_freq_id"),
+    let rows = sqlx::query_as::<_, ExactNetworkFreqCountRow>(
+        r#"
+        WITH exact_requests AS (
+            SELECT *
+            FROM unnest(
+                $1::bigint[],
+                $2::text[],
+                $3::timestamp[],
+                $4::timestamp[]
+            ) AS req(request_id, frequency, day_since_ts, day_till_ts)
+        ),
+        exact_freqs AS (
+            SELECT *
+            FROM unnest(
+                $5::bigint[],
+                $6::bigint[]
+            ) AS freq(request_id, network_freq_id)
         )
-        .expr_as(Expr::cust("COUNT(*)"), Alias::new("quantity"))
-        .from(SignalMessage::Table)
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItem::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::Id))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            DatasourceGroup::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
-                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItemNetwork::Table,
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintInboxItemId,
-            )),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            SigintNetworkFreq::Table,
-            nf.clone(),
-            join_condition,
-        )
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
-        )
-        .and_where(
-            datasource_group::Column::GroupMasterKey.eq_any(groups.clone()),
-        )
-        .and_where(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .eq(network_id),
-        )
-        .and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                .eq(frequency),
-        )
-        .and_where(
-            Expr::col((nf.clone(), SigintNetworkFreq::Deleted)).eq(false),
-        )
-        .and_where(
-            Expr::col((nf.clone(), SigintNetworkFreq::Id))
-                .is_in(network_freq_ids),
-        )
-        .and_where(ts_expr.clone().gte(day_since_ts))
-        .and_where(ts_expr.lt(day_till_ts))
-        .add_group_by([Expr::col((nf, SigintNetworkFreq::Id)).into()]);
-    let sql = query.to_string(PostgresQueryBuilder);
-    let rows = dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, sql))
+        SELECT
+            nf.id AS network_freq_id,
+            COUNT(*) AS quantity
+        FROM exact_requests req
+        JOIN exact_freqs ef
+            ON ef.request_id = req.request_id
+        JOIN sigint_network_freq nf
+            ON nf.id = ef.network_freq_id
+           AND nf.network_id = $7
+           AND nf.freq = req.frequency
+           AND nf.deleted = false
+        JOIN sigint_inbox_item_network iin
+            ON iin.sigint_network_id = nf.network_id
+        JOIN sigint_inbox_item ii
+            ON ii.id = iin.sigint_inbox_item_id
+           AND ii.freq = nf.freq
+        JOIN signal_message sm
+            ON sm.id = ii.id
+        JOIN datasource_group dg
+            ON dg.id = sm.datasource_group_id
+        WHERE sm.deleted = false
+          AND dg.group_master_key = ANY($8)
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at)
+                <= COALESCE(nf.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= req.day_since_ts
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) < req.day_till_ts
+        GROUP BY nf.id
+        "#,
+    )
+        .bind(request_ids)
+        .bind(frequencies)
+        .bind(day_since_tss)
+        .bind(day_till_tss)
+        .bind(freq_request_ids)
+        .bind(network_freq_ids)
+        .bind(network_id)
+        .bind(groups)
+        .fetch_all(dbx.get_postgres_connection_pool())
         .await
-        .c(h!())?
-        .iter()
-        .map(|row| -> Result<ExactNetworkFreqCountRow, AppError> {
-            Ok(ExactNetworkFreqCountRow {
-                network_freq_id: row.try_get("", "network_freq_id").c(h!())?,
-                quantity: row.try_get("", "quantity").c(h!())?,
-            })
-        })
-        .collect::<Result<Vec<_>, AppError>>()
         .c(h!())?;
+
     Ok(rows
         .into_iter()
         .map(|row| (row.network_freq_id, row.quantity))
@@ -872,6 +854,7 @@ pub async fn load_network_freqs_counts_from_stats(
         .c(h!())?;
 
     let mut network_freq_counts: HashMap<i64, i64> = HashMap::new();
+    let mut exact_count_requests = vec![];
     for row in rows {
         let Some(freq_ranges) = network_freq_ranges.get(&row.frequency) else {
             continue;
@@ -894,23 +877,29 @@ pub async fn load_network_freqs_counts_from_stats(
             continue;
         }
 
-        let exact_day_counts = load_exact_network_freq_counts_for_day(
-            dbx,
-            groups,
-            network_id,
-            &row.frequency,
-            row.dt,
-            network_freqs_for_day
+        exact_count_requests.push(ExactNetworkFreqCountRequest {
+            frequency: row.frequency,
+            day_since_ts: crate::stats::start_of_day(row.dt).c(h!())?,
+            day_till_ts: crate::stats::start_of_day(
+                row.dt + chrono::Duration::days(1),
+            )
+            .c(h!())?,
+            network_freq_ids: network_freqs_for_day
                 .iter()
                 .map(|freq| freq.network_freq_id)
                 .collect(),
-        )
-        .await
-        .c(h!())?;
-        for (network_freq_id, quantity) in exact_day_counts {
-            *network_freq_counts.entry(network_freq_id).or_insert(0) +=
-                quantity;
-        }
+        });
+    }
+    let exact_counts = load_exact_network_freq_counts(
+        dbx,
+        groups,
+        network_id,
+        exact_count_requests,
+    )
+    .await
+    .c(h!())?;
+    for (network_freq_id, quantity) in exact_counts {
+        *network_freq_counts.entry(network_freq_id).or_insert(0) += quantity;
     }
     Ok(network_freq_counts)
 }

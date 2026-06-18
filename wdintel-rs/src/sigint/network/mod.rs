@@ -2611,8 +2611,11 @@ async fn load_network_freq_last_datetime_in_aor(
             nf.id AS network_freq_id,
             max(ii.datetime) AS last_datetime_in_aor
         FROM sigint_network_freq nf
+        JOIN sigint_inbox_item_network iin
+            ON iin.sigint_network_id = nf.network_id
         JOIN sigint_inbox_item ii
-            ON ii.freq = nf.freq
+            ON ii.id = iin.sigint_inbox_item_id
+           AND ii.freq = nf.freq
         JOIN signal_message sm
             ON sm.id = ii.id
         JOIN datasource_group dg
@@ -2622,6 +2625,9 @@ async fn load_network_freq_last_datetime_in_aor(
           AND sm.deleted = false
           AND ii.datetime IS NOT NULL
           AND dg.group_master_key = ANY($3)
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at)
+                <= COALESCE(nf.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           AND EXISTS (
               SELECT 1
               FROM signal_message_group smg
