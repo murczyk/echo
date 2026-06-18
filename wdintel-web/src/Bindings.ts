@@ -1894,6 +1894,7 @@ export type ReportPreviewReq = {
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
   interceptionKeepFullMessage: boolean | null;
+  interceptionKeepOldColors: boolean | null;
   digestOmitExoId: boolean | null;
   digestForm1217: boolean | null;
 };

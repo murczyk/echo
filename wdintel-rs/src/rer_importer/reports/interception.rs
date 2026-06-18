@@ -1,5 +1,5 @@
 use super::super::types::*;
-use crate::config::*;
+use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer;
@@ -17,6 +17,8 @@ use sea_orm::{prelude::Expr, *};
 use sea_query::*;
 use serde_json::json;
 use std::path::PathBuf;
+
+mod palette;
 
 #[derive(FromQueryResult)]
 struct InboxMessage {
@@ -53,9 +55,10 @@ pub async fn report_xlsx_kind_interception(
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
     let keep_full_message = req.interception_keep_full_message.unwrap_or(false);
+    let keep_old_colors = req.interception_keep_old_colors.unwrap_or(false);
     // Define formats using rust_xlsxwriter
 
-    set_colors_and_formats_for_sheet(sheet1)?;
+    set_colors_and_formats_for_sheet(sheet1, keep_old_colors)?;
 
     let read_db = env.replica();
     let all_tags = get_all_tags(&read_db).await?;
@@ -82,7 +85,9 @@ fn get_worksheet(workbook: &mut Workbook) -> Result<&mut Worksheet, AppError> {
 
 fn set_colors_and_formats_for_sheet(
     sheet1: &mut Worksheet,
+    keep_old_colors: bool,
 ) -> Result<(), AppError> {
+    let colors = palette::for_keep_old_colors(keep_old_colors);
     let coltitle_base = Format::new()
         .set_bold()
         .set_border(FormatBorder::Thin)
@@ -91,49 +96,49 @@ fn set_colors_and_formats_for_sheet(
 
     let coltitle_blue = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0x5b9bd5));
+        .set_background_color(Color::RGB(colors.blue));
     let coltitle_yellow = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0xfef2cb));
+        .set_background_color(Color::RGB(colors.yellow));
     let coltitle_gray = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0xd8d8d8));
+        .set_background_color(Color::RGB(colors.gray));
     let coltitle_orange = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0xffc000));
+        .set_background_color(Color::RGB(colors.orange));
     let coltitle_pink = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0xff33cc));
+        .set_background_color(Color::RGB(colors.pink));
     let coltitle_green = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0x77bc65));
+        .set_background_color(Color::RGB(colors.green));
     let coltitle_brown = coltitle_base
         .clone()
-        .set_background_color(Color::RGB(0xf67315));
+        .set_background_color(Color::RGB(colors.brown));
 
     let format_blue = Format::new()
-        .set_background_color(Color::RGB(0x5b9bd5))
+        .set_background_color(Color::RGB(colors.blue))
         .set_border(FormatBorder::Thin);
     let format_yellow = Format::new()
-        .set_background_color(Color::RGB(0xfef2cb))
+        .set_background_color(Color::RGB(colors.yellow))
         .set_border(FormatBorder::Thin);
     let format_gray = Format::new()
-        .set_background_color(Color::RGB(0xd8d8d8))
+        .set_background_color(Color::RGB(colors.gray))
         .set_border(FormatBorder::Thin);
     let format_blue_wrap = format_blue.clone().set_text_wrap();
     let format_orange = Format::new()
-        .set_background_color(Color::RGB(0xffc000))
+        .set_background_color(Color::RGB(colors.orange))
         .set_border(FormatBorder::Thin);
     let format_pink_wrap = Format::new()
-        .set_background_color(Color::RGB(0xff33cc))
+        .set_background_color(Color::RGB(colors.pink))
         .set_border(FormatBorder::Thin)
         .set_text_wrap();
     let format_green_wrap = Format::new()
-        .set_background_color(Color::RGB(0x77bc65))
+        .set_background_color(Color::RGB(colors.green))
         .set_border(FormatBorder::Thin)
         .set_text_wrap();
     let format_brown_wrap = Format::new()
-        .set_background_color(Color::RGB(0xf67315))
+        .set_background_color(Color::RGB(colors.brown))
         .set_border(FormatBorder::Thin)
         .set_text_wrap();
 

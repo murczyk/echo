@@ -398,11 +398,18 @@ export function AnalysisReportDialog({
                   onChange={(value) => onUpdate({ withoutModelTags: value })}
                 />
                 {report.template === 'interception' ? (
-                  <ReportCheckboxLabel
-                    checked={report.interceptionKeepFullMessage}
-                    label="Повний текст повідомлення"
-                    onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
-                  />
+                  <>
+                    <ReportCheckboxLabel
+                      checked={report.interceptionKeepFullMessage}
+                      label="Повний текст повідомлення"
+                      onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
+                    />
+                    <ReportCheckboxLabel
+                      checked={report.interceptionKeepOldColors}
+                      label="Залишити старі кольори"
+                      onChange={(value) => onUpdate({ interceptionKeepOldColors: value })}
+                    />
+                  </>
                 ) : null}
                 {(() => {
                   const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Без автоматичних тегів'));

@@ -29,6 +29,7 @@ export type SenderAggregation = 'ByProfile' | 'ByPost';
 export type AnalysisReportState = {
   activeNetworksAorIds: number[];
   interceptionKeepFullMessage: boolean;
+  interceptionKeepOldColors: boolean;
   open: boolean;
   reoAdjacentFreqsDistance: number;
   reoFileType: ReoReportFileType;
@@ -60,6 +61,7 @@ export function createDefaultReportState(): AnalysisReportState {
   return {
     activeNetworksAorIds: [],
     interceptionKeepFullMessage: false,
+    interceptionKeepOldColors: false,
     open: false,
     reoAdjacentFreqsDistance: 0,
     reoFileType: 'Docx',
@@ -148,6 +150,7 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
     report1213LinkedNetworksOnly: null,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
     interceptionKeepFullMessage: state.template === 'interception' ? state.interceptionKeepFullMessage : null,
+    interceptionKeepOldColors: state.template === 'interception' ? state.interceptionKeepOldColors : null,
     digestOmitExoId: state.template === 'digest' ? false : null,
     digestForm1217: state.template === 'digest' ? false : null,
   } as ReportPreviewReq;

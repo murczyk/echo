@@ -42,6 +42,7 @@ pub struct ReportPreviewReq {
     pub report_1213_linked_networks_only: Option<bool>,
     pub without_comments: Option<bool>,
     pub interception_keep_full_message: Option<bool>,
+    pub interception_keep_old_colors: Option<bool>,
     pub digest_omit_exo_id: Option<bool>,
     pub digest_form_1_2_17: Option<bool>,
 }
