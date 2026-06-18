@@ -56,6 +56,54 @@ pub struct InboxMessage {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct ChumakSubmitMessageReq {
+    pub message: String,
+    pub timestamp: String,  // local ts in ISO format
+    pub freq: Option<String>, // {d2..5}.{d4}
+    pub locations: Vec<String>, // todo allow multiple in InboxMessage
+    pub tags: Vec<String>, // todo: якщо є хоча б один - додати коментар за авторством поста, у вигляді 'Теги: {список тегів через кому}'
+
+    // FIXME properties that require clarifications go next
+    pub no_headers_body: String,// TODO discuss: should use this? Option<crate::rer_importer::body_noheader::NoHeadersBody>,
+    pub media: Vec<MessageMediaInfo>, // TODO discuss: skip for now?
+    pub coordinates: Option<String>, //TODO discuss: ?
+    pub signals: Option<String>, //TODO discuss: do we want to support signals, keywords?
+    pub callsign_from: Option<String>, //TODO discuss:  optional?
+    pub callsign_to: Option<String>, // TODO discuss: optional?
+    pub callsigns_other: Vec<String>,
+    pub network_name: Option<String>, //TODO discuss:  optional? >1?
+    pub unit: Option<String>, // TODO discuss: do we need it?
+    pub group_names: Vec<String>, // TODO discuss: >1 ? 0 is ok?
+    pub sender: Option<String>, // TODO discuss: 0 is ok?
+    pub post: Option<String>, // TODO discuss: do we need it?
+    pub network: Option<ChumakNetwork>,
+    pub dmr: Vec<ChumakMetadata>, // todo save as sigint_inbox_item_metadata, cross-validate cc with this.network
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChumakNetwork {
+    pub signal_name: String,// todo add validation: expected 'dmr'
+    pub cc: i32, // todo add validation: should match values from dmr (ChumakMetadata[])
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChumakMetadata {
+    pub timestamp: String, // local ts in ISO format
+    pub cc: i32,
+    pub freq: String, //{d2..5}.{d4}
+    pub signal_name: ChumakSignalName,
+    pub sender_id: i64,
+    pub abonent_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MessageMediaInfo {
     pub id: String,
     pub content_type: String,
@@ -162,6 +210,22 @@ pub struct FreqDetailedPoint {
     pub mgrs_coords: String,
     pub sk42_coords: String,
     pub freq: Option<String>,
+}#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+)]
+pub enum ChumakSignalName {
+    Dmr,
+    Tetra,
+    Am,
+    Fm,
 }
 
 #[derive(

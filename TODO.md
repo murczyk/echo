@@ -1,0 +1,6 @@
+1. fix TODO items in wdintel-rs/src/rer_importer/inbox/mod.rs and wdintel-rs/src/rer_importer/types.rs
+2. implement new sigint network endpoint: you pass required freq, optional AOR and optional cc (colorcode, from sigint inbox item network). finds all live sigint networks that matches these, returns first 10, in rich format: all basic network details (unit, name etc - just not the author), all live freqs (just values like 123.4565), all network callsigns (just callsign itself, no details), all signals (same), last 10 pelends, locations etc. cache its results using redis, so we store top 250 results ready, with 30m expiration.
+3. create archive/2026-06-18-echo-chumak folder with integration docs. put there readme + env + python script similar to echo-iggy/test-cli with commands like:
+   1. login to echo with login n password and obtain a login cookie
+   2. find networks by freq (payload, endpoint, method etc)
+   3. create a new message using "/api/rer-importer/inbox/chumak-submit" (with example of payload you pass)

@@ -536,7 +536,21 @@ async fn inbox_submit(
     req: Json<InboxSubmitReq>,
 ) -> Result<Json<()>, AppError> {
     match do_submit_inbox(user, &env, req).await {
-        // FIXME logging doesn't work for this function, please fix
+        Ok(_) => Ok(Json(())),
+        Err(e) => {
+            error!("failed to submit inbox: {:?}", e);
+            Err(e)
+        }
+    }
+}
+
+#[post("/api/rer-importer/inbox/chumak-submit")]
+async fn chumak_inbox_submit(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ChumakSubmitMessageReq>,
+) -> Result<Json<()>, AppError> {
+    match do_submit_chumak_inbox(user, &env, req).await { // TODO map  ChumakSubmitMessageReq to entry of InboxSubmitReq, save extra data to a new companion table, process later on
         Ok(_) => Ok(Json(())),
         Err(e) => {
             error!("failed to submit inbox: {:?}", e);

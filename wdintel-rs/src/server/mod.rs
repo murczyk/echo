@@ -516,6 +516,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::inbox::comment_save)
             .service(crate::rer_importer::inbox::inbox_submit)
+            .service(crate::rer_importer::inbox::chumak_inbox_submit)
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::messages_by_id)
