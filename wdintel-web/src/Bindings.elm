@@ -7253,8 +7253,6 @@ mergeNetworkReqEncoder struct =
 type alias EncryptionRec =
     { id : Int
     , name : String
-    , left : Int
-    , right : Int
     , enabled : Bool
     }
 
@@ -7264,8 +7262,6 @@ encryptionRecEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
-        , ( "left", (Json.Encode.int) struct.left )
-        , ( "right", (Json.Encode.int) struct.right )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         ]
 
@@ -12823,8 +12819,6 @@ encryptionRecDecoder =
     Json.Decode.succeed EncryptionRec
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
 
 

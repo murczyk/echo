@@ -20,6 +20,8 @@ pub enum Relation {
     AreaOfResponsibility,
     #[sea_orm(has_many = "super::encryption::Entity")]
     Encryption,
+    #[sea_orm(has_many = "super::modulation::Entity")]
+    Modulation,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
@@ -71,6 +73,12 @@ impl Related<super::area_of_responsibility::Entity> for Entity {
 impl Related<super::encryption::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Encryption.def()
+    }
+}
+
+impl Related<super::modulation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Modulation.def()
     }
 }
 

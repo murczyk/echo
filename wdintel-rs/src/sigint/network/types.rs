@@ -502,8 +502,6 @@ pub struct NetworkFreqCallsignsBatchRsp {
 pub struct EncryptionRec {
     pub id: i32,
     pub name: String,
-    pub left: i32,
-    pub right: i32,
     pub enabled: bool,
 }
 

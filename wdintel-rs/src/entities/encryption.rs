@@ -12,13 +12,10 @@ pub struct Model {
     pub id: i32,
     #[sea_orm(column_type = "Text")]
     pub name: String,
-    pub lft: i32,
-    pub rgt: i32,
     pub enabled: bool,
     pub created_at: DateTime,
     pub sigint_origin_id: Option<i64>,
     pub mothership_id: Option<i32>,
-    pub original_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

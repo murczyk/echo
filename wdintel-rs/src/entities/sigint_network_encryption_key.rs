@@ -19,9 +19,10 @@ pub struct Model {
     pub sigint_network_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
-    pub encryption_id: Option<i64>,
+    pub modulation_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub key_hash: Option<String>,
+    pub encryption_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -34,6 +35,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Encryption,
+    #[sea_orm(
+        belongs_to = "super::modulation::Entity",
+        from = "Column::ModulationId",
+        to = "super::modulation::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Modulation,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -65,6 +74,12 @@ pub enum Relation {
 impl Related<super::encryption::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Encryption.def()
+    }
+}
+
+impl Related<super::modulation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Modulation.def()
     }
 }
 

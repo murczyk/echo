@@ -55,6 +55,7 @@ pub mod goi_knowledge;
 pub mod group_admin_data;
 pub mod log_users_report_generation;
 pub mod login;
+pub mod modulation;
 pub mod network_callsign;
 pub mod network_invalidation_task;
 pub mod network_invalidation_worker;

@@ -184,18 +184,35 @@ pub async fn oneoff_migrate_modulation_to_encryption(
 ) -> anyhow::Result<(), AppError> {
     let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
-    let old_schema = table_exists(&db, "modulation").await?;
-    let new_schema = table_exists(&db, "encryption").await?;
+    let encryption_exists = table_exists(&db, "encryption").await?;
+    let modulation_exists = table_exists(&db, "modulation").await?;
 
     info!(
-        "oneoff_migrate_modulation_to_encryption: old_schema={old_schema} \
-         new_schema={new_schema} dry_run={dry_run}"
+        "oneoff_migrate_modulation_to_encryption: encryption_exists={encryption_exists} \
+         modulation_exists={modulation_exists} dry_run={dry_run}"
     );
 
-    if old_schema && !new_schema {
-        println!("\n══ Стара схема (таблиця modulation) ══════════════════════════════════════");
+    if !encryption_exists {
+        return Err(AppError::BL {
+            msg: "DDL-міграцію ще не застосовано — таблиця 'encryption' не існує. \
+                  Спочатку запустіть міграцію (migrate up)."
+                .to_string(),
+        });
+    }
 
-        preflight_old_schema(&db).await?;
+    let already_has_data = encryption_has_data(&db).await?;
+
+    if !already_has_data {
+        if !modulation_exists {
+            return Err(AppError::BL {
+                msg: "Таблиця 'modulation' не знайдена — неможливо виконати data-міграцію."
+                    .to_string(),
+            });
+        }
+
+        println!("\n══ Data-міграція modulation → encryption ══════════════════════════════════");
+
+        preflight(&db).await?;
         print_migration_preview(&db).await?;
 
         println!(
@@ -204,7 +221,7 @@ pub async fn oneoff_migrate_modulation_to_encryption(
         );
 
         let txn = db.begin().await.c(h!())?;
-        run_full_enc_migration(&txn).await?;
+        run_data_migration(&txn).await?;
 
         if dry_run {
             txn.rollback().await.c(h!())?;
@@ -213,10 +230,12 @@ pub async fn oneoff_migrate_modulation_to_encryption(
             );
         } else {
             txn.commit().await.c(h!())?;
-            println!("✓ Міграцію успішно виконано і підтверджено (COMMIT).");
+            println!(
+                "✓ Data-міграцію успішно виконано і підтверджено (COMMIT)."
+            );
         }
-    } else if new_schema {
-        println!("\n══ Нова схема (таблиця encryption) — data-fix ════════════════════════════");
+    } else {
+        println!("\n══ Data-fix (encryption вже заповнена) ══════════════════════════════════");
         print_data_fix_preview(&db).await?;
 
         let txn = db.begin().await.c(h!())?;
@@ -229,11 +248,6 @@ pub async fn oneoff_migrate_modulation_to_encryption(
             txn.commit().await.c(h!())?;
             println!("✓ Data-fix виконано і підтверджено (COMMIT).");
         }
-    } else {
-        return Err(AppError::BL {
-            msg: "Несподіваний стан БД: не знайдено ні таблицю 'modulation', ні 'encryption'."
-                .to_string(),
-        });
     }
 
     Ok(())
@@ -256,34 +270,26 @@ async fn table_exists(
         .is_some())
 }
 
-/// Preflight checks for old schema. Returns Ok if safe to migrate.
-/// Warnings are printed but do not abort. Errors abort.
-async fn preflight_old_schema(db: &DatabaseConnection) -> Result<(), AppError> {
+async fn encryption_has_data(
+    db: &DatabaseConnection,
+) -> Result<bool, AppError> {
+    Ok(db
+        .query_one(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT 1 FROM encryption LIMIT 1".to_string(),
+        ))
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
     println!("\n── Preflight перевірки ─────────────────────────────────────────────────────");
 
     let mut errors: Vec<String> = vec![];
     let mut warnings: Vec<String> = vec![];
 
-    // 1. Temp ID conflict: IDs 101-106 must be free in modulation
-    let conflicts: Vec<i32> = db
-        .query_all(Statement::from_string(
-            DbBackend::Postgres,
-            "SELECT id FROM modulation WHERE id BETWEEN 101 AND 106 ORDER BY id".to_string(),
-        ))
-        .await
-        .c(h!())?
-        .into_iter()
-        .filter_map(|r| r.try_get::<i32>("", "id").ok())
-        .collect();
-
-    if !conflicts.is_empty() {
-        errors.push(format!(
-            "Temp-IDs 101-106 вже зайняті в modulation: {:?}. Звільніть або змініть temp-діапазон.",
-            conflicts
-        ));
-    }
-
-    // 2. Orphaned FK in sigint_network_freq
+    // 1. Orphaned FK in sigint_network_freq
     let orphaned_freq: i64 = db
         .query_one(Statement::from_string(
             DbBackend::Postgres,
@@ -304,7 +310,7 @@ async fn preflight_old_schema(db: &DatabaseConnection) -> Result<(), AppError> {
         ));
     }
 
-    // 3. Orphaned FK in sigint_network_encryption_key
+    // 2. Orphaned FK in sigint_network_encryption_key
     let orphaned_keys: i64 = db
         .query_one(Statement::from_string(
             DbBackend::Postgres,
@@ -325,7 +331,7 @@ async fn preflight_old_schema(db: &DatabaseConnection) -> Result<(), AppError> {
         ));
     }
 
-    // 4. Unknown modulation names (will fall to 'Не визначено')
+    // 3. Unknown modulation names (will fall to 'Не визначено')
     let known = "'NFM','AM','DMR','DMR (ARC40)','DMR (AES256)','HYTERA','HYTERA (256 bit)',\
                  'TYT','TYT (16 bit)','TYT (128 bit)','TETRA','Граніт','GSM','Умовна'";
     let unknown_names: Vec<String> = db
@@ -367,7 +373,6 @@ async fn preflight_old_schema(db: &DatabaseConnection) -> Result<(), AppError> {
         ));
     }
 
-    // Output
     if errors.is_empty() && warnings.is_empty() {
         println!("  ✓ Всі перевірки пройдено без зауважень.\n");
     } else {
@@ -409,23 +414,21 @@ async fn print_migration_preview(
                  SELECT
                      snf.kind::text AS kind,
                      COALESCE(m.name, '(null)') AS old_mod,
-                     CASE snf.kind::text
-                         WHEN 'VHF' THEN CASE
-                             WHEN m.name IS NULL OR m.name = '' OR m.name = 'NFM' THEN 'NFM'
-                             WHEN m.name = 'AM' THEN 'AM'
-                             ELSE 'DMR'
-                         END
+                     CASE
+                         WHEN snf.kind::text = 'VHF'
+                              AND (m.name IS NULL OR m.name = 'NFM') THEN 'NFM'
+                         WHEN snf.kind::text = 'VHF'
+                              AND m.name = 'AM'                      THEN 'AM'
                          ELSE 'DMR'
                      END AS new_mod,
                      CASE
+                         WHEN m.name = 'DMR (ARC40)'                             THEN 'ARC40'
+                         WHEN m.name IN ('DMR (AES256)', 'HYTERA (256 bit)')     THEN 'AES256'
+                         WHEN m.name IN ('TYT', 'TYT (128 bit)')                THEN 'TYT (128 bit)'
+                         WHEN m.name = 'TYT (16 bit)'                           THEN 'TYT (16 bit)'
                          WHEN snf.kind::text = 'VHF'
-                              AND (m.name IS NULL OR m.name = '' OR m.name = 'NFM') THEN 'Без шифрування'
-                         WHEN snf.kind::text = 'VHF' AND m.name = 'AM'             THEN 'Без шифрування'
-                         WHEN m.name = 'DMR (ARC40)'                               THEN 'ARC40'
-                         WHEN m.name IN ('DMR (AES256)', 'HYTERA (256 bit)')       THEN 'AES256'
-                         WHEN m.name IN ('TYT', 'TYT (128 bit)')                   THEN 'TYT (128 bit)'
-                         WHEN m.name = 'TYT (16 bit)'                              THEN 'TYT (16 bit)'
-                         WHEN snf.kind::text = 'VHF' AND m.name = 'DMR'            THEN 'Без шифрування'
+                              AND (m.name IS NULL
+                                   OR m.name IN ('NFM', 'AM', 'DMR'))           THEN 'Без шифрування'
                          ELSE 'Не визначено'
                      END AS new_enc
                  FROM sigint_network_freq snf
@@ -493,158 +496,82 @@ async fn print_data_fix_preview(
     Ok(())
 }
 
-async fn run_full_enc_migration(
+async fn run_data_migration(
     txn: &impl ConnectionTrait,
 ) -> anyhow::Result<(), AppError> {
-    // All steps run inside a single transaction — PostgreSQL DDL is fully transactional,
-    // so any failure automatically rolls back the entire operation. No backup tables are needed.
-
-    info!("Step 1: adding modulation text column (NFM / AM / DMR)");
-    // CTE-based LEFT JOIN: rows with NULL modulation_id get old_mod = NULL → NFM (VHF default)
+    info!("Step 1: inserting encryption entries (IDs 1-6)");
     txn.execute_unprepared(
-        "ALTER TABLE sigint_network_freq ADD COLUMN IF NOT EXISTS modulation TEXT;
-         WITH freq_mods AS (
-             SELECT snf.id, m.name AS old_mod, snf.kind::text AS kind
-             FROM sigint_network_freq snf
-             LEFT JOIN modulation m ON m.id = snf.modulation_id
-         )
-         UPDATE sigint_network_freq snf
-         SET modulation = CASE fm.kind
-             WHEN 'VHF' THEN CASE
-                 WHEN fm.old_mod IS NULL OR fm.old_mod = '' OR fm.old_mod = 'NFM' THEN 'NFM'
-                 WHEN fm.old_mod = 'AM' THEN 'AM'
-                 ELSE 'DMR'
-             END
-             ELSE 'DMR'
-         END
-         FROM freq_mods fm
-         WHERE snf.id = fm.id AND snf.modulation IS NULL;
-         UPDATE sigint_network_freq SET modulation = 'NFM' WHERE modulation IS NULL;
-         ALTER TABLE sigint_network_freq ALTER COLUMN modulation SET NOT NULL;",
-    )
-    .await
-    .c(h!())?;
-
-    info!("Step 2: inserting new encryption entries with temp IDs 101-106");
-    txn.execute_unprepared(
-        "INSERT INTO modulation (id, name, lft, rgt, enabled, created_at) VALUES
-             (101, 'Без шифрування', 1001, 1002, true, now()),
-             (102, 'ARC40',          1003, 1004, true, now()),
-             (103, 'AES256',         1005, 1006, true, now()),
-             (104, 'TYT (16 bit)',   1007, 1008, true, now()),
-             (105, 'TYT (128 bit)', 1009, 1010, true, now()),
-             (106, 'Не визначено',  1011, 1012, true, now())
+        "INSERT INTO encryption (id, name, enabled, created_at) VALUES
+             (1, 'Без шифрування', true, now()),
+             (2, 'ARC40',          true, now()),
+             (3, 'AES256',         true, now()),
+             (4, 'TYT (16 bit)',   true, now()),
+             (5, 'TYT (128 bit)', true, now()),
+             (6, 'Не визначено',  true, now())
          ON CONFLICT (id) DO NOTHING;",
     )
     .await
     .c(h!())?;
 
-    info!("Step 3: remapping sigint_network_freq.modulation_id to temp IDs");
-    // Left-join to old modulation entries (id NOT BETWEEN 101-106) to get the original name.
+    info!("Step 2: setting modulation text + encryption_id on sigint_network_freq");
     txn.execute_unprepared(
         "WITH freq_mods AS (
-             SELECT snf.id, m.name AS old_mod, snf.kind::text AS kind, snf.modulation
+             SELECT snf.id, snf.kind::text AS kind, m.name AS old_mod
              FROM sigint_network_freq snf
-             LEFT JOIN modulation m ON m.id = snf.modulation_id AND m.id NOT BETWEEN 101 AND 106
+             LEFT JOIN modulation m ON m.id = snf.modulation_id
          )
          UPDATE sigint_network_freq snf
-         SET modulation_id = COALESCE(
-             (SELECT m.id FROM modulation m
-              WHERE m.id BETWEEN 101 AND 106
-                AND m.name = CASE
-                    WHEN fm.modulation = 'NFM'                              THEN 'Без шифрування'
-                    WHEN fm.modulation = 'AM'                               THEN 'Без шифрування'
-                    WHEN fm.old_mod = 'DMR (ARC40)'                        THEN 'ARC40'
-                    WHEN fm.old_mod IN ('DMR (AES256)', 'HYTERA (256 bit)') THEN 'AES256'
-                    WHEN fm.old_mod IN ('TYT', 'TYT (128 bit)')            THEN 'TYT (128 bit)'
-                    WHEN fm.old_mod = 'TYT (16 bit)'                       THEN 'TYT (16 bit)'
-                    WHEN fm.kind = 'VHF' AND fm.old_mod = 'DMR'            THEN 'Без шифрування'
-                    ELSE 'Не визначено'
-                END
-              LIMIT 1),
-             106
-         )
+         SET
+             modulation = CASE
+                 WHEN fm.kind = 'VHF'
+                      AND (fm.old_mod IS NULL OR fm.old_mod = 'NFM') THEN 'NFM'
+                 WHEN fm.kind = 'VHF' AND fm.old_mod = 'AM'          THEN 'AM'
+                 ELSE 'DMR'
+             END,
+             encryption_id = (
+                 SELECT e.id FROM encryption e
+                 WHERE e.name = CASE
+                     WHEN fm.old_mod = 'DMR (ARC40)'                              THEN 'ARC40'
+                     WHEN fm.old_mod IN ('DMR (AES256)', 'HYTERA (256 bit)')      THEN 'AES256'
+                     WHEN fm.old_mod IN ('TYT', 'TYT (128 bit)')                 THEN 'TYT (128 bit)'
+                     WHEN fm.old_mod = 'TYT (16 bit)'                            THEN 'TYT (16 bit)'
+                     WHEN fm.kind = 'VHF'
+                          AND (fm.old_mod IS NULL
+                               OR fm.old_mod IN ('NFM', 'AM', 'DMR'))            THEN 'Без шифрування'
+                     ELSE 'Не визначено'
+                 END
+                 LIMIT 1
+             )
          FROM freq_mods fm
          WHERE snf.id = fm.id;",
     )
     .await
     .c(h!())?;
 
-    info!("Step 4: remapping sigint_network_encryption_key.modulation_id to temp IDs");
+    info!("Step 3: setting encryption_id on sigint_network_encryption_key");
     txn.execute_unprepared(
-        "WITH key_mods AS (
-             SELECT k.id, m.name AS old_mod
-             FROM sigint_network_encryption_key k
-             LEFT JOIN modulation m ON m.id = k.modulation_id AND m.id NOT BETWEEN 101 AND 106
+        "UPDATE sigint_network_encryption_key k
+         SET encryption_id = (
+             SELECT e.id FROM encryption e
+             WHERE e.name = CASE
+                 WHEN m.name = 'DMR (ARC40)'                             THEN 'ARC40'
+                 WHEN m.name IN ('DMR (AES256)', 'HYTERA (256 bit)')     THEN 'AES256'
+                 WHEN m.name IN ('TYT', 'TYT (128 bit)')                THEN 'TYT (128 bit)'
+                 WHEN m.name = 'TYT (16 bit)'                           THEN 'TYT (16 bit)'
+                 ELSE 'Не визначено'
+             END
+             LIMIT 1
          )
-         UPDATE sigint_network_encryption_key k
-         SET modulation_id = COALESCE(
-             (SELECT m.id FROM modulation m
-              WHERE m.id BETWEEN 101 AND 106
-                AND m.name = CASE
-                    WHEN km.old_mod = 'DMR (ARC40)'                        THEN 'ARC40'
-                    WHEN km.old_mod IN ('DMR (AES256)', 'HYTERA (256 bit)') THEN 'AES256'
-                    WHEN km.old_mod IN ('TYT', 'TYT (128 bit)')            THEN 'TYT (128 bit)'
-                    WHEN km.old_mod = 'TYT (16 bit)'                       THEN 'TYT (16 bit)'
-                    ELSE 'Не визначено'
-                END
-              LIMIT 1),
-             106
-         )
-         FROM key_mods km
-         WHERE k.id = km.id;
-         UPDATE sigint_network_freq
-         SET modulation_id = 106
-         WHERE modulation_id IS NOT NULL AND modulation_id NOT BETWEEN 101 AND 106;
+         FROM modulation m
+         WHERE k.modulation_id = m.id AND k.encryption_id IS NULL;
          UPDATE sigint_network_encryption_key
-         SET modulation_id = 106
-         WHERE modulation_id IS NOT NULL AND modulation_id NOT BETWEEN 101 AND 106;",
+         SET encryption_id = (SELECT id FROM encryption WHERE name = 'Не визначено' LIMIT 1)
+         WHERE modulation_id IS NULL AND encryption_id IS NULL;",
     )
     .await
     .c(h!())?;
 
-    info!("Step 5: deleting old modulation entries");
-    txn.execute_unprepared(
-        "DELETE FROM modulation WHERE id NOT BETWEEN 101 AND 106;",
-    )
-    .await
-    .c(h!())?;
-
-    info!("Step 6: inserting final encryption entries with IDs 1-6 and DDL renames");
-    txn.execute_unprepared(
-        "INSERT INTO modulation (id, name, lft, rgt, enabled, created_at) VALUES
-             (1, 'Без шифрування', 1,  2,  true, now()),
-             (2, 'ARC40',          3,  4,  true, now()),
-             (3, 'AES256',         5,  6,  true, now()),
-             (4, 'TYT (16 bit)',   7,  8,  true, now()),
-             (5, 'TYT (128 bit)', 9,  10, true, now()),
-             (6, 'Не визначено',  11, 12,  true, now())
-         ON CONFLICT (id) DO NOTHING;
-         UPDATE sigint_network_freq
-         SET modulation_id = CASE modulation_id
-             WHEN 101 THEN 1  WHEN 102 THEN 2  WHEN 103 THEN 3
-             WHEN 104 THEN 4  WHEN 105 THEN 5  WHEN 106 THEN 6
-             ELSE modulation_id
-         END
-         WHERE modulation_id BETWEEN 101 AND 106;
-         UPDATE sigint_network_encryption_key
-         SET modulation_id = CASE modulation_id
-             WHEN 101 THEN 1  WHEN 102 THEN 2  WHEN 103 THEN 3
-             WHEN 104 THEN 4  WHEN 105 THEN 5  WHEN 106 THEN 6
-             ELSE modulation_id
-         END
-         WHERE modulation_id BETWEEN 101 AND 106;
-         DELETE FROM modulation WHERE id BETWEEN 101 AND 106;
-         ALTER TABLE sigint_network_freq DROP COLUMN IF EXISTS kind;
-         ALTER TABLE sigint_network_freq RENAME COLUMN modulation_id TO encryption_id;
-         ALTER TABLE sigint_network_encryption_key RENAME COLUMN modulation_id TO encryption_id;
-         ALTER TABLE modulation RENAME TO encryption;
-         DROP TYPE IF EXISTS sigint_network_kind;",
-    )
-    .await
-    .c(h!())?;
-
-    info!("Full DDL + data migration complete");
+    info!("Data migration complete");
     Ok(())
 }
 

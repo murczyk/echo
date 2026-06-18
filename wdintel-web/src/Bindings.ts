@@ -2793,8 +2793,6 @@ export type MergeNetworkReq = {
 export type EncryptionRec = {
   id: number;
   name: string;
-  left: number;
-  right: number;
   enabled: boolean;
 };
 

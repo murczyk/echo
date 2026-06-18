@@ -874,12 +874,9 @@ where
         };
 
         let model = encryption::ActiveModel {
-            original_id: Set(Some(rec.id)),
             id,
             created_at: Set(rec.created_at),
             name: Set(rec.name),
-            lft: Set(rec.lft),
-            rgt: Set(rec.rgt),
             enabled: Set(rec.enabled),
             sigint_origin_id: Set(Some(origin_id)),
             mothership_id: NotSet,

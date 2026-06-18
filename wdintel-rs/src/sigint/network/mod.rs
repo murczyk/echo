@@ -3148,8 +3148,6 @@ pub async fn encryptions_list(
         res.push(EncryptionRec {
             id: enc.id,
             name: enc.name.clone(),
-            left: enc.lft,
-            right: enc.rgt,
             enabled: enc.enabled,
         });
     }
