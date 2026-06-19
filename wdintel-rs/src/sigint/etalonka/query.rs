@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
+use crate::sigint::callsign::bl_network_callsign::get_callsigns_activity_info;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::filter::apply_network_list_filters;
 use crate::sigint::network::sort as network_sort;
@@ -1033,19 +1034,10 @@ pub async fn load_callsigns(
 
     trace!("> load_callsigns for network: {:?}", network_id);
 
-    let (base_with, callsigns_select) =
-        build_callsigns_queries(groups, network_id, None, filter)
-            .context(h!())?;
-
     // Step 1. Get all active callsigns for the given network
-    let active_callsigns = get_active_callsigns(
-        db,
-        base_with.clone(),
-        callsigns_select.clone(),
-        network_id,
-    )
-    .await
-    .context(h!())?;
+    let active_callsigns = get_active_callsigns(db, groups, filter, network_id)
+        .await
+        .context(h!())?;
 
     let callsigns = active_callsigns
         .iter()
@@ -1101,14 +1093,10 @@ pub async fn load_callsigns(
     // Step 2. Get activity info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
-    let known_callsigns_activity_info = get_activity_info_for_callsigns(
-        db,
-        base_with.clone(),
-        callsigns_select.clone(),
-        &callsigns,
-    )
-    .await
-    .context(h!())?;
+    let known_callsigns_activity_info =
+        get_callsigns_activity_info(db, groups.clone(), network_id, &callsigns)
+            .await
+            .context(h!())?;
 
     apply_activity_info(&mut res, &known_callsigns_activity_info);
 
@@ -1195,8 +1183,7 @@ pub fn build_callsigns_queries(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
-                .eq(false),
+            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .and_where_option(
             net_freq_filter
@@ -1474,169 +1461,176 @@ pub fn build_network_freq_join_condition(
 /// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
-    base_with: WithClause,
-    callsigns_select: SelectStatement,
+    groups: &Vec<String>,
+    filter: Option<&NetworkFreqFilter>,
     network_id: i64,
 ) -> Result<Vec<CallsignQueryResult>, AppError> {
-    let callsigns_cte = CommonTableExpression::new()
-        .query(callsigns_select)
-        .table_name(Alias::new("callsigns"))
-        .to_owned();
-
-    let network_callsign_alias = Alias::new("nc");
-    let callsigns_alias = Alias::new("callsigns");
-    let callsign_alias = Alias::new("callsign");
-    let network_callsigns_subquery: SelectStatement = Query::select()
-        .expr(Expr::value(1)) // SELECT 1
-        .from_as(SigintNetworkCallsign::Table, network_callsign_alias.clone()) // FROM network_callsign
-        .and_where(
-            Expr::col((
-                network_callsign_alias.clone(),
-                SigintNetworkCallsign::SigintNetworkId,
-            ))
-            .eq(network_id),
-        ) // WHERE network_id = ?
-        .and_where(
-            Expr::col((
-                network_callsign_alias.clone(),
-                SigintNetworkCallsign::Deleted,
-            ))
-            .eq(false),
-        ) // WHERE network_id = ?
-        .and_where(
-            Expr::col((
-                network_callsign_alias.clone(),
-                SigintNetworkCallsign::SigintCallsign,
-            ))
-            .eq(Expr::col((callsigns_alias.clone(), callsign_alias.clone()))),
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
         )
-        .to_owned();
-
-    let active_callsigns_select = Query::select()
-        .expr_as(Expr::cust("DISTINCT callsign"), callsign_alias)
-        .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
-        .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
-        .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
-        .expr_as(Expr::cust("division"), Alias::new("division"))
-        .expr_as(Expr::cust("army"), Alias::new("army"))
-        .from(callsigns_alias.clone())
-        // виключаємо позивні, які вже прив'язані до мережі
-        .and_where(Expr::exists(network_callsigns_subquery).not())
-        .order_by_expr(Expr::cust("callsign"), Order::Asc)
-        .to_owned();
-
-    let combined_query = base_with
-        .clone()
-        .cte(callsigns_cte)
-        .clone()
-        .query(active_callsigns_select);
-
-    // debug!(
-    //     "> active callsigns query: {}",
-    //     combined_query.to_string(PostgresQueryBuilder)
-    // );
-
-    let records: Vec<CallsignQueryResult> = db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query.to_string(PostgresQueryBuilder),
-        ))
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|row| CallsignQueryResult {
-            callsign: row.try_get("", "callsign").unwrap_or_default(),
-            unit_id: row.try_get("", "unit_id").unwrap_or_default(),
-            unit_name: row.try_get("", "unit_name").ok().flatten(),
-            regiment: row.try_get("", "regiment").ok().flatten(),
-            division: row.try_get("", "division").ok().flatten(),
-            army: row.try_get("", "army").ok().flatten(),
-        })
-        .collect();
-
-    Ok(records)
-}
-
-pub async fn get_activity_info_for_callsigns<'a, 'async_trait, C>(
-    txn: &'a C,
-    base_with: WithClause,
-    callsigns_select: SelectStatement,
-    callsigns: &[String],
-) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if callsigns.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    // Clone and filter the select statement before wrapping it in the CTE
-    let mut filtered_select = callsigns_select.clone();
-    filtered_select
-        .and_where(Expr::col(Alias::new("callsign")).is_in(callsigns));
-
-    let callsigns_cte = CommonTableExpression::new()
-        .query(filtered_select)
-        .table_name(Alias::new("callsigns"))
-        .to_owned();
-
-    let q = Query::select()
-        .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
-        .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
-        .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
-        .expr_as(
-            Expr::cust("STRING_AGG(DISTINCT freq, ', ')"),
-            Alias::new("freqs"),
-        )
-        .expr_as(
-            Expr::cust("STRING_AGG(DISTINCT network_name, ', ')"),
-            Alias::new("network_names"),
-        )
-        .from(Alias::new("callsigns"))
-        .add_group_by(vec![Expr::cust("callsign")])
-        .to_owned();
-
-    let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
-
-    // debug!(
-    //     "> activity info query: {}",
-    //     combined_query.to_string(PostgresQueryBuilder)
-    // );
-
-    let rows = txn
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query.to_string(PostgresQueryBuilder),
-        ))
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .all(db)
         .await
         .context(h!())?;
 
-    let mut res = HashMap::new();
-    for row in rows {
-        let callsign: String = row.try_get("", "callsign").unwrap_or_default();
-        let message_count: i64 = row.try_get("", "message_count").unwrap_or(0);
-        let last_datetime: Option<i64> = row
-            .try_get::<NaiveDateTime>("", "last_datetime")
-            .ok()
-            .map(|dt| dt.and_utc().timestamp_millis());
-        let freqs: Option<String> = row.try_get("", "freqs").ok();
-        let network_names: Option<String> =
-            row.try_get("", "network_names").ok();
-        res.insert(
-            callsign.clone(),
-            CallsignActivityInfo {
-                message_count,
-                last_datetime,
-                freqs: freqs
-                    .as_ref()
-                    .map(|s| s.split(", ").map(|s| s.to_string()).collect()),
-                network_names: network_names
-                    .as_ref()
-                    .map(|s| s.split(", ").map(|s| s.to_string()).collect()),
-            },
-        );
+    let datasource_group_ids: Vec<i64> = datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        // TODO: do we count the messages if datasource got deleted
+        // .filter(datasource_group::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
+        .into_tuple()
+        .all(db)
+        .await
+        .context(h!())?;
+
+    let expr_datetime = Func::coalesce([
+        sigint_inbox_item::Column::Datetime.into_simple_expr(),
+        signal_message::Column::Timestamp.into_simple_expr(),
+        signal_message::Column::CreatedAt.into_simple_expr(),
+    ]);
+
+    let mut expr_active_from =
+        sigint_network_freq::Column::ActiveFrom.into_simple_expr();
+
+    let mut expr_active_to = Func::coalesce([
+        sigint_network_freq::Column::ActiveTo.into_simple_expr(),
+        Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
+    ]);
+
+    let sigint_network_callsigns: Vec<String> =
+        sigint_network_callsign::Entity::find()
+            .select_only()
+            .distinct()
+            .column(sigint_network_callsign::Column::SigintCallsign)
+            .filter(
+                sigint_network_callsign::Column::SigintNetworkId.eq(network_id),
+            )
+            .filter(sigint_network_callsign::Column::Deleted.eq(false))
+            .into_tuple()
+            .all(db)
+            .await
+            .context(h!())?;
+
+    let mut expr_active_only = None;
+
+    if let Some(network_freq_filter) = filter {
+        if network_freq_filter.active_freqs_only {
+            expr_active_only =
+                Some(sigint_network_freq::Column::ActiveTo.is_null());
+        }
+
+        if let Some(since_ms) = network_freq_filter.since_date_inclusive_ms {
+            let since_dt = DateTime::from_timestamp_millis(since_ms)
+                .context(h!())?
+                .naive_utc();
+            expr_active_from = Func::greatest([
+                Expr::value(since_dt),
+                sigint_network_freq::Column::ActiveFrom.into_simple_expr(),
+            ])
+            .into();
+        }
+
+        if let Some(till_ms) = network_freq_filter.till_date_inclusive_ms {
+            let till_dt = DateTime::from_timestamp_millis(till_ms)
+                .context(h!())?
+                .naive_utc();
+            expr_active_to =
+                Func::least([Expr::value(till_dt), expr_active_to.into()]);
+        }
     }
-    Ok(res)
+
+    let cond_is_network_freq_active =
+        expr_datetime.between(expr_active_from, expr_active_to);
+
+    let expr_jsonb_callsigns = Expr::cust_with_expr(
+        "jsonb_array_elements_text($1)",
+        sigint_inbox_item::Column::Callsigns.into_simple_expr(),
+    );
+
+    let mut query = sigint_inbox_item_network::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Datetime)
+        .expr_as(expr_jsonb_callsigns, "callsign")
+        .column(sigint_inbox_item::Column::Callsigns)
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Entity::belongs_to(sigint_network_freq::Entity)
+                .from(sigint_inbox_item::Column::Freq)
+                .to(sigint_network_freq::Column::Freq)
+                .into(),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId.eq(network_id),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message::Column::DatasourceGroupId
+                .eq_any(datasource_group_ids),
+        )
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
+        .filter(cond_is_network_freq_active);
+
+    if let Some(is_freq_active_filter) = expr_active_only {
+        query = query.filter(is_freq_active_filter);
+    }
+
+    let subquery = query.into_query();
+
+    let cond_not_already_in_network = if sigint_network_callsigns.is_empty() {
+        None
+    } else {
+        Some(Expr::column("callsign").ne(PgFunc::any(sigint_network_callsigns)))
+    };
+
+    let query = sea_query::Query::select()
+        .from_subquery(subquery, "messages")
+        .distinct()
+        .column("callsign")
+        .and_where_option(cond_not_already_in_network)
+        .order_by("callsign", Order::Asc)
+        .to_owned();
+
+    let statement = db.get_database_backend().build(&query);
+    let distinct_callsigns = db.query_all(statement).await.context(h!())?;
+    let mut records = Vec::new();
+    for row in distinct_callsigns {
+        let callsign: String = row.try_get("", "callsign").context(h!())?;
+        if units.is_empty() {
+            let item = CallsignQueryResult {
+                callsign,
+                ..Default::default()
+            };
+            records.push(item);
+        } else {
+            for unit in &units {
+                let item = CallsignQueryResult {
+                    callsign: callsign.clone(),
+                    unit_id: Some(unit.id),
+                    unit_name: Some(unit.name.clone()),
+                    regiment: Some(unit.regiment.clone()),
+                    division: Some(unit.division.clone()),
+                    army: Some(unit.army.clone()),
+                };
+                records.push(item);
+            }
+        };
+    }
+
+    Ok(records)
 }
 
 pub async fn load_signals_per_unit(

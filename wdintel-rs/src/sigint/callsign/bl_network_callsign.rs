@@ -11,7 +11,7 @@ use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, JoinType};
+use sea_query::{Alias, Expr, ExprTrait, Func, JoinType, PgFunc};
 use std::collections::HashMap;
 
 #[derive(Debug, FromQueryResult)]
@@ -623,9 +623,14 @@ pub async fn bl_get_network_callsigns_list(
     let activity_callsigns =
         network_callsigns_activity_targets(&network_callsigns);
 
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
+            .await
+            .context(h!())?;
+
     let activity_info = get_callsigns_activity_info(
         dbx,
-        user_id,
+        groups,
         req.network_id,
         &activity_callsigns,
     )
@@ -809,9 +814,14 @@ where
     let activity_callsigns =
         network_callsigns_activity_targets(&network_callsigns);
 
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(txn, user_id)
+            .await
+            .context(h!())?;
+
     let activity_info = get_callsigns_activity_info(
         txn,
-        user_id,
+        groups,
         network_id,
         &activity_callsigns,
     )
@@ -830,35 +840,135 @@ where
 
 pub async fn get_callsigns_activity_info<'a, 'async_trait, C>(
     txn: &'a C,
-    login: &str,
+    groups: Vec<String>,
     network_id: i64,
     callsigns: &[String],
 ) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let groups =
-        crate::messenger::group::get_identity_sigint_groups(txn, login)
-            .await
-            .context(h!())?;
+    let Some(network) = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.eq(network_id))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .context(h!())?
+    else {
+        return Ok(Default::default());
+    };
 
-    let (base_with, callsigns_select) = build_callsigns_queries(
-        &groups,
-        network_id,
-        Some(&callsigns.to_vec()),
-        None,
-    )
-    .context(h!())?;
+    let datasource_group_ids: Vec<i64> = datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        // TODO: do we count the messages if datasource got deleted
+        // .filter(datasource_group::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups))
+        .into_tuple()
+        .all(txn)
+        .await
+        .context(h!())?;
 
-    let callsigns_activity_info = get_activity_info_for_callsigns(
-        txn,
-        base_with.clone(),
-        callsigns_select.clone(),
-        callsigns,
-    )
-    .await
-    .context(h!())?;
+    let expr_datetime = Func::coalesce([
+        sigint_inbox_item::Column::Datetime.into_simple_expr(),
+        signal_message::Column::Timestamp.into_simple_expr(),
+        signal_message::Column::CreatedAt.into_simple_expr(),
+    ]);
 
+    let expr_active_to = Func::coalesce([
+        sigint_network_freq::Column::ActiveTo.into_simple_expr(),
+        Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
+    ]);
+
+    let cond_is_network_freq_active = expr_datetime.between(
+        sigint_network_freq::Column::ActiveFrom.into_simple_expr(),
+        expr_active_to,
+    );
+
+    let expr_jsonb_callsigns = Expr::cust_with_expr(
+        "jsonb_array_elements_text($1)",
+        sigint_inbox_item::Column::Callsigns.into_simple_expr(),
+    );
+
+    let expr_callsigns = Expr::value(callsigns.to_owned());
+
+    let subquery = sigint_inbox_item_network::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Datetime)
+        .expr_as(expr_jsonb_callsigns, "callsign")
+        .column(sigint_inbox_item::Column::Callsigns)
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Entity::belongs_to(sigint_network_freq::Entity)
+                .from(sigint_inbox_item::Column::Freq)
+                .to(sigint_network_freq::Column::Freq)
+                .into(),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId.eq(network_id),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message::Column::DatasourceGroupId
+                .eq_any(datasource_group_ids),
+        )
+        .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
+        // TODO: this might confuse postgres to scan many rows using GIN index on JSONB callsigns
+        .filter(Expr::cust_with_expr(
+            "sigint_inbox_item.callsigns ?| $1",
+            expr_callsigns.clone(),
+        ))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(cond_is_network_freq_active)
+        .into_query();
+
+    let query = sea_query::Query::select()
+        .from_subquery(subquery, "messages")
+        .column("callsign")
+        .expr_as(Expr::cust("COUNT(*)"), "message_count")
+        .expr_as(Expr::cust("MAX(datetime)"), "last_datetime")
+        .expr_as(Expr::cust("ARRAY_AGG(DISTINCT freq)"), "freqs")
+        .and_where(Expr::column("callsign").eq(PgFunc::any(expr_callsigns)))
+        .group_by_col("callsign")
+        .to_owned();
+
+    let statement = txn.get_database_backend().build(&query);
+    let results = txn.query_all(statement).await.context(h!())?;
+
+    let network_names = if network.name.is_empty() {
+        vec![]
+    } else {
+        vec![format!("р/м {}", &network.name)]
+    };
+
+    let mut callsigns_activity_info = HashMap::with_capacity(results.len());
+    for query_result in results {
+        let callsign: String =
+            query_result.try_get("", "callsign").context(h!())?;
+        let message_count: i64 =
+            query_result.try_get("", "message_count").context(h!())?;
+        let last_datetime: Option<NaiveDateTime> =
+            query_result.try_get("", "last_datetime").context(h!())?;
+        let freqs: Vec<String> =
+            query_result.try_get("", "freqs").context(h!())?;
+
+        let activity_info = CallsignActivityInfo {
+            message_count,
+            last_datetime: last_datetime
+                .map(|ts| ts.and_utc().timestamp_millis()),
+            freqs: Some(freqs),
+            network_names: Some(network_names.clone()),
+        };
+        callsigns_activity_info.insert(callsign, activity_info);
+    }
     Ok(callsigns_activity_info)
 }
 
@@ -948,12 +1058,12 @@ async fn create_network_callsign_changelog(
 /// Get activity for a list of callsigns within a network
 pub async fn bl_get_network_callsigns_activity(
     req: &NetworkCallsignsActivityReq,
-    user_id: &str,
+    groups: Vec<String>,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<CallsignActivityRecord>, AppError> {
     let res = get_callsigns_activity_info(
         dbx,
-        user_id,
+        groups,
         req.network_id,
         req.callsigns.as_slice(),
     )
