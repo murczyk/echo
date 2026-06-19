@@ -184,7 +184,14 @@ export function buildAnalysisReqForFilterSection(
     case 'networks':
       return { ...analysisReq, selectedNetworks: null };
     case 'metadata':
-      return { ...analysisReq, metadataCc: null, metadataSender: null, metadataReceiver: null, metadataHash: null };
+      return {
+        ...analysisReq,
+        metadataCc: null,
+        metadataSender: null,
+        metadataReceiver: null,
+        metadataHash: null,
+        withoutMetadata: false,
+      };
   }
 }
 

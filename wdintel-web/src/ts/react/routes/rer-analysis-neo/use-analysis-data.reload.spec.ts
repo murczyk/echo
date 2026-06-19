@@ -163,11 +163,25 @@ describe('buildAnalysisReqForFilterSection', () => {
         expect(req.metadataSender).toBeNull();
         expect(req.metadataReceiver).toBeNull();
         expect(req.metadataHash).toBeNull();
+        expect(req.withoutMetadata).toBe(false);
         continue;
       }
 
       expect(req[key as keyof typeof req]).toBeNull();
     }
+  });
+
+  it('clears withoutMetadata for metadata filter section requests', () => {
+    const req = buildAnalysisReqForFilterSection('metadata', {
+      ...buildBaseReq(),
+      withoutMetadata: true,
+    });
+
+    expect(req.metadataCc).toBeNull();
+    expect(req.metadataSender).toBeNull();
+    expect(req.metadataReceiver).toBeNull();
+    expect(req.metadataHash).toBeNull();
+    expect(req.withoutMetadata).toBe(false);
   });
 });
 
