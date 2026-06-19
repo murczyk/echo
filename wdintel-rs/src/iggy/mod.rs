@@ -2,8 +2,10 @@ use crate::error::AppError;
 use crate::types::*;
 use iggy::prelude::{
     Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
-    IggyExpiry, MaxTopicSize, StreamClient, SystemClient, TopicClient,
+    IggyExpiry, MaxTopicSize, Permissions, StreamClient, StreamPermissions,
+    SystemClient, TopicClient, UserClient,
 };
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::time::timeout;
 use url::Url;
@@ -35,6 +37,29 @@ pub async fn ensure_topics(
     {
         Ok(result) => result,
         Err(_) => Err(timeout_error("створення тем")),
+    };
+    let shutdown_result = shutdown(&client).await;
+    result?;
+    shutdown_result
+}
+
+pub async fn ensure_topics_for_all_users(
+    url: &str,
+    login: &str,
+    password: &str,
+    topics: &[&str],
+) -> Result<(), AppError> {
+    let client = connect(url, login, password).await?;
+    let result = match timeout(
+        timeout_duration(),
+        ensure_topics_and_user_permissions(&client, topics),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            Err(timeout_error("створення тем і оновлення прав користувачів"))
+        }
     };
     let shutdown_result = shutdown(&client).await;
     result?;
@@ -99,6 +124,66 @@ async fn ensure_topics_with_client(
         ensure_topic(client, stream, topic).await?;
     }
     Ok(())
+}
+
+async fn ensure_topics_and_user_permissions(
+    client: &IggyClient,
+    topics: &[&str],
+) -> Result<(), AppError> {
+    ensure_topics_with_client(client, topics).await?;
+    let stream_ids = configured_stream_ids(client, topics).await?;
+    ensure_user_stream_permissions(client, &stream_ids).await
+}
+
+async fn configured_stream_ids(
+    client: &IggyClient,
+    topics: &[&str],
+) -> Result<Vec<usize>, AppError> {
+    let mut stream_ids = Vec::new();
+    for configured_topic in topics {
+        let (stream, _) = stream_and_topic(configured_topic);
+        let stream = client
+            .get_stream(&Identifier::try_from(stream).c(h!())?)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        let stream_id = stream.id as usize;
+        if !stream_ids.contains(&stream_id) {
+            stream_ids.push(stream_id);
+        }
+    }
+    Ok(stream_ids)
+}
+
+async fn ensure_user_stream_permissions(
+    client: &IggyClient,
+    stream_ids: &[usize],
+) -> Result<(), AppError> {
+    for user in client.get_users().await.c(h!())? {
+        let user_id = Identifier::try_from(user.id).c(h!())?;
+        let user = client.get_user(&user_id).await.c(h!())?.c(h!())?;
+        let mut permissions = user.permissions.unwrap_or_default();
+        for stream_id in stream_ids {
+            grant_stream_access(&mut permissions, *stream_id);
+        }
+        client
+            .update_permissions(&user_id, Some(permissions))
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+fn grant_stream_access(permissions: &mut Permissions, stream_id: usize) {
+    let stream_permissions = permissions
+        .streams
+        .get_or_insert_with(BTreeMap::new)
+        .entry(stream_id)
+        .or_insert_with(StreamPermissions::default);
+    stream_permissions.read_stream = true;
+    stream_permissions.read_topics = true;
+    stream_permissions.poll_messages = true;
+    stream_permissions.send_messages = true;
 }
 
 async fn ensure_stream(
