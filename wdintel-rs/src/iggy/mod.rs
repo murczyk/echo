@@ -2,8 +2,8 @@ use crate::error::AppError;
 use crate::types::*;
 use iggy::prelude::{
     defaults, Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
-    IggyExpiry, MaxTopicSize, Permissions, StreamClient, StreamPermissions,
-    SystemClient, TopicClient, UserClient,
+    IggyExpiry, MaxTopicSize, Permissions, StreamClient, SystemClient,
+    TopicClient, UserClient,
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -182,7 +182,7 @@ fn grant_stream_access(permissions: &mut Permissions, stream_id: usize) {
         .streams
         .get_or_insert_with(BTreeMap::new)
         .entry(stream_id)
-        .or_insert_with(StreamPermissions::default);
+        .or_default();
     stream_permissions.read_stream = true;
     stream_permissions.read_topics = true;
     stream_permissions.poll_messages = true;

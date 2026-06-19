@@ -1,3 +1,4 @@
+use crate::config::REPORT_HISTORY_LIST_LIMIT;
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{bgtask, prelude::*, report_history};
 use crate::error::AppError;
@@ -23,7 +24,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -66,6 +67,7 @@ pub enum ReportHistoryRequest {
 pub struct ReportHistoryRow {
     pub id: i64,
     pub report_kind: String,
+    pub requested_by: String,
     pub created_at: String,
     pub status: String,
     pub completed_at: Option<String>,
@@ -105,6 +107,7 @@ impl From<report_history::Model> for ReportHistoryRow {
         Self {
             id: report_history.id,
             report_kind: report_history.report_kind,
+            requested_by: report_history.requested_by,
             created_at: report_history.created_at.to_string(),
             status: report_history.status,
             completed_at: report_history
@@ -116,6 +119,54 @@ impl From<report_history::Model> for ReportHistoryRow {
             bgtask_id: report_history.bgtask_id,
         }
     }
+}
+
+pub async fn record_failed_report_nofail(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    err_msg: String,
+) {
+    if let Err(err) =
+        record_failed_report(env, requested_by, report_kind, request, err_msg)
+            .await
+    {
+        error!("failed to record failed report history row: {err:?}");
+    }
+}
+
+async fn record_failed_report(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    err_msg: String,
+) -> Result<report_history::Model, AppError> {
+    let now = Utc::now().naive_utc();
+    Ok(report_history::ActiveModel {
+        id: NotSet,
+        report_kind: Set(report_kind.to_string()),
+        requested_by: Set(requested_by.to_string()),
+        request: Set(serde_json::to_value(request).c(h!())?),
+        created_at: Set(now),
+        status: Set(STATUS_FAILED.to_string()),
+        retry_count: Set(0),
+        planned_for_ts: Set(None),
+        started_at: Set(Some(now)),
+        completed_at: Set(Some(now)),
+        s3_id: Set(None),
+        bgtask_id: Set(None),
+        file_name: Set(None),
+        content_type: Set(None),
+        last_error: Set(Some(err_msg.clone())),
+        log: Set(append_log_entry(json!([]), "system", &err_msg)),
+        legacy_log_id: Set(None),
+        legacy_report_path: Set(None),
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?)
 }
 
 pub async fn enqueue_report(
@@ -203,6 +254,121 @@ async fn record_completed_report(
             )
         }
     };
+    insert_completed_report_row(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        generated.file_name,
+        generated.content_type,
+        s3_id,
+        last_error,
+        log,
+        None,
+    )
+    .await
+}
+
+pub async fn record_completed_report_file_nofail(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    file_path: &Path,
+) {
+    if let Err(err) = record_completed_report_file(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        file_name,
+        content_type,
+        file_path,
+    )
+    .await
+    {
+        error!("failed to record completed report history row: {err:?}");
+    }
+}
+
+async fn record_completed_report_file(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    file_path: &Path,
+) -> Result<report_history::Model, AppError> {
+    let report_history = insert_archiving_report_row(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        file_name.clone(),
+        content_type.clone(),
+        file_path.to_string_lossy().to_string(),
+    )
+    .await?;
+    spawn_completed_report_file_archive(
+        env.clone(),
+        report_history.id,
+        file_name,
+        content_type,
+        file_path.to_path_buf(),
+    );
+    Ok(report_history)
+}
+
+async fn insert_archiving_report_row(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    legacy_report_path: String,
+) -> Result<report_history::Model, AppError> {
+    let now = Utc::now().naive_utc();
+    Ok(report_history::ActiveModel {
+        id: NotSet,
+        report_kind: Set(report_kind.to_string()),
+        requested_by: Set(requested_by.to_string()),
+        request: Set(serde_json::to_value(request).c(h!())?),
+        created_at: Set(now),
+        status: Set(STATUS_IN_PROGRESS.to_string()),
+        retry_count: Set(0),
+        planned_for_ts: Set(None),
+        started_at: Set(Some(now)),
+        completed_at: Set(None),
+        s3_id: Set(None),
+        bgtask_id: Set(None),
+        file_name: Set(Some(file_name)),
+        content_type: Set(Some(content_type)),
+        last_error: Set(None),
+        log: Set(json!([])),
+        legacy_log_id: Set(None),
+        legacy_report_path: Set(Some(legacy_report_path)),
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?)
+}
+
+async fn insert_completed_report_row(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    s3_id: Option<String>,
+    last_error: Option<String>,
+    log: serde_json::Value,
+    legacy_report_path: Option<String>,
+) -> Result<report_history::Model, AppError> {
     let now = Utc::now().naive_utc();
     Ok(report_history::ActiveModel {
         id: NotSet,
@@ -217,16 +383,110 @@ async fn record_completed_report(
         completed_at: Set(Some(now)),
         s3_id: Set(s3_id),
         bgtask_id: Set(None),
-        file_name: Set(Some(generated.file_name)),
-        content_type: Set(Some(generated.content_type)),
+        file_name: Set(Some(file_name)),
+        content_type: Set(Some(content_type)),
         last_error: Set(last_error),
         log: Set(log),
         legacy_log_id: Set(None),
-        legacy_report_path: Set(None),
+        legacy_report_path: Set(legacy_report_path),
     }
     .insert(&env.dbx)
     .await
     .c(h!())?)
+}
+
+fn spawn_completed_report_file_archive(
+    env: Env,
+    report_history_id: i64,
+    file_name: String,
+    content_type: String,
+    file_path: PathBuf,
+) {
+    tokio::spawn(async move {
+        if let Err(err) = archive_completed_report_file(
+            &env,
+            report_history_id,
+            file_name,
+            content_type,
+            file_path,
+        )
+        .await
+        {
+            let msg = format!(
+                "completed direct report was not stored in S3: {err:#?}"
+            );
+            error!("{msg}");
+            if let Err(err) =
+                set_completed_report_archive_error(&env, report_history_id, msg)
+                    .await
+            {
+                error!(
+                    "failed to update completed report archive error: {err:?}"
+                );
+            }
+        }
+    });
+}
+
+async fn archive_completed_report_file(
+    env: &Env,
+    report_history_id: i64,
+    file_name: String,
+    content_type: String,
+    file_path: PathBuf,
+) -> Result<(), AppError> {
+    let bytes = tokio::fs::read(&file_path).await.c(h!())?;
+    let generated = GeneratedReport {
+        file_name,
+        content_type,
+        bytes,
+    };
+    let s3_id = upload_report_bytes(env, &generated).await?;
+    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+            "completed report history row not found for archive update: {report_history_id}"
+        );
+        return Ok(());
+    };
+    let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_DONE.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
+    report_history.s3_id = Set(Some(s3_id));
+    report_history.last_error = Set(None);
+    report_history.update(&env.dbx).await.c(h!())?;
+    Ok(())
+}
+
+async fn set_completed_report_archive_error(
+    env: &Env,
+    report_history_id: i64,
+    err_msg: String,
+) -> Result<(), AppError> {
+    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+            "completed report history row not found for archive error update: {report_history_id}"
+        );
+        return Ok(());
+    };
+    let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_FAILED.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
+    report_history.last_error = Set(Some(err_msg.clone()));
+    report_history.log = Set(append_log_entry(
+        report_history.log.unwrap(),
+        "system",
+        &err_msg,
+    ));
+    report_history.update(&env.dbx).await.c(h!())?;
+    Ok(())
 }
 
 #[post("/api/report-history/list")]
@@ -241,7 +501,29 @@ pub async fn report_history_list(
     let rows = ReportHistory::find()
         .filter(report_history::Column::RequestedBy.eq(user_login))
         .order_by_desc(report_history::Column::CreatedAt)
-        .limit(200)
+        .limit(REPORT_HISTORY_LIST_LIMIT)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(ReportHistoryRow::from)
+        .collect();
+    Ok(Json(rows))
+}
+
+#[post("/api/admin/report-history/list")]
+pub async fn report_history_admin_list(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Admin")
+        .await
+        .c(h!())?;
+    let rows = ReportHistory::find()
+        .order_by_desc(report_history::Column::CreatedAt)
+        .order_by_desc(report_history::Column::Id)
+        .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -271,7 +553,7 @@ pub async fn report_history_retry(
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    let report_history = find_report_for_login(&env.dbx, req.id, &user_login)
+    let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
     if report_history.status != STATUS_FAILED {
@@ -330,9 +612,23 @@ async fn find_current_user_report(
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    find_report_for_login(&env.dbx, id, &user_login)
+    find_report_for_user(&env.dbx, id, &user_login)
         .await?
         .ok_or(AppError::NotFound)
+}
+
+async fn find_report_for_user(
+    dbx: &DatabaseConnection,
+    id: i64,
+    user_login: &str,
+) -> Result<Option<report_history::Model>, AppError> {
+    match crate::users::has_role(dbx, user_login, "Admin").await {
+        Ok(()) => Ok(ReportHistory::find_by_id(id).one(dbx).await.c(h!())?),
+        Err(AppError::Forbidden(_)) => {
+            find_report_for_login(dbx, id, user_login).await
+        }
+        Err(err) => Err(err),
+    }
 }
 
 async fn find_report_for_login(
