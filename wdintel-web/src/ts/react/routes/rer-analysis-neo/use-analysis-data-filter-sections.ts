@@ -209,6 +209,12 @@ export function useAnalysisFilterSections({
         return;
       }
 
+      inFlightFilterSectionLoadIdsRef.current.forEach((_loadId, section) => {
+        if (!sectionsToReload.includes(section)) {
+          sectionsToReload.push(section);
+        }
+      });
+
       filterSectionLoadVersionRef.current += 1;
       hasTargetedFilterSectionInvalidationRef.current = true;
       sectionsToReload.forEach((section) => {

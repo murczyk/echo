@@ -186,8 +186,9 @@ describe('useAnalysisReloadOrchestrator', () => {
     const nextReload = new Promise<void>((resolve) => {
       resolveNextReload = resolve;
     });
-    const loadSummaryData = vi.fn().mockResolvedValue(undefined);
-    const params = buildParams({ centerTab: 'summary', loadSummaryData });
+    const initialLoadSummaryData = vi.fn().mockResolvedValue(undefined);
+    const nextLoadSummaryData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({ centerTab: 'summary', loadSummaryData: initialLoadSummaryData });
 
     await renderHook(params);
     await act(async () => {
@@ -196,7 +197,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
-    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+    expect(initialLoadSummaryData).toHaveBeenCalledTimes(1);
 
     reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => nextReload);
 
@@ -206,7 +207,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       queryState: { ...params.queryState, search: 'alpha' },
     });
 
-    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+    expect(initialLoadSummaryData).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
@@ -214,7 +215,16 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
-    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+    expect(initialLoadSummaryData).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      loadSummaryData: nextLoadSummaryData,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    expect(nextLoadSummaryData).toHaveBeenCalledTimes(0);
 
     await act(async () => {
       resolveNextReload?.();
@@ -223,7 +233,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       await Promise.resolve();
     });
 
-    expect(loadSummaryData).toHaveBeenCalledTimes(2);
+    expect(nextLoadSummaryData).toHaveBeenCalledTimes(1);
   });
 
   it('aborts the previous reload when a newer reload starts', async () => {

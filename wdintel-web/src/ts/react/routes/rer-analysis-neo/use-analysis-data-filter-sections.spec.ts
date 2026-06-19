@@ -254,6 +254,39 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
   });
 
+  it('queues an in-flight excluded section when another targeted invalidation bumps the version', async () => {
+    const groupsDeferred = deferred<{ groups: Array<{ masterKey: string; count: number }>; groupNames: Array<{ masterKey: string; name: string }> }>();
+    analysisApiMocks.fetchAnalysisGroups.mockImplementationOnce(() => groupsDeferred.promise);
+
+    await renderHook();
+
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+      await Promise.resolve();
+      void latest?.loadFilterSection('groups');
+      await Promise.resolve();
+    });
+
+    expect(latest?.isFilterSectionLoading('groups')).toBe(true);
+
+    act(() => {
+      latest?.invalidateFilterSectionLoadsForPatch({ groupsSelected: ['x'] });
+    });
+
+    expect(latest?.getReloadFilterSections()).toEqual(expect.arrayContaining(['tags', 'groups']));
+    expect(latest?.isFilterSectionStale('tags')).toBe(true);
+    expect(latest?.isFilterSectionStale('groups')).toBe(true);
+
+    await act(async () => {
+      groupsDeferred.resolve({ groups: [], groupNames: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(latest?.isFilterSectionLoading('groups')).toBe(false);
+    expect(latest?.isFilterSectionStale('groups')).toBe(true);
+  });
+
   it('treats an in-flight section as reloadable before loading state propagates', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
     analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);

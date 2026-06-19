@@ -143,6 +143,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
   const summaryReloadPendingKeyRef = useRef<string | null>(null);
+  const summaryDebouncePendingKeyRef = useRef<string | null>(null);
   const reloadAbortControllerRef = useRef<AbortController | null>(null);
   const reloadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
@@ -277,6 +278,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
     const runReload = () => {
       lastReloadTriggerKeyRef.current = reloadTriggerKey;
+      summaryDebouncePendingKeyRef.current = null;
       const summaryReloadWasAlreadyPending = summaryReloadPendingKeyRef.current === reloadTriggerKey;
       summaryReloadPendingKeyRef.current = reloadTriggerKey;
       if (centerTab === 'summary' && !summaryReloadWasAlreadyPending) {
@@ -306,14 +308,16 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       clearTimeout(reloadDebounceTimerRef.current);
     }
     summaryReloadPendingKeyRef.current = reloadTriggerKey;
+    summaryDebouncePendingKeyRef.current = reloadTriggerKey;
     if (centerTab === 'summary') {
       invalidateSummaryData(true);
     }
     reloadDebounceTimerRef.current = setTimeout(runReload, 200);
 
     return () => {
-      if (summaryReloadPendingKeyRef.current === reloadTriggerKey) {
+      if (summaryDebouncePendingKeyRef.current === reloadTriggerKey) {
         summaryReloadPendingKeyRef.current = null;
+        summaryDebouncePendingKeyRef.current = null;
       }
       if (reloadDebounceTimerRef.current != null) {
         clearTimeout(reloadDebounceTimerRef.current);
