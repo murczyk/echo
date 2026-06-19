@@ -24,7 +24,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -254,6 +254,89 @@ async fn record_completed_report(
             )
         }
     };
+    insert_completed_report_row(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        generated.file_name,
+        generated.content_type,
+        s3_id,
+        last_error,
+        log,
+        None,
+    )
+    .await
+}
+
+pub async fn record_completed_report_file_nofail(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    file_path: &Path,
+) {
+    if let Err(err) = record_completed_report_file(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        file_name,
+        content_type,
+        file_path,
+    )
+    .await
+    {
+        error!("failed to record completed report history row: {err:?}");
+    }
+}
+
+async fn record_completed_report_file(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    file_path: &Path,
+) -> Result<report_history::Model, AppError> {
+    let report_history = insert_completed_report_row(
+        env,
+        requested_by,
+        report_kind,
+        request,
+        file_name.clone(),
+        content_type.clone(),
+        None,
+        None,
+        json!([]),
+        Some(file_path.to_string_lossy().to_string()),
+    )
+    .await?;
+    spawn_completed_report_file_archive(
+        env.clone(),
+        report_history.id,
+        file_name,
+        content_type,
+        file_path.to_path_buf(),
+    );
+    Ok(report_history)
+}
+
+async fn insert_completed_report_row(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    s3_id: Option<String>,
+    last_error: Option<String>,
+    log: serde_json::Value,
+    legacy_report_path: Option<String>,
+) -> Result<report_history::Model, AppError> {
     let now = Utc::now().naive_utc();
     Ok(report_history::ActiveModel {
         id: NotSet,
@@ -268,16 +351,106 @@ async fn record_completed_report(
         completed_at: Set(Some(now)),
         s3_id: Set(s3_id),
         bgtask_id: Set(None),
-        file_name: Set(Some(generated.file_name)),
-        content_type: Set(Some(generated.content_type)),
+        file_name: Set(Some(file_name)),
+        content_type: Set(Some(content_type)),
         last_error: Set(last_error),
         log: Set(log),
         legacy_log_id: Set(None),
-        legacy_report_path: Set(None),
+        legacy_report_path: Set(legacy_report_path),
     }
     .insert(&env.dbx)
     .await
     .c(h!())?)
+}
+
+fn spawn_completed_report_file_archive(
+    env: Env,
+    report_history_id: i64,
+    file_name: String,
+    content_type: String,
+    file_path: PathBuf,
+) {
+    tokio::spawn(async move {
+        if let Err(err) = archive_completed_report_file(
+            &env,
+            report_history_id,
+            file_name,
+            content_type,
+            file_path,
+        )
+        .await
+        {
+            let msg = format!(
+                "completed direct report was not stored in S3: {err:#?}"
+            );
+            error!("{msg}");
+            if let Err(err) =
+                set_completed_report_archive_error(&env, report_history_id, msg)
+                    .await
+            {
+                error!(
+                    "failed to update completed report archive error: {err:?}"
+                );
+            }
+        }
+    });
+}
+
+async fn archive_completed_report_file(
+    env: &Env,
+    report_history_id: i64,
+    file_name: String,
+    content_type: String,
+    file_path: PathBuf,
+) -> Result<(), AppError> {
+    let bytes = tokio::fs::read(&file_path).await.c(h!())?;
+    let generated = GeneratedReport {
+        file_name,
+        content_type,
+        bytes,
+    };
+    let s3_id = upload_report_bytes(env, &generated).await?;
+    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+            "completed report history row not found for archive update: {report_history_id}"
+        );
+        return Ok(());
+    };
+    let mut report_history = report_history.into_active_model();
+    report_history.s3_id = Set(Some(s3_id));
+    report_history.last_error = Set(None);
+    report_history.update(&env.dbx).await.c(h!())?;
+    Ok(())
+}
+
+async fn set_completed_report_archive_error(
+    env: &Env,
+    report_history_id: i64,
+    err_msg: String,
+) -> Result<(), AppError> {
+    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+            "completed report history row not found for archive error update: {report_history_id}"
+        );
+        return Ok(());
+    };
+    let mut report_history = report_history.into_active_model();
+    report_history.last_error = Set(Some(err_msg.clone()));
+    report_history.log = Set(append_log_entry(
+        report_history.log.unwrap(),
+        "system",
+        &err_msg,
+    ));
+    report_history.update(&env.dbx).await.c(h!())?;
+    Ok(())
 }
 
 #[post("/api/report-history/list")]

@@ -614,7 +614,6 @@ async fn report_docx_inner(
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }
-    let bytes = tokio::fs::read(&outpath).await.c(h!())?;
     let file = actix_files::NamedFile::open(&outpath)?;
     save_report_log(
         &env.dbx,
@@ -624,7 +623,7 @@ async fn report_docx_inner(
     )
     .await
     .context(h!())?;
-    crate::report_history::record_completed_report_nofail(
+    crate::report_history::record_completed_report_file_nofail(
         env,
         user_login,
         &req.kind,
@@ -633,7 +632,7 @@ async fn report_docx_inner(
         },
         filename.clone(),
         content_type,
-        &bytes,
+        &outpath,
     )
     .await;
     Ok(file.into_response(http_req))
