@@ -486,6 +486,7 @@ pub async fn report_history_admin_list(
         .c(h!())?;
     let rows = ReportHistory::find()
         .order_by_desc(report_history::Column::CreatedAt)
+        .order_by_desc(report_history::Column::Id)
         .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
