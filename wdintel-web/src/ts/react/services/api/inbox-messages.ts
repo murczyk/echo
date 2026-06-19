@@ -13,6 +13,7 @@ import type {
 } from '../../../../Bindings';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson } from './client';
+import type { RequestOptions } from './client';
 
 const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
@@ -258,9 +259,9 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
   };
 }
 
-export async function fetchInboxMessages(req: InboxMessagesReq): Promise<InboxMessagesRsp> {
+export async function fetchInboxMessages(req: InboxMessagesReq, options?: RequestOptions): Promise<InboxMessagesRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any);
+  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any, options);
   return mapRsp(raw);
 }
 
@@ -269,9 +270,9 @@ export type InboxMessagesDigestRsp = {
   firstElementTs: number | null;
 };
 
-export async function fetchInboxCount(req: InboxMessagesReq): Promise<InboxMessagesDigestRsp> {
+export async function fetchInboxCount(req: InboxMessagesReq, options?: RequestOptions): Promise<InboxMessagesDigestRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<{ quantity: number; first_element_ts: number | null }>('/api/rer-importer/get-inbox-count', body as any);
+  const raw = await postJson<{ quantity: number; first_element_ts: number | null }>('/api/rer-importer/get-inbox-count', body as any, options);
   return {
     quantity: raw.quantity,
     firstElementTs: raw.first_element_ts ?? null,

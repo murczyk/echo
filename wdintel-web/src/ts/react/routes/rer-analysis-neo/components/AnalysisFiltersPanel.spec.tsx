@@ -204,9 +204,24 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
       canResetFilters: false,
       counts: null,
       countsLoading: false,
+      filterSectionLoadStates: {
+        tags: 'idle',
+        aors: 'idle',
+        groups: 'idle',
+        senders: 'idle',
+        callsigns: 'idle',
+        units: 'idle',
+        locations: 'idle',
+        posts: 'idle',
+        networks: 'idle',
+        metadata: 'idle',
+      },
       aorEntries: [],
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
+      isFilterSectionLoading: () => false,
+      isFilterSectionEmptyLoading: () => false,
+      isFilterSectionStale: () => false,
       networkDisplayMap: {},
       options: buildOptions(),
       groupInfos: {},
@@ -320,19 +335,24 @@ describe('AnalysisFiltersPanel', () => {
   });
 
   it('shows loading state for an opened lazy section instead of an empty-options message', async () => {
+    let tagsSectionLoading = false;
     let resolveLoad: (() => void) | null = null;
     const loadFilterSection = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
+      () => {
+        tagsSectionLoading = true;
+        return new Promise<void>((resolve) => {
           resolveLoad = resolve;
-        }),
+        });
+      },
     );
 
-    const view = await renderComponent(
+    const buildPage = () =>
       buildProps({
         loadFilterSection,
-      }),
-    );
+        isFilterSectionLoading: (section) => section === 'tags' && tagsSectionLoading,
+      });
+
+    const view = await renderComponent(buildPage());
     rendered.push(view);
 
     const tagsAccordion = accordionSpy.mock.calls
@@ -340,6 +360,10 @@ describe('AnalysisFiltersPanel', () => {
       .find((callProps) => callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function');
     await act(async () => {
       tagsAccordion?.onChange?.(null, true);
+    });
+
+    await act(async () => {
+      view.root.render(<AnalysisFiltersPanel {...buildPage()} />);
     });
 
     expect(
@@ -386,7 +410,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent ?? '').not.toContain('8 з 4');
   });
 
-  it('passes group master keys as filter values while keeping duplicate group names as labels', async () => {
+  it('merges duplicate group names into one option while preserving selected master keys', async () => {
     const props = buildProps({
       groupInfos: {
         'group-a': buildGroupInfo('group-a', 'Грак Пл'),
@@ -408,12 +432,11 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const groupsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }>; value: string[] })
+      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number; values?: string[] }>; value: string[] })
       .find((callProps) => callProps.label === 'Групи');
 
     expect(groupsField?.options).toEqual([
-      { value: 'group-a', label: 'Грак Пл', count: 1 },
-      { value: 'group-b', label: 'Грак Пл', count: 1 },
+      { value: 'group-a', label: 'Грак Пл', count: 2, values: ['group-a', 'group-b'] },
     ]);
     expect(groupsField?.value).toEqual(['group-b']);
   });

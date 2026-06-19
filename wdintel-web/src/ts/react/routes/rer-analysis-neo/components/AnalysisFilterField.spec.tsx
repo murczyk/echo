@@ -159,8 +159,9 @@ describe('AnalysisFilterField', () => {
     act(() => {
       props.onOpen?.();
     });
+    const openedProps = latestAutocompleteProps();
     act(() => {
-      props.onChange(null, [props.options[0], props.options[1], props.options[2]], 'selectOption');
+      openedProps.onChange(null, [openedProps.options[0], openedProps.options[1], openedProps.options[2]], 'selectOption');
     });
     expect(onChange).not.toHaveBeenCalled();
     expect(latestAutocompleteProps().value.map((option) => option.value)).toEqual(['u1', 'u2', 'u3']);
@@ -175,7 +176,28 @@ describe('AnalysisFilterField', () => {
     });
   });
 
-  it('commits clear immediately even in deferred mode', () => {
+  it('preserves the selected chip order when requested', () => {
+    const { root } = renderFilterField({
+      label: 'Частоти',
+      options: [
+        { value: '1.000', label: '1.000', count: 1 },
+        { value: '2.000', label: '2.000', count: 2 },
+        { value: '10.000', label: '10.000', count: 10 },
+      ],
+      value: ['10.000', '2.000', '1.000'],
+      preserveSelectionOrder: true,
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    expect(props.value.map((option) => option.value)).toEqual(['10.000', '2.000', '1.000']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('defers clear until close when the popup is open', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({
       label: 'Підрозділи',
@@ -187,7 +209,16 @@ describe('AnalysisFilterField', () => {
     const props = latestAutocompleteProps();
 
     act(() => {
-      props.onChange(null, [], 'clear');
+      props.onOpen?.();
+    });
+    const openedProps = latestAutocompleteProps();
+    act(() => {
+      openedProps.onChange(null, [], 'clear');
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      openedProps.onClose?.();
     });
     expect(onChange).toHaveBeenCalledWith([]);
 
@@ -221,6 +252,39 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('defers chip removal until close when the popup is open', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: 'Unit 1', count: 1 },
+        { value: 'u2', label: 'Unit 2', count: 2 },
+      ],
+      value: ['u1', 'u2'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onOpen?.();
+    });
+    const openedProps = latestAutocompleteProps();
+    act(() => {
+      openedProps.onChange(null, [openedProps.options[1]], 'removeOption');
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      openedProps.onClose?.();
+    });
+    expect(onChange).toHaveBeenCalledWith(['u2']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('keeps a cleared deferred selection empty when the menu closes', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({
@@ -244,6 +308,38 @@ describe('AnalysisFilterField', () => {
 
     expect(onChange).toHaveBeenCalledWith([]);
     expect(onChange).not.toHaveBeenCalledWith(['u1']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('does not replay an older draft after a deferred chip removal commits', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: 'Unit 1', count: 1 },
+        { value: 'u2', label: 'Unit 2', count: 2 },
+      ],
+      value: ['u1', 'u2'],
+      deferredCommit: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onOpen?.();
+    });
+    act(() => {
+      props.onChange(null, [props.options[1]], 'removeOption');
+    });
+    act(() => {
+      props.onClose?.();
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(['u2']);
 
     act(() => {
       root.unmount();

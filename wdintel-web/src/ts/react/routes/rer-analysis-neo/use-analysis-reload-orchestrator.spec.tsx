@@ -134,9 +134,130 @@ afterEach(() => {
   root = null;
   container?.remove();
   container = null;
+  vi.useRealTimers();
 });
 
 describe('useAnalysisReloadOrchestrator', () => {
+  it('runs the initial reload immediately', async () => {
+    vi.useFakeTimers();
+    const params = buildParams();
+
+    await renderHook(params);
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+  });
+
+  it('debounces rapid reload trigger updates and keeps only the latest reload', async () => {
+    vi.useFakeTimers();
+    const params = buildParams();
+
+    await renderHook(params);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-3',
+      queryState: { ...params.queryState, search: 'bravo' },
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(199);
+    });
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'bravo' });
+  });
+
+  it('aborts the previous reload when a newer reload starts', async () => {
+    vi.useFakeTimers();
+    let resolveFirstReload: (() => void) | null = null;
+    const firstReload = new Promise<void>((resolve) => {
+      resolveFirstReload = resolve;
+    });
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => firstReload);
+
+    const params = buildParams();
+
+    await renderHook(params);
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    expect(firstSignal).toBeDefined();
+    expect(firstSignal?.aborted).toBe(false);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      await Promise.resolve();
+    });
+
+    const secondSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0].signal as AbortSignal | undefined;
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(firstSignal?.aborted).toBe(true);
+    expect(secondSignal).toBeDefined();
+    expect(secondSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      resolveFirstReload?.();
+      await firstReload;
+      await Promise.resolve();
+    });
+  });
+
+  it('aborts the active reload and clears pending debounce timers on unmount', async () => {
+    vi.useFakeTimers();
+    let resolveFirstReload: (() => void) | null = null;
+    const firstReload = new Promise<void>((resolve) => {
+      resolveFirstReload = resolve;
+    });
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => firstReload);
+
+    const params = buildParams();
+
+    await renderHook(params);
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    expect(firstSignal).toBeDefined();
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    act(() => {
+      root?.unmount();
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    resolveFirstReload?.();
+    await act(async () => {
+      await firstReload;
+      await Promise.resolve();
+    });
+  });
+
   it('reloads when the map becomes visible even if the trigger key stays the same', async () => {
     const params = buildParams();
 

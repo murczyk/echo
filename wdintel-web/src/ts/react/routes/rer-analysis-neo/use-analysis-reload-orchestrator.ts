@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { InboxMessage, Network, NewCallsignsRes, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
 import { buildAnalysisReq } from './helpers';
 import { reloadAnalysisData } from './use-analysis-data.reload';
+import type { FilterSectionLoadPlan } from './use-analysis-data-filter-sections';
 import type { AnalysisAorEntry, AnalysisCenterTab, AnalysisCountItem, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState, AnalysisSidebarTab } from './types';
 
 type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchAnalysisNetworks;
@@ -27,9 +28,9 @@ type Params = {
   invalidateFilterSectionLoadsForPatch: (patch?: Partial<AnalysisQueryState>) => void;
   loadInitialFilterSections: (
     analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
-    forceReload?: boolean,
-    loadedSections?: AnalysisFilterSectionId[],
+    plan: FilterSectionLoadPlan | { mode: 'initial'; selectedSections: AnalysisFilterSectionId[] },
     networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
+    signal?: AbortSignal,
   ) => Promise<void>;
   invalidateCallsignGraph: () => void;
   invalidateCorrelatedFreqsCache: () => void;
@@ -144,65 +145,78 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
   const summaryReloadPendingKeyRef = useRef<string | null>(null);
+  const reloadAbortControllerRef = useRef<AbortController | null>(null);
+  const reloadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
 
   const reload = useCallback(async () => {
-    await reloadAnalysisData({
-      clearAnalysisResults,
-      invalidateCallsignGraph,
-      invalidateCorrelatedFreqsCache,
-      invalidateMessagePaging,
-      newestFirst,
-      onError,
-      onUnauthorized,
-      optionsFreqsRef: optionsFreqValuesRef,
-      queryState,
-      reloadRequestRef,
-      newCallsignsRequestRef,
-      newCallsignsLoadedKeyRef,
-      newCallsignsPendingKeyRef,
-      setAorEntries,
-      setCounts,
-      setCountsLoading,
-      setFiltersLoading,
-      setGroupInfos,
-      setMapLoading,
-      setMapDateRange,
-      setMapNetworkUnits,
-      setMapOpenMessages,
-      setMapPoints,
-      setMessages,
-      loadMessageComments,
-      setMessagesLoading,
-      setNetworkDisplayMap,
-      setNetworks,
-      setNewCallsigns,
-      setNewCallsignsLoading,
-      setNewCallsignsLoadedKey,
-      shouldLoadNewCallsigns,
-      setNoMoreToLoad,
-      setNolimitShown,
-      setOptions,
-      setProfiles,
-      setSummaryCallsignsInfo,
-      setTagsMap,
-      setTopCallsigns,
-      setTopFreqs,
-      setTopLocations,
-      setTopUnits,
-      setUnitsMap,
-      setHasLoadedInitialMessages,
-      invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
-      invalidateTopSidebarLoads: invalidateRightSidebarData,
-      getLoadedFilterSections,
-      getReloadFilterSections,
-      loadInitialFilterSections,
-      invalidateFilterSectionLoads,
-      invalidateFilterSectionLoadsForPatch,
-      centerTab,
-      rightSidebarVisible,
-      rightSidebarTab,
-    });
+    reloadAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    reloadAbortControllerRef.current = abortController;
+
+    try {
+      await reloadAnalysisData({
+        clearAnalysisResults,
+        invalidateCallsignGraph,
+        invalidateCorrelatedFreqsCache,
+        invalidateMessagePaging,
+        newestFirst,
+        onError,
+        onUnauthorized,
+        optionsFreqsRef: optionsFreqValuesRef,
+        queryState,
+        reloadRequestRef,
+        newCallsignsRequestRef,
+        newCallsignsLoadedKeyRef,
+        newCallsignsPendingKeyRef,
+        setAorEntries,
+        setCounts,
+        setCountsLoading,
+        setFiltersLoading,
+        setGroupInfos,
+        setMapLoading,
+        setMapDateRange,
+        setMapNetworkUnits,
+        setMapOpenMessages,
+        setMapPoints,
+        setMessages,
+        loadMessageComments,
+        setMessagesLoading,
+        setNetworkDisplayMap,
+        setNetworks,
+        setNewCallsigns,
+        setNewCallsignsLoading,
+        setNewCallsignsLoadedKey,
+        shouldLoadNewCallsigns,
+        setNoMoreToLoad,
+        setNolimitShown,
+        setOptions,
+        setProfiles,
+        setSummaryCallsignsInfo,
+        setTagsMap,
+        setTopCallsigns,
+        setTopFreqs,
+        setTopLocations,
+        setTopUnits,
+        setUnitsMap,
+        setHasLoadedInitialMessages,
+        invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
+        invalidateTopSidebarLoads: invalidateRightSidebarData,
+        getLoadedFilterSections,
+        getReloadFilterSections,
+        loadInitialFilterSections,
+        invalidateFilterSectionLoads,
+        invalidateFilterSectionLoadsForPatch,
+        centerTab,
+        rightSidebarVisible,
+        rightSidebarTab,
+        signal: abortController.signal,
+      });
+    } finally {
+      if (reloadAbortControllerRef.current === abortController) {
+        reloadAbortControllerRef.current = null;
+      }
+    }
   }, [
     centerTab,
     clearAnalysisResults,
@@ -265,22 +279,41 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   useEffect(() => {
     if (deferInitialLoad) return;
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
-    lastReloadTriggerKeyRef.current = reloadTriggerKey;
-    summaryReloadPendingKeyRef.current = reloadTriggerKey;
-    if (centerTab === 'summary') {
-      invalidateSummaryData(true);
+    const runReload = () => {
+      lastReloadTriggerKeyRef.current = reloadTriggerKey;
+      summaryReloadPendingKeyRef.current = reloadTriggerKey;
+      if (centerTab === 'summary') {
+        invalidateSummaryData(true);
+      }
+      void reload()
+        .then(() => {
+          if (mapVisible) {
+            mapReloadedKeyRef.current = reloadTriggerKey;
+          }
+        })
+        .finally(() => {
+          if (summaryReloadPendingKeyRef.current !== reloadTriggerKey) return;
+          summaryReloadPendingKeyRef.current = null;
+          setSummaryReloadBarrier((current) => current + 1);
+        });
+    };
+
+    if (lastReloadTriggerKeyRef.current === null) {
+      runReload();
+      return;
     }
-    void reload()
-      .then(() => {
-        if (mapVisible) {
-          mapReloadedKeyRef.current = reloadTriggerKey;
-        }
-      })
-      .finally(() => {
-        if (summaryReloadPendingKeyRef.current !== reloadTriggerKey) return;
-        summaryReloadPendingKeyRef.current = null;
-        setSummaryReloadBarrier((current) => current + 1);
-      });
+
+    if (reloadDebounceTimerRef.current != null) {
+      clearTimeout(reloadDebounceTimerRef.current);
+    }
+    reloadDebounceTimerRef.current = setTimeout(runReload, 200);
+
+    return () => {
+      if (reloadDebounceTimerRef.current != null) {
+        clearTimeout(reloadDebounceTimerRef.current);
+        reloadDebounceTimerRef.current = null;
+      }
+    };
   }, [centerTab, deferInitialLoad, invalidateSummaryData, mapVisible, reload, reloadTriggerKey]);
 
   const mapReloadPendingKeyRef = useRef<string | null>(null);
@@ -320,6 +353,17 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (deferInitialLoad) return;
     void loadMapPalitras();
   }, [deferInitialLoad, loadMapPalitras]);
+
+  useEffect(() => {
+    return () => {
+      reloadAbortControllerRef.current?.abort();
+      reloadAbortControllerRef.current = null;
+      if (reloadDebounceTimerRef.current != null) {
+        clearTimeout(reloadDebounceTimerRef.current);
+        reloadDebounceTimerRef.current = null;
+      }
+    };
+  }, []);
 
   return { reload, summaryReloadBarrier };
 }

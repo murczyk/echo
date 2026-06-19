@@ -30,6 +30,7 @@ import {
   getLatestSenders,
   getTagsMapForDisplay,
 } from '../../services/api/analysis';
+import { isAbortError } from '../../services/api/client';
 import { getUnitsList } from '../../services/api/units';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq, shouldRebuildAnalysisRequests } from './helpers';
@@ -58,6 +59,7 @@ type FilterSectionLoadContext = {
   loadVersion: number;
   loadVersionRef: React.MutableRefObject<number>;
   networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>;
+  signal?: AbortSignal;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setNetworks: Setter<Network[]>;
@@ -110,12 +112,13 @@ function mergeSignalGroups(
 async function loadAnalysisNetworksWithCache(
   analysisReq: AnalysisStatsReq,
   cache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
+  signal?: AbortSignal,
 ): ReturnType<typeof fetchAnalysisNetworks> {
   const requestKey = JSON.stringify(analysisReq);
   const cached = cache?.get(requestKey);
   if (cached) return cached;
 
-  const request = fetchAnalysisNetworks(analysisReq);
+  const request = fetchAnalysisNetworks(analysisReq, signal ? { signal } : undefined);
   cache?.set(requestKey, request);
   return request;
 }
@@ -188,11 +191,13 @@ export function buildAnalysisReqForFilterSection(
 
 export async function loadFilterSectionData(section: AnalysisFilterSectionId, context: FilterSectionLoadContext): Promise<void> {
   const isStale = () => context.loadVersion !== context.loadVersionRef.current;
+  const requestOptions = context.signal ? { signal: context.signal } : undefined;
+  const isAborted = () => context.signal?.aborted === true;
 
   switch (section) {
     case 'tags': {
-      const [tagsRsp, tagsDisplayMap] = await Promise.all([fetchAnalysisTags(context.analysisReq), getTagsMapForDisplay()]);
-      if (isStale()) return;
+      const [tagsRsp, tagsDisplayMap] = await Promise.all([fetchAnalysisTags(context.analysisReq, requestOptions), getTagsMapForDisplay(requestOptions)]);
+      if (isStale() || isAborted()) return;
       context.setTagsMap(tagsDisplayMap);
       context.setOptions((current) => ({
         ...current,
@@ -206,8 +211,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'aors': {
-      const aorsRsp = await fetchAnalysisAors(context.analysisReq);
-      if (isStale()) return;
+      const aorsRsp = await fetchAnalysisAors(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       const aorNamesById = Object.fromEntries((aorsRsp.aorNames ?? []).map((item) => [String(item.id), item.name]));
       context.setAorEntries((aorsRsp.aorNames ?? []).map((item) => ({ id: item.id, name: item.name })));
       context.setOptions((current) => ({
@@ -222,8 +227,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'groups': {
-      const groupsRsp = await fetchAnalysisGroups(context.analysisReq);
-      if (isStale()) return;
+      const groupsRsp = await fetchAnalysisGroups(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       const groupInfosByKey: Record<string, SignalGroupEntry> = {};
       groupsRsp.groupNames.forEach((item) => {
         groupInfosByKey[item.masterKey] = item;
@@ -241,8 +246,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'senders': {
-      const [sendersRsp, senderProfilesRsp] = await Promise.all([fetchAnalysisSenders(context.analysisReq), getLatestSenders()]);
-      if (isStale()) return;
+      const [sendersRsp, senderProfilesRsp] = await Promise.all([fetchAnalysisSenders(context.analysisReq, requestOptions), getLatestSenders(requestOptions)]);
+      if (isStale() || isAborted()) return;
       context.setProfiles((current) => mergeSignalProfiles(current, senderProfilesRsp.data ?? {}));
       context.setOptions((current) => ({
         ...current,
@@ -251,8 +256,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'callsigns': {
-      const callsignsRsp = await fetchAnalysisCallsigns(context.analysisReq);
-      if (isStale()) return;
+      const callsignsRsp = await fetchAnalysisCallsigns(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       const groupedByLabel = new Map<string, AnalysisFilterOption>();
       callsignsRsp.callsigns.forEach((item) => {
         const label = item.callsign.toUpperCase();
@@ -271,8 +276,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'units': {
-      const unitsRsp = await fetchAnalysisUnits(context.analysisReq);
-      if (isStale()) return;
+      const unitsRsp = await fetchAnalysisUnits(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
         units: toFilterOptions(
@@ -285,8 +290,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'locations': {
-      const locationsRsp = await fetchAnalysisLocations(context.analysisReq);
-      if (isStale()) return;
+      const locationsRsp = await fetchAnalysisLocations(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
         locations: toFilterOptions(
@@ -299,8 +304,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'posts': {
-      const postsRsp = await fetchAnalysisPosts(context.analysisReq);
-      if (isStale()) return;
+      const postsRsp = await fetchAnalysisPosts(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
         posts: toFilterOptions(
@@ -313,11 +318,11 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'networks': {
-      const networksStatsRsp = await loadAnalysisNetworksWithCache(context.analysisReq, context.networkStatsCache);
-      if (isStale()) return;
+      const networksStatsRsp = await loadAnalysisNetworksWithCache(context.analysisReq, context.networkStatsCache, context.signal);
+      if (isStale() || isAborted()) return;
       const networkIds = networksStatsRsp.networks.map((item) => item.networkId);
-      const networksById = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
-      if (isStale()) return;
+      const networksById = networkIds.length > 0 ? await fetchNetworksByIds(networkIds, requestOptions) : [];
+      if (isStale() || isAborted()) return;
       const networkNamesById = Object.fromEntries(networksStatsRsp.networkNames.map((network) => [network.id, network.name]));
       context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setNetworkDisplayMap(buildNetworkDisplayMap(networksById, context.unitsMap));
@@ -333,8 +338,8 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       return;
     }
     case 'metadata': {
-      const metadataRsp = await fetchAnalysisMetadata(context.analysisReq);
-      if (isStale()) return;
+      const metadataRsp = await fetchAnalysisMetadata(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
         metadataCcs: toFilterOptions(metadataRsp.ccs, (item) => item.value, (item) => item.value, (item) => item.count),
@@ -402,13 +407,16 @@ type ReloadParams = {
   getLoadedFilterSections?: () => AnalysisFilterSectionId[];
   loadInitialFilterSections: (
     analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>,
-    forceReload?: boolean,
-    loadedSections?: AnalysisFilterSectionId[],
+    plan:
+      | import('./use-analysis-data-filter-sections').FilterSectionLoadPlan
+      | { mode: 'initial'; selectedSections: AnalysisFilterSectionId[] },
     networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
+    signal?: AbortSignal,
   ) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (patch?: Partial<AnalysisQueryState>) => void;
   getReloadFilterSections?: () => AnalysisFilterSectionId[] | null;
+  signal?: AbortSignal;
 };
 
 export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
@@ -417,8 +425,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
   const networkStatsCache = new Map<string, ReturnType<typeof fetchAnalysisNetworks>>();
-  const targetedReloadSections = params.getReloadFilterSections?.() ?? null;
-  const loadedFilterSectionsBeforeReload = targetedReloadSections ?? params.getLoadedFilterSections?.() ?? [];
+  const targetedReloadSections = params.getReloadFilterSections?.();
   const shouldLoadMap =
     params.centerTab === 'map' || (params.rightSidebarVisible === true && params.rightSidebarTab === 'map');
 
@@ -471,19 +478,20 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return null;
       }
 
-      const countsPromise = fetchAnalysisCount(analysisReq);
+      const countsPromise = fetchAnalysisCount(analysisReq, params.signal ? { signal: params.signal } : undefined);
       countsPromise.catch(() => undefined);
-      const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst });
-      const freqsPromise = fetchAnalysisFreqs(analysisReq);
+      const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst }, params.signal ? { signal: params.signal } : undefined);
+      const freqsPromise = fetchAnalysisFreqs(analysisReq, params.signal ? { signal: params.signal } : undefined);
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       try {
         inboxRsp = await inboxPromise;
       } catch (loadError) {
+        if (isAbortError(loadError) || params.signal?.aborted) return null;
         void freqsPromise.catch(() => undefined);
         throw loadError;
       }
-      if (isStaleReload()) return null;
+      if (isStaleReload() || params.signal?.aborted) return null;
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));
@@ -498,7 +506,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       try {
         freqsRsp = await freqsPromise;
       } catch (loadError) {
-        if (isStaleReload()) return null;
+        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return null;
         params.setCounts(null);
         params.setNewCallsigns(emptyNewCallsigns);
         params.setNewCallsignsLoadedKey(null);
@@ -506,7 +514,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.setTopFreqs([]);
         throw loadError;
       }
-      if (isStaleReload()) return null;
+      if (isStaleReload() || params.signal?.aborted) return null;
 
       const nextFrequencies = freqsRsp.freqs.map((item) => item.freq);
       let resolvedAnalysisReq = analysisReq;
@@ -520,9 +528,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const rebuiltInboxReq = buildInboxReq(params.queryState, nextFrequencies);
         if (isPresent(rebuiltAnalysisReq) && isPresent(rebuiltInboxReq)) {
           try {
-            const rebuiltInboxRsp = await fetchInboxMessages({ ...rebuiltInboxReq, newestFirst: params.newestFirst });
-            const rebuiltFreqsRsp = await fetchAnalysisFreqs(rebuiltAnalysisReq);
-            if (isStaleReload()) return null;
+            const rebuiltInboxRsp = await fetchInboxMessages(
+              { ...rebuiltInboxReq, newestFirst: params.newestFirst },
+              params.signal ? { signal: params.signal } : undefined,
+            );
+            const rebuiltFreqsRsp = await fetchAnalysisFreqs(rebuiltAnalysisReq, params.signal ? { signal: params.signal } : undefined);
+            if (isStaleReload() || params.signal?.aborted) return null;
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
             params.setMessages(rebuiltInboxRsp.inboxItems ?? []);
@@ -536,7 +547,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedFreqsRsp = rebuiltFreqsRsp;
             void params.loadMessageComments?.(rebuiltInboxRsp.inboxItems ?? [], true);
           } catch (loadError) {
-            if (isStaleReload()) return null;
+            if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return null;
             if (!params.onUnauthorized(loadError)) {
               params.onError(toErrorMessage(loadError));
             }
@@ -562,7 +573,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         freqs: nextFreqOptions,
         newFreqs: nextNewFreqs,
       }));
-      await params.loadInitialFilterSections(resolvedAnalysisReq, true, loadedFilterSectionsBeforeReload, networkStatsCache);
+      const loadPlan =
+        targetedReloadSections == null
+          ? {
+              mode: 'full' as const,
+              sectionsToReload: filterSectionsForInitialLoad(params.queryState),
+              loadedSections: params.getLoadedFilterSections?.() ?? [],
+              selectedSections: filterSectionsForQueryState(params.queryState),
+            }
+          : {
+              mode: 'targeted' as const,
+              sectionsToReload: targetedReloadSections,
+            };
+      void params.loadInitialFilterSections(resolvedAnalysisReq, loadPlan, networkStatsCache, params.signal);
       params.setTopFreqs(topItems(effectiveFreqsRsp.freqs, (item) => item.freq, (item) => item.count));
       params.setMapDateRange({
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
@@ -580,7 +603,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
-    if (isNullOrUndefined(criticalData) || isStaleReload()) return;
+    if (isNullOrUndefined(criticalData) || isStaleReload() || params.signal?.aborted) return;
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
     params.setFiltersLoading(false);
@@ -591,18 +614,18 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const countsPromise =
           criticalData.resolvedAnalysisReq === criticalData.originalAnalysisReq
             ? criticalData.countsPromise
-            : fetchAnalysisCount(criticalData.resolvedAnalysisReq);
+            : fetchAnalysisCount(criticalData.resolvedAnalysisReq, params.signal ? { signal: params.signal } : undefined);
         if (criticalData.resolvedAnalysisReq !== criticalData.originalAnalysisReq) {
           countsPromise.catch(() => undefined);
         }
         const countsRsp = await countsPromise;
-        if (isStaleReload()) return;
+        if (isStaleReload() || params.signal?.aborted) return;
         params.setCounts(countsRsp);
       } catch (loadError) {
-        if (isStaleReload()) return;
+        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
       } finally {
-        if (!isStaleReload()) params.setCountsLoading(false);
+        if (!isStaleReload() && !params.signal?.aborted) params.setCountsLoading(false);
       }
     };
 
@@ -610,10 +633,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       try {
         const networksAnalysisReq = buildAnalysisReqForFilterSection('networks', criticalData.resolvedAnalysisReq);
         const [units, networksStatsRsp] = await Promise.all([
-          getUnitsList(),
-          loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache),
+          getUnitsList(params.signal ? { signal: params.signal } : undefined),
+          loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache, params.signal),
         ]);
-        if (isStaleReload()) return;
+        if (isStaleReload() || params.signal?.aborted) return;
         const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
         params.setUnitsMap(unitsMap);
         const networkIds = Array.from(
@@ -622,35 +645,38 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             ...(criticalData.inboxRsp.inboxItems ?? []).flatMap(([, message]) => message.networkIds ?? []),
           ]),
         );
-        const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds) : [];
-        if (isStaleReload()) return;
+        const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds, params.signal ? { signal: params.signal } : undefined) : [];
+        if (isStaleReload() || params.signal?.aborted) return;
         params.setNetworks((current) => {
           const mergedNetworks = mergeNetworks(current, networksByAnalysisIds);
           params.setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
           return mergedNetworks;
         });
       } catch (loadError) {
-        if (isStaleReload()) return;
+        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
       }
     };
 
     const loadMapData = async () => {
       try {
-        const mapRsp = await fetchAnalysisMapPoints({
-          inboxItemsFilter: criticalData.inboxReq,
-          mapFilter: null,
-          pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
-        });
-        if (isStaleReload()) return;
+        const mapRsp = await fetchAnalysisMapPoints(
+          {
+            inboxItemsFilter: criticalData.inboxReq,
+            mapFilter: null,
+            pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
+          },
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return;
         params.setMapPoints(mapRsp.points ?? []);
         params.setMapNetworkUnits(mapRsp.networkUnits ?? []);
         params.setMapOpenMessages([]);
       } catch (loadError) {
-        if (isStaleReload()) return;
+        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
       } finally {
-        if (!isStaleReload()) params.setMapLoading(false);
+        if (!isStaleReload() && !params.signal?.aborted) params.setMapLoading(false);
       }
     };
 
@@ -668,15 +694,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       secondaryLoads.push(
         (async () => {
           try {
-            const newCallsignsRsp = await fetchAnalysisNewCallsigns(criticalData.resolvedAnalysisReq);
-            if (isStaleReload()) return;
+            const newCallsignsRsp = await fetchAnalysisNewCallsigns(criticalData.resolvedAnalysisReq, params.signal ? { signal: params.signal } : undefined);
+            if (isStaleReload() || params.signal?.aborted) return;
             params.setNewCallsigns(newCallsignsRsp);
             params.setNewCallsignsLoadedKey(JSON.stringify(criticalData.resolvedAnalysisReq));
           } catch (loadError) {
-            if (isStaleReload()) return;
+            if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
             if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
           } finally {
-            if (!isStaleReload()) params.setNewCallsignsLoading(false);
+            if (!isStaleReload() && !params.signal?.aborted) params.setNewCallsignsLoading(false);
           }
         })(),
       );
@@ -687,10 +713,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     }
     void Promise.all(secondaryLoads);
   } catch (loadError) {
-    if (isStaleReload()) return;
+    if (isStaleReload() || params.signal?.aborted) return;
     if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
   } finally {
-    if (!isStaleReload()) {
+    if (!isStaleReload() && !params.signal?.aborted) {
       params.setMessagesLoading(false);
       if (!startedSecondaryLoads) {
         params.setCountsLoading(false);

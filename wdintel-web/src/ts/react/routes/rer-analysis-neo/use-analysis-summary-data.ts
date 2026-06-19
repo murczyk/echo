@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 
 import type { CallsignInfoRes, SummaryTableFreqRow } from '../../../../Bindings';
 import { downloadAnalysisSummaryTableXlsx, fetchAnalysisCallsignInfos, fetchAnalysisSummaryTable } from '../../services/api/analysis';
+import { isAbortError } from '../../services/api/client';
 import { downloadBlob } from '../../utils/download-blob';
 import { isNullOrUndefined } from '../../utils/misc';
 import { buildAnalysisReq } from './helpers';
@@ -37,11 +38,13 @@ export function useAnalysisSummaryData({
   const summaryRequestRef = useRef(0);
   const summaryRequestKeyRef = useRef<string | null>(null);
   const pendingCallsignInfoKeysRef = useRef(new Set<string>());
+  const summaryAbortControllerRef = useRef<AbortController | null>(null);
 
   const loadMissingCallsignInfos = useCallback(
-    async (callsigns: string[]) => {
+    async (callsigns: string[], signal?: AbortSignal) => {
       const missingCallsigns: string[] = [];
       const seenKeys = new Set<string>();
+      const requestOptions = signal ? { signal } : undefined;
 
       callsigns.forEach((callsign) => {
         const key = normalizeCallsignLookupValue(callsign);
@@ -55,7 +58,8 @@ export function useAnalysisSummaryData({
       if (missingCallsigns.length === 0) return;
 
       try {
-        const callsignInfos = await fetchAnalysisCallsignInfos(missingCallsigns);
+        const callsignInfos = await fetchAnalysisCallsignInfos(missingCallsigns, requestOptions);
+        if (signal?.aborted) return;
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
       } finally {
         missingCallsigns.forEach((callsign) => {
@@ -68,6 +72,7 @@ export function useAnalysisSummaryData({
 
   const invalidateSummaryData = useCallback(
     (keepLoading = false) => {
+      summaryAbortControllerRef.current?.abort();
       summaryRequestRef.current += 1;
       summaryRequestKeyRef.current = null;
       if (!keepLoading) {
@@ -95,6 +100,9 @@ export function useAnalysisSummaryData({
     const requestKey = JSON.stringify(analysisReq);
     if (summaryRequestKeyRef.current === requestKey) return;
 
+    summaryAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    summaryAbortControllerRef.current = abortController;
     const requestId = summaryRequestRef.current + 1;
     summaryRequestRef.current = requestId;
     summaryRequestKeyRef.current = requestKey;
@@ -102,8 +110,8 @@ export function useAnalysisSummaryData({
     setSummaryLoading(true);
 
     try {
-      const rsp = await fetchAnalysisSummaryTable(analysisReq);
-      if (requestId !== summaryRequestRef.current) return;
+      const rsp = await fetchAnalysisSummaryTable(analysisReq, { signal: abortController.signal });
+      if (requestId !== summaryRequestRef.current || abortController.signal.aborted) return;
       const nextRows = rsp.rows ?? [];
       setSummaryRows(nextRows);
       const callsignIds = Array.from(
@@ -116,27 +124,37 @@ export function useAnalysisSummaryData({
       );
       if (callsignIds.length > 0) {
         try {
-          await loadMissingCallsignInfos(callsignIds);
+          await loadMissingCallsignInfos(callsignIds, abortController.signal);
         } catch (loadError) {
-          if (requestId !== summaryRequestRef.current) return;
+          if (requestId !== summaryRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
           summaryRequestKeyRef.current = null;
           if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
         }
-        if (requestId !== summaryRequestRef.current) return;
+        if (requestId !== summaryRequestRef.current || abortController.signal.aborted) return;
       }
     } catch (loadError) {
-      if (requestId !== summaryRequestRef.current) return;
+      if (requestId !== summaryRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
       summaryRequestKeyRef.current = null;
       setSummaryRows([]);
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId === summaryRequestRef.current) {
+      if (requestId === summaryRequestRef.current && !abortController.signal.aborted) {
         setSummaryHasLoadedOnce(true);
         setSummaryLoaded(true);
         setSummaryLoading(false);
       }
+      if (summaryAbortControllerRef.current === abortController) {
+        summaryAbortControllerRef.current = null;
+      }
     }
   }, [loadMissingCallsignInfos, onError, onUnauthorized, optionsFreqValues, queryState]);
+
+  useEffect(() => {
+    return () => {
+      summaryAbortControllerRef.current?.abort();
+      summaryAbortControllerRef.current = null;
+    };
+  }, []);
 
   const downloadSummaryXlsx = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);

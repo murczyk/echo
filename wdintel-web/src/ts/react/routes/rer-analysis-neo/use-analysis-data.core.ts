@@ -60,6 +60,10 @@ export function useAnalysisData({
   });
 
   const {
+    filterSectionLoadStates,
+    isFilterSectionEmptyLoading,
+    isFilterSectionLoading,
+    isFilterSectionStale,
     getLoadedFilterSections,
     getReloadFilterSections,
     invalidateFilterSectionLoads,
@@ -99,7 +103,7 @@ export function useAnalysisData({
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
 
-  const { clearAnalysisResults, onUpdateLocalMessage, patchMessages, messageActionState } = useAnalysisActions(
+  const { clearAnalysisResults, onUpdateLocalMessage, messageActionState } = useAnalysisActions(
     buildAnalysisActionsParams({
       authUserName,
       currentUser,
@@ -191,6 +195,10 @@ export function useAnalysisData({
     countsLoading,
     aorEntries: messageList.aorEntries,
     filtersLoading,
+    filterSectionLoadStates,
+    isFilterSectionLoading,
+    isFilterSectionEmptyLoading,
+    isFilterSectionStale,
     groupsActivityPeriod: sidebarData.groupsActivityPeriod,
     downloadGeojson: sidebarData.downloadGeojson,
     downloadKmz: sidebarData.downloadKmz,

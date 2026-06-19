@@ -21,11 +21,15 @@ type Props = Pick<AnalysisFiltersPanelPage, 'counts' | 'countsLoading' | 'includ
   expandedSections: Record<FilterSectionId, boolean>;
   countsLoading: boolean;
   filtersLoading: boolean;
+  isFilterSectionLoading: (section: AnalysisFilterSectionId) => boolean;
+  isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
+  isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
+  loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
   toggleSection: (section: FilterSectionId) => void;
-  isSectionLoading: (section: FilterSectionId) => boolean;
-  loadFilterSectionWithSpinner: (section: AnalysisFilterSectionId) => Promise<void>;
 };
+
+type FilterSectionLoadTarget = AnalysisFilterSectionId | 'freqs';
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
 
@@ -54,8 +58,10 @@ export function AnalysisFiltersPanelSections({
   countsLoading,
   includeOnlyNewFreqs,
   filtersLoading,
-  isSectionLoading,
-  loadFilterSectionWithSpinner,
+  isFilterSectionLoading,
+  isFilterSectionEmptyLoading,
+  isFilterSectionStale,
+  loadFilterSection,
   options,
   queryState,
   unitsExactMatchOnlyDefault,
@@ -73,13 +79,17 @@ export function AnalysisFiltersPanelSections({
     }
   }, [counts, countsLoading]);
 
-  const countLabel = (section: AnalysisFilterSectionId | 'freqs', optionCount: number, selectedCount: number, overallCount: number | null | undefined) =>
-    isSectionLoading(section) || (filtersLoading && optionCount === 0 && selectedCount === 0)
+  const isSectionLoading = (section: FilterSectionLoadTarget) => (section === 'freqs' ? false : isFilterSectionLoading(section));
+  const isSectionEmptyLoading = (section: FilterSectionLoadTarget, optionCount: number) =>
+    section === 'freqs' ? filtersLoading && optionCount === 0 : isFilterSectionEmptyLoading(section, optionCount);
+  const isSectionStale = (section: FilterSectionLoadTarget) => (section === 'freqs' ? false : isFilterSectionStale(section));
+  const countLabel = (section: FilterSectionLoadTarget, optionCount: number, selectedCount: number, overallCount: number | null | undefined) =>
+    isSectionLoading(section) || isSectionStale(section) || (filtersLoading && optionCount === 0 && selectedCount === 0)
       ? loadingCountLabel
       : sectionCountLabel(selectedCount, overallCount);
 
   const loadSection = (section: AnalysisFilterSectionId) => () => {
-    void loadFilterSectionWithSpinner(section);
+    void loadFilterSection(section);
   };
 
   const handleMetadataFilterModeChange = (_event: MouseEvent<HTMLElement>, nextMode: MetadataFilterMode | null) => {
@@ -113,7 +123,8 @@ export function AnalysisFiltersPanelSections({
         <AnalysisFilterField
           label="Смуги"
           options={derived.aorOptions}
-          loading={isSectionLoading('aors')}
+          loading={isFilterSectionLoading('aors') || isFilterSectionStale('aors')}
+          emptyLoading={isFilterSectionEmptyLoading('aors', derived.aorOptions.length)}
           value={queryState.aorsSelected}
           deferredCommit
           onChange={(aorsSelected) => updateQueryState({ aorsSelected })}
@@ -127,12 +138,14 @@ export function AnalysisFiltersPanelSections({
       >
         <Stack spacing={1.25}>
           <AnalysisFilterField
-            label="Частоти"
-            options={options.freqs}
-            disabled={includeOnlyNewFreqs}
-            loading={isSectionLoading('freqs')}
-            value={queryState.freqsSelected}
+          label="Частоти"
+          options={options.freqs}
+          disabled={includeOnlyNewFreqs}
+          loading={isSectionLoading('freqs') || isSectionStale('freqs')}
+          emptyLoading={isSectionEmptyLoading('freqs', options.freqs.length)}
+          value={queryState.freqsSelected}
             deferredCommit
+            preserveSelectionOrder
             onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
           />
           <FormControl size="small" disabled={includeOnlyNewFreqs}>
@@ -167,7 +180,8 @@ export function AnalysisFiltersPanelSections({
         <AnalysisFilterField
           label="Позивні"
           options={derived.callsignsOptions}
-          loading={isSectionLoading('callsigns')}
+          loading={isFilterSectionLoading('callsigns') || isFilterSectionStale('callsigns')}
+          emptyLoading={isFilterSectionEmptyLoading('callsigns', derived.callsignsOptions.length)}
           value={queryState.callsignsSelected}
           deferredCommit
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
@@ -184,7 +198,8 @@ export function AnalysisFiltersPanelSections({
           label="Мережі"
           options={derived.networkOptions}
           disabled={queryState.withoutNetwork}
-          loading={isSectionLoading('networks')}
+          loading={isFilterSectionLoading('networks') || isFilterSectionStale('networks')}
+          emptyLoading={isFilterSectionEmptyLoading('networks', derived.networkOptions.length)}
           value={queryState.networksSelected}
           deferredCommit
           onChange={(networksSelected) => updateQueryState({ networksSelected })}
@@ -208,7 +223,8 @@ export function AnalysisFiltersPanelSections({
           <AnalysisFilterField
             label="Підрозділи"
             options={derived.unitsOptions}
-            loading={isSectionLoading('units')}
+            loading={isFilterSectionLoading('units') || isFilterSectionStale('units')}
+            emptyLoading={isFilterSectionEmptyLoading('units', derived.unitsOptions.length)}
             value={queryState.unitsSelected}
             normalizeUnknownAliases
             deferredCommit
@@ -233,7 +249,8 @@ export function AnalysisFiltersPanelSections({
         <AnalysisFilterField
           label="Групи"
           options={derived.groupOptions}
-          loading={isSectionLoading('groups')}
+          loading={isFilterSectionLoading('groups') || isFilterSectionStale('groups')}
+          emptyLoading={isFilterSectionEmptyLoading('groups', derived.groupOptions.length)}
           value={queryState.groupsSelected}
           deferredCommit
           onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
@@ -249,7 +266,8 @@ export function AnalysisFiltersPanelSections({
         <AnalysisFilterField
           label="Відправники"
           options={options.senders}
-          loading={isSectionLoading('senders')}
+          loading={isFilterSectionLoading('senders') || isFilterSectionStale('senders')}
+          emptyLoading={isFilterSectionEmptyLoading('senders', options.senders.length)}
           value={queryState.sendersSelected}
           deferredCommit
           onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
@@ -266,7 +284,8 @@ export function AnalysisFiltersPanelSections({
           <AnalysisFilterField
             label="Пости"
             options={derived.postsOptions}
-            loading={isSectionLoading('posts')}
+            loading={isFilterSectionLoading('posts') || isFilterSectionStale('posts')}
+            emptyLoading={isFilterSectionEmptyLoading('posts', derived.postsOptions.length)}
             value={queryState.postsSelected}
             deferredCommit
             onChange={(postsSelected) => updateQueryState({ postsSelected })}
@@ -284,7 +303,8 @@ export function AnalysisFiltersPanelSections({
           <AnalysisFilterField
             label="Локації"
             options={derived.locationsOptions}
-            loading={isSectionLoading('locations')}
+            loading={isFilterSectionLoading('locations') || isFilterSectionStale('locations')}
+            emptyLoading={isFilterSectionEmptyLoading('locations', derived.locationsOptions.length)}
             value={queryState.locationsSelected}
             deferredCommit
             onChange={(locationsSelected) => updateQueryState({ locationsSelected })}
@@ -356,7 +376,8 @@ export function AnalysisFiltersPanelSections({
           <AnalysisFilterField
             label="Теги"
             options={derived.tagOptions}
-            loading={isSectionLoading('tags')}
+            loading={isFilterSectionLoading('tags') || isFilterSectionStale('tags')}
+            emptyLoading={isFilterSectionEmptyLoading('tags', derived.tagOptions.length)}
             value={queryState.tags.map((tagId) => String(tagId))}
             onChange={(next) => updateQueryState({ tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)) })}
           />
@@ -400,7 +421,8 @@ export function AnalysisFiltersPanelSections({
             label="Метадані CC"
             options={derived.metadataCcsOptions}
             disabled={queryState.withoutMetadata}
-            loading={isSectionLoading('metadata')}
+            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+            emptyLoading={isFilterSectionEmptyLoading('metadata', derived.metadataCcsOptions.length)}
             value={queryState.metadataCc}
             onChange={(metadataCc) => updateQueryState({ metadataCc })}
           />
@@ -408,7 +430,8 @@ export function AnalysisFiltersPanelSections({
             label="Метадані відправника"
             options={derived.metadataSendersOptions}
             disabled={queryState.withoutMetadata}
-            loading={isSectionLoading('metadata')}
+            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+            emptyLoading={isFilterSectionEmptyLoading('metadata', derived.metadataSendersOptions.length)}
             value={queryState.metadataSender}
             onChange={(metadataSender) => updateQueryState({ metadataSender })}
           />
@@ -416,7 +439,8 @@ export function AnalysisFiltersPanelSections({
             label="Метадані отримувача"
             options={derived.metadataReceiversOptions}
             disabled={queryState.withoutMetadata}
-            loading={isSectionLoading('metadata')}
+            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+            emptyLoading={isFilterSectionEmptyLoading('metadata', derived.metadataReceiversOptions.length)}
             value={queryState.metadataReceiver}
             onChange={(metadataReceiver) => updateQueryState({ metadataReceiver })}
           />
@@ -424,7 +448,8 @@ export function AnalysisFiltersPanelSections({
             label="Хеш метаданих"
             options={derived.metadataHashesOptions}
             disabled={queryState.withoutMetadata}
-            loading={isSectionLoading('metadata')}
+            loading={isFilterSectionLoading('metadata') || isFilterSectionStale('metadata')}
+            emptyLoading={isFilterSectionEmptyLoading('metadata', derived.metadataHashesOptions.length)}
             value={queryState.metadataHash}
             onChange={(metadataHash) => updateQueryState({ metadataHash })}
           />

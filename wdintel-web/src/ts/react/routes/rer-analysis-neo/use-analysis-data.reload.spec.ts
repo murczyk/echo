@@ -594,7 +594,7 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
 
     expect(mocks.fetchAnalysisNetworks).toHaveBeenCalled();
-    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12]);
+    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12], undefined);
     expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
     expect(setNetworks).toHaveBeenCalled();
     expect(setNetworkDisplayMap).toHaveBeenCalled();
@@ -751,7 +751,7 @@ describe('reloadAnalysisData', () => {
     mocks.getUnitsList.mockResolvedValue([]);
 
     const networksAnalysisReq = buildAnalysisReqForFilterSection('networks', buildAnalysisReq(queryState, [])!);
-    const loadInitialFilterSections = vi.fn(async (_analysisReq, _forceReload, _loadedSections, networkStatsCache) => {
+    const loadInitialFilterSections = vi.fn(async (_analysisReq, _plan, networkStatsCache) => {
       await loadFilterSectionData('networks', {
         analysisReq: networksAnalysisReq,
         loadVersion: 0,
@@ -1127,7 +1127,17 @@ describe('reloadAnalysisData', () => {
 
     expect(getReloadFilterSections).toHaveBeenCalledTimes(1);
     expect(getLoadedFilterSections).toHaveBeenCalledTimes(1);
-    expect(loadInitialFilterSections).toHaveBeenCalledWith(expect.any(Object), true, ['units', 'locations', 'posts'], expect.any(Map));
+    expect(loadInitialFilterSections).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        mode: 'full',
+        sectionsToReload: ['tags', 'groups', 'senders'],
+        loadedSections: ['units', 'locations', 'posts'],
+        selectedSections: [],
+      },
+      expect.any(Map),
+      undefined,
+    );
   });
 
   it('does not fall back when targeted invalidation resolved to an empty reload set', async () => {
@@ -1199,7 +1209,15 @@ describe('reloadAnalysisData', () => {
 
     expect(getReloadFilterSections).toHaveBeenCalledTimes(1);
     expect(getLoadedFilterSections).not.toHaveBeenCalled();
-    expect(loadInitialFilterSections).toHaveBeenCalledWith(expect.any(Object), true, [], expect.any(Map));
+    expect(loadInitialFilterSections).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        mode: 'targeted',
+        sectionsToReload: [],
+      },
+      expect.any(Map),
+      undefined,
+    );
   });
 
   it('uses targeted reload sections when they are present', async () => {
@@ -1271,7 +1289,15 @@ describe('reloadAnalysisData', () => {
 
     expect(getReloadFilterSections).toHaveBeenCalledTimes(1);
     expect(getLoadedFilterSections).not.toHaveBeenCalled();
-    expect(loadInitialFilterSections).toHaveBeenCalledWith(expect.any(Object), true, ['units'], expect.any(Map));
+    expect(loadInitialFilterSections).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        mode: 'targeted',
+        sectionsToReload: ['units'],
+      },
+      expect.any(Map),
+      undefined,
+    );
   });
 
   it('keeps deferred panel data intact when the critical inbox request fails early', async () => {

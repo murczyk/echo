@@ -35,12 +35,9 @@ import type {
   EncryptionKeyData,
 } from '../../../../Bindings';
 import { postBytes, postJson } from './client';
+import type { RequestOptions } from './client';
 import { downloadReportHistory } from './report-history';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
-
-type RequestOptions = {
-  signal?: AbortSignal;
-};
 
 export async function listNetworks(req: ListNetworksReq, options?: RequestOptions): Promise<ListNetworksRsp> {
   const data = await postJson<ListNetworksRsp>('/api/sigint/network-list', transformCamelToSnake(req), options);
@@ -74,9 +71,9 @@ export async function getNetworksList(options?: RequestOptions): Promise<Network
 }
 
 /** Fetch networks by IDs */
-export async function getNetworksByIds(ids: number[]): Promise<Network[]> {
+export async function getNetworksByIds(ids: number[], options?: RequestOptions): Promise<Network[]> {
   if (ids.length === 0) return [];
-  const data = await postJson<Network[]>('/api/sigint/network-info-batch-id', ids);
+  const data = await postJson<Network[]>('/api/sigint/network-info-batch-id', ids, options);
   if (!Array.isArray(data)) return [];
   return data.map((row) => transformSnakeToCamel<Network>(row));
 }
