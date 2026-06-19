@@ -1,22 +1,25 @@
-default:
+default: ensure-dotenv
     @just --list
 
-check:
+ensure-dotenv:
+    @if [ ! -f .env ]; then echo "❌ .env file is missing, create it from bitwarden note: Iggy test-cli echo-staging .env" >&2; exit 1; fi
+
+check: ensure-dotenv
     python3 test_iggy.py check
 
-test-inbox:
+test-inbox: ensure-dotenv
     python3 test_iggy.py test-inbox
 
-test-analytics:
+test-analytics: ensure-dotenv
     python3 test_iggy.py test-analytics
 
-test-all:
+test-all: ensure-dotenv
     just check
     just test-inbox
     just test-analytics
 
-send topic:
+send topic: ensure-dotenv
     python3 test_iggy.py send "{{ topic }}"
 
-print-new topic:
+print-new topic: ensure-dotenv
     python3 test_iggy.py print-new "{{ topic }}"
