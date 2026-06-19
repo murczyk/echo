@@ -142,6 +142,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   } = params;
   const reloadRequestRef = useRef(0);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
+  const invalidatedReloadTriggerKeyRef = useRef<string | null>(null);
   const summaryReloadPendingKeyRef = useRef<string | null>(null);
   const summaryDebouncePendingKeyRef = useRef<string | null>(null);
   const reloadAbortControllerRef = useRef<AbortController | null>(null);
@@ -275,9 +276,12 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
 
   useEffect(() => {
     if (deferInitialLoad) return;
-    if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
+    if (lastReloadTriggerKeyRef.current === reloadTriggerKey && invalidatedReloadTriggerKeyRef.current !== reloadTriggerKey) return;
     const runReload = () => {
       lastReloadTriggerKeyRef.current = reloadTriggerKey;
+      if (invalidatedReloadTriggerKeyRef.current === reloadTriggerKey) {
+        invalidatedReloadTriggerKeyRef.current = null;
+      }
       summaryDebouncePendingKeyRef.current = null;
       const summaryReloadWasAlreadyPending = summaryReloadPendingKeyRef.current === reloadTriggerKey;
       summaryReloadPendingKeyRef.current = reloadTriggerKey;
@@ -303,6 +307,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     }
 
     reloadAbortControllerRef.current?.abort();
+    invalidatedReloadTriggerKeyRef.current = lastReloadTriggerKeyRef.current;
     reloadRequestRef.current += 1;
     if (reloadDebounceTimerRef.current != null) {
       clearTimeout(reloadDebounceTimerRef.current);

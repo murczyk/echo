@@ -180,6 +180,55 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'bravo' });
   });
 
+  it('reschedules an aborted key when the user reverts before the debounce fires', async () => {
+    vi.useFakeTimers();
+    let resolveInitialReload: (() => void) | null = null;
+    const initialReload = new Promise<void>((resolve) => {
+      resolveInitialReload = resolve;
+    });
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => initialReload);
+
+    const params = buildParams({
+      queryState: { ...buildQueryState(), search: 'alpha' },
+      reloadTriggerKey: 'reload-key-alpha',
+    });
+
+    await renderHook(params);
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    expect(firstSignal).toBeDefined();
+    expect(firstSignal?.aborted).toBe(false);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-bravo',
+      queryState: { ...params.queryState, search: 'bravo' },
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'alpha' });
+
+    await act(async () => {
+      resolveInitialReload?.();
+      await initialReload;
+      await Promise.resolve();
+    });
+  });
+
   it('blocks summary reloads until the debounced reload settles', async () => {
     vi.useFakeTimers();
     let resolveNextReload: (() => void) | null = null;
