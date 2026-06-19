@@ -884,7 +884,6 @@ where
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::Datetime)
         .expr_as(expr_jsonb_callsigns, "callsign")
-        .column(sigint_inbox_item::Column::Callsigns)
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item_network::Relation::SigintInboxItem.def(),
