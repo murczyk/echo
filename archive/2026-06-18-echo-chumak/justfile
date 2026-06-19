@@ -1,0 +1,15 @@
+default:
+    @just --list
+
+login:
+    python3 test_chumak.py login
+
+find-networks:
+    python3 test_chumak.py find-networks
+
+submit-message:
+    python3 test_chumak.py submit-message
+
+check:
+    just login
+    just find-networks

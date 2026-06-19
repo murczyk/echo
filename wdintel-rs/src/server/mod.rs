@@ -688,6 +688,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
             .service(crate::sigint::freq::latest_frequencies)
             .service(crate::sigint::network::network_list)
+            .service(crate::sigint::network::find_live_networks)
             .service(crate::sigint::network::network_info_one)
             .service(crate::sigint::network::network_info_batch_id)
             .service(crate::sigint::network::network_info_batch_freq)

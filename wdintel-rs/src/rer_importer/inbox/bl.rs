@@ -843,6 +843,11 @@ pub async fn submit_upsert_inbox_item(
         .freq
         .as_ref()
         .map(|x| crate::rer_importer::frequency::etalon(x));
+    let datetime = message
+        .timestamp
+        .map(crate::utils::dt_from_millis)
+        .transpose()
+        .context(h!())?;
 
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
@@ -956,7 +961,7 @@ pub async fn submit_upsert_inbox_item(
             callsigns_alg1: NotSet,
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
-            datetime: NotSet,
+            datetime: Set(datetime),
             body_noheader: NotSet,
             post_id: Set(message.post_id),
             unit_v2: Set(message.unit.clone()),
@@ -981,6 +986,7 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Lng,
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
+                    sigint_inbox_item::Column::Datetime,
                     sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),

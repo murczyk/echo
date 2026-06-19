@@ -677,3 +677,66 @@ pub struct UpdateNetworkUnitsReq {
 pub struct NetworkFreqsActivityReq {
     pub network_id: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworksReq {
+    pub freq: String,
+    pub aor_id: Option<i64>,
+    pub color_code: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworksRsp {
+    pub networks: Vec<FindLiveNetwork>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetwork {
+    pub details: FindLiveNetworkDetails,
+    pub live_freqs: Vec<String>,
+    pub callsigns: Vec<String>,
+    pub signals: Vec<String>,
+    pub pelengs: Vec<FindLiveNetworkPeleng>,
+    pub locations: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworkDetails {
+    pub id: i64,
+    pub name: String,
+    pub location: String,
+    pub radio_station: Option<String>,
+    pub purpose: Option<String>,
+    pub operation_mode: Option<String>,
+    pub operation_type: Option<String>,
+    pub operation_period: Option<String>,
+    pub created_at: i64,
+    pub active_from: Option<i64>,
+    pub active_to: Option<i64>,
+    pub units: Vec<String>,
+    pub aor_ids: Vec<i64>,
+    pub post_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworkPeleng {
+    pub id: i64,
+    pub inbox_item_id: i64,
+    pub lat: f64,
+    pub lng: f64,
+    pub settlement: Option<String>,
+    pub locality_direction: Option<String>,
+    pub distance_m: Option<f64>,
+    pub country_code: Option<String>,
+    pub timestamp: Option<i64>,
+}

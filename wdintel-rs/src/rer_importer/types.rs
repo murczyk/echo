@@ -58,34 +58,49 @@ pub struct InboxMessage {
 )]
 pub struct ChumakSubmitMessageReq {
     pub message: String,
-    pub timestamp: String,  // local ts in ISO format
-    pub freq: Option<String>, // {d2..5}.{d4}
-    pub locations: Vec<String>, // todo allow multiple in InboxMessage
-    pub tags: Vec<String>, // todo: якщо є хоча б один - додати коментар за авторством поста, у вигляді 'Теги: {список тегів через кому}'
-
-    // FIXME properties that require clarifications go next
-    pub no_headers_body: String,// TODO discuss: should use this? Option<crate::rer_importer::body_noheader::NoHeadersBody>,
-    pub media: Vec<MessageMediaInfo>, // TODO discuss: skip for now?
-    pub coordinates: Option<String>, //TODO discuss: ?
-    pub signals: Option<String>, //TODO discuss: do we want to support signals, keywords?
-    pub callsign_from: Option<String>, //TODO discuss:  optional?
-    pub callsign_to: Option<String>, // TODO discuss: optional?
+    /// Local ISO timestamp. Offset-aware values are accepted; offset-less values
+    /// are interpreted in the configured local timezone.
+    pub timestamp: String,
+    /// Frequency in MHz, normalized with the same etalon formatter as inbox saves.
+    pub freq: Option<String>,
+    /// Chumak may send several location labels; Echo stores them as one joined
+    /// inbox location string.
+    pub locations: Vec<String>,
+    /// Chumak string tags are saved as a user-visible comment line.
+    pub tags: Vec<String>,
+    /// Body fragment without headers. Used for coordinate extraction when present.
+    pub no_headers_body: String,
+    /// External media descriptors are accepted for compatibility but not persisted
+    /// because Echo needs local stored attachments.
+    pub media: Vec<MessageMediaInfo>,
+    /// Explicit coordinates in "lat, lng" format.
+    pub coordinates: Option<String>,
+    /// Chumak signal summary; saved into the user-visible comment when present.
+    pub signals: Option<String>,
+    pub callsign_from: Option<String>,
+    pub callsign_to: Option<String>,
     pub callsigns_other: Vec<String>,
-    pub network_name: Option<String>, //TODO discuss:  optional? >1?
-    pub unit: Option<String>, // TODO discuss: do we need it?
-    pub group_names: Vec<String>, // TODO discuss: >1 ? 0 is ok?
-    pub sender: Option<String>, // TODO discuss: 0 is ok?
-    pub post: Option<String>, // TODO discuss: do we need it?
+    pub network_name: Option<String>,
+    pub unit: Option<String>,
+    /// At least one group name is required; the first group becomes the primary
+    /// datasource group, and all names are linked to the message.
+    pub group_names: Vec<String>,
+    pub sender: Option<String>,
+    pub post: Option<String>,
     pub network: Option<ChumakNetwork>,
-    pub dmr: Vec<ChumakMetadata>, // todo save as sigint_inbox_item_metadata, cross-validate cc with this.network
+    /// Stored as sigint_inbox_item_metadata rows. If network.cc is present, every
+    /// DMR row must use the same color code.
+    pub dmr: Vec<ChumakMetadata>,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ChumakNetwork {
-    pub signal_name: String,// todo add validation: expected 'dmr'
-    pub cc: i32, // todo add validation: should match values from dmr (ChumakMetadata[])
+    /// Currently only "dmr" is accepted.
+    pub signal_name: String,
+    /// Must match every DMR metadata color code when metadata is present.
+    pub cc: i32,
     pub name: String,
 }
 
@@ -210,7 +225,8 @@ pub struct FreqDetailedPoint {
     pub mgrs_coords: String,
     pub sk42_coords: String,
     pub freq: Option<String>,
-}#[derive(
+}
+#[derive(
     Elm,
     ElmEncode,
     ElmDecode,

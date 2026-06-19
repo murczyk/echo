@@ -550,12 +550,579 @@ async fn chumak_inbox_submit(
     env: actix_web::web::Data<Env>,
     req: Json<ChumakSubmitMessageReq>,
 ) -> Result<Json<()>, AppError> {
-    match do_submit_chumak_inbox(user, &env, req).await { // TODO map  ChumakSubmitMessageReq to entry of InboxSubmitReq, save extra data to a new companion table, process later on
+    match do_submit_chumak_inbox(user, &env, req).await {
         Ok(_) => Ok(Json(())),
         Err(e) => {
             error!("failed to submit inbox: {:?}", e);
             Err(e)
         }
+    }
+}
+
+async fn do_submit_chumak_inbox(
+    user: Identity,
+    env: &Data<Env>,
+    req: Json<ChumakSubmitMessageReq>,
+) -> Result<(), AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", "Api", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let req = req.into_inner();
+    validate_chumak_submit_req(&req)?;
+
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let timestamp = parse_chumak_timestamp(&req.timestamp)?;
+    let txn = env.dbx.begin().await.c(h!())?;
+
+    let datasource = ensure_chumak_datasource(&txn, &login).await.c(h!())?;
+    let groups =
+        ensure_chumak_groups(&txn, &datasource, &login, &req.group_names)
+            .await
+            .c(h!())?;
+    let post = normalized_optional_string(req.post.as_deref());
+    let post_id = crate::sigint::post::get_or_create_post_id(&txn, &post)
+        .await
+        .c(h!())?;
+    let signal_message = insert_chumak_signal_message(
+        &txn,
+        &env.config,
+        &req,
+        timestamp,
+        &groups,
+    )
+    .await
+    .c(h!())?;
+    let message =
+        map_chumak_inbox_message(&req, timestamp, &groups, post, post_id)?;
+    let inbox_id = submit_upsert_inbox_item(
+        env.settlements.clone(),
+        &txn,
+        signal_message.id,
+        &message,
+        &login,
+        &logins,
+    )
+    .await
+    .c(h!())?;
+    save_chumak_metadata(inbox_id, &req, &txn).await.c(h!())?;
+
+    txn.commit().await.c(h!())?;
+    fanout_inbox_changed(env, vec![inbox_id]).await;
+    Ok(())
+}
+
+fn validate_chumak_submit_req(
+    req: &ChumakSubmitMessageReq,
+) -> Result<(), AppError> {
+    if req.group_names.iter().all(|group| group.trim().is_empty()) {
+        return Err(AppError::BL {
+            msg: "Chumak submit requires at least one group name".to_string(),
+        });
+    }
+    let Some(network) = req.network.as_ref() else {
+        return Ok(());
+    };
+    if !network.signal_name.eq_ignore_ascii_case("dmr") {
+        return Err(AppError::BL {
+            msg: format!(
+                "Unsupported Chumak network signal name: {}",
+                network.signal_name
+            ),
+        });
+    }
+    if req.dmr.iter().any(|metadata| metadata.cc != network.cc) {
+        return Err(AppError::BL {
+            msg: "Chumak network color code does not match DMR metadata"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn parse_chumak_timestamp(timestamp: &str) -> Result<NaiveDateTime, AppError> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+        return Ok(dt.naive_utc());
+    }
+
+    let local_datetime =
+        NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S")
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S")
+            })
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S%.f")
+            })
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S%.f")
+            })
+            .map_err(|e| AppError::BL {
+                msg: format!("Invalid Chumak timestamp {timestamp}: {e}"),
+            })?;
+    let zoned = local_datetime
+        .and_local_timezone(crate::config::get_tz())
+        .single()
+        .ok_or_else(|| AppError::BL {
+            msg: format!("Ambiguous Chumak timestamp: {timestamp}"),
+        })?;
+    Ok(zoned.to_utc().naive_utc())
+}
+
+async fn ensure_chumak_datasource(
+    txn: &DatabaseTransaction,
+    login: &str,
+) -> Result<datasource::Model, AppError> {
+    let now = Utc::now().naive_utc();
+    let default_aor_id =
+        crate::sigint::aor::load_default_aor(txn).await.c(h!())?.id;
+    let datasource = datasource::Entity::find()
+        .filter(datasource::Column::ApiLogin.eq(login))
+        .one(txn)
+        .await
+        .c(h!())?;
+    if let Some(datasource) = datasource {
+        let is_deleted = datasource.deleted;
+        let has_default_aor = datasource.default_aor_id.is_some();
+        let mut datasource = datasource.into_active_model();
+        datasource.kind = Set("echo_operator".to_string());
+        if is_deleted {
+            datasource.deleted = Set(false);
+            datasource.enabled = Set(Some(false));
+            datasource.updated_by = Set(Some(login.to_string()));
+        }
+        if !has_default_aor {
+            datasource.default_aor_id = Set(Some(default_aor_id));
+        }
+        datasource.last_sync_at = Set(Some(now));
+        return Ok(datasource.update(txn).await.c(h!())?);
+    }
+
+    Ok(datasource::ActiveModel {
+        kind: Set("echo_operator".to_string()),
+        display_name: Set(format!("EХО Оператор {login}")),
+        enabled: Set(Some(true)),
+        api_login: Set(Some(login.to_string())),
+        updated_by: Set(Some(login.to_string())),
+        last_sync_at: Set(Some(now)),
+        deleted: Set(false),
+        default_aor_id: Set(Some(default_aor_id)),
+        ..Default::default()
+    }
+    .insert(txn)
+    .await
+    .c(h!())?)
+}
+
+async fn ensure_chumak_groups(
+    txn: &DatabaseTransaction,
+    datasource: &datasource::Model,
+    login: &str,
+    group_names: &[String],
+) -> Result<Vec<(String, i64)>, AppError> {
+    let mut groups = vec![];
+    for group_name in group_names {
+        let group_name = group_name.trim();
+        if group_name.is_empty() {
+            continue;
+        }
+        let group_master_key = chumak_group_master_key(login, group_name);
+        let (group_master_key, datasource_group_id) =
+            ensure_chumak_datasource_group(
+                txn,
+                datasource.id,
+                &group_master_key,
+                group_name,
+            )
+            .await
+            .c(h!())?;
+        ensure_chumak_group_aor(
+            txn,
+            datasource.default_aor_id,
+            &group_master_key,
+        )
+        .await
+        .c(h!())?;
+        groups.push((group_master_key, datasource_group_id));
+    }
+    Ok(groups)
+}
+
+fn chumak_group_master_key(login: &str, group_name: &str) -> String {
+    let digest = sha256::digest(format!("{login}:{group_name}"));
+    format!("echo.{}", &digest[..32])
+}
+
+async fn ensure_chumak_datasource_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    group_master_key: &str,
+    group_name: &str,
+) -> Result<(String, i64), AppError> {
+    let existing = datasource_group::Entity::find()
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            Condition::any()
+                .add(
+                    datasource_group::Column::GroupMasterKey
+                        .eq(group_master_key),
+                )
+                .add(datasource_group::Column::Name.eq(group_name)),
+        )
+        .order_by_asc(datasource_group::Column::Id)
+        .one(txn)
+        .await
+        .c(h!())?;
+    if let Some(existing) = existing {
+        let id = existing.id;
+        let existing_group_master_key = existing.group_master_key.clone();
+        crate::messenger::group::ensure_signal_group(
+            txn,
+            existing_group_master_key.clone(),
+            Some(group_name.to_string()),
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
+        if existing.deleted || existing.name != group_name {
+            let mut existing = existing.into_active_model();
+            existing.deleted = Set(false);
+            existing.name = Set(group_name.to_string());
+            existing.last_sync_at = Set(Utc::now().naive_utc());
+            existing.update(txn).await.c(h!())?;
+        }
+        return Ok((existing_group_master_key, id));
+    }
+
+    crate::messenger::group::ensure_signal_group(
+        txn,
+        group_master_key.to_string(),
+        Some(group_name.to_string()),
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
+    let datasource_group = datasource_group::ActiveModel {
+        group_master_key: Set(group_master_key.to_string()),
+        datasource_id: Set(datasource_id),
+        name: Set(group_name.to_string()),
+        deleted: Set(false),
+        last_sync_at: Set(Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+    Ok((datasource_group.group_master_key, datasource_group.id))
+}
+
+async fn ensure_chumak_group_aor(
+    txn: &DatabaseTransaction,
+    aor_id: Option<i64>,
+    group_master_key: &str,
+) -> Result<(), AppError> {
+    let Some(aor_id) = aor_id else {
+        return Ok(());
+    };
+    let existing_aors = signal_group_aor::Entity::find()
+        .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+        .count(txn)
+        .await
+        .c(h!())?;
+    if existing_aors > 0 {
+        return Ok(());
+    }
+    signal_group_aor::ActiveModel {
+        id: NotSet,
+        master_key: Set(group_master_key.to_string()),
+        aor_id: Set(aor_id),
+        created_at: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn insert_chumak_signal_message(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    req: &ChumakSubmitMessageReq,
+    timestamp: NaiveDateTime,
+    groups: &[(String, i64)],
+) -> Result<signal_message::Model, AppError> {
+    let (_group_master_key, datasource_group_id) =
+        groups.first().cloned().c(h!())?;
+    let signal_message = signal_message::ActiveModel {
+        id: NotSet,
+        body: Set(Some(req.message.clone())),
+        datasource_group_id: Set(Some(datasource_group_id)),
+        created_at: NotSet,
+        timestamp: Set(Some(timestamp)),
+        sender: Set(req.sender.clone()),
+        format: NotSet,
+        deleted: Set(false),
+        external_id: NotSet,
+        message_uid: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+
+    for (group_master_key, datasource_group_id) in groups {
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message.id),
+            group_master_key: Set(Some(group_master_key.clone())),
+            sender: Set(req.sender.clone()),
+            message_uid: Set(signal_message.message_uid.clone()),
+            datasource_group_id: Set(Some(*datasource_group_id)),
+            created_at: Set(signal_message.created_at),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+
+    Ok(crate::messenger::id::update_message_with_uid(
+        txn,
+        config,
+        signal_message,
+    )
+    .await
+    .c(h!())?)
+}
+
+fn map_chumak_inbox_message(
+    req: &ChumakSubmitMessageReq,
+    timestamp: NaiveDateTime,
+    groups: &[(String, i64)],
+    post: Option<String>,
+    post_id: Option<i64>,
+) -> Result<InboxMessage, AppError> {
+    let no_headers_source = if req.no_headers_body.trim().is_empty() {
+        req.message.as_str()
+    } else {
+        req.no_headers_body.as_str()
+    };
+    let no_headers_body =
+        crate::rer_importer::body_noheader::extract_text(no_headers_source)?;
+    let extended_form = chumak_extended_form(req);
+    let callsigns = chumak_callsigns(req);
+
+    Ok(InboxMessage {
+        message_uid: None,
+        text: req.message.clone(),
+        media: vec![],
+        images: vec![],
+        image_recognized: vec![],
+        date: Some(timestamp.format("%d.%m.%Y").to_string()),
+        time: Some(timestamp.format("%H:%M:%S").to_string()),
+        freq: req
+            .freq
+            .as_ref()
+            .map(|freq| crate::rer_importer::frequency::etalon(freq)),
+        coords: req.coordinates.clone(),
+        callsigns,
+        callsigns_alg2: vec![],
+        checked: true,
+        important: false,
+        bookmarked: false,
+        timestamp: Some(timestamp.and_utc().timestamp_millis()),
+        group_master_key: groups.first().map(|(key, _)| key.clone()),
+        sender: req.sender.clone(),
+        extended_form,
+        post,
+        post_id,
+        unit: req.unit.clone(),
+        callsign_tokens: None,
+        signal_tokens: None,
+        point_tokens: None,
+        no_headers_body: Some(no_headers_body),
+        keyword_tokens: None,
+        text_marked: None,
+        datasource_id: None,
+        location: chumak_location(req),
+        tags: None,
+        network_ids: None,
+        inbox_tags: None,
+        metadata: vec![],
+    })
+}
+
+fn normalized_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn chumak_callsigns(req: &ChumakSubmitMessageReq) -> Vec<String> {
+    req.callsign_from
+        .clone()
+        .into_iter()
+        .chain(req.callsign_to.clone())
+        .chain(req.callsigns_other.clone())
+        .map(|callsign| callsign.trim().to_lowercase())
+        .filter(|callsign| !callsign.is_empty())
+        .unique()
+        .collect()
+}
+
+fn chumak_location(req: &ChumakSubmitMessageReq) -> Option<String> {
+    let locations = req
+        .locations
+        .iter()
+        .map(|location| location.trim())
+        .filter(|location| !location.is_empty())
+        .unique()
+        .collect::<Vec<_>>();
+    if locations.is_empty() {
+        None
+    } else {
+        Some(locations.join(", "))
+    }
+}
+
+fn chumak_extended_form(req: &ChumakSubmitMessageReq) -> Option<String> {
+    let mut lines = vec![];
+    if !req.tags.is_empty() {
+        lines.push(format!("Теги: {}", req.tags.join(", ")));
+    }
+    if let Some(signals) = req.signals.as_ref().filter(|s| !s.trim().is_empty())
+    {
+        lines.push(format!("Сигнали: {}", signals.trim()));
+    }
+    if let Some(network_name) =
+        req.network_name.as_ref().filter(|s| !s.trim().is_empty())
+    {
+        lines.push(format!("Мережа: {}", network_name.trim()));
+    }
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
+async fn save_chumak_metadata(
+    inbox_id: i64,
+    req: &ChumakSubmitMessageReq,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let mut entries = req
+        .dmr
+        .iter()
+        .map(|metadata| chumak_metadata_model(inbox_id, metadata))
+        .collect::<Vec<_>>();
+
+    if let Some(network) = req.network.as_ref() {
+        let cc = network.cc.to_string();
+        let already_saved =
+            req.dmr.iter().any(|metadata| metadata.cc.to_string() == cc);
+        if !already_saved {
+            entries.push(sigint_inbox_item_metadata::ActiveModel {
+                id: NotSet,
+                sigint_inbox_item_id: Set(inbox_id),
+                color_code: Set(Some(cc)),
+                created_at: NotSet,
+                ..Default::default()
+            });
+        }
+    }
+
+    let mut existing_metadata_keys =
+        load_chumak_metadata_keys(inbox_id, txn).await.c(h!())?;
+    entries.retain(|entry| {
+        existing_metadata_keys.insert(chumak_metadata_key_from_active(entry))
+    });
+    if entries.is_empty() {
+        return Ok(());
+    }
+    sigint_inbox_item_metadata::Entity::insert_many(entries)
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+type ChumakMetadataKey = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn load_chumak_metadata_keys(
+    inbox_id: i64,
+    txn: &DatabaseTransaction,
+) -> Result<BTreeSet<ChumakMetadataKey>, AppError> {
+    Ok(sigint_inbox_item_metadata::Entity::find()
+        .filter(
+            sigint_inbox_item_metadata::Column::SigintInboxItemId.eq(inbox_id),
+        )
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(chumak_metadata_key_from_model)
+        .collect())
+}
+
+fn chumak_metadata_key_from_model(
+    metadata: sigint_inbox_item_metadata::Model,
+) -> ChumakMetadataKey {
+    (
+        metadata.color_code,
+        metadata.call_group_id,
+        metadata.call_group_name,
+        metadata.sender_id,
+        metadata.sender_name,
+        metadata.hash_id,
+    )
+}
+
+fn chumak_metadata_key_from_active(
+    metadata: &sigint_inbox_item_metadata::ActiveModel,
+) -> ChumakMetadataKey {
+    (
+        active_optional_string(&metadata.color_code),
+        active_optional_string(&metadata.call_group_id),
+        active_optional_string(&metadata.call_group_name),
+        active_optional_string(&metadata.sender_id),
+        active_optional_string(&metadata.sender_name),
+        active_optional_string(&metadata.hash_id),
+    )
+}
+
+fn active_optional_string(
+    value: &ActiveValue<Option<String>>,
+) -> Option<String> {
+    match value {
+        Set(value) | Unchanged(value) => value.clone(),
+        NotSet => None,
+    }
+}
+
+fn chumak_metadata_model(
+    inbox_id: i64,
+    metadata: &ChumakMetadata,
+) -> sigint_inbox_item_metadata::ActiveModel {
+    sigint_inbox_item_metadata::ActiveModel {
+        id: NotSet,
+        sigint_inbox_item_id: Set(inbox_id),
+        color_code: Set(Some(metadata.cc.to_string())),
+        call_group_id: Set(metadata.abonent_id.map(|id| id.to_string())),
+        sender_id: Set(Some(metadata.sender_id.to_string())),
+        created_at: NotSet,
+        ..Default::default()
     }
 }
 
@@ -708,6 +1275,7 @@ async fn do_submit_inbox(
         .await
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
+    let mut changed_inbox_ids = vec![];
 
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
@@ -733,7 +1301,7 @@ async fn do_submit_inbox(
 
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in &all_ids {
-            submit_upsert_inbox_item(
+            let inbox_id = submit_upsert_inbox_item(
                 env.settlements.clone(),
                 &txn,
                 *id,
@@ -743,6 +1311,7 @@ async fn do_submit_inbox(
             )
             .await
             .c(h!())?;
+            changed_inbox_ids.push(inbox_id);
         }
         do_palitra_highlight(
             all_ids,
@@ -754,7 +1323,24 @@ async fn do_submit_inbox(
         .c(h!())?;
     }
     txn.commit().await.c(h!())?;
+    fanout_inbox_changed(env, changed_inbox_ids).await;
     Ok(())
+}
+
+async fn fanout_inbox_changed(env: &Data<Env>, inbox_ids: Vec<i64>) {
+    let events: Vec<EventMsg> = inbox_ids
+        .into_iter()
+        .collect::<BTreeSet<i64>>()
+        .into_iter()
+        .map(EventType::ETInboxChanged)
+        .map(EventMsg::new)
+        .collect();
+    if events.is_empty() {
+        return;
+    }
+    if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
+        warn!("failed to send to redis: {:#?}", e);
+    }
 }
 
 /// DEPRECATED Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
