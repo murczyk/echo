@@ -183,13 +183,20 @@ export function useAnalysisFilterSections({
       const sectionsToInvalidate = filterSectionsToInvalidateForPatch(patch);
       if (sectionsToInvalidate.length === 0) return;
 
+      const sectionsToReload = sectionsToInvalidate.filter(
+        (section) => hasLoadedSection(section) || filterSectionLoadStates[section] === 'loading',
+      );
+      if (sectionsToReload.length === 0) {
+        return;
+      }
+
       filterSectionLoadVersionRef.current += 1;
       hasTargetedFilterSectionInvalidationRef.current = true;
+      sectionsToReload.forEach((section) => {
+        reloadFilterSectionsRef.current.add(section);
+        setSectionLoadState(section, 'stale');
+      });
       sectionsToInvalidate.forEach((section) => {
-        if (hasLoadedSection(section) || filterSectionLoadStates[section] === 'loading') {
-          reloadFilterSectionsRef.current.add(section);
-          setSectionLoadState(section, 'stale');
-        }
         delete loadedFilterSectionKeyRef.current[section];
       });
     },

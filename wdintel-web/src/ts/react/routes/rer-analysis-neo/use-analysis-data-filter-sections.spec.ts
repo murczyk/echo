@@ -228,14 +228,14 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toBeNull();
   });
 
-  it('returns an empty reload list when targeted invalidation does not hit a loaded section', async () => {
+  it('returns null when targeted invalidation does not hit a loaded section', async () => {
     await renderHook();
 
     act(() => {
       latest?.invalidateFilterSectionLoadsForPatch({ unitsSelected: ['u1'] });
     });
 
-    expect(latest?.getReloadFilterSections()).toEqual([]);
+    expect(latest?.getReloadFilterSections()).toBeNull();
   });
 
   it('queues already loaded unrelated sections when targeted invalidation touches them', async () => {

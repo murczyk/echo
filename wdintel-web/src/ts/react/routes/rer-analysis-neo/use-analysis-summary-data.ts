@@ -37,11 +37,11 @@ export function useAnalysisSummaryData({
 
   const summaryRequestRef = useRef(0);
   const summaryRequestKeyRef = useRef<string | null>(null);
-  const pendingCallsignInfoKeysRef = useRef(new Set<string>());
+  const pendingCallsignInfoOwnersRef = useRef(new Map<string, number>());
   const summaryAbortControllerRef = useRef<AbortController | null>(null);
 
   const loadMissingCallsignInfos = useCallback(
-    async (callsigns: string[], signal?: AbortSignal) => {
+    async (callsigns: string[], requestId: number, signal?: AbortSignal) => {
       const missingCallsigns: string[] = [];
       const seenKeys = new Set<string>();
       const requestOptions = signal ? { signal } : undefined;
@@ -50,8 +50,10 @@ export function useAnalysisSummaryData({
         const key = normalizeCallsignLookupValue(callsign);
         if (key === '' || seenKeys.has(key)) return;
         seenKeys.add(key);
-        if (summaryCallsignsInfoRef.current[key] || pendingCallsignInfoKeysRef.current.has(key)) return;
-        pendingCallsignInfoKeysRef.current.add(key);
+        if (summaryCallsignsInfoRef.current[key]) return;
+        const pendingOwner = pendingCallsignInfoOwnersRef.current.get(key);
+        if (pendingOwner === requestId) return;
+        pendingCallsignInfoOwnersRef.current.set(key, requestId);
         missingCallsigns.push(callsign.trim());
       });
 
@@ -63,7 +65,10 @@ export function useAnalysisSummaryData({
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
       } finally {
         missingCallsigns.forEach((callsign) => {
-          pendingCallsignInfoKeysRef.current.delete(normalizeCallsignLookupValue(callsign));
+          const key = normalizeCallsignLookupValue(callsign);
+          if (pendingCallsignInfoOwnersRef.current.get(key) === requestId) {
+            pendingCallsignInfoOwnersRef.current.delete(key);
+          }
         });
       }
     },
@@ -124,7 +129,7 @@ export function useAnalysisSummaryData({
       );
       if (callsignIds.length > 0) {
         try {
-          await loadMissingCallsignInfos(callsignIds, abortController.signal);
+          await loadMissingCallsignInfos(callsignIds, requestId, abortController.signal);
         } catch (loadError) {
           if (requestId !== summaryRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
           summaryRequestKeyRef.current = null;
@@ -177,7 +182,7 @@ export function useAnalysisSummaryData({
     summaryRows,
     summaryRequestRef,
     summaryRequestKeyRef,
-    pendingCallsignInfoKeysRef,
+    pendingCallsignInfoOwnersRef,
     invalidateSummaryData,
     loadSummaryData,
     downloadSummaryXlsx,

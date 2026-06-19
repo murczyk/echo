@@ -132,7 +132,11 @@ describe('useAnalysisSidebarData', () => {
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
-    await rerenderHook(buildQueryState('next'));
+    await act(async () => {
+      root?.render(createElement(Harness, { queryState: buildQueryState('next') }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     act(() => {
       void latest?.loadSummaryData();
     });
@@ -146,6 +150,81 @@ describe('useAnalysisSidebarData', () => {
     secondLoad.resolve({ rows: [] });
     await act(async () => {
       await Promise.resolve();
+    });
+  });
+
+  it('re-requests pending callsign infos after the previous summary batch aborts', async () => {
+    apiMocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [{ callsigns: ['alpha'] }] });
+    const firstCallsignInfos = deferred<Array<CallsignInfoRes>>();
+    const secondCallsignInfos = deferred<Array<CallsignInfoRes>>();
+    apiMocks.fetchAnalysisCallsignInfos
+      .mockImplementationOnce(() => firstCallsignInfos.promise)
+      .mockImplementationOnce(() => secondCallsignInfos.promise);
+
+    const setSummaryCallsignsInfo = vi.fn();
+
+    function HarnessWithSpy({ queryState }: HarnessProps) {
+      const summaryCallsignsInfoRef = useRef<Record<string, CallsignInfoRes>>({});
+      latest = useAnalysisSidebarData({
+        onError: vi.fn(),
+        onUnauthorized: vi.fn(() => false),
+        optionsFreqValues: ['100.0000'],
+        queryState,
+        summaryCallsignsInfoRef,
+        setSummaryCallsignsInfo,
+      });
+      return null;
+    }
+
+    await act(async () => {
+      root = createRoot(container as HTMLDivElement);
+      root.render(createElement(HarnessWithSpy, { queryState: buildQueryState() }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      void latest?.loadSummaryData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root?.render(createElement(HarnessWithSpy, { queryState: buildQueryState('next') }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      void latest?.loadSummaryData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(1, ['alpha'], expect.any(Object));
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['alpha'], expect.any(Object));
+
+    secondCallsignInfos.resolve([{ callsign: 'alpha', res: [] }]);
+    firstCallsignInfos.resolve([{ callsign: 'alpha', res: [] }]);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(setSummaryCallsignsInfo).toHaveBeenCalled();
+    const updater = setSummaryCallsignsInfo.mock.calls.at(-1)?.[0];
+    expect(typeof updater).toBe('function');
+    expect(updater?.({})).toEqual({
+      alpha: { callsign: 'alpha', res: [] },
     });
   });
 
