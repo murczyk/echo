@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::types::*;
 use iggy::prelude::{
-    Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
+    defaults, Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
     IggyExpiry, MaxTopicSize, Permissions, StreamClient, StreamPermissions,
     SystemClient, TopicClient, UserClient,
 };
@@ -160,6 +160,9 @@ async fn ensure_user_stream_permissions(
     stream_ids: &[usize],
 ) -> Result<(), AppError> {
     for user in client.get_users().await.c(h!())? {
+        if user.id == defaults::DEFAULT_ROOT_USER_ID {
+            continue;
+        }
         let user_id = Identifier::try_from(user.id).c(h!())?;
         let user = client.get_user(&user_id).await.c(h!())?.c(h!())?;
         let mut permissions = user.permissions.unwrap_or_default();
