@@ -357,7 +357,7 @@ pub async fn aggregate_to_inbox_messages(
             },
         )?;
         let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            &env, message.id, &logins,
+            env, message.id, logins,
         )
         .await?;
         let location_v2 = match message.location_v2.clone() {

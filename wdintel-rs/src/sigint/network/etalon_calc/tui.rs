@@ -472,12 +472,9 @@ fn build_time_buckets(
     }
 
     for bucket in &mut buckets {
-        if bucket.total == 0 {
-            bucket.percent_complete = 0;
-        } else {
-            bucket.percent_complete =
-                ((bucket.completed * 100) / bucket.total) as u16;
-        }
+        bucket.percent_complete = ((bucket.completed * 100)
+            .checked_div(bucket.total)
+            .unwrap_or(0)) as u16;
     }
 
     buckets

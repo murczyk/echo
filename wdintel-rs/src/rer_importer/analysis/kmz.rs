@@ -110,7 +110,7 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         let Some(ref lat) = item.lat else { continue };
         let Some(ref lng) = item.lng else { continue };
         let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            &env, item.id, &logins,
+            env, item.id, &logins,
         )
         .await?;
 

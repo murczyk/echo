@@ -325,7 +325,7 @@ async fn load_live_goi_callsigns(
         );
         out.push(goi_callsign);
     }
-    out.sort_by(|left, right| left.id.cmp(&right.id));
+    out.sort_by_key(|left| left.id);
     info!(
         "[goi-sync] Finished preparing GOI callsigns: {} rows selected",
         out.len()
@@ -722,7 +722,7 @@ impl KnowledgeWorkbookData {
                 });
             }
         }
-        callsigns.sort_by(|left, right| left.id.cmp(&right.id));
+        callsigns.sort_by_key(|left| left.id);
         callsigns
     }
 

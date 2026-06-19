@@ -147,10 +147,7 @@ pub async fn load_coordinates_from_kml(
     let mut values: Vec<PalitraPoint> = Vec::new();
     let mut line_strings: Vec<PalitraLineString> = Vec::new();
     let mut queue = doc.nodes;
-    loop {
-        let Some(node) = queue.pop() else {
-            break;
-        };
+    while let Some(node) = queue.pop() {
         match node {
             Node::Folder(n) => {
                 for n in n.nodes {
