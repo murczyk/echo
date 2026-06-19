@@ -1075,6 +1075,8 @@ async fn import_network_freqs(
             created_at: Set(import_freq.created_at),
             last_seen_dt: Set(import_freq.last_seen_dt),
             modulation: Set(import_freq.modulation),
+            modulation_id: NotSet,
+            kind: NotSet,
             encryption_id: Set(encryption_id),
             active_from: Set(import_freq.active_from),
             active_to: Set(import_freq.active_to),
