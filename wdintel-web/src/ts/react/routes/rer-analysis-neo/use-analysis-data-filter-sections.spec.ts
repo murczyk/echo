@@ -253,6 +253,30 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
   });
 
+  it('treats an in-flight section as reloadable before loading state propagates', async () => {
+    const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
+    analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);
+
+    await renderHook();
+
+    act(() => {
+      void latest?.loadFilterSection('callsigns' as AnalysisFilterSectionId);
+      latest?.invalidateFilterSectionLoadsForPatch({ unitsSelected: ['u1'] });
+    });
+
+    expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
+    expect(latest?.isFilterSectionStale('callsigns')).toBe(true);
+
+    await act(async () => {
+      callsignsDeferred.resolve({ callsigns: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
+    expect(latest?.isFilterSectionStale('callsigns')).toBe(true);
+  });
+
   it('keeps a failed targeted section queued for retry', async () => {
     await renderHook();
 
