@@ -30,6 +30,7 @@ type Props = {
   normalizeUnknownAliases?: boolean;
   deferredCommit?: boolean;
   preserveSelectionOrder?: boolean;
+  preserveSelectedOptionValuesOnChange?: boolean;
   onChange: (next: string[]) => void;
 };
 
@@ -92,6 +93,32 @@ function buildSelectedOptions(
   return selectedOptions;
 }
 
+function buildCommittedValues(
+  next: AutocompleteOption[],
+  currentValues: string[],
+  preserveSelectedOptionValuesOnChange: boolean,
+): string[] {
+  if (!preserveSelectedOptionValuesOnChange) {
+    return next.flatMap((option) => option.values);
+  }
+
+  const currentValueSet = new Set(currentValues);
+  const committedValues: string[] = [];
+  const seenValues = new Set<string>();
+
+  next.forEach((option) => {
+    const preservedValues = option.values.filter((value) => currentValueSet.has(value));
+    const valuesToCommit = preservedValues.length > 0 ? preservedValues : option.values;
+    valuesToCommit.forEach((value) => {
+      if (seenValues.has(value)) return;
+      seenValues.add(value);
+      committedValues.push(value);
+    });
+  });
+
+  return committedValues;
+}
+
 export function AnalysisFilterField({
   label,
   options,
@@ -102,6 +129,7 @@ export function AnalysisFilterField({
   normalizeUnknownAliases = false,
   deferredCommit = false,
   preserveSelectionOrder = false,
+  preserveSelectedOptionValuesOnChange = false,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -196,7 +224,7 @@ export function AnalysisFilterField({
         })
       }
       onChange={(_event, next, _reason) => {
-        const nextValues = next.flatMap((option) => option.values);
+        const nextValues = buildCommittedValues(next, effectiveValue, preserveSelectedOptionValuesOnChange);
         if (deferredCommit && open) {
           updateDraftValue(nextValues);
           return;

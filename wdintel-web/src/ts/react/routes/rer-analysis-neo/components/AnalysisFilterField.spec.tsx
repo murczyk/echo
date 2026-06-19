@@ -100,6 +100,28 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('preserves already selected grouped values when requested', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Групи',
+      options: [
+        { value: 'group-a', label: 'Грак Пл', count: 2, values: ['group-a', 'group-b'] },
+        { value: 'group-c', label: 'Group C', count: 1 },
+      ],
+      value: ['group-b'],
+      preserveSelectedOptionValuesOnChange: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    props.onChange(null, [props.options[0], props.options[1]], 'selectOption');
+    expect(onChange).toHaveBeenCalledWith(['group-b', 'group-c']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('matches the unknown unit alias to the canonical empty filter option', () => {
     const onChange = vi.fn();
     const { root } = renderFilterField({

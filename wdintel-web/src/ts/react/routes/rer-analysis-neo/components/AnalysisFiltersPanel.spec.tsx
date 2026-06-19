@@ -439,6 +439,7 @@ describe('AnalysisFiltersPanel', () => {
       { value: 'group-a', label: 'Грак Пл', count: 2, values: ['group-a', 'group-b'] },
     ]);
     expect(groupsField?.value).toEqual(['group-b']);
+    expect((groupsField as { preserveSelectedOptionValuesOnChange?: boolean } | undefined)?.preserveSelectedOptionValuesOnChange).toBe(true);
   });
 
   it('uses the network stats label and sorts networks by it', async () => {

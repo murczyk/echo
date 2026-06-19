@@ -253,6 +253,7 @@ export function AnalysisFiltersPanelSections({
           emptyLoading={isFilterSectionEmptyLoading('groups', derived.groupOptions.length)}
           value={queryState.groupsSelected}
           deferredCommit
+          preserveSelectedOptionValuesOnChange
           onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
         />
       </FilterSection>
