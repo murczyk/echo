@@ -754,13 +754,17 @@ async fn load_find_live_network_pelengs(
             FROM sigint_inbox_item_network iin
             JOIN sigint_inbox_item ii ON ii.id = iin.sigint_inbox_item_id
             JOIN signal_message sm ON sm.id = ii.id
-            JOIN datasource_group dg ON dg.id = sm.datasource_group_id
             JOIN sigint_peleng sp ON sp.source_inbox_item_id = ii.id
             WHERE iin.sigint_network_id = ANY($1)
               AND ii.freq = $2
-              AND dg.group_master_key = ANY($3)
               AND sm.deleted = false
               AND sp.deleted = false
+              AND EXISTS (
+                  SELECT 1
+                  FROM signal_message_group smg
+                  WHERE smg.signal_message_id = sm.id
+                    AND smg.group_master_key = ANY($3)
+              )
         ) ranked
         WHERE row_number <= 10
         ORDER BY network_id, timestamp DESC, id DESC
@@ -819,11 +823,15 @@ async fn load_find_live_network_locations(
         FROM sigint_inbox_item_network iin
         JOIN sigint_inbox_item ii ON ii.id = iin.sigint_inbox_item_id
         JOIN signal_message sm ON sm.id = ii.id
-        JOIN datasource_group dg ON dg.id = sm.datasource_group_id
         WHERE iin.sigint_network_id = ANY($1)
           AND ii.freq = $2
-          AND dg.group_master_key = ANY($3)
           AND sm.deleted = false
+          AND EXISTS (
+              SELECT 1
+              FROM signal_message_group smg
+              WHERE smg.signal_message_id = sm.id
+                AND smg.group_master_key = ANY($3)
+          )
           AND COALESCE(NULLIF(ii.location_v2, ''), NULLIF(ii.location, '')) IS NOT NULL
         ORDER BY network_id, location
         "#,

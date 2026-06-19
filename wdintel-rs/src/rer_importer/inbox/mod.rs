@@ -914,6 +914,7 @@ fn map_chumak_inbox_message(
         crate::rer_importer::body_noheader::extract_text(no_headers_source)?;
     let extended_form = chumak_extended_form(req);
     let callsigns = chumak_callsigns(req);
+    let (date, time) = chumak_display_date_time(timestamp);
 
     Ok(InboxMessage {
         message_uid: None,
@@ -921,8 +922,8 @@ fn map_chumak_inbox_message(
         media: vec![],
         images: vec![],
         image_recognized: vec![],
-        date: Some(timestamp.format("%d.%m.%Y").to_string()),
-        time: Some(timestamp.format("%H:%M:%S").to_string()),
+        date: Some(date),
+        time: Some(time),
         freq: req
             .freq
             .as_ref()
@@ -953,6 +954,15 @@ fn map_chumak_inbox_message(
         inbox_tags: None,
         metadata: vec![],
     })
+}
+
+fn chumak_display_date_time(timestamp: NaiveDateTime) -> (String, String) {
+    let local_timestamp =
+        timestamp.and_utc().with_timezone(&crate::config::get_tz());
+    (
+        local_timestamp.format("%d.%m.%Y").to_string(),
+        local_timestamp.format("%H:%M:%S").to_string(),
+    )
 }
 
 fn normalized_optional_string(value: Option<&str>) -> Option<String> {
