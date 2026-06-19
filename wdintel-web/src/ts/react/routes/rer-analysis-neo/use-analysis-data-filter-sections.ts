@@ -74,11 +74,11 @@ export type FilterSectionLoadPlan =
 export function buildFilterSectionsToLoad(plan: FilterSectionLoadPlan): AnalysisFilterSectionId[] {
   const sections = new Set<AnalysisFilterSectionId>(plan.sectionsToReload);
   if (plan.mode === 'full') {
-    const loadedSections = new Set(plan.loadedSections);
+    plan.loadedSections.forEach((section) => {
+      sections.add(section);
+    });
     plan.selectedSections.forEach((section) => {
-      if (!loadedSections.has(section)) {
-        sections.add(section);
-      }
+      sections.add(section);
     });
   }
   return Array.from(sections);

@@ -138,12 +138,13 @@ describe('buildFilterSectionsToLoad', () => {
   it('reloads previously loaded lazy sections on a forced reload', () => {
     const sections = buildFilterSectionsToLoad({
       mode: 'full',
-      sectionsToReload: ['tags', 'groups', 'senders', 'units', 'locations', 'posts'],
+      sectionsToReload: ['tags', 'groups', 'senders'],
       selectedSections: [],
       loadedSections: ['units', 'locations', 'posts'],
     });
 
     expect(sections).toEqual(expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'locations', 'posts']));
+    expect(sections).toHaveLength(6);
   });
 
   it('does not re-add selected sections on a reload when cached sections already exist', () => {
