@@ -1,3 +1,4 @@
+use crate::config::REPORT_HISTORY_LIST_LIMIT;
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{bgtask, prelude::*, report_history};
 use crate::error::AppError;
@@ -291,7 +292,7 @@ pub async fn report_history_list(
     let rows = ReportHistory::find()
         .filter(report_history::Column::RequestedBy.eq(user_login))
         .order_by_desc(report_history::Column::CreatedAt)
-        .limit(200)
+        .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -312,6 +313,7 @@ pub async fn report_history_admin_list(
         .c(h!())?;
     let rows = ReportHistory::find()
         .order_by_desc(report_history::Column::CreatedAt)
+        .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
         .c(h!())?
