@@ -266,7 +266,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading,
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -362,7 +361,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -463,7 +461,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages,
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -530,7 +527,6 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
 
     const setSummaryCallsignsInfo = vi.fn();
-    const setNetworkDisplayMap = vi.fn();
     const setNetworks = vi.fn((update) => {
       if (typeof update === 'function') update([]);
     });
@@ -565,7 +561,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap,
       setNetworks,
       setUnitsMap,
       setNewCallsigns: vi.fn(),
@@ -597,7 +592,6 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12], undefined);
     expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
     expect(setNetworks).toHaveBeenCalled();
-    expect(setNetworkDisplayMap).toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null));
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
@@ -642,7 +636,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -708,7 +701,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -760,7 +752,6 @@ describe('reloadAnalysisData', () => {
         setAorEntries: vi.fn(),
         setGroupInfos: vi.fn(),
         setNetworks: vi.fn(),
-        setNetworkDisplayMap: vi.fn(),
         setOptions: vi.fn(),
         setProfiles: vi.fn(),
         setTagsMap: vi.fn(),
@@ -791,7 +782,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -870,7 +860,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -957,7 +946,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -1027,7 +1015,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns,
@@ -1056,6 +1043,87 @@ describe('reloadAnalysisData', () => {
     expect(setNewCallsignsLoadedKey).toHaveBeenCalledWith(null);
     expect(setOptions).toHaveBeenCalledWith(emptyOptions);
     expect(setTopFreqs).toHaveBeenCalledWith([]);
+  });
+
+  it('keeps a late freqs rejection handled after an inbox abort returns first', async () => {
+    const inboxDeferred = deferred<ReloadInboxRsp>();
+    const freqsDeferred = deferred<{ freqs: Array<{ freq: string; count: number; isNew: boolean }> }>();
+
+    mocks.fetchInboxMessages.mockImplementationOnce(() => inboxDeferred.promise);
+    mocks.fetchAnalysisFreqs.mockImplementationOnce(() => freqsDeferred.promise);
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    try {
+      const reloadPromise = reloadAnalysisData({
+        clearAnalysisResults: vi.fn(),
+        invalidateCorrelatedFreqsCache: vi.fn(),
+        invalidateCallsignGraph: vi.fn(),
+        invalidateMessagePaging: vi.fn(),
+        newestFirst: true,
+        onError: vi.fn(),
+        onUnauthorized: vi.fn().mockReturnValue(false),
+        optionsFreqsRef: { current: [] },
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+        },
+        reloadRequestRef: { current: 0 },
+        setAorEntries: vi.fn(),
+        setCounts: vi.fn(),
+        setCountsLoading: vi.fn(),
+        setFiltersLoading: vi.fn(),
+        setGroupInfos: vi.fn(),
+        setMapLoading: vi.fn(),
+        setMapDateRange: vi.fn(),
+        setMapNetworkUnits: vi.fn(),
+        setMapOpenMessages: vi.fn(),
+        setMapPoints: vi.fn(),
+        setMessages: vi.fn(),
+        setMessagesLoading: vi.fn(),
+        setNetworks: vi.fn(),
+        setUnitsMap: vi.fn(),
+        setNewCallsigns: vi.fn(),
+        setHasLoadedInitialMessages: vi.fn(),
+        setNewCallsignsLoading: vi.fn(),
+        setNewCallsignsLoadedKey: vi.fn(),
+        shouldLoadNewCallsigns: false,
+        setNoMoreToLoad: vi.fn(),
+        setNolimitShown: vi.fn(),
+        setOptions: vi.fn(),
+        setProfiles: vi.fn(),
+        setSummaryCallsignsInfo: vi.fn(),
+        setSummaryLoading: vi.fn(),
+        setSummaryRows: vi.fn(),
+        setTagsMap: vi.fn(),
+        setTopCallsigns: vi.fn(),
+        setTopFreqs: vi.fn(),
+        setTopLocations: vi.fn(),
+        setTopUnits: vi.fn(),
+        loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+        invalidateFilterSectionLoads: vi.fn(),
+      });
+
+      await flushPromises();
+
+      inboxDeferred.reject(new DOMException('Aborted', 'AbortError'));
+      freqsDeferred.reject(new Error('freqs aborted later'));
+
+      await reloadPromise;
+      await flushPromises();
+
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
   });
 
   it('falls back to previously loaded lazy sections when no targeted invalidation is pending', async () => {
@@ -1099,7 +1167,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -1181,7 +1248,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -1261,7 +1327,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -1340,7 +1405,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
@@ -1414,7 +1478,6 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworkDisplayMap: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),

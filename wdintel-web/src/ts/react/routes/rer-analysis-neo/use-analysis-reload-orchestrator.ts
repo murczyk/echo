@@ -54,7 +54,6 @@ type Params = {
   setMapPoints: Setter<import('../../../../Bindings').FreqDetailedPoint[]>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
   setMessagesLoading: Setter<boolean>;
-  setNetworkDisplayMap: Setter<Record<number, string>>;
   setNetworks: Setter<Network[]>;
   setNewCallsigns: Setter<NewCallsignsRes>;
   setNewCallsignsLoading: Setter<boolean>;
@@ -124,7 +123,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setMapPoints,
     setMessages,
     setMessagesLoading,
-    setNetworkDisplayMap,
     setNetworks,
     setNewCallsigns,
     setNewCallsignsLoading,
@@ -182,7 +180,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
         setMessages,
         loadMessageComments,
         setMessagesLoading,
-        setNetworkDisplayMap,
         setNetworks,
         setNewCallsigns,
         setNewCallsignsLoading,
@@ -253,7 +250,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setMapPoints,
     setMessages,
     setMessagesLoading,
-    setNetworkDisplayMap,
     setNetworks,
     setNewCallsigns,
     setNewCallsignsLoading,
@@ -303,6 +299,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       return;
     }
 
+    reloadAbortControllerRef.current?.abort();
+    reloadRequestRef.current += 1;
     if (reloadDebounceTimerRef.current != null) {
       clearTimeout(reloadDebounceTimerRef.current);
     }

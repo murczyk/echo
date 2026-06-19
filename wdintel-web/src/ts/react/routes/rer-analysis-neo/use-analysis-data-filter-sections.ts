@@ -132,7 +132,6 @@ type Params = {
   onUnauthorized: (error: unknown) => boolean;
   setAorEntries: Dispatch<SetStateAction<AnalysisAorEntry[]>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
-  setNetworkDisplayMap: Dispatch<SetStateAction<Record<number, string>>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setOptions: Dispatch<SetStateAction<AnalysisFilterOptions>>;
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
@@ -147,7 +146,6 @@ export function useAnalysisFilterSections({
   onUnauthorized,
   setAorEntries,
   setGroupInfos,
-  setNetworkDisplayMap,
   setNetworks,
   setOptions,
   setProfiles,
@@ -228,7 +226,6 @@ export function useAnalysisFilterSections({
           setAorEntries,
           setGroupInfos,
           setNetworks,
-          setNetworkDisplayMap,
           setOptions,
           setProfiles,
           setTagsMap,
@@ -253,7 +250,6 @@ export function useAnalysisFilterSections({
       queryState,
       setAorEntries,
       setGroupInfos,
-      setNetworkDisplayMap,
       setNetworks,
       setOptions,
       setProfiles,
@@ -312,7 +308,6 @@ export function useAnalysisFilterSections({
               setAorEntries,
               setGroupInfos,
               setNetworks,
-              setNetworkDisplayMap,
               setOptions,
               setProfiles,
               setTagsMap,
@@ -344,7 +339,6 @@ export function useAnalysisFilterSections({
       queryState,
       setAorEntries,
       setGroupInfos,
-      setNetworkDisplayMap,
       setNetworks,
       setOptions,
       setProfiles,

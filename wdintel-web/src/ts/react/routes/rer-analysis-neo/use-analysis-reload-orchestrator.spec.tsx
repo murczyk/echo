@@ -72,7 +72,6 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     setMapPoints: noopSetter as Dispatch<SetStateAction<import('../../../../Bindings').FreqDetailedPoint[]>>,
     setMessages: noopSetter as Dispatch<SetStateAction<Array<[number, InboxMessage]>>>,
     setMessagesLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
-    setNetworkDisplayMap: noopSetter as Dispatch<SetStateAction<Record<number, string>>>,
     setNetworks: noopSetter as Dispatch<SetStateAction<Network[]>>,
     setNewCallsigns: noopSetter as Dispatch<SetStateAction<NewCallsignsRes>>,
     setNewCallsignsLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
@@ -201,6 +200,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       reloadTriggerKey: 'reload-key-2',
       queryState: { ...params.queryState, search: 'alpha' },
     });
+    expect(firstSignal?.aborted).toBe(true);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);

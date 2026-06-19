@@ -44,7 +44,7 @@ import {
   topItems,
 } from './use-analysis-data.shared';
 import { invalidateNewCallsignsLoadState } from './use-analysis-data.support';
-import { buildNetworkDisplayMap, buildSenderFilterOptions } from './message-utils';
+import { buildSenderFilterOptions } from './message-utils';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
@@ -63,7 +63,6 @@ type FilterSectionLoadContext = {
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setNetworks: Setter<Network[]>;
-  setNetworkDisplayMap: Setter<Record<number, string>>;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setTagsMap: Setter<Record<number, Tag>>;
@@ -325,7 +324,6 @@ export async function loadFilterSectionData(section: AnalysisFilterSectionId, co
       if (isStale() || isAborted()) return;
       const networkNamesById = Object.fromEntries(networksStatsRsp.networkNames.map((network) => [network.id, network.name]));
       context.setNetworks((current) => mergeNetworks(current, networksById));
-      context.setNetworkDisplayMap(buildNetworkDisplayMap(networksById, context.unitsMap));
       context.setOptions((current) => ({
         ...current,
         networks: toFilterOptions(
@@ -383,7 +381,6 @@ type ReloadParams = {
   setMapPoints: Setter<import('../../../../Bindings').FreqDetailedPoint[]>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
   setMessagesLoading: Setter<boolean>;
-  setNetworkDisplayMap: Setter<Record<number, string>>;
   setNetworks: Setter<Network[]>;
   setUnitsMap: Setter<Record<number, Unit>>;
   setNewCallsigns: Setter<NewCallsignsRes>;
@@ -482,13 +479,13 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       countsPromise.catch(() => undefined);
       const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst }, params.signal ? { signal: params.signal } : undefined);
       const freqsPromise = fetchAnalysisFreqs(analysisReq, params.signal ? { signal: params.signal } : undefined);
+      void freqsPromise.catch(() => undefined);
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       try {
         inboxRsp = await inboxPromise;
       } catch (loadError) {
         if (isAbortError(loadError) || params.signal?.aborted) return null;
-        void freqsPromise.catch(() => undefined);
         throw loadError;
       }
       if (isStaleReload() || params.signal?.aborted) return null;
@@ -648,9 +645,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const networksByAnalysisIds = networkIds.length > 0 ? await fetchNetworksByIds(networkIds, params.signal ? { signal: params.signal } : undefined) : [];
         if (isStaleReload() || params.signal?.aborted) return;
         params.setNetworks((current) => {
-          const mergedNetworks = mergeNetworks(current, networksByAnalysisIds);
-          params.setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
-          return mergedNetworks;
+          return mergeNetworks(current, networksByAnalysisIds);
         });
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;

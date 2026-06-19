@@ -139,7 +139,6 @@ type BuildReloadParamsInput = {
   setMapPoints: MapData['setMapPoints'];
   setMessages: MessageList['setMessages'];
   setMessagesLoading: MessageList['setMessagesLoading'];
-  setNetworkDisplayMap: ReferenceState['setNetworkDisplayMap'];
   setNetworks: ReferenceState['setNetworks'];
   setNewCallsigns: SidebarData['setNewCallsigns'];
   setNewCallsignsLoading: SidebarData['setNewCallsignsLoading'];
@@ -201,7 +200,6 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     setMapPoints: input.setMapPoints,
     setMessages: input.setMessages,
     setMessagesLoading: input.setMessagesLoading,
-    setNetworkDisplayMap: input.setNetworkDisplayMap,
     setNetworks: input.setNetworks,
     setNewCallsigns: input.setNewCallsigns,
     setNewCallsignsLoading: input.setNewCallsignsLoading,

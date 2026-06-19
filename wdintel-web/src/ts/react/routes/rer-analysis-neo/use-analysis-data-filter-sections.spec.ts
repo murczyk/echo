@@ -9,6 +9,7 @@ import type { Unit } from '../../../../Bindings';
 import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
 import { buildFilterSectionsToLoad, filterSectionsToInvalidateForPatch, useAnalysisFilterSections } from './use-analysis-data-filter-sections';
+import { loadFilterSectionData } from './use-analysis-data.reload';
 
 const analysisApiMocks = vi.hoisted(() => ({
   fetchAnalysisGroups: vi.fn(),
@@ -16,6 +17,8 @@ const analysisApiMocks = vi.hoisted(() => ({
   fetchAnalysisSenders: vi.fn(),
   fetchAnalysisTags: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchAnalysisNetworks: vi.fn(),
+  fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
 }));
@@ -26,6 +29,8 @@ vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisSenders: analysisApiMocks.fetchAnalysisSenders,
   fetchAnalysisTags: analysisApiMocks.fetchAnalysisTags,
   fetchAnalysisUnits: analysisApiMocks.fetchAnalysisUnits,
+  fetchAnalysisNetworks: analysisApiMocks.fetchAnalysisNetworks,
+  fetchNetworksByIds: analysisApiMocks.fetchNetworksByIds,
   getLatestSenders: analysisApiMocks.getLatestSenders,
   getTagsMapForDisplay: analysisApiMocks.getTagsMapForDisplay,
 }));
@@ -52,7 +57,6 @@ function Harness() {
     onUnauthorized: vi.fn(() => false),
     setAorEntries: vi.fn(),
     setGroupInfos: vi.fn(),
-    setNetworkDisplayMap: vi.fn(),
     setNetworks: vi.fn(),
     setOptions: vi.fn(),
     setProfiles: vi.fn(),
@@ -91,6 +95,8 @@ beforeEach(() => {
   analysisApiMocks.fetchAnalysisSenders.mockResolvedValue({ senders: [] });
   analysisApiMocks.fetchAnalysisTags.mockResolvedValue({ tags: [] });
   analysisApiMocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
+  analysisApiMocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
+  analysisApiMocks.fetchNetworksByIds.mockResolvedValue([]);
   analysisApiMocks.getLatestSenders.mockResolvedValue({ data: {} });
   analysisApiMocks.getTagsMapForDisplay.mockResolvedValue({});
 });
@@ -167,6 +173,52 @@ describe('buildFilterSectionsToLoad', () => {
     expect(filterSectionsToInvalidateForPatch(patch)).toEqual(expected);
   });
 
+});
+
+describe('loadFilterSectionData', () => {
+  it('does not overwrite network display labels during a late networks load', async () => {
+    analysisApiMocks.fetchAnalysisNetworks.mockResolvedValue({
+      networks: [{ networkId: 11, count: 3 }],
+      networkNames: [{ id: 11, name: 'Network 11' }],
+    });
+    analysisApiMocks.fetchNetworksByIds.mockResolvedValue([{ id: 11, name: 'Network 11' }]);
+    const setNetworks = vi.fn((update) => {
+      if (typeof update === 'function') {
+        expect(update([{ id: 7, name: 'Network 7' }])).toEqual([
+          { id: 7, name: 'Network 7' },
+          { id: 11, name: 'Network 11' },
+        ]);
+      }
+    });
+    const setOptions = vi.fn();
+
+    await act(async () => {
+      await loadFilterSectionData('networks', {
+        analysisReq: buildAnalysisReq(
+          {
+            ...emptyQueryState(),
+            fromDateTimeStr: '2026-03-30T08:00',
+            toDateTimeStr: '2026-03-31T08:00',
+          },
+          [],
+        )!,
+        loadVersion: 0,
+        loadVersionRef: { current: 0 },
+        setAorEntries: vi.fn(),
+        setGroupInfos: vi.fn(),
+        setNetworks,
+        setOptions,
+        setProfiles: vi.fn(),
+        setTagsMap: vi.fn(),
+        unitsMap: { 1: { id: 1, name: 'Fresh Unit' } },
+      });
+      await Promise.resolve();
+    });
+
+    expect(setNetworks).toHaveBeenCalledTimes(1);
+    expect(setOptions).toHaveBeenCalledTimes(1);
+    expect(setOptions.mock.calls[0][0]).toEqual(expect.any(Function));
+  });
 });
 
 describe('useAnalysisFilterSections', () => {
