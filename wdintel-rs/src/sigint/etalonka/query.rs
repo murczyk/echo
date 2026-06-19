@@ -1098,7 +1098,7 @@ pub async fn load_callsigns(
         groups.clone(),
         network_id,
         &callsigns,
-        None,
+        filter,
     )
     .await
     .context(h!())?;
