@@ -302,17 +302,14 @@ async fn record_completed_report_file(
     content_type: String,
     file_path: &Path,
 ) -> Result<report_history::Model, AppError> {
-    let report_history = insert_completed_report_row(
+    let report_history = insert_archiving_report_row(
         env,
         requested_by,
         report_kind,
         request,
         file_name.clone(),
         content_type.clone(),
-        None,
-        None,
-        json!([]),
-        Some(file_path.to_string_lossy().to_string()),
+        file_path.to_string_lossy().to_string(),
     )
     .await?;
     spawn_completed_report_file_archive(
@@ -323,6 +320,41 @@ async fn record_completed_report_file(
         file_path.to_path_buf(),
     );
     Ok(report_history)
+}
+
+async fn insert_archiving_report_row(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    file_name: String,
+    content_type: String,
+    legacy_report_path: String,
+) -> Result<report_history::Model, AppError> {
+    let now = Utc::now().naive_utc();
+    Ok(report_history::ActiveModel {
+        id: NotSet,
+        report_kind: Set(report_kind.to_string()),
+        requested_by: Set(requested_by.to_string()),
+        request: Set(serde_json::to_value(request).c(h!())?),
+        created_at: Set(now),
+        status: Set(STATUS_IN_PROGRESS.to_string()),
+        retry_count: Set(0),
+        planned_for_ts: Set(None),
+        started_at: Set(Some(now)),
+        completed_at: Set(None),
+        s3_id: Set(None),
+        bgtask_id: Set(None),
+        file_name: Set(Some(file_name)),
+        content_type: Set(Some(content_type)),
+        last_error: Set(None),
+        log: Set(json!([])),
+        legacy_log_id: Set(None),
+        legacy_report_path: Set(Some(legacy_report_path)),
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?)
 }
 
 async fn insert_completed_report_row(
@@ -421,6 +453,8 @@ async fn archive_completed_report_file(
         return Ok(());
     };
     let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_DONE.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
     report_history.s3_id = Set(Some(s3_id));
     report_history.last_error = Set(None);
     report_history.update(&env.dbx).await.c(h!())?;
@@ -443,6 +477,8 @@ async fn set_completed_report_archive_error(
         return Ok(());
     };
     let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_FAILED.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
     report_history.last_error = Set(Some(err_msg.clone()));
     report_history.log = Set(append_log_entry(
         report_history.log.unwrap(),
