@@ -1,5 +1,8 @@
 use super::super::types::*;
-use crate::config::TAG_MINIMUM_CONFIDENCE;
+use crate::config::{
+    RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM, TAG_MINIMUM_CONFIDENCE,
+    XLSX_WORKSHEET_ROW_MAX,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer;
@@ -66,6 +69,7 @@ pub async fn report_xlsx_kind_interception(
     let messages = get_inbox_messages_report(user_login, env, &inbox_req)
         .await
         .context(h!())?;
+    ensure_interception_report_row_limit(user_login, messages.len())?;
     process_messages_for_interception_report(
         sheet1,
         messages,
@@ -292,7 +296,8 @@ fn process_messages_for_interception_report(
             sheet1,
             &all_tags,
             SheetRowData {
-                row_number: index as RowNum + 1,
+                row_number: index as RowNum
+                    + RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM as RowNum,
                 message: &message,
                 date,
                 time: time.clone(),
@@ -305,6 +310,27 @@ fn process_messages_for_interception_report(
     }
 
     Ok(())
+}
+
+fn ensure_interception_report_row_limit(
+    user_login: &str,
+    rows_count: usize,
+) -> Result<(), AppError> {
+    let max_rows =
+        XLSX_WORKSHEET_ROW_MAX - RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM;
+    if rows_count <= max_rows {
+        return Ok(());
+    }
+
+    log::error!(
+        "interception report row limit exceeded: user={user_login}, rows={rows_count}, max_rows={max_rows}",
+    );
+
+    Err(AppError::BL {
+        msg: format!(
+            "Звіт містить {rows_count} рядків, максимум для XLSX: {max_rows}. Зменшіть період або фільтри."
+        ),
+    })
 }
 
 fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
@@ -908,7 +934,11 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{eject_body_from_message, select_report_message_body};
+    use super::{
+        eject_body_from_message, ensure_interception_report_row_limit,
+        select_report_message_body,
+    };
+    use crate::config::XLSX_WORKSHEET_ROW_MAX;
 
     #[test]
     fn eject_body_keeps_only_number_long_dash_lines() {
@@ -1142,5 +1172,23 @@ y:73-71279
         let output = select_report_message_body(input, true).unwrap();
 
         assert_eq!(output, input.to_string());
+    }
+
+    #[test]
+    fn interception_report_row_limit_allows_excel_max_data_rows() {
+        assert!(ensure_interception_report_row_limit(
+            "operator",
+            XLSX_WORKSHEET_ROW_MAX - 1
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn interception_report_row_limit_rejects_overflow() {
+        assert!(ensure_interception_report_row_limit(
+            "operator",
+            XLSX_WORKSHEET_ROW_MAX
+        )
+        .is_err());
     }
 }

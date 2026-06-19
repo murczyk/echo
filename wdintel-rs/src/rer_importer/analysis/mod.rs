@@ -2450,16 +2450,30 @@ async fn summary_table_xlsx(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let bytes = summary_table_xlsx_bytes(&login, &env, req.clone())
-        .await
-        .c(h!())?;
+    let history_request =
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req.clone()),
+        };
+    let bytes = match summary_table_xlsx_bytes(&login, &env, req.clone()).await
+    {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            crate::report_history::record_failed_report_nofail(
+                &env,
+                &login,
+                crate::report_history::KIND_SUMMARY_TABLE,
+                history_request,
+                format!("{err:#?}"),
+            )
+            .await;
+            return Err(err);
+        }
+    };
     crate::report_history::record_completed_report_nofail(
         &env,
         &login,
         crate::report_history::KIND_SUMMARY_TABLE,
-        crate::report_history::ReportHistoryRequest::AnalysisExport {
-            payload: Box::new(req),
-        },
+        history_request,
         "summary-table.xlsx".to_string(),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             .to_string(),

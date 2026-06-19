@@ -66,6 +66,7 @@ pub enum ReportHistoryRequest {
 pub struct ReportHistoryRow {
     pub id: i64,
     pub report_kind: String,
+    pub requested_by: String,
     pub created_at: String,
     pub status: String,
     pub completed_at: Option<String>,
@@ -105,6 +106,7 @@ impl From<report_history::Model> for ReportHistoryRow {
         Self {
             id: report_history.id,
             report_kind: report_history.report_kind,
+            requested_by: report_history.requested_by,
             created_at: report_history.created_at.to_string(),
             status: report_history.status,
             completed_at: report_history
@@ -116,6 +118,54 @@ impl From<report_history::Model> for ReportHistoryRow {
             bgtask_id: report_history.bgtask_id,
         }
     }
+}
+
+pub async fn record_failed_report_nofail(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    err_msg: String,
+) {
+    if let Err(err) =
+        record_failed_report(env, requested_by, report_kind, request, err_msg)
+            .await
+    {
+        error!("failed to record failed report history row: {err:?}");
+    }
+}
+
+async fn record_failed_report(
+    env: &Env,
+    requested_by: &str,
+    report_kind: &str,
+    request: ReportHistoryRequest,
+    err_msg: String,
+) -> Result<report_history::Model, AppError> {
+    let now = Utc::now().naive_utc();
+    Ok(report_history::ActiveModel {
+        id: NotSet,
+        report_kind: Set(report_kind.to_string()),
+        requested_by: Set(requested_by.to_string()),
+        request: Set(serde_json::to_value(request).c(h!())?),
+        created_at: Set(now),
+        status: Set(STATUS_FAILED.to_string()),
+        retry_count: Set(0),
+        planned_for_ts: Set(None),
+        started_at: Set(Some(now)),
+        completed_at: Set(Some(now)),
+        s3_id: Set(None),
+        bgtask_id: Set(None),
+        file_name: Set(None),
+        content_type: Set(None),
+        last_error: Set(Some(err_msg.clone())),
+        log: Set(append_log_entry(json!([]), "system", &err_msg)),
+        legacy_log_id: Set(None),
+        legacy_report_path: Set(None),
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?)
 }
 
 pub async fn enqueue_report(
@@ -251,6 +301,26 @@ pub async fn report_history_list(
     Ok(Json(rows))
 }
 
+#[post("/api/admin/report-history/list")]
+pub async fn report_history_admin_list(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Admin")
+        .await
+        .c(h!())?;
+    let rows = ReportHistory::find()
+        .order_by_desc(report_history::Column::CreatedAt)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(ReportHistoryRow::from)
+        .collect();
+    Ok(Json(rows))
+}
+
 #[post("/api/report-history/status")]
 pub async fn report_history_status(
     user: Identity,
@@ -271,7 +341,7 @@ pub async fn report_history_retry(
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    let report_history = find_report_for_login(&env.dbx, req.id, &user_login)
+    let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
     if report_history.status != STATUS_FAILED {
@@ -330,9 +400,23 @@ async fn find_current_user_report(
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    find_report_for_login(&env.dbx, id, &user_login)
+    find_report_for_user(&env.dbx, id, &user_login)
         .await?
         .ok_or(AppError::NotFound)
+}
+
+async fn find_report_for_user(
+    dbx: &DatabaseConnection,
+    id: i64,
+    user_login: &str,
+) -> Result<Option<report_history::Model>, AppError> {
+    match crate::users::has_role(dbx, user_login, "Admin").await {
+        Ok(()) => Ok(ReportHistory::find_by_id(id).one(dbx).await.c(h!())?),
+        Err(AppError::Forbidden(_)) => {
+            find_report_for_login(dbx, id, user_login).await
+        }
+        Err(err) => Err(err),
+    }
 }
 
 async fn find_report_for_login(
