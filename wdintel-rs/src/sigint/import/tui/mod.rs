@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::entities::sea_orm_active_enums::SigintNetworkKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::sigint::import::types::EtalonData;
@@ -1074,9 +1075,12 @@ async fn import_network_freqs(
             freq: Set(import_freq.freq),
             created_at: Set(import_freq.created_at),
             last_seen_dt: Set(import_freq.last_seen_dt),
+            kind: Set(match import_freq.modulation.as_str() {
+                "NFM" | "AM" => SigintNetworkKind::Vhf,
+                _ => SigintNetworkKind::Dmr,
+            }),
             modulation: Set(import_freq.modulation),
             modulation_id: NotSet,
-            kind: NotSet,
             encryption_id: Set(encryption_id),
             active_from: Set(import_freq.active_from),
             active_to: Set(import_freq.active_to),

@@ -24,6 +24,14 @@ impl MigrationTrait for Migration {
                     );
                 END IF;
             END $$;
+            INSERT INTO encryption (id, name, enabled, created_at) VALUES
+                (1, 'Без шифрування', true, now()),
+                (2, 'ARC40',          true, now()),
+                (3, 'AES256',         true, now()),
+                (4, 'TYT (16 bit)',   true, now()),
+                (5, 'TYT (128 bit)', true, now()),
+                (6, 'Не визначено',  true, now())
+            ON CONFLICT (id) DO NOTHING;
             ALTER TABLE sigint_network_freq
                 ADD COLUMN IF NOT EXISTS modulation    TEXT    NOT NULL DEFAULT 'NFM';
             ALTER TABLE sigint_network_freq

@@ -427,7 +427,7 @@ pub async fn create_network(
                 active_to: Set(active_to),
                 modulation: Set(frequency.modulation.clone()),
                 modulation_id: NotSet,
-                kind: NotSet,
+                kind: Set(kind_from_modulation(&frequency.modulation)),
                 encryption_id: Set(encryption_id),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
@@ -1655,7 +1655,7 @@ pub async fn add_network_freq(
             last_seen_dt: NotSet,
             modulation: Set(req.freq_rec.modulation.clone()),
             modulation_id: NotSet,
-            kind: NotSet,
+            kind: Set(kind_from_modulation(&req.freq_rec.modulation)),
             encryption_id: Set(encryption_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
@@ -3837,6 +3837,13 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
         _ => Err(AppError::BL {
             msg: "Unknown network type!".to_string(),
         }),
+    }
+}
+
+fn kind_from_modulation(modulation: &str) -> SigintNetworkKind {
+    match modulation {
+        "NFM" | "AM" => SigintNetworkKind::Vhf,
+        _ => SigintNetworkKind::Dmr,
     }
 }
 

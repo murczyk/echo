@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::entities::sea_orm_active_enums::SigintNetworkKind;
 use crate::entities::*;
 use crate::entities::{
     area_of_responsibility, sigint_network_aor, sigint_zone_aor,
@@ -1456,9 +1457,12 @@ where
             freq: Set(rec.freq),
             created_at: Set(rec.created_at),
             last_seen_dt: Set(rec.last_seen_dt),
+            kind: Set(match rec.modulation.as_str() {
+                "NFM" | "AM" => SigintNetworkKind::Vhf,
+                _ => SigintNetworkKind::Dmr,
+            }),
             modulation: Set(rec.modulation),
             modulation_id: NotSet,
-            kind: NotSet,
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
             deleted: Set(rec.deleted),
