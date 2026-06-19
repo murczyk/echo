@@ -21,6 +21,7 @@
 
 #[cfg(test)]
 pub mod tests {
+    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
     use crate::entities::*;
     use crate::types::*;
     use sea_orm::*;
@@ -1621,6 +1622,19 @@ pub mod tests {
         }
         if out.modulation == NotSet {
             out.modulation = Set("NFM".to_string());
+        }
+        if out.kind == NotSet {
+            let mod_str = match &out.modulation {
+                ActiveValue::Set(m) | ActiveValue::Unchanged(m) => m.as_str(),
+                _ => "NFM",
+            };
+            out.kind = Set(match mod_str {
+                "NFM" | "AM" => SigintNetworkKind::Vhf,
+                _ => SigintNetworkKind::Dmr,
+            });
+        }
+        if out.modulation_id == NotSet {
+            out.modulation_id = Set(None);
         }
         if out.encryption_id == NotSet {
             out.encryption_id = Set(None);
