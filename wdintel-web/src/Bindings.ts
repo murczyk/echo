@@ -315,6 +315,7 @@ export type BgtaskStatusAndLogsQuery = {
 export type ReportHistoryRow = {
   id: number;
   reportKind: string;
+  requestedBy: string;
   createdAt: string;
   status: string;
   completedAt: string | null;

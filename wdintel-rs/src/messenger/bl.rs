@@ -307,7 +307,10 @@ async fn set_client_signal_mode(
         .filter(echo_client_config::Column::ClientId.eq(client.id))
         .col_expr(
             echo_client_config::Column::SignalMode,
-            Expr::value(signal_cli_mode),
+            Expr::cust_with_values(
+                "$1::signal_cli_mode",
+                vec![signal_cli_mode.into_value()],
+            ),
         )
         .exec(txn)
         .await

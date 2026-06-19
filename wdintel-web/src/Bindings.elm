@@ -876,6 +876,7 @@ bgtaskStatusAndLogsQueryEncoder struct =
 type alias ReportHistoryRow =
     { id : Int
     , reportKind : String
+    , requestedBy : String
     , createdAt : String
     , status : String
     , completedAt : Maybe (String)
@@ -891,6 +892,7 @@ reportHistoryRowEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "report_kind", (Json.Encode.string) struct.reportKind )
+        , ( "requested_by", (Json.Encode.string) struct.requestedBy )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )

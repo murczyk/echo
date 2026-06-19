@@ -15,16 +15,29 @@ pub async fn rer_analysis_download_kmz(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let bytes = rer_analysis_kmz_bytes(&login, &env, req.clone())
-        .await
-        .c(h!())?;
+    let history_request =
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req.clone()),
+        };
+    let bytes = match rer_analysis_kmz_bytes(&login, &env, req.clone()).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            crate::report_history::record_failed_report_nofail(
+                &env,
+                &login,
+                crate::report_history::KIND_KMZ,
+                history_request,
+                format!("{err:#?}"),
+            )
+            .await;
+            return Err(err);
+        }
+    };
     crate::report_history::record_completed_report_nofail(
         &env,
         &login,
         crate::report_history::KIND_KMZ,
-        crate::report_history::ReportHistoryRequest::AnalysisExport {
-            payload: Box::new(req),
-        },
+        history_request,
         "analysis.kmz".to_string(),
         "application/vnd.google-earth.kmz".to_string(),
         &bytes,

@@ -16,11 +16,23 @@ import { SettingsNeoTable } from './SettingsNeoTable';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
+type LoadReportHistory = (options?: { signal?: AbortSignal }) => Promise<ReportHistoryRow[]>;
+
 type Props = {
   active: boolean;
 };
 
-const DEFAULT_MY_REPORTS_COLUMNS_VISIBILITY = {
+export type ReportHistoryTableSectionProps = {
+  active: boolean;
+  title: string;
+  tableId: string;
+  panelId?: string;
+  labelledBy?: string;
+  includeAuthor?: boolean;
+  loadReportHistory?: LoadReportHistory;
+};
+
+const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   reportKind: true,
   createdAt: true,
   status: true,
@@ -28,7 +40,7 @@ const DEFAULT_MY_REPORTS_COLUMNS_VISIBILITY = {
   actions: true,
 };
 
-const DEFAULT_MY_REPORTS_COLUMN_ORDER = [
+const DEFAULT_REPORTS_COLUMN_ORDER = [
   'mrt-row-numbers',
   'reportKind',
   'createdAt',
@@ -37,7 +49,22 @@ const DEFAULT_MY_REPORTS_COLUMN_ORDER = [
   'actions',
 ];
 
-const DEFAULT_MY_REPORTS_SORTING = [{ id: 'createdAt', desc: true }];
+const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
+  ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
+  requestedBy: true,
+};
+
+const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'reportKind',
+  'requestedBy',
+  'createdAt',
+  'status',
+  'completedAt',
+  'actions',
+];
+
+const DEFAULT_REPORTS_SORTING = [{ id: 'createdAt', desc: true }];
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   planned: 'В черзі',
@@ -94,6 +121,7 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
   return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
     id: -index - 1,
     reportKind: '',
+    requestedBy: '',
     createdAt: '',
     status: 'planned',
     completedAt: null,
@@ -105,6 +133,26 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
 }
 
 export function SettingsMyReportsSection({ active }: Props) {
+  return (
+    <ReportHistoryTableSection
+      active={active}
+      title="Мої Звіти"
+      tableId="settings-neo-my-reports-v1"
+      panelId="settings-neo-panel-my-reports"
+      labelledBy="settings-neo-tab-my-reports"
+    />
+  );
+}
+
+export function ReportHistoryTableSection({
+  active,
+  title,
+  tableId,
+  panelId,
+  labelledBy,
+  includeAuthor = false,
+  loadReportHistory = listReportHistory,
+}: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +162,7 @@ export function SettingsMyReportsSection({ active }: Props) {
     setLoadState((current) => (current === 'success' ? current : 'loading'));
     setError(null);
     try {
-      const nextRows = await listReportHistory(signal ? { signal } : undefined);
+      const nextRows = await loadReportHistory(signal ? { signal } : undefined);
       setRows(nextRows);
       setLoadState('success');
     } catch (loadError) {
@@ -173,82 +221,97 @@ export function SettingsMyReportsSection({ active }: Props) {
   }
 
   const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(
-    () => [
-      {
-        accessorKey: 'reportKind',
-        header: 'Вид',
-        Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
-      },
-      {
-        accessorKey: 'createdAt',
-        header: 'Створено',
-        Cell: ({ row }) => formatReportDate(row.original.createdAt),
-      },
-      {
-        accessorKey: 'status',
-        header: 'Статус',
-        Cell: ({ row }) => (
-          <Chip
-            size="small"
-            color={statusColor(row.original.status)}
-            label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
-            variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
-          />
-        ),
-      },
-      {
-        accessorKey: 'completedAt',
-        header: 'Завершено',
-        Cell: ({ row }) => formatReportDate(row.original.completedAt),
-      },
-      {
-        id: 'actions',
-        header: '',
-        enableSorting: false,
-        enableColumnActions: false,
-        enableColumnFilter: false,
-        size: 88,
-        Cell: ({ row }) => {
-          const report = row.original;
-          const disabled = actionInFlight === report.id;
-          if (report.status === 'failed') {
+    () => {
+      const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
+        {
+          accessorKey: 'reportKind',
+          header: 'Вид',
+          Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
+        },
+      ];
+
+      if (includeAuthor) {
+        nextColumns.push({
+          accessorKey: 'requestedBy',
+          header: 'Автор',
+          Cell: ({ row }) => row.original.requestedBy,
+        });
+      }
+
+      nextColumns.push(
+        {
+          accessorKey: 'createdAt',
+          header: 'Створено',
+          Cell: ({ row }) => formatReportDate(row.original.createdAt),
+        },
+        {
+          accessorKey: 'status',
+          header: 'Статус',
+          Cell: ({ row }) => (
+            <Chip
+              size="small"
+              color={statusColor(row.original.status)}
+              label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
+              variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
+            />
+          ),
+        },
+        {
+          accessorKey: 'completedAt',
+          header: 'Завершено',
+          Cell: ({ row }) => formatReportDate(row.original.completedAt),
+        },
+        {
+          id: 'actions',
+          header: '',
+          enableSorting: false,
+          enableColumnActions: false,
+          enableColumnFilter: false,
+          size: 88,
+          Cell: ({ row }) => {
+            const report = row.original;
+            const disabled = actionInFlight === report.id;
+            if (report.status === 'failed') {
+              return (
+                <Tooltip title="Повторити">
+                  <span>
+                    <IconButton size="small" disabled={disabled} onClick={() => void handleRetry(report)}>
+                      <ReplayIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              );
+            }
             return (
-              <Tooltip title="Повторити">
+              <Tooltip title={report.hasFile ? 'Завантажити' : ''}>
                 <span>
-                  <IconButton size="small" disabled={disabled} onClick={() => void handleRetry(report)}>
-                    <ReplayIcon fontSize="small" />
+                  <IconButton
+                    size="small"
+                    disabled={disabled || report.status !== 'done' || !report.hasFile}
+                    onClick={() => void handleDownload(report)}
+                  >
+                    <DownloadIcon fontSize="small" />
                   </IconButton>
                 </span>
               </Tooltip>
             );
-          }
-          return (
-            <Tooltip title={report.hasFile ? 'Завантажити' : ''}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={disabled || report.status !== 'done' || !report.hasFile}
-                  onClick={() => void handleDownload(report)}
-                >
-                  <DownloadIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          );
+          },
         },
-      },
-    ],
-    [actionInFlight],
+      );
+
+      return nextColumns;
+    },
+    [actionInFlight, includeAuthor],
   );
 
 
   return (
-    <Box id="settings-neo-panel-my-reports" role="tabpanel" aria-labelledby="settings-neo-tab-my-reports">
+    <Box id={panelId} role={panelId ? 'tabpanel' : undefined} aria-labelledby={labelledBy}>
       <Box sx={{ p: 3 }}>
         <Stack spacing={2}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
             <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
-              Мої Звіти
+              {title}
             </Typography>
             <Tooltip title="Оновити">
               <span>
@@ -261,11 +324,13 @@ export function SettingsMyReportsSection({ active }: Props) {
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
           <TableStateProvider
-            tableId="settings-neo-my-reports-v1"
-            defaultColumnOrder={DEFAULT_MY_REPORTS_COLUMN_ORDER}
-            defaultColumnVisibility={DEFAULT_MY_REPORTS_COLUMNS_VISIBILITY}
+            tableId={tableId}
+            defaultColumnOrder={includeAuthor ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER : DEFAULT_REPORTS_COLUMN_ORDER}
+            defaultColumnVisibility={
+              includeAuthor ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY : DEFAULT_REPORTS_COLUMNS_VISIBILITY
+            }
             defaultEnableColumnOrdering={false}
-            defaultSorting={DEFAULT_MY_REPORTS_SORTING}
+            defaultSorting={DEFAULT_REPORTS_SORTING}
           >
             <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
               <SettingsNeoTable
