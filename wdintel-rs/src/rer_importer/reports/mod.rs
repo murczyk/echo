@@ -178,6 +178,9 @@ pub(crate) async fn report_docx_generate_file(
 ) -> Result<ReportTaskGenerated, AppError> {
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     req.req.nolimit = Some(true);
+    ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
+        .await
+        .c(h!())?;
 
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
@@ -255,16 +258,10 @@ pub(crate) async fn report_docx_generate_file(
         .await
         .c(h!())?;
     } else if req.kind == kinds::REO {
-        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
-            .await
-            .c(h!())?;
         self::revo::report_docx_kind_revo(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::DIGEST {
-        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
-            .await
-            .c(h!())?;
         self::digest::report_docx_kind_digest(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
