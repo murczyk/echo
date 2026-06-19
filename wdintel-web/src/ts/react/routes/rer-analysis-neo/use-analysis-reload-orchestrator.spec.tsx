@@ -180,6 +180,52 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'bravo' });
   });
 
+  it('blocks summary reloads until the debounced reload settles', async () => {
+    vi.useFakeTimers();
+    let resolveNextReload: (() => void) | null = null;
+    const nextReload = new Promise<void>((resolve) => {
+      resolveNextReload = resolve;
+    });
+    const loadSummaryData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({ centerTab: 'summary', loadSummaryData });
+
+    await renderHook(params);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(() => nextReload);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveNextReload?.();
+      await nextReload;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadSummaryData).toHaveBeenCalledTimes(2);
+  });
+
   it('aborts the previous reload when a newer reload starts', async () => {
     vi.useFakeTimers();
     let resolveFirstReload: (() => void) | null = null;
@@ -256,6 +302,38 @@ describe('useAnalysisReloadOrchestrator', () => {
       await firstReload;
       await Promise.resolve();
     });
+  });
+
+  it('clears pending summary reload state when unmounted during debounce', async () => {
+    vi.useFakeTimers();
+    const loadSummaryData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({ centerTab: 'summary', loadSummaryData });
+
+    await renderHook(params);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadSummaryData).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'alpha' },
+    });
+
+    act(() => {
+      root?.unmount();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+      await Promise.resolve();
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(loadSummaryData).toHaveBeenCalledTimes(1);
   });
 
   it('reloads when the map becomes visible even if the trigger key stays the same', async () => {

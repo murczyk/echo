@@ -277,8 +277,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (lastReloadTriggerKeyRef.current === reloadTriggerKey) return;
     const runReload = () => {
       lastReloadTriggerKeyRef.current = reloadTriggerKey;
+      const summaryReloadWasAlreadyPending = summaryReloadPendingKeyRef.current === reloadTriggerKey;
       summaryReloadPendingKeyRef.current = reloadTriggerKey;
-      if (centerTab === 'summary') {
+      if (centerTab === 'summary' && !summaryReloadWasAlreadyPending) {
         invalidateSummaryData(true);
       }
       void reload()
@@ -304,9 +305,16 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (reloadDebounceTimerRef.current != null) {
       clearTimeout(reloadDebounceTimerRef.current);
     }
+    summaryReloadPendingKeyRef.current = reloadTriggerKey;
+    if (centerTab === 'summary') {
+      invalidateSummaryData(true);
+    }
     reloadDebounceTimerRef.current = setTimeout(runReload, 200);
 
     return () => {
+      if (summaryReloadPendingKeyRef.current === reloadTriggerKey) {
+        summaryReloadPendingKeyRef.current = null;
+      }
       if (reloadDebounceTimerRef.current != null) {
         clearTimeout(reloadDebounceTimerRef.current);
         reloadDebounceTimerRef.current = null;
