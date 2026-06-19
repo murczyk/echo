@@ -1,9 +1,10 @@
-import type { InboxMessage, NewCallsignsRes } from '../../../../Bindings';
+import type { InboxMessage } from '../../../../Bindings';
 import { useAnalysisReferenceState } from './use-analysis-reference-state';
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
-import type { AnalysisCountItem, AnalysisFilterOptions, AnalysisQueryState, AnalysisGroupsActivityPeriod, AnalysisFilterSectionId } from './types';
+import type { AnalysisQueryState, AnalysisFilterSectionId } from './types';
+import type { FilterSectionLoadPlan } from './use-analysis-data-filter-sections';
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
 import type { UseAnalysisDataProps } from './use-analysis-data.types';
 
@@ -112,9 +113,9 @@ type BuildReloadParamsInput = {
   invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
   loadInitialFilterSections: (
     analysisReq: NonNullable<ReturnType<typeof import('./helpers').buildAnalysisReq>>,
-    forceReload?: boolean,
-    loadedSections?: AnalysisFilterSectionId[],
+    plan: FilterSectionLoadPlan | { mode: 'initial'; selectedSections: AnalysisFilterSectionId[] },
     networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
+    signal?: AbortSignal,
   ) => Promise<void>;
   invalidateCallsignGraph: () => void;
   invalidateCorrelatedFreqsCache: () => void;
@@ -138,7 +139,6 @@ type BuildReloadParamsInput = {
   setMapPoints: MapData['setMapPoints'];
   setMessages: MessageList['setMessages'];
   setMessagesLoading: MessageList['setMessagesLoading'];
-  setNetworkDisplayMap: ReferenceState['setNetworkDisplayMap'];
   setNetworks: ReferenceState['setNetworks'];
   setNewCallsigns: SidebarData['setNewCallsigns'];
   setNewCallsignsLoading: SidebarData['setNewCallsignsLoading'];
@@ -200,7 +200,6 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     setMapPoints: input.setMapPoints,
     setMessages: input.setMessages,
     setMessagesLoading: input.setMessagesLoading,
-    setNetworkDisplayMap: input.setNetworkDisplayMap,
     setNetworks: input.setNetworks,
     setNewCallsigns: input.setNewCallsigns,
     setNewCallsignsLoading: input.setNewCallsignsLoading,

@@ -95,6 +95,8 @@ export type AnalysisFilterSectionId =
   | 'networks'
   | 'metadata';
 
+export type AnalysisFilterSectionLoadState = 'idle' | 'loading' | 'stale' | 'loaded' | 'error';
+
 export type AnalysisPalitrasLoadState = 'idle' | 'loading' | 'success' | 'error';
 
 export type AnalysisMapAttrs = {
@@ -133,6 +135,10 @@ export type AnalysisPageState = {
   editorSaveInFlight: boolean;
   currentUser: User | null;
   filtersLoading: boolean;
+  filterSectionLoadStates: Record<AnalysisFilterSectionId, AnalysisFilterSectionLoadState>;
+  isFilterSectionLoading: (section: AnalysisFilterSectionId) => boolean;
+  isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
+  isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;

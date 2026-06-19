@@ -5,8 +5,6 @@ import {
   normalizeUnknownUnitFilterValue,
 } from '../../shared/analysis-unit-filter';
 import { isPresent } from '../../../utils/misc';
-
-
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
 type Params = Pick<AnalysisFiltersPanelPage, 'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'>;
@@ -39,13 +37,52 @@ export type AnalysisFiltersPanelDerivedData = {
   metadataOptionsCount: number;
 };
 
+function buildMergedGroupOptions(groupOptions: AnalysisFilterOption[], groupInfos: Record<string, { name: string }>): AnalysisFilterOption[] {
+  const groupedByLabel = new Map<
+    string,
+    {
+      value: string;
+      label: string;
+      count: number;
+      values: string[];
+    }
+  >();
+
+  groupOptions.forEach((option) => {
+    const label = normalizeFilterLabel(groupInfos[option.value]?.name ?? option.label ?? option.value);
+    const values = option.values ?? [option.value];
+    const existingOption = groupedByLabel.get(label);
+    if (existingOption != null) {
+      existingOption.count += option.count;
+      existingOption.values = Array.from(new Set([...existingOption.values, ...values]));
+      return;
+    }
+
+    groupedByLabel.set(label, {
+      value: values[0] ?? option.value,
+      label,
+      count: option.count,
+      values: Array.from(new Set(values)),
+    });
+  });
+
+  return sortFilterOptionsByLabel(Array.from(groupedByLabel.values()));
+}
+
+function countMergedSelectedGroupOptions(groupOptions: AnalysisFilterOption[], selectedGroups: string[]): number {
+  const selectedGroupKeys = new Set(selectedGroups);
+  const matchedSelectedKeys = new Set<string>();
+  const visibleCount = groupOptions.reduce((count, option) => {
+    const optionValues = option.values ?? [option.value];
+    const matchedValues = optionValues.filter((value) => selectedGroupKeys.has(value));
+    matchedValues.forEach((value) => matchedSelectedKeys.add(value));
+    return matchedValues.length > 0 ? count + 1 : count;
+  }, 0);
+  return visibleCount + selectedGroups.filter((key) => !matchedSelectedKeys.has(key)).length;
+}
+
 export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, options, queryState, tagsMap }: Params): AnalysisFiltersPanelDerivedData {
-  const groupOptions = sortFilterOptionsByLabel(
-    options.groups.map((option) => ({
-      ...option,
-      label: normalizeFilterLabel(groupInfos[option.value]?.name ?? option.label ?? option.value),
-    })),
-  );
+  const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
   const callsignsOptions = options.callsigns.reduce<AnalysisFilterOption[]>((acc, option) => {
     const label = (option.label ?? option.value).toUpperCase();
@@ -162,7 +199,7 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
     importantSelectedCount,
     tagsSelectedCount,
     aorsSelectedCount: queryState.aorsSelected.length,
-    groupsSelectedCount: queryState.groupsSelected.length,
+    groupsSelectedCount: countMergedSelectedGroupOptions(groupOptions, queryState.groupsSelected),
     sendersSelectedCount: queryState.sendersSelected.length,
     freqsSelectedCount: queryState.freqsSelected.length,
     callsignsSelectedCount: queryState.callsignsSelected.length,

@@ -3,8 +3,8 @@ import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
 import { fetchAnalysisNewCallsigns, fetchNetworksByIds } from '../../services/api/analysis';
+import { isAbortError } from '../../services/api/client';
 import { buildAnalysisReq } from './helpers';
 import { buildNetworkDisplayMap } from './message-utils';
 import { emptyNewCallsigns, toErrorMessage } from './use-analysis-data.shared';
@@ -35,6 +35,7 @@ type UseLoadNewCallsignsParams = {
   newCallsignsRequestRef: MutableRefObject<number>;
   newCallsignsLoadedKeyRef: MutableRefObject<string | null>;
   newCallsignsPendingKeyRef: MutableRefObject<string | null>;
+  newCallsignsAbortControllerRef: MutableRefObject<AbortController | null>;
 };
 
 export function invalidateNewCallsignsLoadState({
@@ -64,6 +65,7 @@ export function useLoadNewCallsigns({
   newCallsignsRequestRef,
   newCallsignsLoadedKeyRef,
   newCallsignsPendingKeyRef,
+  newCallsignsAbortControllerRef,
 }: UseLoadNewCallsignsParams) {
   return useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
@@ -86,27 +88,34 @@ export function useLoadNewCallsigns({
     const requestId = newCallsignsRequestRef.current + 1;
     newCallsignsRequestRef.current = requestId;
     newCallsignsPendingKeyRef.current = requestKey;
+    newCallsignsAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    newCallsignsAbortControllerRef.current = abortController;
     setNewCallsignsLoading(true);
     setNewCallsigns(emptyNewCallsigns);
     onError('');
 
     try {
-      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq);
-      if (requestId !== newCallsignsRequestRef.current) return;
+      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq, { signal: abortController.signal });
+      if (requestId !== newCallsignsRequestRef.current || abortController.signal.aborted) return;
       setNewCallsigns(newCallsignsRsp);
       newCallsignsLoadedKeyRef.current = requestKey;
     } catch (loadError) {
-      if (requestId !== newCallsignsRequestRef.current) return;
+      if (requestId !== newCallsignsRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
       }
     } finally {
-      if (requestId === newCallsignsRequestRef.current) {
+      if (requestId === newCallsignsRequestRef.current && !abortController.signal.aborted) {
         newCallsignsPendingKeyRef.current = null;
         setNewCallsignsLoading(false);
       }
+      if (newCallsignsAbortControllerRef.current === abortController) {
+        newCallsignsAbortControllerRef.current = null;
+      }
     }
   }, [
+    newCallsignsAbortControllerRef,
     newCallsignsLoadedKeyRef,
     newCallsignsPendingKeyRef,
     newCallsignsRequestRef,

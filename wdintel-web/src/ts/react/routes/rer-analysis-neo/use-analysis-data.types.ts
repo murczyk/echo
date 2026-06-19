@@ -20,6 +20,7 @@ import type {
   AnalysisAorEntry,
   AnalysisCountItem,
   AnalysisFilterOptions,
+  AnalysisFilterSectionLoadState,
   AnalysisFilterSectionId,
   AnalysisCenterTab,
   AnalysisGroupsActivityPeriod,
@@ -52,6 +53,10 @@ export type UseAnalysisDataResult = {
   countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
   filtersLoading: boolean;
+  filterSectionLoadStates: Record<AnalysisFilterSectionId, AnalysisFilterSectionLoadState>;
+  isFilterSectionLoading: (section: AnalysisFilterSectionId) => boolean;
+  isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
+  isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   downloadGeojson: () => Promise<void>;
   downloadKmz: () => Promise<void>;

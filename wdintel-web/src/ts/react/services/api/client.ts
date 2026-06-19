@@ -6,7 +6,7 @@ type JsonRequestObject = { [key: string]: JsonValue | undefined };
 export type JsonBody = JsonValue | JsonObject | JsonRequestObject;
 
 type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
-type RequestOptions = {
+export type RequestOptions = {
   signal?: AbortSignal;
 };
 
@@ -22,6 +22,10 @@ export class HttpRequestError extends Error {
 
 export function isUnauthorizedError(error: unknown): boolean {
   return error instanceof HttpRequestError && error.status === 401;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export async function tryRunAndReturnNullExceptUnauthorized<T>(request: () => Promise<T>): Promise<T | null> {

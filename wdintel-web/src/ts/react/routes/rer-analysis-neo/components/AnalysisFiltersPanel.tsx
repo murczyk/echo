@@ -2,11 +2,10 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { Badge, Box, Button, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerChip } from '../../../components/PowerChip';
-import type { AnalysisFilterSectionId } from '../types';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
@@ -20,6 +19,9 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     aorEntries,
     countsLoading,
     filtersLoading,
+    isFilterSectionEmptyLoading,
+    isFilterSectionLoading,
+    isFilterSectionStale,
     groupInfos,
     includeOnlyNewFreqs,
     loadedSavedFilter,
@@ -45,8 +47,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
   const [mobileExpanded, setMobileExpanded] = useState(false);
-  const [loadingSections, setLoadingSections] = useState<Partial<Record<FilterSectionId, boolean>>>({});
-
   const derived = useMemo(
     () =>
       buildAnalysisFiltersPanelDerivedData({
@@ -64,23 +64,10 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
 
-  const loadFilterSectionWithSpinner = useCallback(
-    async (section: AnalysisFilterSectionId) => {
-      setLoadingSections((current) => ({ ...current, [section]: true }));
-      try {
-        await loadFilterSection(section);
-      } finally {
-        setLoadingSections((current) => ({ ...current, [section]: false }));
-      }
-    },
-    [loadFilterSection],
-  );
-
   useEffect(() => {
     setMobileExpanded(!isMobileLayout);
   }, [isMobileLayout]);
 
-  const isSectionLoading = (section: FilterSectionId): boolean => loadingSections[section] === true;
   const showCompactToggle = isMobileLayout;
   const showFilterContent = !showCompactToggle || mobileExpanded;
 
@@ -183,8 +170,10 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
-                  isSectionLoading={isSectionLoading}
-                  loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
+                  isFilterSectionEmptyLoading={isFilterSectionEmptyLoading}
+                  isFilterSectionLoading={isFilterSectionLoading}
+                  isFilterSectionStale={isFilterSectionStale}
+                  loadFilterSection={loadFilterSection}
                   options={options}
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
@@ -236,8 +225,10 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
-                  isSectionLoading={isSectionLoading}
-                  loadFilterSectionWithSpinner={loadFilterSectionWithSpinner}
+                  isFilterSectionEmptyLoading={isFilterSectionEmptyLoading}
+                  isFilterSectionLoading={isFilterSectionLoading}
+                  isFilterSectionStale={isFilterSectionStale}
+                  loadFilterSection={loadFilterSection}
                   options={options}
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}

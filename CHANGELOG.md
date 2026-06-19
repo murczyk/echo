@@ -9,6 +9,10 @@
 
 ## NEXT
 
+- [#2555](https://github.com/echoua/echo/issues/2555) 🐞 Аналіз (нова): покращено обробку дублікатів груп.
+- [#2531](https://github.com/echoua/echo/issues/2531) 🐞 Аналіз (нова): виправлено/доопрацьовано поведінку фільтрів.
+- [#2554](https://github.com/echoua/echo/issues/2554) 🐞 Аналіз (нова): виправлено поведінку фільтра частот.
+- [#2552](https://github.com/echoua/echo/issues/2552) 🐞 Аналіз (нова): пришвидшено роботу фільтрів.
 - [#2496](https://github.com/echoua/echo/issues/2496) ✅ Мережі (нова): додано можливість створення мережі.
 - [#2506](https://github.com/echoua/echo/issues/2506) ✅ Мережі (нова): міграція сторінки мереж на новий рушій з покращеним дизайном.
 - [#2538](https://github.com/echoua/echo/issues/2538) 🐞 Випралено підтримку формату дати HH:MI:SS DD.MM.YYYY. 
