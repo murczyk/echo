@@ -211,7 +211,7 @@ async fn ensure_iggy_topics_for_api_integration(
         "Ensuring Iggy topics for API integration {}",
         api_integration.id
     );
-    crate::iggy::ensure_topics(
+    crate::iggy::ensure_topics_for_all_users(
         api_integration.iggy_url.as_deref().c(h!())?,
         api_integration.iggy_login.as_deref().c(h!())?,
         api_integration.iggy_password.as_deref().c(h!())?,
