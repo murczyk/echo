@@ -452,12 +452,46 @@ pub async fn report_docx(
 ) -> Result<HttpResponse, AppError> {
     info!("> Start RER report generation...");
 
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let user_login = user.id().context(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     let mut req = req.into_inner().clone();
     req.req.nolimit = Some(true);
+    let history_request =
+        crate::report_history::ReportHistoryRequest::AnalysisReport {
+            payload: Box::new(req.clone()),
+        };
+    let report_kind = req.kind.clone();
+    let result = report_docx_inner(&user_login, &env, &http_req, req).await;
+    let failed_msg = match &result {
+        Ok(resp) if !resp.status().is_success() => Some(format!(
+            "report generation returned HTTP status {}",
+            resp.status()
+        )),
+        Err(err) => Some(format!("{err:#?}")),
+        _ => None,
+    };
+    if let Some(failed_msg) = failed_msg {
+        crate::report_history::record_failed_report_nofail(
+            &env,
+            &user_login,
+            &report_kind,
+            history_request,
+            failed_msg,
+        )
+        .await;
+    }
+    result
+}
+
+async fn report_docx_inner(
+    user_login: &str,
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    req: types::ReportPreviewReq,
+) -> Result<HttpResponse, AppError> {
+    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
 
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
@@ -471,34 +505,27 @@ pub async fn report_docx(
         file_extension
     );
     let outpath = outfolder.join(&filename);
-    let user_login = user.id().context(h!())?;
     if req.kind == kinds::TAGS {
-        self::tag::report_docx_kind_tag(&user_login, &env, &req, &outpath)
+        self::tag::report_docx_kind_tag(user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::INTERCEPTION {
         self::interception::report_xlsx_kind_interception(
-            &user_login,
-            &env,
-            &req,
-            &outpath,
+            user_login, env, &req, &outpath,
         )
         .await
         .c(h!())?;
     } else if req.kind == kinds::BABAK {
-        self::babak::report_docx_kind_babak(&user_login, &env, &req, &outpath)
+        self::babak::report_docx_kind_babak(user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::MOUSE {
-        self::mouse::report_docx_kind_mouse(&user_login, &env, &req, &outpath)
+        self::mouse::report_docx_kind_mouse(user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::PELENGS {
         self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
-            &user_login,
-            &env,
-            &req,
-            &outpath,
+            user_login, env, &req, &outpath,
         )
         .await
         .c(h!())?;
@@ -519,8 +546,8 @@ pub async fn report_docx(
         self::senders::report_xlsx_kind_senders(
             aggregation,
             advanced_freqs,
-            &user_login,
-            &env,
+            user_login,
+            env,
             &req.req,
             &outpath,
         )
@@ -528,73 +555,62 @@ pub async fn report_docx(
         .c(h!())?;
     } else if req.kind == kinds::NAUSHNOM {
         self::naushnom::report_docx_kind_naushnom(
-            &user_login,
-            &env,
-            &req,
-            &outpath,
+            user_login, env, &req, &outpath,
         )
         .await
         .c(h!())?;
     } else if req.kind == kinds::REO {
         if let Some(resp) =
-            ensure_editor_report_permissions(&env, &user_login).await?
+            ensure_editor_report_permissions(env, user_login).await?
         {
             return Ok(resp);
         }
-        self::revo::report_docx_kind_revo(&user_login, &env, &req, &outpath)
+        self::revo::report_docx_kind_revo(user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::DIGEST {
         if let Some(resp) =
-            ensure_editor_report_permissions(&env, &user_login).await?
+            ensure_editor_report_permissions(env, user_login).await?
         {
             return Ok(resp);
         }
-        self::digest::report_docx_kind_digest(
-            &user_login,
-            &env,
-            &req,
-            &outpath,
-        )
-        .await
-        .c(h!())?;
+        self::digest::report_docx_kind_digest(user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
     } else if req.kind == kinds::POSTS_DOCX {
-        self::posts::report_docx_kind_posts(&user_login, &env, &req, &outpath)
+        self::posts::report_docx_kind_posts(user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::ACTIVE_NETWORKS {
         if let Some(resp) =
-            ensure_editor_report_permissions(&env, &user_login).await?
+            ensure_editor_report_permissions(env, user_login).await?
         {
             return Ok(resp);
         }
         self::active_networks::report_docx_kind_active_networks(
-            &env, &req, &outpath,
+            env, &req, &outpath,
         )
         .await
         .c(h!())?;
     } else if req.kind == kinds::NETWORK_FREQUENCIES {
         if let Some(resp) =
-            ensure_editor_report_permissions(&env, &user_login).await?
+            ensure_editor_report_permissions(env, user_login).await?
         {
             return Ok(resp);
         }
         self::network_frequencies::report_docx_kind_network_frequencies(
-            &env, &req, &outpath,
+            env, &req, &outpath,
         )
         .await
         .c(h!())?;
     } else if req.kind == kinds::REPORT_1213 {
         if let Some(resp) =
-            ensure_editor_report_permissions(&env, &user_login).await?
+            ensure_editor_report_permissions(env, user_login).await?
         {
             return Ok(resp);
         }
         self::report_1213::report_docx_kind_report_1213(
-            &user_login,
-            &env,
-            &req,
-            &outpath,
+            user_login, env, &req, &outpath,
         )
         .await
         .c(h!())?;
@@ -602,9 +618,18 @@ pub async fn report_docx(
         return Err(format!("Unknown report kind {}", req.kind).into());
     }
     let bytes = tokio::fs::read(&outpath).await.c(h!())?;
+    let file = actix_files::NamedFile::open(&outpath)?;
+    save_report_log(
+        &env.dbx,
+        format!("reports_log/{filename}"),
+        &serde_json::to_string(&req).context(h!())?,
+        user_login,
+    )
+    .await
+    .context(h!())?;
     crate::report_history::record_completed_report_nofail(
-        &env,
-        &user_login,
+        env,
+        user_login,
         &req.kind,
         crate::report_history::ReportHistoryRequest::AnalysisReport {
             payload: Box::new(req.clone()),
@@ -614,16 +639,7 @@ pub async fn report_docx(
         &bytes,
     )
     .await;
-    let file = actix_files::NamedFile::open(&outpath)?;
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
-    Ok(file.into_response(&http_req))
+    Ok(file.into_response(http_req))
 }
 
 /// Fills the comp_freq table with data about when the frequency was first seen.

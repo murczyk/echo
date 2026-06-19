@@ -1049,7 +1049,7 @@ pub async fn get_inbox_messages_report_unit(
         .from(Alias::new("cluster_centroids"))
         // @TODO: postgresql doesn't support CROSS JOIN LATERAL with ON
         .join_lateral(
-            JoinType::CrossJoin,
+            JoinType::InnerJoin,
             Query::select()
                 .column(settlement::Column::Name)
                 .expr_as(Expr::cust("ST_SetSRID(ST_MakePoint(lon, lat), 4326)"), Alias::new("geom"))
@@ -1058,7 +1058,7 @@ pub async fn get_inbox_messages_report_unit(
                 .limit(1)
                 .to_owned(),
             Alias::new("s"),
-            Expr::cust(""),
+            Expr::cust("TRUE"),
         )
         .to_owned();
 
@@ -1069,16 +1069,10 @@ pub async fn get_inbox_messages_report_unit(
         .clone()
         .query(main_query);
 
-    let query = &combined_query.to_string(PostgresQueryBuilder);
-    let raw_query = query.strip_suffix("ON ").unwrap();
-
-    print!("{raw_query}");
+    let raw_query = combined_query.to_string(PostgresQueryBuilder);
 
     let mut units = read_db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            raw_query.to_string(),
-        ))
+        .query_all(Statement::from_string(DatabaseBackend::Postgres, raw_query))
         .await
         .c(h!())?
         .iter()
