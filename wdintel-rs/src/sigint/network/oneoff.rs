@@ -200,9 +200,9 @@ pub async fn oneoff_migrate_modulation_to_encryption(
         });
     }
 
-    let already_has_data = encryption_has_data(&db).await?;
+    let needs_full_migration = freq_migration_pending(&db).await?;
 
-    if !already_has_data {
+    if needs_full_migration {
         if !modulation_exists {
             return Err(AppError::BL {
                 msg: "Таблиця 'modulation' не знайдена — неможливо виконати data-міграцію."
@@ -235,7 +235,7 @@ pub async fn oneoff_migrate_modulation_to_encryption(
             );
         }
     } else {
-        println!("\n══ Data-fix (encryption вже заповнена) ══════════════════════════════════");
+        println!("\n══ Data-fix (немає незмігрованих рядків modulation_id) ════════════════════");
         print_data_fix_preview(&db).await?;
 
         let txn = db.begin().await.c(h!())?;
@@ -270,13 +270,16 @@ async fn table_exists(
         .is_some())
 }
 
-async fn encryption_has_data(
+async fn freq_migration_pending(
     db: &DatabaseConnection,
 ) -> Result<bool, AppError> {
     Ok(db
         .query_one(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT 1 FROM encryption LIMIT 1".to_string(),
+            "SELECT 1 FROM sigint_network_freq \
+             WHERE modulation_id IS NOT NULL AND encryption_id IS NULL \
+             LIMIT 1"
+                .to_string(),
         ))
         .await
         .c(h!())?
