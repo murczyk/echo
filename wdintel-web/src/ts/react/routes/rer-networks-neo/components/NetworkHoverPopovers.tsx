@@ -4,8 +4,7 @@ import type { ReactNode } from 'react';
 
 import type { NetworkRowView } from '../helpers';
 import { buildNetworkFrequencyPopupGroups } from '../helpers';
-import { CompactPowerChip } from '../../../components/CompactPowerChip';
-import { buildFrequencyMetadataLabels, getLocationParts } from './NetworkCells';
+import { getLocationParts } from './NetworkCells';
 
 export const FREQUENCY_HOVER_POPPER_PLACEMENT = 'top-start';
 export const FREQUENCY_HOVER_POPPER_MODIFIERS: Array<{ name: string; options?: Record<string, unknown> }> = [
@@ -103,39 +102,6 @@ function FrequencyGroupDetails({ group }: { group: ReturnType<typeof buildNetwor
               }}
             >
               {freq.freq}
-            </Box>
-            <Box sx={{ ml: 'auto', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-              <Stack
-                direction="row"
-                spacing={0.5}
-                useFlexGap
-                sx={{
-                  flexWrap: 'nowrap',
-                  minWidth: 0,
-                  maxWidth: '100%',
-                  overflow: 'hidden',
-                  justifyContent: 'flex-end',
-                }}
-              >
-                {buildFrequencyMetadataLabels(freq).map((label) => (
-                  <CompactPowerChip
-                    key={label}
-                    label={label}
-                    interactive={false}
-                    title={label}
-                    sx={{
-                      maxWidth: '100%',
-                      minWidth: 0,
-                      '& .MuiChip-label': {
-                        maxWidth: '100%',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      },
-                    }}
-                  />
-                ))}
-              </Stack>
             </Box>
           </Stack>
         ))}

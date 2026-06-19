@@ -124,6 +124,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
 let locationReplaceSpy: any = null;
+let locationAssignSpy: any = null;
 let authUserRoles: string[] = ['Rer', 'Full'];
 
 function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
@@ -259,6 +260,7 @@ describe('useRerNetworksNeoPage', () => {
     authUserRoles = ['Rer', 'Full'];
 
     locationReplaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
+    locationAssignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -271,6 +273,8 @@ describe('useRerNetworksNeoPage', () => {
     latest = null;
     locationReplaceSpy?.mockRestore();
     locationReplaceSpy = null;
+    locationAssignSpy?.mockRestore();
+    locationAssignSpy = null;
     vi.useRealTimers();
   });
 
@@ -324,7 +328,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.postOptions).toEqual([{ id: 2, label: '_stihl_XN Пост' }]);
   });
 
-  it('creates a network and refreshes the list with the create request mapping', async () => {
+  it('creates a network and redirects to the new network details page', async () => {
     await renderHook();
     await flushEffects();
 
@@ -390,7 +394,8 @@ describe('useRerNetworksNeoPage', () => {
     });
     expect(latest?.createDialog).toBeNull();
     expect(latest?.status).toEqual({ kind: 'success', text: 'Мережу створено.' });
-    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+    expect(locationAssignSpy).toHaveBeenCalledWith('/rer-networks-neo/3');
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
   });
 
   it('keeps backend row order when the server returns a custom sort', async () => {
