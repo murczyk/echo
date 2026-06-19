@@ -212,7 +212,7 @@ mod tests {
     use super::{audio_temp_suffix, spectrogram_png_path, wave_png_path};
     use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
     use crate::entities::signal_message_media;
-    use sea_orm::prelude::DateTimeUtc;
+    use sea_orm::prelude::DateTime;
     use std::path::PathBuf;
 
     fn media(
@@ -227,7 +227,7 @@ mod tests {
             file_ext: file_ext.map(str::to_string),
             file_name: file_name.map(str::to_string),
             size_bytes: 0,
-            created_at: DateTimeUtc::default(),
+            created_at: DateTime::default(),
         }
     }
 
