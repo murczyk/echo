@@ -873,6 +873,46 @@ bgtaskStatusAndLogsQueryEncoder struct =
         ]
 
 
+type alias ReportHistoryRow =
+    { id : Int
+    , reportKind : String
+    , createdAt : String
+    , status : String
+    , completedAt : Maybe (String)
+    , hasFile : Bool
+    , fileName : Maybe (String)
+    , contentType : Maybe (String)
+    , bgtaskId : Maybe (Int)
+    }
+
+
+reportHistoryRowEncoder : ReportHistoryRow -> Json.Encode.Value
+reportHistoryRowEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "report_kind", (Json.Encode.string) struct.reportKind )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
+        , ( "has_file", (Json.Encode.bool) struct.hasFile )
+        , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
+        , ( "content_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentType )
+        , ( "bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.bgtaskId )
+        ]
+
+
+type alias ReportHistoryIdReq =
+    { id : Int
+    }
+
+
+reportHistoryIdReqEncoder : ReportHistoryIdReq -> Json.Encode.Value
+reportHistoryIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
 type alias DownloadLayerResultReq =
     { bgtaskId : Int
     }
@@ -4899,6 +4939,7 @@ type alias ReportPreviewReq =
     , report1213LinkedNetworksOnly : Maybe (Bool)
     , withoutComments : Maybe (Bool)
     , interceptionKeepFullMessage : Maybe (Bool)
+    , interceptionKeepOldColors : Maybe (Bool)
     , digestOmitExoId : Maybe (Bool)
     , digestForm1217 : Maybe (Bool)
     }
@@ -4914,6 +4955,7 @@ reportPreviewReqEncoder struct =
         , ( "report_1213_linked_networks_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.report1213LinkedNetworksOnly )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutComments )
         , ( "interception_keep_full_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepFullMessage )
+        , ( "interception_keep_old_colors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepOldColors )
         , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestOmitExoId )
         , ( "digest_form_1_2_17", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestForm1217 )
         ]
@@ -6417,6 +6459,52 @@ networkStatusEncoder enum =
         NetworkInactive ->
             Json.Encode.string "NetworkInactive"
 
+type ListNetworksStatusFilter
+    = ListNetworksActive
+    | ListNetworksInactive
+    | ListNetworksArchived
+
+
+listNetworksStatusFilterEncoder : ListNetworksStatusFilter -> Json.Encode.Value
+listNetworksStatusFilterEncoder enum =
+    case enum of
+        ListNetworksActive ->
+            Json.Encode.string "ListNetworksActive"
+        ListNetworksInactive ->
+            Json.Encode.string "ListNetworksInactive"
+        ListNetworksArchived ->
+            Json.Encode.string "ListNetworksArchived"
+
+type alias ListNetworksStatusCountsRsp =
+    { active : Int
+    , inactive : Int
+    , archived : Int
+    }
+
+
+listNetworksStatusCountsRspEncoder : ListNetworksStatusCountsRsp -> Json.Encode.Value
+listNetworksStatusCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "active", (Json.Encode.int) struct.active )
+        , ( "inactive", (Json.Encode.int) struct.inactive )
+        , ( "archived", (Json.Encode.int) struct.archived )
+        ]
+
+
+type alias ListNetworksRsp =
+    { list : List (Network)
+    , statusCounts : ListNetworksStatusCountsRsp
+    }
+
+
+listNetworksRspEncoder : ListNetworksRsp -> Json.Encode.Value
+listNetworksRspEncoder struct =
+    Json.Encode.object
+        [ ( "list", (Json.Encode.list (networkEncoder)) struct.list )
+        , ( "status_counts", (listNetworksStatusCountsRspEncoder) struct.statusCounts )
+        ]
+
+
 type alias UpdateFreqNetworksReq =
     { freq : String
     , networks : List (UpdFreqNetwork)
@@ -6896,9 +6984,17 @@ updFreqNetworkEncoder struct =
 type alias ListNetworksReq =
     { filterFreq : Maybe (String)
     , filterUnit : Maybe (String)
+    , filterUnitArmy : Maybe (String)
+    , filterUnitDivision : Maybe (String)
+    , filterUnitRegiment : Maybe (String)
+    , filterUnitBattalion : Maybe (String)
+    , filterText : Maybe (String)
+    , filterName : Maybe (String)
+    , filterLocation : Maybe (String)
     , showOnlyFurtherInverstigation : Maybe (Bool)
     , showInactive : Maybe (Bool)
     , showOnlyDeleted : Maybe (Bool)
+    , statusFilter : Maybe (ListNetworksStatusFilter)
     , aorIds : Maybe (List (Int))
     , ids : Maybe (List (Int))
     , limit : Maybe (Int)
@@ -6912,9 +7008,17 @@ listNetworksReqEncoder struct =
     Json.Encode.object
         [ ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
+        , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmy )
+        , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitDivision )
+        , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitRegiment )
+        , ( "filter_unit_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitBattalion )
+        , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterText )
+        , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterName )
+        , ( "filter_location", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterLocation )
         , ( "show_only_further_inverstigation", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.showOnlyFurtherInverstigation )
         , ( "show_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.showInactive )
         , ( "show_only_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.showOnlyDeleted )
+        , ( "status_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (listNetworksStatusFilterEncoder)) struct.statusFilter )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
         , ( "ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.ids )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
@@ -6926,6 +7030,14 @@ listNetworksReqEncoder struct =
 type ListNetworksSortBy
     = NameAsc
     | NameDesc
+    | LastActivityAsc
+    | LastActivityDesc
+    | AorAsc
+    | AorDesc
+    | NetworkFreqAsc
+    | NetworkFreqDesc
+    | LocationAsc
+    | LocationDesc
 
 
 listNetworksSortByEncoder : ListNetworksSortBy -> Json.Encode.Value
@@ -6935,6 +7047,22 @@ listNetworksSortByEncoder enum =
             Json.Encode.string "NameAsc"
         NameDesc ->
             Json.Encode.string "NameDesc"
+        LastActivityAsc ->
+            Json.Encode.string "LastActivityAsc"
+        LastActivityDesc ->
+            Json.Encode.string "LastActivityDesc"
+        AorAsc ->
+            Json.Encode.string "AorAsc"
+        AorDesc ->
+            Json.Encode.string "AorDesc"
+        NetworkFreqAsc ->
+            Json.Encode.string "FreqAsc"
+        NetworkFreqDesc ->
+            Json.Encode.string "FreqDesc"
+        LocationAsc ->
+            Json.Encode.string "LocationAsc"
+        LocationDesc ->
+            Json.Encode.string "LocationDesc"
 
 type alias NetworkUnitStatRow =
     { unitId : Int
@@ -10940,6 +11068,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_1213_linked_networks_only" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_full_message" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_old_colors" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_form_1_2_17" (Json.Decode.nullable (Json.Decode.bool))))
 
@@ -11987,6 +12116,53 @@ networkStatusDecoder =
                 )
         ]
 
+listNetworksStatusFilterDecoder : Json.Decode.Decoder ListNetworksStatusFilter
+listNetworksStatusFilterDecoder = 
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ListNetworksActive" ->
+                            Json.Decode.succeed ListNetworksActive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ListNetworksInactive" ->
+                            Json.Decode.succeed ListNetworksInactive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ListNetworksArchived" ->
+                            Json.Decode.succeed ListNetworksArchived
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+listNetworksStatusCountsRspDecoder : Json.Decode.Decoder ListNetworksStatusCountsRsp
+listNetworksStatusCountsRspDecoder =
+    Json.Decode.succeed ListNetworksStatusCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inactive" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.int)))
+
+
+listNetworksRspDecoder : Json.Decode.Decoder ListNetworksRsp
+listNetworksRspDecoder =
+    Json.Decode.succeed ListNetworksRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (networkDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_counts" (listNetworksStatusCountsRspDecoder)))
+
+
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
 updateFreqNetworksReqDecoder =
     Json.Decode.succeed UpdateFreqNetworksReq
@@ -12201,9 +12377,17 @@ listNetworksReqDecoder =
     Json.Decode.succeed ListNetworksReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_battalion" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_location" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_further_inverstigation" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_inactive" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_deleted" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_filter" (Json.Decode.nullable (listNetworksStatusFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
@@ -12229,6 +12413,78 @@ listNetworksSortByDecoder =
                     case x of
                         "NameDesc" ->
                             Json.Decode.succeed NameDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "LastActivityAsc" ->
+                            Json.Decode.succeed LastActivityAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "LastActivityDesc" ->
+                            Json.Decode.succeed LastActivityDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AorAsc" ->
+                            Json.Decode.succeed AorAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AorDesc" ->
+                            Json.Decode.succeed AorDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "FreqAsc" ->
+                            Json.Decode.succeed NetworkFreqAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "FreqDesc" ->
+                            Json.Decode.succeed NetworkFreqDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "LocationAsc" ->
+                            Json.Decode.succeed LocationAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "LocationDesc" ->
+                            Json.Decode.succeed LocationDesc
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )

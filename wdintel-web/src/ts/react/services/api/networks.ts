@@ -1,12 +1,15 @@
 import type {
   AddNetworkFreqReq,
   CreateEncryptionKeyReq,
+  CreateNetworkReq,
   AddNetworkDescriptionsReq,
   DeleteNetworkDescriptionReq,
   DeleteNetworkFreqReq,
+  EtalonkaJimForksReq,
   EtalonkaNetworkBatchReq,
   EtalonkaReportType,
   ListNetworksReq,
+  ListNetworksRsp,
   ListKeysReq,
   Network,
   NetworkGroupsActivityOneReq,
@@ -23,6 +26,7 @@ import type {
   NetworkCallsignRelationsRsp,
   NetworkCallsignRelationMessagesReq,
   NetworkCallsignRelationMessagesRsp,
+  NetworkGroupsActivityReq,
   UpdateNetworkDescriptionReq,
   UpdateNetworkFreqReq,
   UpdateNetworkPostsReq,
@@ -31,29 +35,42 @@ import type {
   EncryptionKeyData,
 } from '../../../../Bindings';
 import { postBytes, postJson } from './client';
+import { downloadReportHistory } from './report-history';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 type RequestOptions = {
   signal?: AbortSignal;
 };
 
+export async function listNetworks(req: ListNetworksReq, options?: RequestOptions): Promise<ListNetworksRsp> {
+  const data = await postJson<ListNetworksRsp>('/api/sigint/network-list', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<ListNetworksRsp>(data);
+}
+
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
-export async function getNetworksList(): Promise<Network[]> {
+export async function getNetworksList(options?: RequestOptions): Promise<Network[]> {
   const req: ListNetworksReq = {
-    filterFreq: '',
+    filterFreq: null,
     filterUnit: null,
+    filterUnitArmy: null,
+    filterUnitDivision: null,
+    filterUnitRegiment: null,
+    filterUnitBattalion: null,
+    filterText: '',
+    filterName: null,
+    filterLocation: null,
     showOnlyFurtherInverstigation: null,
     showInactive: true,
     showOnlyDeleted: false,
+    statusFilter: null,
     aorIds: null,
     ids: null,
     limit: null,
     offset: null,
     sortBy: ['NameAsc'],
   };
-  const data = await postJson<Network[]>('/api/sigint/network-list', req);
-  const normalizedData = transformSnakeToCamel(data);
-  return Array.isArray(normalizedData) ? normalizedData : [];
+  const data = await listNetworks(req, options);
+  return data.list ?? [];
 }
 
 /** Fetch networks by IDs */
@@ -104,6 +121,24 @@ export async function getNetworkGroupsActivityOne(networkId: number): Promise<Re
     tillDateNoninclusiveMs: null,
   } satisfies NetworkGroupsActivityOneReq));
   return data;
+}
+
+export async function getNetworksGroupsActivity(
+  req: NetworkGroupsActivityReq,
+  options?: RequestOptions,
+): Promise<Record<string, Record<string, Record<string, number>>>> {
+  const data = await postJson<Record<string, Record<string, Record<string, number>>>>(
+    '/api/sigint/network-group-activity',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<Record<string, Record<string, Record<string, number>>>>(data);
+}
+
+export async function getNetworkUnitStats(): Promise<Array<{ unitId: number; count: number }>> {
+  const data = await postJson<{ units: Array<{ unit_id: number; count: number }> }>('/api/sigint/network/unit-stats');
+  const normalized = transformSnakeToCamel<{ units: Array<{ unitId: number; count: number }> }>(data);
+  return normalized.units ?? [];
 }
 
 export async function listNetworkPoints(req: ListNetworkPointsReq): Promise<ListNetworkPointsRsp> {
@@ -170,6 +205,11 @@ export async function deleteNetwork(networkId: number): Promise<Network> {
   return transformSnakeToCamel<Network>(data);
 }
 
+export async function createNetwork(req: CreateNetworkReq): Promise<Network> {
+  const data = await postJson<Network>('/api/sigint/create-network', transformCamelToSnake(req));
+  return transformSnakeToCamel<Network>(data);
+}
+
 function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
   if ('AccordingToTheForm' in etalonkaType) {
     return {
@@ -198,6 +238,36 @@ export async function downloadNetworkEtalonkaReport(req: EtalonkaNetworkBatchReq
   const body = transformCamelToSnake(req) as Record<string, unknown>;
   body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
   return postBytes('/api/sigint/etalonka/report-networks-batch-id', body as any);
+}
+
+export async function downloadNetworksEtalonkaReport(req: EtalonkaJimForksReq): Promise<Blob> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postBytes('/api/sigint/etalonka/report-networks', body as any);
+}
+
+export async function launchNetworksEtalonkaReportTask(req: EtalonkaJimForksReq): Promise<number> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postJson<number>('/api/sigint/etalonka/report-networks-task-launch', body as any);
+}
+
+export async function launchNetworkEtalonkaBatchReportTask(req: EtalonkaNetworkBatchReq): Promise<number> {
+  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  body.etalonka_type = toEtalonkaReportTypeBody(req.etalonkaType);
+  return postJson<number>('/api/sigint/etalonka/report-networks-batch-id-task-launch', body as any);
+}
+
+export async function downloadNetworkEtalonkaReportTaskResult(taskId: number): Promise<Blob> {
+  return downloadReportHistory(taskId);
+}
+
+export async function downloadNetworkGoiReport(): Promise<Blob> {
+  return postBytes('/api/sigint/network/report-networks-goi');
+}
+
+export async function launchNetworkGoiReportTask(): Promise<number> {
+  return postJson<number>('/api/sigint/network/report-networks-goi-task-launch');
 }
 
 export async function updateNetworkPosts(req: UpdateNetworkPostsReq): Promise<Network> {

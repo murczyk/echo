@@ -11,14 +11,14 @@ import {
   Typography,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 import type { ModulationRec, NetworkFreqsRes } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { type NetworkFreqEditForm } from '../use-rer-network-details-neo-page.shared';
-import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
-import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
+import { parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
+import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
 import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
 
@@ -32,11 +32,35 @@ type Props = {
   onClose: () => void;
   onChange: (next: NetworkFreqEditForm | null) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
-function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modulations, onClose, onChange, onSave }: Props) {
+function NetworkFreqEditDrawerComponent({
+  open,
+  form,
+  freq,
+  saving,
+  error,
+  modulations,
+  onClose,
+  onChange,
+  onSave,
+  disableRestoreFocus = false,
+}: Props) {
   const titleId = 'network-freq-edit-drawer-title';
+  const [activePeriodTouched, setActivePeriodTouched] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setActivePeriodTouched(false);
+  }, [open, form?.networkFreqId]);
+
+  const activeFromValidationError = form && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
+  const activeToValidationError = form && form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
+  const activeFromError = activePeriodTouched ? activeFromValidationError : null;
+  const activeToError = activePeriodTouched ? activeToValidationError : null;
   const formBlocked = saving;
+  const saveDisabled = saving || !form || activeFromValidationError !== null || activeToValidationError !== null;
 
   const modulationItems = useMemo(
     () =>
@@ -60,6 +84,7 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
       open={open}
       onClose={saving ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },
@@ -129,20 +154,19 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
                 </Select>
               </FormControl>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <NetworkFreqDatePickerField
-                  label="Активна з"
-                  value={form.activeFrom}
-                  onChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
-                  disabled={formBlocked}
-                />
-
-                <NetworkFreqActivityControl
-                  activeTo={form.activeTo}
-                  onChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
-                  disabled={formBlocked}
-                />
-              </Box>
+              <NetworkFreqActivityPeriodControl
+                activeFrom={form.activeFrom}
+                activeTo={form.activeTo}
+                onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
+                onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
+                onActiveFromBlur={() => setActivePeriodTouched(true)}
+                onActiveToBlur={() => setActivePeriodTouched(true)}
+                disabled={formBlocked}
+                activeFromError={activeFromError !== null}
+                activeFromHelperText={activeFromError ?? undefined}
+                activeToError={activeToError !== null}
+                activeToHelperText={activeToError ?? undefined}
+              />
             </>
           ) : null}
         </Stack>
@@ -161,7 +185,7 @@ function NetworkFreqEditDrawerComponent({ open, form, freq, saving, error, modul
         <Button onClick={onClose} disabled={saving}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant="contained" disabled={saving || !form}>
+        <Button onClick={onSave} variant="contained" disabled={saveDisabled}>
           {saving ? <CircularProgress size={16} color="inherit" /> : 'Зберегти'}
         </Button>
       </Box>

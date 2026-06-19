@@ -3620,6 +3620,8 @@ update user shared route msg model =
                                 Nothing
                         , interceptionKeepFullMessage =
                             Nothing
+                        , interceptionKeepOldColors =
+                            Nothing
                         , digestOmitExoId =
                             if model.reportTemplate == RTDigest then
                                 Just model.reportDigestOmitExoId

@@ -21,6 +21,7 @@ type Props = {
   referenceDataReady: boolean;
   onSetEditForm: (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
 function EditPalitraDrawerComponent({
@@ -38,14 +39,16 @@ function EditPalitraDrawerComponent({
   referenceDataReady,
   onSetEditForm,
   onSave,
+  disableRestoreFocus = false,
 }: Props) {
   const formBlocked = editInFlight || !referenceDataReady;
 
   return (
-    <Drawer
+      <Drawer
       anchor="right"
       open={open}
       onClose={editInFlight ? undefined : onClose}
+      ModalProps={{ disableRestoreFocus }}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>

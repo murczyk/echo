@@ -335,7 +335,7 @@ export function NetworkDetailsDescriptionsPanel({
 
   return (
     <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', flex: 1 }}>
-      <Box sx={{ px: 2, pt: 2, pb: 3, minHeight: 0 }}>
+      <Box sx={{ p: 2, minHeight: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
           <Typography variant="h6">{sectionTitle}</Typography>
           {canManageDescriptions ? (

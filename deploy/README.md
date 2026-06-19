@@ -218,6 +218,11 @@ Make sure your nginx (`brew install nginx`) has the following configuration (`/o
             try_files $uri $uri/ /;
             add_header Cache-Control "no-cache";
         }
+        location /src/ { include /etc/nginx/echo-dev-front-proxy.inc; }
+        location /.elm-land/ { include /etc/nginx/echo-dev-front-proxy.inc; }
+        location /@vite/ { include /etc/nginx/echo-dev-front-proxy.inc; }
+        location /@id/ { include /etc/nginx/echo-dev-front-proxy.inc; }
+        location /node_modules/.vite/ { include /etc/nginx/echo-dev-front-proxy.inc; }
         location /api {
             proxy_pass http://localhost:8081;
             proxy_set_header Host $host;

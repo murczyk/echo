@@ -37,6 +37,7 @@ const PARAGRAPH_2_STYLE_NAME: &str = "Paragraph 2";
 const TABLE_HEADER_STYLE_NAME: &str = "Table Header";
 
 pub mod query;
+pub mod task;
 pub mod types;
 pub mod util;
 
@@ -2177,9 +2178,17 @@ mod tests {
             req: ListNetworksReq {
                 filter_freq: None,
                 filter_unit: None,
+                filter_unit_army: None,
+                filter_unit_division: None,
+                filter_unit_regiment: None,
+                filter_unit_battalion: None,
+                filter_text: None,
+                filter_name: None,
+                filter_location: None,
                 show_only_further_inverstigation: None,
                 show_inactive: None,
                 show_only_deleted: None,
+                status_filter: None,
                 aor_ids: None,
                 ids: None,
                 limit: None,

@@ -19,9 +19,21 @@ type Props = {
   onClose: () => void;
   onChange: (next: CallsignEditForm) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
-export function EditCallsignDrawer({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
+export function EditCallsignDrawer({
+  open,
+  form,
+  units,
+  sources,
+  submitting,
+  error,
+  onClose,
+  onChange,
+  onSave,
+  disableRestoreFocus = false,
+}: Props) {
   const titleId = 'callsigns-edit-drawer-title';
   const latestFormRef = useRef<CallsignEditForm | null>(form);
 
@@ -54,6 +66,7 @@ export function EditCallsignDrawer({ open, form, units, sources, submitting, err
       open={open}
       onClose={submitting ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

@@ -64,6 +64,13 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
     (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) => column.id || column.columnDef.id || column.columnDef.accessorKey || '',
     [],
   );
+  const isColumnVisible = useCallback(
+    (column: unknown, columnIdentifier: string) => {
+      const getIsVisible = typeof column === 'object' && column !== null ? (column as { getIsVisible?: () => boolean }).getIsVisible : undefined;
+      return getIsVisible?.() ?? tableStateContext.columnVisibility[columnIdentifier] ?? true;
+    },
+    [tableStateContext.columnVisibility],
+  );
   const sortedColumns = allColumns.sort((c1, c2) => {
     return (
       tableStateContext.columnOrder.findIndex((c) => c === getColumnIdentifier(c1)) -
@@ -146,7 +153,7 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
                             control={
                               <Switch
                                 onChange={(event) => onToggleColumn(event, childColumnIdentifier)}
-                                checked={tableStateContext.columnVisibility[childColumnIdentifier] || false}
+                                checked={isColumnVisible(childColumn, childColumnIdentifier)}
                                 size="small"
                               />
                             }
@@ -164,12 +171,7 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             return (
               <div key={columnIdentifier}>
                 <FormControlLabel
-                  control={
-                    <Switch
-                      onChange={(event) => onToggleColumn(event, columnIdentifier)}
-                      checked={tableStateContext.columnVisibility[columnIdentifier] || false}
-                    />
-                  }
+                  control={<Switch onChange={(event) => onToggleColumn(event, columnIdentifier)} checked={isColumnVisible(column, columnIdentifier)} />}
                   label={column.columnDef.header}
                   onClick={(e) => e.stopPropagation()}
                 />

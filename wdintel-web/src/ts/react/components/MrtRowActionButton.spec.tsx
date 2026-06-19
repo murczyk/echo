@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/icons-material/MoreVert', () => ({
   default: () => <span>more-icon</span>,
@@ -103,6 +103,10 @@ describe('mrtRowActionsColumnSize', () => {
 describe('MrtRowActions', () => {
   const rendered: Rendered[] = [];
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
     for (const item of rendered.splice(0)) {
       act(() => {
@@ -110,6 +114,7 @@ describe('MrtRowActions', () => {
       });
       item.container.remove();
     }
+    vi.useRealTimers();
   });
 
   it('renders one action directly without a menu button', async () => {
@@ -128,13 +133,52 @@ describe('MrtRowActions', () => {
     expect(view.container.querySelector('[data-testid="overflow-menu"]')).toBeNull();
   });
 
+  it('defers a direct modal action and blurs the active element first', async () => {
+    const onEdit = vi.fn();
+    const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
+    const view = await renderComponent(
+      <MrtRowActions>
+        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} opensModal />
+      </MrtRowActions>,
+    );
+    rendered.push(view);
+
+    const button = getButtons(view.container)[0]!;
+    button.focus();
+    await click(button);
+
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(blurSpy).toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    blurSpy.mockRestore();
+  });
+
+  it('keeps a direct non-modal action immediate', async () => {
+    const onSelect = vi.fn();
+    const view = await renderComponent(
+      <MrtRowActions>
+        <MrtRowActionButton label="У фільтр" onClick={onSelect} icon={<span>filter-icon</span>} />
+      </MrtRowActions>,
+    );
+    rendered.push(view);
+
+    await click(getButtons(view.container)[0]!);
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
   it('renders two actions as a single menu button and keeps both actions in the menu', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" />
+        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" opensModal />
       </MrtRowActions>,
     );
     rendered.push(view);
@@ -159,9 +203,42 @@ describe('MrtRowActions', () => {
     expect(menuButtons[1]?.textContent).toContain('Видалити');
     expect(menuButtons[1]?.textContent).toContain('delete-icon');
 
+    const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
+    blurSpy.mockClear();
+
     await click(menuButtons[1]!);
 
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(blurSpy).toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(onDelete).toHaveBeenCalledTimes(1);
+    blurSpy.mockRestore();
+  });
+
+  it('calls non-modal overflow actions immediately without deferring them', async () => {
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const view = await renderComponent(
+      <MrtRowActions>
+        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
+        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" opensModal />
+      </MrtRowActions>,
+    );
+    rendered.push(view);
+
+    await click(getButtons(view.container)[0]!);
+
+    const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
+    blurSpy.mockClear();
+
+    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    await click(menuButtons[0]!);
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(blurSpy).not.toHaveBeenCalled();
+    blurSpy.mockRestore();
   });
 
   it('renders three-plus actions as a single menu button with all entries in the menu', async () => {

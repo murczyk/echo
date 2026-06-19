@@ -377,7 +377,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           },
           descriptionDrawerSaving: false,
           descriptionDrawerError: null,
-          activeNetworkDetailsTab: 'descriptions',
+          activeNetworkDetailsTab: current.activeNetworkDetailsTab,
           deleteDescriptionDialogOpen: false,
           deleteDescriptionTarget: null,
           deleteDescriptionSubmitting: false,

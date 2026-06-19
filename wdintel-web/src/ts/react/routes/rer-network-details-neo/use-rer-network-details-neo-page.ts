@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
+import { buildRerNetworkDetailsNeoPageViewModel } from './use-rer-network-details-neo-page.view-model';
 import {
   EMPTY_STATE,
   buildLookupMap,
@@ -21,19 +22,27 @@ import {
   type NetworkDetailsNeoPageState,
   type NetworkOption,
 } from './use-rer-network-details-neo-page.shared';
+import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
 import {
   parseDateInputExclusiveEndInTimeZone,
   parseDateInputInTimeZone,
 } from '../../utils/misc';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
+import { readRequestedNetworkDetailsTab, resolveRequestedNetworkDetailsTab } from './network-details-tab-url';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
 }
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
-  const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
+  const initialRequestedTab = typeof window === 'undefined' ? null : readRequestedNetworkDetailsTab(window.location.search);
+  const [state, setState] = useState<NetworkDetailsNeoPageState>(() => ({
+    ...EMPTY_STATE,
+    activeNetworkDetailsTab: initialRequestedTab === null
+      ? EMPTY_STATE.activeNetworkDetailsTab
+      : resolveRequestedNetworkDetailsTab(initialRequestedTab, true, true),
+  }));
   const pageReloadGeneration = useRef(0);
   const frequencyReloadGeneration = useRef(0);
   const currentNetworkIdRef = useRef<number | null>(null);
@@ -62,10 +71,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
 
-  const aorOptions = useMemo(() => buildOptions(state.aors), [state.aors]);
+  const aorOptions = useMemo(() => buildOptions(sortNetworkAorsForDisplay(state.aors)), [state.aors]);
   const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
   const unitOptions = useMemo(() => buildOptions(selectableUnits), [selectableUnits]);
-  const postOptions = useMemo(() => buildOptions(state.posts), [state.posts]);
+  const postOptions = useMemo(() => buildOptions(state.posts.filter((post) => post.name.trim() !== '')), [state.posts]);
 
   const confirmationDescriptions = useMemo(() => {
     const descriptions = state.network?.descriptions ?? [];
@@ -261,7 +270,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   useEffect(() => {
     if (state.network === null) return;
-    if (state.activeNetworkDetailsTab !== 'pelengation') return;
+    if (state.activeNetworkDetailsTab !== 'direction-finding') return;
 
     const pelengWindowMatched =
       state.pelengPointsRequestedFrom === pelengSinceMs &&
@@ -293,8 +302,19 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     return formatTransferTypeLabel(state.network?.freqs ?? [], modulationsById);
   }, [modulationsById, state.network?.freqs]);
 
-  return {
-    ...state,
+  const requestedTab = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return readRequestedNetworkDetailsTab(window.location.search);
+  }, []);
+
+  useEffect(() => {
+    if (!requestedTab) return;
+    const nextTab = resolveRequestedNetworkDetailsTab(requestedTab, canViewActivityTab, canViewRelationsTab);
+    setState((current) => (current.activeNetworkDetailsTab === nextTab ? current : { ...current, activeNetworkDetailsTab: nextTab }));
+  }, [canViewActivityTab, canViewRelationsTab, requestedTab]);
+
+  return buildRerNetworkDetailsNeoPageViewModel({
+    state,
     status,
     canDelete,
     canEdit,
@@ -314,183 +334,28 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     postOptions,
     confirmationDescriptions,
     signDescriptions,
-    activeNetworkDetailsTab: state.activeNetworkDetailsTab,
-    setActiveNetworkDetailsTab: actions.setActiveNetworkDetailsTab,
-    loadFrequencies: actions.loadFrequencies,
-    loadCallsigns: actions.loadCallsigns,
-    expandedDescriptionIds: state.expandedDescriptionIds,
-    toggleDescriptionExpanded: actions.toggleDescriptionExpanded,
-    freqs: state.freqs,
-    freqsLoaded: state.freqsLoaded,
-    freqsLoading: state.freqsLoading,
-    freqsError: state.freqsError,
-    freqActivityByFreq: state.freqActivityByFreq,
-    networkActivity: state.networkActivity,
-    networkActivityLoaded: state.networkActivityLoaded,
-    networkActivityLoading: state.networkActivityLoading,
-    networkActivityError: state.networkActivityError,
-    pelengPoints: state.pelengPoints,
-    pelengPointsLoaded: state.pelengPointsLoaded,
-    pelengPointsLoading: state.pelengPointsLoading,
-    pelengPointsError: state.pelengPointsError,
-    expandedFrequencyGroupIds: state.expandedFrequencyGroupIds,
-    toggleFrequencyGroupExpanded: actions.toggleFrequencyGroupExpanded,
-    openFreqCreateWizard: actions.openFreqCreateWizard,
-    closeFreqCreateWizard: actions.closeFreqCreateWizard,
-    setFreqCreateWizardForm: actions.setFreqCreateWizardForm,
-    setFreqCreateWizardStep: actions.setFreqCreateWizardStep,
-    freqCreateWizardOpen: state.freqCreateWizardOpen,
-    freqCreateWizardStep: state.freqCreateWizardStep,
-    freqCreateWizardForm: state.freqCreateWizardForm,
-    freqCreateWizardSaving: state.freqCreateWizardSaving,
-    freqCreateWizardError: state.freqCreateWizardError,
-    saveFreqCreateWizard: actions.saveFreqCreateWizard,
-    openFreqEditDrawer: actions.openFreqEditDrawer,
-    closeFreqEditDrawer: actions.closeFreqEditDrawer,
-    setFreqEditDrawerForm: actions.setFreqEditDrawerForm,
-    freqEditDrawerOpen: state.freqEditDrawerOpen,
-    freqEditDrawerForm: state.freqEditDrawerForm,
-    freqEditDrawerSaving: state.freqEditDrawerSaving,
-    freqEditDrawerError: state.freqEditDrawerError,
-    saveFreqEditDrawer: actions.saveFreqEditDrawer,
-    openFreqTechDrawer: actions.openFreqTechDrawer,
-    closeFreqTechDrawer: actions.closeFreqTechDrawer,
-    setFreqTechDrawerForm: actions.setFreqTechDrawerForm,
-    freqTechDrawerOpen: state.freqTechDrawerOpen,
-    freqTechDrawerForm: state.freqTechDrawerForm,
-    freqTechDrawerSaving: state.freqTechDrawerSaving,
-    freqTechDrawerError: state.freqTechDrawerError,
-    saveFreqTechDrawer: actions.saveFreqTechDrawer,
-    openFreqRowActions: actions.openFreqRowActions,
-    closeFreqRowActions: actions.closeFreqRowActions,
-    freqRowActionMenuAnchorEl: state.freqRowActionMenuAnchorEl,
-    freqRowActionTargetId: state.freqRowActionTargetId,
-    openDeleteFreqDialog: actions.openDeleteFreqDialog,
-    closeDeleteFreqDialog: actions.closeDeleteFreqDialog,
-    freqDeleteDialogOpen: state.freqDeleteDialogOpen,
-    freqDeleteTarget: state.freqDeleteTarget,
-    freqDeleteSubmitting: state.freqDeleteSubmitting,
-    freqDeleteError: state.freqDeleteError,
-    deleteFreq: actions.deleteFreq,
-    callsignSectionMode: state.callsignSectionMode,
-    setCallsignSectionMode: actions.setCallsignSectionMode,
-    callsignStatusFilter: state.callsignStatusFilter,
-    setCallsignStatusFilter: actions.setCallsignStatusFilter,
-    callsignInterceptedExpanded: state.callsignInterceptedExpanded,
-    toggleCallsignInterceptedExpanded: actions.toggleCallsignInterceptedExpanded,
-    networkCallsigns: state.networkCallsigns,
-    catalogCallsignGroups: state.catalogCallsignGroups,
-    unknownInterceptedCallsigns: state.unknownInterceptedCallsigns,
-    callsignsLoaded: state.callsignsLoaded,
-    callsignsLoading: state.callsignsLoading,
-    callsignsError: state.callsignsError,
-    callsignCreateInFlightCallsigns: state.callsignCreateInFlightCallsigns,
-    callsignCatalogAddInFlightIds: state.callsignCatalogAddInFlightIds,
-    callsignUpdateInFlightIds: state.callsignUpdateInFlightIds,
-    callsignDeleteInFlightIds: state.callsignDeleteInFlightIds,
-    callsignDrawerOpen: state.callsignDrawerOpen,
-    callsignDrawerMode: state.callsignDrawerMode,
-    callsignDrawerForm: state.callsignDrawerForm,
-    callsignDrawerSaving: state.callsignDrawerSaving,
-    callsignDrawerError: state.callsignDrawerError,
-    openCallsignDrawerForCreate: actions.openCallsignDrawerForCreate,
-    openCallsignDrawerForEdit: actions.openCallsignDrawerForEdit,
-    closeCallsignDrawer: actions.closeCallsignDrawer,
-    setCallsignDrawerForm: actions.setCallsignDrawerForm,
-    saveCallsignDrawer: actions.saveCallsignDrawer,
-    callsignDeleteDialogOpen: state.callsignDeleteDialogOpen,
-    callsignDeleteTarget: state.callsignDeleteTarget,
-    callsignDeleteSubmitting: state.callsignDeleteSubmitting,
-    callsignDeleteError: state.callsignDeleteError,
-    callsignDeleteAlsoFromCatalog: state.callsignDeleteAlsoFromCatalog,
-    openCallsignDeleteDialog: actions.openCallsignDeleteDialog,
-    closeCallsignDeleteDialog: actions.closeCallsignDeleteDialog,
-    deleteCallsign: actions.deleteCallsign,
-    setCallsignDeleteAlsoFromCatalog: actions.setCallsignDeleteAlsoFromCatalog,
-    addKnownCallsignsToNetwork: actions.addKnownCallsignsToNetwork,
-    addInterceptedCallsignToNetwork: actions.addInterceptedCallsignToNetwork,
-    setNetworkCallsignMarkerMode: actions.setNetworkCallsignMarkerMode,
-    relations: state.relations,
-    relationsLoaded: state.relationsLoaded,
-    relationsLoading: state.relationsLoading,
-    relationsError: state.relationsError,
-    relationsSearch: state.relationsSearch,
     setRelationsSearch,
-    relationsEnabledFreqs: state.relationsEnabledFreqs,
     setRelationsEnabledFreqs,
-    relationsMinIntensity: state.relationsMinIntensity,
     setRelationsMinIntensity,
-    relationsShowLabels: state.relationsShowLabels,
     setRelationsShowLabels,
-    relationsSelectedNodeId: state.relationsSelectedNodeId,
     setRelationsSelectedNodeId,
-    relationsSelectedEdgeId: state.relationsSelectedEdgeId,
     setRelationsSelectedEdgeId,
-    relationsSince: state.relationsSince,
     setRelationsSince,
-    relationsTill: state.relationsTill,
     setRelationsTill,
-    pelengSince: state.pelengSince,
     setPelengSince,
-    pelengTill: state.pelengTill,
     setPelengTill,
-    pelengSearch: state.pelengSearch,
     setPelengSearch,
-    pelengEnabledFreqs: state.pelengEnabledFreqs,
     setPelengEnabledFreqs,
-    pelengShowLabels: state.pelengShowLabels,
     setPelengShowLabels,
-    pelengSatelliteEnabled: state.pelengSatelliteEnabled,
     setPelengSatelliteEnabled,
-    pelengHeatmapEnabled: state.pelengHeatmapEnabled,
     setPelengHeatmapEnabled,
     loadRelations,
     loadPelengPoints,
-    descriptionDrawerOpen: state.descriptionDrawerOpen,
-    descriptionDrawerMode: state.descriptionDrawerMode,
-    descriptionDrawerDescrType: state.descriptionDrawerDescrType,
-    descriptionDrawerDescriptionId: state.descriptionDrawerDescriptionId,
-    descriptionDrawerForm: state.descriptionDrawerForm,
-    descriptionDrawerSaving: state.descriptionDrawerSaving,
-    descriptionDrawerError: state.descriptionDrawerError,
-    openDescriptionDrawerForCreate: actions.openDescriptionDrawerForCreate,
-    openDescriptionDrawerForEdit: actions.openDescriptionDrawerForEdit,
-    setDescriptionDrawerForm: actions.setDescriptionDrawerForm,
-    closeDescriptionDrawer: actions.closeDescriptionDrawer,
-    saveDescription: actions.saveDescription,
-    deleteDescriptionDialogOpen: state.deleteDescriptionDialogOpen,
-    deleteDescriptionTarget: state.deleteDescriptionTarget,
-    deleteDescriptionSubmitting: state.deleteDescriptionSubmitting,
-    deleteDescriptionError: state.deleteDescriptionError,
-    openDeleteDescriptionDialog: actions.openDeleteDescriptionDialog,
-    closeDeleteDescriptionDialog: actions.closeDeleteDescriptionDialog,
-    resetDeleteDescriptionDialog: actions.resetDeleteDescriptionDialog,
-    deleteDescription: actions.deleteDescription,
-    openMenu: actions.openMenu,
-    closeMenu: actions.closeMenu,
-    openEtalonkaReportDialog: actions.openEtalonkaReportDialog,
-    closeEtalonkaReportDialog: actions.closeEtalonkaReportDialog,
-    setEtalonkaReportType: actions.setEtalonkaReportType,
-    setEtalonkaReportActiveFreqsOnly: actions.setEtalonkaReportActiveFreqsOnly,
-    setEtalonkaReportIncludeSigintSigns: actions.setEtalonkaReportIncludeSigintSigns,
-    setEtalonkaReportIncludeConfirmation: actions.setEtalonkaReportIncludeConfirmation,
-    setEtalonkaReportIncludeUnitCallsigns: actions.setEtalonkaReportIncludeUnitCallsigns,
-    setEtalonkaReportIncludePelengsMap: actions.setEtalonkaReportIncludePelengsMap,
-    setEtalonkaReportFromDateTimeStr: actions.setEtalonkaReportFromDateTimeStr,
-    setEtalonkaReportToDateTimeStr: actions.setEtalonkaReportToDateTimeStr,
-    downloadEtalonkaReport: actions.downloadEtalonkaReport,
-    openDeleteDialog: actions.openDeleteDialog,
-    closeDeleteDialog: actions.closeDeleteDialog,
-    openEditDrawer: actions.openEditDrawer,
-    closeEditDrawer: actions.closeEditDrawer,
-    setEditForm: actions.setEditForm,
-    saveNetworkEdit: actions.saveNetworkEdit,
-    handleCopyNetworkInfo: actions.handleCopyNetworkInfo,
-    handleCopyMainInfo: actions.handleCopyMainInfo,
-    handleDelete: actions.handleDelete,
     loadNetworkActivity,
     reload,
-  };
+    actions,
+    setEtalonkaReportProgressExpanded: actions.setEtalonkaReportProgressExpanded,
+  });
 }
 
 export type RerNetworkDetailsNeoPage = ReturnType<typeof useRerNetworkDetailsNeoPage>;

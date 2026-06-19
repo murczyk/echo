@@ -8,6 +8,7 @@ import {
   formatAorSummaryText,
   formatClassicNetworkHeaderName,
   formatErrorMessage,
+  getNetworkUpsertValidationError,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
@@ -18,6 +19,7 @@ import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-deta
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 import { useRerNetworkDetailsNeoPageCallsignActions } from './use-rer-network-details-neo-page.callsign-actions';
 import { useRerNetworkDetailsNeoPageCallsignMutations } from './use-rer-network-details-neo-page.callsign-mutations';
+import { getRestoreNetworkOnEditValue } from './network-status';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -31,12 +33,17 @@ type Args = {
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {
+  const networkId = editForm.id;
+  if (networkId === null) {
+    return Promise.resolve();
+  }
+
   return updateNetworkPosts({
-    networkId: editForm.id,
+    networkId,
     postIds: [...editForm.postIds],
   }).then(() =>
     updateNetworkUnits({
-      networkId: editForm.id,
+      networkId,
       unitIds: [...editForm.unitIds],
     }),
   );
@@ -148,8 +155,18 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
   const saveNetworkEdit = useCallback(async () => {
     const network = state.network;
     const editForm = state.editForm;
+    const networkId = editForm?.id ?? null;
 
-    if (!network || !editForm || state.editInProgress) return;
+    if (!network || !editForm || networkId === null || state.editInProgress) return;
+
+    const validationError = getNetworkUpsertValidationError(editForm, { includeFrequency: false });
+    if (validationError !== null) {
+      setState((current) => ({
+        ...current,
+        editError: validationError.name ?? validationError.location ?? validationError.aorIds ?? 'Перевірте форму',
+      }));
+      return;
+    }
 
     setState((current) => ({
       ...current,
@@ -160,8 +177,8 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
 
     try {
       const updatedNetwork = await updateNetwork({
-        id: editForm.id,
-        restoreNetwork: network.deleted && editForm.status === 'NetworkActive' ? true : null,
+        id: networkId,
+        restoreNetwork: getRestoreNetworkOnEditValue(network, editForm.status),
         areaOfResponsibilityIds: [...editForm.aorIds],
         name: editForm.name,
         location: editForm.location,
@@ -203,7 +220,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
     setState((current) => ({ ...current, deleteInProgress: true }));
     try {
       await deleteNetwork(state.network.id);
-      navigateWithinSpa('/rer-networks');
+      navigateWithinSpa('/rer-networks-neo');
     } catch (error) {
       setState((current) => ({
         ...current,

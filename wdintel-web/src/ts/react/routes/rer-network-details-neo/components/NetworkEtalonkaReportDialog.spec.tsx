@@ -45,7 +45,13 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
   const props: Parameters<typeof NetworkEtalonkaReportDialog>[0] = {
     report: {
       dialogOpen: true,
-      downloading: false,
+      taskRunId: 0,
+      taskId: null,
+      startedAtMs: null,
+      running: false,
+      curr: 0,
+      overall: 4,
+      logs: [],
       reportType: 'ExtendedReport',
       activeFreqsOnly: true,
       includeSigintSigns: true,
@@ -54,10 +60,15 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
       includePelengsMap: true,
       fromDateTimeStr: '2026-05-01T10:00',
       toDateTimeStr: '2026-05-02T11:00',
+      downloadFileName: null,
       error: null,
+      finishedAt: null,
+      progressExpanded: false,
     },
+    description: 'Для поточної радіомережі',
     onClose,
     onDownload,
+    onSetProgressExpanded: vi.fn(),
     onTypeChange,
     onActiveFreqsOnlyChange,
     onIncludeSigintSignsChange,
@@ -180,5 +191,51 @@ describe('NetworkEtalonkaReportDialog', () => {
     act(() => {
       view.root.unmount();
     });
+  });
+
+  it('keeps technical task ids out of the visible header and shows the long-running hint', () => {
+    const originalNow = Date.now;
+    Date.now = () => 192_000 + 1;
+
+    try {
+      const view = renderDialog({
+        report: {
+          dialogOpen: true,
+          taskRunId: 7,
+          taskId: 42,
+          startedAtMs: 0,
+          running: true,
+          curr: 2,
+          overall: 4,
+          logs: ['[1/4] Підготовка даних'],
+          reportType: 'ExtendedReport',
+          activeFreqsOnly: true,
+          includeSigintSigns: true,
+          includeConfirmation: true,
+          includeUnitCallsigns: false,
+          includePelengsMap: true,
+          fromDateTimeStr: '2026-05-01T10:00',
+          toDateTimeStr: '2026-05-02T11:00',
+          downloadFileName: null,
+          error: null,
+          finishedAt: null,
+          progressExpanded: true,
+        },
+      });
+
+      expect(document.body.textContent).not.toContain('task 42');
+      expect(document.body.textContent).toContain('#42');
+      expect(document.body.textContent).toContain('3 хв 12 с');
+      expect(document.body.textContent).toContain('Етап');
+      expect(document.body.textContent).toContain('Логи');
+      expect(document.body.textContent).toContain('Файл');
+      expect(document.body.textContent).toContain('Формування може тривати кілька хвилин');
+
+      act(() => {
+        view.root.unmount();
+      });
+    } finally {
+      Date.now = originalNow;
+    }
   });
 });

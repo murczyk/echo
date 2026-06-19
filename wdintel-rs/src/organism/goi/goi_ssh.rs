@@ -6,7 +6,7 @@ use std::io::Read;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub fn goi_check_connection_sync(
     req: CheckOrganismGoiConnectionReq,
@@ -196,6 +196,34 @@ fn goi_try_upload_file_for_socket(
 ) -> anyhow::Result<()> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
+    let remote_temp_file_path = goi_remote_upload_temp_path(remote_file_path);
+    if let Err(err) =
+        goi_scp_send_file(&session, &remote_temp_file_path, file_data)
+    {
+        let _ = goi_remove_remote_file(&session, &remote_temp_file_path);
+        return Err(err);
+    }
+
+    let command = goi_verify_and_replace_upload_command(
+        &remote_temp_file_path,
+        remote_file_path,
+        file_data.len(),
+        &sha256::digest(file_data),
+    );
+    goi_exec_command_for_session(
+        &session,
+        &command,
+        Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+        false,
+    )?;
+    Ok(())
+}
+
+fn goi_scp_send_file(
+    session: &ssh2::Session,
+    remote_file_path: &str,
+    file_data: &[u8],
+) -> anyhow::Result<()> {
     let mut remote_file = session
         .scp_send(
             Path::new(remote_file_path),
@@ -209,6 +237,59 @@ fn goi_try_upload_file_for_socket(
     remote_file.wait_eof().c(h!())?;
     remote_file.wait_close().c(h!())?;
     Ok(())
+}
+
+fn goi_remove_remote_file(
+    session: &ssh2::Session,
+    remote_file_path: &str,
+) -> anyhow::Result<()> {
+    goi_exec_command_for_session(
+        session,
+        &format!("rm -f -- {}", goi_shell_quote_single(remote_file_path)),
+        Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+        false,
+    )?;
+    Ok(())
+}
+
+fn goi_remote_upload_temp_path(remote_file_path: &str) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!(
+        "{}.upload-{}-{now}.tmp",
+        remote_file_path,
+        std::process::id()
+    )
+}
+
+fn goi_verify_and_replace_upload_command(
+    remote_temp_file_path: &str,
+    remote_file_path: &str,
+    expected_size: usize,
+    expected_sha256: &str,
+) -> String {
+    format!(
+        "\
+tmp={tmp}; \
+dst={dst}; \
+expected_size={expected_size}; \
+expected_sha256={expected_sha256}; \
+trap 'rm -f -- \"$tmp\"' EXIT; \
+actual_size=$(wc -c < \"$tmp\" | tr -d '[:space:]') || exit 1; \
+actual_sha256=$(sha256sum \"$tmp\" | awk '{{print $1}}') || exit 1; \
+if [ \"$actual_size\" != \"$expected_size\" ] || [ \"$actual_sha256\" != \"$expected_sha256\" ]; then \
+echo \"GOI upload verification failed for $tmp: expected size=$expected_size sha256=$expected_sha256, got size=$actual_size sha256=$actual_sha256\" >&2; \
+exit 1; \
+fi; \
+mv -f -- \"$tmp\" \"$dst\" || exit 1; \
+trap - EXIT\
+",
+        tmp = goi_shell_quote_single(remote_temp_file_path),
+        dst = goi_shell_quote_single(remote_file_path),
+        expected_sha256 = goi_shell_quote_single(expected_sha256),
+    )
 }
 
 fn goi_try_download_file_for_socket(
@@ -241,11 +322,11 @@ fn goi_try_exec_command_for_socket(
 ) -> anyhow::Result<Vec<String>> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
-    goi_exec_command_for_session(session, command, max_lines, fail_on_limit)
+    goi_exec_command_for_session(&session, command, max_lines, fail_on_limit)
 }
 
 fn goi_exec_command_for_session(
-    session: ssh2::Session,
+    session: &ssh2::Session,
     command: &str,
     max_lines: Option<usize>,
     fail_on_limit: bool,

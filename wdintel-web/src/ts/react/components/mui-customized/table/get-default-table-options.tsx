@@ -87,7 +87,7 @@ export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   });
 
   return (
-    <Box sx={{ py: 6 }}>
+    <Box sx={{ py: 6, minHeight: '100%', display: 'flex', flex: 1 }}>
       <TableEmptyState
         message={resolvedHasFilters ? filteredMessage : noDataMessage}
         actionLabel={resolvedHasFilters ? clearFiltersLabel : noDataActionLabel}

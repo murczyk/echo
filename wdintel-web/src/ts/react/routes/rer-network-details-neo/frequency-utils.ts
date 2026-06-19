@@ -1,5 +1,6 @@
 import type { EncryptionKeyData, NetworkFreqsRes } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
+import type { NetworkFreqKind } from './use-rer-network-details-neo-page.types';
 
 export type NetworkFreqActivityPoint = {
   day: string;
@@ -77,7 +78,7 @@ function collectUniqueLabels(values: string[]): string | null {
   return uniqueValues.join(', ');
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): string {
+export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
   const normalized = normalizeText(kind).toUpperCase();
   if (normalized === 'DMR') return 'DMR';
   if (normalized === 'DMRE') return 'DMRe';

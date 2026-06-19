@@ -2,6 +2,7 @@ import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
 import { InputAdornment, TextField } from '@mui/material';
 import clsx from 'clsx';
+import type { KeyboardEvent } from 'react';
 
 import { PowerIconButton } from '../../../../../PowerIconButton';
 
@@ -13,6 +14,16 @@ type GlobalFilterTextFieldProps = {
 };
 
 export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (props.disabled || !props.globalFilter || event.key !== 'Escape' || event.currentTarget.readOnly) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    props.setGlobalFilter('');
+  }
+
   return (
     <TextField
       className={clsx('!min-w-40', props.className)}
@@ -47,6 +58,7 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
       }}
       disabled={props.disabled}
       onChange={(event) => props.setGlobalFilter(event.target.value)}
+      onKeyDown={onKeyDown}
       value={props.globalFilter}
       variant="outlined"
       size="small"

@@ -23,10 +23,10 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import {
   formatErrorMessage,
   getFrequencyFormatError,
+  parseNetworkDetailsDateInput,
   type NetworkFreqCreateWizardForm,
 } from '../use-rer-network-details-neo-page.shared';
-import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
-import { NetworkFreqActivityControl } from './NetworkFreqActivityControl';
+import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqSectionCard } from './NetworkFreqSectionCard';
 
@@ -107,6 +107,8 @@ function NetworkFreqCreateWizardComponent({
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [newKeySaving, setNewKeySaving] = useState(false);
   const [freqTouched, setFreqTouched] = useState(false);
+  const [activeFromTouched, setActiveFromTouched] = useState(false);
+  const [activeToTouched, setActiveToTouched] = useState(false);
   const [techForm, setTechForm] = useState<TechForm>(DEFAULT_TECH_FORM);
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
     key: '',
@@ -127,19 +129,33 @@ function NetworkFreqCreateWizardComponent({
 
   const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
   const freqError = freqTouched ? freqValidationError : null;
-  const saveDisabled = saving || form.modulationId === null || freqValidationError !== null;
+  const activeFromValidationError = parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
+  const activeToValidationError = form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
+  const activeFromError = activeFromTouched ? activeFromValidationError : null;
+  const activeToError = activeToTouched ? activeToValidationError : null;
+  const saveDisabled = saving
+    || form.modulationId === null
+    || freqValidationError !== null
+    || activeFromValidationError !== null
+    || activeToValidationError !== null;
   const handleClose = () => {
     setFreqTouched(false);
+    setActiveFromTouched(false);
+    setActiveToTouched(false);
     onClose();
   };
   const handleSave = () => {
     setFreqTouched(false);
+    setActiveFromTouched(false);
+    setActiveToTouched(false);
     onSave();
   };
 
   useEffect(() => {
     if (!open) return;
     setFreqTouched(false);
+    setActiveFromTouched(false);
+    setActiveToTouched(false);
     setTechForm(DEFAULT_TECH_FORM);
   }, [open]);
 
@@ -287,20 +303,20 @@ function NetworkFreqCreateWizardComponent({
                 </FormControl>
               </Box>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <NetworkFreqDatePickerField
-                  label="Активна з"
-                  value={form.activeFrom}
-                  onChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
-                  disabled={saving}
-                />
-
-                <NetworkFreqActivityControl
-                  activeTo={form.activeTo}
-                  onChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
-                  disabled={saving}
-                />
-              </Box>
+              <NetworkFreqActivityPeriodControl
+                activeFrom={form.activeFrom}
+                activeTo={form.activeTo}
+                onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
+                onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
+                onActiveFromBlur={() => setActiveFromTouched(true)}
+                onActiveToBlur={() => setActiveToTouched(true)}
+                disabled={saving}
+                required
+                activeFromError={activeFromError !== null}
+                activeFromHelperText={activeFromError ?? undefined}
+                activeToError={activeToError !== null}
+                activeToHelperText={activeToError ?? undefined}
+              />
 
               <TextField
                 label="Опис (необов'язково)"

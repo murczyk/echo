@@ -520,6 +520,7 @@ function TableRowActions(props: TableActionsProps) {
         disabled={props.disabled}
         onClick={() => props.onEdit(account.id)}
         icon={<EditIcon fontSize="small" />}
+        opensModal
       />
       {account.isLinked ? (
         <MrtRowActionButton
@@ -542,6 +543,7 @@ function TableRowActions(props: TableActionsProps) {
         onClick={() => props.onDelete(account.id)}
         icon={<DeleteIcon fontSize="small" />}
         tone="danger"
+        opensModal
       />
     </MrtRowActions>
   );
@@ -1092,6 +1094,7 @@ function AdminMessengerNeoPageBody() {
       description="Ви впевнені, що хочете видалити цей акаунт месенджера?"
       submitting={isMutating}
       disabled={deleteAccountId === null}
+      disableRestoreFocus
     />
   );
 
@@ -1100,6 +1103,7 @@ function AdminMessengerNeoPageBody() {
       anchor="right"
       open={linkSidebarOpen}
       onClose={closeLinkSidebar}
+      ModalProps={{ disableRestoreFocus: true }}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
       <Box className="flex flex-col h-full">
@@ -1313,6 +1317,7 @@ function AdminMessengerNeoPageBody() {
       anchor="right"
       open={editSidebarOpen}
       onClose={closeEditSidebar}
+      ModalProps={{ disableRestoreFocus: true }}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
       <Box className="flex flex-col h-full">

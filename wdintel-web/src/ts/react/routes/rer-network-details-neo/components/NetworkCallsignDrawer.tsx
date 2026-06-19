@@ -39,6 +39,7 @@ type Props = {
   onClose: () => void;
   onChange: (next: NetworkCallsignDrawerForm | null) => void;
   onSave: () => void;
+  disableRestoreFocus?: boolean;
 };
 
 function updateForm(
@@ -245,6 +246,7 @@ export function NetworkCallsignDrawer({
   onClose,
   onChange,
   onSave,
+  disableRestoreFocus = false,
 }: Props) {
   const titleId = 'network-callsign-drawer-title';
   const sourceId = form?.sourceId ?? null;
@@ -277,6 +279,7 @@ export function NetworkCallsignDrawer({
       open={open}
       onClose={saving ? undefined : onClose}
       ModalProps={{
+        disableRestoreFocus,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

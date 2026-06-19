@@ -14,6 +14,7 @@ use crate::sigint;
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::bl::*;
+use crate::sigint::network::filter::apply_network_list_filters;
 use crate::sigint::network::merge::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -33,10 +34,12 @@ use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
 pub mod etalon_calc;
+pub mod filter;
 pub mod goi;
 pub mod merge;
 pub mod oneoff;
 pub mod relations;
+pub mod sort;
 pub mod types;
 
 /// Отримання списку мереж
@@ -52,7 +55,7 @@ pub mod types;
 ///
 /// # Повертає
 ///
-/// [`Json<Vec<Network>>`], де [`Network`] - це структура, що представляє одну мережу.
+/// [`Json<ListNetworksRsp>`], де [`Network`] - це структура, що представляє одну мережу.
 ///
 
 #[post("/api/sigint/network-list")]
@@ -60,7 +63,14 @@ pub async fn network_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworksReq>,
-) -> Result<Json<Vec<Network>>, AppError> {
+) -> Result<Json<ListNetworksRsp>, AppError> {
+    #[derive(FromQueryResult)]
+    struct Row {
+        active: i64,
+        inactive: i64,
+        archived: i64,
+    }
+
     let user_id = user.id().c(h!())?;
     crate::users::has_any_role(
         &env.dbx,
@@ -69,132 +79,113 @@ pub async fn network_list(
     )
     .await?;
 
-    let mut networks = sigint_network::Entity::find()
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-            Alias::new("sigint_network_unit"),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-            Alias::new("sigint_unit"),
-        );
-
-    networks = networks.filter(
-        sigint_network::Column::Deleted
-            .eq(req.show_only_deleted.unwrap_or(false)),
-    );
-
-    if let Some(ids) = &req.ids {
-        if !ids.is_empty() {
-            networks =
-                networks.filter(sigint_network::Column::Id.is_in(ids.clone()));
-        }
-    }
-
-    if !req.show_inactive.unwrap_or(false) {
-        networks = networks.filter(sigint_network::Column::ActiveTo.is_null());
-    }
-
-    if let Some(filter_unit) = &req.filter_unit {
-        networks = networks.filter(Expr::cust_with_values(
-            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-            vec![format!("%{}%", filter_unit.to_lowercase())],
-        ))
-    };
-
-    if req.show_only_further_inverstigation.unwrap_or(false) {
-        networks = networks.filter(sigint_network_unit::Column::Id.is_null());
-    }
-
-    // Optional filter by Areas of Responsibility (AOR) IDs
-    if let Some(aor_ids) = &req.aor_ids {
-        if !aor_ids.is_empty() {
-            networks = networks
-                .join_as(
-                    JoinType::InnerJoin,
-                    sigint_network::Relation::SigintNetworkAor.def(),
-                    Alias::new("sigint_network_aor"),
-                )
-                .filter(
-                    sigint_network_aor::Column::AorId.eq_any(aor_ids.clone()),
-                );
-        }
-    }
-
-    if let Some(filter_freq) = &req.filter_freq {
-        let subquery = sigint_network_freq::Entity::find()
-            .select_only()
-            .column(sigint_network_freq::Column::Freq)
-            .filter(
-                sigint_network_freq::Column::NetworkId
-                    .into_simple_expr()
-                    .eq(sigint_network::Column::Id.into_simple_expr()),
-            )
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .filter(Expr::cust_with_values(
-                "sigint_network_freq.freq ilike $1",
-                vec![format!("{filter_freq}%").as_str()],
-            ));
-        networks = networks.filter(Expr::exists(subquery.into_query()));
-    }
-
-    networks = if let Some(sort_by) = &req.sort_by {
-        sort_by
-            .iter()
-            .fold(networks, |networks, sort_by| match sort_by {
-                ListNetworksSortBy::NameAsc => {
-                    networks.order_by_asc(sigint_network::Column::Name)
-                }
-                ListNetworksSortBy::NameDesc => {
-                    networks.order_by_desc(sigint_network::Column::Name)
-                }
-            })
-    } else {
-        networks.order_by_asc(sigint_network::Column::Name)
-    };
-
-    let has_filters = req.filter_freq.is_some()
-        || req.filter_unit.is_some()
-        || req
-            .aor_ids
-            .as_ref()
-            .map(|aor_ids| !aor_ids.is_empty())
-            .unwrap_or(false)
-        || req.show_only_further_inverstigation.unwrap_or(false)
-        || req.ids.as_ref().map(|ids| !ids.is_empty()).unwrap_or(false);
-
-    if !has_filters {
-        networks = networks.order_by_desc(sigint_network::Column::CreatedAt);
-
-        networks = networks.limit(
-            req.limit
-                .unwrap_or(SIGINT_NETWORK_LIST_DEFAULT_LIMIT)
-                .try_into()
-                .unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
-        );
-    } else if let Some(limit) = req.limit {
-        networks = networks
-            .limit(limit.try_into().unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT));
-    }
-
-    if let Some(offset) = req.offset {
-        networks = networks.offset(offset.try_into().unwrap_or(0));
-    }
-
-    // debug!(
-    //     "> networks list sql: {}",
-    //     networks.clone().build(DbBackend::Postgres).to_string()
-    // );
-
-    let networks = networks.all(&env.dbx).await.context(h!())?;
+    let networks = build_networks_query(&req, NetworkQueryKind::List)
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
 
     let res = render_networks(networks, &env.dbx, &user_id)
         .await
         .context(h!())?;
 
-    Ok(Json(res))
+    let row = build_networks_counts_query(&req)
+        .into_model::<Row>()
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .context(h!())?;
+
+    Ok(Json(ListNetworksRsp {
+        list: res,
+        status_counts: ListNetworksStatusCountsRsp {
+            active: row.active,
+            inactive: row.inactive,
+            archived: row.archived,
+        },
+    }))
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum NetworkQueryKind {
+    List,
+    Counts,
+}
+
+fn build_networks_query(
+    req: &ListNetworksReq,
+    kind: NetworkQueryKind,
+) -> Select<sigint_network::Entity> {
+    let mut query = sigint_network::Entity::find();
+    query = apply_network_list_filters(
+        query,
+        req,
+        matches!(kind, NetworkQueryKind::List),
+    );
+
+    if matches!(kind, NetworkQueryKind::List) {
+        query = sort::apply_network_sorts(query, req.sort_by.as_ref());
+
+        let has_filters = req.filter_freq.is_some()
+            || req.filter_text.is_some()
+            || req.filter_name.is_some()
+            || req.filter_location.is_some()
+            || req.status_filter.is_some()
+            || req.filter_unit.is_some()
+            || req.filter_unit_army.is_some()
+            || req.filter_unit_division.is_some()
+            || req.filter_unit_regiment.is_some()
+            || req.filter_unit_battalion.is_some()
+            || req
+                .aor_ids
+                .as_ref()
+                .map(|aor_ids| !aor_ids.is_empty())
+                .unwrap_or(false)
+            || req.show_only_further_inverstigation.unwrap_or(false)
+            || req.ids.as_ref().map(|ids| !ids.is_empty()).unwrap_or(false);
+
+        if !has_filters {
+            query = query.order_by_desc(sigint_network::Column::CreatedAt);
+            query = query.limit(
+                req.limit
+                    .unwrap_or(SIGINT_NETWORK_LIST_DEFAULT_LIMIT)
+                    .try_into()
+                    .unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
+            );
+        } else if let Some(limit) = req.limit {
+            query = query.limit(
+                limit.try_into().unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
+            );
+        }
+
+        if let Some(offset) = req.offset {
+            query = query.offset(offset.try_into().unwrap_or(0));
+        }
+    }
+
+    query
+}
+
+fn build_networks_counts_query(
+    req: &ListNetworksReq,
+) -> Select<sigint_network::Entity> {
+    build_networks_query(req, NetworkQueryKind::Counts)
+        .select_only()
+        .column_as(
+            Expr::cust(
+                "COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)",
+            ),
+            "active",
+        )
+        .column_as(
+            Expr::cust(
+                "COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)",
+            ),
+            "inactive",
+        )
+        .column_as(
+            Expr::cust("COUNT(*) FILTER (WHERE sigint_network.deleted = true)"),
+            "archived",
+        )
 }
 
 #[post("/api/sigint/restore-network")]
@@ -2620,8 +2611,11 @@ async fn load_network_freq_last_datetime_in_aor(
             nf.id AS network_freq_id,
             max(ii.datetime) AS last_datetime_in_aor
         FROM sigint_network_freq nf
+        JOIN sigint_inbox_item_network iin
+            ON iin.sigint_network_id = nf.network_id
         JOIN sigint_inbox_item ii
-            ON ii.freq = nf.freq
+            ON ii.id = iin.sigint_inbox_item_id
+           AND ii.freq = nf.freq
         JOIN signal_message sm
             ON sm.id = ii.id
         JOIN datasource_group dg
@@ -2631,6 +2625,9 @@ async fn load_network_freq_last_datetime_in_aor(
           AND sm.deleted = false
           AND ii.datetime IS NOT NULL
           AND dg.group_master_key = ANY($3)
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
+          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at)
+                <= COALESCE(nf.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           AND EXISTS (
               SELECT 1
               FROM signal_message_group smg
@@ -3260,6 +3257,37 @@ pub async fn report_networks_goi(
     Ok(file.into_response(&http_req))
 }
 
+#[post("/api/sigint/network/report-networks-goi-task-launch")]
+pub async fn report_networks_goi_task_launch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<i64>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    let filename = format!(
+        "goi_report_{}.xlsx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
+    );
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_id,
+        crate::report_history::KIND_GOI,
+        crate::report_history::ReportHistoryRequest::GoiReport {
+            payload: serde_json::json!({}),
+        },
+        Some(filename),
+        Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string(),
+        ),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
+}
+
 fn map_add_network_description(
     user_id: String,
     network: &sigint_network::Model,
@@ -3430,6 +3458,7 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sigint::network::filter::tokenize_search_text;
     use chrono::NaiveDate;
 
     fn dt(day: u32) -> NaiveDateTime {
@@ -3437,6 +3466,29 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    fn empty_list_networks_req() -> ListNetworksReq {
+        ListNetworksReq {
+            filter_freq: None,
+            filter_unit: None,
+            filter_unit_army: None,
+            filter_unit_division: None,
+            filter_unit_regiment: None,
+            filter_unit_battalion: None,
+            filter_text: None,
+            filter_name: None,
+            filter_location: None,
+            show_only_further_inverstigation: None,
+            show_inactive: None,
+            show_only_deleted: None,
+            status_filter: None,
+            aor_ids: None,
+            ids: None,
+            limit: None,
+            offset: None,
+            sort_by: None,
+        }
     }
 
     #[test]
@@ -3472,5 +3524,273 @@ mod tests {
             merge_invalidation_range(old_from, old_to, new_from, new_to);
 
         assert_eq!(merged, (Some(dt(1)), Some(dt(20))));
+    }
+
+    #[test]
+    fn counts_query_ignores_list_status_scope() {
+        let mut req = empty_list_networks_req();
+        req.status_filter = Some(ListNetworksStatusFilter::ListNetworksActive);
+        req.show_only_deleted = Some(true);
+        req.show_inactive = Some(false);
+        req.limit = Some(5);
+        req.offset = Some(10);
+        req.sort_by = Some(vec![ListNetworksSortBy::NameDesc]);
+
+        let sql = build_networks_counts_query(&req)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(!sql.contains("LIMIT"));
+        assert!(!sql.contains("ORDER BY"));
+        assert!(!sql.contains("GROUP BY"));
+        assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)"));
+        assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)"));
+        assert!(sql
+            .contains("COUNT(*) FILTER (WHERE sigint_network.deleted = true)"));
+    }
+
+    #[test]
+    fn list_query_with_text_filter_does_not_apply_default_limit() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("abc".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(!sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn tokenize_search_text_drops_display_tokens_and_punctuation() {
+        assert_eq!(
+            tokenize_search_text(" р/м 1 мсб, 423 мсп "),
+            vec![
+                "1".to_string(),
+                "мсб".to_string(),
+                "423".to_string(),
+                "мсп".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn list_query_with_name_filter_uses_name_and_unit_tokens() {
+        let mut req = empty_list_networks_req();
+        req.filter_name = Some("р/м 423 мсп".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql
+            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(
+            sql.matches(
+                "lower(sigint_network.name collate \"ru-x-icu\") ilike"
+            )
+            .count()
+                >= 2
+        );
+        assert!(
+            sql.matches("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+                .count()
+                >= 2
+        );
+        assert!(!sql.contains(
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+        ));
+    }
+
+    #[test]
+    fn list_query_with_global_text_filter_searches_visible_row_fields() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("423 kyiv".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql
+            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
+        assert!(sql.contains(
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+        ));
+        assert!(sql.contains(
+            "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(sql.contains(
+            "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(!sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn list_query_with_numeric_global_text_filter_uses_valid_aor_alias() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("336".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql
+            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
+        assert!(sql.contains(
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+        ));
+        assert!(sql.contains(
+            "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(sql.contains(
+            "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike"
+        ));
+        assert!(
+            sql.contains("lower(sigint_aor.name collate \"ru-x-icu\") ilike")
+        );
+        assert!(sql.contains("\"sigint_aor\".\"deleted\" = false"));
+        assert!(!sql.contains(
+            "lower(area_of_responsibility.name collate \"ru-x-icu\") ilike"
+        ));
+        assert!(!sql.contains("area_of_responsibility.deleted = false"));
+    }
+
+    #[test]
+    fn list_query_with_status_filter_does_not_apply_default_limit() {
+        let mut req = empty_list_networks_req();
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksInactive);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(!sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn list_query_sorts_by_last_activity_with_stable_secondary_keys() {
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::LastActivityDesc]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("\"sigint_network\".\"updated_at\" DESC"));
+        assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
+        assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
+    }
+
+    #[test]
+    fn list_query_sorts_by_location_with_stable_secondary_keys() {
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::LocationAsc]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("\"sigint_network\".\"location\" ASC"));
+        assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
+        assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
+    }
+
+    #[test]
+    fn list_query_sorts_by_freq_with_first_active_frequency_expression() {
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::NetworkFreqAsc]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("CASE WHEN (SELECT MIN(sigint_network_freq.freq COLLATE \"ru-x-icu\")"));
+        assert!(
+            sql.contains("sigint_network_freq.network_id = sigint_network.id")
+        );
+        assert!(sql.contains("sigint_network_freq.deleted = false"));
+        assert!(sql.contains("sigint_network_freq.active_to IS NULL"));
+        assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
+        assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
+    }
+
+    #[test]
+    fn list_query_sorts_by_aor_with_first_name_expression() {
+        let mut req = empty_list_networks_req();
+        req.sort_by = Some(vec![ListNetworksSortBy::AorDesc]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("CASE WHEN (SELECT MIN(area_of_responsibility.name COLLATE \"ru-x-icu\")"));
+        assert!(
+            sql.contains("sigint_network_aor.network_id = sigint_network.id")
+        );
+        assert!(sql.contains("area_of_responsibility.deleted = false"));
+        assert!(sql.contains("DESC"));
+        assert!(sql.contains("\"sigint_network\".\"name\" ASC"));
+        assert!(sql.contains("\"sigint_network\".\"id\" ASC"));
+    }
+
+    #[test]
+    fn aor_filter_supports_no_aor_only() {
+        let mut req = empty_list_networks_req();
+        req.aor_ids = Some(vec![-1]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("NOT EXISTS"));
+    }
+
+    #[test]
+    fn aor_filter_supports_mixed_no_aor_and_regular() {
+        let mut req = empty_list_networks_req();
+        req.aor_ids = Some(vec![-1, 42]);
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("NOT EXISTS"));
+        assert!(sql.contains("EXISTS"));
+    }
+
+    #[test]
+    fn counts_query_with_name_and_location_filters_keeps_status_scope_open() {
+        let mut req = empty_list_networks_req();
+        req.filter_name = Some("alpha".to_string());
+        req.filter_location = Some("kyiv".to_string());
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+
+        let sql = build_networks_counts_query(&req)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql
+            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
+        assert!(sql.contains(
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
+        ));
+        assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)"));
+        assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)"));
+        assert!(sql
+            .contains("COUNT(*) FILTER (WHERE sigint_network.deleted = true)"));
     }
 }

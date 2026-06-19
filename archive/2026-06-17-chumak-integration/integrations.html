@@ -1,0 +1,1529 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ЕХО інтеграції</title>
+    <style>
+      :root {
+        --body-bg: #17181c;
+        --body-color: #f2f4f8;
+        --border-color: #383b43;
+        --primary: #90caf9;
+        --primary-strong: #42a5f5;
+        --primary-soft: rgba(144, 202, 249, 0.13);
+        --paper: #202228;
+        --paper-elevated: #252832;
+        --hover: rgba(255, 255, 255, 0.07);
+        --muted: #aeb4bf;
+        --muted-strong: #d5d9e0;
+        --danger: #f87171;
+        --success: #81c784;
+        --warning: #ffb74d;
+        --field-border: rgba(255, 255, 255, 0.25);
+        --shadow-dialog: 0 11px 15px -7px rgba(0, 0, 0, 0.48), 0 24px 38px 3px rgba(0, 0, 0, 0.34), 0 9px 46px 8px rgba(0, 0, 0, 0.32);
+        color-scheme: dark;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--body-bg);
+        color: var(--body-color);
+      }
+
+      body {
+        padding: 28px 32px 40px;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      .page {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        width: 100%;
+      }
+
+      .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.334;
+        margin: 0;
+      }
+
+      .page-support {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: -14px 0 0;
+      }
+
+      .toolbar {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+
+      .toolbar-left,
+      .toolbar-right {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .search {
+        align-items: center;
+        background: var(--paper);
+        border: 1px solid var(--field-border);
+        border-radius: 4px;
+        display: flex;
+        height: 40px;
+        min-width: 240px;
+        padding: 0 8px 0 12px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .search:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary);
+      }
+
+      .search svg {
+        color: var(--muted);
+        flex: 0 0 auto;
+        height: 20px;
+        margin-right: 8px;
+        width: 20px;
+      }
+
+      .search input {
+        background: transparent;
+        border: 0;
+        color: var(--body-color);
+        flex: 1;
+        height: 100%;
+        min-width: 0;
+        outline: 0;
+      }
+
+      .search input::placeholder,
+      .field input::placeholder,
+      .field textarea::placeholder {
+        color: #89909b;
+      }
+
+      .btn {
+        align-items: center;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        display: inline-flex;
+        font-size: 14px;
+        font-weight: 500;
+        gap: 8px;
+        height: 36px;
+        justify-content: center;
+        letter-spacing: 0;
+        line-height: 1.75;
+        min-width: 64px;
+        padding: 5px 15px;
+        text-transform: uppercase;
+        transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+        white-space: nowrap;
+      }
+
+      .btn svg {
+        height: 18px;
+        width: 18px;
+      }
+
+      .btn:disabled {
+        cursor: default;
+        opacity: 0.48;
+      }
+
+      .btn-contained {
+        background: var(--primary-strong);
+        color: #06131f;
+      }
+
+      .btn-contained:hover:not(:disabled) {
+        background: var(--primary);
+      }
+
+      .btn-outlined {
+        background: transparent;
+        border-color: rgba(144, 202, 249, 0.55);
+        color: var(--primary);
+      }
+
+      .btn-outlined:hover:not(:disabled),
+      .btn-text:hover:not(:disabled),
+      .tab-btn:hover {
+        background: var(--primary-soft);
+      }
+
+      .btn-text {
+        background: transparent;
+        color: var(--primary);
+      }
+
+      .btn-danger {
+        color: var(--danger);
+      }
+
+      .icon-btn {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: 50%;
+        color: var(--muted-strong);
+        cursor: pointer;
+        display: inline-flex;
+        height: 34px;
+        justify-content: center;
+        padding: 5px;
+        width: 34px;
+      }
+
+      .icon-btn:hover {
+        background: var(--hover);
+      }
+
+      .icon-btn.confirm {
+        color: var(--success);
+      }
+
+      .icon-btn.danger {
+        color: var(--danger);
+      }
+
+      .icon-btn svg {
+        height: 20px;
+        width: 20px;
+      }
+
+      .table-wrap {
+        border: 1px solid var(--border-color);
+        overflow: auto;
+        width: 100%;
+      }
+
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+        min-width: 1100px;
+        table-layout: fixed;
+        width: 100%;
+      }
+
+      .groups-table table {
+        min-width: 860px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border-color);
+        border-right: 1px solid var(--border-color);
+        font-size: 14px;
+        height: 50px;
+        overflow: hidden;
+        padding: 10px 16px;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      th {
+        background: var(--paper);
+        color: var(--body-color);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      td {
+        color: var(--muted-strong);
+      }
+
+      th:last-child,
+      td:last-child {
+        border-right: 0;
+      }
+
+      tbody tr:hover {
+        background: var(--hover);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .col-number {
+        text-align: center;
+        width: 48px;
+      }
+
+      .col-actions {
+        text-align: center;
+        width: 80px;
+      }
+
+      .col-name {
+        width: 220px;
+      }
+
+      .col-sender,
+      .col-login {
+        width: 180px;
+      }
+
+      .col-url {
+        width: 320px;
+      }
+
+      .col-groups {
+        width: 320px;
+      }
+
+      .col-description {
+        width: 320px;
+      }
+
+      .col-state {
+        text-align: center;
+        width: 120px;
+      }
+
+      .empty-state {
+        color: var(--muted);
+        padding: 28px;
+        text-align: center;
+      }
+
+      .group-list {
+        display: inline;
+      }
+
+      .group-name.disabled {
+        color: var(--warning);
+      }
+
+      .group-name.primary {
+        font-weight: 700;
+      }
+
+      dialog {
+        background: var(--paper-elevated);
+        border: 0;
+        border-radius: 4px;
+        box-shadow: var(--shadow-dialog);
+        color: var(--body-color);
+        max-width: min(980px, calc(100vw - 32px));
+        padding: 0;
+        width: 980px;
+      }
+
+      dialog::backdrop {
+        background: rgba(0, 0, 0, 0.64);
+      }
+
+      .dialog-title {
+        font-size: 20px;
+        font-weight: 500;
+        line-height: 1.6;
+        margin: 0;
+        padding: 16px 24px 2px;
+      }
+
+      .dialog-subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0 24px 12px;
+      }
+
+      .dialog-content {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 12px 24px 20px;
+      }
+
+      .dialog-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+        padding: 8px 24px 16px;
+      }
+
+      .field-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+      }
+
+      .field-grid .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .field label,
+      .check-field {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .label-with-hint {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .field input,
+      .field textarea {
+        background: var(--paper);
+        border: 1px solid var(--field-border);
+        border-radius: 4px;
+        color: var(--body-color);
+        min-height: 40px;
+        outline: 0;
+        padding: 8px 12px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        width: 100%;
+      }
+
+      .field textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+
+      .field input:focus,
+      .field textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary);
+      }
+
+      .check-row {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+      }
+
+      .check-field {
+        align-items: center;
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .check-with-hint {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .check-field input {
+        accent-color: var(--primary-strong);
+        height: 18px;
+        width: 18px;
+      }
+
+      .hint-symbol {
+        align-items: center;
+        border: 1px solid var(--field-border);
+        border-radius: 50%;
+        color: var(--primary);
+        cursor: help;
+        display: inline-flex;
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 700;
+        height: 16px;
+        justify-content: center;
+        line-height: 1;
+        position: relative;
+        width: 16px;
+      }
+
+      .hint-symbol::after {
+        background: #111318;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        bottom: calc(100% + 8px);
+        box-shadow: var(--shadow-dialog);
+        color: var(--body-color);
+        content: attr(data-hint);
+        font-size: 12px;
+        font-weight: 400;
+        left: 0;
+        line-height: 1.4;
+        max-width: calc(100vw - 64px);
+        opacity: 0;
+        padding: 8px 10px;
+        pointer-events: none;
+        position: absolute;
+        text-align: left;
+        transition: opacity 0.15s ease;
+        white-space: normal;
+        width: 420px;
+        z-index: 5;
+      }
+
+      .hint-symbol:hover::after,
+      .hint-symbol:focus::after,
+      .hint-symbol:focus-visible::after {
+        opacity: 1;
+      }
+
+      .helper {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.66;
+        margin: 0 12px;
+      }
+
+      .connection-status {
+        font-size: 14px;
+        font-weight: 500;
+        min-height: 20px;
+      }
+
+      .connection-status.success {
+        color: var(--success);
+      }
+
+      .connection-status.error {
+        color: var(--danger);
+      }
+
+      .tabs {
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        gap: 4px;
+      }
+
+      .tab-btn {
+        background: transparent;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-weight: 500;
+        padding: 10px 14px;
+      }
+
+      .tab-btn.active {
+        border-bottom-color: var(--primary);
+        color: var(--primary);
+      }
+
+      .screen-header {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: space-between;
+      }
+
+      .screen-title {
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      .info-banner {
+        background: rgba(144, 202, 249, 0.11);
+        border: 1px solid rgba(144, 202, 249, 0.32);
+        border-radius: 4px;
+        color: var(--muted-strong);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0 0 14px;
+        padding: 10px 12px;
+      }
+
+      .group-editor {
+        border: 1px solid var(--border-color);
+        display: grid;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .group-editor-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .group-form-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .group-form-actions .btn-danger {
+        margin-right: auto;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 18px 14px 28px;
+        }
+
+        .toolbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .toolbar-left,
+        .toolbar-right,
+        .search {
+          width: 100%;
+        }
+
+        .toolbar-right .btn,
+        .dialog-actions .btn {
+          flex: 1;
+        }
+
+        .field-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dialog-actions {
+          justify-content: stretch;
+        }
+
+        .screen-header,
+        .group-form-actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .screen-header .btn,
+        .group-form-actions .btn {
+          width: 100%;
+        }
+
+        .group-form-actions .btn-danger {
+          margin-right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1 class="page-title">ЕХО інтеграції</h1>
+      <p class="page-support">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
+
+      <section aria-label="ЕХО інтеграції">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M9.5 3a6.5 6.5 0 0 1 5.17 10.45l4.44 4.44-1.42 1.42-4.44-4.44A6.5 6.5 0 1 1 9.5 3Zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z"></path>
+              </svg>
+              <input id="searchInput" type="search" placeholder="Пошук" autocomplete="off">
+            </label>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn btn-outlined" type="button" id="refreshButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V6a6 6 0 1 1-5.2 3H4.68A8 8 0 1 0 17.65 6.35Z"></path>
+              </svg>
+              Оновити
+            </button>
+            <button class="btn btn-contained" type="button" id="createButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"></path>
+              </svg>
+              Створити
+            </button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-number">#</th>
+                <th class="col-actions"></th>
+                <th class="col-name">Назва</th>
+                <th class="col-sender">Відправник</th>
+                <th class="col-url">URL</th>
+                <th class="col-login">Логін</th>
+                <th class="col-groups">Групи</th>
+              </tr>
+            </thead>
+            <tbody id="integrationsBody"></tbody>
+          </table>
+          <div class="empty-state hidden" id="emptyState">ЕХО інтеграції відсутні</div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="createDialog" aria-labelledby="createDialogTitle">
+      <form id="createDetailsForm" method="dialog">
+        <h2 class="dialog-title" id="createDialogTitle">Додати ЕХО інтеграцію</h2>
+        <p class="dialog-subtitle">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
+        <div class="dialog-content" id="createDetailsStep">
+          <div class="field-grid">
+            <div class="field">
+              <label for="createName">Назва</label>
+              <input id="createName" name="name" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label class="label-with-hint" for="createSender">
+                Відправник
+                <span class="hint-symbol" tabindex="0" title="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp." data-hint="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp.">?</span>
+              </label>
+              <input id="createSender" name="sender" autocomplete="off">
+            </div>
+            <div class="field field-wide">
+              <label for="createUrl">URL</label>
+              <input id="createUrl" name="echoApi" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="createLogin">Логін</label>
+              <input id="createLogin" name="login" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="createPassword">Пароль</label>
+              <input id="createPassword" name="password" type="password" required autocomplete="new-password">
+              <p class="helper">Обовʼязкове поле</p>
+            </div>
+          </div>
+          <div class="connection-status" id="createConnectionStatus" aria-live="polite"></div>
+        </div>
+      </form>
+
+      <div class="dialog-content hidden" id="createGroupsStep">
+        <div class="info-banner">
+          Виберіть назви груп, під якими повідомлення попадатиме в ЕХО Аналіз. Назви можуть бути довільними, аналогічно до груп Signal/WhatsApp що використовуються для обміну повідомленнями. Саме під цими назвами користувачі бачитимуть ваші перехоплення.
+        </div>
+        <div id="createGroupsListScreen">
+          <div class="screen-header">
+            <h3 class="screen-title">Групи</h3>
+            <button class="btn btn-outlined" type="button" id="createGroupCreateButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"></path>
+              </svg>
+              Створити
+            </button>
+          </div>
+          <div class="table-wrap groups-table">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-number">#</th>
+                  <th class="col-actions"></th>
+                  <th class="col-name">Назва</th>
+                  <th class="col-description">Опис</th>
+                  <th class="col-state">За замовчуванням</th>
+                  <th class="col-state">Увімкнено</th>
+                </tr>
+              </thead>
+              <tbody id="createGroupsBody"></tbody>
+            </table>
+            <div class="empty-state hidden" id="createGroupsEmpty">Групи відсутні</div>
+          </div>
+        </div>
+        <div class="hidden" id="createGroupEditorScreen">
+          <h3 class="screen-title" id="createGroupEditorTitle">Створити групу</h3>
+          <div class="group-editor">
+            <div class="field-grid">
+              <div class="field">
+                <label for="createGroupName">Назва групи</label>
+                <input id="createGroupName" autocomplete="off">
+              </div>
+              <div class="field field-wide">
+                <label for="createGroupDescription">Опис</label>
+                <textarea id="createGroupDescription" placeholder="Опціонально"></textarea>
+              </div>
+            </div>
+            <div class="check-row">
+              <span class="check-with-hint">
+                <label class="check-field">
+                  <input id="createGroupPrimary" type="checkbox" checked>
+                  Чи є групою за замовчуванням
+                </label>
+                <span class="hint-symbol" tabindex="0" title="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну" data-hint="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну">?</span>
+              </span>
+              <label class="check-field">
+                <input id="createGroupEnabled" type="checkbox" checked>
+                Увімкнено
+              </label>
+            </div>
+          </div>
+          <div class="group-form-actions">
+            <button class="btn btn-outlined btn-danger hidden" type="button" id="createGroupDeleteButton">Видалити</button>
+            <button class="btn btn-text" type="button" id="createGroupCancelButton">Скасувати</button>
+            <button class="btn btn-contained" type="button" id="createGroupConfirmButton">Зберегти</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-actions" id="createDetailsActions">
+        <button class="btn btn-outlined" type="button" id="createTestButton">Перевірити</button>
+        <button class="btn btn-text" type="button" data-close-dialog="createDialog">Скасувати</button>
+        <button class="btn btn-contained" type="submit" form="createDetailsForm">Далі</button>
+      </div>
+      <div class="dialog-actions hidden" id="createGroupsActions">
+        <button class="btn btn-outlined" type="button" id="createBackButton">Назад</button>
+        <button class="btn btn-text" type="button" data-close-dialog="createDialog">Скасувати</button>
+        <button class="btn btn-contained" type="button" id="createSaveButton">Додати</button>
+      </div>
+    </dialog>
+
+    <dialog id="editDialog" aria-labelledby="editDialogTitle">
+      <h2 class="dialog-title" id="editDialogTitle">Редагувати ЕХО інтеграцію</h2>
+      <p class="dialog-subtitle">Якщо ви маєте додаткові питання – напишіть на Signal акаунт @echopvd.02</p>
+      <div class="dialog-content">
+        <div class="tabs" role="tablist" aria-label="Редагування інтеграції">
+          <button class="tab-btn active" type="button" id="editDetailsTab" data-edit-tab="details">Details</button>
+          <button class="tab-btn" type="button" id="editGroupsTab" data-edit-tab="groups">Groups</button>
+        </div>
+
+        <form id="editDetailsForm" method="dialog">
+          <input id="editId" name="id" type="hidden">
+          <div class="field-grid">
+            <div class="field">
+              <label for="editName">Назва</label>
+              <input id="editName" name="name" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label class="label-with-hint" for="editSender">
+                Відправник
+                <span class="hint-symbol" tabindex="0" title="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp." data-hint="Це довільне імʼя користувача від якого в ЕХО Аналізі буде видно автора-відправника перехоплень. Аналогічно підпису юзеру в Signal/WhatsApp.">?</span>
+              </label>
+              <input id="editSender" name="sender" autocomplete="off">
+            </div>
+            <div class="field field-wide">
+              <label for="editUrl">URL</label>
+              <input id="editUrl" name="echoApi" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="editLogin">Логін</label>
+              <input id="editLogin" name="login" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="editPassword">Пароль</label>
+              <input id="editPassword" name="password" type="password" autocomplete="new-password">
+              <p class="helper">Заповніть, якщо потрібно оновити пароль</p>
+            </div>
+          </div>
+          <div class="connection-status" id="editConnectionStatus" aria-live="polite"></div>
+        </form>
+
+        <div class="hidden" id="editGroupsPanel">
+          <div class="info-banner">
+            Виберіть назви груп, під якими повідомлення попадатиме в ЕХО Аналіз. Назви можуть бути довільними, аналогічно до груп Signal/WhatsApp що використовуються для обміну повідомленнями. Саме під цими назвами користувачі бачитимуть ваші перехоплення.
+          </div>
+          <div id="editGroupsListScreen">
+            <div class="screen-header">
+              <h3 class="screen-title">Групи</h3>
+              <button class="btn btn-outlined" type="button" id="editGroupCreateButton">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"></path>
+                </svg>
+                Створити
+              </button>
+            </div>
+            <div class="table-wrap groups-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="col-number">#</th>
+                    <th class="col-actions"></th>
+                    <th class="col-name">Назва</th>
+                    <th class="col-description">Опис</th>
+                    <th class="col-state">За замовчуванням</th>
+                    <th class="col-state">Увімкнено</th>
+                  </tr>
+                </thead>
+                <tbody id="editGroupsBody"></tbody>
+              </table>
+              <div class="empty-state hidden" id="editGroupsEmpty">Групи відсутні</div>
+            </div>
+          </div>
+          <div class="hidden" id="editGroupEditorScreen">
+            <h3 class="screen-title" id="editGroupEditorTitle">Створити групу</h3>
+            <div class="group-editor">
+              <div class="field-grid">
+                <div class="field">
+                  <label for="editGroupName">Назва групи</label>
+                  <input id="editGroupName" autocomplete="off">
+                </div>
+                <div class="field field-wide">
+                  <label for="editGroupDescription">Опис</label>
+                  <textarea id="editGroupDescription" placeholder="Опціонально"></textarea>
+                </div>
+              </div>
+              <div class="check-row">
+                <span class="check-with-hint">
+                  <label class="check-field">
+                    <input id="editGroupPrimary" type="checkbox" checked>
+                    Чи є групою за замовчуванням
+                  </label>
+                  <span class="hint-symbol" tabindex="0" title="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну" data-hint="При включеній опції групу буде додано в переліку на відсилання, при виключеній – її можна буде додати вручну">?</span>
+                </span>
+                <label class="check-field">
+                  <input id="editGroupEnabled" type="checkbox" checked>
+                  Увімкнено
+                </label>
+              </div>
+            </div>
+            <div class="group-form-actions">
+              <button class="btn btn-outlined btn-danger hidden" type="button" id="editGroupDeleteButton">Видалити</button>
+              <button class="btn btn-text" type="button" id="editGroupCancelButton">Скасувати</button>
+              <button class="btn btn-contained" type="button" id="editGroupConfirmButton">Зберегти</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-actions" id="editDialogActions">
+        <button class="btn btn-outlined" type="button" id="editTestButton">Перевірити</button>
+        <button class="btn btn-text" type="button" data-close-dialog="editDialog">Скасувати</button>
+        <button class="btn btn-contained" type="button" id="editSaveButton">Зберегти</button>
+      </div>
+    </dialog>
+
+    <script type="application/json" id="seedIntegrations">
+      [
+        {
+          "id": "1",
+          "name": "Північ",
+          "sender": "Черешня",
+          "echoApi": "https://echo-api.example.local/north",
+          "login": "north.operator",
+          "groups": [
+            { "id": "g-101", "name": "ВИШНЕВЕ ВУХО", "description": "Основна група сповіщень", "isPrimary": true, "isEnabled": true },
+            { "id": "g-102", "name": "Черешня резерв", "description": "Резервний канал", "isPrimary": false, "isEnabled": false }
+          ]
+        }
+      ]
+    </script>
+
+    <script>
+      const STORAGE_KEY = 'echo-integrations-mockup-v4';
+
+      const state = {
+        integrations: loadIntegrations(),
+        search: '',
+        createDraft: null,
+        createEditingGroupId: null,
+        editDraft: null,
+        editEditingGroupId: null,
+        editTab: 'details',
+      };
+
+      const els = {
+        body: document.getElementById('integrationsBody'),
+        emptyState: document.getElementById('emptyState'),
+        searchInput: document.getElementById('searchInput'),
+        refreshButton: document.getElementById('refreshButton'),
+        createButton: document.getElementById('createButton'),
+        createDialog: document.getElementById('createDialog'),
+        createDialogTitle: document.getElementById('createDialogTitle'),
+        createDetailsForm: document.getElementById('createDetailsForm'),
+        createDetailsStep: document.getElementById('createDetailsStep'),
+        createGroupsStep: document.getElementById('createGroupsStep'),
+        createDetailsActions: document.getElementById('createDetailsActions'),
+        createGroupsActions: document.getElementById('createGroupsActions'),
+        createTestButton: document.getElementById('createTestButton'),
+        createBackButton: document.getElementById('createBackButton'),
+        createSaveButton: document.getElementById('createSaveButton'),
+        createConnectionStatus: document.getElementById('createConnectionStatus'),
+        createGroupsListScreen: document.getElementById('createGroupsListScreen'),
+        createGroupsBody: document.getElementById('createGroupsBody'),
+        createGroupsEmpty: document.getElementById('createGroupsEmpty'),
+        createGroupCreateButton: document.getElementById('createGroupCreateButton'),
+        createGroupEditorScreen: document.getElementById('createGroupEditorScreen'),
+        createGroupEditorTitle: document.getElementById('createGroupEditorTitle'),
+        createGroupConfirmButton: document.getElementById('createGroupConfirmButton'),
+        createGroupCancelButton: document.getElementById('createGroupCancelButton'),
+        createGroupDeleteButton: document.getElementById('createGroupDeleteButton'),
+        editDialog: document.getElementById('editDialog'),
+        editDetailsForm: document.getElementById('editDetailsForm'),
+        editDialogActions: document.getElementById('editDialogActions'),
+        editDetailsTab: document.getElementById('editDetailsTab'),
+        editGroupsTab: document.getElementById('editGroupsTab'),
+        editGroupsPanel: document.getElementById('editGroupsPanel'),
+        editTestButton: document.getElementById('editTestButton'),
+        editSaveButton: document.getElementById('editSaveButton'),
+        editConnectionStatus: document.getElementById('editConnectionStatus'),
+        editGroupsListScreen: document.getElementById('editGroupsListScreen'),
+        editGroupsBody: document.getElementById('editGroupsBody'),
+        editGroupsEmpty: document.getElementById('editGroupsEmpty'),
+        editGroupCreateButton: document.getElementById('editGroupCreateButton'),
+        editGroupEditorScreen: document.getElementById('editGroupEditorScreen'),
+        editGroupEditorTitle: document.getElementById('editGroupEditorTitle'),
+        editGroupConfirmButton: document.getElementById('editGroupConfirmButton'),
+        editGroupCancelButton: document.getElementById('editGroupCancelButton'),
+        editGroupDeleteButton: document.getElementById('editGroupDeleteButton'),
+      };
+
+      function loadIntegrations() {
+        let stored = null;
+        try {
+          stored = localStorage.getItem(STORAGE_KEY);
+        } catch (_) {
+          stored = null;
+        }
+
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+              return parsed.map(normalizeIntegration);
+            }
+          } catch (_) {
+            try {
+              localStorage.removeItem(STORAGE_KEY);
+            } catch (_) {}
+          }
+        }
+
+        return JSON.parse(document.getElementById('seedIntegrations').textContent).map(normalizeIntegration);
+      }
+
+      function normalizeIntegration(integration) {
+        return {
+          id: String(integration.id || Date.now()),
+          name: String(integration.name || ''),
+          sender: String(integration.sender || ''),
+          echoApi: String(integration.echoApi || ''),
+          login: String(integration.login || ''),
+          groups: Array.isArray(integration.groups) ? integration.groups.map(normalizeGroup) : [],
+        };
+      }
+
+      function normalizeGroup(group) {
+        return {
+          id: String(group.id || newId('group')),
+          name: String(group.name || ''),
+          description: String(group.description || ''),
+          isPrimary: Boolean(group.isPrimary),
+          isEnabled: group.isEnabled !== false,
+        };
+      }
+
+      function saveIntegrations() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.integrations));
+        } catch (_) {}
+      }
+
+      function normalize(value) {
+        return String(value || '').trim();
+      }
+
+      function newId(prefix) {
+        return `${prefix}-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+      }
+
+      function filteredIntegrations() {
+        const needle = state.search.toLowerCase().trim();
+        if (!needle) {
+          return state.integrations;
+        }
+
+        return state.integrations.filter((integration) => {
+          const groups = (integration.groups || []).map((group) => group.name).join(', ');
+          return [integration.name, integration.sender, integration.echoApi, integration.login, groups]
+            .some((value) => String(value || '').toLowerCase().includes(needle));
+        });
+      }
+
+      function renderTable() {
+        const rows = filteredIntegrations();
+        els.body.innerHTML = '';
+        els.emptyState.classList.toggle('hidden', rows.length > 0);
+
+        rows.forEach((integration, index) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="col-number">${index + 1}</td>
+            <td class="col-actions">
+              <button class="icon-btn" type="button" title="Редагувати" aria-label="Редагувати" data-edit-id="${escapeHtml(integration.id)}">
+                ${editIcon()}
+              </button>
+            </td>
+            <td class="col-name" title="${escapeHtml(integration.name)}">${escapeHtml(integration.name)}</td>
+            <td class="col-sender" title="${escapeHtml(integration.sender)}">${escapeHtml(integration.sender)}</td>
+            <td class="col-url" title="${escapeHtml(integration.echoApi)}">${escapeHtml(integration.echoApi)}</td>
+            <td class="col-login" title="${escapeHtml(integration.login)}">${escapeHtml(integration.login)}</td>
+            <td class="col-groups">${renderGroupSummary(integration.groups)}</td>
+          `;
+          els.body.appendChild(tr);
+        });
+      }
+
+      function renderGroupSummary(groups) {
+        if (!groups || groups.length === 0) {
+          return '';
+        }
+
+        return groups.map((group, index) => {
+          const classes = ['group-name'];
+          if (!group.isEnabled) classes.push('disabled');
+          if (group.isPrimary) classes.push('primary');
+          const comma = index < groups.length - 1 ? ', ' : '';
+          return `<span class="${classes.join(' ')}">${escapeHtml(group.name)}</span>${comma}`;
+        }).join('');
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function openCreateDialog() {
+        state.createDraft = null;
+        state.createEditingGroupId = null;
+        els.createDetailsForm.reset();
+        resetCreateGroupForm();
+        setConnectionStatus(els.createConnectionStatus, 'unknown');
+        showCreateStep('details');
+        els.createDialog.showModal();
+        document.getElementById('createName').focus();
+      }
+
+      function showCreateStep(step) {
+        const isGroups = step === 'groups';
+        els.createDetailsStep.classList.toggle('hidden', isGroups);
+        els.createDetailsActions.classList.toggle('hidden', isGroups);
+        els.createGroupsStep.classList.toggle('hidden', !isGroups);
+        els.createGroupsActions.classList.toggle('hidden', !isGroups);
+        els.createDialogTitle.textContent = isGroups ? 'Додати групи' : 'Додати ЕХО інтеграцію';
+        if (isGroups) {
+          showCreateGroupsList();
+        }
+      }
+
+      function handleCreateNext(event) {
+        event.preventDefault();
+        const form = els.createDetailsForm;
+        if (!form.reportValidity()) {
+          return;
+        }
+
+        state.createDraft = {
+          id: newId('integration'),
+          name: normalize(form.elements.name.value),
+          sender: normalize(form.elements.sender.value),
+          echoApi: normalize(form.elements.echoApi.value),
+          login: normalize(form.elements.login.value),
+          groups: state.createDraft?.groups || [],
+        };
+        showCreateStep('groups');
+        els.createGroupCreateButton.focus();
+      }
+
+      function saveCreatedIntegration() {
+        if (!state.createDraft) {
+          return;
+        }
+        state.integrations = [...state.integrations, normalizeIntegration(state.createDraft)];
+        saveIntegrations();
+        els.createDialog.close();
+        renderTable();
+      }
+
+      function openEditDialog(id) {
+        const integration = state.integrations.find((item) => item.id === id);
+        if (!integration) {
+          return;
+        }
+
+        state.editDraft = structuredCloneSafe(integration);
+        state.editEditingGroupId = null;
+        setEditTab('details');
+        fillEditDetailsForm(state.editDraft);
+        resetEditGroupForm();
+        setConnectionStatus(els.editConnectionStatus, 'unknown');
+        els.editDialog.showModal();
+        document.getElementById('editName').focus();
+      }
+
+      function structuredCloneSafe(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function fillEditDetailsForm(integration) {
+        const form = els.editDetailsForm;
+        form.reset();
+        form.elements.id.value = integration.id;
+        form.elements.name.value = integration.name;
+        form.elements.sender.value = integration.sender || '';
+        form.elements.echoApi.value = integration.echoApi;
+        form.elements.login.value = integration.login;
+      }
+
+      function setEditTab(tab) {
+        state.editTab = tab;
+        const isGroups = tab === 'groups';
+        els.editDetailsForm.classList.toggle('hidden', isGroups);
+        els.editGroupsPanel.classList.toggle('hidden', !isGroups);
+        els.editTestButton.classList.toggle('hidden', isGroups);
+        els.editDialogActions.classList.remove('hidden');
+        els.editDetailsTab.classList.toggle('active', !isGroups);
+        els.editGroupsTab.classList.toggle('active', isGroups);
+        if (isGroups) {
+          showEditGroupsList();
+        } else {
+          resetEditGroupForm();
+        }
+      }
+
+      function saveEditedIntegration() {
+        if (!state.editDraft) {
+          return;
+        }
+
+        if (!els.editDetailsForm.checkValidity()) {
+          setEditTab('details');
+          els.editDetailsForm.reportValidity();
+          return;
+        }
+
+        const form = els.editDetailsForm;
+        state.editDraft = {
+          ...state.editDraft,
+          name: normalize(form.elements.name.value),
+          sender: normalize(form.elements.sender.value),
+          echoApi: normalize(form.elements.echoApi.value),
+          login: normalize(form.elements.login.value),
+        };
+
+        state.integrations = state.integrations.map((integration) => {
+          return integration.id === state.editDraft.id ? normalizeIntegration(state.editDraft) : integration;
+        });
+        saveIntegrations();
+        els.editDialog.close();
+        renderTable();
+      }
+
+      function renderCreateGroupsTable() {
+        renderGroupsTable({
+          groups: state.createDraft?.groups || [],
+          body: els.createGroupsBody,
+          empty: els.createGroupsEmpty,
+          editAttr: 'data-create-group-edit-id',
+        });
+      }
+
+      function renderEditGroupsTable() {
+        renderGroupsTable({
+          groups: state.editDraft?.groups || [],
+          body: els.editGroupsBody,
+          empty: els.editGroupsEmpty,
+          editAttr: 'data-edit-group-edit-id',
+        });
+      }
+
+      function renderGroupsTable({ groups, body, empty, editAttr }) {
+        body.innerHTML = '';
+        empty.classList.toggle('hidden', groups.length > 0);
+        groups.forEach((group, index) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="col-number">${index + 1}</td>
+            <td class="col-actions">
+              <button class="icon-btn" type="button" title="Редагувати" aria-label="Редагувати" ${editAttr}="${escapeHtml(group.id)}">
+                ${editIcon()}
+              </button>
+            </td>
+            <td class="col-name" title="${escapeHtml(group.name)}">${escapeHtml(group.name)}</td>
+            <td class="col-description" title="${escapeHtml(group.description)}">${escapeHtml(group.description)}</td>
+            <td class="col-state">${group.isPrimary ? 'Так' : 'Ні'}</td>
+            <td class="col-state">${group.isEnabled ? 'Так' : 'Ні'}</td>
+          `;
+          body.appendChild(tr);
+        });
+      }
+
+      function readGroupForm(prefix) {
+        const name = normalize(document.getElementById(`${prefix}GroupName`).value);
+        if (!name) {
+          document.getElementById(`${prefix}GroupName`).focus();
+          return null;
+        }
+
+        return {
+          id: newId('group'),
+          name,
+          description: normalize(document.getElementById(`${prefix}GroupDescription`).value),
+          isPrimary: document.getElementById(`${prefix}GroupPrimary`).checked,
+          isEnabled: document.getElementById(`${prefix}GroupEnabled`).checked,
+        };
+      }
+
+      function resetGroupForm(prefix) {
+        document.getElementById(`${prefix}GroupName`).value = '';
+        document.getElementById(`${prefix}GroupDescription`).value = '';
+        document.getElementById(`${prefix}GroupPrimary`).checked = true;
+        document.getElementById(`${prefix}GroupEnabled`).checked = true;
+      }
+
+      function fillGroupForm(prefix, group) {
+        document.getElementById(`${prefix}GroupName`).value = group.name;
+        document.getElementById(`${prefix}GroupDescription`).value = group.description || '';
+        document.getElementById(`${prefix}GroupPrimary`).checked = group.isPrimary;
+        document.getElementById(`${prefix}GroupEnabled`).checked = group.isEnabled;
+      }
+
+      function resetCreateGroupForm() {
+        state.createEditingGroupId = null;
+        resetGroupForm('create');
+        els.createGroupDeleteButton.classList.add('hidden');
+      }
+
+      function resetEditGroupForm() {
+        state.editEditingGroupId = null;
+        resetGroupForm('edit');
+        els.editGroupDeleteButton.classList.add('hidden');
+      }
+
+      function showCreateGroupsList() {
+        resetCreateGroupForm();
+        els.createGroupsListScreen.classList.remove('hidden');
+        els.createGroupEditorScreen.classList.add('hidden');
+        els.createGroupsActions.classList.remove('hidden');
+        renderCreateGroupsTable();
+      }
+
+      function showEditGroupsList() {
+        resetEditGroupForm();
+        els.editGroupsListScreen.classList.remove('hidden');
+        els.editGroupEditorScreen.classList.add('hidden');
+        els.editDialogActions.classList.remove('hidden');
+        renderEditGroupsTable();
+      }
+
+      function openCreateGroupEditor(id = null) {
+        const group = id ? state.createDraft?.groups.find((item) => item.id === id) : null;
+        if (id && !group) {
+          return;
+        }
+
+        resetGroupForm('create');
+        state.createEditingGroupId = id;
+        if (group) {
+          fillGroupForm('create', group);
+        }
+        els.createGroupEditorTitle.textContent = id ? 'Редагувати групу' : 'Створити групу';
+        els.createGroupDeleteButton.classList.toggle('hidden', !id);
+        els.createGroupsListScreen.classList.add('hidden');
+        els.createGroupEditorScreen.classList.remove('hidden');
+        els.createGroupsActions.classList.add('hidden');
+        document.getElementById('createGroupName').focus();
+      }
+
+      function openEditGroupEditor(id = null) {
+        const group = id ? state.editDraft?.groups.find((item) => item.id === id) : null;
+        if (id && !group) {
+          return;
+        }
+
+        resetGroupForm('edit');
+        state.editEditingGroupId = id;
+        if (group) {
+          fillGroupForm('edit', group);
+        }
+        els.editGroupEditorTitle.textContent = id ? 'Редагувати групу' : 'Створити групу';
+        els.editGroupDeleteButton.classList.toggle('hidden', !id);
+        els.editGroupsListScreen.classList.add('hidden');
+        els.editGroupEditorScreen.classList.remove('hidden');
+        els.editDialogActions.classList.add('hidden');
+        document.getElementById('editGroupName').focus();
+      }
+
+      function confirmCreateGroup() {
+        if (!state.createDraft) {
+          return;
+        }
+        const group = readGroupForm('create');
+        if (!group) {
+          return;
+        }
+
+        state.createDraft.groups = upsertGroup(state.createDraft.groups, group, state.createEditingGroupId);
+        showCreateGroupsList();
+      }
+
+      function confirmEditGroup() {
+        if (!state.editDraft) {
+          return;
+        }
+        const group = readGroupForm('edit');
+        if (!group) {
+          return;
+        }
+
+        state.editDraft.groups = upsertGroup(state.editDraft.groups, group, state.editEditingGroupId);
+        showEditGroupsList();
+      }
+
+      function upsertGroup(groups, group, editingGroupId) {
+        if (!editingGroupId) {
+          return [...groups, group];
+        }
+
+        return groups.map((item) => item.id === editingGroupId ? { ...group, id: editingGroupId } : item);
+      }
+
+      function editCreateGroup(id) {
+        openCreateGroupEditor(id);
+      }
+
+      function editEditGroup(id) {
+        openEditGroupEditor(id);
+      }
+
+      function deleteCreateGroup() {
+        if (!state.createDraft || !state.createEditingGroupId) {
+          return;
+        }
+        state.createDraft.groups = state.createDraft.groups.filter((group) => group.id !== state.createEditingGroupId);
+        showCreateGroupsList();
+      }
+
+      function deleteEditGroup() {
+        if (!state.editDraft || !state.editEditingGroupId) {
+          return;
+        }
+        state.editDraft.groups = state.editDraft.groups.filter((group) => group.id !== state.editEditingGroupId);
+        showEditGroupsList();
+      }
+
+      function testConnection(form, statusElement, button) {
+        const echoApi = normalize(form.elements.echoApi.value);
+        const login = normalize(form.elements.login.value);
+        const password = normalize(form.elements.password.value);
+
+        if (!echoApi || !login || !password) {
+          setConnectionStatus(statusElement, 'error');
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = 'Перевірка...';
+        window.setTimeout(() => {
+          setConnectionStatus(statusElement, echoApi.startsWith('http') ? 'success' : 'error');
+          button.disabled = false;
+          button.textContent = 'Перевірити';
+        }, 450);
+      }
+
+      function setConnectionStatus(element, status) {
+        element.className = 'connection-status';
+        if (status === 'success') {
+          element.classList.add('success');
+          element.textContent = 'Підключення успішне';
+          return;
+        }
+        if (status === 'error') {
+          element.classList.add('error');
+          element.textContent = 'Підключення неуспішне';
+          return;
+        }
+        element.textContent = '';
+      }
+
+      function editIcon() {
+        return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.04a1 1 0 0 0 0-1.41L18.2 3.29a1 1 0 0 0-1.41 0l-1.96 1.96L18.58 9l2.13-1.79Z"></path></svg>';
+      }
+
+      els.searchInput.addEventListener('input', (event) => {
+        state.search = event.target.value;
+        renderTable();
+      });
+
+      els.refreshButton.addEventListener('click', renderTable);
+      els.createButton.addEventListener('click', openCreateDialog);
+      els.createDetailsForm.addEventListener('submit', handleCreateNext);
+      els.createBackButton.addEventListener('click', () => showCreateStep('details'));
+      els.createSaveButton.addEventListener('click', saveCreatedIntegration);
+      els.createGroupCreateButton.addEventListener('click', () => openCreateGroupEditor());
+      els.createGroupCancelButton.addEventListener('click', showCreateGroupsList);
+      els.createGroupConfirmButton.addEventListener('click', confirmCreateGroup);
+      els.createGroupDeleteButton.addEventListener('click', deleteCreateGroup);
+      els.createTestButton.addEventListener('click', () => testConnection(els.createDetailsForm, els.createConnectionStatus, els.createTestButton));
+
+      els.editSaveButton.addEventListener('click', saveEditedIntegration);
+      els.editGroupCreateButton.addEventListener('click', () => openEditGroupEditor());
+      els.editGroupCancelButton.addEventListener('click', showEditGroupsList);
+      els.editGroupConfirmButton.addEventListener('click', confirmEditGroup);
+      els.editGroupDeleteButton.addEventListener('click', deleteEditGroup);
+      els.editTestButton.addEventListener('click', () => testConnection(els.editDetailsForm, els.editConnectionStatus, els.editTestButton));
+      els.editDetailsTab.addEventListener('click', () => setEditTab('details'));
+      els.editGroupsTab.addEventListener('click', () => setEditTab('groups'));
+
+      document.addEventListener('click', (event) => {
+        const closeButton = event.target.closest('[data-close-dialog]');
+        if (closeButton) {
+          document.getElementById(closeButton.dataset.closeDialog).close();
+          return;
+        }
+
+        const editButton = event.target.closest('[data-edit-id]');
+        if (editButton) {
+          openEditDialog(editButton.dataset.editId);
+          return;
+        }
+
+        const createGroupEditButton = event.target.closest('[data-create-group-edit-id]');
+        if (createGroupEditButton) {
+          editCreateGroup(createGroupEditButton.dataset.createGroupEditId);
+          return;
+        }
+
+        const editGroupEditButton = event.target.closest('[data-edit-group-edit-id]');
+        if (editGroupEditButton) {
+          editEditGroup(editGroupEditButton.dataset.editGroupEditId);
+        }
+      });
+
+      renderTable();
+    </script>
+  </body>
+</html>

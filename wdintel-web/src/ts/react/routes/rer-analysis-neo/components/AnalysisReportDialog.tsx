@@ -43,6 +43,7 @@ import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 
 const FORMING_TEXT = `Формується${ELLIPSIS}`;
 const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
+const REPORT_HISTORY_URL = "/settings-neo?section=myReports";
 
 type Props = {
   aors: AnalysisAorEntry[];
@@ -229,6 +230,9 @@ export function AnalysisReportDialog({
               <Tab value="reports" label="Звіти" />
               <Tab value="exports" label="Експорт" />
             </Tabs>
+            <Typography variant="body2" color="text.secondary">
+              Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування -&gt; Мої Звіти</Box>
+            </Typography>
 
             {builderMode === 'reports' ? (
               <Stack spacing={1}>
@@ -394,11 +398,18 @@ export function AnalysisReportDialog({
                   onChange={(value) => onUpdate({ withoutModelTags: value })}
                 />
                 {report.template === 'interception' ? (
-                  <ReportCheckboxLabel
-                    checked={report.interceptionKeepFullMessage}
-                    label="Повний текст повідомлення"
-                    onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
-                  />
+                  <>
+                    <ReportCheckboxLabel
+                      checked={report.interceptionKeepFullMessage}
+                      label="Повний текст повідомлення"
+                      onChange={(value) => onUpdate({ interceptionKeepFullMessage: value })}
+                    />
+                    <ReportCheckboxLabel
+                      checked={report.interceptionKeepOldColors}
+                      label="Залишити старі кольори"
+                      onChange={(value) => onUpdate({ interceptionKeepOldColors: value })}
+                    />
+                  </>
                 ) : null}
                 {(() => {
                   const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Без автоматичних тегів'));

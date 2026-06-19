@@ -46,6 +46,7 @@ pub mod oneoff;
 pub mod operator;
 pub mod organism;
 pub mod palitra;
+pub mod report_history;
 pub mod rer_importer;
 pub mod secret;
 pub mod server;
@@ -668,6 +669,7 @@ enum Cmd {
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffRefreshAiModels,
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
+    OneoffEnsureApiIntegrationIggyTopics,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1164,6 +1166,9 @@ async fn async_main(
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await
+        }
+        Cmd::OneoffEnsureApiIntegrationIggyTopics => {
+            api_integrations::oneoff_ensure_iggy_topics(mode).await
         }
     }
 }

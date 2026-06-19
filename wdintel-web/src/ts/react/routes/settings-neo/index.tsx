@@ -9,11 +9,12 @@ import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { SettingsReportsSection } from './SettingsReportsSection';
+import { SettingsMyReportsSection } from './SettingsMyReportsSection';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
-export type SettingsSection = 'general' | 'myGroups' | 'duty' | 'analysis' | 'reports';
+export type SettingsSection = 'general' | 'myGroups' | 'duty' | 'analysis' | 'reports' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: SettingsSection;
@@ -25,7 +26,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'myGroups' || section === 'my-groups') {
     return 'myGroups';
   }
-  if (section === 'duty' || section === 'analysis' || section === 'reports') {
+  if (section === 'duty' || section === 'analysis' || section === 'reports' || section === 'myReports') {
     return section;
   }
   return 'myGroups';
@@ -150,6 +151,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               id="settings-neo-tab-reports"
               aria-controls="settings-neo-panel-reports"
             />
+            <Tab
+              value="myReports"
+              label="Мої Звіти (бета)"
+              id="settings-neo-tab-my-reports"
+              aria-controls="settings-neo-panel-my-reports"
+            />
           </Tabs>
 
           {settingsSection === 'myGroups' ? (
@@ -267,6 +274,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               userRoles={globalSettings.userRoles}
               rolesLoading={globalSettings.loadInProgress}
             />
+          ) : null}
+
+          {settingsSection === 'myReports' ? (
+            <SettingsMyReportsSection active={settingsSection === 'myReports'} />
           ) : null}
 
         </Card>

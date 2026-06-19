@@ -55,12 +55,37 @@ pub async fn rer_analysis_download_geojson(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
-    http_req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login.clone(), "Rer")
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
+    let req = req.into_inner();
+    let bytes = rer_analysis_geojson_bytes(&login, &env, req.clone())
+        .await
+        .c(h!())?;
+    crate::report_history::record_completed_report_nofail(
+        &env,
+        &login,
+        crate::report_history::KIND_GEOJSON,
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req),
+        },
+        "analysis.geojson".to_string(),
+        "application/geo+json".to_string(),
+        &bytes,
+    )
+    .await;
+    Ok(HttpResponse::Ok()
+        .insert_header(("Content-Type", "application/geo+json"))
+        .body(bytes))
+}
+
+pub(crate) async fn rer_analysis_geojson_bytes(
+    login: &str,
+    env: &Env,
+    req: AnalysisStatsReq,
+) -> Result<Vec<u8>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_since_minus_24h =
         dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
@@ -79,7 +104,7 @@ pub async fn rer_analysis_download_geojson(
         body: Option<String>,
     }
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let items = signal_message::Entity::find()
@@ -140,7 +165,7 @@ pub async fn rer_analysis_download_geojson(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().c(h!())?,
+        login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let items =
@@ -313,9 +338,8 @@ pub async fn rer_analysis_download_geojson(
     };
     let geojson = serde_json::to_string(&geojson).context(h!())?;
     std::fs::write(&outpath, geojson)?;
-
-    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    let bytes = tokio::fs::read(&outpath).await.c(h!())?;
+    Ok(bytes)
 }
 
 #[cfg(test)]

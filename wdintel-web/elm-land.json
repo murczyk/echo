@@ -49,7 +49,11 @@
           "type": "image/x-icon"
         }
       ],
-      "script": []
+      "script": [
+        {
+          "src": "/dev-module-reload-recovery.js"
+        }
+      ]
     },
     "router": {
       "useHashRouting": false

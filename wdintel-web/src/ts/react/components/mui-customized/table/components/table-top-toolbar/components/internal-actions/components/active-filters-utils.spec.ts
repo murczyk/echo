@@ -76,6 +76,37 @@ describe('active-filters utils', () => {
     ]);
   });
 
+  it('uses the active-filter formatter from column meta when available', () => {
+    const table = buildTable({
+      getState: () => ({
+        columnFilters: [{ id: 'status', value: ['open', 'closed'] }],
+        globalFilter: '',
+      }),
+      getColumn: (columnId: string) =>
+        columnId === 'status'
+          ? ({
+              columnDef: {
+                header: 'Статус',
+                meta: {
+                  activeFilterValueFormatter: (value: unknown) =>
+                    Array.isArray(value) ? value.map((item) => String(item).toUpperCase()).join(', ') : String(value),
+                },
+              },
+            } as any)
+          : undefined,
+    });
+
+    expect(getActiveTableFilters(table, [{ id: 'status', value: ['open', 'closed'] }], '')).toEqual([
+      {
+        id: 'status',
+        label: 'Статус',
+        value: ['open', 'closed'],
+        valuePreview: 'OPEN, CLOSED',
+        isGlobalFilter: false,
+      },
+    ]);
+  });
+
   it('skips filters that match the configured default active value', () => {
     const table = buildTable({
       getState: () => ({

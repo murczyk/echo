@@ -210,6 +210,7 @@ function NetworkCallsignsCatalogTableContent({
             disabled={!canManage || isInFlight}
             icon={<AddIcon fontSize="small" />}
             label="Додати в мережу"
+            opensModal
           />
         </Box>
       );

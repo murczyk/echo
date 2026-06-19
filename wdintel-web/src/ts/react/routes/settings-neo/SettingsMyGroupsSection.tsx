@@ -1,19 +1,12 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import { useEffect, useMemo } from 'react';
+import { MRT_ColumnDef } from 'material-react-table';
+import { useMemo } from 'react';
 
 import type { MyAdminSignalGroup, SignalGroupLogin } from '../../../../Bindings';
 import { ELLIPSIS } from '../../utils/misc';
 import { PowerAlert } from '../../components/PowerAlert';
-import {
-  CUSTOM_CELL_STYLES,
-  CUSTOM_STYLES,
-  FULL_HEIGHT_LOADING_ROW_COUNT,
-  FULL_WIDTH_TABLE_PAPER_SX,
-  getPageScrollTableContainerSx,
-} from '../../components/mui-customized/table/custom-styles';
-import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { SettingsNeoTable } from './SettingsNeoTable';
 
 const DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY = {
   name: true,
@@ -32,7 +25,6 @@ const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
   'allowedUsers',
 ];
 
-const defaultMyGroupsMRTOptions = getDefaultMRTOptions<MyAdminSignalGroup>();
 const MY_GROUPS_SETUP_FLOW_IMAGE_ALT =
   'Схема додавання групи: 1. Додайте номер бота до групи Signal або WhatsApp. 2. Напишіть в підтримку "Додано групу ...". 3. Вкажіть тип групи: приватна група — користувачі Delta1, Delta2; смугова група — смуга АК33, АК34.';
 
@@ -57,19 +49,6 @@ function formatGroupLogins(logins: SignalGroupLogin[]): string {
 function formatAllowedUsers(group: MyAdminSignalGroup): string {
   if (!group.isGroupSecret) return 'без обмежень';
   return formatGroupLogins(group.allowedUsers);
-}
-
-function buildMyGroupLoadingRows(): MyAdminSignalGroup[] {
-  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
-    masterKey: `loading-${index}`,
-    name: '',
-    datasourceName: null,
-    datasourceKind: null,
-    isGroupSecret: false,
-    allowedUsers: [],
-    adminLogins: [],
-    areasOfResponsibility: null,
-  }));
 }
 
 function useMyGroupsColumns() {
@@ -115,84 +94,7 @@ function useMyGroupsColumns() {
 
 function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: boolean }) {
   const columns = useMyGroupsColumns();
-  const tableStateContext = useTableStateContext();
-  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-
-  const table = useMaterialReactTable({
-    columns,
-    data: props.loading ? buildMyGroupLoadingRows() : props.groups,
-    ...defaultMyGroupsMRTOptions,
-    layoutMode: 'grid-no-grow',
-    enableSorting: true,
-    enableColumnActions: true,
-    enableRowNumbers: true,
-    enableColumnFilters: true,
-    enableColumnFilterModes: true,
-    enableFacetedValues: true,
-    enableRowVirtualization: false,
-    enableColumnOrdering: tableStateContext.enableColumnOrdering,
-    enableColumnResizing: tableStateContext.enableColumnResizing,
-    columnFilterDisplayMode: 'popover',
-    globalFilterFn: 'contains',
-    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
-    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
-    onColumnOrderChange: tableStateContext.onColumnOrderChange,
-    onColumnSizingChange: tableStateContext.onColumnSizingChange,
-    onSortingChange: tableStateContext.onSortingChange,
-    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
-    defaultColumn: {
-      size: 200,
-      renderColumnActionsMenuItems,
-    },
-    displayColumnDefOptions: {
-      ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-numbers': {
-        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
-        muiTableBodyCellProps: () => ({
-          sx: {
-            justifyContent: 'center',
-            ...CUSTOM_CELL_STYLES,
-          },
-        }),
-      },
-    },
-    muiTablePaperProps: ({ table }) => {
-      const baseProps = resolvedPaperProps({ table });
-      return {
-        ...baseProps,
-        sx: {
-          ...(baseProps as any)?.sx,
-          ...FULL_WIDTH_TABLE_PAPER_SX,
-        },
-      };
-    },
-    muiTableContainerProps: {
-      sx: {
-        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        ...getPageScrollTableContainerSx({ loading: props.loading, idleOverflow: 'auto' }),
-      },
-    },
-    state: {
-      showAlertBanner: false,
-      showLoadingOverlay: false,
-      showSkeletons: props.loading,
-      globalFilter: tableStateContext.globalFilter,
-      columnVisibility: tableStateContext.columnVisibility,
-      columnFilters: tableStateContext.columnFilters,
-      density: tableStateContext.density,
-      sorting: tableStateContext.sorting,
-      columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
-    },
-  });
-
-  useEffect(() => {
-    tableStateContext.onTableInitialized(table);
-  }, [table]);
-
-  return <MaterialReactTable table={table} />;
+  return <SettingsNeoTable columns={columns} data={props.groups} loading={props.loading} />;
 }
 
 function MyGroupsSetupFlowImage() {

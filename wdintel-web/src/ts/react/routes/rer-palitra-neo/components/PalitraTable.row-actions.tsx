@@ -45,12 +45,14 @@ function renderFolderRowActions(row: FolderTableRowView, props: Props) {
           onClick={() => props.onRequestRenameFolder(row.folderPath)}
           disabled={!row.canModify || props.externalBusy}
           icon={<EditIcon fontSize='small' />}
+          opensModal
         />
         <MrtRowActionButton
           label='Архівувати всі палітри в папці'
           onClick={() => props.onRequestArchiveFolder(row.folderPath)}
           disabled={!row.canModify || props.externalBusy}
           icon={<ArchiveOutlinedIcon fontSize='small' />}
+          opensModal
         />
         <MrtRowActionButton
           label='Видалити всі палітри в папці'
@@ -58,6 +60,7 @@ function renderFolderRowActions(row: FolderTableRowView, props: Props) {
           disabled={!row.canModify || props.externalBusy}
           icon={<DeleteIcon fontSize='small' />}
           tone='danger'
+          opensModal
         />
       </MrtRowActions>
     </Box>
@@ -87,12 +90,14 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           onClick={() => props.onOpenEdit(row.palitra)}
           disabled={disabled}
           icon={<EditIcon fontSize='small' />}
+          opensModal
         />
         <MrtRowActionButton
           label='Перемістити в папку'
           onClick={() => props.onRequestAssignFolder(row.palitra)}
           disabled={disabled}
           icon={<DriveFileMoveOutlinedIcon fontSize='small' />}
+          opensModal
         />
         {row.palitra.isArchived ? (
           <MrtRowActionButton
@@ -100,6 +105,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             onClick={() => props.onRequestUnarchive(row.palitra)}
             disabled={disabled}
             icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <UnarchiveOutlinedIcon fontSize='small' />}
+            opensModal
           />
         ) : (
           <MrtRowActionButton
@@ -107,6 +113,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             onClick={() => props.onRequestArchive(row.palitra)}
             disabled={disabled}
             icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <ArchiveOutlinedIcon fontSize='small' />}
+            opensModal
           />
         )}
         <MrtRowActionButton
@@ -135,6 +142,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           disabled={disabled}
           icon={row.deleteInFlight ? <CircularProgress size={16} color='inherit' /> : <DeleteIcon fontSize='small' />}
           tone='danger'
+          opensModal
         />
       </MrtRowActions>
     </Box>

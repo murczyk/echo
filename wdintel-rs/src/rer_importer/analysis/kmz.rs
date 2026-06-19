@@ -9,12 +9,37 @@ pub async fn rer_analysis_download_kmz(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<super::AnalysisStatsReq>,
-    http_req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
+    let req = req.into_inner();
+    let bytes = rer_analysis_kmz_bytes(&login, &env, req.clone())
+        .await
+        .c(h!())?;
+    crate::report_history::record_completed_report_nofail(
+        &env,
+        &login,
+        crate::report_history::KIND_KMZ,
+        crate::report_history::ReportHistoryRequest::AnalysisExport {
+            payload: Box::new(req),
+        },
+        "analysis.kmz".to_string(),
+        "application/vnd.google-earth.kmz".to_string(),
+        &bytes,
+    )
+    .await;
+    Ok(HttpResponse::Ok()
+        .insert_header(("Content-Type", "application/vnd.google-earth.kmz"))
+        .body(bytes))
+}
+
+pub(crate) async fn rer_analysis_kmz_bytes(
+    login: &str,
+    env: &Env,
+    req: super::AnalysisStatsReq,
+) -> Result<Vec<u8>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
@@ -27,7 +52,7 @@ pub async fn rer_analysis_download_kmz(
         body: Option<String>,
     }
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let items = signal_message::Entity::find()
@@ -82,7 +107,7 @@ pub async fn rer_analysis_download_kmz(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().c(h!())?,
+        login,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let items =
@@ -109,7 +134,7 @@ pub async fn rer_analysis_download_kmz(
     // let res = crate::kml::build_style_maps_per_app6d(&vec![sidc.clone()])?;
 
     let mut nodes = vec![];
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins_by_login(&env.dbx, login)
         .await
         .c(h!())?;
     for item in items.iter() {
@@ -198,6 +223,6 @@ pub async fn rer_analysis_download_kmz(
     };
     let outpath =
         crate::importer::package_up_kmz2(&env.config, &tmp_dir, &kml)?;
-    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    let bytes = tokio::fs::read(&outpath).await.c(h!())?;
+    Ok(bytes)
 }

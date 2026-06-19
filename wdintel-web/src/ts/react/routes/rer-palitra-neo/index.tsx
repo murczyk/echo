@@ -224,6 +224,7 @@ function RerPalitraNeoPageBody() {
         onClose={page.cancelFolderAction}
         onConfirm={page.confirmFolderAction}
         onNextFolderPathChange={page.setFolderDialogNextFolderPath}
+        disableRestoreFocus
       />
 
       <Dialog
@@ -421,6 +422,7 @@ function RerPalitraNeoPageBody() {
         referenceDataReady={page.referenceDataReady}
         onSetEditForm={page.updateEditForm}
         onSave={page.handleEditSave}
+        disableRestoreFocus
       />
     </Box>
   );

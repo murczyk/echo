@@ -16,6 +16,7 @@ type Props = {
   icon: ReactNode;
   disabled?: boolean;
   tone?: Tone;
+  opensModal?: boolean;
 };
 
 type GroupProps = {
@@ -24,6 +25,36 @@ type GroupProps = {
 };
 
 type ActionElement = ReactElement<Props, typeof MrtRowActionButton>;
+
+export const MRT_ROW_ACTION_MODAL_PROPS = {
+  disableRestoreFocus: true,
+} as const;
+
+function blurActiveElement() {
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+}
+
+function runRowAction({
+  opensModal,
+  onClick,
+  onClose,
+}: {
+  opensModal: boolean;
+  onClick: () => void;
+  onClose?: () => void;
+}) {
+  if (opensModal) {
+    blurActiveElement();
+    onClose?.();
+    window.setTimeout(onClick, 0);
+    return;
+  }
+
+  onClose?.();
+  onClick();
+}
 
 function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
   if (tone === 'danger') {
@@ -119,12 +150,20 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
   );
 }
 
-export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default' }: Props) {
+export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default', opensModal = false }: Props) {
+  function handleClick(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (opensModal) {
+      event.currentTarget.blur();
+    }
+    runRowAction({ opensModal, onClick });
+  }
+
   const button = (
     <span style={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
       <PowerIconButton
         size="small"
-        onClick={onClick}
+        onClick={handleClick}
         disabled={disabled}
         aria-label={label}
         title={label}
@@ -150,12 +189,14 @@ function isMrtRowActionElement(child: ReactNode): child is ActionElement {
 }
 
 function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClose: () => void }) {
-  const { label, onClick, icon, disabled = false, tone = 'default' } = action.props;
+  const { label, onClick, icon, disabled = false, tone = 'default', opensModal = false } = action.props;
 
   function handleClick(event: MouseEvent<HTMLLIElement>) {
     event.stopPropagation();
-    onClose();
-    onClick();
+    if (opensModal) {
+      event.currentTarget.blur();
+    }
+    runRowAction({ opensModal, onClick, onClose });
   }
 
   return (
