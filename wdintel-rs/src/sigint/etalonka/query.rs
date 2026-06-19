@@ -1093,10 +1093,15 @@ pub async fn load_callsigns(
     // Step 2. Get activity info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
-    let known_callsigns_activity_info =
-        get_callsigns_activity_info(db, groups.clone(), network_id, &callsigns)
-            .await
-            .context(h!())?;
+    let known_callsigns_activity_info = get_callsigns_activity_info(
+        db,
+        groups.clone(),
+        network_id,
+        &callsigns,
+        None,
+    )
+    .await
+    .context(h!())?;
 
     apply_activity_info(&mut res, &known_callsigns_activity_info);
 
@@ -1215,6 +1220,60 @@ pub fn build_network_freq_join_condition(
     Ok(join_condition)
 }
 
+pub fn build_datetime_filter(
+    filter: Option<&NetworkFreqFilter>,
+) -> Result<SimpleExpr, AppError> {
+    let mut expr_active_only = None;
+    let mut expr_active_from =
+        sigint_network_freq::Column::ActiveFrom.into_simple_expr();
+
+    let mut expr_active_to = Func::coalesce([
+        sigint_network_freq::Column::ActiveTo.into_simple_expr(),
+        Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
+    ]);
+
+    if let Some(network_freq_filter) = filter {
+        if network_freq_filter.active_freqs_only {
+            expr_active_only =
+                Some(sigint_network_freq::Column::ActiveTo.is_null());
+        }
+
+        if let Some(since_ms) = network_freq_filter.since_date_inclusive_ms {
+            let since_dt = DateTime::from_timestamp_millis(since_ms)
+                .context(h!())?
+                .naive_utc();
+            expr_active_from = Func::greatest([
+                Expr::value(since_dt),
+                sigint_network_freq::Column::ActiveFrom.into_simple_expr(),
+            ])
+            .into();
+        }
+
+        if let Some(till_ms) = network_freq_filter.till_date_inclusive_ms {
+            let till_dt = DateTime::from_timestamp_millis(till_ms)
+                .context(h!())?
+                .naive_utc();
+            expr_active_to =
+                Func::least([Expr::value(till_dt), expr_active_to.into()]);
+        }
+    }
+
+    let expr_datetime = Func::coalesce([
+        sigint_inbox_item::Column::Datetime.into_simple_expr(),
+        signal_message::Column::Timestamp.into_simple_expr(),
+        signal_message::Column::CreatedAt.into_simple_expr(),
+    ]);
+
+    let cond_is_network_freq_active =
+        expr_datetime.between(expr_active_from, expr_active_to);
+
+    if let Some(active_filter) = expr_active_only {
+        Ok(cond_is_network_freq_active.and(active_filter))
+    } else {
+        Ok(cond_is_network_freq_active)
+    }
+}
+
 /// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
@@ -1244,20 +1303,6 @@ pub async fn get_active_callsigns(
         .await
         .context(h!())?;
 
-    let expr_datetime = Func::coalesce([
-        sigint_inbox_item::Column::Datetime.into_simple_expr(),
-        signal_message::Column::Timestamp.into_simple_expr(),
-        signal_message::Column::CreatedAt.into_simple_expr(),
-    ]);
-
-    let mut expr_active_from =
-        sigint_network_freq::Column::ActiveFrom.into_simple_expr();
-
-    let mut expr_active_to = Func::coalesce([
-        sigint_network_freq::Column::ActiveTo.into_simple_expr(),
-        Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
-    ]);
-
     let sigint_network_callsigns: Vec<String> =
         sigint_network_callsign::Entity::find()
             .select_only()
@@ -1272,43 +1317,12 @@ pub async fn get_active_callsigns(
             .await
             .context(h!())?;
 
-    let mut expr_active_only = None;
-
-    if let Some(network_freq_filter) = filter {
-        if network_freq_filter.active_freqs_only {
-            expr_active_only =
-                Some(sigint_network_freq::Column::ActiveTo.is_null());
-        }
-
-        if let Some(since_ms) = network_freq_filter.since_date_inclusive_ms {
-            let since_dt = DateTime::from_timestamp_millis(since_ms)
-                .context(h!())?
-                .naive_utc();
-            expr_active_from = Func::greatest([
-                Expr::value(since_dt),
-                sigint_network_freq::Column::ActiveFrom.into_simple_expr(),
-            ])
-            .into();
-        }
-
-        if let Some(till_ms) = network_freq_filter.till_date_inclusive_ms {
-            let till_dt = DateTime::from_timestamp_millis(till_ms)
-                .context(h!())?
-                .naive_utc();
-            expr_active_to =
-                Func::least([Expr::value(till_dt), expr_active_to.into()]);
-        }
-    }
-
-    let cond_is_network_freq_active =
-        expr_datetime.between(expr_active_from, expr_active_to);
-
     let expr_jsonb_callsigns = Expr::cust_with_expr(
         "jsonb_array_elements_text($1)",
         sigint_inbox_item::Column::Callsigns.into_simple_expr(),
     );
 
-    let mut query = sigint_inbox_item_network::Entity::find()
+    let query = sigint_inbox_item_network::Entity::find()
         .select_only()
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::Datetime)
@@ -1337,20 +1351,21 @@ pub async fn get_active_callsigns(
             signal_message::Column::DatasourceGroupId
                 .eq_any(datasource_group_ids),
         )
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
-        .filter(cond_is_network_freq_active);
-
-    if let Some(is_freq_active_filter) = expr_active_only {
-        query = query.filter(is_freq_active_filter);
-    }
+        .filter(build_datetime_filter(filter)?);
 
     let subquery = query.into_query();
 
     let cond_not_already_in_network = if sigint_network_callsigns.is_empty() {
         None
     } else {
-        Some(Expr::column("callsign").ne(PgFunc::any(sigint_network_callsigns)))
+        Some(
+            Expr::column("callsign")
+                .eq(PgFunc::any(sigint_network_callsigns))
+                .not(),
+        )
     };
 
     let query = sea_query::Query::select()

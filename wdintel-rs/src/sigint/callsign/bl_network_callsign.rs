@@ -6,12 +6,13 @@ use crate::sigint::callsign::{
     list_callsign_additional_source_ids,
 };
 use crate::sigint::etalonka::query::*;
+use crate::sigint::etalonka::types::NetworkFreqFilter;
 use crate::sigint::network::bl::find_network;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, ExprTrait, Func, JoinType, PgFunc};
+use sea_query::{Alias, Expr, JoinType, PgFunc};
 use std::collections::HashMap;
 
 #[derive(Debug, FromQueryResult)]
@@ -633,6 +634,7 @@ pub async fn bl_get_network_callsigns_list(
         groups,
         req.network_id,
         &activity_callsigns,
+        None,
     )
     .await
     .context(h!())?;
@@ -824,6 +826,7 @@ where
         groups,
         network_id,
         &activity_callsigns,
+        None,
     )
     .await
     .context(h!())?;
@@ -843,6 +846,7 @@ pub async fn get_callsigns_activity_info<'a, 'async_trait, C>(
     groups: Vec<String>,
     network_id: i64,
     callsigns: &[String],
+    filter: Option<&NetworkFreqFilter>,
 ) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -867,22 +871,6 @@ where
         .all(txn)
         .await
         .context(h!())?;
-
-    let expr_datetime = Func::coalesce([
-        sigint_inbox_item::Column::Datetime.into_simple_expr(),
-        signal_message::Column::Timestamp.into_simple_expr(),
-        signal_message::Column::CreatedAt.into_simple_expr(),
-    ]);
-
-    let expr_active_to = Func::coalesce([
-        sigint_network_freq::Column::ActiveTo.into_simple_expr(),
-        Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
-    ]);
-
-    let cond_is_network_freq_active = expr_datetime.between(
-        sigint_network_freq::Column::ActiveFrom.into_simple_expr(),
-        expr_active_to,
-    );
 
     let expr_jsonb_callsigns = Expr::cust_with_expr(
         "jsonb_array_elements_text($1)",
@@ -926,8 +914,9 @@ where
             "sigint_inbox_item.callsigns ?| $1",
             expr_callsigns.clone(),
         ))
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(cond_is_network_freq_active)
+        .filter(build_datetime_filter(filter)?)
         .into_query();
 
     let query = sea_query::Query::select()
@@ -1066,6 +1055,7 @@ pub async fn bl_get_network_callsigns_activity(
         groups,
         req.network_id,
         req.callsigns.as_slice(),
+        None,
     )
     .await
     .context(h!())?
