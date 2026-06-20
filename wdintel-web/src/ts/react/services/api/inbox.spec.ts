@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../Bindings';
 import { postJson } from './client';
 import { fetchInboxMessages } from './inbox';
+import { normalizeMessageMediaInfo } from './inbox-messages';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
@@ -142,5 +143,63 @@ describe('inbox API normalization', () => {
         hashIdEndIndex: 12,
       },
     ]);
+  });
+
+  it('normalizes inbox media fields from snake_case', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      inbox_items: [
+        [
+          9,
+          buildRawMessage({
+            media: [
+              {
+                id: 'audio-1',
+                content_type: 'audio/mpeg',
+                file_name: 'recording.mp3',
+                size_bytes: 1024,
+                href: '/api/messenger/media/audio-1',
+              },
+            ],
+          }),
+        ],
+      ],
+      callsigns: [],
+      signal_profiles: {},
+      signal_groups: [],
+      freq_pelengs_summary: null,
+    });
+
+    const response = await fetchInboxMessages({} as Parameters<typeof fetchInboxMessages>[0]);
+    const message = response.inboxItems[0]?.[1];
+
+    expect(message?.media).toEqual([
+      {
+        id: 'audio-1',
+        contentType: 'audio/mpeg',
+        fileName: 'recording.mp3',
+        sizeBytes: 1024,
+        href: '/api/messenger/media/audio-1',
+      },
+    ]);
+  });
+});
+
+describe('normalizeMessageMediaInfo', () => {
+  it('maps snake_case attachment fields to camelCase', () => {
+    expect(
+      normalizeMessageMediaInfo({
+        id: 'm1',
+        content_type: 'audio/wav',
+        file_name: 'clip.wav',
+        size_bytes: 2048,
+        href: '/api/messenger/media/m1',
+      }),
+    ).toEqual({
+      id: 'm1',
+      contentType: 'audio/wav',
+      fileName: 'clip.wav',
+      sizeBytes: 2048,
+      href: '/api/messenger/media/m1',
+    });
   });
 });

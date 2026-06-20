@@ -33,6 +33,7 @@
     "@tmcw/togeojson": "^5.8.1",
     "bootstrap": "^5.3.3",
     "clsx": "^2.1.1",
+   "@echoua/echo-audio-player": "^0.1.0",
     "d3": "^7.9.0",
     "dayjs": "^1.11.13",
     "echarts": "^6.1.0",

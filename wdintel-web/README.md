@@ -5,6 +5,13 @@
 
 This project requires the latest LTS version of [Node.js](https://nodejs.org/)
 
+Private `@echoua/*` packages are installed from GitHub Packages. `.npmrc` in this directory points the registry at `npm.pkg.github.com`; export a personal access token before install:
+
+```bash
+export GITHUB_TOKEN=ghp_...   # read:packages (+ repo if needed)
+npm ci
+```
+
 ```bash
 npm install -g elm elm-spa
 ```

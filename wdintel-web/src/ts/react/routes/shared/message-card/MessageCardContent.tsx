@@ -7,7 +7,14 @@ import { renderMarkedText } from './MarkedText';
 import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
-import { collectMessageImageHrefs, MessageMediaDownloadLink, MessagePictureThumb } from './MessageCardMedia';
+import {
+  collectMessageImageHrefs,
+  isAudioMediaAttachment,
+  mediaAttachmentContentType,
+  MessageMediaAudioPlayer,
+  MessageMediaDownloadLink,
+  MessagePictureThumb,
+} from './MessageCardMedia';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -51,11 +58,13 @@ export function MessageCardMessageBody({
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
     if (imageHrefSet.has(href)) return false;
-    const contentType = String(attachment.contentType ?? '').trim();
+    const contentType = mediaAttachmentContentType(attachment);
     if (contentType.startsWith('image/')) return false;
     if (contentType !== '') return true;
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
+  const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
+  const downloadAttachments = attachmentMedia.filter((attachment) => !isAudioMediaAttachment(attachment));
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
@@ -71,9 +80,12 @@ export function MessageCardMessageBody({
           ))}
         </Box>
       ) : null}
-      {attachmentMedia.length > 0 ? (
-        <Box className="mt-1" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-          {attachmentMedia.map((attachment) => (
+      {audioAttachments.length > 0 || downloadAttachments.length > 0 ? (
+        <Box className="mt-1" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
+          {audioAttachments.map((attachment) => (
+            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+          ))}
+          {downloadAttachments.map((attachment) => (
             <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
           ))}
         </Box>

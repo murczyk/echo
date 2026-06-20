@@ -7,6 +7,7 @@ import type {
   InboxMessageTag,
   InboxMessagesReq,
   InboxMessagesRsp,
+  MessageMediaInfo,
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
@@ -63,6 +64,23 @@ export type InboxMessageMetadataRaw = Partial<InboxMessageMetadata> & {
   hash_id_start_index?: number | null;
   hash_id_end_index?: number | null;
 };
+
+export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
+  content_type?: string;
+  file_name?: string | null;
+  size_bytes?: number;
+};
+
+export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaInfo {
+  const raw = m as Record<string, unknown>;
+  return {
+    id: String(m.id ?? raw.id ?? ''),
+    contentType: String(m.contentType ?? raw.content_type ?? ''),
+    fileName: (m.fileName ?? raw.file_name ?? null) as string | null,
+    sizeBytes: Number(m.sizeBytes ?? raw.size_bytes ?? 0),
+    href: String(m.href ?? raw.href ?? ''),
+  };
+}
 
 type ContentNodeCandidate = Partial<{
   CNHighlightC: { text?: string | null };
@@ -167,7 +185,10 @@ function normalizeInboxMessage(
   const textMarked = normalizeTextMarked((raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked']);
   const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
   const pointTokens = normalizePointTokens(rawPointTokens);
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, metadata, textMarked, pointTokens };
+  const rawMedia = (raw.media ?? m.media ?? null) as MessageMediaInfoRaw[] | null | undefined;
+  const media: InboxMessageType['media'] =
+    isPresent(rawMedia) && Array.isArray(rawMedia) ? rawMedia.map(normalizeMessageMediaInfo) : (m.media ?? []);
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, metadata, textMarked, pointTokens, media };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {

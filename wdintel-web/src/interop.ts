@@ -1,3 +1,4 @@
+import '@echoua/echo-audio-player/register';
 
 import '@shoelace-style/shoelace/dist/themes/light.css';
 
