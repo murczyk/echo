@@ -112,6 +112,7 @@ type AddUserErrors = {
   password?: string;
   roles?: string;
   zone?: string;
+  organism?: string;
 };
 
 type EditUserForm = {
@@ -127,6 +128,7 @@ type EditUserForm = {
 type EditUserErrors = {
   roles?: string;
   zone?: string;
+  organism?: string;
 };
 
 const EMPTY_ADD_FORM: AddUserForm = {
@@ -239,6 +241,10 @@ function buildAddUserErrors(form: AddUserForm): AddUserErrors {
     errors.zone = 'Виберіть зону';
   }
 
+  if (!form.organismId) {
+    errors.organism = 'Виберіть організм';
+  }
+
   return errors;
 }
 
@@ -247,6 +253,8 @@ function hasFormErrors(errors: AddUserErrors): boolean {
 }
 
 function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
+  if (!form.organismId) throw new Error('Виберіть організм');
+
   return {
     login: form.login.trim(),
     password: form.useDelta ? '' : form.password.trim(),
@@ -267,10 +275,16 @@ function buildEditUserErrors(form: EditUserForm): EditUserErrors {
     errors.zone = 'Виберіть зону';
   }
 
+  if (!form.organismId) {
+    errors.organism = 'Виберіть організм';
+  }
+
   return errors;
 }
 
 function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
+  if (!form.organismId) throw new Error('Виберіть організм');
+
   const trimmedPassword = form.password.trim();
   const trimmedDelta = form.deltaLogin.trim();
   const deactivationReason: DeactivationReasonType | null = form.deleted ? 'Admin' : null;
@@ -442,7 +456,7 @@ function AddUserDialog(props: {
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
-  const canSubmit = zonesReady && !isSubmitting;
+  const canSubmit = zonesReady && organismsReady && !isSubmitting;
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
     id: zoneId,
@@ -625,6 +639,7 @@ function AddUserDialog(props: {
               const value = newValue?.id ?? null;
               debugLog('add:organism change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, organismId: value }));
+              setErrors((prev) => ({ ...prev, organism: undefined }));
             }}
             loading={organismsLoading}
             disabled={isSubmitting}
@@ -636,6 +651,9 @@ function AddUserDialog(props: {
               <TextField
                 {...params}
                 label="Організм"
+                required
+                error={Boolean(errors.organism)}
+                helperText={errors.organism || ' '}
               />
             )}
           />
@@ -671,6 +689,7 @@ function EditUserDialog(props: {
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
+  const canSubmit = zonesReady && (organismsReady || Boolean(form?.organismId)) && !isSubmitting && Boolean(form);
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
     id: zoneId,
@@ -845,6 +864,7 @@ function EditUserDialog(props: {
                 const value = newValue?.id ?? null;
                 debugLog('edit:organism change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, organismId: value } : prev));
+                setErrors((prev) => ({ ...prev, organism: undefined }));
               }}
               loading={organismsLoading}
               disabled={isSubmitting}
@@ -856,6 +876,9 @@ function EditUserDialog(props: {
                 <TextField
                   {...params}
                   label="Організм"
+                  required
+                  error={Boolean(errors.organism)}
+                  helperText={errors.organism || ' '}
                 />
               )}
             />
@@ -891,7 +914,7 @@ function EditUserDialog(props: {
         <PowerButton onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>
-        <PowerButton variant="contained" onClick={handleSave} disabled={isSubmitting || !form}>
+        <PowerButton variant="contained" onClick={handleSave} disabled={!canSubmit}>
           Зберегти
         </PowerButton>
       </DialogActions>

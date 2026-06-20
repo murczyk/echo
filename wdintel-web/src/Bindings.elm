@@ -3614,7 +3614,7 @@ type alias CreateLoginReq =
     , password : String
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
-    , organismId : Maybe (Int)
+    , organismId : Int
     }
 
 
@@ -3625,7 +3625,7 @@ createLoginReqEncoder struct =
         , ( "password", (Json.Encode.string) struct.password )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
-        , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
         ]
 
 
@@ -3633,7 +3633,7 @@ type alias UpdateLoginReq =
     { login : String
     , roles : Maybe (List (String))
     , sigintZoneId : Maybe (Int)
-    , organismId : Maybe (Int)
+    , organismId : Int
     , deleted : Maybe (Bool)
     , password : Maybe (String)
     , deltaLogin : Maybe (String)
@@ -3647,7 +3647,7 @@ updateLoginReqEncoder struct =
         [ ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
-        , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
         , ( "deleted", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.deleted )
         , ( "password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.password )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
@@ -10169,7 +10169,7 @@ createLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
 
 
 updateLoginReqDecoder : Json.Decode.Decoder UpdateLoginReq
@@ -10178,7 +10178,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
