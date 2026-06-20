@@ -158,7 +158,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
 
       setState((current) => ({
         ...current,
-        freqs: freqsResponse.freqs,
+        freqs: sortNetworkFreqsByTableOrder(freqsResponse.freqs),
         freqActivityByFreq: buildNetworkFreqActivityByFreq(activityResponse, freqsResponse.freqs),
         freqsLoading: false,
         freqsLoaded: true,

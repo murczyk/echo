@@ -153,7 +153,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
   it('creates a frequency in place without reloading the list when v2 returns a row', async () => {
     apiMock.addFreqToNetworkV2.mockResolvedValueOnce({
       network: buildNetwork(),
-      freq: buildFreq({ networkFreqId: 9, freq: '123.4000' }),
+      freq: buildFreq({ networkFreqId: 9, freq: '123.4000', isActive: true }),
     });
 
     renderHarness({
@@ -161,7 +161,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       network: buildNetwork(),
       freqsLoaded: true,
       freqActivityByFreq: { 7: [{ day: '2026-06-01', messageCount: 3 }] },
-      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000' })],
+      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000', isActive: false })],
       freqCreateWizardOpen: true,
       freqCreateWizardForm: {
         ...buildCreateForm(),
@@ -177,7 +177,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(apiMock.addFreqToNetworkV2).toHaveBeenCalled();
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
-    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 9]);
+    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([9, 7]);
     expect(latestState?.freqActivityByFreq[9]).toEqual([]);
     expect(latestState?.freqsLoaded).toBe(true);
     expect(latestState?.freqCreateWizardOpen).toBe(false);
@@ -196,7 +196,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       network: buildNetwork(),
       freqsLoaded: true,
       freqActivityByFreq: { 7: [] },
-      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000' })],
+      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000', isActive: false })],
       freqCreateWizardOpen: true,
       freqCreateWizardForm: {
         ...buildCreateForm(),
@@ -226,7 +226,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       await savePromise;
     });
 
-    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 8, 9]);
+    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([8, 9, 7]);
   });
 
   it('falls back to a reload when the create response does not include a row', async () => {

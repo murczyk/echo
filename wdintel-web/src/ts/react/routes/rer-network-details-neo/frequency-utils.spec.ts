@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { NetworkFreqsRes } from '../../../../Bindings';
-import { buildNetworkFreqActivityByFreq, buildNetworkFreqRows, encryptionLabelFromKeys, formatNetworkFreqValue } from './frequency-utils';
+import { buildNetworkFreqActivityByFreq, buildNetworkFreqRows, encryptionLabelFromKeys, formatNetworkFreqValue, sortNetworkFreqsByTableOrder } from './frequency-utils';
 
 function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
   return {
@@ -58,6 +58,17 @@ describe('frequency utils', () => {
       displayFreq: '652.1500',
       typeLabel: 'DMR',
     });
+  });
+
+  it('sorts active frequencies before inactive ones and keeps frequency order within each activity bucket', () => {
+    const sorted = sortNetworkFreqsByTableOrder([
+      createFreq({ networkFreqId: 30, freq: '652.3000', isActive: false }),
+      createFreq({ networkFreqId: 10, freq: '652.1000', isActive: true }),
+      createFreq({ networkFreqId: 20, freq: '652.2000', isActive: true }),
+      createFreq({ networkFreqId: 40, freq: '652.4000', isActive: false }),
+    ]);
+
+    expect(sorted.map((freq) => freq.networkFreqId)).toEqual([10, 20, 30, 40]);
   });
 
   it('preserves DMRe as a distinct frequency type label', () => {

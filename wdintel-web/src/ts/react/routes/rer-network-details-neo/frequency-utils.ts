@@ -163,6 +163,10 @@ function joinCallsigns(callsigns: Array<string> | null | undefined): string {
 }
 
 function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
+  if (left.isActive !== right.isActive) {
+    return left.isActive ? -1 : 1;
+  }
+
   const leftUnits = parseNetworkFreqUnits(left.freq) ?? 0;
   const rightUnits = parseNetworkFreqUnits(right.freq) ?? 0;
 
@@ -230,7 +234,7 @@ export function buildNetworkFreqRows(
   modulationsById: Map<number, string>,
   expandedGroupIds: string[],
 ): NetworkFreqTableRow[] {
-  const sortedFreqs = [...freqs].sort(compareFreqsByUnits);
+  const sortedFreqs = sortNetworkFreqsByTableOrder(freqs);
   const expandedGroupIdSet = new Set(expandedGroupIds);
   const rows: NetworkFreqTableRow[] = [];
 
