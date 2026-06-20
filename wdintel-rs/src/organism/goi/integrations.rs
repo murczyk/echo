@@ -2,9 +2,11 @@ use crate::config::{
     ORGANISM_GOI_API_PORT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX,
+    ORGANISM_GOI_CATEGORIES_FILE_NAME, ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES,
+    ORGANISM_GOI_CATEGORIES_UPLOAD_ZIP_MAX_BYTES,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
-    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
-    ORGANISM_GOI_SSH_PORT_DEFAULT,
+    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PALETTES_DIR_NAME,
+    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
 };
 use crate::entities::{
     goi_association, goi_integration, goi_integration_access_login,
@@ -17,11 +19,11 @@ use crate::organism::goi::shared::{
     goi_server_key_and_label, goi_swapp_url,
 };
 use crate::organism::goi::types::{
-    DeleteGoiAdminIntegrationReq, GetGoiAdminIntegrationReq,
-    GoiAdminIntegration, GoiAssociation, GoiKnowledge, GoiUserIntegration,
-    ListGoiAdminIntegrationsRsp, ListGoiAssociationsReq,
-    ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
-    ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
+    DeleteGoiAdminIntegrationReq, DownloadGoiIntegrationPalettesReq,
+    GetGoiAdminIntegrationReq, GoiAdminIntegration, GoiAssociation,
+    GoiKnowledge, GoiUserIntegration, ListGoiAdminIntegrationsRsp,
+    ListGoiAssociationsReq, ListGoiAssociationsRsp, ListGoiAssociationsSortBy,
+    ListGoiKnowledgeReq, ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
     RestartGoiIntegrationServiceReq, SetupGoiIntegrationWorkerReq,
     UnlinkGoiIntegrationWhatsappReq, UpsertGoiAdminIntegrationReq,
 };
@@ -33,12 +35,17 @@ use crate::types::*;
 use crate::utils::string::{
     normalize_optional_trimmed, normalize_trimmed_or_default,
 };
+use actix_multipart::{Field, Multipart};
+use actix_web::http::header;
 use actix_web::post;
-use actix_web::web::Json;
+use actix_web::web::{Json, Path as ActixPath};
+use actix_web::HttpResponse;
+use futures_util::StreamExt;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::io::{Cursor, Read};
 
 #[derive(Clone)]
 struct GoiIntegrationWithOwner {
@@ -56,6 +63,11 @@ enum GoiService {
     SwappAlt,
     Goi,
     EchoSwapp,
+}
+
+struct GoiCategoriesUpload {
+    filename: String,
+    bytes: Vec<u8>,
 }
 
 #[post("/api/admin/goi/integrations")]
@@ -492,6 +504,69 @@ pub async fn unlink_current_user_goi_whatsapp(
     Ok(Json(true))
 }
 
+#[post("/api/goi/download-palettes")]
+pub async fn download_current_user_goi_palettes(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DownloadGoiIntegrationPalettesReq>,
+) -> Result<HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let req = req.into_inner();
+    let integration = load_accessible_integration_for_user(
+        &env.dbx,
+        &user_id,
+        req.integration_id,
+    )
+    .await
+    .c(h!())?;
+    let ssh_req =
+        goi_connection_req_from_integration(&integration.integration)?;
+    let archive = download_goi_palettes_archive(ssh_req).await?;
+
+    Ok(make_goi_zip_response(
+        format!("goi-palettes-{}.zip", integration.integration.id),
+        archive,
+    ))
+}
+
+#[post("/api/goi/upload-categories/{integration_id}")]
+pub async fn upload_current_user_goi_categories(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    integration_id: ActixPath<i64>,
+    mut payload: Multipart,
+) -> Result<Json<bool>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let integration = load_accessible_integration_for_user(
+        &env.dbx,
+        &user_id,
+        integration_id.into_inner(),
+    )
+    .await
+    .c(h!())?;
+    let ssh_req =
+        goi_connection_req_from_integration(&integration.integration)?;
+    let upload = read_goi_categories_upload(&mut payload).await?;
+    let categories_json = extract_categories_json_from_zip(upload)?;
+    let categories_path = goi_categories_remote_path(&ssh_req.path);
+
+    super::goi_upload_file(
+        ssh_req,
+        categories_path,
+        categories_json,
+    )
+    .await
+    .map_err(|err| AppError::BL {
+        msg: format!("Не вдалося завантажити categories.json на ГОІ: {err:#}"),
+    })?;
+
+    Ok(Json(true))
+}
+
 async fn load_accessible_integrations_for_user(
     dbx: &DatabaseConnection,
     user_id: &str,
@@ -509,6 +584,285 @@ async fn load_accessible_integrations_for_user(
             .await
             .c(h!())?;
     load_integrations_with_owners_by_ids(dbx, integration_ids.as_slice()).await
+}
+
+async fn load_accessible_integration_for_user(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+    integration_id: i64,
+) -> Result<GoiIntegrationWithOwner, AppError> {
+    load_accessible_integrations_for_user(dbx, user_id)
+        .await
+        .c(h!())?
+        .into_iter()
+        .find(|item| item.integration.id == integration_id)
+        .ok_or_else(|| AppError::BL {
+            msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
+        })
+}
+
+async fn download_goi_palettes_archive(
+    ssh_req: CheckOrganismGoiConnectionReq,
+) -> Result<Vec<u8>, AppError> {
+    let remote_zip_path =
+        format!("/tmp/echo-goi-palettes-{}.zip", Uuid::new_v4());
+    let command =
+        build_goi_palettes_archive_command(&ssh_req.path, &remote_zip_path);
+    let create_result = super::goi_run_command(
+        ssh_req.clone(),
+        command,
+        "Не вдалося створити архів палітр ГОІ",
+    )
+    .await;
+    if let Err(err) = create_result {
+        super::goi_delete_file_loose(ssh_req, remote_zip_path).await;
+        return Err(err);
+    }
+
+    let download_result =
+        super::goi_download_file(ssh_req.clone(), remote_zip_path.clone())
+            .await;
+    super::goi_delete_file_loose(ssh_req, remote_zip_path).await;
+
+    download_result.map_err(|err| AppError::BL {
+        msg: format!("Не вдалося завантажити архів палітр ГОІ: {err:#}"),
+    })
+}
+
+fn build_goi_palettes_archive_command(
+    goi_path: &str,
+    remote_zip_path: &str,
+) -> String {
+    let data_dir = goi_remote_data_dir(goi_path);
+    format!(
+        "\
+set -eu; \
+data_dir={data_dir}; \
+palettes_dir_name={palettes_dir_name}; \
+palette_dir=\"$data_dir/$palettes_dir_name\"; \
+archive={archive}; \
+if [ ! -d \"$palette_dir\" ]; then \
+echo \"GOI palettes folder not found: $palette_dir\" >&2; \
+exit 1; \
+fi; \
+rm -f -- \"$archive\"; \
+cd \"$data_dir\"; \
+zip -qr \"$archive\" \"$palettes_dir_name\"\
+",
+        data_dir = super::goi_ssh::goi_shell_quote_single(&data_dir),
+        palettes_dir_name =
+            super::goi_ssh::goi_shell_quote_single(
+                ORGANISM_GOI_PALETTES_DIR_NAME,
+            ),
+        archive = super::goi_ssh::goi_shell_quote_single(remote_zip_path),
+    )
+}
+
+fn goi_remote_data_dir(goi_path: &str) -> String {
+    let goi_path = normalize_trimmed_or_default(
+        Some(goi_path.to_string()),
+        ORGANISM_GOI_PATH_DEFAULT,
+    );
+    let goi_path = goi_path.trim_end_matches('/');
+    if goi_path.ends_with(&format!("/{ORGANISM_GOI_PALETTES_DIR_NAME}")) {
+        Path::new(goi_path)
+            .parent()
+            .and_then(|parent| parent.to_str())
+            .map(|parent| parent.to_string())
+            .unwrap_or_else(|| goi_path.to_string())
+    } else {
+        goi_path.to_string()
+    }
+}
+
+fn goi_categories_remote_path(goi_path: &str) -> String {
+    goi_join_remote_path(
+        &goi_remote_data_dir(goi_path),
+        ORGANISM_GOI_CATEGORIES_FILE_NAME,
+    )
+}
+
+fn goi_join_remote_path(dir: &str, file_name: &str) -> String {
+    let dir = dir.trim_end_matches('/');
+    let file_name = file_name.trim_start_matches('/');
+    if dir.is_empty() {
+        format!("/{file_name}")
+    } else {
+        format!("{dir}/{file_name}")
+    }
+}
+
+fn make_goi_zip_response(filename: String, archive: Vec<u8>) -> HttpResponse {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/zip"))
+        .insert_header((
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        ))
+        .insert_header((header::CONTENT_LENGTH, archive.len().to_string()))
+        .body(archive)
+}
+
+async fn read_goi_categories_upload(
+    payload: &mut Multipart,
+) -> Result<GoiCategoriesUpload, AppError> {
+    let mut upload: Option<GoiCategoriesUpload> = None;
+    while let Some(item) = payload.next().await {
+        let mut field = item.map_err(|err| AppError::BL {
+            msg: format!("Multipart error: {err:?}"),
+        })?;
+        let is_file_field = field
+            .content_disposition()
+            .and_then(|cd| cd.get_filename())
+            .is_some();
+        if !is_file_field {
+            read_goi_categories_field_bytes(&mut field, 1024).await?;
+            continue;
+        }
+        if upload.is_some() {
+            return Err(AppError::BL {
+                msg: "Очікується лише один zip-файл".to_string(),
+            });
+        }
+        let filename = field
+            .content_disposition()
+            .and_then(|cd| cd.get_filename())
+            .unwrap_or("categories.zip")
+            .to_string();
+        let bytes = read_goi_categories_field_bytes(
+            &mut field,
+            ORGANISM_GOI_CATEGORIES_UPLOAD_ZIP_MAX_BYTES,
+        )
+        .await?;
+        upload = Some(GoiCategoriesUpload { filename, bytes });
+    }
+
+    upload.ok_or_else(|| AppError::BL {
+        msg: "Zip-файл з categories.json не вибрано".to_string(),
+    })
+}
+
+async fn read_goi_categories_field_bytes(
+    field: &mut Field,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = field.next().await {
+        let chunk = chunk.map_err(|err| AppError::BL {
+            msg: format!("Field read error: {err:?}"),
+        })?;
+        if bytes.len() + chunk.len() > max_bytes {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Файл завеликий. Максимальний розмір: {} МБ",
+                    max_bytes / 1024 / 1024
+                ),
+            });
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn extract_categories_json_from_zip(
+    upload: GoiCategoriesUpload,
+) -> Result<Vec<u8>, AppError> {
+    validate_goi_categories_zip_upload(&upload)?;
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(upload.bytes)).map_err(|err| {
+            AppError::BL {
+                msg: format!("Не вдалося прочитати zip-файл: {err}"),
+            }
+        })?;
+    if archive.is_empty() {
+        return Err(AppError::BL {
+            msg: "Zip-файл порожній".to_string(),
+        });
+    }
+
+    let categories_json = read_categories_json_from_archive(&mut archive)?;
+    validate_categories_json_payload(&categories_json)?;
+    Ok(categories_json)
+}
+
+fn validate_goi_categories_zip_upload(
+    upload: &GoiCategoriesUpload,
+) -> Result<(), AppError> {
+    if upload.bytes.is_empty() {
+        return Err(AppError::BL {
+            msg: "Zip-файл порожній".to_string(),
+        });
+    }
+    if !upload.filename.to_lowercase().ends_with(".zip") {
+        return Err(AppError::BL {
+            msg: "Файл має бути .zip архівом".to_string(),
+        });
+    }
+    if !upload.bytes.starts_with(b"PK") {
+        return Err(AppError::BL {
+            msg: "Файл не схожий на zip-архів".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn read_categories_json_from_archive<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Result<Vec<u8>, AppError> {
+    let mut categories_json: Option<Vec<u8>> = None;
+    let mut file_count = 0;
+    for idx in 0..archive.len() {
+        let mut file = archive.by_index(idx).map_err(|err| AppError::BL {
+            msg: format!("Не вдалося прочитати файл у zip: {err}"),
+        })?;
+        if file.is_dir() {
+            continue;
+        }
+        file_count += 1;
+        let entry_path = file.enclosed_name().ok_or_else(|| AppError::BL {
+            msg: "Zip містить небезпечний шлях файлу".to_string(),
+        })?;
+        if entry_path.as_path() != Path::new("categories.json") {
+            return Err(AppError::BL {
+                msg: "Zip має містити файл categories.json без вкладених папок"
+                    .to_string(),
+            });
+        }
+        if file.size() > ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES as u64 {
+            return Err(AppError::BL {
+                msg: format!(
+                    "categories.json завеликий. Максимальний розмір: {} МБ",
+                    ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES / 1024 / 1024
+                ),
+            });
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).c(h!())?;
+        categories_json = Some(bytes);
+    }
+
+    if file_count != 1 {
+        return Err(AppError::BL {
+            msg: "Zip має містити рівно один файл categories.json".to_string(),
+        });
+    }
+    categories_json.ok_or_else(|| AppError::BL {
+        msg: "categories.json не знайдено в zip-файлі".to_string(),
+    })
+}
+
+fn validate_categories_json_payload(bytes: &[u8]) -> Result<(), AppError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|err| AppError::BL {
+            msg: format!("categories.json не є коректним JSON: {err}"),
+        })?;
+    if !value.is_array() && !value.is_object() {
+        return Err(AppError::BL {
+            msg: "categories.json має містити JSON об'єкт або масив"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 pub async fn load_user_goi_integrations(
@@ -1651,5 +2005,38 @@ fn goi_integration_type_value(
         GoiIntegrationType::Full => {
             crate::config::ORGANISM_GOI_INTEGRATION_TYPE_FULL
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_categories_remote_path_uses_configured_palette_parent() {
+        assert_eq!(
+            goi_categories_remote_path("/opt/goi/data/palettes"),
+            "/opt/goi/data/categories.json"
+        );
+    }
+
+    #[test]
+    fn goi_categories_remote_path_accepts_configured_data_dir() {
+        assert_eq!(
+            goi_categories_remote_path("/opt/goi/data"),
+            "/opt/goi/data/categories.json"
+        );
+    }
+
+    #[test]
+    fn goi_palettes_archive_command_uses_configured_data_dir() {
+        let command = build_goi_palettes_archive_command(
+            "/opt/goi/data/palettes",
+            "/tmp/palettes.zip",
+        );
+
+        assert!(command.contains("data_dir='/opt/goi/data'"));
+        assert!(command.contains("palettes_dir_name='palettes'"));
+        assert!(!command.contains("/etc/goi/data"));
     }
 }

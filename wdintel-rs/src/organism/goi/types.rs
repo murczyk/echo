@@ -237,3 +237,8 @@ pub struct UnlinkGoiIntegrationWhatsappReq {
     pub integration_id: i64,
     pub service: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DownloadGoiIntegrationPalettesReq {
+    pub integration_id: i64,
+}
