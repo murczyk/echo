@@ -3,7 +3,7 @@ use crate::config::{
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX,
     ORGANISM_GOI_CATEGORIES_FILE_NAME, ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES,
-    ORGANISM_GOI_CATEGORIES_UPLOAD_ZIP_MAX_BYTES,
+    ORGANISM_GOI_CATEGORIES_UPLOAD_MAX_BYTES,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PALETTES_DIR_NAME,
     ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
@@ -45,7 +45,7 @@ use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Read};
+use std::path::Path;
 
 #[derive(Clone)]
 struct GoiIntegrationWithOwner {
@@ -551,7 +551,7 @@ pub async fn upload_current_user_goi_categories(
     let ssh_req =
         goi_connection_req_from_integration(&integration.integration)?;
     let upload = read_goi_categories_upload(&mut payload).await?;
-    let categories_json = extract_categories_json_from_zip(upload)?;
+    let categories_json = extract_categories_json_upload(upload)?;
     let categories_path = goi_categories_remote_path(&ssh_req.path);
 
     super::goi_upload_file(ssh_req, categories_path, categories_json)
@@ -645,7 +645,7 @@ exit 1; \
 fi; \
 rm -f -- \"$archive\"; \
 cd \"$data_dir\"; \
-zip -qr \"$archive\" \"$palettes_dir_name\"\
+python3 -m zipfile -c \"$archive\" \"$palettes_dir_name/\"\
 ",
         data_dir = super::goi_ssh::goi_shell_quote_single(&data_dir),
         palettes_dir_name = super::goi_ssh::goi_shell_quote_single(
@@ -718,24 +718,24 @@ async fn read_goi_categories_upload(
         }
         if upload.is_some() {
             return Err(AppError::BL {
-                msg: "Очікується лише один zip-файл".to_string(),
+                msg: "Очікується лише один JSON-файл".to_string(),
             });
         }
         let filename = field
             .content_disposition()
             .and_then(|cd| cd.get_filename())
-            .unwrap_or("categories.zip")
+            .unwrap_or(ORGANISM_GOI_CATEGORIES_FILE_NAME)
             .to_string();
         let bytes = read_goi_categories_field_bytes(
             &mut field,
-            ORGANISM_GOI_CATEGORIES_UPLOAD_ZIP_MAX_BYTES,
+            ORGANISM_GOI_CATEGORIES_UPLOAD_MAX_BYTES,
         )
         .await?;
         upload = Some(GoiCategoriesUpload { filename, bytes });
     }
 
     upload.ok_or_else(|| AppError::BL {
-        msg: "Zip-файл з categories.json не вибрано".to_string(),
+        msg: "JSON-файл з категоріями не вибрано".to_string(),
     })
 }
 
@@ -761,91 +761,36 @@ async fn read_goi_categories_field_bytes(
     Ok(bytes)
 }
 
-fn extract_categories_json_from_zip(
+fn extract_categories_json_upload(
     upload: GoiCategoriesUpload,
 ) -> Result<Vec<u8>, AppError> {
-    validate_goi_categories_zip_upload(&upload)?;
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(upload.bytes)).map_err(|err| {
-            AppError::BL {
-                msg: format!("Не вдалося прочитати zip-файл: {err}"),
-            }
-        })?;
-    if archive.is_empty() {
-        return Err(AppError::BL {
-            msg: "Zip-файл порожній".to_string(),
-        });
-    }
-
-    let categories_json = read_categories_json_from_archive(&mut archive)?;
-    validate_categories_json_payload(&categories_json)?;
-    Ok(categories_json)
+    validate_goi_categories_upload(&upload)?;
+    validate_categories_json_payload(&upload.bytes)?;
+    Ok(upload.bytes)
 }
 
-fn validate_goi_categories_zip_upload(
+fn validate_goi_categories_upload(
     upload: &GoiCategoriesUpload,
 ) -> Result<(), AppError> {
     if upload.bytes.is_empty() {
         return Err(AppError::BL {
-            msg: "Zip-файл порожній".to_string(),
+            msg: "JSON-файл порожній".to_string(),
         });
     }
-    if !upload.filename.to_lowercase().ends_with(".zip") {
+    if !upload.filename.to_lowercase().ends_with(".json") {
         return Err(AppError::BL {
-            msg: "Файл має бути .zip архівом".to_string(),
+            msg: "Файл має бути у форматі .json".to_string(),
         });
     }
-    if !upload.bytes.starts_with(b"PK") {
+    if upload.bytes.len() > ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES {
         return Err(AppError::BL {
-            msg: "Файл не схожий на zip-архів".to_string(),
+            msg: format!(
+                "categories.json завеликий. Максимальний розмір: {} МБ",
+                ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES / 1024 / 1024
+            ),
         });
     }
     Ok(())
-}
-
-fn read_categories_json_from_archive<R: Read + std::io::Seek>(
-    archive: &mut zip::ZipArchive<R>,
-) -> Result<Vec<u8>, AppError> {
-    let mut categories_json: Option<Vec<u8>> = None;
-    let mut file_count = 0;
-    for idx in 0..archive.len() {
-        let mut file = archive.by_index(idx).map_err(|err| AppError::BL {
-            msg: format!("Не вдалося прочитати файл у zip: {err}"),
-        })?;
-        if file.is_dir() {
-            continue;
-        }
-        file_count += 1;
-        let entry_path = file.enclosed_name().ok_or_else(|| AppError::BL {
-            msg: "Zip містить небезпечний шлях файлу".to_string(),
-        })?;
-        if entry_path.as_path() != Path::new("categories.json") {
-            return Err(AppError::BL {
-                msg: "Zip має містити файл categories.json без вкладених папок"
-                    .to_string(),
-            });
-        }
-        if file.size() > ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES as u64 {
-            return Err(AppError::BL {
-                msg: format!(
-                    "categories.json завеликий. Максимальний розмір: {} МБ",
-                    ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES / 1024 / 1024
-                ),
-            });
-        }
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).c(h!())?;
-        categories_json = Some(bytes);
-    }
-
-    if file_count != 1 {
-        return Err(AppError::BL {
-            msg: "Zip має містити рівно один файл categories.json".to_string(),
-        });
-    }
-    categories_json.ok_or_else(|| AppError::BL {
-        msg: "categories.json не знайдено в zip-файлі".to_string(),
-    })
 }
 
 fn validate_categories_json_payload(bytes: &[u8]) -> Result<(), AppError> {
@@ -2034,6 +1979,31 @@ mod tests {
 
         assert!(command.contains("data_dir='/opt/goi/data'"));
         assert!(command.contains("palettes_dir_name='palettes'"));
+        assert!(command.contains(
+            "python3 -m zipfile -c \"$archive\" \"$palettes_dir_name/\""
+        ));
+        assert!(!command.contains("zip -"));
         assert!(!command.contains("/etc/goi/data"));
+    }
+
+    #[test]
+    fn goi_categories_upload_accepts_json_file() {
+        let categories_json =
+            extract_categories_json_upload(GoiCategoriesUpload {
+                filename: "categories.json".to_string(),
+                bytes: br#"{"items":[]}"#.to_vec(),
+            })
+            .unwrap();
+
+        assert_eq!(categories_json, br#"{"items":[]}"#);
+    }
+
+    #[test]
+    fn goi_categories_upload_rejects_zip_file() {
+        assert!(extract_categories_json_upload(GoiCategoriesUpload {
+            filename: "categories.zip".to_string(),
+            bytes: b"PK".to_vec(),
+        })
+        .is_err());
     }
 }

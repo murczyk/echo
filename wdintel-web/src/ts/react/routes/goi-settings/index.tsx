@@ -297,7 +297,7 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
         <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
           <AdditionalFunctionRow
             title="Оновити категорії"
-            description="Надсилає ZIP-файл з одним categories.json на цей ГОІ."
+            description="Надсилає JSON-файл категорій на цей ГОІ як categories.json."
           >
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
@@ -308,7 +308,7 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
                 ref={categoriesInputRef}
                 component="input"
                 type="file"
-                accept=".zip,application/zip,application/x-zip-compressed"
+                accept=".json,application/json"
                 aria-label="Файл категорій"
                 disabled={props.disabled}
                 onChange={onFileChange}
