@@ -13,6 +13,7 @@ import { formatErrorMessage } from '../use-rer-network-details-neo-page.helpers'
 import { NetworkDatePickerField } from './NetworkDatePickerField';
 import { NetworkCallsignRelationsGraphFilters } from './NetworkCallsignRelationsGraphFilters';
 import { NetworkCallsignRelationsGraphStage } from './NetworkCallsignRelationsGraphStage';
+import { NetworkCallsignRelationsIntensityPopover } from './NetworkCallsignRelationsIntensityPopover';
 import { getNetworkCallsignRelationMessages } from '../../../services/api/networks';
 import {
   buildRelationNeighborIds,
@@ -82,6 +83,7 @@ export function NetworkCallsignRelationsGraph({
   const dragRef = useRef<{ x: number; y: number; viewBox: RelationGraphViewBox } | null>(null);
   const labelsAutoDisabledRef = useRef(false);
   const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null);
+  const [intensityAnchorEl, setIntensityAnchorEl] = useState<HTMLElement | null>(null);
   const [viewBox, setViewBox] = useState<RelationGraphViewBox>({ x: -450, y: -450, width: 900, height: 900 });
   const [selectedMessages, setSelectedMessages] = useState<NetworkCallsignRelationMessage[]>([]);
   const [selectedMessagesLoading, setSelectedMessagesLoading] = useState(false);
@@ -304,6 +306,14 @@ export function NetworkCallsignRelationsGraph({
     onEnabledFreqsChange(nextFreqs);
   };
 
+  const handleOpenIntensitySettings = (anchorEl: HTMLElement) => {
+    setIntensityAnchorEl(anchorEl);
+  };
+
+  const handleCloseIntensitySettings = () => {
+    setIntensityAnchorEl(null);
+  };
+
   const handleSelectNodeId = (nodeId: string | null) => {
     setEdgeDrilldownNodeId(null);
     onSelectNodeId(nodeId);
@@ -496,9 +506,11 @@ export function NetworkCallsignRelationsGraph({
           legendFreqs={legendFreqs}
           relationsEnabledFreqs={relationsEnabledFreqs}
           relationsMinIntensity={relationsMinIntensity}
+          intensityAnchorEl={intensityAnchorEl}
           onSearchChange={onSearchChange}
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
+          onOpenIntensitySettings={handleOpenIntensitySettings}
           relationsLoading={relationsLoading}
           onSelectNodeId={handleSelectNodeId}
           onSelectEdgeId={handleSelectEdgeId}
@@ -518,10 +530,16 @@ export function NetworkCallsignRelationsGraph({
         popoverId={filterPopoverId}
         legendFreqs={legendFreqs}
         enabledFreqs={relationsEnabledFreqs}
-        minIntensity={relationsMinIntensity}
-        intensitySliderMax={intensitySliderMax}
         onClose={() => setFilterAnchorEl(null)}
         onEnabledFreqToggle={handleFilterToggle}
+      />
+
+      <NetworkCallsignRelationsIntensityPopover
+        anchorEl={intensityAnchorEl}
+        popoverId={`${headingId}-intensity-popover`}
+        minIntensity={relationsMinIntensity}
+        intensitySliderMax={intensitySliderMax}
+        onClose={handleCloseIntensitySettings}
         onMinIntensityChange={onMinIntensityChange}
       />
     </Box>

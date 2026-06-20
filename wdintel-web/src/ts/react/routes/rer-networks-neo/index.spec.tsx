@@ -393,7 +393,10 @@ it('wraps long network labels without truncating the status chip row', () => {
   const networkAnchor = renderedNetworkCell.props.children[1];
   const rowLabel = networkAnchor.props.children;
   const rowLabelBox = (rowLabel?.type as (props: any) => any)(rowLabel?.props);
+  const statusDot = renderedNetworkCell.props.children[0];
+  const statusDotBox = statusDot.props.children;
   expect(renderedNetworkCell.props.alignItems).toBe('flex-start');
+  expect(statusDotBox.props.sx).toEqual(expect.objectContaining({ alignSelf: 'center' }));
   expect(networkAnchor.props.sx).toEqual(expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }));
   expect(rowLabelBox.props.sx).toEqual(
     expect.objectContaining({

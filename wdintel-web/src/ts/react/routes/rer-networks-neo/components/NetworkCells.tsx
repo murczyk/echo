@@ -61,6 +61,7 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
             borderRadius: '50%',
             bgcolor: network.statusColor,
             flexShrink: 0,
+            alignSelf: 'center',
           }}
         />
       </Tooltip>

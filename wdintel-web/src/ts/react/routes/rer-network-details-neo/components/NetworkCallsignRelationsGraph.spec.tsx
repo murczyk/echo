@@ -15,10 +15,6 @@ vi.mock('./NetworkDatePickerField', () => ({
   NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
 }));
 
-vi.mock('./NetworkCallsignRelationsGraphFilters', () => ({
-  NetworkCallsignRelationsGraphFilters: () => <div data-testid="graph-filters" />,
-}));
-
 import { getNetworkCallsignRelationMessages } from '../../../services/api/networks';
 import { NetworkCallsignRelationsGraph } from './NetworkCallsignRelationsGraph';
 
@@ -68,7 +64,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
   };
 }
 
-function renderGraph() {
+function renderGraph(relationsSelectedNodeId: string | null = null) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -91,7 +87,7 @@ function renderGraph() {
         relationsEnabledFreqs={['652.111']}
         relationsMinIntensity={1}
         relationsShowLabels={true}
-        relationsSelectedNodeId="ALPHA"
+        relationsSelectedNodeId={relationsSelectedNodeId}
         relationsSelectedEdgeId={null}
         relationsSince="2026-05-20"
         relationsTill="2026-05-21"
@@ -126,7 +122,7 @@ describe('NetworkCallsignRelationsGraph', () => {
   });
 
   it('loads selected node messages and renders them in the details panel', async () => {
-    const view = renderGraph();
+    const view = renderGraph('ALPHA');
     rendered.push(view);
 
     await act(async () => {
@@ -151,5 +147,82 @@ describe('NetworkCallsignRelationsGraph', () => {
 
     expect(view.container.textContent).toContain('hello');
     expect(view.container.textContent).toContain('652.111');
+  });
+
+  it('toggles fullscreen through the stage portal and exits on Escape', async () => {
+    const view = renderGraph();
+    rendered.push(view);
+
+    const fullscreenButton = view.container.querySelector('button[aria-label="Розгорнути граф"]');
+    expect(fullscreenButton).not.toBeNull();
+
+    await act(async () => {
+      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(document.body.classList.contains('small-map-fullscreen-open')).toBe(true);
+    expect(view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).toBeNull();
+    expect(document.body.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).not.toBeNull();
+
+    const intensityButton = document.body.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    expect(intensityButton).not.toBeNull();
+
+    await act(async () => {
+      intensityButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const intensityButtonAfterOpen = document.body.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    const intensityPopoverId = intensityButtonAfterOpen?.getAttribute('aria-controls');
+    expect(intensityPopoverId).not.toBeNull();
+
+    const intensityPopover = document.body.querySelector(`#${intensityPopoverId}`);
+    expect(intensityPopover).not.toBeNull();
+    expect((intensityPopover as HTMLElement).style.zIndex).toBe('10001');
+
+    const filterButton = document.body.querySelector('button[id$="-filters"]');
+    expect(filterButton).not.toBeNull();
+    const filterPopoverId = filterButton?.id ? `${filterButton.id}-popover` : null;
+    expect(filterPopoverId).not.toBeNull();
+
+    await act(async () => {
+      filterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const filterPopover = document.body.querySelector(`#${filterPopoverId}`);
+    expect(filterPopover).not.toBeNull();
+    expect((filterPopover as HTMLElement).style.zIndex).toBe('10001');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(document.body.classList.contains('small-map-fullscreen-open')).toBe(false);
+    expect(view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).not.toBeNull();
+  });
+
+  it('opens the intensity settings from the overlay and keeps the frequency filter separate', async () => {
+    const view = renderGraph();
+    rendered.push(view);
+
+    const intensityButton = view.container.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    expect(intensityButton).not.toBeNull();
+
+    await act(async () => {
+      intensityButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(document.body.querySelector('[data-testid="graph-intensity-popover"]')).not.toBeNull();
+
+    const filterButton = view.container.querySelector('button[id$="-filters"]');
+    expect(filterButton).not.toBeNull();
+
+    await act(async () => {
+      filterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const filtersPopover = document.body.querySelector('[data-testid="graph-filters-popover"]');
+    expect(filtersPopover).not.toBeNull();
+    expect(filtersPopover?.textContent).toContain('652.111');
+    expect(filtersPopover?.textContent).not.toContain('Інтенсивність');
   });
 });
