@@ -5,7 +5,7 @@ import { act, createElement, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { NetworkCallsignRes, Source } from '../../../../Bindings';
+import type { NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { EMPTY_STATE, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.types';
 import { derivePelengEnabledFreqs, useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
@@ -17,7 +17,30 @@ const callsignsApiMock = vi.hoisted(() => ({
   listSources: vi.fn(),
 }));
 
+const otherApiMocks = vi.hoisted(() => ({
+  listAors: vi.fn(),
+  getNetworkById: vi.fn(),
+  getNetworkCallsignRelations: vi.fn(),
+  getNetworkGroupsActivityOne: vi.fn(),
+  listNetworkPoints: vi.fn(),
+  getModulations: vi.fn(),
+  getUnitsList: vi.fn(),
+  listPosts: vi.fn(),
+  fetchCurrentUser: vi.fn(),
+}));
+
 vi.mock('../../services/api/callsigns', () => callsignsApiMock);
+vi.mock('../../services/api/aor', () => ({ listAors: otherApiMocks.listAors }));
+vi.mock('../../services/api/networks', () => ({
+  getNetworkById: otherApiMocks.getNetworkById,
+  getNetworkCallsignRelations: otherApiMocks.getNetworkCallsignRelations,
+  getNetworkGroupsActivityOne: otherApiMocks.getNetworkGroupsActivityOne,
+  listNetworkPoints: otherApiMocks.listNetworkPoints,
+}));
+vi.mock('../../services/api/modulations', () => ({ getModulations: otherApiMocks.getModulations }));
+vi.mock('../../services/api/units', () => ({ getUnitsList: otherApiMocks.getUnitsList }));
+vi.mock('../../services/api/posts', () => ({ listPosts: otherApiMocks.listPosts }));
+vi.mock('../../services/api/user', () => ({ fetchCurrentUser: otherApiMocks.fetchCurrentUser }));
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -77,7 +100,40 @@ afterEach(() => {
   callsignsApiMock.getNetworkCallsigns.mockReset();
   callsignsApiMock.getNetworkCallsignsActivity.mockReset();
   callsignsApiMock.listSources.mockReset();
+  otherApiMocks.listAors.mockReset();
+  otherApiMocks.getNetworkById.mockReset();
+  otherApiMocks.getNetworkCallsignRelations.mockReset();
+  otherApiMocks.getNetworkGroupsActivityOne.mockReset();
+  otherApiMocks.listNetworkPoints.mockReset();
+  otherApiMocks.getModulations.mockReset();
+  otherApiMocks.getUnitsList.mockReset();
+  otherApiMocks.listPosts.mockReset();
+  otherApiMocks.fetchCurrentUser.mockReset();
 });
+
+function installDefaultApiMocks() {
+  otherApiMocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] });
+  otherApiMocks.getNetworkById.mockResolvedValue({
+    id: 42,
+    name: 'Мережа 42',
+    descriptions: [],
+    aorIds: [],
+    unitIds: [],
+    postIds: [],
+    freqs: [],
+  });
+  otherApiMocks.listAors.mockResolvedValue([]);
+  otherApiMocks.getModulations.mockResolvedValue([]);
+  otherApiMocks.getUnitsList.mockResolvedValue([]);
+  otherApiMocks.listPosts.mockResolvedValue([]);
+  otherApiMocks.getNetworkCallsignRelations.mockResolvedValue({ freqs: [] });
+  otherApiMocks.getNetworkGroupsActivityOne.mockResolvedValue({});
+  otherApiMocks.listNetworkPoints.mockResolvedValue({ points: [] });
+  callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [] });
+  callsignsApiMock.getNetworkCallsigns.mockResolvedValue({ callsigns: [] });
+  callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
+  callsignsApiMock.listSources.mockResolvedValue([]);
+}
 
 describe('use-rer-network-details-neo-page.load', () => {
   it('keeps blank frequencies enabled after load', () => {
@@ -98,6 +154,7 @@ describe('use-rer-network-details-neo-page.load', () => {
   });
 
   it('lets catalog resolve while intercepted is still loading', async () => {
+    installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
@@ -144,6 +201,7 @@ describe('use-rer-network-details-neo-page.load', () => {
   });
 
   it('does not use network rows as an activity fallback', async () => {
+    installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
@@ -177,6 +235,7 @@ describe('use-rer-network-details-neo-page.load', () => {
   });
 
   it('lets intercepted resolve while catalog is still loading', async () => {
+    installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
@@ -220,6 +279,7 @@ describe('use-rer-network-details-neo-page.load', () => {
   });
 
   it('does not fail intercepted when catalog errors first', async () => {
+    installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
@@ -262,6 +322,7 @@ describe('use-rer-network-details-neo-page.load', () => {
   });
 
   it('does not fail catalog when intercepted errors first', async () => {
+    installDefaultApiMocks();
     renderHookHarness();
 
     const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
@@ -301,5 +362,62 @@ describe('use-rer-network-details-neo-page.load', () => {
 
     expect(latestState?.catalogCallsignsLoaded).toBe(true);
     expect(latestState?.catalogCallsignsError).toBeNull();
+  });
+
+  it('drops a stale unknown intercepted callsign when network callsigns resolve after the tab data', async () => {
+    installDefaultApiMocks();
+    renderHookHarness();
+
+    const networkCallsignsDeferred = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
+    const sourcesDeferred = createDeferred<Source[]>();
+    const catalogDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+    const interceptedDeferred = createDeferred<{ callsigns: NetworkCallsignRes[] }>();
+
+    callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
+    callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
+    callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section?: string | null }) => {
+      if (req.section === 'Catalog') {
+        return catalogDeferred.promise;
+      }
+      return interceptedDeferred.promise;
+    });
+    callsignsApiMock.getNetworkCallsignsActivity.mockRejectedValue(new Error('activity failed'));
+
+    await act(async () => {
+      void latestLoadCallsigns?.(42);
+    });
+
+    await act(async () => {
+      catalogDeferred.resolve({
+        callsigns: [
+          {
+            callsign: 'СОКІЛ-1',
+            knownCallsigns: [],
+            messageCount: 5,
+            lastDatetime: 1710000000000,
+            freqs: null,
+            isOld: false,
+            isInDictionary: false,
+          } as NetworkCallsignRes,
+        ],
+      });
+      interceptedDeferred.resolve({ callsigns: [] });
+      await Promise.resolve();
+    });
+
+    expect(latestState?.unknownInterceptedCallsigns).toEqual([
+      expect.objectContaining({ callsign: 'СОКІЛ-1' }),
+    ]);
+
+    await act(async () => {
+      sourcesDeferred.resolve([]);
+      networkCallsignsDeferred.resolve({
+        networkCallsigns: [{ id: 1, callsign: 'СОКІЛ-1' } as NetworkCallsign],
+      });
+      await Promise.resolve();
+    });
+
+    expect(latestState?.unknownInterceptedCallsigns).toEqual([]);
+    expect(latestState?.catalogCallsignGroups).toEqual([]);
   });
 });

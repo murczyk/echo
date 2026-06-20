@@ -44,6 +44,12 @@ type CallsignSectionState = Pick<
   | 'interceptedCallsignsError'
 >;
 
+type CallsignDerivedDataOverrides = {
+  networkCallsignGroups?: NetworkDetailsNeoPageState['networkCallsignGroups'];
+  callsignActivityMap?: NetworkDetailsNeoPageState['callsignActivityMap'];
+  networkCallsigns?: NetworkDetailsNeoPageState['networkCallsigns'];
+};
+
 function deriveCallsignsLoading(sectionState: CallsignSectionState): boolean {
   return !(
     sectionState.networkCallsignsLoaded
@@ -109,6 +115,17 @@ function updateCallsignSectionState(
   next: Partial<CallsignSectionState>,
 ): Pick<NetworkDetailsNeoPageState, 'callsignsLoaded' | 'callsignsLoading' | 'callsignsError'> {
   return buildCallsignSectionFlags(current, next);
+}
+
+function recomputeCallsignDerivedData(
+  current: NetworkDetailsNeoPageState,
+  overrides: CallsignDerivedDataOverrides = {},
+) {
+  const networkCallsignGroups = overrides.networkCallsignGroups ?? current.networkCallsignGroups;
+  const callsignActivityMap = overrides.callsignActivityMap ?? current.callsignActivityMap;
+  const networkCallsigns = overrides.networkCallsigns ?? current.networkCallsigns;
+
+  return buildNetworkCallsignTabData(networkCallsignGroups, callsignActivityMap, networkCallsigns);
 }
 
 export function deriveRelationsEnabledFreqs(
@@ -214,6 +231,9 @@ export function useRerNetworkDetailsNeoPageLoad(
       if (!isCurrent()) return;
       setState((current) => ({
         ...current,
+        ...recomputeCallsignDerivedData(current, {
+          networkCallsigns: networkCallsignsRes.networkCallsigns,
+        }),
         networkCallsigns: networkCallsignsRes.networkCallsigns,
         sources,
         callsignCount: networkCallsignsRes.networkCallsigns.length,
@@ -302,7 +322,9 @@ export function useRerNetworkDetailsNeoPageLoad(
     if (!isCurrent()) return null;
     setState((current) => {
       const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(current.networkCallsignGroups, callsignsRes.callsigns);
-      const derived = buildNetworkCallsignTabData(mergedNetworkCallsignGroups, current.callsignActivityMap, current.networkCallsigns);
+      const derived = recomputeCallsignDerivedData(current, {
+        networkCallsignGroups: mergedNetworkCallsignGroups,
+      });
       return {
         ...current,
         networkCallsignGroups: mergedNetworkCallsignGroups,
@@ -380,7 +402,9 @@ export function useRerNetworkDetailsNeoPageLoad(
     if (!isCurrent()) return null;
     setState((current) => {
       const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(current.networkCallsignGroups, callsignsRes.callsigns);
-      const derived = buildNetworkCallsignTabData(mergedNetworkCallsignGroups, current.callsignActivityMap, current.networkCallsigns);
+      const derived = recomputeCallsignDerivedData(current, {
+        networkCallsignGroups: mergedNetworkCallsignGroups,
+      });
       return {
         ...current,
         networkCallsignGroups: mergedNetworkCallsignGroups,
@@ -419,7 +443,9 @@ export function useRerNetworkDetailsNeoPageLoad(
       );
 
       setState((current) => {
-        const derived = buildNetworkCallsignTabData(current.networkCallsignGroups, activityMap, current.networkCallsigns);
+        const derived = recomputeCallsignDerivedData(current, {
+          callsignActivityMap: activityMap,
+        });
         return {
           ...current,
           callsignActivityMap: activityMap,
