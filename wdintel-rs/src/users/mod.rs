@@ -189,7 +189,7 @@ pub async fn update_login(
     if req.sigint_zone_id.is_some() {
         login_obj.sigint_zone_id = Set(req.sigint_zone_id);
     }
-    login_obj.organism_id = Set(req.organism_id);
+    login_obj.organism_id = Set(Some(req.organism_id));
     if req.deactivation_reason.is_some() {
         login_obj.deactivation_reason = Set(req
             .deactivation_reason
@@ -288,7 +288,7 @@ pub async fn create_login(
             roles: Set(serde_json::to_value(req.roles.clone()).c(h!())?),
             created_at: NotSet,
             sigint_zone_id: Set(req.sigint_zone_id),
-            organism_id: Set(req.organism_id),
+            organism_id: Set(Some(req.organism_id)),
             deleted: Set(false),
             last_active_at: Set(Some(Utc::now().naive_utc())),
             deactivation_reason: NotSet,
@@ -348,7 +348,7 @@ pub async fn create_delta_login(
     let login = req.login.clone();
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
-    let organism_id = req.organism_id;
+    let organism_id = Some(req.organism_id);
 
     let result =
         register_delta_user(&env.dbx, login, roles, sigint_zone, organism_id)

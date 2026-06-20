@@ -3,6 +3,7 @@ import {
   MaterialReactTable,
   type MRT_ColumnDef,
   type MRT_RowData,
+  type MRT_TableOptions,
   useMaterialReactTable,
 } from 'material-react-table';
 
@@ -20,6 +21,7 @@ type SettingsNeoTableProps<TData extends MRT_RowData> = {
   data: TData[];
   loading?: boolean;
   loadingRows?: TData[];
+  layoutMode?: MRT_TableOptions<TData>['layoutMode'];
 };
 
 export function SettingsNeoTable<TData extends MRT_RowData>({
@@ -27,6 +29,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   data,
   loading = false,
   loadingRows,
+  layoutMode = 'grid-no-grow',
 }: SettingsNeoTableProps<TData>) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -36,7 +39,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
     columns,
     data: loading && loadingRows ? loadingRows : data,
     ...getDefaultMRTOptions<TData>(),
-    layoutMode: 'grid-no-grow',
+    layoutMode,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

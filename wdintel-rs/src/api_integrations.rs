@@ -119,7 +119,7 @@ pub async fn upsert_api_integration(
         let iggy_connection_changed =
             has_iggy_connection_changed(&api_integration, &values);
         if iggy_connection_changed {
-            ensure_iggy_topics(&values).await?;
+            ensure_iggy_topics_for_values(&values).await?;
         }
         let mut api_integration = api_integration.into_active_model();
         apply_values(&mut api_integration, values);
@@ -130,7 +130,8 @@ pub async fn upsert_api_integration(
         {
             api_integration.is_working = Set(false);
         }
-        api_integration.update(&env.dbx).await.c(h!())?
+        let api_integration = api_integration.update(&env.dbx).await.c(h!())?;
+        api_integration
     } else {
         let mut api_integration = api_integration::ActiveModel {
             id: NotSet,
@@ -147,9 +148,10 @@ pub async fn upsert_api_integration(
             last_sync_at: NotSet,
             is_working: NotSet,
         };
-        ensure_iggy_topics(&values).await?;
+        ensure_iggy_topics_for_values(&values).await?;
         apply_values(&mut api_integration, values);
-        api_integration.insert(&env.dbx).await.c(h!())?
+        let api_integration = api_integration.insert(&env.dbx).await.c(h!())?;
+        api_integration
     };
 
     Ok(Json(ApiIntegration::from(api_integration)))
@@ -207,6 +209,9 @@ pub async fn oneoff_ensure_iggy_topics(mode: Mode) -> Result<(), AppError> {
 async fn ensure_iggy_topics_for_api_integration(
     api_integration: &api_integration::Model,
 ) -> Result<(), AppError> {
+    if !api_integration.has_iggy_connection {
+        return Ok(());
+    }
     info!(
         "Ensuring Iggy topics for API integration {}",
         api_integration.id
@@ -218,6 +223,25 @@ async fn ensure_iggy_topics_for_api_integration(
         &[
             api_integration.iggy_inbox_topic.as_deref().c(h!())?,
             api_integration.iggy_analytics_topic.as_deref().c(h!())?,
+        ],
+    )
+    .await
+}
+
+async fn ensure_iggy_topics_for_values(
+    values: &ApiIntegrationValues,
+) -> Result<(), AppError> {
+    if !values.has_iggy_connection {
+        return Ok(());
+    }
+    info!("Ensuring Iggy topics for API integration settings");
+    crate::iggy::ensure_topics_for_all_users(
+        values.iggy_url.as_deref().c(h!())?,
+        values.iggy_login.as_deref().c(h!())?,
+        values.iggy_password.as_deref().c(h!())?,
+        &[
+            values.iggy_inbox_topic.as_deref().c(h!())?,
+            values.iggy_analytics_topic.as_deref().c(h!())?,
         ],
     )
     .await
@@ -336,24 +360,6 @@ fn apply_values(
     api_integration.iggy_inbox_topic = Set(values.iggy_inbox_topic);
     api_integration.iggy_analytics_topic = Set(values.iggy_analytics_topic);
     api_integration.sync_enabled = Set(values.sync_enabled);
-}
-
-async fn ensure_iggy_topics(
-    values: &ApiIntegrationValues,
-) -> Result<(), AppError> {
-    if !values.has_iggy_connection {
-        return Ok(());
-    }
-    crate::iggy::ensure_topics(
-        values.iggy_url.as_deref().c(h!())?,
-        values.iggy_login.as_deref().c(h!())?,
-        values.iggy_password.as_deref().c(h!())?,
-        &[
-            values.iggy_inbox_topic.as_deref().c(h!())?,
-            values.iggy_analytics_topic.as_deref().c(h!())?,
-        ],
-    )
-    .await
 }
 
 fn has_iggy_connection_changed(

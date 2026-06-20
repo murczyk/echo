@@ -11,10 +11,11 @@ import type {
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { isPresent } from '../../utils/misc';
 import { postJson } from './client';
+import type { RequestOptions } from './client';
 
 /** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
-export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
-  const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {});
+export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Record<number, Tag>> {
+  const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {}, options);
   const map: Record<number, Tag> = {};
   for (const [i, tagRecord] of Object.entries(raw)) {
     const nTag = transformSnakeToCamel<Tag>(tagRecord[1]);
@@ -24,10 +25,11 @@ export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
 }
 
 /** Latest sender profiles (UUID -> profile). */
-export async function getLatestSenders(): Promise<SignalProfilesRsp> {
+export async function getLatestSenders(options?: RequestOptions): Promise<SignalProfilesRsp> {
   const raw = await postJson<{ data: Record<string, { given_name?: string; family_name?: string; givenName?: string; familyName?: string } | null> }>(
     '/api/rer-importer/latest-senders',
     {},
+    options,
   );
   const data: Record<string, SignalProfilesRsp['data'][string]> = {};
   if (raw?.data) {
@@ -53,7 +55,7 @@ export async function getLatestFrequencies(): Promise<string[]> {
 }
 
 /** Posts list for duty filter (from analysis stats). */
-export async function getPostsList(): Promise<string[]> {
+export async function getPostsList(options?: RequestOptions): Promise<string[]> {
   const now = Date.now();
   const sinceMs = now - 14 * 24 * 60 * 60 * 1000;
   const tillMs = now + 24 * 60 * 60 * 1000;
@@ -90,26 +92,26 @@ export async function getPostsList(): Promise<string[]> {
     reportTagsOnlyThisUnit: null,
   };
   const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
-  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody);
+  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody, options);
   const posts = raw?.posts ?? [];
   return posts.map((p) => p.post);
 }
 
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */
-export async function getUserSigintGroups(sinceDateInclusiveMs: number | null): Promise<string[]> {
+export async function getUserSigintGroups(sinceDateInclusiveMs: number | null, options?: RequestOptions): Promise<string[]> {
   const body: Record<string, number> = isPresent(sinceDateInclusiveMs) ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
-  const raw = await postJson<string[]>('/api/user/sigint-groups', body);
+  const raw = await postJson<string[]>('/api/user/sigint-groups', body, options);
   return Array.isArray(raw) ? raw : [];
 }
 
 /** Group details from master keys. */
-export async function getGroupInfosBatch(masterKeys: string[]): Promise<SignalGroupEntry[]> {
+export async function getGroupInfosBatch(masterKeys: string[], options?: RequestOptions): Promise<SignalGroupEntry[]> {
   if (masterKeys.length === 0) return [];
   const body = {
     groups: masterKeys.map((masterKey) => ({ master_key: masterKey })),
     skip_group_stats: true,
   };
-  const raw = await postJson<{ data: Array<Record<string, unknown>> }>('/api/rer-importer/signal-group-batch', body);
+  const raw = await postJson<{ data: Array<Record<string, unknown>> }>('/api/rer-importer/signal-group-batch', body, options);
   const arr = raw?.data ?? [];
   return arr.map((r: Record<string, unknown>) => ({
     masterKey: (r.master_key ?? r.masterKey) as string,

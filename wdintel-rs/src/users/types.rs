@@ -105,7 +105,7 @@ pub struct CreateLoginReq {
     pub password: String,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
-    pub organism_id: Option<i64>,
+    pub organism_id: i64,
 }
 
 #[derive(
@@ -115,7 +115,7 @@ pub struct CreateDeltaLoginReq {
     pub login: String,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
-    pub organism_id: Option<i64>,
+    pub organism_id: i64,
 }
 
 #[derive(
@@ -125,7 +125,7 @@ pub struct UpdateLoginReq {
     pub login: String,
     pub roles: Option<Vec<String>>,
     pub sigint_zone_id: Option<i64>,
-    pub organism_id: Option<i64>,
+    pub organism_id: i64,
     pub deleted: Option<bool>,
     pub password: Option<String>,
     pub delta_login: Option<String>,

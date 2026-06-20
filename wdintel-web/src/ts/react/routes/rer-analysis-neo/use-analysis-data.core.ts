@@ -60,6 +60,10 @@ export function useAnalysisData({
   });
 
   const {
+    filterSectionLoadStates,
+    isFilterSectionEmptyLoading,
+    isFilterSectionLoading,
+    isFilterSectionStale,
     getLoadedFilterSections,
     getReloadFilterSections,
     invalidateFilterSectionLoads,
@@ -74,7 +78,6 @@ export function useAnalysisData({
     onUnauthorized,
     setAorEntries: messageList.setAorEntries,
     setGroupInfos: referenceState.setGroupInfos,
-    setNetworkDisplayMap: referenceState.setNetworkDisplayMap,
     setNetworks: referenceState.setNetworks,
     setOptions: referenceState.setOptions,
     setProfiles: referenceState.setProfiles,
@@ -99,7 +102,7 @@ export function useAnalysisData({
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
 
-  const { clearAnalysisResults, onUpdateLocalMessage, patchMessages, messageActionState } = useAnalysisActions(
+  const { clearAnalysisResults, onUpdateLocalMessage, messageActionState } = useAnalysisActions(
     buildAnalysisActionsParams({
       authUserName,
       currentUser,
@@ -155,7 +158,6 @@ export function useAnalysisData({
       setMapPoints: mapData.setMapPoints,
       setMessages: messageList.setMessages,
       setMessagesLoading: messageList.setMessagesLoading,
-      setNetworkDisplayMap: referenceState.setNetworkDisplayMap,
       setNetworks: referenceState.setNetworks,
       setNewCallsigns: sidebarData.setNewCallsigns,
       setNewCallsignsLoading: sidebarData.setNewCallsignsLoading,
@@ -191,6 +193,10 @@ export function useAnalysisData({
     countsLoading,
     aorEntries: messageList.aorEntries,
     filtersLoading,
+    filterSectionLoadStates,
+    isFilterSectionLoading,
+    isFilterSectionEmptyLoading,
+    isFilterSectionStale,
     groupsActivityPeriod: sidebarData.groupsActivityPeriod,
     downloadGeojson: sidebarData.downloadGeojson,
     downloadKmz: sidebarData.downloadKmz,

@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CorrelatedFreq, NetJsonGraphAndMeta } from '../../../../Bindings';
 import { fetchAnalysisCallsignGraph, fetchAnalysisCorrelatedFreqs } from '../../services/api/analysis';
+import { isAbortError } from '../../services/api/client';
 import { isNullOrUndefined } from '../../utils/misc';
 import { buildAnalysisReq } from './helpers';
 import { toErrorMessage } from './use-analysis-data.shared';
@@ -25,13 +26,19 @@ export function useAnalysisGraphData({ onError, onUnauthorized, optionsFreqValue
   const correlatedFreqsRequestRef = useRef(0);
   const correlatedFreqsRequestKeyRef = useRef<string | null>(null);
   const callsignGraphRequestRef = useRef(0);
+  const correlatedFreqsAbortControllerRef = useRef<AbortController | null>(null);
+  const callsignGraphAbortControllerRef = useRef<AbortController | null>(null);
 
   const invalidateCorrelatedFreqsCache = useCallback(() => {
+    correlatedFreqsAbortControllerRef.current?.abort();
+    correlatedFreqsAbortControllerRef.current = null;
     correlatedFreqsRequestRef.current += 1;
     correlatedFreqsRequestKeyRef.current = null;
+    setCorrelatedFreqsLoading(false);
   }, []);
 
   const invalidateCallsignGraph = useCallback(() => {
+    callsignGraphAbortControllerRef.current?.abort();
     callsignGraphRequestRef.current += 1;
     setCallsignGraph(null);
     setCallsignGraphLoading(false);
@@ -41,30 +48,39 @@ export function useAnalysisGraphData({ onError, onUnauthorized, optionsFreqValue
   const loadCorrelatedFreqs = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq) || queryState.freqsSelected.length === 0) {
+      correlatedFreqsAbortControllerRef.current?.abort();
+      correlatedFreqsAbortControllerRef.current = null;
       correlatedFreqsRequestRef.current += 1;
       correlatedFreqsRequestKeyRef.current = null;
       setCorrelatedFreqs([]);
+      setCorrelatedFreqsLoading(false);
       return;
     }
 
     const requestKey = JSON.stringify(analysisReq);
     if (correlatedFreqsRequestKeyRef.current === requestKey) return;
 
+    correlatedFreqsAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    correlatedFreqsAbortControllerRef.current = abortController;
     const requestId = correlatedFreqsRequestRef.current + 1;
     correlatedFreqsRequestRef.current = requestId;
     correlatedFreqsRequestKeyRef.current = requestKey;
     setCorrelatedFreqsLoading(true);
     try {
-      const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq);
-      if (requestId !== correlatedFreqsRequestRef.current) return;
+      const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq, { signal: abortController.signal });
+      if (requestId !== correlatedFreqsRequestRef.current || abortController.signal.aborted) return;
       setCorrelatedFreqs(rsp.freqs ?? []);
     } catch (loadError) {
-      if (requestId !== correlatedFreqsRequestRef.current) return;
+      if (requestId !== correlatedFreqsRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
       correlatedFreqsRequestKeyRef.current = null;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId !== correlatedFreqsRequestRef.current) return;
+      if (requestId !== correlatedFreqsRequestRef.current || abortController.signal.aborted) return;
       setCorrelatedFreqsLoading(false);
+      if (correlatedFreqsAbortControllerRef.current === abortController) {
+        correlatedFreqsAbortControllerRef.current = null;
+      }
     }
   }, [onError, onUnauthorized, optionsFreqValues, queryState]);
 
@@ -72,19 +88,25 @@ export function useAnalysisGraphData({ onError, onUnauthorized, optionsFreqValue
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq)) return;
 
+    callsignGraphAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    callsignGraphAbortControllerRef.current = abortController;
     const requestId = callsignGraphRequestRef.current + 1;
     callsignGraphRequestRef.current = requestId;
     setCallsignGraphLoading(true);
     try {
-      const rsp = await fetchAnalysisCallsignGraph({ ...analysisReq, nolimit: callsignGraphNolimit });
-      if (requestId !== callsignGraphRequestRef.current) return;
+      const rsp = await fetchAnalysisCallsignGraph({ ...analysisReq, nolimit: callsignGraphNolimit }, { signal: abortController.signal });
+      if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted) return;
       setCallsignGraph(rsp);
     } catch (loadError) {
-      if (requestId !== callsignGraphRequestRef.current) return;
+      if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId !== callsignGraphRequestRef.current) return;
+      if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted) return;
       setCallsignGraphLoading(false);
+      if (callsignGraphAbortControllerRef.current === abortController) {
+        callsignGraphAbortControllerRef.current = null;
+      }
     }
   }, [callsignGraphNolimit, onError, onUnauthorized, optionsFreqValues, queryState]);
 
@@ -92,6 +114,15 @@ export function useAnalysisGraphData({ onError, onUnauthorized, optionsFreqValue
     invalidateCallsignGraph();
     setCallsignGraphNolimit((current) => !current);
   }, [invalidateCallsignGraph]);
+
+  useEffect(() => {
+    return () => {
+      correlatedFreqsAbortControllerRef.current?.abort();
+      correlatedFreqsAbortControllerRef.current = null;
+      callsignGraphAbortControllerRef.current?.abort();
+      callsignGraphAbortControllerRef.current = null;
+    };
+  }, []);
 
   return {
     correlatedFreqs,

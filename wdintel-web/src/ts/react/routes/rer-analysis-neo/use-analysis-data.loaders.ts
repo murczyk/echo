@@ -141,7 +141,7 @@ export function useAnalysisDataLoaders(params: Params) {
   const summaryRequestKeyRef = useRef<string | null>(null);
   const rightSidebarRequestRef = useRef(0);
   const rightSidebarRequestKeyRef = useRef<string | null>(null);
-  const pendingCallsignInfoKeysRef = useRef(new Set<string>());
+  const pendingCallsignInfoOwnersRef = useRef(new Map<string, number>());
 
   const invalidateCorrelatedFreqsCache = useCallback(() => {
     correlatedFreqsRequestRef.current += 1;
@@ -176,7 +176,7 @@ export function useAnalysisDataLoaders(params: Params) {
   }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
 
   const loadMissingCallsignInfos = useCallback(
-    async (callsigns: string[]) => {
+    async (callsigns: string[], requestId: number) => {
       const missingCallsigns: string[] = [];
       const seenKeys = new Set<string>();
 
@@ -184,8 +184,10 @@ export function useAnalysisDataLoaders(params: Params) {
         const key = normalizeCallsignLookupValue(callsign);
         if (key === '' || seenKeys.has(key)) return;
         seenKeys.add(key);
-        if (summaryCallsignsInfoRef.current[key] || pendingCallsignInfoKeysRef.current.has(key)) return;
-        pendingCallsignInfoKeysRef.current.add(key);
+        if (summaryCallsignsInfoRef.current[key]) return;
+        const pendingOwner = pendingCallsignInfoOwnersRef.current.get(key);
+        if (pendingOwner === requestId) return;
+        pendingCallsignInfoOwnersRef.current.set(key, requestId);
         missingCallsigns.push(callsign.trim());
       });
 
@@ -196,7 +198,10 @@ export function useAnalysisDataLoaders(params: Params) {
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, callsignInfos));
       } finally {
         missingCallsigns.forEach((callsign) => {
-          pendingCallsignInfoKeysRef.current.delete(normalizeCallsignLookupValue(callsign));
+          const key = normalizeCallsignLookupValue(callsign);
+          if (pendingCallsignInfoOwnersRef.current.get(key) === requestId) {
+            pendingCallsignInfoOwnersRef.current.delete(key);
+          }
         });
       }
     },
@@ -440,7 +445,7 @@ export function useAnalysisDataLoaders(params: Params) {
       );
       if (callsignIds.length > 0) {
         try {
-          await loadMissingCallsignInfos(callsignIds);
+          await loadMissingCallsignInfos(callsignIds, requestId);
         } catch (loadError) {
           if (requestId !== summaryRequestRef.current) return;
           summaryRequestKeyRef.current = null;
@@ -496,7 +501,7 @@ export function useAnalysisDataLoaders(params: Params) {
 
       const callsignIds = callsignsRsp.callsigns.map((item) => item.callsign);
       if (callsignIds.length > 0) {
-        await loadMissingCallsignInfos(callsignIds);
+        await loadMissingCallsignInfos(callsignIds, requestId);
         if (requestId !== rightSidebarRequestRef.current) return;
       }
     } catch (loadError) {

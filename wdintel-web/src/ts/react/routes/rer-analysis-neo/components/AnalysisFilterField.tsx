@@ -26,8 +26,11 @@ type Props = {
   value: string[];
   disabled?: boolean;
   loading?: boolean;
+  emptyLoading?: boolean;
   normalizeUnknownAliases?: boolean;
   deferredCommit?: boolean;
+  preserveSelectionOrder?: boolean;
+  preserveSelectedOptionValuesOnChange?: boolean;
   onChange: (next: string[]) => void;
 };
 
@@ -51,14 +54,82 @@ function optionContainsValue(option: AutocompleteOption, selected: string, norma
   return normalizeUnknownAliases && option.value === '' && (selected === '' || selected === 'Не визначено');
 }
 
+function buildSelectedOptions(
+  selectedValues: string[],
+  autocompleteOptions: AutocompleteOption[],
+  normalizeUnknownAliases: boolean,
+  preserveSelectionOrder: boolean,
+  labelCache: Record<string, string>,
+): AutocompleteOption[] {
+  if (!preserveSelectionOrder) {
+    return [
+      ...autocompleteOptions.filter((option) => selectedValues.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases))),
+      ...selectedValues
+        .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected, normalizeUnknownAliases)))
+        .map((selected) => {
+          const label = labelCache[selected] ?? selected;
+          return { key: selected, label, value: selected, count: 0, values: [selected] };
+        }),
+    ];
+  }
+
+  const selectedOptions: AutocompleteOption[] = [];
+  const seenKeys = new Set<string>();
+  selectedValues.forEach((selected) => {
+    const option = autocompleteOptions.find((candidate) => optionContainsValue(candidate, selected, normalizeUnknownAliases));
+    if (option != null) {
+      if (seenKeys.has(option.key)) return;
+      seenKeys.add(option.key);
+      selectedOptions.push(option);
+      return;
+    }
+
+    if (seenKeys.has(selected)) return;
+    seenKeys.add(selected);
+    const label = labelCache[selected] ?? selected;
+    selectedOptions.push({ key: selected, label, value: selected, count: 0, values: [selected] });
+  });
+
+  return selectedOptions;
+}
+
+function buildCommittedValues(
+  next: AutocompleteOption[],
+  currentValues: string[],
+  preserveSelectedOptionValuesOnChange: boolean,
+): string[] {
+  if (!preserveSelectedOptionValuesOnChange) {
+    return next.flatMap((option) => option.values);
+  }
+
+  const currentValueSet = new Set(currentValues);
+  const committedValues: string[] = [];
+  const seenValues = new Set<string>();
+
+  next.forEach((option) => {
+    const preservedValues = option.values.filter((value) => currentValueSet.has(value));
+    const valuesToCommit = preservedValues.length > 0 ? preservedValues : option.values;
+    valuesToCommit.forEach((value) => {
+      if (seenValues.has(value)) return;
+      seenValues.add(value);
+      committedValues.push(value);
+    });
+  });
+
+  return committedValues;
+}
+
 export function AnalysisFilterField({
   label,
   options,
   value,
   disabled,
   loading,
+  emptyLoading = false,
   normalizeUnknownAliases = false,
   deferredCommit = false,
+  preserveSelectionOrder = false,
+  preserveSelectedOptionValuesOnChange = false,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -66,6 +137,7 @@ export function AnalysisFilterField({
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState(value);
   const draftValueRef = useRef(value);
+  const lastCommittedValueRef = useRef(value);
 
   const updateDraftValue = (nextValue: string[]) => {
     draftValueRef.current = nextValue;
@@ -83,22 +155,22 @@ export function AnalysisFilterField({
     if (!open) {
       updateDraftValue(value);
     }
+    lastCommittedValueRef.current = value;
   }, [open, value]);
 
   const effectiveValue = deferredCommit && open ? draftValue : value;
-  const autocompleteValue = autocompleteOptions.filter((option) => effectiveValue.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases)));
-  const unknownAutocompleteValue = effectiveValue
-    .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected, normalizeUnknownAliases)))
-    .map((selected) => {
-      const label = labelCacheRef.current[selected] ?? selected;
-      return { key: selected, label, value: selected, count: 0, values: [selected] };
-    });
+  const autocompleteValue = buildSelectedOptions(
+    effectiveValue,
+    autocompleteOptions,
+    normalizeUnknownAliases,
+    preserveSelectionOrder,
+    labelCacheRef.current,
+  );
 
   const commitValue = (nextValue: string[]) => {
-    if (deferredCommit) {
-      draftValueRef.current = nextValue;
-      setDraftValue(nextValue);
-    }
+    draftValueRef.current = nextValue;
+    lastCommittedValueRef.current = nextValue;
+    setDraftValue(nextValue);
     onChange(nextValue);
   };
 
@@ -109,7 +181,7 @@ export function AnalysisFilterField({
       open={open}
       size="small"
       options={autocompleteOptions}
-      value={[...autocompleteValue, ...unknownAutocompleteValue]}
+      value={autocompleteValue}
       disabled={disabled}
       loading={loading}
       loadingText={`Завантаження${ELLIPSIS}`}
@@ -118,7 +190,7 @@ export function AnalysisFilterField({
       openText="Відкрити"
       closeText="Закрити"
       clearText="Очистити"
-      noOptionsText={loading ? `Завантаження${ELLIPSIS}` : 'Немає варіантів'}
+      noOptionsText={loading || emptyLoading ? `Завантаження${ELLIPSIS}` : 'Немає варіантів'}
       onOpen={() => {
         setOpen(true);
         if (deferredCommit) {
@@ -128,7 +200,9 @@ export function AnalysisFilterField({
       onClose={() => {
         setOpen(false);
         if (deferredCommit) {
-          onChange(draftValueRef.current);
+          if (draftValueRef.current.length !== lastCommittedValueRef.current.length || !draftValueRef.current.every((item, index) => item === lastCommittedValueRef.current[index])) {
+            commitValue(draftValueRef.current);
+          }
         }
       }}
       renderTags={(tagValue, getTagProps) =>
@@ -149,13 +223,13 @@ export function AnalysisFilterField({
           );
         })
       }
-      onChange={(_event, next, reason) => {
-        const nextValues = next.flatMap((option) => option.values);
-        if (!deferredCommit || reason === 'clear' || (reason === 'removeOption' && !open)) {
-          commitValue(nextValues);
+      onChange={(_event, next, _reason) => {
+        const nextValues = buildCommittedValues(next, effectiveValue, preserveSelectedOptionValuesOnChange);
+        if (deferredCommit && open) {
+          updateDraftValue(nextValues);
           return;
         }
-        updateDraftValue(nextValues);
+        commitValue(nextValues);
       }}
       renderOption={(props, option) => {
         const { key: _unusedKey, ...optionProps } = props;

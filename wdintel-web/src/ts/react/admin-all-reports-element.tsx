@@ -19,6 +19,7 @@ class AdminAllReportsElement extends HTMLElement {
       this.style.display = 'block';
       this.style.width = '100%';
       this.style.height = '100%';
+      this.style.minHeight = '0';
       this.root = createRoot(this);
     }
     this.root.render(<AdminAllReportsRoot />);
