@@ -554,15 +554,13 @@ pub async fn upload_current_user_goi_categories(
     let categories_json = extract_categories_json_from_zip(upload)?;
     let categories_path = goi_categories_remote_path(&ssh_req.path);
 
-    super::goi_upload_file(
-        ssh_req,
-        categories_path,
-        categories_json,
-    )
-    .await
-    .map_err(|err| AppError::BL {
-        msg: format!("Не вдалося завантажити categories.json на ГОІ: {err:#}"),
-    })?;
+    super::goi_upload_file(ssh_req, categories_path, categories_json)
+        .await
+        .map_err(|err| AppError::BL {
+            msg: format!(
+                "Не вдалося завантажити categories.json на ГОІ: {err:#}"
+            ),
+        })?;
 
     Ok(Json(true))
 }
@@ -650,17 +648,16 @@ cd \"$data_dir\"; \
 zip -qr \"$archive\" \"$palettes_dir_name\"\
 ",
         data_dir = super::goi_ssh::goi_shell_quote_single(&data_dir),
-        palettes_dir_name =
-            super::goi_ssh::goi_shell_quote_single(
-                ORGANISM_GOI_PALETTES_DIR_NAME,
-            ),
+        palettes_dir_name = super::goi_ssh::goi_shell_quote_single(
+            ORGANISM_GOI_PALETTES_DIR_NAME,
+        ),
         archive = super::goi_ssh::goi_shell_quote_single(remote_zip_path),
     )
 }
 
 fn goi_remote_data_dir(goi_path: &str) -> String {
     let goi_path = normalize_trimmed_or_default(
-        Some(goi_path.to_string()),
+        goi_path.to_string(),
         ORGANISM_GOI_PATH_DEFAULT,
     );
     let goi_path = goi_path.trim_end_matches('/');
