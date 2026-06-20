@@ -1,6 +1,9 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import DownloadIcon from '@mui/icons-material/Download';
 import LaunchIcon from '@mui/icons-material/Launch';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {
+  Box,
   Button,
   Card,
   CardContent,
@@ -21,13 +24,16 @@ import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import {
+  downloadCurrentUserGoiPalettes,
   GoiRestartService,
   GoiWhatsappService,
   GoiUserIntegration,
   fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
   unlinkCurrentUserGoiWhatsapp,
+  uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
+import { downloadBlob } from '../../utils/download-blob';
 
 const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
 
@@ -89,6 +95,8 @@ type IntegrationCardProps = {
   pendingKey: string | null;
   onRestart: (integrationId: number, service: GoiRestartService) => void;
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
+  onDownloadPalettes: (integrationId: number) => void;
+  onUploadCategories: (integrationId: number, file: File) => void;
 };
 
 type ShowMoreTableRowProps = {
@@ -111,6 +119,14 @@ type ServiceTableRowProps = {
   disabled: boolean;
   onRestart: (integrationId: number, service: GoiRestartService) => void;
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
+};
+
+type GoiDataControlPanelProps = {
+  integration: GoiUserIntegration;
+  disabled: boolean;
+  pendingKey: string | null;
+  onDownloadPalettes: (integrationId: number) => void;
+  onUploadCategories: (integrationId: number, file: File) => void;
 };
 
 function ShowMoreTableRow(props: ShowMoreTableRowProps) {
@@ -205,6 +221,74 @@ function ServiceTableRow(props: ServiceTableRowProps) {
         </Stack>
       </TableCell>
     </TableRow>
+  );
+}
+
+function GoiDataControlPanel(props: GoiDataControlPanelProps) {
+  const [categoriesFile, setCategoriesFile] = React.useState<File | null>(null);
+  const downloadPendingKey = `${props.integration.id}:download-palettes`;
+  const uploadPendingKey = `${props.integration.id}:upload-categories`;
+  const downloading = props.pendingKey === downloadPendingKey;
+  const uploading = props.pendingKey === uploadPendingKey;
+
+  function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setCategoriesFile(event.target.files?.[0] ?? null);
+  }
+
+  return (
+    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        spacing={1.25}
+        alignItems={{ xs: 'stretch', md: 'center' }}
+      >
+        <PowerButton
+          variant="outlined"
+          startIcon={
+            downloading ? (
+              <CircularProgress size={16} />
+            ) : (
+              <DownloadIcon fontSize="small" />
+            )
+          }
+          disabled={props.disabled}
+          onClick={() => props.onDownloadPalettes(props.integration.id)}
+        >
+          Скачати палітри
+        </PowerButton>
+        <Box
+          component="input"
+          type="file"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          disabled={props.disabled}
+          onChange={onFileChange}
+          sx={{
+            flex: 1,
+            minWidth: 180,
+            maxWidth: 360,
+            color: 'text.secondary',
+          }}
+        />
+        <PowerButton
+          variant="contained"
+          startIcon={
+            uploading ? (
+              <CircularProgress color="inherit" size={16} />
+            ) : (
+              <UploadFileIcon fontSize="small" />
+            )
+          }
+          disabled={props.disabled || !categoriesFile}
+          onClick={() => {
+            if (categoriesFile) {
+              props.onUploadCategories(props.integration.id, categoriesFile);
+            }
+          }}
+        >
+          Завантажити категорії
+        </PowerButton>
+      </Stack>
+    </Box>
   );
 }
 
@@ -313,6 +397,14 @@ function IntegrationCard(props: IntegrationCardProps) {
             </Table>
           </TableContainer>
 
+          <GoiDataControlPanel
+            integration={integration}
+            disabled={disabled}
+            pendingKey={props.pendingKey}
+            onDownloadPalettes={props.onDownloadPalettes}
+            onUploadCategories={props.onUploadCategories}
+          />
+
           {!integration.canRestart && integration.restartUnavailableReason ? (
             <PowerAlert severity="info">{integration.restartUnavailableReason}</PowerAlert>
           ) : null}
@@ -405,6 +497,57 @@ export function GoiSettingsPage() {
     }
   }
 
+  async function handleDownloadPalettes(integrationId: number) {
+    const nextPendingKey = `${integrationId}:download-palettes`;
+    if (pendingKey) return;
+
+    setPendingKey(nextPendingKey);
+    setActionStatus(null);
+
+    try {
+      const blob = await downloadCurrentUserGoiPalettes(integrationId);
+      downloadBlob(blob, `goi-palettes-${integrationId}.zip`);
+      setActionStatus({
+        kind: 'success',
+        integrationId,
+        message: 'Архів палітр завантажено',
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        integrationId,
+        message: formatErrorMessage(error),
+      });
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function handleUploadCategories(integrationId: number, file: File) {
+    const nextPendingKey = `${integrationId}:upload-categories`;
+    if (pendingKey) return;
+
+    setPendingKey(nextPendingKey);
+    setActionStatus(null);
+
+    try {
+      await uploadCurrentUserGoiCategories(integrationId, file);
+      setActionStatus({
+        kind: 'success',
+        integrationId,
+        message: 'categories.json завантажено на ГОІ',
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        integrationId,
+        message: formatErrorMessage(error),
+      });
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <PageHeader
@@ -426,6 +569,8 @@ export function GoiSettingsPage() {
           pendingKey={pendingKey}
           onRestart={handleRestart}
           onUnlink={handleUnlink}
+          onDownloadPalettes={handleDownloadPalettes}
+          onUploadCategories={handleUploadCategories}
         />
       ))}
     </Stack>
