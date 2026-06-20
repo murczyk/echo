@@ -581,7 +581,11 @@ async fn do_submit_chumak_inbox(
     let timestamp = parse_chumak_timestamp(&req.timestamp)?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let datasource = ensure_chumak_datasource(&txn, &login).await.c(h!())?;
+    let datasource =  datasource::Entity::find()
+        .filter(datasource::Column::ApiLogin.eq(login))
+        .one(&txn)
+        .await
+        .c(h!())?.c(h!())?;
     let groups =
         ensure_chumak_groups(&txn, &datasource, &login, &req.group_names)
             .await
@@ -672,51 +676,6 @@ fn parse_chumak_timestamp(timestamp: &str) -> Result<NaiveDateTime, AppError> {
             msg: format!("Ambiguous Chumak timestamp: {timestamp}"),
         })?;
     Ok(zoned.to_utc().naive_utc())
-}
-
-async fn ensure_chumak_datasource(
-    txn: &DatabaseTransaction,
-    login: &str,
-) -> Result<datasource::Model, AppError> {
-    let now = Utc::now().naive_utc();
-    let default_aor_id =
-        crate::sigint::aor::load_default_aor(txn).await.c(h!())?.id;
-    let datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
-        .one(txn)
-        .await
-        .c(h!())?;
-    if let Some(datasource) = datasource {
-        let is_deleted = datasource.deleted;
-        let has_default_aor = datasource.default_aor_id.is_some();
-        let mut datasource = datasource.into_active_model();
-        datasource.kind = Set("echo_operator".to_string());
-        if is_deleted {
-            datasource.deleted = Set(false);
-            datasource.enabled = Set(Some(false));
-            datasource.updated_by = Set(Some(login.to_string()));
-        }
-        if !has_default_aor {
-            datasource.default_aor_id = Set(Some(default_aor_id));
-        }
-        datasource.last_sync_at = Set(Some(now));
-        return Ok(datasource.update(txn).await.c(h!())?);
-    }
-
-    Ok(datasource::ActiveModel {
-        kind: Set("echo_operator".to_string()),
-        display_name: Set(format!("EХО Оператор {login}")),
-        enabled: Set(Some(true)),
-        api_login: Set(Some(login.to_string())),
-        updated_by: Set(Some(login.to_string())),
-        last_sync_at: Set(Some(now)),
-        deleted: Set(false),
-        default_aor_id: Set(Some(default_aor_id)),
-        ..Default::default()
-    }
-    .insert(txn)
-    .await
-    .c(h!())?)
 }
 
 async fn ensure_chumak_groups(
