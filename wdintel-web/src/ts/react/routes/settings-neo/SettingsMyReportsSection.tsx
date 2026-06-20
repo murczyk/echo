@@ -41,7 +41,14 @@ const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   actions: true,
 };
 
-const DEFAULT_REPORTS_COLUMN_ORDER = ['mrt-row-numbers', 'reportKind', 'createdAt', 'status', 'completedAt', 'actions'];
+const DEFAULT_REPORTS_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'reportKind',
+  'createdAt',
+  'status',
+  'completedAt',
+  'actions',
+];
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
@@ -252,86 +259,89 @@ export function ReportHistoryTableSection({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(() => {
-    const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
-      {
-        accessorKey: 'reportKind',
-        header: 'Вид',
-        Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
-      },
-    ];
+  const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(
+    () => {
+      const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
+        {
+          accessorKey: 'reportKind',
+          header: 'Вид',
+          Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
+        },
+      ];
 
-    if (includeAuthor) {
-      nextColumns.push({
-        accessorKey: 'requestedBy',
-        header: 'Автор',
-        Cell: ({ row }) => row.original.requestedBy,
-      });
-    }
+      if (includeAuthor) {
+        nextColumns.push({
+          accessorKey: 'requestedBy',
+          header: 'Автор',
+          Cell: ({ row }) => row.original.requestedBy,
+        });
+      }
 
-    nextColumns.push(
-      {
-        accessorKey: 'createdAt',
-        header: 'Створено',
-        Cell: ({ row }) => formatReportDate(row.original.createdAt),
-      },
-      {
-        accessorKey: 'status',
-        header: 'Статус',
-        Cell: ({ row }) => (
-          <Chip
-            size="small"
-            color={statusColor(row.original.status)}
-            label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
-            variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
-          />
-        ),
-      },
-      {
-        accessorKey: 'completedAt',
-        header: 'Завершено',
-        Cell: ({ row }) => formatReportDate(row.original.completedAt),
-      },
-      {
-        id: 'actions',
-        header: 'Завантажити',
-        enableSorting: false,
-        enableColumnActions: false,
-        enableColumnFilter: false,
-        size: 120,
-        Cell: ({ row }) => {
-          const report = row.original;
-          const disabled = actionInFlight === report.id;
-          if (report.status === 'failed') {
+      nextColumns.push(
+        {
+          accessorKey: 'createdAt',
+          header: 'Створено',
+          Cell: ({ row }) => formatReportDate(row.original.createdAt),
+        },
+        {
+          accessorKey: 'status',
+          header: 'Статус',
+          Cell: ({ row }) => (
+            <Chip
+              size="small"
+              color={statusColor(row.original.status)}
+              label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
+              variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
+            />
+          ),
+        },
+        {
+          accessorKey: 'completedAt',
+          header: 'Завершено',
+          Cell: ({ row }) => formatReportDate(row.original.completedAt),
+        },
+        {
+          id: 'actions',
+          header: 'Завантажити',
+          enableSorting: false,
+          enableColumnActions: false,
+          enableColumnFilter: false,
+          size: 120,
+          Cell: ({ row }) => {
+            const report = row.original;
+            const disabled = actionInFlight === report.id;
+            if (report.status === 'failed') {
+              return (
+                <Tooltip title="Повторити">
+                  <span>
+                    <IconButton size="small" disabled={disabled} onClick={() => void handleRetry(report)}>
+                      <ReplayIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              );
+            }
             return (
-              <Tooltip title="Повторити">
+              <Tooltip title={report.hasFile ? 'Завантажити' : ''}>
                 <span>
-                  <IconButton size="small" disabled={disabled} onClick={() => void handleRetry(report)}>
-                    <ReplayIcon fontSize="small" />
+                  <IconButton
+                    size="small"
+                    disabled={disabled || report.status !== 'done' || !report.hasFile}
+                    onClick={() => void handleDownload(report)}
+                  >
+                    <DownloadIcon fontSize="small" />
                   </IconButton>
                 </span>
               </Tooltip>
             );
-          }
-          return (
-            <Tooltip title={report.hasFile ? 'Завантажити' : ''}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={disabled || report.status !== 'done' || !report.hasFile}
-                  onClick={() => void handleDownload(report)}
-                >
-                  <DownloadIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          );
+          },
         },
-      },
-    );
+      );
 
-    return nextColumns;
-  }, [actionInFlight, includeAuthor]);
+      return nextColumns;
+    },
+    [actionInFlight, includeAuthor],
+  );
 
   return (
     <Box
@@ -346,7 +356,11 @@ export function ReportHistoryTableSection({
           ...(fullHeight ? REPORTS_FULL_HEIGHT_CONTENT_SX : {}),
         }}
       >
-        <Stack spacing={2} useFlexGap={fullHeight} sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}>
+        <Stack
+          spacing={2}
+          useFlexGap={fullHeight}
+          sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
+        >
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
             <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
               {title}
