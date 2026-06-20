@@ -96,6 +96,7 @@ pub const MESSENGER_UNLINKED_DATASOURCE_NOTIFICATION_STATE_TTL_SEC: u64 =
     24 * 60 * 60;
 pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 600;
 pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
+pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
 pub const NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE: u64 = 1000;

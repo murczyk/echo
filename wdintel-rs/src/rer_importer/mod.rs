@@ -9,10 +9,11 @@ use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::http::header;
+use actix_web::http::StatusCode;
 use actix_web::web::{Bytes, Json};
-use actix_web::{get, post, HttpResponse};
+use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
-use futures_util::{stream, TryStreamExt};
+use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use rand::prelude::IndexedRandom;
@@ -45,9 +46,70 @@ pub mod signals;
 pub mod types;
 pub mod unit;
 
+fn media_inline_content_disposition(
+    file_name: Option<&str>,
+) -> Option<header::ContentDisposition> {
+    file_name.map(|file_name| header::ContentDisposition {
+        disposition: header::DispositionType::Inline,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: file_name.as_bytes().to_vec(),
+            },
+        )],
+    })
+}
+
+fn parse_single_byte_range(
+    range_header: &str,
+    total: u64,
+) -> Option<(u64, u64)> {
+    let spec = range_header.trim().strip_prefix("bytes=")?.trim();
+    let spec = spec.split(',').next()?.trim();
+    if spec.is_empty() || total == 0 {
+        return None;
+    }
+
+    if let Some(suffix) = spec.strip_prefix('-') {
+        let suffix_len: u64 = suffix.parse().ok()?;
+        if suffix_len == 0 {
+            return None;
+        }
+        let suffix_len = suffix_len.min(total);
+        let start = total - suffix_len;
+        return Some((start, total - 1));
+    }
+
+    let (start_str, end_str) = spec.split_once('-')?;
+    let start: u64 = start_str.parse().ok()?;
+    let end = if end_str.is_empty() {
+        total - 1
+    } else {
+        end_str.parse().ok()?
+    };
+    if start >= total || start > end {
+        return None;
+    }
+    Some((start, end.min(total - 1)))
+}
+
+fn apply_media_response_headers(
+    builder: &mut actix_web::HttpResponseBuilder,
+    content_type: &str,
+    file_name: Option<&str>,
+) {
+    builder.insert_header((header::ACCEPT_RANGES, "bytes"));
+    builder.insert_header((header::CONTENT_TYPE, content_type.to_string()));
+    if let Some(cd) = media_inline_content_disposition(file_name) {
+        builder.insert_header(cd);
+    }
+}
+
 #[get("/api/messenger/media/{media_id}")]
 async fn messenger_media(
     user: actix_identity::Identity,
+    req: HttpRequest,
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
@@ -61,60 +123,47 @@ async fn messenger_media(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    ensure_media_access(&env.dbx, &login, media.signal_message_id).await?;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &login,
+        media.signal_message_id,
+    )
+    .await?;
     let data = crate::messenger::media::fetch_media_bytes(env.as_ref(), &media)
         .await?;
     let bytes = Bytes::from(data);
-    let size = media.size_bytes.max(0) as u64;
-    let stream_body =
-        stream::once(async move { Ok::<Bytes, std::io::Error>(bytes) });
-    let mut resp = HttpResponse::Ok();
-    resp.insert_header((header::CONTENT_TYPE, media.content_type.clone()));
-    resp.insert_header((header::CONTENT_LENGTH, size.to_string()));
-    if let Some(file_name) = media.file_name.clone() {
-        let cd = header::ContentDisposition {
-            disposition: header::DispositionType::Inline,
-            parameters: vec![header::DispositionParam::FilenameExt(
-                header::ExtendedValue {
-                    charset: header::Charset::Ext("UTF-8".into()),
-                    language_tag: None,
-                    value: file_name.into_bytes(),
-                },
-            )],
-        };
-        resp.insert_header(cd);
-    }
-    Ok(resp.streaming(stream_body))
-}
+    let total = bytes.len() as u64;
+    let content_type = media.content_type.as_str();
+    let file_name = media.file_name.as_deref();
 
-async fn ensure_media_access(
-    dbx: &DatabaseConnection,
-    login: &str,
-    signal_message_id: i64,
-) -> Result<(), AppError> {
-    let allowed_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
-            .await
-            .c(h!())?;
-    let is_allowed = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
-        )
-        .filter(
-            signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
-        )
-        .select_only()
-        .column(signal_message_group::Column::Id)
-        .into_tuple::<i64>()
-        .one(dbx)
-        .await
-        .c(h!())?
-        .is_some();
-    if is_allowed {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("media access denied".into()))
+    if let Some(range_header) = req.headers().get(header::RANGE) {
+        let range_header = range_header.to_str().unwrap_or("");
+        if let Some((start, end)) = parse_single_byte_range(range_header, total)
+        {
+            let slice = bytes.slice(start as usize..=end as usize);
+            let length = end - start + 1;
+            let mut resp = HttpResponse::PartialContent();
+            apply_media_response_headers(&mut resp, content_type, file_name);
+            return Ok(resp
+                .insert_header((
+                    header::CONTENT_RANGE,
+                    format!("bytes {start}-{end}/{total}"),
+                ))
+                .insert_header((header::CONTENT_LENGTH, length.to_string()))
+                .body(slice));
+        }
+        let mut resp = HttpResponse::build(StatusCode::RANGE_NOT_SATISFIABLE);
+        apply_media_response_headers(&mut resp, content_type, file_name);
+        return Ok(resp
+            .insert_header((header::CONTENT_RANGE, format!("bytes */{total}")))
+            .finish());
     }
+
+    let mut resp = HttpResponse::Ok();
+    apply_media_response_headers(&mut resp, content_type, file_name);
+    Ok(resp
+        .insert_header((header::CONTENT_LENGTH, total.to_string()))
+        .body(bytes))
 }
 
 #[post("/api/rer-importer/callsigns")]
@@ -882,4 +931,35 @@ where
         data.insert(id, m_profile);
     }
     Ok(data)
+}
+
+#[cfg(test)]
+mod messenger_media_tests {
+    use super::parse_single_byte_range;
+
+    #[test]
+    fn parse_byte_range_from_start() {
+        assert_eq!(parse_single_byte_range("bytes=0-99", 1000), Some((0, 99)));
+    }
+
+    #[test]
+    fn parse_byte_range_open_end() {
+        assert_eq!(
+            parse_single_byte_range("bytes=500-", 1000),
+            Some((500, 999))
+        );
+    }
+
+    #[test]
+    fn parse_byte_range_suffix() {
+        assert_eq!(
+            parse_single_byte_range("bytes=-100", 1000),
+            Some((900, 999))
+        );
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_out_of_bounds() {
+        assert_eq!(parse_single_byte_range("bytes=1000-1100", 1000), None);
+    }
 }

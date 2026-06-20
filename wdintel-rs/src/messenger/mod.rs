@@ -17,6 +17,7 @@ pub mod dedupe;
 pub mod group;
 pub mod id;
 pub mod media;
+pub mod media_wave;
 pub(crate) mod oneoff;
 pub mod ops;
 #[cfg(test)]

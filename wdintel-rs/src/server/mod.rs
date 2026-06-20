@@ -486,6 +486,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
+            .service(crate::messenger::media_wave::messenger_media_wave)
+            .service(crate::messenger::media_wave::messenger_media_spectrogram)
             .service(crate::rer_importer::rer_importer_callsigns)
             .service(crate::rer_importer::callsigns_alchemy)
             .service(crate::rer_importer::unread_counters)
