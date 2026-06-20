@@ -56,7 +56,7 @@ function restartServiceLabel(service: GoiRestartService): string {
   if (service === 'swapp') return 'Swapp';
   if (service === 'swapp_alt') return 'Swapp Додатковий';
   if (service === 'echo_swapp') return 'Месенджери';
-  return 'GOI';
+  return 'ГОІ';
 }
 
 function whatsappServiceLabel(service: GoiWhatsappService): string {
@@ -128,6 +128,38 @@ type GoiDataControlPanelProps = {
   onDownloadPalettes: (integrationId: number) => void;
   onUploadCategories: (integrationId: number, file: File) => void;
 };
+
+type AdditionalFunctionRowProps = {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+};
+
+function AdditionalFunctionRow(props: AdditionalFunctionRowProps) {
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+        gap: 1.5,
+        alignItems: { xs: 'stretch', md: 'center' },
+        py: 1.5,
+      }}
+    >
+      <Stack spacing={0.5}>
+        <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 600 }}>
+          {props.title}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {props.description}
+        </Typography>
+      </Stack>
+      <Box sx={{ justifySelf: { xs: 'stretch', md: 'end' } }}>
+        {props.children}
+      </Box>
+    </Box>
+  );
+}
 
 function ShowMoreTableRow(props: ShowMoreTableRowProps) {
   return (
@@ -226,6 +258,7 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 
 function GoiDataControlPanel(props: GoiDataControlPanelProps) {
   const [categoriesFile, setCategoriesFile] = React.useState<File | null>(null);
+  const categoriesInputRef = React.useRef<HTMLInputElement | null>(null);
   const downloadPendingKey = `${props.integration.id}:download-palettes`;
   const uploadPendingKey = `${props.integration.id}:upload-categories`;
   const downloading = props.pendingKey === downloadPendingKey;
@@ -237,56 +270,91 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
 
   return (
     <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={1.25}
-        alignItems={{ xs: 'stretch', md: 'center' }}
-      >
-        <PowerButton
-          variant="outlined"
-          startIcon={
-            downloading ? (
-              <CircularProgress size={16} />
-            ) : (
-              <DownloadIcon fontSize="small" />
-            )
-          }
-          disabled={props.disabled}
-          onClick={() => props.onDownloadPalettes(props.integration.id)}
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
+        Додаткові функції
+      </Typography>
+      <Stack spacing={0.5} sx={{ mt: 1.5 }}>
+        <AdditionalFunctionRow
+          title="Завантажити палітри"
+          description="Завантажує ZIP-архів папки palettes з цього ГОІ."
         >
-          Скачати палітри
-        </PowerButton>
-        <Box
-          component="input"
-          type="file"
-          accept=".zip,application/zip,application/x-zip-compressed"
-          disabled={props.disabled}
-          onChange={onFileChange}
-          sx={{
-            flex: 1,
-            minWidth: 180,
-            maxWidth: 360,
-            color: 'text.secondary',
-          }}
-        />
-        <PowerButton
-          variant="contained"
-          startIcon={
-            uploading ? (
-              <CircularProgress color="inherit" size={16} />
-            ) : (
-              <UploadFileIcon fontSize="small" />
-            )
-          }
-          disabled={props.disabled || !categoriesFile}
-          onClick={() => {
-            if (categoriesFile) {
-              props.onUploadCategories(props.integration.id, categoriesFile);
+          <PowerButton
+            variant="outlined"
+            startIcon={
+              downloading ? (
+                <CircularProgress size={16} />
+              ) : (
+                <DownloadIcon fontSize="small" />
+              )
             }
-          }}
-        >
-          Завантажити категорії
-        </PowerButton>
+            disabled={props.disabled}
+            onClick={() => props.onDownloadPalettes(props.integration.id)}
+          >
+            Завантажити
+          </PowerButton>
+        </AdditionalFunctionRow>
+
+        <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
+          <AdditionalFunctionRow
+            title="Оновити категорії"
+            description="Надсилає ZIP-файл з одним categories.json на цей ГОІ."
+          >
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+            >
+              <Box
+                ref={categoriesInputRef}
+                component="input"
+                type="file"
+                accept=".zip,application/zip,application/x-zip-compressed"
+                aria-label="Файл категорій"
+                disabled={props.disabled}
+                onChange={onFileChange}
+                sx={{ display: 'none' }}
+              />
+              <PowerButton
+                variant="outlined"
+                startIcon={<UploadFileIcon fontSize="small" />}
+                disabled={props.disabled}
+                onClick={() => categoriesInputRef.current?.click()}
+              >
+                Вибрати файл
+              </PowerButton>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  maxWidth: { xs: '100%', sm: 220 },
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {categoriesFile?.name ?? 'Файл не вибрано'}
+              </Typography>
+              <PowerButton
+                variant="contained"
+                startIcon={
+                  uploading ? (
+                    <CircularProgress color="inherit" size={16} />
+                  ) : (
+                    <UploadFileIcon fontSize="small" />
+                  )
+                }
+                disabled={props.disabled || !categoriesFile}
+                onClick={() => {
+                  if (categoriesFile) {
+                    props.onUploadCategories(props.integration.id, categoriesFile);
+                  }
+                }}
+              >
+                Надіслати
+              </PowerButton>
+            </Stack>
+          </AdditionalFunctionRow>
+        </Box>
       </Stack>
     </Box>
   );
@@ -319,7 +387,7 @@ function IntegrationCard(props: IntegrationCardProps) {
           </div>
 
           <TableContainer>
-            <Table size="small" sx={{ minWidth: 860 }} aria-label="GOI services">
+            <Table size="small" sx={{ minWidth: 860 }} aria-label="Сервіси ГОІ">
               <TableHead>
                 <TableRow>
                   <TableCell>Сервіс</TableCell>
@@ -330,7 +398,7 @@ function IntegrationCard(props: IntegrationCardProps) {
               <TableBody>
                 <ServiceTableRow
                   integrationId={integration.id}
-                  label="GOI"
+                  label="ГОІ"
                   openLabel="Відкрити ГОІ"
                   url={integration.goiUrl}
                   unavailableLabel="URL / host ГОІ не вказано"
