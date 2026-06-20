@@ -173,6 +173,10 @@ function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): num
   return left.networkFreqId - right.networkFreqId;
 }
 
+export function sortNetworkFreqsByTableOrder(freqs: NetworkFreqsRes[]): NetworkFreqsRes[] {
+  return [...freqs].sort(compareFreqsByUnits);
+}
+
 function buildGroupId(freqs: NetworkFreqsRes[]): string {
   return `freq-group:${freqs.map((freq) => freq.networkFreqId).join('-')}`;
 }

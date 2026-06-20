@@ -8,12 +8,14 @@ import {
   downloadNetworkEtalonkaReportTaskResult,
   downloadNetworkEtalonkaReport,
   downloadNetworksEtalonkaReport,
+  addFreqToNetworkV2,
   getNetworksList,
   getNetworkCallsignRelationMessages,
   getNetworksGroupsActivity,
   listNetworks,
   launchNetworkEtalonkaBatchReportTask,
   launchNetworksEtalonkaReportTask,
+  updateNetworkFreqV2,
 } from './networks';
 
 vi.mock('./client', () => ({
@@ -404,6 +406,103 @@ describe('networks API list helper', () => {
       expect.objectContaining({
         filter_text: '',
         limit: null,
+      }),
+      undefined,
+    );
+  });
+});
+
+describe('networks API v2 frequency mutations', () => {
+  beforeEach(() => {
+    postJsonMock.mockReset();
+  });
+
+  it('posts add-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      network: { id: 1, freqs: [], unit_ids: [], aor_ids: [], name: 'Net', location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' },
+      freq: {
+        network_freq_id: 9,
+        freq: '123.4000',
+        modulation_id: null,
+        modulation: null,
+        encryption_key_ids: [],
+        encryption_keys: [],
+        message_count: 0,
+        callsigns: null,
+        last_datetime: null,
+        last_datetime_in_aor: null,
+        created_at: 1,
+        is_active: true,
+        active_from: 1,
+        active_to: null,
+        kind: 'VHF',
+      },
+    });
+
+    await addFreqToNetworkV2({
+      networkId: 1,
+      freqRec: {
+        freq: '123.4000',
+        kind: 'VHF',
+        modulationId: null,
+        encryptionKeyIds: [],
+        description: null,
+        activeFrom: null,
+        activeTo: null,
+      },
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network/v2/add-freq',
+      expect.objectContaining({
+        network_id: 1,
+        freq_rec: expect.objectContaining({
+          freq: '123.4000',
+        }),
+      }),
+      undefined,
+    );
+  });
+
+  it('posts update-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      network: { id: 1, freqs: [], unit_ids: [], aor_ids: [], name: 'Net', location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' },
+      freq: {
+        network_freq_id: 9,
+        freq: '123.4000',
+        modulation_id: 1,
+        modulation: 'VHF',
+        encryption_key_ids: [7],
+        encryption_keys: ['AES256'],
+        message_count: 12,
+        callsigns: ['ALPHA'],
+        last_datetime: 1,
+        last_datetime_in_aor: 2,
+        created_at: 1,
+        is_active: true,
+        active_from: 1,
+        active_to: null,
+        kind: 'VHF',
+      },
+    });
+
+    await updateNetworkFreqV2({
+      networkId: 1,
+      networkFreqId: 9,
+      freq: '123.4000',
+      kind: 'VHF',
+      modulationId: 1,
+      encryptionKeyIds: [7],
+      activeFrom: 1,
+      activeTo: null,
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network/v2/update-freq',
+      expect.objectContaining({
+        network_id: 1,
+        network_freq_id: 9,
+        freq: '123.4000',
       }),
       undefined,
     );

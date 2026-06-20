@@ -389,6 +389,12 @@ pub struct AddNetworkFreqReq {
     pub freq_rec: AddNetworkFreq,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct NetworkFreqMutationV2Rsp {
+    pub network: Network,
+    pub freq: Option<NetworkFreqsRes>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

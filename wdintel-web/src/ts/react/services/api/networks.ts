@@ -17,6 +17,7 @@ import type {
   ListNetworkPointsRsp,
   NetworkFreqCallsignsReq,
   NetworkFreqsActivityReq,
+  NetworkFreqsRes,
   ReactivateNetworkFreqReq,
   SingleNetworkFreqsListRsp,
   SingleNetworkFreqsReq,
@@ -172,9 +173,24 @@ export async function addFreqToNetwork(req: AddNetworkFreqReq): Promise<Network>
   return transformSnakeToCamel<Network>(data);
 }
 
+export type NetworkFreqMutationV2Rsp = {
+  network: Network;
+  freq: NetworkFreqsRes | null;
+};
+
+export async function addFreqToNetworkV2(req: AddNetworkFreqReq): Promise<NetworkFreqMutationV2Rsp> {
+  const data = await postJson<NetworkFreqMutationV2Rsp>('/api/sigint/network/v2/add-freq', transformCamelToSnake(req), undefined);
+  return transformSnakeToCamel<NetworkFreqMutationV2Rsp>(data);
+}
+
 export async function updateNetworkFreq(req: UpdateNetworkFreqReq): Promise<Network> {
   const data = await postJson<Network>('/api/sigint/network/update-freq', transformCamelToSnake(req));
   return transformSnakeToCamel<Network>(data);
+}
+
+export async function updateNetworkFreqV2(req: UpdateNetworkFreqReq): Promise<NetworkFreqMutationV2Rsp> {
+  const data = await postJson<NetworkFreqMutationV2Rsp>('/api/sigint/network/v2/update-freq', transformCamelToSnake(req), undefined);
+  return transformSnakeToCamel<NetworkFreqMutationV2Rsp>(data);
 }
 
 export async function deleteNetworkFreq(req: DeleteNetworkFreqReq): Promise<Network> {
