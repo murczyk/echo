@@ -178,7 +178,7 @@ rollback_pgdata() {
   log "rolling back to previous PostgreSQL data directory"
   stop_cluster || true
   if [[ "${PGDATA_MOVED_TO_PREV}" == "true" && -d "${PGDATA_PREV}" ]]; then
-    rm -rf --one-file-system "${PGDATA}"
+    mv "${PGDATA}" "${PGDATA_NEXT}"
     mv "${PGDATA_PREV}" "${PGDATA}"
   elif [[ "${PGDATA_MOVED_TO_PREV}" != "true" ]]; then
     log "previous PostgreSQL data directory was not moved; leaving ${PGDATA} unchanged"
