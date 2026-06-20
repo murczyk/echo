@@ -29,6 +29,7 @@ export type ReportHistoryTableSectionProps = {
   panelId?: string;
   labelledBy?: string;
   includeAuthor?: boolean;
+  fullHeight?: boolean;
   loadReportHistory?: LoadReportHistory;
 };
 
@@ -65,6 +66,43 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
 ];
 
 const DEFAULT_REPORTS_SORTING = [{ id: 'createdAt', desc: true }];
+
+const REPORTS_FULL_HEIGHT_ROOT_SX = {
+  height: '100%',
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  boxSizing: 'border-box',
+} as const;
+
+const REPORTS_FULL_HEIGHT_CONTENT_SX = {
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  boxSizing: 'border-box',
+} as const;
+
+const REPORTS_FULL_HEIGHT_STACK_SX = {
+  flex: 1,
+  minHeight: 0,
+  overflow: 'hidden',
+} as const;
+
+const REPORTS_TABLE_WRAPPER_SX = {
+  width: '100%',
+  minWidth: 0,
+  overflow: 'hidden',
+} as const;
+
+const REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX = {
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   planned: 'В черзі',
@@ -151,6 +189,7 @@ export function ReportHistoryTableSection({
   panelId,
   labelledBy,
   includeAuthor = false,
+  fullHeight = false,
   loadReportHistory = listReportHistory,
 }: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
@@ -263,11 +302,11 @@ export function ReportHistoryTableSection({
         },
         {
           id: 'actions',
-          header: '',
+          header: 'Завантажити',
           enableSorting: false,
           enableColumnActions: false,
           enableColumnFilter: false,
-          size: 88,
+          size: 120,
           Cell: ({ row }) => {
             const report = row.original;
             const disabled = actionInFlight === report.id;
@@ -304,11 +343,24 @@ export function ReportHistoryTableSection({
     [actionInFlight, includeAuthor],
   );
 
-
   return (
-    <Box id={panelId} role={panelId ? 'tabpanel' : undefined} aria-labelledby={labelledBy}>
-      <Box sx={{ p: 3 }}>
-        <Stack spacing={2}>
+    <Box
+      id={panelId}
+      role={panelId ? 'tabpanel' : undefined}
+      aria-labelledby={labelledBy}
+      sx={fullHeight ? REPORTS_FULL_HEIGHT_ROOT_SX : undefined}
+    >
+      <Box
+        sx={{
+          p: 3,
+          ...(fullHeight ? REPORTS_FULL_HEIGHT_CONTENT_SX : {}),
+        }}
+      >
+        <Stack
+          spacing={2}
+          useFlexGap={fullHeight}
+          sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
+        >
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
             <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
               {title}
@@ -332,12 +384,18 @@ export function ReportHistoryTableSection({
             defaultEnableColumnOrdering={false}
             defaultSorting={DEFAULT_REPORTS_SORTING}
           >
-            <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+            <Box
+              sx={{
+                ...REPORTS_TABLE_WRAPPER_SX,
+                ...(fullHeight ? REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX : {}),
+              }}
+            >
               <SettingsNeoTable
                 columns={columns}
                 data={rows}
                 loading={loadState === 'loading'}
                 loadingRows={buildReportLoadingRows()}
+                layoutMode={fullHeight ? 'grid' : undefined}
               />
             </Box>
           </TableStateProvider>
