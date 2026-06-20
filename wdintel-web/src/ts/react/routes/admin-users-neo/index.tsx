@@ -689,7 +689,11 @@ function EditUserDialog(props: {
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
-  const canSubmit = zonesReady && (organismsReady || Boolean(form?.organismId)) && !isSubmitting && Boolean(form);
+  const canSubmit =
+    (zonesReady || Boolean(form?.sigintZoneId)) &&
+    (organismsReady || Boolean(form?.organismId)) &&
+    !isSubmitting &&
+    Boolean(form);
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
     id: zoneId,
