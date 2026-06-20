@@ -5,6 +5,7 @@ import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, 
 import { useState } from 'react';
 
 import type { NetworkCallsignInterceptedView } from '../network-callsigns.types';
+import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerMenu } from '../../../components/PowerMenu';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
@@ -15,6 +16,7 @@ type InterceptedPanelProps = {
   canManage: boolean;
   expanded: boolean;
   loading: boolean;
+  loadingError: string | null;
   mutationBusy: boolean;
   onToggleExpanded: () => void;
   onAddToDeveloping: (callsign: string) => void;
@@ -124,6 +126,7 @@ export function NetworkCallsignsInterceptedPanel({
   canManage,
   expanded,
   loading,
+  loadingError,
   mutationBusy,
   onToggleExpanded,
   onAddToDeveloping,
@@ -202,6 +205,9 @@ export function NetworkCallsignsInterceptedPanel({
               Згорнути
             </Button>
           </Box>
+        ) : null}
+        {loadingError ? (
+          <PowerAlert severity="error">{loadingError}</PowerAlert>
         ) : null}
         {showEmptyState ? (
           <NetworkDetailsEmptyState

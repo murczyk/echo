@@ -37,6 +37,15 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
     loadMockState.loadCallsigns.mockImplementation(async () => {
       setState((current) => ({
         ...current,
+        networkCallsignsLoaded: true,
+        networkCallsignsLoading: false,
+        networkCallsignsError: null,
+        catalogCallsignsLoaded: true,
+        catalogCallsignsLoading: false,
+        catalogCallsignsError: null,
+        interceptedCallsignsLoaded: true,
+        interceptedCallsignsLoading: false,
+        interceptedCallsignsError: null,
         callsignsLoaded: true,
         callsignsLoading: false,
         callsignsError: null,

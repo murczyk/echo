@@ -2793,6 +2793,7 @@ pub async fn network_callsigns_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkCallsignsReq>,
 ) -> Result<Json<SingleNetworkCallsignsListRsp>, AppError> {
+    let req = req.into_inner();
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
@@ -2818,6 +2819,7 @@ pub async fn network_callsigns_list(
         req.network_id,
         None,
         include_activity_info,
+        req.section,
         None,
     )
     .await

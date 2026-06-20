@@ -489,6 +489,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     network.id,
                     Some(&all_known_callsigns),
                     true,
+                    None,
                     Some(&filter),
                 )
                 .await

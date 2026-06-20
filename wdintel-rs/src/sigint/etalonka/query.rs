@@ -1082,6 +1082,9 @@ pub async fn load_callsigns(
     network_id: i64,
     known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
     include_activity_info: bool,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
@@ -1142,6 +1145,7 @@ pub async fn load_callsigns(
         .collect();
 
     res = filter_callsigns(res);
+    res = filter_callsigns_for_section(res, section);
     sort_callsigns(&mut res);
 
     if !include_activity_info {
@@ -1906,6 +1910,23 @@ fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
     result
 }
 
+fn filter_callsigns_for_section(
+    callsigns: Vec<CallsignRes>,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
+) -> Vec<CallsignRes> {
+    match section.unwrap_or(crate::sigint::network::types::SingleNetworkCallsignsSection::Everything) {
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Everything => callsigns,
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Catalog => {
+            callsigns.into_iter().filter(|callsign| callsign.known_callsigns.is_some()).collect()
+        }
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Intercepted => {
+            callsigns.into_iter().filter(|callsign| callsign.known_callsigns.is_none()).collect()
+        }
+    }
+}
+
 pub async fn load_pelengs_map(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
@@ -2364,6 +2385,21 @@ mod tests {
         );
     }
 
+    fn test_callsign_res(
+        callsign: &str,
+        known_callsigns: Option<Vec<KnownCallsignShortRes>>,
+    ) -> CallsignRes {
+        CallsignRes {
+            callsign: callsign.to_string(),
+            known_callsigns,
+            message_count: 0,
+            last_datetime: None,
+            freqs: None,
+            network_names: None,
+            is_old: false,
+        }
+    }
+
     #[test]
     fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
         let filter = NetworkFreqFilter {
@@ -2478,6 +2514,57 @@ mod tests {
         assert_primary_sort_before_name(
             &sql,
             "\"sigint_network\".\"updated_at\" DESC",
+        );
+    }
+
+    #[test]
+    fn filter_callsigns_for_section_respects_requested_section() {
+        let known = test_callsign_res(
+            "KNOWN",
+            Some(vec![KnownCallsignShortRes {
+                id: 1,
+                callsign: "KNOWN".to_string(),
+                position: String::new(),
+                comment: String::new(),
+                unit_id: 1,
+                unit_name: "Unit".to_string(),
+                source_name: "Source".to_string(),
+                created_at: 1,
+            }]),
+        );
+        let unknown = test_callsign_res("UNKNOWN", None);
+        let callsigns = vec![known.clone(), unknown.clone()];
+
+        assert_eq!(
+            filter_callsigns_for_section(callsigns.clone(), None),
+            callsigns
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns.clone(),
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Everything
+                ),
+            ),
+            callsigns
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns.clone(),
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Catalog
+                ),
+            ),
+            vec![known]
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns,
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Intercepted
+                ),
+            ),
+            vec![unknown]
         );
     }
 }

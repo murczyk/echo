@@ -21,6 +21,12 @@ export function getNetworkCallsignMarkerState(markerMode: NetworkCallsignMarkerM
   return { mainRadioStation: false, commandControl: false };
 }
 
+export function hasNetworkCallsignMarker(
+  networkCallsign: Pick<NetworkCallsignDrawerForm, 'mainRadioStation' | 'commandControl'>,
+): boolean {
+  return networkCallsign.mainRadioStation || networkCallsign.commandControl;
+}
+
 export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId: number | null): NetworkCallsignDrawerForm {
   return {
     id: null,
@@ -36,6 +42,10 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
     mainRadioStation: false,
     commandControl: false,
   };
+}
+
+export function isNetworkCallsignSourceRequired(form: Pick<NetworkCallsignDrawerForm, 'developing'>): boolean {
+  return !form.developing;
 }
 
 export function createNetworkCallsignDrawerForm(
@@ -70,7 +80,7 @@ export function getNetworkCallsignDrawerSaveError(form: NetworkCallsignDrawerFor
 
   const callsign = normalizeCallsignDisplay(form.callsign);
   if (callsign === '') return 'Позивний є обовʼязковим';
-  if (form.sourceId === null) return 'Джерело є обовʼязковим';
+  if (isNetworkCallsignSourceRequired(form) && form.sourceId === null) return 'Джерело є обовʼязковим';
   if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
     return 'Для джерела "РО" частота є обовʼязковою';
   }

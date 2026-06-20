@@ -22,6 +22,7 @@ import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './Network
 import {
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
+  isNetworkCallsignSourceRequired,
 } from '../network-callsigns.forms';
 import type { NetworkCallsignDrawerForm, NetworkCallsignDrawerMode } from '../network-callsigns.types';
 import { NetworkCallsignSourceId } from '../network-callsigns.types';
@@ -255,12 +256,13 @@ export function NetworkCallsignDrawer({
   const [sourceTouched, setSourceTouched] = useState(false);
   const radioFreqValidationError = isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
   const radioFreqError = radioFreqTouched ? radioFreqValidationError : null;
-  const sourceValidationError = sourceId === null ? 'Джерело є обовʼязковим' : null;
+  const sourceRequired = form ? isNetworkCallsignSourceRequired(form) : false;
+  const sourceValidationError = sourceRequired && sourceId === null ? 'Джерело є обовʼязковим' : null;
   const showSourceValidationError = sourceValidationError !== null && (sourceTouched || error === sourceValidationError);
   const canSave = Boolean(
     form
       && normalizeCallsignDisplay(form.callsign) !== ''
-      && sourceId !== null
+      && (!sourceRequired || sourceId !== null)
       && (!isRoSource || radioFreqValidationError === null),
   );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
@@ -348,7 +350,7 @@ export function NetworkCallsignDrawer({
 
               <Stack spacing={1}>
                 <Typography variant="body2" color="text.secondary">
-                  Джерело *
+                  Джерело{sourceRequired ? ' *' : ''}
                 </Typography>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   {sortNetworkCallsignSources(sources).map((source) => (

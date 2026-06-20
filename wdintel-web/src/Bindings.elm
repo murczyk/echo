@@ -7178,9 +7178,26 @@ networkFreqCallsignsRspEncoder struct =
         ]
 
 
+type SingleNetworkCallsignsSection
+    = Everything
+    | Catalog
+    | Intercepted
+
+
+singleNetworkCallsignsSectionEncoder : SingleNetworkCallsignsSection -> Json.Encode.Value
+singleNetworkCallsignsSectionEncoder enum =
+    case enum of
+        Everything ->
+            Json.Encode.string "Everything"
+        Catalog ->
+            Json.Encode.string "Catalog"
+        Intercepted ->
+            Json.Encode.string "Intercepted"
+
 type alias SingleNetworkCallsignsReq =
     { networkId : Int
     , includeActivityInfo : Maybe (Bool)
+    , section : Maybe (SingleNetworkCallsignsSection)
     }
 
 
@@ -7189,6 +7206,7 @@ singleNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
+        , ( "section", (Maybe.withDefault Json.Encode.null << Maybe.map (singleNetworkCallsignsSectionEncoder)) struct.section )
         ]
 
 
@@ -12568,11 +12586,44 @@ networkFreqCallsignsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
 
 
+singleNetworkCallsignsSectionDecoder : Json.Decode.Decoder SingleNetworkCallsignsSection
+singleNetworkCallsignsSectionDecoder = 
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Everything" ->
+                            Json.Decode.succeed Everything
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Catalog" ->
+                            Json.Decode.succeed Catalog
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Intercepted" ->
+                            Json.Decode.succeed Intercepted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 singleNetworkCallsignsReqDecoder : Json.Decode.Decoder SingleNetworkCallsignsReq
 singleNetworkCallsignsReqDecoder =
     Json.Decode.succeed SingleNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.nullable (singleNetworkCallsignsSectionDecoder))))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp
