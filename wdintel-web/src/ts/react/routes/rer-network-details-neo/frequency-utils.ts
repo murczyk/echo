@@ -1,6 +1,5 @@
 import type { EncryptionKeyData, NetworkFreqsRes } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
-import type { NetworkFreqKind } from './use-rer-network-details-neo-page.types';
 
 export type NetworkFreqTableSortingItem = {
   id: string;
@@ -105,6 +104,11 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
   return null;
 }
 
+function extractFromParens(name: string): string | null {
+  const match = /\(([^)]+)\)$/.exec(name.trim());
+  return match ? match[1].trim() : null;
+}
+
 export function encryptionLabelFromKey(
   key: EncryptionKeyData,
   encryptionsById: Map<number, string>,
@@ -140,11 +144,9 @@ export function encryptionLabelFromKeys(
   if (labels.length === 0 && encryptionId !== null && encryptionId !== undefined) {
     const encryptionName = encryptionsById.get(encryptionId) ?? null;
     if (encryptionName) {
-      const encryptionLabel = encryptionLabelFromCandidate(encryptionName) ?? encryptionName;
-      const normalizedLabel = encryptionLabelFromCandidate(encryptionLabel) ?? encryptionLabel;
-      if (normalizedLabel) {
-        labels.push(normalizedLabel);
-      }
+      const encryptionLabel =
+        encryptionLabelFromCandidate(encryptionName) ?? extractFromParens(encryptionName) ?? encryptionName;
+      labels.push(encryptionLabel);
     }
   }
 
@@ -380,8 +382,8 @@ function buildGroupRow(
   encryptionsById: Map<number, string>,
   callsignsById: Map<number, string[]>,
 ): NetworkFreqGroupRow {
-  const firstFreq = freqs[0] ?? null;
-  const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.modulation));
+    const firstFreq = freqs[0] ?? null;
+    const typeLabels = freqs.map((freq) => freq.modulation ?? '');
   const encryptionLabels = freqs.map((freq) =>
     encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
   );
@@ -421,8 +423,8 @@ function buildFreqRow(
     parentGroupId,
     freq,
     displayFreq: normalizeFrequencyLabel(freq.freq),
-    typeLabel: typeLabelFromKind(freq.modulation),
-    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionsById, freq.encryption),
+    typeLabel: freq.modulation ?? '',
+    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
     callsignLabel: joinCallsignsByFreqIds([freq.networkFreqId], callsignsById),
     sortFreqUnits: parseNetworkFreqUnits(freq.freq),
     sortNetworkFreqId: freq.networkFreqId,

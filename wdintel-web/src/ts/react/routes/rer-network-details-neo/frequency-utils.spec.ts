@@ -17,8 +17,9 @@ function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
   return {
     networkFreqId: 1,
     freq: '652.1111',
-    modulationId: null,
-    modulation: null,
+    encryptionId: null,
+    encryption: null,
+    modulation: 'NFM',
     encryptionKeyIds: [],
     encryptionKeys: [],
     messageCount: 0,
@@ -29,7 +30,6 @@ function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
     isActive: true,
     activeFrom: 0,
     activeTo: null,
-    kind: 'VHF',
     ...overrides,
   };
 }
@@ -49,9 +49,9 @@ describe('frequency utils', () => {
     ]);
     const rows = buildNetworkFreqRows(
       [
-        createFreq({ networkFreqId: 10, freq: '652.1111', messageCount: 2, callsigns: ['Alpha'], kind: 'VHF' }),
-        createFreq({ networkFreqId: 11, freq: '652.1200', messageCount: 3, callsigns: ['Bravo'], kind: 'VHF' }),
-        createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], kind: 'DMR' }),
+        createFreq({ networkFreqId: 10, freq: '652.1111', messageCount: 2, callsigns: ['Alpha'], modulation: 'NFM' }),
+        createFreq({ networkFreqId: 11, freq: '652.1200', messageCount: 3, callsigns: ['Bravo'], modulation: 'NFM' }),
+        createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], modulation: 'DMR' }),
       ],
       new Map(),
       callsignsById,
@@ -138,8 +138,8 @@ describe('frequency utils', () => {
   it('preserves DMRe as a distinct frequency type label', () => {
     const rows = buildNetworkFreqRows(
       [
-        createFreq({ networkFreqId: 10, freq: '652.1111', kind: 'DMRe' }),
-        createFreq({ networkFreqId: 11, freq: '652.1500', kind: 'DMR' }),
+        createFreq({ networkFreqId: 10, freq: '652.1111', modulation: 'DMRe' }),
+        createFreq({ networkFreqId: 11, freq: '652.1500', modulation: 'DMR' }),
       ],
       new Map(),
       new Map(),

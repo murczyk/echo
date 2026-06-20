@@ -101,8 +101,8 @@ function buildForm(overrides: Partial<NetworkFreqEditForm> = {}): NetworkFreqEdi
   return {
     networkFreqId: 1,
     freq: '148.2500',
-    kind: 'DMR',
-    modulationId: 11,
+    modulation: 'DMR',
+    encryptionId: 11,
     activeFrom: '2026-06-13',
     activeTo: '',
     encryptionKeyIds: [],
@@ -123,7 +123,7 @@ function renderDrawer(form: NetworkFreqEditForm): Rendered {
         saving={false}
         error={null}
         networkId={null}
-        modulations={[{ id: 11, name: 'DMR' }]}
+        encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
         onChange={() => {}}
         onSave={() => {}}
