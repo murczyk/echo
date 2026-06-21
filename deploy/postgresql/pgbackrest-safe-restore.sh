@@ -14,9 +14,9 @@ PGDATA_NEXT="${ECHO_PGBACKREST_RESTORE_PGDATA_NEXT:-${PGDATA}.next}"
 PGDATA_PREV="${ECHO_PGBACKREST_RESTORE_PGDATA_PREV:-${PGDATA}.prev}"
 PGBACKREST_CONF="${ECHO_PGBACKREST_CONF:-/etc/pgbackrest/pgbackrest.conf}"
 PGBACKREST_CONF_INCLUDE="${ECHO_PGBACKREST_CONF_INCLUDE:-/etc/pgbackrest/conf.d}"
-PGBACKREST_LOG_LEVEL="${ECHO_PGBACKREST_RESTORE_LOG_LEVEL:-info}"
+PGBACKREST_LOG_LEVEL="${ECHO_PGBACKREST_RESTORE_LOG_LEVEL:-detail}"
 PGBACKREST_IO_TIMEOUT="${ECHO_PGBACKREST_RESTORE_IO_TIMEOUT:-10m}"
-PGBACKREST_PROCESS_MAX="${ECHO_PGBACKREST_RESTORE_PROCESS_MAX:-1}"
+PGBACKREST_PROCESS_MAX="${ECHO_PGBACKREST_RESTORE_PROCESS_MAX:-4}"
 PGBACKREST_BIN="${ECHO_PGBACKREST_BIN:-/usr/bin/pgbackrest}"
 PG_CTLCLUSTER_BIN="${ECHO_PG_CTLCLUSTER_BIN:-/usr/bin/pg_ctlcluster}"
 PG_CONTROLDATA_BIN="${ECHO_PG_CONTROLDATA_BIN:-/usr/lib/postgresql/${PG_VERSION}/bin/pg_controldata}"
@@ -81,19 +81,27 @@ stop_cluster() {
 }
 
 restore_into_next() {
-  rm -rf --one-file-system "${PGDATA_NEXT}" || return
-  install -d -m 0700 -o postgres -g postgres "${PGDATA_NEXT}" || return
+  if  [ ! -e "${PGDATA_NEXT}" ]; then
+      log "copying ${STANZA} into ${PGDATA_NEXT} for delta restore"
+      cp -a "${PGDATA}" "${PGDATA_NEXT}" || return
+  else
+      log "reusing ${PGDATA_NEXT} for delta restore"
+  fi
+  rm -f "${PGDATA_NEXT}/postmaster.pid" || true
   log "restoring ${STANZA} into ${PGDATA_NEXT}"
   sudo -n -u postgres "${PGBACKREST_BIN}" \
     --config="${PGBACKREST_CONF}" \
     --config-include-path="${PGBACKREST_CONF_INCLUDE}" \
     --stanza="${STANZA}" \
     --pg1-path="${PGDATA_NEXT}" \
+    --archive-mode=off \
     --delta \
+    --force \
     --io-timeout="${PGBACKREST_IO_TIMEOUT}" \
     --process-max="${PGBACKREST_PROCESS_MAX}" \
     --log-level-console="${PGBACKREST_LOG_LEVEL}" \
     restore || return
+  sed -i "s|${PGDATA_NEXT}|${PGDATA}|" "${PGDATA_NEXT}/postgresql.auto.conf"
   "${PG_CONTROLDATA_BIN}" "${PGDATA_NEXT}" >/dev/null || return
 }
 
@@ -170,7 +178,9 @@ rollback_pgdata() {
   log "rolling back to previous PostgreSQL data directory"
   stop_cluster || true
   if [[ "${PGDATA_MOVED_TO_PREV}" == "true" && -d "${PGDATA_PREV}" ]]; then
-    rm -rf --one-file-system "${PGDATA}"
+    if [ -e "${PGDATA}" ]; then
+        mv "${PGDATA}" "${PGDATA_NEXT}"
+    fi
     mv "${PGDATA_PREV}" "${PGDATA}"
   elif [[ "${PGDATA_MOVED_TO_PREV}" != "true" ]]; then
     log "previous PostgreSQL data directory was not moved; leaving ${PGDATA} unchanged"
