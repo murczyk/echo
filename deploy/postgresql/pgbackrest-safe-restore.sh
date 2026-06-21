@@ -97,7 +97,6 @@ restore_into_next() {
     --archive-mode=off \
     --delta \
     --force \
-    --type=immediate \
     --io-timeout="${PGBACKREST_IO_TIMEOUT}" \
     --process-max="${PGBACKREST_PROCESS_MAX}" \
     --log-level-console="${PGBACKREST_LOG_LEVEL}" \
@@ -179,7 +178,9 @@ rollback_pgdata() {
   log "rolling back to previous PostgreSQL data directory"
   stop_cluster || true
   if [[ "${PGDATA_MOVED_TO_PREV}" == "true" && -d "${PGDATA_PREV}" ]]; then
-    mv "${PGDATA}" "${PGDATA_NEXT}"
+    if [ -e "${PGDATA}" ]; then
+        mv "${PGDATA}" "${PGDATA_NEXT}"
+    fi
     mv "${PGDATA_PREV}" "${PGDATA}"
   elif [[ "${PGDATA_MOVED_TO_PREV}" != "true" ]]; then
     log "previous PostgreSQL data directory was not moved; leaving ${PGDATA} unchanged"
