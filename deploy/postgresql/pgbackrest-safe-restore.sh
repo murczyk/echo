@@ -102,6 +102,7 @@ restore_into_next() {
     --process-max="${PGBACKREST_PROCESS_MAX}" \
     --log-level-console="${PGBACKREST_LOG_LEVEL}" \
     restore || return
+  sed -i "s|${PGDATA_NEXT}|${PGDATA}|" "${PGDATA_NEXT}/postgresql.auto.conf"
   "${PG_CONTROLDATA_BIN}" "${PGDATA_NEXT}" >/dev/null || return
 }
 
