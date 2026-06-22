@@ -166,6 +166,7 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
             , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "Панель керування"
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
+            , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти AOR"
             , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "API Інтеграції"
             , internalMenu Route.Path.Admin_AllReports "all-reports" "Всі Звіти"
             , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"

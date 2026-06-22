@@ -95,8 +95,8 @@ function formatCoords(coords: AorCoordinates | null): string {
 }
 
 function formatLocationConfigs(configs: string[] | null | undefined): string {
-  if (!configs || configs.length === 0) return 'За замовчуванням (config.toml)';
-  return configs.join(', ');
+  if (!configs || configs.length === 0) return 'Набір сервера за замовчуванням';
+  return configs.map((config) => config.split('/').pop() || config).join(', ');
 }
 
 function buildAorRows(aors: AreaOfResponsibility[], locationConfigsByAorId: Map<number, string[]>): AorRow[] {
@@ -154,7 +154,7 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
         size: 120,
       },
       {
-        header: 'Конфігурація локацій',
+        header: 'Файли населених пунктів',
         accessorFn: (row) => formatLocationConfigs(row.locationConfigs),
         id: 'locationConfigs',
         size: 260,
@@ -212,7 +212,7 @@ function RowActions(props: RowActionsProps) {
         icon={<EditIcon fontSize="small" />}
       />
       <MrtRowActionButton
-        label="Налаштувати конфігурацію локацій"
+        label="Обрати файли населених пунктів"
         onClick={() => props.onConfigure(props.aor)}
         icon={<SettingsIcon fontSize="small" />}
       />
@@ -460,7 +460,7 @@ function AdminAorNeoPageBody() {
         <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
         <Dialog open={Boolean(locationConfigDialog)} onClose={closeLocationConfigDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>Конфігурація локацій</DialogTitle>
+          <DialogTitle>Файли населених пунктів для AOR</DialogTitle>
           <DialogContent>
             {locationConfigDialog ? (
               <Stack spacing={2} sx={{ pt: 1 }}>
@@ -472,7 +472,9 @@ function AdminAorNeoPageBody() {
                     value={locationConfigDialog.selectedConfigs}
                     onChange={onLocationConfigChange}
                     renderValue={(selected) =>
-                      selected.length > 0 ? selected.join(', ') : 'За замовчуванням (config.toml)'
+                      selected.length > 0
+                        ? selected.map((config) => config.split('/').pop() || config).join(', ')
+                        : 'Набір сервера за замовчуванням'
                     }
                     disabled={locationConfigDialog.isSaving}
                     displayEmpty
