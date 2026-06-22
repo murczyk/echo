@@ -318,7 +318,12 @@ pub async fn network_callsigns_activity(
     );
     let req = req.into_inner();
 
-    let res = bl_get_network_callsigns_activity(&req, &user_id, &env.dbx)
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &user_id)
+            .await
+            .context(h!())?;
+
+    let res = bl_get_network_callsigns_activity(&req, groups, &env.dbx)
         .await
         .context(h!())?;
 
