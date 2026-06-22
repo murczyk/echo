@@ -163,15 +163,15 @@ function joinCallsigns(callsigns: Array<string> | null | undefined): string {
 }
 
 function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
-  if (left.isActive !== right.isActive) {
-    return left.isActive ? -1 : 1;
-  }
-
   const leftUnits = parseNetworkFreqUnits(left.freq) ?? 0;
   const rightUnits = parseNetworkFreqUnits(right.freq) ?? 0;
 
   if (leftUnits !== rightUnits) {
     return leftUnits - rightUnits;
+  }
+
+  if (left.isActive !== right.isActive) {
+    return left.isActive ? -1 : 1;
   }
 
   return left.networkFreqId - right.networkFreqId;

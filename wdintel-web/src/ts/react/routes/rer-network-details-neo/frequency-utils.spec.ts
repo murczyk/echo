@@ -60,15 +60,32 @@ describe('frequency utils', () => {
     });
   });
 
-  it('sorts active frequencies before inactive ones and keeps frequency order within each activity bucket', () => {
+  it('sorts by frequency first, then active status, then id', () => {
     const sorted = sortNetworkFreqsByTableOrder([
-      createFreq({ networkFreqId: 30, freq: '652.3000', isActive: false }),
-      createFreq({ networkFreqId: 10, freq: '652.1000', isActive: true }),
-      createFreq({ networkFreqId: 20, freq: '652.2000', isActive: true }),
-      createFreq({ networkFreqId: 40, freq: '652.4000', isActive: false }),
+      createFreq({ networkFreqId: 30, freq: '652.3000', isActive: true }),
+      createFreq({ networkFreqId: 10, freq: '30.0000', isActive: false }),
+      createFreq({ networkFreqId: 20, freq: '652.3000', isActive: false }),
+      createFreq({ networkFreqId: 40, freq: '652.3000', isActive: true }),
     ]);
 
-    expect(sorted.map((freq) => freq.networkFreqId)).toEqual([10, 20, 30, 40]);
+    expect(sorted.map((freq) => freq.networkFreqId)).toEqual([10, 30, 40, 20]);
+  });
+
+  it('keeps distant active and inactive frequencies on separate rows', () => {
+    const rows = buildNetworkFreqRows(
+      [
+        createFreq({ networkFreqId: 10, freq: '652.5000', isActive: true }),
+        createFreq({ networkFreqId: 20, freq: '30.0000', isActive: false }),
+      ],
+      new Map(),
+      [],
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows).toMatchObject([
+      { kind: 'freq', displayFreq: '30.0000' },
+      { kind: 'freq', displayFreq: '652.5000' },
+    ]);
   });
 
   it('preserves DMRe as a distinct frequency type label', () => {

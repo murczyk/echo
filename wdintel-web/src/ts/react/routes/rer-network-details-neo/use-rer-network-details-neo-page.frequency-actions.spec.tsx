@@ -177,7 +177,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(apiMock.addFreqToNetworkV2).toHaveBeenCalled();
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
-    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([9, 7]);
+    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 9]);
     expect(latestState?.freqActivityByFreq[9]).toEqual([]);
     expect(latestState?.freqsLoaded).toBe(true);
     expect(latestState?.freqCreateWizardOpen).toBe(false);
@@ -226,7 +226,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       await savePromise;
     });
 
-    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([8, 9, 7]);
+    expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 8, 9]);
   });
 
   it('falls back to a reload when the create response does not include a row', async () => {

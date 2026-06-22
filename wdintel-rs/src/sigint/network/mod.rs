@@ -3917,31 +3917,39 @@ mod tests {
     }
 
     #[test]
-    fn list_query_with_name_filter_uses_name_and_unit_tokens() {
+    fn list_query_with_name_filter_uses_normalized_boundaries_for_label_tokens()
+    {
         let mut req = empty_list_networks_req();
-        req.filter_name = Some("р/м 423 мсп".to_string());
+        req.filter_name = Some("1 мсб 83 мсп".to_string());
 
         let sql = build_networks_query(&req, NetworkQueryKind::List)
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql
+        assert!(sql.contains(
+            "concat(' ', regexp_replace(lower(sigint_network.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
+        ));
+        assert!(sql.contains(
+            "concat(' ', regexp_replace(lower(sigint_unit.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
+        ));
+        assert!(!sql
             .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
         assert!(
-            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+            !sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
         );
         assert!(
             sql.matches(
-                "lower(sigint_network.name collate \"ru-x-icu\") ilike"
+                "concat(' ', regexp_replace(lower(sigint_network.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
             )
             .count()
                 >= 2
         );
         assert!(
-            sql.matches("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+            sql.matches("regexp_replace(lower(sigint_unit.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g')")
                 .count()
                 >= 2
         );
+        assert!(!sql.contains("lower(lower("));
         assert!(!sql.contains(
             "lower(sigint_network.location collate \"ru-x-icu\") ilike"
         ));

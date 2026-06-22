@@ -56,7 +56,43 @@ fn token_like_expr(column_sql: &str, token: &str) -> SimpleExpr {
     Expr::cust_with_values(column_sql, vec![pattern])
 }
 
-fn network_unit_exists_for_token(token: &str) -> SimpleExpr {
+fn token_like_expr_with_normalized_boundaries(
+    column_sql: &str,
+    token: &str,
+) -> SimpleExpr {
+    let pattern = format!("% {} %", token);
+    let normalized_text = format!(
+        "regexp_replace(lower({column_sql}), '[[:punct:][:space:]]+', ' ', 'g')"
+    );
+    Expr::cust_with_values(
+        &format!("concat(' ', {}, ' ') ilike $1", normalized_text),
+        vec![pattern],
+    )
+}
+
+fn network_name_matches_token(token: &str) -> SimpleExpr {
+    token_like_expr(
+        "lower(sigint_network.name collate \"ru-x-icu\") ilike $1",
+        token,
+    )
+}
+
+fn network_unit_exists_for_token(
+    token: &str,
+    use_normalized_boundaries: bool,
+) -> SimpleExpr {
+    let unit_name_expr = if use_normalized_boundaries {
+        token_like_expr_with_normalized_boundaries(
+            "sigint_unit.name collate \"ru-x-icu\"",
+            token,
+        )
+    } else {
+        token_like_expr(
+            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
+            token,
+        )
+    };
+
     let unit_exists = sigint_network_unit::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -70,12 +106,19 @@ fn network_unit_exists_for_token(token: &str) -> SimpleExpr {
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .filter(token_like_expr(
-            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-            token,
-        ))
+        .filter(unit_name_expr)
         .into_query();
     Expr::exists(unit_exists)
+}
+
+fn network_label_matches_token(token: &str) -> Condition {
+    let mut token_condition = Condition::any();
+    token_condition =
+        token_condition.add(token_like_expr_with_normalized_boundaries(
+            "sigint_network.name collate \"ru-x-icu\"",
+            token,
+        ));
+    token_condition.add(network_unit_exists_for_token(token, true))
 }
 
 fn network_freq_exists_for_token(token: &str) -> SimpleExpr {
@@ -119,13 +162,6 @@ fn network_aor_exists_for_token(token: &str) -> SimpleExpr {
     Expr::exists(aor_exists)
 }
 
-fn network_name_matches_token(token: &str) -> SimpleExpr {
-    token_like_expr(
-        "lower(sigint_network.name collate \"ru-x-icu\") ilike $1",
-        token,
-    )
-}
-
 fn network_location_matches_token(token: &str) -> SimpleExpr {
     token_like_expr(
         "lower(sigint_network.location collate \"ru-x-icu\") ilike $1",
@@ -162,14 +198,12 @@ fn filter_network_tokens(
                             .add(network_name_matches_token(&token))
                             .add(network_location_matches_token(&token))
                             .add(network_radio_station_matches_token(&token))
-                            .add(network_unit_exists_for_token(&token))
+                            .add(network_unit_exists_for_token(&token, false))
                             .add(network_freq_exists_for_token(&token))
                             .add(network_aor_exists_for_token(&token));
                     }
                     SearchScope::NetworkLabel => {
-                        token_condition = token_condition
-                            .add(network_name_matches_token(&token))
-                            .add(network_unit_exists_for_token(&token));
+                        token_condition = network_label_matches_token(&token);
                     }
                     SearchScope::Location => {
                         token_condition = token_condition
