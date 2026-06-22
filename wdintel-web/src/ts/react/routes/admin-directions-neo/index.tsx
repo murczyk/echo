@@ -727,7 +727,7 @@ function OrphanGroupsTable(props: {
               label="Архівувати"
               onClick={() => props.onArchive?.(row.original)}
               icon={<ArchiveOutlinedIcon fontSize="small" />}
-              tone="danger"
+              tone="warning"
               opensModal
             />
           ) : null}
@@ -1157,19 +1157,6 @@ function ZoneGroupsTable(props: {
             opensModal
           />
           <MrtRowActionButton
-            label="Видалити"
-            onClick={() =>
-              props.onDelete(
-                row.original.zoneId,
-                row.original.datasourceId,
-                row.original.group
-              )
-            }
-            icon={<DeleteIcon fontSize="small" />}
-            tone="danger"
-            opensModal
-          />
-          <MrtRowActionButton
             label="Архівувати"
             onClick={() =>
               props.onArchive(
@@ -1179,6 +1166,19 @@ function ZoneGroupsTable(props: {
               )
             }
             icon={<ArchiveOutlinedIcon fontSize="small" />}
+            tone="warning"
+            opensModal
+          />
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() =>
+              props.onDelete(
+                row.original.zoneId,
+                row.original.datasourceId,
+                row.original.group
+              )
+            }
+            icon={<DeleteIcon fontSize="small" />}
             tone="danger"
             opensModal
           />

@@ -36,6 +36,8 @@ pub async fn list_effective_report_order(
             .c(h!())?,
         None => BTreeMap::new(),
     };
+    let has_saved_orders =
+        !global_orders.is_empty() || !scoped_orders.is_empty();
 
     let mut rows = aors
         .into_iter()
@@ -53,11 +55,17 @@ pub async fn list_effective_report_order(
         })
         .collect::<Vec<_>>();
 
+    if !has_saved_orders {
+        rows.sort_by(alphabetic_report_order);
+        for (index, row) in rows.iter_mut().enumerate() {
+            row.order_for_report = ((index + 1) * 10) as f64;
+        }
+    }
+
     rows.sort_by(|left, right| {
         left.order_for_report
             .total_cmp(&right.order_for_report)
-            .then_with(|| left.aor_name.cmp(&right.aor_name))
-            .then_with(|| left.aor_id.cmp(&right.aor_id))
+            .then_with(|| alphabetic_report_order(left, right))
     });
     Ok(rows)
 }
@@ -203,4 +211,13 @@ where
         });
     }
     Ok(())
+}
+
+fn alphabetic_report_order(
+    left: &AorReportOrderRow,
+    right: &AorReportOrderRow,
+) -> std::cmp::Ordering {
+    left.aor_name
+        .cmp(&right.aor_name)
+        .then_with(|| left.aor_id.cmp(&right.aor_id))
 }
