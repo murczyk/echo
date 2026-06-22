@@ -1672,7 +1672,7 @@ fn build_basic_freqs_table(
             create_table_data_cell(
                 width_unit * 16,
                 &freq
-                    .encryption
+                    .modulation
                     .clone()
                     .unwrap_or(DEFAULT_MODULATION.to_string()),
                 None,
@@ -1766,7 +1766,7 @@ fn build_extended_freqs_table(
             create_table_data_cell(
                 width_unit * 5,
                 &freq
-                    .encryption
+                    .modulation
                     .clone()
                     .unwrap_or(DEFAULT_MODULATION.to_string()),
                 None,
