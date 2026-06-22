@@ -360,6 +360,7 @@ async fn collect_freq_counts(
             "freq, day, signal_group.name",
         ))
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(message_in_groups_exists(
             master_keys,
         ))

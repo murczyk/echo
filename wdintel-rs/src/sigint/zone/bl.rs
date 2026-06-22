@@ -47,6 +47,7 @@ pub async fn bl_szd_group_update(
 
     let is_secret = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
         .column(signal_group::Column::IsSecret)
@@ -111,6 +112,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
 ) -> Result<(), AppError> {
     let m_group = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq(szd.group_master_key))
         .one(txn)
         .await
@@ -348,6 +350,8 @@ pub async fn bl_szd_groups_list(
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
         .filter(sigint_zone_datasource::Column::DatasourceId.eq(datasource_id))
         .into_model::<Res>()

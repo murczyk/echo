@@ -1,6 +1,8 @@
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Tab, Switch, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
@@ -54,15 +56,18 @@ import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
 import {
   addZoneDatasourceGroup,
+  archiveSignalGroup,
   deleteZoneDatasourceGroup,
   fetchSignalGroupInfoBatch,
   fetchSignalGroupStatsTimeline,
+  listArchivedSignalGroups,
   listDatasources,
   listOrphanSignalGroups,
   listSigintZones,
   listZoneDatasourceGroups,
   listZoneDatasources,
   updateZoneDatasourceGroup,
+  unarchiveSignalGroup,
 } from '../../services/api/zones';
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -121,6 +126,13 @@ type DeleteState = {
   group: ZoneDatasourceGroup;
   groupName: string;
   isDeleting: boolean;
+  error: string | null;
+};
+
+type ArchiveState = {
+  masterKey: string;
+  groupName: string;
+  isSaving: boolean;
   error: string | null;
 };
 
@@ -292,6 +304,12 @@ function getGroupName(
   return groupKey.slice(-5);
 }
 
+function getOrphanGroupName(group: OrphanSignalGroupEntry) {
+  return group.name && group.name.trim()
+    ? group.name
+    : group.masterKey.slice(-5);
+}
+
 function getDatasourceLabel(
   datasourceId: number | null,
   datasourceById: Map<number, Datasource>
@@ -396,6 +414,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     name: '',
     datasourceId: null,
     ignoreOperativny: false,
+    isArchived: false,
     groupStats: {
       activityLastDay: 0,
       activityLastWeek: 0,
@@ -475,8 +494,11 @@ function OrphanGroupsTable(props: {
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
   aorFilterOptions: { text: string; value: string }[];
-  onAssign: (group: OrphanSignalGroupEntry) => void;
-  onEdit: (group: OrphanSignalGroupEntry) => void;
+  onAssign?: (group: OrphanSignalGroupEntry) => void;
+  onEdit?: (group: OrphanSignalGroupEntry) => void;
+  onArchive?: (group: OrphanSignalGroupEntry) => void;
+  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
+  unarchiveInFlightMasterKey?: string | null;
 }) {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
@@ -647,6 +669,11 @@ function OrphanGroupsTable(props: {
     columnOrder: tableStateContext.columnOrder,
     columnSizing: tableStateContext.columnSizing,
   };
+  const rowActionCount =
+    (props.onAssign ? 1 : 0) +
+    (props.onEdit ? 1 : 0) +
+    (props.onArchive ? 1 : 0) +
+    (props.onUnarchive ? 1 : 0);
 
   const table = useMaterialReactTable({
     columns,
@@ -679,18 +706,45 @@ function OrphanGroupsTable(props: {
     renderRowActions: ({ row }) =>
       isLoading || !row.original?.masterKey ? null : (
         <MrtRowActions>
-          <MrtRowActionButton
-            label="Додати до напрямку"
-            onClick={() => props.onAssign(row.original)}
-            icon={<AddCircleOutlineIcon fontSize="small" />}
-            opensModal
-          />
-          <MrtRowActionButton
-            label="Редагувати"
-            onClick={() => props.onEdit(row.original)}
-            icon={<EditIcon fontSize="small" />}
-            opensModal
-          />
+          {props.onAssign ? (
+            <MrtRowActionButton
+              label="Додати до напрямку"
+              onClick={() => props.onAssign?.(row.original)}
+              icon={<AddCircleOutlineIcon fontSize="small" />}
+              opensModal
+            />
+          ) : null}
+          {props.onEdit ? (
+            <MrtRowActionButton
+              label="Редагувати"
+              onClick={() => props.onEdit?.(row.original)}
+              icon={<EditIcon fontSize="small" />}
+              opensModal
+            />
+          ) : null}
+          {props.onArchive ? (
+            <MrtRowActionButton
+              label="Архівувати"
+              onClick={() => props.onArchive?.(row.original)}
+              icon={<ArchiveOutlinedIcon fontSize="small" />}
+              tone="danger"
+              opensModal
+            />
+          ) : null}
+          {props.onUnarchive ? (
+            <MrtRowActionButton
+              label="Повернути з архіву"
+              onClick={() => props.onUnarchive?.(row.original)}
+              disabled={props.unarchiveInFlightMasterKey === row.original.masterKey}
+              icon={
+                props.unarchiveInFlightMasterKey === row.original.masterKey ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <UnarchiveOutlinedIcon fontSize="small" />
+                )
+              }
+            />
+          ) : null}
         </MrtRowActions>
       ),
     defaultColumn: {
@@ -701,7 +755,7 @@ function OrphanGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(2),
+        size: mrtRowActionsColumnSize(Math.max(rowActionCount, 1)),
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -794,6 +848,11 @@ function ZoneGroupsTable(props: {
     group: ZoneDatasourceGroup
   ) => void;
   onDelete: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
+  onArchive: (
     zoneId: number,
     datasourceId: number,
     group: ZoneDatasourceGroup
@@ -1110,6 +1169,19 @@ function ZoneGroupsTable(props: {
             tone="danger"
             opensModal
           />
+          <MrtRowActionButton
+            label="Архівувати"
+            onClick={() =>
+              props.onArchive(
+                row.original.zoneId,
+                row.original.datasourceId,
+                row.original.group
+              )
+            }
+            icon={<ArchiveOutlinedIcon fontSize="small" />}
+            tone="danger"
+            opensModal
+          />
         </MrtRowActions>
       ),
     defaultColumn: {
@@ -1120,7 +1192,7 @@ function ZoneGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(2),
+        size: mrtRowActionsColumnSize(3),
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -1202,16 +1274,20 @@ function ZoneGroupsTable(props: {
 }
 
 function OrphanGroupsSection(props: {
+  tableId?: string;
   data: OrphanSignalGroupEntry[];
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
   aorFilterOptions: { text: string; value: string }[];
-  onAssign: (group: OrphanSignalGroupEntry) => void;
-  onEdit: (group: OrphanSignalGroupEntry) => void;
+  onAssign?: (group: OrphanSignalGroupEntry) => void;
+  onEdit?: (group: OrphanSignalGroupEntry) => void;
+  onArchive?: (group: OrphanSignalGroupEntry) => void;
+  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
+  unarchiveInFlightMasterKey?: string | null;
 }) {
   return (
     <TableStateProvider
-      tableId="admin-orphan-groups"
+      tableId={props.tableId ?? "admin-orphan-groups"}
       defaultColumnOrder={DEFAULT_ORPHAN_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_ORPHAN_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
@@ -1225,6 +1301,9 @@ function OrphanGroupsSection(props: {
           aorFilterOptions={props.aorFilterOptions}
           onAssign={props.onAssign}
           onEdit={props.onEdit}
+          onArchive={props.onArchive}
+          onUnarchive={props.onUnarchive}
+          unarchiveInFlightMasterKey={props.unarchiveInFlightMasterKey}
         />
       </div>
     </TableStateProvider>
@@ -1248,6 +1327,11 @@ function ZoneGroupsSection(props: {
     datasourceId: number,
     group: ZoneDatasourceGroup
   ) => void;
+  onArchive: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
 }) {
   return (
     <TableStateProvider
@@ -1266,6 +1350,7 @@ function ZoneGroupsSection(props: {
           aorFilterOptions={props.aorFilterOptions}
           onEdit={props.onEdit}
           onDelete={props.onDelete}
+          onArchive={props.onArchive}
         />
       </div>
     </TableStateProvider>
@@ -1275,6 +1360,11 @@ function ZoneGroupsSection(props: {
 type DirectionsTab =
   | {
       key: 'orphans';
+      label: string;
+      content: ReactNode;
+    }
+  | {
+      key: 'archive';
       label: string;
       content: ReactNode;
     }
@@ -1301,6 +1391,9 @@ function AdminDirectionsNeoPageBody() {
   const [orphanGroups, setOrphanGroups] = useState<
     OrphanSignalGroupEntry[]
   >([]);
+  const [archivedGroups, setArchivedGroups] = useState<
+    OrphanSignalGroupEntry[]
+  >([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
 
   const [editDialog, setEditDialog] = useState<GroupEditState | null>(
@@ -1313,6 +1406,11 @@ function AdminDirectionsNeoPageBody() {
   const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(
     null
   );
+  const [archiveDialog, setArchiveDialog] = useState<ArchiveState | null>(
+    null
+  );
+  const [unarchiveInFlightMasterKey, setUnarchiveInFlightMasterKey] =
+    useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
 
   const [logins, setLogins] = useState<string[]>([]);
@@ -1344,6 +1442,21 @@ function AdminDirectionsNeoPageBody() {
             />
           ),
         },
+        {
+          key: 'archive',
+          label: '🗑️ АРХІВ',
+          content: (
+            <OrphanGroupsSection
+              tableId="admin-archived-groups"
+              data={[]}
+              loading
+              datasourceById={datasourceById}
+              aorFilterOptions={aorFilterOptions}
+              onUnarchive={handleUnarchiveGroup}
+              unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
+            />
+          ),
+        },
       ];
     }
 
@@ -1361,6 +1474,24 @@ function AdminDirectionsNeoPageBody() {
               aorFilterOptions={aorFilterOptions}
               onAssign={openAssignDialog}
               onEdit={openOrphanEditDialog}
+              onArchive={openArchiveOrphanDialog}
+            />
+          ),
+      },
+      {
+        key: 'archive',
+        label: '🗑️ АРХІВ',
+        content:
+          archivedGroups.length === 0 ? (
+            <SectionEmptyState message="Архівні групи відсутні" />
+          ) : (
+            <OrphanGroupsSection
+              tableId="admin-archived-groups"
+              data={archivedGroups}
+              datasourceById={datasourceById}
+              aorFilterOptions={aorFilterOptions}
+              onUnarchive={handleUnarchiveGroup}
+              unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
             />
           ),
       },
@@ -1407,6 +1538,7 @@ function AdminDirectionsNeoPageBody() {
               aorFilterOptions={aorFilterOptions}
               onEdit={openEditDialog}
               onDelete={openDeleteDialog}
+              onArchive={openArchiveZoneDialog}
             />
           ),
       });
@@ -1416,9 +1548,11 @@ function AdminDirectionsNeoPageBody() {
   }, [
     status,
     aorFilterOptions,
+    archivedGroups,
     datasourceById,
     groupInfos,
     orphanGroups,
+    unarchiveInFlightMasterKey,
     zoneDatasourceIds,
     zoneGroups,
     zones,
@@ -1444,11 +1578,12 @@ function AdminDirectionsNeoPageBody() {
     setStatus('loading');
     setError(null);
     try {
-      const [datasourceList, zoneList, orphanList, aorList] = await Promise.all(
+      const [datasourceList, zoneList, orphanList, archivedList, aorList] = await Promise.all(
         [
           listDatasources(),
           listSigintZones(),
           listOrphanSignalGroups(),
+          listArchivedSignalGroups(),
           listAors({ sortBy: null }),
         ]
       );
@@ -1456,6 +1591,7 @@ function AdminDirectionsNeoPageBody() {
       setDatasources(datasourceList);
       setZones(zoneList);
       setOrphanGroups(orphanList);
+      setArchivedGroups(archivedList);
       setAors(aorList);
 
       const zoneDatasourceEntries = await Promise.all(
@@ -1542,8 +1678,7 @@ function AdminDirectionsNeoPageBody() {
   }
 
   function openOrphanEditDialog(group: OrphanSignalGroupEntry) {
-    const groupName =
-      group.name && group.name.trim() ? group.name : group.masterKey.slice(-5);
+    const groupName = getOrphanGroupName(group);
     setOrphanEditDialog({
       group,
       groupName,
@@ -1571,6 +1706,28 @@ function AdminDirectionsNeoPageBody() {
     void ensureLoginsLoaded();
   }
 
+  function openArchiveOrphanDialog(group: OrphanSignalGroupEntry) {
+    setArchiveDialog({
+      masterKey: group.masterKey,
+      groupName: getOrphanGroupName(group),
+      isSaving: false,
+      error: null,
+    });
+  }
+
+  function openArchiveZoneDialog(
+    _zoneId: number,
+    _datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) {
+    setArchiveDialog({
+      masterKey: group.groupMasterKey,
+      groupName: getGroupName(group.groupMasterKey, null, groupInfos),
+      isSaving: false,
+      error: null,
+    });
+  }
+
   function openDeleteDialog(
     zoneId: number,
     datasourceId: number,
@@ -1585,6 +1742,34 @@ function AdminDirectionsNeoPageBody() {
       isDeleting: false,
       error: null,
     });
+  }
+
+  async function handleArchiveGroup() {
+    if (!archiveDialog) return;
+    setArchiveDialog({ ...archiveDialog, isSaving: true, error: null });
+    try {
+      await archiveSignalGroup({ masterKey: archiveDialog.masterKey });
+      setArchiveDialog(null);
+      await loadData();
+    } catch (err) {
+      setArchiveDialog({
+        ...archiveDialog,
+        isSaving: false,
+        error: 'Не вдалося архівувати групу',
+      });
+    }
+  }
+
+  async function handleUnarchiveGroup(group: OrphanSignalGroupEntry) {
+    setUnarchiveInFlightMasterKey(group.masterKey);
+    try {
+      await unarchiveSignalGroup({ masterKey: group.masterKey });
+      await loadData();
+    } catch (err) {
+      setError('Не вдалося повернути групу з архіву');
+    } finally {
+      setUnarchiveInFlightMasterKey(null);
+    }
   }
 
   async function handleSaveGroupEdit() {
@@ -2218,6 +2403,25 @@ function AdminDirectionsNeoPageBody() {
           </PowerButton>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDangerDialog
+        open={Boolean(archiveDialog)}
+        onClose={() => setArchiveDialog(null)}
+        onConfirm={handleArchiveGroup}
+        submitting={Boolean(archiveDialog?.isSaving)}
+        disabled={!archiveDialog}
+        title="Архівувати групу"
+        confirmLabel="Архівувати"
+        disableRestoreFocus
+      >
+          {archiveDialog?.error ? (
+            <PowerAlert severity="error">{archiveDialog.error}</PowerAlert>
+          ) : null}
+          <Typography variant="body2" className="text-muted-foreground">
+            Група {archiveDialog?.groupName} буде відвʼязана від напрямків і
+            перенесена в архів.
+          </Typography>
+      </ConfirmDangerDialog>
 
       <ConfirmDangerDialog
         open={Boolean(deleteDialog)}
