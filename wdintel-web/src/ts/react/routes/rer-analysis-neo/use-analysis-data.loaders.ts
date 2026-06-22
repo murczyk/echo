@@ -28,7 +28,7 @@ import {
   fetchMessagesByIds,
   fetchAnalysisUnits,
 } from '../../services/api/analysis';
-import { listPalitrasV2 } from '../../services/api/palitra';
+import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq } from './helpers';
@@ -285,7 +285,7 @@ export function useAnalysisDataLoaders(params: Params) {
     setMapPalitrasLoaded(false);
 
     try {
-      const palitras = await listPalitrasV2();
+      const palitras = await listMapPalitrasV2();
       setMapPalitras(
         palitras.map((palitraRead) => ({
           ...palitraRead,

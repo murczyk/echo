@@ -1379,6 +1379,15 @@ palitra_list_v2 toMsg =
         }
 
 
+palitra_map_list_v2 : (Result ApiError (List PalitraReadV2) -> msg) -> Cmd msg
+palitra_map_list_v2 toMsg =
+    Http.post
+        { url = "/api/palitra/v2/list-map"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list palitraReadV2Decoder)
+        }
+
+
 palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
 palitra_delete toMsg palitraId =
     Http.post
