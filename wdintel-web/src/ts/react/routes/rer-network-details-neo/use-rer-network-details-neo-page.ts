@@ -271,6 +271,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [
     loadRelations,
     state.activeNetworkDetailsTab,
+    canViewRelationsTab,
+    state.currentUserLoaded,
     state.network,
     state.relationsError,
     state.relationsLoaded,

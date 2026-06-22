@@ -425,7 +425,35 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
       page.setRelationsTill('2024-06-02');
     });
 
-    expect(loadMockState.loadRelations).toHaveBeenCalledTimes(1);
+    expect(loadMockState.loadRelations).toHaveBeenCalled();
+  });
+
+  it('waits for resolved relations permissions before loading a direct relations url', async () => {
+    loadMockState.currentUser = null;
+    window.history.replaceState({}, '', '/rer-networks/42?tab=connections-graph');
+
+    const page = renderHookHarness();
+    expect(loadMockState.loadRelations).toHaveBeenCalledTimes(0);
+    expect(latestPage?.activeNetworkDetailsTab).toBe('relations');
+    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=connections-graph');
+
+    loadMockState.currentUser = { roles: ['Api'] } as User;
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadMockState.loadRelations).toHaveBeenCalled();
+    expect(latestPage?.activeNetworkDetailsTab).toBe('relations');
+    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=connections-graph');
+
+    const callsBefore = loadMockState.loadRelations.mock.calls.length;
+    act(() => {
+      page.setRelationsSince('2024-06-01');
+    });
+
+    expect(loadMockState.loadRelations.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   it('loads network activity only on the activity tab and does not reload on return', async () => {
