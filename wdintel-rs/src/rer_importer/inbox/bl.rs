@@ -477,6 +477,7 @@ async fn get_palitra_points_by_message(
             sigint_inbox_item_point_token::Relation::Palitra.def(),
         )
         .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra::Column::IsArchived.eq(false))
         .filter(palitra::Column::Id.eq_any(palitra_ids))
         .select_only()
         .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
