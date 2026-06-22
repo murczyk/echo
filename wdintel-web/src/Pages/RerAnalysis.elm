@@ -477,7 +477,7 @@ loadPalitrasIfNeeded model =
         case model.palitras of
             NotAsked ->
                 ( { model | palitras = Loading }
-                , E.sendCmd <| Api.palitra_list_v2 GotPalitras
+                , E.sendCmd <| Api.palitra_map_list_v2 GotPalitras
                 )
 
             _ ->
