@@ -567,6 +567,10 @@ export type SignalGroupStatsTimelineRsp = {
   data: Array<SignalGroupStatsTimelineEntry>;
 };
 
+export type SignalGroupArchiveReq = {
+  masterKey: string;
+};
+
 export type SignalGroupRsp = {
   name: string | null;
 };
@@ -597,6 +601,7 @@ export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
   groupStats: SignalGroupStats;

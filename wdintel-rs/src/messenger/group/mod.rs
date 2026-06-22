@@ -27,6 +27,7 @@ pub async fn collect_groups(
 ) -> Result<Vec<types::SignalGroupEntry>, AppError> {
     let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq_any(keys.clone()))
         .all(txn)
         .await
@@ -92,6 +93,7 @@ pub async fn collect_groups_f2(
             datasource_group::Relation::Datasource.def(),
         )
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::Name.is_not_null())
         .filter(signal_group::Column::MasterKey.eq_any(keys.clone()))
         .select_only()
@@ -378,6 +380,7 @@ where
             ignore_operativny: NotSet,
             is_secret: NotSet,
             deleted: NotSet,
+            is_archived: NotSet,
         }
         .insert(db)
         .await
@@ -386,6 +389,35 @@ where
     };
 
     Ok(saved.master_key)
+}
+
+pub async fn set_signal_group_archived(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    is_archived: bool,
+) -> Result<signal_group::Model, AppError> {
+    let signal_group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.eq(master_key))
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    if is_archived {
+        sigint_zone_datasource::Entity::delete_many()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey.eq(master_key),
+            )
+            .exec(txn)
+            .await
+            .c(h!())?;
+    }
+
+    let mut signal_group = signal_group.into_active_model();
+    signal_group.is_archived = Set(is_archived);
+    let signal_group = signal_group.update(txn).await.c(h!())?;
+    Ok(signal_group)
 }
 
 pub async fn collect_group_admin_data<'a, 'async_trait, C>(
@@ -482,6 +514,7 @@ where
             .context(h!())?;
     let group_query = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(
             signal_group::Column::MasterKey
                 .eq_any(organism_groups.available_keys),

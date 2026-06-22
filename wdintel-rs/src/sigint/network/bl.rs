@@ -410,6 +410,7 @@ pub async fn network_group_activity_bl(
             "network_id, day, signal_group.name",
         ))
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups_noimport(

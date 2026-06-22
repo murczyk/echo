@@ -3716,6 +3716,7 @@ async fn include_missing_secret_groups(
         .select_only()
         .column(signal_group::Column::MasterKey)
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::IsSecret.eq(true))
         .filter(
             signal_group::Column::MasterKey.eq_any(allowed_group_keys.to_vec()),
@@ -4509,6 +4510,7 @@ async fn collect_group_names(
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
     let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .select_only()
         .columns([
             signal_group::Column::MasterKey,
