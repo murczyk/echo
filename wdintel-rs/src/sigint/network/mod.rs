@@ -3244,7 +3244,10 @@ pub async fn report_networks_goi(
     );
     let outpath = outfolder.join(&filename);
 
-    self::goi::report_xlsx_networks_goi(user, &env, &outpath)
+    let organism_id = self::goi::login_organism_id(&env.dbx, &user_id)
+        .await
+        .c(h!())?;
+    self::goi::report_xlsx_networks_goi(&env, &outpath, organism_id)
         .await
         .c(h!())?;
 

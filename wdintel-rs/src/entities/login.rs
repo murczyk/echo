@@ -33,6 +33,8 @@ pub enum Relation {
     ApiIntegration,
     #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
     AreaOfResponsibility,
+    #[sea_orm(has_many = "super::area_of_responsibility_report_order::Entity")]
+    AreaOfResponsibilityReportOrder,
     #[sea_orm(
         belongs_to = "super::delta_login::Entity",
         from = "Column::DeltaLoginId",
@@ -108,6 +110,12 @@ impl Related<super::api_integration::Entity> for Entity {
 impl Related<super::area_of_responsibility::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AreaOfResponsibility.def()
+    }
+}
+
+impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AreaOfResponsibilityReportOrder.def()
     }
 }
 

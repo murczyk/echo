@@ -163,6 +163,37 @@ pub struct GoiUserIntegration {
     pub restart_unavailable_reason: Option<String>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GoiReportTabOrderItem {
+    pub aor_id: i64,
+    pub aor_name: String,
+    pub order_for_report: f64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GoiReportTabOrderListReq {
+    pub integration_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GoiReportTabOrderListRsp {
+    pub items: Vec<GoiReportTabOrderItem>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GoiReportTabOrderUpdateReq {
+    pub integration_id: Option<i64>,
+    pub items: Vec<GoiReportTabOrderItem>,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct GoiAdminIntegration {
     pub id: i64,

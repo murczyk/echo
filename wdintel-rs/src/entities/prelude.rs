@@ -4,6 +4,7 @@ pub use super::alert::Entity as Alert;
 pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;
 pub use super::area_of_responsibility::Entity as AreaOfResponsibility;
+pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibilityReportOrder;
 pub use super::bgtask::Entity as Bgtask;
 pub use super::bgtask_res::Entity as BgtaskRes;
 pub use super::callsign_additional_source::Entity as CallsignAdditionalSource;

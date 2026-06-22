@@ -1,4 +1,9 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
+import type {
+  GoiReportTabOrderItem,
+  GoiReportTabOrderListRsp,
+  GoiReportTabOrderUpdateReq,
+} from '../../../../Bindings';
 import { HttpRequestError, postBytes, postJson } from './client';
 
 export type GoiRestartService = 'swapp' | 'swapp_alt' | 'goi' | 'echo_swapp';
@@ -57,6 +62,19 @@ type DownloadGoiIntegrationPalettesReqBody = {
   integration_id: number;
 };
 
+type GoiReportTabOrderItemLike = {
+  aorId?: number | string;
+  aor_id?: number | string;
+  aorName?: string | null;
+  aor_name?: string | null;
+  orderForReport?: number | string;
+  order_for_report?: number | string;
+};
+
+type GoiReportTabOrderListRspLike = {
+  items?: GoiReportTabOrderItemLike[] | null;
+};
+
 function normalizeNumber(value: number | string | null | undefined): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -102,6 +120,29 @@ function normalizeGoiUserIntegration(
   };
 }
 
+function normalizeGoiReportTabOrderItem(
+  raw: GoiReportTabOrderItemLike | null | undefined,
+): GoiReportTabOrderItem {
+  return {
+    aorId: normalizeNumber(raw?.aorId ?? raw?.aor_id),
+    aorName: normalizeOptionalString(raw?.aorName ?? raw?.aor_name) ?? '',
+    orderForReport: normalizeNumber(
+      raw?.orderForReport ?? raw?.order_for_report,
+    ),
+  };
+}
+
+function toGoiReportTabOrderUpdateReqBody(req: GoiReportTabOrderUpdateReq) {
+  return {
+    integration_id: req.integrationId,
+    items: req.items.map((item) => ({
+      aor_id: item.aorId,
+      aor_name: item.aorName,
+      order_for_report: item.orderForReport,
+    })),
+  };
+}
+
 export async function fetchCurrentUserGoiIntegrations(
   signal?: AbortSignal,
 ): Promise<GoiUserIntegration[]> {
@@ -111,6 +152,28 @@ export async function fetchCurrentUserGoiIntegrations(
     { signal },
   );
   return (data?.items ?? []).map(normalizeGoiUserIntegration);
+}
+
+export async function fetchGoiReportTabOrder(
+  integrationId: number | null,
+  signal?: AbortSignal,
+): Promise<GoiReportTabOrderItem[]> {
+  const data = await postJson<GoiReportTabOrderListRspLike>(
+    '/api/goi/report-tab-order',
+    { integration_id: integrationId },
+    { signal },
+  );
+  return (data?.items ?? []).map(normalizeGoiReportTabOrderItem);
+}
+
+export async function updateGoiReportTabOrder(
+  req: GoiReportTabOrderUpdateReq,
+): Promise<GoiReportTabOrderItem[]> {
+  const data = await postJson<GoiReportTabOrderListRsp>(
+    '/api/goi/report-tab-order/update',
+    toGoiReportTabOrderUpdateReqBody(req),
+  );
+  return (data?.items ?? []).map(normalizeGoiReportTabOrderItem);
 }
 
 export async function restartCurrentUserGoiService(

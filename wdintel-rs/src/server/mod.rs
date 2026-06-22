@@ -625,6 +625,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::organism::goi::integrations::check_goi_integration_connection)
             .service(crate::organism::goi::integrations::setup_goi_integration_worker)
             .service(crate::organism::goi::integrations::list_current_user_goi_integrations)
+            .service(crate::organism::goi::integrations::list_goi_report_tab_order)
+            .service(crate::organism::goi::integrations::update_goi_report_tab_order)
             .service(crate::organism::goi::integrations::restart_current_user_goi_service)
             .service(crate::organism::goi::integrations::unlink_current_user_goi_whatsapp)
             .service(crate::organism::goi::integrations::download_current_user_goi_palettes)

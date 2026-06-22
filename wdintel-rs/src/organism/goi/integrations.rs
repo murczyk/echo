@@ -21,9 +21,11 @@ use crate::organism::goi::shared::{
 use crate::organism::goi::types::{
     DeleteGoiAdminIntegrationReq, DownloadGoiIntegrationPalettesReq,
     GetGoiAdminIntegrationReq, GoiAdminIntegration, GoiAssociation,
-    GoiKnowledge, GoiUserIntegration, ListGoiAdminIntegrationsRsp,
-    ListGoiAssociationsReq, ListGoiAssociationsRsp, ListGoiAssociationsSortBy,
-    ListGoiKnowledgeReq, ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
+    GoiKnowledge, GoiReportTabOrderItem, GoiReportTabOrderListReq,
+    GoiReportTabOrderListRsp, GoiReportTabOrderUpdateReq, GoiUserIntegration,
+    ListGoiAdminIntegrationsRsp, ListGoiAssociationsReq,
+    ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
+    ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
     RestartGoiIntegrationServiceReq, SetupGoiIntegrationWorkerReq,
     UnlinkGoiIntegrationWhatsappReq, UpsertGoiAdminIntegrationReq,
 };
@@ -31,6 +33,7 @@ use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
     GoiIntegrationType,
 };
+use crate::sigint::aor::report_order;
 use crate::types::*;
 use crate::utils::string::{
     normalize_optional_trimmed, normalize_trimmed_or_default,
@@ -336,6 +339,68 @@ pub async fn list_current_user_goi_integrations(
     }))
 }
 
+#[post("/api/goi/report-tab-order")]
+pub async fn list_goi_report_tab_order(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<GoiReportTabOrderListReq>,
+) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    let organism_id = resolve_report_tab_order_organism_id(
+        &env.dbx,
+        &user_id,
+        req.integration_id,
+    )
+    .await
+    .c(h!())?;
+    let items =
+        report_order::list_effective_report_order(&env.dbx, organism_id)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(goi_report_tab_order_item_from_row)
+            .collect();
+
+    Ok(Json(GoiReportTabOrderListRsp { items }))
+}
+
+#[post("/api/goi/report-tab-order/update")]
+pub async fn update_goi_report_tab_order(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<GoiReportTabOrderUpdateReq>,
+) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    let organism_id = resolve_report_tab_order_organism_id(
+        &env.dbx,
+        &user_id,
+        req.integration_id,
+    )
+    .await
+    .c(h!())?;
+    let items = req
+        .items
+        .iter()
+        .map(|item| report_order::AorReportOrderUpdate {
+            aor_id: item.aor_id,
+            order_for_report: item.order_for_report,
+        })
+        .collect::<Vec<_>>();
+    let items = report_order::update_report_order(
+        &env.dbx,
+        &user_id,
+        organism_id,
+        &items,
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(goi_report_tab_order_item_from_row)
+    .collect();
+
+    Ok(Json(GoiReportTabOrderListRsp { items }))
+}
+
 #[post("/api/goi/associations")]
 pub async fn list_current_user_goi_associations(
     user: actix_identity::Identity,
@@ -434,6 +499,40 @@ pub async fn list_current_user_goi_knowledge(
         .collect();
 
     Ok(Json(ListGoiKnowledgeRsp { items, has_more }))
+}
+
+async fn resolve_report_tab_order_organism_id(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+    integration_id: Option<i64>,
+) -> Result<Option<i64>, AppError> {
+    match integration_id {
+        Some(integration_id) => {
+            crate::users::has_role(dbx, user_id, "Rer").await?;
+            let integration = load_accessible_integration_for_user(
+                dbx,
+                user_id,
+                integration_id,
+            )
+            .await
+            .c(h!())?;
+            Ok(Some(integration.integration.owner_organism_id))
+        }
+        None => {
+            crate::users::has_role(dbx, user_id, "Admin").await?;
+            Ok(None)
+        }
+    }
+}
+
+fn goi_report_tab_order_item_from_row(
+    row: report_order::AorReportOrderRow,
+) -> GoiReportTabOrderItem {
+    GoiReportTabOrderItem {
+        aor_id: row.aor_id,
+        aor_name: row.aor_name,
+        order_for_report: row.order_for_report,
+    }
 }
 
 #[post("/api/goi/restart-service")]

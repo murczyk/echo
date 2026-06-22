@@ -1337,6 +1337,25 @@ export type GoiUserIntegration = {
   restartUnavailableReason: string | null;
 };
 
+export type GoiReportTabOrderItem = {
+  aorId: number;
+  aorName: string;
+  orderForReport: number;
+};
+
+export type GoiReportTabOrderListReq = {
+  integrationId: number | null;
+};
+
+export type GoiReportTabOrderListRsp = {
+  items: Array<GoiReportTabOrderItem>;
+};
+
+export type GoiReportTabOrderUpdateReq = {
+  integrationId: number | null;
+  items: Array<GoiReportTabOrderItem>;
+};
+
 export type SettingsSaveReq = {
   sigintZoneId: number | null;
 };
