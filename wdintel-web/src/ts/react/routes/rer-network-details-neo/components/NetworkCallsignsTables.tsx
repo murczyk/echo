@@ -283,7 +283,7 @@ export function NetworkDetailsCallsignsPanel({
         ) : null}
       </Box>
 
-      {loadingError && networkCallsigns.length === 0 && catalogCallsignGroups.length === 0 && unknownInterceptedCallsigns.length === 0 ? (
+      {loadingError ? (
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
           <PowerAlert severity="error">{loadingError}</PowerAlert>
           <Button size="small" onClick={onReload}>
