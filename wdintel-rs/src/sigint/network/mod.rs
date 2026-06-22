@@ -205,7 +205,7 @@ pub async fn restore_network(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network,
         vec![],
         &env.dbx,
@@ -505,7 +505,7 @@ pub async fn create_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -615,7 +615,7 @@ pub async fn update_network(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -703,7 +703,7 @@ pub async fn delete_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -1444,7 +1444,7 @@ pub async fn update_freq_networks(
 
     for network in networks {
         let network_id = network.id;
-        sigint::network::etalon_calc::invalidate_network_inbox(
+        etalon_calc::invalidate_network_inbox(
             network,
             vec![req.freq.clone()],
             &env.dbx,
@@ -1556,7 +1556,7 @@ async fn load_network_freq_mutation_response(
     .context(h!())?;
 
     let user_id = user.id().c(h!())?.to_string();
-    let mut freq = crate::sigint::etalonka::query::load_network_freq_row(
+    let mut freq = load_network_freq_row(
         &env.dbx,
         &groups,
         network_id,
@@ -1687,7 +1687,7 @@ pub async fn add_network_freq(
 
     let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-    crate::sigint::key::replace_freq_key_links(
+    sigint::key::replace_freq_key_links(
         &txn,
         network_freq.network_id,
         network_freq.id,
@@ -1723,7 +1723,7 @@ pub async fn add_network_freq(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.network_active_from,
         result.network_active_to,
@@ -1781,6 +1781,11 @@ pub async fn add_network_freq_v2(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        let normalized_encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.freq_rec.modulation,
+            req.freq_rec.encryption_id,
+        ).await.context(h!())?;
         sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
@@ -1788,12 +1793,14 @@ pub async fn add_network_freq_v2(
             created_at: NotSet,
             last_seen_dt: NotSet,
             kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
+            modulation: Set(req.freq_rec.modulation.clone()),
             modulation_id: Set(req.freq_rec.modulation_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
             sigint_origin_id: NotSet,
             original_id: NotSet,
+            encryption_id: Set(normalized_encryption_id),
         }
         .insert(&txn)
         .await
@@ -1814,7 +1821,7 @@ pub async fn add_network_freq_v2(
         .context(h!())?;
     }
 
-    crate::sigint::key::replace_freq_key_links(
+    sigint::key::replace_freq_key_links(
         &txn,
         network_freq.network_id,
         network_freq.id,
@@ -1848,7 +1855,7 @@ pub async fn add_network_freq_v2(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq_rec.freq,
         result.network_active_from,
         result.network_active_to,
@@ -1955,7 +1962,7 @@ pub async fn reactivate_network_freq(
         return Err(AppError::NotFound);
     }
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![freq.clone()],
         &env.dbx,
@@ -2102,7 +2109,7 @@ pub async fn update_network_freq(
 
         let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-        crate::sigint::key::replace_freq_key_links(
+        sigint::key::replace_freq_key_links(
             &txn,
             req.network_id,
             network_freq_id,
@@ -2141,7 +2148,7 @@ pub async fn update_network_freq(
         return Err(AppError::NotFound);
     }
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
@@ -2210,16 +2217,24 @@ pub async fn update_network_freq_v2(
         );
         invalidation_freq = freq;
 
+        let normalized_encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.modulation,
+            req.encryption_id,
+        ).await.context(h!())?;
+
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
         model.modulation_id = Set(req.modulation_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
+        model.encryption_id = Set(normalized_encryption_id);
+        model.modulation = Set(req.modulation.clone());
         model.update(&txn).await.context(h!())?;
 
         let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-        crate::sigint::key::replace_freq_key_links(
+        sigint::key::replace_freq_key_links(
             &txn,
             req.network_id,
             network_freq_id,
@@ -2252,7 +2267,7 @@ pub async fn update_network_freq_v2(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
@@ -2422,7 +2437,7 @@ pub async fn delete_network_freq(
             );
 
             if let Err(e) =
-                sigint::network::etalon_calc::invalidate_network_inbox(
+                etalon_calc::invalidate_network_inbox(
                     network,
                     vec![freq_records[0].freq.clone()],
                     &env.dbx,
@@ -2584,7 +2599,7 @@ async fn cleanup_networks_worker_1(
                 model.active_to = Set(Some(Utc::now().naive_utc()));
                 let network_freq = model.update(dbx).await.context(h!())?;
                 if let Err(e) =
-                    sigint::network::etalon_calc::invalidate_network_inbox(
+                    etalon_calc::invalidate_network_inbox(
                         network.clone(),
                         vec![network_freq.freq],
                         dbx,
@@ -2621,7 +2636,7 @@ async fn cleanup_networks_worker_1(
             }
             let network = network.update(dbx).await.context(h!())?;
             if let Err(e) =
-                sigint::network::etalon_calc::invalidate_network_inbox(
+                etalon_calc::invalidate_network_inbox(
                     network.clone(),
                     vec![],
                     dbx,
@@ -2792,7 +2807,7 @@ pub async fn merge_network(
         .next()
         .context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_from)
             .one(&env.dbx)
             .await
@@ -2808,7 +2823,7 @@ pub async fn merge_network(
     .await
     .context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_to)
             .one(&env.dbx)
             .await
@@ -3275,7 +3290,7 @@ pub async fn update_network_posts(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -3401,7 +3416,7 @@ pub async fn update_network_units(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network,
         vec![],
         &env.dbx,
