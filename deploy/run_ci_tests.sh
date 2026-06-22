@@ -17,6 +17,7 @@ if [[ -f "node_modules/.npm_installed" ]]; then
 fi
 
 if [[ ! -d "node_modules" ]] || [[ "$installed_hash" != "$lockfile_hash" ]]; then
+    bash "$REPO_ROOT/deploy/ci/require_github_packages_token.sh"
     npm ci
     printf '%s\n' "$lockfile_hash" > node_modules/.npm_installed
 fi
