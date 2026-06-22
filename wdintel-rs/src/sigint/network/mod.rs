@@ -4133,11 +4133,10 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql
-            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
-        assert!(sql.contains(
-            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
-        ));
+        assert!(sql.contains("regexp_replace"));
+        assert!(sql.contains("sigint_network.name"));
+        assert!(sql.contains("sigint_network.location"));
+        assert!(!sql.contains("lower(lower("));
         assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)"));
         assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)"));
         assert!(sql

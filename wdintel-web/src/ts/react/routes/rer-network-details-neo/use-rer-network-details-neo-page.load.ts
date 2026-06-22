@@ -430,6 +430,21 @@ export function useRerNetworkDetailsNeoPageLoad(
         callsignsRes.callsigns,
         'Intercepted',
       );
+      if (!current.networkCallsignsLoaded) {
+        return {
+          ...current,
+          networkCallsignGroups: mergedNetworkCallsignGroups,
+          interceptedCallsignsLoaded: true,
+          interceptedCallsignsLoading: false,
+          interceptedCallsignsError: null,
+          ...updateCallsignSectionState(current, {
+            interceptedCallsignsLoaded: true,
+            interceptedCallsignsLoading: false,
+            interceptedCallsignsError: null,
+          }),
+        };
+      }
+
       const derived = recomputeCallsignDerivedData(current, {
         networkCallsignGroups: mergedNetworkCallsignGroups,
       });
@@ -481,8 +496,15 @@ export function useRerNetworkDetailsNeoPageLoad(
           unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
         };
       });
-    } catch {
-      // Activity is an enrichment path; keep the primary section data visible.
+    } catch (error) {
+      if (reloadGeneration.current !== generation || callsignActivityLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        callsignsError: formatErrorMessage(error),
+      }));
     }
   }, [reloadGeneration, setState]);
 
