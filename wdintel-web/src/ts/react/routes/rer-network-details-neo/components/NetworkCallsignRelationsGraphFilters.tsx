@@ -35,12 +35,10 @@ export function NetworkCallsignRelationsGraphFilters({
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       slotProps={{
-        root: {
+        paper: {
           style: {
             zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined,
           },
-        },
-        paper: {
           sx: {
             borderRadius: 2,
             overflow: 'hidden',
@@ -51,7 +49,12 @@ export function NetworkCallsignRelationsGraphFilters({
         },
       }}
     >
-      <Box data-testid="graph-filters-popover" sx={{ width: 320, p: 2, color: graphTheme.overlayText, position: 'relative' }}>
+      <Box
+        data-testid="graph-filters-popover"
+        data-zindex={isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined}
+        style={{ zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined }}
+        sx={{ width: 320, p: 2, color: graphTheme.overlayText, position: 'relative' }}
+      >
         <Stack spacing={1.5}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             Налаштування

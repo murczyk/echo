@@ -503,10 +503,12 @@ export function NetworkCallsignRelationsGraph({
           relationsEnabledFreqs={relationsEnabledFreqs}
           relationsMinIntensity={relationsMinIntensity}
           intensityAnchorEl={intensityAnchorEl}
+          filterPopoverId={filterPopoverId}
           onSearchChange={onSearchChange}
           onEnabledFreqsChange={onEnabledFreqsChange}
           onMinIntensityChange={onMinIntensityChange}
           onOpenIntensitySettings={handleOpenIntensitySettings}
+          onOpenFrequencySettings={(anchorEl) => setFilterAnchorEl(anchorEl)}
           relationsLoading={relationsLoading}
           onSelectNodeId={handleSelectNodeId}
           onSelectEdgeId={handleSelectEdgeId}

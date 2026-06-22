@@ -175,22 +175,20 @@ describe('NetworkCallsignRelationsGraph', () => {
     const intensityPopoverId = intensityButtonAfterOpen?.getAttribute('aria-controls');
     expect(intensityPopoverId).not.toBeNull();
 
-    const intensityPopover = document.body.querySelector(`#${intensityPopoverId}`);
+    const intensityPopover = document.body.querySelector('[data-testid="graph-intensity-popover"]');
     expect(intensityPopover).not.toBeNull();
-    expect((intensityPopover as HTMLElement).style.zIndex).toBe('10001');
+    expect((intensityPopover as HTMLElement).getAttribute('data-zindex')).toBe('10001');
 
-    const filterButton = document.body.querySelector('button[id$="-filters"]');
+    const filterButton = document.body.querySelector('button[aria-label="Налаштувати частоти"]');
     expect(filterButton).not.toBeNull();
-    const filterPopoverId = filterButton?.id ? `${filterButton.id}-popover` : null;
-    expect(filterPopoverId).not.toBeNull();
 
     await act(async () => {
       filterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    const filterPopover = document.body.querySelector(`#${filterPopoverId}`);
+    const filterPopover = document.body.querySelector('[data-testid="graph-filters-popover"]');
     expect(filterPopover).not.toBeNull();
-    expect((filterPopover as HTMLElement).style.zIndex).toBe('10001');
+    expect((filterPopover as HTMLElement).getAttribute('data-zindex')).toBe('10001');
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

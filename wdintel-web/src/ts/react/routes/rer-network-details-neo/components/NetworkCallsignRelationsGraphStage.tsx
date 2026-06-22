@@ -1,6 +1,7 @@
 import AddIcon from '@mui/icons-material/Add';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import { Box, Button, ButtonBase, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
@@ -50,10 +51,12 @@ type Props = {
   relationsMinIntensity: number;
   relationsLoading: boolean;
   intensityAnchorEl: HTMLElement | null;
+  filterPopoverId: string;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
   onOpenIntensitySettings: (anchorEl: HTMLElement) => void;
+  onOpenFrequencySettings: (anchorEl: HTMLElement) => void;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
   onOpenNodeEdgeId: (edgeId: string) => void;
@@ -108,10 +111,12 @@ export function NetworkCallsignRelationsGraphStage({
   relationsMinIntensity,
   relationsLoading,
   intensityAnchorEl,
+  filterPopoverId,
   onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
   onOpenIntensitySettings,
+  onOpenFrequencySettings,
   onSelectNodeId,
   onSelectEdgeId,
   onOpenNodeEdgeId,
@@ -346,6 +351,39 @@ export function NetworkCallsignRelationsGraphStage({
           >
             <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
           </IconButton>
+          {isFullscreen ? (
+            <IconButton
+              onClick={(event) => onOpenFrequencySettings(event.currentTarget)}
+              aria-label="Налаштувати частоти"
+              aria-controls={filterPopoverId}
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 0,
+                color: graphTheme.zoomControlText,
+                flex: '0 0 44px',
+                minWidth: 44,
+                bgcolor: 'transparent',
+                '&:hover': {
+                  bgcolor: graphTheme.zoomControlHoverBg,
+                  color: graphTheme.zoomControlText,
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
+                  outlineOffset: -3,
+                },
+                '&:active': {
+                  bgcolor: graphTheme.zoomControlHoverBg,
+                  color: graphTheme.zoomControlText,
+                },
+                '& .MuiSvgIcon-root': {
+                  color: 'inherit',
+                },
+              }}
+            >
+              <TuneOutlinedIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          ) : null}
         </Box>
       </Box>
 

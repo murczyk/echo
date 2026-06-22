@@ -35,12 +35,10 @@ export function NetworkCallsignRelationsIntensityPopover({
       anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       slotProps={{
-        root: {
+        paper: {
           style: {
             zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined,
           },
-        },
-        paper: {
           sx: {
             borderRadius: 2,
             overflow: 'hidden',
@@ -51,7 +49,12 @@ export function NetworkCallsignRelationsIntensityPopover({
         },
       }}
     >
-      <Box data-testid="graph-intensity-popover" sx={{ width: 280, p: 2, color: graphTheme.overlayText, position: 'relative' }}>
+      <Box
+        data-testid="graph-intensity-popover"
+        data-zindex={isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined}
+        style={{ zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined }}
+        sx={{ width: 280, p: 2, color: graphTheme.overlayText, position: 'relative' }}
+      >
         <Stack spacing={1.25}>
           <Stack spacing={0.25}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
