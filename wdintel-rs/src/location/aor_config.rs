@@ -176,8 +176,6 @@ pub async fn list_aor_location_configs(
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let default_configs = settlements_lock.default_settlements_files.clone();
-
     let items = aors
         .into_iter()
         .map(|aor| {
@@ -190,7 +188,7 @@ pub async fn list_aor_location_configs(
                         &settlements_lock.available_settlements_configs,
                     )
                 })
-                .unwrap_or_else(|| default_configs.clone());
+                .unwrap_or_default();
             AorLocationConfigItem {
                 aor_id: aor.id,
                 aor_name: aor.name,
