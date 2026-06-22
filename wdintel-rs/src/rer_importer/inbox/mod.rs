@@ -549,11 +549,16 @@ async fn chumak_inbox_submit(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<ChumakSubmitMessageReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<ChumakSubmitMessageRsp>, AppError> {
+    let req = req.into_inner();
+    let external_id = req.id.clone();
     match do_submit_chumak_inbox(user, &env, req).await {
-        Ok(_) => Ok(Json(())),
+        Ok(rsp) => Ok(Json(rsp)),
         Err(e) => {
-            error!("failed to submit inbox: {:?}", e);
+            error!(
+                "failed to submit Chumak inbox external_id={}: {:?}",
+                external_id, e
+            );
             Err(e)
         }
     }
@@ -562,8 +567,8 @@ async fn chumak_inbox_submit(
 async fn do_submit_chumak_inbox(
     user: Identity,
     env: &Data<Env>,
-    req: Json<ChumakSubmitMessageReq>,
-) -> Result<(), AppError> {
+    req: ChumakSubmitMessageReq,
+) -> Result<ChumakSubmitMessageRsp, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_any_role(
         &env.dbx,
@@ -572,8 +577,7 @@ async fn do_submit_chumak_inbox(
     )
     .await
     .c(h!())?;
-    let req = req.into_inner();
-    validate_chumak_submit_req(&req)?;
+    let external_id = validate_chumak_submit_req(&req)?;
 
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -581,11 +585,12 @@ async fn do_submit_chumak_inbox(
     let timestamp = parse_chumak_timestamp(&req.timestamp)?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let datasource =  datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
+    let datasource = datasource::Entity::find()
+        .filter(datasource::Column::ApiLogin.eq(&login))
         .one(&txn)
         .await
-        .c(h!())?.c(h!())?;
+        .c(h!())?
+        .c(h!())?;
     let groups =
         ensure_chumak_groups(&txn, &datasource, &login, &req.group_names)
             .await
@@ -599,6 +604,7 @@ async fn do_submit_chumak_inbox(
         &env.config,
         &req,
         timestamp,
+        external_id,
         &groups,
     )
     .await
@@ -619,19 +625,28 @@ async fn do_submit_chumak_inbox(
 
     txn.commit().await.c(h!())?;
     fanout_inbox_changed(env, vec![inbox_id]).await;
-    Ok(())
+    Ok(ChumakSubmitMessageRsp { external_id })
 }
 
 fn validate_chumak_submit_req(
     req: &ChumakSubmitMessageReq,
-) -> Result<(), AppError> {
+) -> Result<i64, AppError> {
+    let external_id = req.id.trim();
+    if external_id.is_empty() {
+        return Err(AppError::BL {
+            msg: "Chumak submit requires ID".to_string(),
+        });
+    }
+    let external_id = external_id.parse::<i64>().map_err(|e| AppError::BL {
+        msg: format!("Chumak submit ID must be an integer: {e}"),
+    })?;
     if req.group_names.iter().all(|group| group.trim().is_empty()) {
         return Err(AppError::BL {
             msg: "Chumak submit requires at least one group name".to_string(),
         });
     }
     let Some(network) = req.network.as_ref() else {
-        return Ok(());
+        return Ok(external_id);
     };
     if !network.signal_name.eq_ignore_ascii_case("dmr") {
         return Err(AppError::BL {
@@ -647,7 +662,7 @@ fn validate_chumak_submit_req(
                 .to_string(),
         });
     }
-    Ok(())
+    Ok(external_id)
 }
 
 fn parse_chumak_timestamp(timestamp: &str) -> Result<NaiveDateTime, AppError> {
@@ -813,6 +828,7 @@ async fn insert_chumak_signal_message(
     config: &Config,
     req: &ChumakSubmitMessageReq,
     timestamp: NaiveDateTime,
+    external_id: i64,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
@@ -826,7 +842,7 @@ async fn insert_chumak_signal_message(
         sender: Set(req.sender.clone()),
         format: NotSet,
         deleted: Set(false),
-        external_id: NotSet,
+        external_id: Set(Some(external_id)),
         message_uid: NotSet,
     }
     .insert(txn)

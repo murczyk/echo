@@ -57,6 +57,10 @@ pub struct InboxMessage {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ChumakSubmitMessageReq {
+    /// Mandatory Chumak-side text ID. Echo stores its integer value as
+    /// signal_message.external_id so the message can be traced later.
+    #[serde(rename = "ID")]
+    pub id: String,
     pub message: String,
     /// Local ISO timestamp. Offset-aware values are accepted; offset-less values
     /// are interpreted in the configured local timezone.
@@ -91,6 +95,13 @@ pub struct ChumakSubmitMessageReq {
     /// Stored as sigint_inbox_item_metadata rows. If network.cc is present, every
     /// DMR row must use the same color code.
     pub dmr: Vec<ChumakMetadata>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ChumakSubmitMessageRsp {
+    pub external_id: i64,
 }
 
 #[derive(

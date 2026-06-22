@@ -8,7 +8,7 @@
 cp .env.example .env
 ```
 
-Заповніть у `.env` адресу Echo, логін, пароль і тестові значення Chumak.
+У `.env.example` `ECHO_*` значення вказані для staging. Для production інтеграції потрібно запросити production base URL, login і password. `CHUMAK_*` значення описують тестовий payload.
 
 ## Команди
 
@@ -43,7 +43,7 @@ POST /api/sigint/network/find-live
 ```json
 {
   "freq": "145.0260",
-  "aor_id": null,
+  "aor_id": 1,
   "color_code": "1"
 }
 ```
@@ -58,16 +58,16 @@ POST /api/sigint/network/find-live
         "id": 123,
         "name": "Chumak test network",
         "location": "ЛИМАН ПЕРШИЙ",
-        "radio_station": null,
-        "purpose": null,
-        "operation_mode": null,
-        "operation_type": null,
-        "operation_period": null,
+        "radio_station": "Motorola DP4800",
+        "purpose": "Ретрансляція голосового зв'язку",
+        "operation_mode": "DMR",
+        "operation_type": "Голос",
+        "operation_period": "Цілодобово",
         "created_at": 1781851200000,
         "active_from": 1781851200000,
-        "active_to": null,
+        "active_to": 1781937600000,
         "units": ["Підрозділ 1"],
-        "aor_ids": [10],
+        "aor_ids": [1],
         "post_ids": [5]
       },
       "live_freqs": ["145.026"],
@@ -80,8 +80,8 @@ POST /api/sigint/network/find-live
           "lat": 49.12345,
           "lng": 37.12345,
           "settlement": "ЛИМАН ПЕРШИЙ",
-          "locality_direction": null,
-          "distance_m": null,
+          "locality_direction": "пн.-сх.",
+          "distance_m": 1200.0,
           "country_code": "UA",
           "timestamp": 1781851200000
         }
@@ -118,6 +118,7 @@ just submit-message
 
 ```json
 {
+  "ID": "123",
   "message": "2026-06-19T14:00:00 F=145.0260 (МГц)\nУКХ р/м СС:1 CG:50\nID➡️:110(ЯРУС)\nТестове повідомлення Chumak",
   "timestamp": "2026-06-19T14:00:00",
   "freq": "145.0260",
@@ -125,13 +126,13 @@ just submit-message
   "tags": ["chumak-test"],
   "no_headers_body": "Тестове повідомлення Chumak",
   "media": [],
-  "coordinates": "49.12345, 37.12345",
+  "coordinates": "",
   "signals": "dmr",
   "callsign_from": "110",
   "callsign_to": "50",
   "callsigns_other": [],
   "network_name": "Chumak test network",
-  "unit": null,
+  "unit": "Підрозділ 1",
   "group_names": ["Chumak test group"],
   "sender": "chumak",
   "post": "Chumak",
@@ -153,10 +154,14 @@ just submit-message
 }
 ```
 
+Поле `ID` обов'язкове: Echo зберігає його як `signal_message.external_id`, щоб потім знайти і простежити це повідомлення в Echo. `ID` передається як текст, але має містити число.
+
 Приклад response payload для успішного запиту:
 
 ```json
-null
+{
+  "external_id": 123
+}
 ```
 
 Скрипт `test_chumak.py` перед надсиланням виводить фактичний JSON payload, сформований із `.env`.

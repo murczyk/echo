@@ -122,19 +122,20 @@ def connected_client() -> EchoClient:
 
 def network_payload() -> dict:
     return {
-        "freq": required_env("ECHO_CHUMAK_FREQ"),
-        "aor_id": optional_int("ECHO_CHUMAK_AOR_ID"),
-        "color_code": optional_env("ECHO_CHUMAK_COLOR_CODE") or None,
+        "freq": required_env("CHUMAK_FREQ"),
+        "aor_id": optional_int("CHUMAK_AOR_ID"),
+        "color_code": optional_env("CHUMAK_COLOR_CODE") or None,
     }
 
 
 def submit_payload() -> dict:
     timestamp = datetime.now().replace(microsecond=0).isoformat()
-    freq = required_env("ECHO_CHUMAK_FREQ")
-    color_code = int(optional_env("ECHO_CHUMAK_COLOR_CODE", "1"))
+    freq = required_env("CHUMAK_FREQ")
+    color_code = int(optional_env("CHUMAK_COLOR_CODE", "1"))
     sender_id = 110
     abonent_id = 50
-    location = optional_env("ECHO_CHUMAK_LOCATION", "ЛИМАН ПЕРШИЙ")
+    location = optional_env("CHUMAK_LOCATION", "ЛИМАН ПЕРШИЙ")
+    unit = optional_env("CHUMAK_UNIT", "Підрозділ 1")
     message = (
         f"{timestamp} F={freq} (МГц)\n"
         f"УКХ р/м СС:{color_code} CG:{abonent_id}\n"
@@ -142,6 +143,7 @@ def submit_payload() -> dict:
         "Тестове повідомлення Chumak"
     )
     return {
+        "ID": required_env("CHUMAK_ID"),
         "message": message,
         "timestamp": timestamp,
         "freq": freq,
@@ -149,16 +151,16 @@ def submit_payload() -> dict:
         "tags": ["chumak-test"],
         "no_headers_body": "Тестове повідомлення Chumak",
         "media": [],
-        "coordinates": optional_env("ECHO_CHUMAK_COORDINATES") or None,
+        "coordinates": "",
         "signals": "dmr",
         "callsign_from": str(sender_id),
         "callsign_to": str(abonent_id),
         "callsigns_other": [],
         "network_name": "Chumak test network",
-        "unit": None,
-        "group_names": [required_env("ECHO_CHUMAK_GROUP")],
-        "sender": optional_env("ECHO_CHUMAK_SENDER", "chumak"),
-        "post": optional_env("ECHO_CHUMAK_POST") or None,
+        "unit": unit or None,
+        "group_names": [required_env("CHUMAK_GROUP")],
+        "sender": optional_env("CHUMAK_SENDER", "chumak"),
+        "post": optional_env("CHUMAK_POST") or None,
         "network": {"signal_name": "dmr", "cc": color_code, "name": "Chumak test network"},
         "dmr": [
             {
