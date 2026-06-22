@@ -99,7 +99,12 @@ function buildCallsignSectionFlags(
   };
 }
 
-function mergeNetworkCallsignGroups(existing: NetworkCallsignRes[], next: NetworkCallsignRes[]): NetworkCallsignRes[] {
+type CallsignSection = 'Catalog' | 'Intercepted';
+
+function mergeNetworkCallsignGroupsByCallsign(
+  existing: NetworkCallsignRes[],
+  next: NetworkCallsignRes[],
+): NetworkCallsignRes[] {
   if (next.length === 0) return existing;
 
   const byCallsign = new Map(existing.map((group) => [group.callsign, group] as const));
@@ -108,6 +113,21 @@ function mergeNetworkCallsignGroups(existing: NetworkCallsignRes[], next: Networ
   });
 
   return [...byCallsign.values()];
+}
+
+function mergeNetworkCallsignGroups(
+  existing: NetworkCallsignRes[],
+  next: NetworkCallsignRes[],
+  section: CallsignSection,
+): NetworkCallsignRes[] {
+  const keepExisting = existing.filter((group) => {
+    const hasKnownCallsigns = (group.knownCallsigns ?? []).length > 0;
+    return section === 'Catalog' ? !hasKnownCallsigns : hasKnownCallsigns;
+  });
+
+  if (next.length === 0) return keepExisting;
+
+  return mergeNetworkCallsignGroupsByCallsign(keepExisting, next);
 }
 
 function updateCallsignSectionState(
@@ -321,7 +341,11 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     if (!isCurrent()) return null;
     setState((current) => {
-      const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(current.networkCallsignGroups, callsignsRes.callsigns);
+      const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(
+        current.networkCallsignGroups,
+        callsignsRes.callsigns,
+        'Catalog',
+      );
       const derived = recomputeCallsignDerivedData(current, {
         networkCallsignGroups: mergedNetworkCallsignGroups,
       });
@@ -401,7 +425,11 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     if (!isCurrent()) return null;
     setState((current) => {
-      const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(current.networkCallsignGroups, callsignsRes.callsigns);
+      const mergedNetworkCallsignGroups = mergeNetworkCallsignGroups(
+        current.networkCallsignGroups,
+        callsignsRes.callsigns,
+        'Intercepted',
+      );
       const derived = recomputeCallsignDerivedData(current, {
         networkCallsignGroups: mergedNetworkCallsignGroups,
       });
@@ -465,7 +493,10 @@ export function useRerNetworkDetailsNeoPageLoad(
       loadInterceptedCallsigns(targetNetworkId),
     ]);
 
-    const mergedCallsigns = mergeNetworkCallsignGroups(catalogCallsigns ?? [], interceptedCallsigns ?? []);
+    const mergedCallsigns = mergeNetworkCallsignGroupsByCallsign(
+      catalogCallsigns ?? [],
+      interceptedCallsigns ?? [],
+    );
     await loadCallsignActivity(targetNetworkId, mergedCallsigns);
   }, [loadCallsignActivity, loadCatalogCallsigns, loadInterceptedCallsigns, loadNetworkCallsigns]);
 

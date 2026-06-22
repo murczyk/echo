@@ -65,7 +65,7 @@ fn token_like_expr_with_normalized_boundaries(
         "regexp_replace(lower({column_sql}), '[[:punct:][:space:]]+', ' ', 'g')"
     );
     Expr::cust_with_values(
-        &format!("concat(' ', {}, ' ') ilike $1", normalized_text),
+        format!("concat(' ', {}, ' ') ilike $1", normalized_text),
         vec![pattern],
     )
 }

@@ -5,7 +5,7 @@ import { act, createElement, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
+import type { KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { EMPTY_STATE, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.types';
 import { derivePelengEnabledFreqs, useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
@@ -66,9 +66,39 @@ const rendered: Root[] = [];
 let latestState: NetworkDetailsNeoPageState | null = null;
 let latestLoadCallsigns: ((networkId: number) => Promise<void>) | null = null;
 
-function HookHarness() {
+function createKnownCallsign(overrides: Partial<KnownCallsignShortRes> = {}): KnownCallsignShortRes {
+  return {
+    id: 20,
+    callsign: 'Барс-4',
+    position: 'ЗКМ',
+    comment: 'Збiг',
+    unitId: 201,
+    unitName: 'арт. дивізіон',
+    sourceName: 'Каталог 2024',
+    createdAt: 1710100000000,
+    ...overrides,
+  };
+}
+
+function createCallsignGroup(
+  overrides: Partial<NetworkCallsignRes> & { knownCallsigns?: KnownCallsignShortRes[] } = {},
+): NetworkCallsignRes {
+  return {
+    callsign: 'барс-4',
+    knownCallsigns: [],
+    messageCount: 8,
+    lastDatetime: 1710200000000,
+    networkNames: null,
+    isOld: false,
+    isInDictionary: false,
+    freqs: ['145.2000'],
+    ...overrides,
+  };
+}
+
+function HookHarness({ stateSeed = EMPTY_STATE }: { stateSeed?: NetworkDetailsNeoPageState }) {
   const reloadGeneration = useRef(1);
-  const [state, setState] = useState<NetworkDetailsNeoPageState>(EMPTY_STATE);
+  const [state, setState] = useState<NetworkDetailsNeoPageState>(stateSeed);
   const pageLoad = useRerNetworkDetailsNeoPageLoad(42, setState, reloadGeneration);
 
   latestState = state;
@@ -77,14 +107,14 @@ function HookHarness() {
   return null;
 }
 
-function renderHookHarness() {
+function renderHookHarness(stateSeed: NetworkDetailsNeoPageState = EMPTY_STATE) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   rendered.push(root);
 
   act(() => {
-    root.render(createElement(HookHarness));
+    root.render(createElement(HookHarness, { stateSeed }));
   });
 }
 
@@ -215,7 +245,7 @@ describe('use-rer-network-details-neo-page.load', () => {
       if (req.section === 'Catalog') {
         return catalogDeferred.promise;
       }
-      return interceptedDeferred.promise;
+      return Promise.resolve({ callsigns: [] });
     });
     callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
 
@@ -364,7 +394,137 @@ describe('use-rer-network-details-neo-page.load', () => {
     expect(latestState?.catalogCallsignsError).toBeNull();
   });
 
-  it('drops a stale unknown intercepted callsign when network callsigns resolve after the tab data', async () => {
+  it('clears stale catalog groups when catalog reload returns no rows', async () => {
+    installDefaultApiMocks();
+    renderHookHarness({
+      ...EMPTY_STATE,
+      networkCallsignGroups: [
+        createCallsignGroup({ callsign: 'БАРС-4', knownCallsigns: [createKnownCallsign()] }),
+        createCallsignGroup({ callsign: 'ГІЄНА-4', knownCallsigns: [] }),
+      ],
+      catalogCallsignGroups: [
+        {
+          callsign: 'БАРС-4',
+          knownCallsigns: [createKnownCallsign()],
+          messageCount: 8,
+          lastDatetime: 1710200000000,
+          freqs: ['145.2000'],
+          isOld: false,
+          isInDictionary: false,
+          activity: null,
+        },
+      ],
+      unknownInterceptedCallsigns: [
+        {
+          callsign: 'ГІЄНА-4',
+          messageCount: 9,
+          lastDatetime: 1710300000000,
+          freqs: ['145.3000'],
+          isOld: false,
+          isInDictionary: false,
+          activity: null,
+        },
+      ],
+    });
+
+    const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
+    const sourcesDeferred = createDeferred<Source[]>();
+    const activityDeferred = createDeferred<{ callsignsActivity: never[] }>();
+
+    callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
+    callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
+    callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section?: string | null }) => {
+      if (req.section === 'Catalog') {
+        return Promise.resolve({ callsigns: [] });
+      }
+      return Promise.resolve({
+        callsigns: [createCallsignGroup({ callsign: 'ГІЄНА-4', knownCallsigns: [] })],
+      });
+    });
+    callsignsApiMock.getNetworkCallsignsActivity.mockReturnValue(activityDeferred.promise);
+
+    await act(async () => {
+      void latestLoadCallsigns?.(42);
+    });
+
+    await act(async () => {
+      sourcesDeferred.resolve([]);
+      networkCallsignsDeferred.resolve({ networkCallsigns: [] });
+      activityDeferred.resolve({ callsignsActivity: [] });
+      await Promise.resolve();
+    });
+
+    expect(latestState?.networkCallsignGroups.map((group) => group.callsign)).toEqual(['ГІЄНА-4']);
+    expect(latestState?.catalogCallsignGroups).toEqual([]);
+    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual(['ГІЄНА-4']);
+  });
+
+  it('clears stale intercepted rows when intercepted reload returns no rows', async () => {
+    installDefaultApiMocks();
+    renderHookHarness({
+      ...EMPTY_STATE,
+      networkCallsignGroups: [
+        createCallsignGroup({ callsign: 'БАРС-4', knownCallsigns: [createKnownCallsign()] }),
+        createCallsignGroup({ callsign: 'ГІЄНА-4', knownCallsigns: [] }),
+      ],
+      catalogCallsignGroups: [
+        {
+          callsign: 'БАРС-4',
+          knownCallsigns: [createKnownCallsign()],
+          messageCount: 8,
+          lastDatetime: 1710200000000,
+          freqs: ['145.2000'],
+          isOld: false,
+          isInDictionary: false,
+          activity: null,
+        },
+      ],
+      unknownInterceptedCallsigns: [
+        {
+          callsign: 'ГІЄНА-4',
+          messageCount: 9,
+          lastDatetime: 1710300000000,
+          freqs: ['145.3000'],
+          isOld: false,
+          isInDictionary: false,
+          activity: null,
+        },
+      ],
+    });
+
+    const networkCallsignsDeferred = createDeferred<{ networkCallsigns: never[] }>();
+    const sourcesDeferred = createDeferred<Source[]>();
+    const activityDeferred = createDeferred<{ callsignsActivity: never[] }>();
+
+    callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
+    callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
+    callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section?: string | null }) => {
+      if (req.section === 'Intercepted') {
+        return Promise.resolve({ callsigns: [] });
+      }
+      return Promise.resolve({
+        callsigns: [createCallsignGroup({ callsign: 'БАРС-4', knownCallsigns: [createKnownCallsign()] })],
+      });
+    });
+    callsignsApiMock.getNetworkCallsignsActivity.mockReturnValue(activityDeferred.promise);
+
+    await act(async () => {
+      void latestLoadCallsigns?.(42);
+    });
+
+    await act(async () => {
+      sourcesDeferred.resolve([]);
+      networkCallsignsDeferred.resolve({ networkCallsigns: [] });
+      activityDeferred.resolve({ callsignsActivity: [] });
+      await Promise.resolve();
+    });
+
+    expect(latestState?.networkCallsignGroups.map((group) => group.callsign)).toEqual(['БАРС-4']);
+    expect(latestState?.unknownInterceptedCallsigns).toEqual([]);
+    expect(latestState?.catalogCallsignGroups.map((group) => group.callsign)).toEqual(['БАРС-4']);
+  });
+
+  it('drops a stale unknown intercepted callsign when intercepted reload resolves', async () => {
     installDefaultApiMocks();
     renderHookHarness();
 
@@ -405,9 +565,7 @@ describe('use-rer-network-details-neo-page.load', () => {
       await Promise.resolve();
     });
 
-    expect(latestState?.unknownInterceptedCallsigns).toEqual([
-      expect.objectContaining({ callsign: 'СОКІЛ-1' }),
-    ]);
+    expect(latestState?.unknownInterceptedCallsigns).toEqual([]);
 
     await act(async () => {
       sourcesDeferred.resolve([]);
