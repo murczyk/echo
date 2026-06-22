@@ -1478,23 +1478,6 @@ function AdminDirectionsNeoPageBody() {
             />
           ),
       },
-      {
-        key: 'archive',
-        label: '🗑️ АРХІВ',
-        content:
-          archivedGroups.length === 0 ? (
-            <SectionEmptyState message="Архівні групи відсутні" />
-          ) : (
-            <OrphanGroupsSection
-              tableId="admin-archived-groups"
-              data={archivedGroups}
-              datasourceById={datasourceById}
-              aorFilterOptions={aorFilterOptions}
-              onUnarchive={handleUnarchiveGroup}
-              unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
-            />
-          ),
-      },
     ];
 
     zones.forEach((zoneEntry) => {
@@ -1542,6 +1525,24 @@ function AdminDirectionsNeoPageBody() {
             />
           ),
       });
+    });
+
+    tabs.push({
+      key: 'archive',
+      label: '🗑️ АРХІВ',
+      content:
+        archivedGroups.length === 0 ? (
+          <SectionEmptyState message="Архівні групи відсутні" />
+        ) : (
+          <OrphanGroupsSection
+            tableId="admin-archived-groups"
+            data={archivedGroups}
+            datasourceById={datasourceById}
+            aorFilterOptions={aorFilterOptions}
+            onUnarchive={handleUnarchiveGroup}
+            unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
+          />
+        ),
     });
 
     return tabs;
