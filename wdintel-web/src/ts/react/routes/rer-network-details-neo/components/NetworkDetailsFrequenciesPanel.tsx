@@ -1,5 +1,6 @@
 import { TableStateProvider } from '../../../components/mui-customized/table/table-state-provider';
 import { buildNetworkColumnOrder } from './NetworkCallsignsTableShared';
+import { DEFAULT_NETWORK_FREQ_SORTING } from '../frequency-utils';
 import { NetworkDetailsFrequenciesTable, type NetworkDetailsFrequenciesTableProps } from './NetworkDetailsFrequenciesTable';
 
 const DEFAULT_COLUMNS_VISIBILITY = {
@@ -22,6 +23,7 @@ export function NetworkDetailsFrequenciesPanel(props: Props) {
       defaultColumnOrder={buildNetworkColumnOrder({
         dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
       })}
+      defaultSorting={DEFAULT_NETWORK_FREQ_SORTING}
     >
       <NetworkDetailsFrequenciesTable {...props} />
     </TableStateProvider>

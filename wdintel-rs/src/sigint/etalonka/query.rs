@@ -197,6 +197,65 @@ async fn load_freqs_impl(
         .await;
     }
 
+    let combined_query = build_network_freqs_query(
+        groups,
+        network_id,
+        filter,
+        include_callsigns,
+        None,
+    )?;
+
+    // debug!(
+    //     "> freqs query: {}",
+    //     combined_query.to_string(PostgresQueryBuilder)
+    // );
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?;
+
+    load_network_freq_rows(db, rows, user_login, freq_counts).await
+}
+
+pub async fn load_network_freq_row(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+    network_freq_id: i64,
+    user_login: &str,
+    include_callsigns: bool,
+) -> Result<Option<NetworkFreqsRes>, AppError> {
+    let combined_query = build_network_freqs_query(
+        groups,
+        network_id,
+        None,
+        include_callsigns,
+        Some(network_freq_id),
+    )?;
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?;
+
+    let mut freqs = load_network_freq_rows(db, rows, user_login, None).await?;
+    Ok(freqs.pop())
+}
+
+fn build_network_freqs_query(
+    groups: &Vec<String>,
+    network_id: i64,
+    filter: Option<&NetworkFreqFilter>,
+    include_callsigns: bool,
+    network_freq_id: Option<i64>,
+) -> Result<WithQuery, AppError> {
     let nf = Alias::new("network_freqs");
     let join_condition =
         build_network_freq_join_condition(filter, true).c(h!())?;
@@ -266,26 +325,29 @@ async fn load_freqs_impl(
     q = filter_selected_networks_stmt(q, &Some(vec![network_id]), &None)
         .c(h!())?;
 
+    if let Some(network_freq_id) = network_freq_id {
+        q.and_where(
+            Expr::col((nf.clone(), SigintNetworkFreq::Id)).eq(network_freq_id),
+        );
+    }
+
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
         .table_name(Alias::new("network_messages"))
         .to_owned();
 
     let mut q_agg: SelectStatement = Query::select();
-    let message_count_expr = if freq_counts.is_none() {
-        Expr::cust("COUNT(*)")
-    } else {
-        Expr::cust("0")
-    };
-    let callsigns_expr = if include_callsigns {
-        Expr::cust("jsonb_agg(callsigns)")
-    } else {
-        Expr::cust("NULL")
-    };
     q_agg
         .expr_as(Expr::cust("network_freq_id"), Alias::new("network_freq_id"))
-        .expr_as(message_count_expr, Alias::new("message_count"))
-        .expr_as(callsigns_expr, Alias::new("callsigns"))
+        .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
+        .expr_as(
+            if include_callsigns {
+                Expr::cust("jsonb_agg(callsigns)")
+            } else {
+                Expr::cust("NULL")
+            },
+            Alias::new("callsigns"),
+        )
         .from(Alias::new("network_messages"))
         .add_group_by([Expr::col((
             NetworkMessages::Table,
@@ -298,7 +360,8 @@ async fn load_freqs_impl(
         .table_name(Alias::new("agg"))
         .to_owned();
 
-    let main_query = SelectStatement::new()
+    let mut main_query = SelectStatement::new();
+    main_query
         .expr_as(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
             Alias::new("network_freq_id"),
@@ -394,31 +457,23 @@ async fn load_freqs_impl(
                 ))
                 .is_null()
             },
-        ))
+        ));
+    if let Some(network_freq_id) = network_freq_id {
+        main_query.and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id))
+                .eq(network_freq_id),
+        );
+    }
+    let main_query = main_query
         .order_by_expr(Expr::cust("freq"), Order::Asc)
         .to_owned();
 
-    let combined_query = Query::with()
+    Ok(Query::with()
         .cte(network_messages_cte)
         .clone()
         .cte(aggregated_cte)
         .clone()
-        .query(main_query);
-
-    // debug!(
-    //     "> freqs query: {}",
-    //     combined_query.to_string(PostgresQueryBuilder)
-    // );
-
-    let rows = db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query.to_string(PostgresQueryBuilder),
-        ))
-        .await
-        .context(h!())?;
-
-    load_network_freq_rows(db, rows, user_login, freq_counts).await
+        .query(main_query))
 }
 
 async fn load_freqs_with_cached_activity(
@@ -1028,6 +1083,9 @@ pub async fn load_callsigns(
     network_id: i64,
     known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
     include_activity_info: bool,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
@@ -1079,6 +1137,7 @@ pub async fn load_callsigns(
         .collect();
 
     res = filter_callsigns(res);
+    res = filter_callsigns_for_section(res, section);
     sort_callsigns(&mut res);
 
     if !include_activity_info {
@@ -1614,6 +1673,23 @@ fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
     result
 }
 
+fn filter_callsigns_for_section(
+    callsigns: Vec<CallsignRes>,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
+) -> Vec<CallsignRes> {
+    match section.unwrap_or(crate::sigint::network::types::SingleNetworkCallsignsSection::Everything) {
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Everything => callsigns,
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Catalog => {
+            callsigns.into_iter().filter(|callsign| callsign.known_callsigns.is_some()).collect()
+        }
+        crate::sigint::network::types::SingleNetworkCallsignsSection::Intercepted => {
+            callsigns.into_iter().filter(|callsign| callsign.known_callsigns.is_none()).collect()
+        }
+    }
+}
+
 pub async fn load_pelengs_map(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
@@ -2072,6 +2148,21 @@ mod tests {
         );
     }
 
+    fn test_callsign_res(
+        callsign: &str,
+        known_callsigns: Option<Vec<KnownCallsignShortRes>>,
+    ) -> CallsignRes {
+        CallsignRes {
+            callsign: callsign.to_string(),
+            known_callsigns,
+            message_count: 0,
+            last_datetime: None,
+            freqs: None,
+            network_names: None,
+            is_old: false,
+        }
+    }
+
     #[test]
     fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
         let filter = NetworkFreqFilter {
@@ -2186,6 +2277,57 @@ mod tests {
         assert_primary_sort_before_name(
             &sql,
             "\"sigint_network\".\"updated_at\" DESC",
+        );
+    }
+
+    #[test]
+    fn filter_callsigns_for_section_respects_requested_section() {
+        let known = test_callsign_res(
+            "KNOWN",
+            Some(vec![KnownCallsignShortRes {
+                id: 1,
+                callsign: "KNOWN".to_string(),
+                position: String::new(),
+                comment: String::new(),
+                unit_id: 1,
+                unit_name: "Unit".to_string(),
+                source_name: "Source".to_string(),
+                created_at: 1,
+            }]),
+        );
+        let unknown = test_callsign_res("UNKNOWN", None);
+        let callsigns = vec![known.clone(), unknown.clone()];
+
+        assert_eq!(
+            filter_callsigns_for_section(callsigns.clone(), None),
+            callsigns
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns.clone(),
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Everything
+                ),
+            ),
+            callsigns
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns.clone(),
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Catalog
+                ),
+            ),
+            vec![known]
+        );
+        assert_eq!(
+            filter_callsigns_for_section(
+                callsigns,
+                Some(
+                    crate::sigint::network::types::SingleNetworkCallsignsSection::Intercepted
+                ),
+            ),
+            vec![unknown]
         );
     }
 }

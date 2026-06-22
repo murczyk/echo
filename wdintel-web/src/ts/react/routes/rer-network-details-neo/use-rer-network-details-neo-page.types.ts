@@ -137,6 +137,15 @@ export type NetworkDetailsNeoPageState = {
   pelengShowLabels: boolean;
   pelengSatelliteEnabled: boolean;
   pelengHeatmapEnabled: boolean;
+  networkCallsignsLoaded: boolean;
+  networkCallsignsLoading: boolean;
+  networkCallsignsError: string | null;
+  catalogCallsignsLoaded: boolean;
+  catalogCallsignsLoading: boolean;
+  catalogCallsignsError: string | null;
+  interceptedCallsignsLoaded: boolean;
+  interceptedCallsignsLoading: boolean;
+  interceptedCallsignsError: string | null;
   callsignsLoaded: boolean;
   callsignsLoading: boolean;
   callsignsError: string | null;
@@ -253,6 +262,15 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   pelengShowLabels: true,
   pelengSatelliteEnabled: true,
   pelengHeatmapEnabled: false,
+  networkCallsignsLoaded: false,
+  networkCallsignsLoading: false,
+  networkCallsignsError: null,
+  catalogCallsignsLoaded: false,
+  catalogCallsignsLoading: false,
+  catalogCallsignsError: null,
+  interceptedCallsignsLoaded: false,
+  interceptedCallsignsLoading: false,
+  interceptedCallsignsError: null,
   callsignCount: null,
   networkCallsigns: [],
   networkCallsignGroups: [],

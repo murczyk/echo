@@ -1480,6 +1480,111 @@ where
     Ok(())
 }
 
+struct NetworkFreqMutationResult {
+    network: sigint_network::Model,
+    network_freq_id: i64,
+    network_active_from: Option<NaiveDateTime>,
+    network_active_to: Option<NaiveDateTime>,
+    invalidation_freq: String,
+    invalidation_range: (Option<NaiveDateTime>, Option<NaiveDateTime>),
+}
+
+async fn finish_network_freq_mutation(
+    txn: &DatabaseTransaction,
+    user_id: &str,
+    network: sigint_network::Model,
+    network_id: i64,
+    network_freq_id: i64,
+    invalidation_freq: String,
+    invalidation_range: (Option<NaiveDateTime>, Option<NaiveDateTime>),
+) -> Result<NetworkFreqMutationResult, AppError> {
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(txn, network_id)
+            .await
+            .context(h!())?;
+
+    let mut network_model = network.into_active_model();
+    network_model.active_from = Set(network_active_from);
+    network_model.active_to = Set(network_active_to);
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_id.to_string()));
+    let network = network_model.update(txn).await.context(h!())?;
+
+    Ok(NetworkFreqMutationResult {
+        network,
+        network_freq_id,
+        network_active_from,
+        network_active_to,
+        invalidation_freq,
+        invalidation_range,
+    })
+}
+
+async fn load_user_organism_id(
+    txn: &DatabaseTransaction,
+    user_id: &str,
+) -> Result<i64, AppError> {
+    login::Entity::find_by_id(user_id.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })
+}
+
+async fn load_network_freq_mutation_response(
+    env: &Env,
+    user: &actix_identity::Identity,
+    network_id: i64,
+    network_freq_id: i64,
+    network: Vec<Network>,
+) -> Result<NetworkFreqMutationV2Rsp, AppError> {
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    let user_id = user.id().c(h!())?.to_string();
+    let mut freq = crate::sigint::etalonka::query::load_network_freq_row(
+        &env.dbx,
+        &groups,
+        network_id,
+        network_freq_id,
+        &user_id,
+        true,
+    )
+    .await
+    .context(h!())?;
+
+    if let Some(freq_row) = freq.as_mut() {
+        let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
+            &env.dbx, network_id, &groups,
+        )
+        .await
+        .context(h!())?;
+        freq_row.last_datetime_in_aor = last_datetime_in_aor
+            .get(&freq_row.network_freq_id)
+            .copied()
+            .flatten();
+    }
+
+    if network.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(NetworkFreqMutationV2Rsp {
+        network: network[0].clone(),
+        freq,
+    })
+}
+
 #[post("/api/sigint/network/add-freq")]
 pub async fn add_network_freq(
     user: actix_identity::Identity,
@@ -1567,28 +1672,7 @@ pub async fn add_network_freq(
         .context(h!())?;
     }
 
-    let (network_active_from, network_active_to) =
-        get_network_activity_range(&txn, req.network_id)
-            .await
-            .context(h!())?;
-
-    let mut network_model = network.into_active_model();
-    network_model.active_from = Set(network_active_from);
-    network_model.active_to = Set(network_active_to);
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user_id.to_string()));
-    network_model.update(&txn).await.context(h!())?;
-
-    let organism_id = login::Entity::find_by_id(user_id.to_string())
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(&txn)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "User has no organism assigned".to_string(),
-        })?;
+    let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
     crate::sigint::key::replace_freq_key_links(
         &txn,
@@ -1600,6 +1684,24 @@ pub async fn add_network_freq(
     .await
     .c(h!())?;
 
+    let result = finish_network_freq_mutation(
+        &txn,
+        &user_id,
+        network,
+        req.network_id,
+        network_freq.id,
+        req.freq_rec.freq.clone(),
+        (
+            req.freq_rec
+                .active_from
+                .map(dt_from_millis)
+                .transpose()?
+                .or(Some(Utc::now().naive_utc())),
+            req.freq_rec.active_to.map(dt_from_millis).transpose()?,
+        ),
+    )
+    .await?;
+
     // Now fetch the updated network with all frequencies to return
     let network_detail =
         bl_network_info_batch(vec![req.network_id], &txn, &user_id)
@@ -1609,9 +1711,9 @@ pub async fn add_network_freq(
     txn.commit().await.context(h!())?;
 
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
-        &req.freq_rec.freq,
-        network_active_from,
-        network_active_to,
+        &result.invalidation_freq,
+        result.network_active_from,
+        result.network_active_to,
         &env.dbx,
         format!("added network frequency from web UI: {}", req.freq_rec.freq),
     )
@@ -1626,6 +1728,135 @@ pub async fn add_network_freq(
     }
 
     Ok(Json(network_detail[0].clone()))
+}
+
+#[post("/api/sigint/network/v2/add-freq")]
+pub async fn add_network_freq_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AddNetworkFreqReq>,
+) -> Result<Json<NetworkFreqMutationV2Rsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    let user_id = user_id.to_string();
+    let req = req.into_inner();
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
+
+    let existing_freq = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+        .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?;
+
+    let network_freq = if existing_freq.is_none() {
+        let active_from = req
+            .freq_rec
+            .active_from
+            .map(dt_from_millis)
+            .transpose()?
+            .unwrap_or(Utc::now().naive_utc());
+        let active_to =
+            req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        sigint_network_freq::ActiveModel {
+            id: NotSet,
+            network_id: Set(req.network_id),
+            freq: Set(req.freq_rec.freq.trim().to_string()),
+            created_at: NotSet,
+            last_seen_dt: NotSet,
+            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
+            modulation_id: Set(req.freq_rec.modulation_id),
+            active_from: Set(active_from),
+            active_to: Set(active_to),
+            deleted: Set(false),
+            sigint_origin_id: NotSet,
+            original_id: NotSet,
+        }
+        .insert(&txn)
+        .await
+        .context(h!())?
+    } else {
+        existing_freq.context(h!())?
+    };
+
+    if let Some(description) = req.freq_rec.clone().description {
+        map_add_network_frequency_description(
+            &user_id,
+            &network,
+            network_freq.id,
+            description,
+        )
+        .insert(&txn)
+        .await
+        .context(h!())?;
+    }
+
+    crate::sigint::key::replace_freq_key_links(
+        &txn,
+        network_freq.network_id,
+        network_freq.id,
+        &req.freq_rec.encryption_key_ids,
+        load_user_organism_id(&txn, &user_id).await?,
+    )
+    .await
+    .c(h!())?;
+
+    let result = finish_network_freq_mutation(
+        &txn,
+        &user_id,
+        network,
+        req.network_id,
+        network_freq.id,
+        req.freq_rec.freq.clone(),
+        (
+            req.freq_rec
+                .active_from
+                .map(dt_from_millis)
+                .transpose()?
+                .or(Some(Utc::now().naive_utc())),
+            req.freq_rec.active_to.map(dt_from_millis).transpose()?,
+        ),
+    )
+    .await?;
+
+    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+        &req.freq_rec.freq,
+        result.network_active_from,
+        result.network_active_to,
+        &env.dbx,
+        format!("added network frequency from web UI: {}", req.freq_rec.freq),
+    )
+    .await
+    .c(h!())?;
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    let response = load_network_freq_mutation_response(
+        &env,
+        &user,
+        req.network_id,
+        result.network_freq_id,
+        network,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 #[post("/api/sigint/network/reactivate-freq")]
@@ -1849,16 +2080,7 @@ pub async fn update_network_freq(
         model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
 
-        let organism_id = login::Entity::find_by_id(user_id.clone())
-            .select_only()
-            .column(login::Column::OrganismId)
-            .into_tuple::<i64>()
-            .one(&txn)
-            .await
-            .c(h!())?
-            .ok_or_else(|| AppError::BL {
-                msg: "User has no organism assigned".to_string(),
-            })?;
+        let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
         crate::sigint::key::replace_freq_key_links(
             &txn,
@@ -1876,18 +2098,16 @@ pub async fn update_network_freq(
         );
     }
 
-    let (network_active_from, network_active_to) =
-        get_network_activity_range(&txn, req.network_id)
-            .await
-            .context(h!())?;
-
-    // Update the network's updated_at timestamp as well as new active_from and active_to
-    let mut network_model = network.into_active_model();
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user_id.clone()));
-    network_model.active_from = Set(network_active_from);
-    network_model.active_to = Set(network_active_to);
-    network_model.update(&txn).await.context(h!())?;
+    let result = finish_network_freq_mutation(
+        &txn,
+        &user_id,
+        network,
+        req.network_id,
+        req.network_freq_id,
+        invalidation_freq.clone(),
+        invalidation_range,
+    )
+    .await?;
 
     // Now fetch the updated network with all descriptions, units and freqs to return
     let network_detail =
@@ -1902,9 +2122,9 @@ pub async fn update_network_freq(
     }
 
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
-        &invalidation_freq,
-        invalidation_range.0,
-        invalidation_range.1,
+        &result.invalidation_freq,
+        result.invalidation_range.0,
+        result.invalidation_range.1,
         &env.dbx,
         format!(
             "edited network frequency from web UI: {}",
@@ -1915,6 +2135,126 @@ pub async fn update_network_freq(
     .c(h!())?;
 
     Ok(Json(network_detail[0].clone()))
+}
+
+#[post("/api/sigint/network/v2/update-freq")]
+pub async fn update_network_freq_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkFreqReq>,
+) -> Result<Json<NetworkFreqMutationV2Rsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_id = user.id().c(h!())?.to_string();
+
+    let req = req.into_inner();
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let updated_freq_active_from =
+        update_network_freq_active_from(req.active_from);
+    let updated_freq_active_to =
+        req.active_to.map(dt_from_millis).transpose()?;
+    let mut invalidation_range =
+        (Some(updated_freq_active_from), updated_freq_active_to);
+    let mut invalidation_freq = req.freq.clone();
+
+    let network_freq_model =
+        sigint_network_freq::Entity::find_by_id(req.network_freq_id)
+            .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+    if let Some(network_freq_model) = network_freq_model {
+        let freq = network_freq_model.freq.clone();
+        if req.freq != freq {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Frequency id {} belongs to frequency {}, not {}",
+                    req.network_freq_id, freq, req.freq
+                ),
+            });
+        }
+
+        let network_freq_id = network_freq_model.id;
+        invalidation_range = merge_invalidation_range(
+            Some(network_freq_model.active_from),
+            network_freq_model.active_to,
+            Some(updated_freq_active_from),
+            updated_freq_active_to,
+        );
+        invalidation_freq = freq;
+
+        let mut model = network_freq_model.into_active_model();
+        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
+        model.modulation_id = Set(req.modulation_id);
+        model.active_from = Set(updated_freq_active_from);
+        model.active_to = Set(updated_freq_active_to);
+        model.update(&txn).await.context(h!())?;
+
+        let organism_id = load_user_organism_id(&txn, &user_id).await?;
+
+        crate::sigint::key::replace_freq_key_links(
+            &txn,
+            req.network_id,
+            network_freq_id,
+            &req.encryption_key_ids,
+            organism_id,
+        )
+        .await
+        .c(h!())?;
+    } else {
+        debug!(
+            "Frequency id={} freq={} not found for network {}, no action needed",
+            req.network_freq_id, req.freq, req.network_id
+        );
+    }
+
+    let result = finish_network_freq_mutation(
+        &txn,
+        &user_id,
+        network,
+        req.network_id,
+        req.network_freq_id,
+        invalidation_freq.clone(),
+        invalidation_range,
+    )
+    .await?;
+
+    let network = bl_network_info_batch(vec![req.network_id], &txn, &user_id)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+        &result.invalidation_freq,
+        result.invalidation_range.0,
+        result.invalidation_range.1,
+        &env.dbx,
+        format!(
+            "edited network frequency from web UI: {}",
+            result.network.name
+        ),
+    )
+    .await
+    .c(h!())?;
+
+    let response = load_network_freq_mutation_response(
+        &env,
+        &user,
+        req.network_id,
+        result.network_freq_id,
+        network,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
@@ -2453,6 +2793,7 @@ pub async fn network_callsigns_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkCallsignsReq>,
 ) -> Result<Json<SingleNetworkCallsignsListRsp>, AppError> {
+    let req = req.into_inner();
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
@@ -2478,6 +2819,7 @@ pub async fn network_callsigns_list(
         req.network_id,
         None,
         include_activity_info,
+        req.section,
         None,
     )
     .await
@@ -3578,31 +3920,39 @@ mod tests {
     }
 
     #[test]
-    fn list_query_with_name_filter_uses_name_and_unit_tokens() {
+    fn list_query_with_name_filter_uses_normalized_boundaries_for_label_tokens()
+    {
         let mut req = empty_list_networks_req();
-        req.filter_name = Some("р/м 423 мсп".to_string());
+        req.filter_name = Some("1 мсб 83 мсп".to_string());
 
         let sql = build_networks_query(&req, NetworkQueryKind::List)
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql
+        assert!(sql.contains(
+            "concat(' ', regexp_replace(lower(sigint_network.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
+        ));
+        assert!(sql.contains(
+            "concat(' ', regexp_replace(lower(sigint_unit.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
+        ));
+        assert!(!sql
             .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
         assert!(
-            sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+            !sql.contains("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
         );
         assert!(
             sql.matches(
-                "lower(sigint_network.name collate \"ru-x-icu\") ilike"
+                "concat(' ', regexp_replace(lower(sigint_network.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike"
             )
             .count()
                 >= 2
         );
         assert!(
-            sql.matches("lower(sigint_unit.name collate \"ru-x-icu\") ilike")
+            sql.matches("regexp_replace(lower(sigint_unit.name collate \"ru-x-icu\"), '[[:punct:][:space:]]+', ' ', 'g')")
                 .count()
                 >= 2
         );
+        assert!(!sql.contains("lower(lower("));
         assert!(!sql.contains(
             "lower(sigint_network.location collate \"ru-x-icu\") ilike"
         ));
@@ -3786,11 +4136,10 @@ mod tests {
             .build(DbBackend::Postgres)
             .to_string();
 
-        assert!(sql
-            .contains("lower(sigint_network.name collate \"ru-x-icu\") ilike"));
-        assert!(sql.contains(
-            "lower(sigint_network.location collate \"ru-x-icu\") ilike"
-        ));
+        assert!(sql.contains("regexp_replace"));
+        assert!(sql.contains("sigint_network.name"));
+        assert!(sql.contains("sigint_network.location"));
+        assert!(!sql.contains("lower(lower("));
         assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)"));
         assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)"));
         assert!(sql

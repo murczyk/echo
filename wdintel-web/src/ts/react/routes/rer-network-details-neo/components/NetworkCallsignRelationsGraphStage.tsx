@@ -1,8 +1,11 @@
 import AddIcon from '@mui/icons-material/Add';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
-import { Box, Button, CircularProgress, IconButton, Paper, Stack, Typography } from '@mui/material';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
+import { Box, Button, ButtonBase, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
 
 import { ELLIPSIS } from '../../../utils/misc';
@@ -10,7 +13,7 @@ import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-deta
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
-import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
+import { NETWORK_RELATIONS_FULLSCREEN_Z_INDEX, getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 import type {
   NetworkCallsignRelationFreqView,
   NetworkCallsignRelationsEdgeView,
@@ -47,9 +50,13 @@ type Props = {
   relationsEnabledFreqs: string[];
   relationsMinIntensity: number;
   relationsLoading: boolean;
+  intensityAnchorEl: HTMLElement | null;
+  filterPopoverId: string;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
+  onOpenIntensitySettings: (anchorEl: HTMLElement) => void;
+  onOpenFrequencySettings: (anchorEl: HTMLElement) => void;
   onSelectNodeId: (nodeId: string | null) => void;
   onSelectEdgeId: (edgeId: string | null) => void;
   onOpenNodeEdgeId: (edgeId: string) => void;
@@ -57,6 +64,8 @@ type Props = {
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onWheel: (event: WheelEvent) => void;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
   handleZoom: (factor: number) => void;
   zoomInFactor: number;
   zoomOutFactor: number;
@@ -101,9 +110,13 @@ export function NetworkCallsignRelationsGraphStage({
   relationsEnabledFreqs,
   relationsMinIntensity,
   relationsLoading,
+  intensityAnchorEl,
+  filterPopoverId,
   onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
+  onOpenIntensitySettings,
+  onOpenFrequencySettings,
   onSelectNodeId,
   onSelectEdgeId,
   onOpenNodeEdgeId,
@@ -111,6 +124,8 @@ export function NetworkCallsignRelationsGraphStage({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onWheel,
+  onFullscreenChange,
   handleZoom,
   zoomInFactor,
   zoomOutFactor,
@@ -118,24 +133,97 @@ export function NetworkCallsignRelationsGraphStage({
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const graphTheme = getNetworkRelationsGraphTheme(theme);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const defaultEnabledFreqs = getDefaultEnabledFreqs(legendFreqs);
   const hasResettableGraphFilters =
     relationsSearch.trim() !== '' ||
     relationsMinIntensity !== NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY ||
     !sameFreqs(relationsEnabledFreqs, defaultEnabledFreqs);
 
-  return (
+  useEffect(() => {
+    document.body.classList.toggle('small-map-fullscreen-open', isFullscreen);
+    onFullscreenChange?.(isFullscreen);
+    return () => {
+      document.body.classList.remove('small-map-fullscreen-open');
+    };
+  }, [isFullscreen, onFullscreenChange]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsFullscreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen]);
+
+  const handleFilterToggle = (freq: string, checked: boolean) => {
+    const nextFreqs = checked ? [...new Set([...relationsEnabledFreqs, freq])] : relationsEnabledFreqs.filter((item) => item !== freq);
+    onEnabledFreqsChange(nextFreqs);
+  };
+
+  const handleSelectNodeId = (nodeId: string | null) => {
+    onSelectNodeId(nodeId);
+  };
+
+  const handleSelectEdgeId = (edgeId: string | null) => {
+    onSelectEdgeId(edgeId);
+  };
+
+  const handleOpenNodeEdgeId = (edgeId: string) => {
+    onOpenNodeEdgeId(edgeId);
+  };
+
+  const handleBackToNode = () => {
+    onBackToNode();
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    onPointerDown(event);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    onPointerMove(event);
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    onPointerUp(event);
+  };
+
+  const stagePanel = (
     <Paper
+      component="section"
       variant="outlined"
       sx={{
         minHeight: 0,
+        minWidth: 0,
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
         flex: 1,
-        position: 'relative',
+        position: isFullscreen ? 'fixed' : 'relative',
+        inset: isFullscreen ? 0 : undefined,
         overflow: 'hidden',
-        borderRadius: 2,
+        borderRadius: isFullscreen ? 0 : 2,
         borderColor: graphTheme.frameBorder,
         bgcolor: graphTheme.frameBg,
-        boxShadow: theme.palette.mode === 'dark' ? 'inset 0 1px 0 rgba(255,255,255,0.03)' : 'inset 0 1px 0 rgba(0,0,0,0.03)',
+        boxShadow: isFullscreen
+          ? 'none'
+          : theme.palette.mode === 'dark'
+            ? 'inset 0 1px 0 rgba(255,255,255,0.03)'
+            : 'inset 0 1px 0 rgba(0,0,0,0.03)',
+        zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX : 'auto',
+        maxWidth: isFullscreen ? '100vw' : '100%',
+        maxHeight: isFullscreen ? '100svh' : '100%',
+        m: isFullscreen ? 0 : undefined,
+        p: isFullscreen ? 0 : undefined,
       }}
     >
       <Box
@@ -230,6 +318,72 @@ export function NetworkCallsignRelationsGraphStage({
           >
             <RemoveIcon sx={{ fontSize: 24 }} />
           </IconButton>
+          <IconButton
+            onClick={() => setIsFullscreen((current) => !current)}
+            aria-label={isFullscreen ? 'Згорнути граф' : 'Розгорнути граф'}
+            title={isFullscreen ? 'Згорнути граф' : 'Розгорнути граф'}
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: 0,
+              color: graphTheme.zoomControlText,
+              flex: '0 0 44px',
+              minWidth: 44,
+              bgcolor: 'transparent',
+              '&:hover': {
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
+              },
+              '&:focus-visible': {
+                outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
+                outlineOffset: -3,
+              },
+              '&:active': {
+                bgcolor: graphTheme.zoomControlHoverBg,
+                color: graphTheme.zoomControlText,
+              },
+              '& i': {
+                color: 'inherit',
+                fontSize: 18,
+                lineHeight: 1,
+              },
+            }}
+          >
+            <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
+          </IconButton>
+          {isFullscreen ? (
+            <IconButton
+              onClick={(event) => onOpenFrequencySettings(event.currentTarget)}
+              aria-label="Налаштувати частоти"
+              aria-controls={filterPopoverId}
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 0,
+                color: graphTheme.zoomControlText,
+                flex: '0 0 44px',
+                minWidth: 44,
+                bgcolor: 'transparent',
+                '&:hover': {
+                  bgcolor: graphTheme.zoomControlHoverBg,
+                  color: graphTheme.zoomControlText,
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
+                  outlineOffset: -3,
+                },
+                '&:active': {
+                  bgcolor: graphTheme.zoomControlHoverBg,
+                  color: graphTheme.zoomControlText,
+                },
+                '& .MuiSvgIcon-root': {
+                  color: 'inherit',
+                },
+              }}
+            >
+              <TuneOutlinedIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          ) : null}
         </Box>
       </Box>
 
@@ -301,22 +455,52 @@ export function NetworkCallsignRelationsGraphStage({
               top: 16,
               left: 16,
               zIndex: 2,
-              px: 1.25,
-              py: 0.75,
-              borderRadius: 2,
-              bgcolor: graphTheme.overlayBg,
-              border: `1px solid ${graphTheme.overlayBorder}`,
-              color: graphTheme.overlayText,
             }}
           >
-            <Stack spacing={0.5}>
-              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                Інтенсивність
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                {relationsMinIntensity}
-              </Typography>
-            </Stack>
+            <ButtonBase
+              type="button"
+              onClick={(event) => onOpenIntensitySettings(event.currentTarget)}
+              aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
+              aria-haspopup="dialog"
+              aria-expanded={intensityAnchorEl !== null}
+              aria-controls={intensityAnchorEl !== null ? `${headingId}-intensity-popover` : undefined}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 1.25,
+                py: 0.75,
+                borderRadius: 2,
+                bgcolor: graphTheme.overlayBg,
+                border: `1px solid ${graphTheme.overlayBorder}`,
+                color: graphTheme.overlayText,
+                cursor: 'pointer',
+                font: 'inherit',
+                textAlign: 'left',
+                boxShadow: 'none',
+                '&:hover': {
+                  bgcolor: theme.palette.action.hover,
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.78)}`,
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Stack spacing={0.15}>
+                <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary, lineHeight: 1.1 }}>
+                  Інтенсивність
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                  {relationsMinIntensity}
+                </Typography>
+              </Stack>
+              <Tooltip title="Мінімальна кількість перехоплень для видимого ребра або вузла.">
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: graphTheme.overlayTextSecondary }}>
+                  <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                </Box>
+              </Tooltip>
+            </ButtonBase>
           </Box>
 
           <Box
@@ -361,10 +545,10 @@ export function NetworkCallsignRelationsGraphStage({
             selectedMessagesLoading={selectedMessagesLoading}
             selectedMessagesError={selectedMessagesError}
             selectedEdgeId={selectedEdgeId}
-            onBackToNode={onBackToNode}
-            onSelectNodeId={onSelectNodeId}
-            onSelectEdgeId={onSelectEdgeId}
-            onOpenNodeEdgeId={onOpenNodeEdgeId}
+            onBackToNode={handleBackToNode}
+            onSelectNodeId={handleSelectNodeId}
+            onSelectEdgeId={handleSelectEdgeId}
+            onOpenNodeEdgeId={handleOpenNodeEdgeId}
           />
 
           <NetworkCallsignRelationsGraphCanvas
@@ -382,11 +566,12 @@ export function NetworkCallsignRelationsGraphStage({
             legendFreqs={legendFreqs}
             visibleEdgeIdsForRender={visibleEdgeIdsForRender}
             visibleNodeIdsForRender={visibleNodeIdsForRender}
-            onSelectNodeId={onSelectNodeId}
-            onSelectEdgeId={onSelectEdgeId}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
+            onSelectNodeId={handleSelectNodeId}
+            onSelectEdgeId={handleSelectEdgeId}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onWheel={onWheel}
           />
         </>
       )}
@@ -413,4 +598,6 @@ export function NetworkCallsignRelationsGraphStage({
       ) : null}
     </Paper>
   );
+
+  return isFullscreen && typeof document !== 'undefined' ? createPortal(stagePanel, document.body) : stagePanel;
 }

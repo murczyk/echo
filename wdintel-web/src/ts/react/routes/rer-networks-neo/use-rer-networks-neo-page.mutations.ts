@@ -147,15 +147,10 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     args.setCreateError(null);
 
     try {
-      await createNetwork(toCreateNetworkReq(args.createDialog));
+      const network = await createNetwork(toCreateNetworkReq(args.createDialog));
       args.setCreateDialog(null);
-      args.lastExecutedFullQueryKeyRef.current = null;
-      void args.loadNetworks(args.latestQuerySnapshotRef.current ?? args.querySnapshot, {
-        includeLookups: false,
-        append: false,
-        force: true,
-      });
       args.setStatus({ kind: 'success', text: 'Мережу створено.' });
+      window.location.assign(`/rer-networks-neo/${network.id}`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         redirectToLogin();

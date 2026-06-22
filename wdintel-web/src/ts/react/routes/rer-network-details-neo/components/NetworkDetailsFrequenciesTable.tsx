@@ -30,7 +30,12 @@ import { InternalTableActions } from '../../../components/mui-customized/table/c
 import { PowerChip } from '../../../components/PowerChip';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { formatDateTime24 } from '../../../utils/misc';
-import { buildNetworkFreqRows, type NetworkFreqTableRow } from '../frequency-utils';
+import {
+  buildNetworkFreqRows,
+  DEFAULT_NETWORK_FREQ_SORTING,
+  sortNetworkFreqRowsByTableOrder,
+  type NetworkFreqTableRow,
+} from '../frequency-utils';
 import {
   buildNetworkColumnOrder,
 } from './NetworkCallsignsTableShared';
@@ -151,6 +156,8 @@ function buildLoadingRows(): NetworkFreqTableRow[] {
     typeLabel: '',
     encryptionLabel: '',
     callsignLabel: '',
+    sortFreqUnits: null,
+    sortNetworkFreqId: -(index + 1),
   }));
 }
 
@@ -178,15 +185,44 @@ export type NetworkDetailsFrequenciesTableProps = {
 
 function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
   return [
-    { header: 'Частота', accessorKey: 'displayFreq', id: 'displayFreq', size: 280, Cell: ({ row }) => renderFrequencyCell(row.original) },
-    { header: 'Тип', accessorKey: 'typeLabel', id: 'typeLabel', size: 120, Cell: ({ row }) => renderCategoryChip(row.original.typeLabel) },
-    { header: 'Шифрування', accessorKey: 'encryptionLabel', id: 'encryptionLabel', size: 180, Cell: ({ row }) => renderCategoryChip(row.original.encryptionLabel) },
-    { header: 'К-сть', accessorKey: 'messageCount', id: 'messageCount', size: 110, Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{getRowMessageCount(row.original)}</Typography> },
+    {
+      header: 'Частота',
+      accessorKey: 'displayFreq',
+      id: 'displayFreq',
+      size: 280,
+      enableSorting: true,
+      Cell: ({ row }) => renderFrequencyCell(row.original),
+    },
+    {
+      header: 'Тип',
+      accessorKey: 'typeLabel',
+      id: 'typeLabel',
+      size: 120,
+      enableSorting: true,
+      Cell: ({ row }) => renderCategoryChip(row.original.typeLabel),
+    },
+    {
+      header: 'Шифрування',
+      accessorKey: 'encryptionLabel',
+      id: 'encryptionLabel',
+      size: 180,
+      enableSorting: true,
+      Cell: ({ row }) => renderCategoryChip(row.original.encryptionLabel),
+    },
+    {
+      header: 'К-сть',
+      accessorKey: 'messageCount',
+      id: 'messageCount',
+      size: 110,
+      enableSorting: true,
+      Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{getRowMessageCount(row.original)}</Typography>,
+    },
     {
       header: 'Позивні',
       accessorKey: 'callsignLabel',
       id: 'callsignLabel',
       size: 300,
+      enableSorting: false,
       Cell: ({ row }) => {
         const label = getRowCallsignLabel(row.original);
         return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
@@ -231,15 +267,18 @@ function NetworkDetailsFrequenciesTableContent({
 }: NetworkDetailsFrequenciesTableProps) {
   const tableStateContext = useTableStateContext();
   const modulationsById = useMemo(() => new Map(modulations.map((modulation) => [modulation.id, modulation.name])), [modulations]);
-  const rows = useMemo(() => buildNetworkFreqRows(freqs, modulationsById, expandedFrequencyGroupIds), [expandedFrequencyGroupIds, freqs, modulationsById]);
+  const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
+  const rows = useMemo(() => {
+    const filteredFreqs =
+      statusFilterValue === 'Усі'
+        ? freqs
+        : freqs.filter((freq) => (statusFilterValue === 'active' ? freq.isActive : !freq.isActive));
+    const groupedRows = buildNetworkFreqRows(filteredFreqs, modulationsById, expandedFrequencyGroupIds);
+    return sortNetworkFreqRowsByTableOrder(groupedRows, tableStateContext.sorting, statusFilterValue);
+  }, [expandedFrequencyGroupIds, freqs, modulationsById, statusFilterValue, tableStateContext.sorting]);
   const loadingRows = useMemo(() => buildLoadingRows(), []);
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
-  const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
-  const visibleRows = useMemo(
-    () => (statusFilterValue === 'Усі' ? rows : rows.filter((row) => (statusFilterValue === 'active' ? getRowIsActive(row) : !getRowIsActive(row)))),
-    [rows, statusFilterValue],
-  );
   const hasActiveFilters = tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
   void onOpenFreqRowActions;
   void onCloseFreqRowActions;
@@ -269,7 +308,7 @@ function NetworkDetailsFrequenciesTableContent({
   }, []);
   const table = useMaterialReactTable({
     columns,
-    data: isInitialLoading && rows.length === 0 ? loadingRows : visibleRows,
+    data: isInitialLoading && rows.length === 0 ? loadingRows : rows,
     ...defaultMRTOptions,
     localization: NETWORK_MRT_LOCALIZATION,
     layoutMode: 'grid',
@@ -284,7 +323,9 @@ function NetworkDetailsFrequenciesTableContent({
     enableColumnFilterModes: false,
     enableFacetedValues: true,
     enableHiding: true,
-    enableSorting: false,
+    enableSorting: true,
+    manualSorting: true,
+    enableMultiSort: false,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enableRowVirtualization: false,
@@ -292,6 +333,7 @@ function NetworkDetailsFrequenciesTableContent({
     columnFilterDisplayMode: 'popover',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onSortingChange: tableStateContext.onSortingChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
@@ -388,6 +430,7 @@ function NetworkDetailsFrequenciesTableContent({
     manualFiltering: false,
     initialState: {
       density: 'comfortable',
+      sorting: DEFAULT_NETWORK_FREQ_SORTING,
       columnOrder: buildNetworkColumnOrder({
         dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
       }),

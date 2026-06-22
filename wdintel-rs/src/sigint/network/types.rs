@@ -389,6 +389,12 @@ pub struct AddNetworkFreqReq {
     pub freq_rec: AddNetworkFreq,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct NetworkFreqMutationV2Rsp {
+    pub network: Network,
+    pub freq: Option<NetworkFreqsRes>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -410,9 +416,19 @@ pub struct DeleteNetworkFreqReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum SingleNetworkCallsignsSection {
+    Everything,
+    Catalog,
+    Intercepted,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SingleNetworkCallsignsReq {
     pub network_id: i64,
     pub include_activity_info: Option<bool>,
+    pub section: Option<SingleNetworkCallsignsSection>,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,

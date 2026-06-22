@@ -2,6 +2,13 @@ import type { EncryptionKeyData, NetworkFreqsRes } from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import type { NetworkFreqKind } from './use-rer-network-details-neo-page.types';
 
+export type NetworkFreqTableSortingItem = {
+  id: string;
+  desc: boolean;
+};
+
+export type NetworkFreqTableStatusFilterValue = 'Усі' | 'active' | 'inactive';
+
 export type NetworkFreqActivityPoint = {
   day: string;
   messageCount: number;
@@ -18,6 +25,8 @@ export type NetworkFreqRow = {
   typeLabel: string;
   encryptionLabel: string;
   callsignLabel: string;
+  sortFreqUnits: number | null;
+  sortNetworkFreqId: number;
 };
 
 export type NetworkFreqGroupRow = {
@@ -32,6 +41,8 @@ export type NetworkFreqGroupRow = {
   callsignLabel: string;
   lastDatetime: number | null;
   isActive: boolean;
+  sortFreqUnits: number | null;
+  sortNetworkFreqId: number;
 };
 
 export type NetworkFreqTableRow = NetworkFreqRow | NetworkFreqGroupRow;
@@ -163,6 +174,10 @@ function joinCallsigns(callsigns: Array<string> | null | undefined): string {
 }
 
 function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
+  if (left.isActive !== right.isActive) {
+    return left.isActive ? -1 : 1;
+  }
+
   const leftUnits = parseNetworkFreqUnits(left.freq) ?? 0;
   const rightUnits = parseNetworkFreqUnits(right.freq) ?? 0;
 
@@ -173,11 +188,191 @@ function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): num
   return left.networkFreqId - right.networkFreqId;
 }
 
+export function sortNetworkFreqsByTableOrder(freqs: NetworkFreqsRes[]): NetworkFreqsRes[] {
+  return [...freqs].sort(compareFreqsByUnits);
+}
+
+function compareFreqsByFrequencyOrder(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
+  const leftUnits = parseNetworkFreqUnits(left.freq) ?? 0;
+  const rightUnits = parseNetworkFreqUnits(right.freq) ?? 0;
+
+  if (leftUnits !== rightUnits) {
+    return leftUnits - rightUnits;
+  }
+
+  return left.networkFreqId - right.networkFreqId;
+}
+
+function sortNetworkFreqsByFrequencyOrder(freqs: NetworkFreqsRes[]): NetworkFreqsRes[] {
+  return [...freqs].sort(compareFreqsByFrequencyOrder);
+}
+
+const TABLE_SORT_COLUMNS = new Set(['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount']);
+const UK_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
+export const DEFAULT_NETWORK_FREQ_SORTING: NetworkFreqTableSortingItem[] = [{ id: 'displayFreq', desc: false }];
+
+function getRowIsActive(row: NetworkFreqTableRow): boolean {
+  return row.kind === 'group' ? row.isActive : row.freq.isActive;
+}
+
+function getRowSortFreqUnits(row: NetworkFreqTableRow): number | null {
+  return row.sortFreqUnits;
+}
+
+function getRowSortNetworkFreqId(row: NetworkFreqTableRow): number {
+  return row.sortNetworkFreqId;
+}
+
+function getRowDisplayFreq(row: NetworkFreqTableRow): number | null {
+  return getRowSortFreqUnits(row);
+}
+
+function getRowTypeLabel(row: NetworkFreqTableRow): string {
+  return row.typeLabel;
+}
+
+function getRowEncryptionLabel(row: NetworkFreqTableRow): string {
+  return row.encryptionLabel;
+}
+
+function getRowMessageCount(row: NetworkFreqTableRow): number {
+  return row.kind === 'group' ? row.messageCount : row.freq.messageCount;
+}
+
+function compareText(left: string, right: string): number {
+  return UK_COLLATOR.compare(left, right);
+}
+
+function compareNumber(left: number, right: number): number {
+  return left - right;
+}
+
+function compareNullableNumber(left: number | null, right: number | null): number {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left - right;
+}
+
+function getPrimarySortingItem(sorting: NetworkFreqTableSortingItem[]): NetworkFreqTableSortingItem {
+  return sorting.find((item) => TABLE_SORT_COLUMNS.has(item.id)) ?? DEFAULT_NETWORK_FREQ_SORTING[0];
+}
+
+function compareRowsBySortingItem(left: NetworkFreqTableRow, right: NetworkFreqTableRow, sorting: NetworkFreqTableSortingItem): number {
+  let result = 0;
+
+  switch (sorting.id) {
+    case 'displayFreq':
+      result = compareNullableNumber(getRowDisplayFreq(left), getRowDisplayFreq(right));
+      break;
+    case 'typeLabel':
+      result = compareText(getRowTypeLabel(left), getRowTypeLabel(right));
+      break;
+    case 'encryptionLabel':
+      result = compareText(getRowEncryptionLabel(left), getRowEncryptionLabel(right));
+      break;
+    case 'messageCount':
+      result = compareNumber(getRowMessageCount(left), getRowMessageCount(right));
+      break;
+    default:
+      result = compareNumber(getRowDisplayFreq(left) ?? 0, getRowDisplayFreq(right) ?? 0);
+      break;
+  }
+
+  return sorting.desc ? -result : result;
+}
+
+function compareNetworkFreqTableRows(
+  left: NetworkFreqTableRow,
+  right: NetworkFreqTableRow,
+  sorting: NetworkFreqTableSortingItem[],
+  statusFilterValue: NetworkFreqTableStatusFilterValue,
+): number {
+  if (statusFilterValue === 'Усі') {
+    const leftActive = getRowIsActive(left);
+    const rightActive = getRowIsActive(right);
+
+    if (leftActive !== rightActive) {
+      return leftActive ? -1 : 1;
+    }
+  }
+
+  const primarySorting = getPrimarySortingItem(sorting);
+  const sortingResult = compareRowsBySortingItem(left, right, primarySorting);
+  if (sortingResult !== 0) {
+    return sortingResult;
+  }
+
+  const leftUnits = getRowSortFreqUnits(left);
+  const rightUnits = getRowSortFreqUnits(right);
+  const fallbackUnitsResult = compareNullableNumber(leftUnits, rightUnits);
+  if (fallbackUnitsResult !== 0) {
+    return fallbackUnitsResult;
+  }
+
+  return getRowSortNetworkFreqId(left) - getRowSortNetworkFreqId(right);
+}
+
+type NetworkFreqRowSegment = {
+  row: NetworkFreqTableRow;
+  children: NetworkFreqRow[];
+};
+
+function buildNetworkFreqRowSegments(rows: NetworkFreqTableRow[]): NetworkFreqRowSegment[] {
+  const segments: NetworkFreqRowSegment[] = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row.kind === 'group') {
+      const children: NetworkFreqRow[] = [];
+      let cursor = index + 1;
+      while (cursor < rows.length) {
+        const nextRow = rows[cursor];
+        if (nextRow.kind !== 'freq' || nextRow.parentGroupId !== row.groupId) {
+          break;
+        }
+        children.push(nextRow);
+        cursor += 1;
+      }
+      segments.push({ row, children });
+      index = cursor - 1;
+      continue;
+    }
+
+    segments.push({ row, children: [] });
+  }
+
+  return segments;
+}
+
+function flattenNetworkFreqRowSegments(segments: NetworkFreqRowSegment[]): NetworkFreqTableRow[] {
+  const rows: NetworkFreqTableRow[] = [];
+
+  for (const segment of segments) {
+    rows.push(segment.row, ...segment.children);
+  }
+
+  return rows;
+}
+
+export function sortNetworkFreqRowsByTableOrder(
+  rows: NetworkFreqTableRow[],
+  sorting: NetworkFreqTableSortingItem[],
+  statusFilterValue: NetworkFreqTableStatusFilterValue,
+): NetworkFreqTableRow[] {
+  const segments = buildNetworkFreqRowSegments(rows);
+
+  segments.sort((left, right) => compareNetworkFreqTableRows(left.row, right.row, sorting, statusFilterValue));
+
+  return flattenNetworkFreqRowSegments(segments);
+}
+
 function buildGroupId(freqs: NetworkFreqsRes[]): string {
   return `freq-group:${freqs.map((freq) => freq.networkFreqId).join('-')}`;
 }
 
 function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, string>): NetworkFreqGroupRow {
+  const firstFreq = freqs[0] ?? null;
   const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.kind));
   const encryptionLabels = freqs.map((freq) =>
     encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
@@ -201,6 +396,8 @@ function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, st
     callsignLabel: joinCallsigns(freqs.flatMap((freq) => freq.callsigns ?? [])),
     lastDatetime,
     isActive: freqs.every((freq) => freq.isActive),
+    sortFreqUnits: firstFreq ? parseNetworkFreqUnits(firstFreq.freq) : null,
+    sortNetworkFreqId: firstFreq?.networkFreqId ?? 0,
   };
 }
 
@@ -218,6 +415,8 @@ function buildFreqRow(
     typeLabel: typeLabelFromKind(freq.kind),
     encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
     callsignLabel: joinCallsigns(freq.callsigns),
+    sortFreqUnits: parseNetworkFreqUnits(freq.freq),
+    sortNetworkFreqId: freq.networkFreqId,
   };
 }
 
@@ -226,7 +425,7 @@ export function buildNetworkFreqRows(
   modulationsById: Map<number, string>,
   expandedGroupIds: string[],
 ): NetworkFreqTableRow[] {
-  const sortedFreqs = [...freqs].sort(compareFreqsByUnits);
+  const sortedFreqs = sortNetworkFreqsByFrequencyOrder(freqs);
   const expandedGroupIdSet = new Set(expandedGroupIds);
   const rows: NetworkFreqTableRow[] = [];
 
@@ -244,7 +443,7 @@ export function buildNetworkFreqRows(
     while (cursor < sortedFreqs.length) {
       const nextFreq = sortedFreqs[cursor];
       const nextUnits = parseNetworkFreqUnits(nextFreq.freq);
-      if (nextUnits === null || nextUnits - startUnits > GROUP_SPREAD_UNITS) {
+      if (nextUnits === null || nextUnits - startUnits > GROUP_SPREAD_UNITS || nextFreq.isActive !== startFreq.isActive) {
         break;
       }
       cluster.push(nextFreq);

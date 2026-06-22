@@ -93,7 +93,7 @@ function renderCanvas() {
     );
   });
 
-  return { container, root };
+  return { container, root, layout };
 }
 
 describe('NetworkCallsignRelationsGraphCanvas', () => {
@@ -113,6 +113,18 @@ describe('NetworkCallsignRelationsGraphCanvas', () => {
     const view = renderCanvas();
     rendered.push(view);
 
-    expect(view.container.querySelectorAll('circle')).toHaveLength(4);
+    const alphaPosition = view.layout.positions.get('ALPHA');
+    expect(alphaPosition).not.toBeUndefined();
+
+    const markerBadges = view.container.querySelectorAll('g[role="img"]');
+    expect(markerBadges).toHaveLength(2);
+    expect(markerBadges[0]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x - 15} ${alphaPosition!.y})`);
+    expect(markerBadges[1]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x + 15} ${alphaPosition!.y})`);
+    expect(markerBadges[0]?.querySelector('circle')?.getAttribute('r')).toBe('12');
+    expect(markerBadges[1]?.querySelector('circle')?.getAttribute('r')).toBe('12');
+    expect(markerBadges[0]?.querySelector('svg')?.getAttribute('width')).toBe('16');
+    expect(markerBadges[0]?.querySelector('svg')?.getAttribute('height')).toBe('16');
+    expect(markerBadges[1]?.querySelector('svg')?.getAttribute('width')).toBe('16');
+    expect(markerBadges[1]?.querySelector('svg')?.getAttribute('height')).toBe('16');
   });
 });

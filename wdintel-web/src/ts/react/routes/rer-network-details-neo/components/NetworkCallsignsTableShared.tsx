@@ -8,6 +8,7 @@ import type {
 } from '../network-callsigns.types';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
 import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
+import { NO_DATA_LABEL } from '../../../utils/misc';
 
 export const NETWORK_STATUS_FILTER_LABELS: Record<NetworkCallsignStatusFilter, string> = {
   All: 'Всі',
@@ -74,11 +75,15 @@ export function CountChipLabel({
   selected = false,
 }: {
   label: string;
-  count: number;
-  totalCount?: number;
+  count: number | null;
+  totalCount?: number | null;
   selected?: boolean;
 }) {
-  const countLabel = totalCount !== undefined ? `${formatCountLabel(count)}/${formatCountLabel(totalCount)}` : formatCountLabel(count);
+  const countLabel = count === null
+    ? NO_DATA_LABEL
+    : totalCount === null || totalCount === undefined
+      ? formatCountLabel(count)
+      : `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
   return (
     <Stack direction="row" spacing={0.4} alignItems="center" sx={{ lineHeight: 1 }}>
       <Box component="span" sx={{ lineHeight: 1 }}>

@@ -24,6 +24,7 @@ import { PowerChip } from '../../../components/PowerChip';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import { NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildNetworkColumnOrder,
   buildNetworkLoadingRows,
@@ -37,6 +38,7 @@ import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows } from '../network-callsigns.rows';
 import { formatNetworkCallsignDatetime } from '../network-callsigns.search';
+import { hasNetworkCallsignMarker } from '../network-callsigns.forms';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -176,6 +178,7 @@ function NetworkCallsignsNetworkTableContent({
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
+  const titleCountLabel = countLabel ?? (isInitialLoading ? NO_DATA_LABEL : null);
   const columns = useMemo<MRT_ColumnDef<NetworkCallsignRowView>[]>(() => [
       {
         header: 'Позивний',
@@ -307,12 +310,14 @@ function NetworkCallsignsNetworkTableContent({
             disabled={markerDisabled}
             icon={<MilitaryTechOutlinedIcon fontSize="small" />}
           />
-          <MrtRowActionButton
-            label="Очистити маркер"
-            onClick={() => onSetMarkerMode(networkCallsign, 'none')}
-            disabled={clearMarkerDisabled}
-            icon={<Box component="span" sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>−</Box>}
-          />
+          {hasNetworkCallsignMarker(networkCallsign) ? (
+            <MrtRowActionButton
+              label="Очистити маркер"
+              onClick={() => onSetMarkerMode(networkCallsign, 'none')}
+              disabled={clearMarkerDisabled}
+              icon={<Box component="span" sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>−</Box>}
+            />
+          ) : null}
           <MrtRowActionButton
             label="Видалити"
             onClick={() => onOpenDeleteDialog(networkCallsign)}
@@ -401,9 +406,9 @@ function NetworkCallsignsNetworkTableContent({
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
               <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap', minWidth: 0 }}>
                 <Typography variant="h6">{title}</Typography>
-                {countLabel ? (
+                {titleCountLabel !== null ? (
                   <Typography variant="body2" color="text.secondary">
-                    {countLabel}
+                    {titleCountLabel}
                   </Typography>
                 ) : null}
               </Stack>
@@ -413,7 +418,7 @@ function NetworkCallsignsNetworkTableContent({
                   label={
                     <CountChipLabel
                       label={NETWORK_STATUS_FILTER_LABELS[filter]}
-                      count={getNetworkStatusFilterCount(filter, statusCounts)}
+                      count={isInitialLoading ? null : getNetworkStatusFilterCount(filter, statusCounts)}
                     />
                   }
                   selected={normalizedStatusFilter === filter}

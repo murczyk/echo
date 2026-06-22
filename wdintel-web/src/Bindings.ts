@@ -2781,9 +2781,16 @@ export type NetworkFreqCallsignsRsp = {
   callsigns: Array<string>;
 };
 
+export type SingleNetworkCallsignsSection =
+  | 'Everything'
+  | 'Catalog'
+  | 'Intercepted'
+;
+
 export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
+  section: SingleNetworkCallsignsSection | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {

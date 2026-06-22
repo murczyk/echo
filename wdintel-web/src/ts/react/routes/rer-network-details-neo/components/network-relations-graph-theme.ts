@@ -1,5 +1,7 @@
 import { alpha, type Theme } from '@mui/material/styles';
 
+export const NETWORK_RELATIONS_FULLSCREEN_Z_INDEX = 10000;
+
 export type NetworkRelationsGraphTheme = {
   frameBg: string;
   frameBorder: string;
