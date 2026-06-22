@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { NetworkFreqsRes } from '../../../../Bindings';
-import { buildNetworkFreqActivityByFreq, buildNetworkFreqRows, encryptionLabelFromKeys, formatNetworkFreqValue, sortNetworkFreqsByTableOrder } from './frequency-utils';
+import {
+  buildNetworkFreqActivityByFreq,
+  buildNetworkFreqRows,
+  encryptionLabelFromKeys,
+  formatNetworkFreqValue,
+  sortNetworkFreqRowsByTableOrder,
+  sortNetworkFreqsByTableOrder,
+} from './frequency-utils';
 
 function createFreq(overrides: Partial<NetworkFreqsRes>): NetworkFreqsRes {
   return {
@@ -60,7 +67,7 @@ describe('frequency utils', () => {
     });
   });
 
-  it('sorts by frequency first, then active status, then id', () => {
+  it('sorts active frequencies before inactive frequencies, then by frequency and id', () => {
     const sorted = sortNetworkFreqsByTableOrder([
       createFreq({ networkFreqId: 30, freq: '652.3000', isActive: true }),
       createFreq({ networkFreqId: 10, freq: '30.0000', isActive: false }),
@@ -68,14 +75,14 @@ describe('frequency utils', () => {
       createFreq({ networkFreqId: 40, freq: '652.3000', isActive: true }),
     ]);
 
-    expect(sorted.map((freq) => freq.networkFreqId)).toEqual([10, 30, 40, 20]);
+    expect(sorted.map((freq) => freq.networkFreqId)).toEqual([30, 40, 10, 20]);
   });
 
-  it('keeps distant active and inactive frequencies on separate rows', () => {
+  it('keeps adjacent active and inactive frequencies on separate rows', () => {
     const rows = buildNetworkFreqRows(
       [
         createFreq({ networkFreqId: 10, freq: '652.5000', isActive: true }),
-        createFreq({ networkFreqId: 20, freq: '30.0000', isActive: false }),
+        createFreq({ networkFreqId: 20, freq: '652.5100', isActive: false }),
       ],
       new Map(),
       [],
@@ -83,9 +90,40 @@ describe('frequency utils', () => {
 
     expect(rows).toHaveLength(2);
     expect(rows).toMatchObject([
-      { kind: 'freq', displayFreq: '30.0000' },
       { kind: 'freq', displayFreq: '652.5000' },
+      { kind: 'freq', displayFreq: '652.5100' },
     ]);
+  });
+
+  it('keeps an active row above a nearby inactive row in the overall table order', () => {
+    const rows = buildNetworkFreqRows(
+      [
+        createFreq({ networkFreqId: 10, freq: '652.5000', isActive: true }),
+        createFreq({ networkFreqId: 20, freq: '652.5100', isActive: false }),
+      ],
+      new Map(),
+      [],
+    );
+
+    const sortedRows = sortNetworkFreqRowsByTableOrder(rows, [{ id: 'displayFreq', desc: false }], 'Усі');
+
+    expect(sortedRows.map((row) => row.id)).toEqual(['freq-10', 'freq-20']);
+  });
+
+  it('keeps expanded children attached to their parent group when sorting rows', () => {
+    const rows = buildNetworkFreqRows(
+      [
+        createFreq({ networkFreqId: 10, freq: '652.5000', messageCount: 20, isActive: true }),
+        createFreq({ networkFreqId: 11, freq: '652.5100', messageCount: 30, isActive: true }),
+        createFreq({ networkFreqId: 20, freq: '652.9000', messageCount: 5, isActive: true }),
+      ],
+      new Map(),
+      ['freq-group:10-11'],
+    );
+
+    const sortedRows = sortNetworkFreqRowsByTableOrder(rows, [{ id: 'messageCount', desc: false }], 'Усі');
+
+    expect(sortedRows.map((row) => row.id)).toEqual(['freq-20', 'freq-group:10-11', 'freq-10', 'freq-11']);
   });
 
   it('preserves DMRe as a distinct frequency type label', () => {
@@ -104,7 +142,7 @@ describe('frequency utils', () => {
     ]);
   });
 
-  it('marks grouped frequencies inactive when any child frequency is inactive', () => {
+  it('does not group adjacent active and inactive frequencies', () => {
     const rows = buildNetworkFreqRows(
       [
         createFreq({ networkFreqId: 10, freq: '652.1111', isActive: true }),
@@ -114,10 +152,10 @@ describe('frequency utils', () => {
       [],
     );
 
-    expect(rows[0]).toMatchObject({
-      kind: 'group',
-      isActive: false,
-    });
+    expect(rows).toMatchObject([
+      { kind: 'freq', displayFreq: '652.1111' },
+      { kind: 'freq', displayFreq: '652.1200' },
+    ]);
   });
 
   it('preserves activity for duplicate frequency labels across rows', () => {
