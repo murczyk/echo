@@ -12,7 +12,7 @@ import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-deta
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
-import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
+import { NETWORK_RELATIONS_FULLSCREEN_Z_INDEX, getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 import type {
   NetworkCallsignRelationFreqView,
   NetworkCallsignRelationsEdgeView,
@@ -61,6 +61,8 @@ type Props = {
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onWheel: (event: WheelEvent) => void;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
   handleZoom: (factor: number) => void;
   zoomInFactor: number;
   zoomOutFactor: number;
@@ -117,6 +119,8 @@ export function NetworkCallsignRelationsGraphStage({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onWheel,
+  onFullscreenChange,
   handleZoom,
   zoomInFactor,
   zoomOutFactor,
@@ -133,10 +137,11 @@ export function NetworkCallsignRelationsGraphStage({
 
   useEffect(() => {
     document.body.classList.toggle('small-map-fullscreen-open', isFullscreen);
+    onFullscreenChange?.(isFullscreen);
     return () => {
       document.body.classList.remove('small-map-fullscreen-open');
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, onFullscreenChange]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -209,7 +214,7 @@ export function NetworkCallsignRelationsGraphStage({
           : theme.palette.mode === 'dark'
             ? 'inset 0 1px 0 rgba(255,255,255,0.03)'
             : 'inset 0 1px 0 rgba(0,0,0,0.03)',
-        zIndex: isFullscreen ? 10000 : 'auto',
+        zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX : 'auto',
         maxWidth: isFullscreen ? '100vw' : '100%',
         maxHeight: isFullscreen ? '100svh' : '100%',
         m: isFullscreen ? 0 : undefined,
@@ -528,6 +533,7 @@ export function NetworkCallsignRelationsGraphStage({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onWheel={onWheel}
           />
         </>
       )}

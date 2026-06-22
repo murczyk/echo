@@ -84,6 +84,7 @@ export function NetworkCallsignRelationsGraph({
   const labelsAutoDisabledRef = useRef(false);
   const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null);
   const [intensityAnchorEl, setIntensityAnchorEl] = useState<HTMLElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [viewBox, setViewBox] = useState<RelationGraphViewBox>({ x: -450, y: -450, width: 900, height: 900 });
   const [selectedMessages, setSelectedMessages] = useState<NetworkCallsignRelationMessage[]>([]);
   const [selectedMessagesLoading, setSelectedMessagesLoading] = useState(false);
@@ -281,22 +282,6 @@ export function NetworkCallsignRelationsGraph({
     }
   }, [denseGraph, onShowLabelsChange, relationsShowLabels, renderGraphView.warning]);
 
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg || !hasRenderableGraph) return;
-
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const factor = event.deltaY > 0 ? GRAPH_WHEEL_ZOOM_OUT_FACTOR : GRAPH_WHEEL_ZOOM_IN_FACTOR;
-      setViewBox((current) => zoomRelationGraphViewBox(current, factor));
-    };
-
-    svg.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      svg.removeEventListener('wheel', handleWheel);
-    };
-  }, [hasRenderableGraph]);
-
   const handleZoom = (factor: number) => {
     setViewBox((current) => zoomRelationGraphViewBox(current, factor));
   };
@@ -312,6 +297,10 @@ export function NetworkCallsignRelationsGraph({
 
   const handleCloseIntensitySettings = () => {
     setIntensityAnchorEl(null);
+  };
+
+  const handleFullscreenChange = (value: boolean) => {
+    setIsFullscreen(value);
   };
 
   const handleSelectNodeId = (nodeId: string | null) => {
@@ -369,6 +358,13 @@ export function NetworkCallsignRelationsGraph({
     } catch (_) {
       // ignore
     }
+  };
+
+  const handleWheel = (event: WheelEvent) => {
+    if (!hasRenderableGraph) return;
+    event.preventDefault();
+    const factor = event.deltaY > 0 ? GRAPH_WHEEL_ZOOM_OUT_FACTOR : GRAPH_WHEEL_ZOOM_IN_FACTOR;
+    setViewBox((current) => zoomRelationGraphViewBox(current, factor));
   };
 
   return (
@@ -519,6 +515,8 @@ export function NetworkCallsignRelationsGraph({
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onWheel={handleWheel}
+          onFullscreenChange={handleFullscreenChange}
           handleZoom={handleZoom}
           zoomInFactor={GRAPH_WHEEL_ZOOM_IN_FACTOR}
           zoomOutFactor={GRAPH_WHEEL_ZOOM_OUT_FACTOR}
@@ -530,6 +528,7 @@ export function NetworkCallsignRelationsGraph({
         popoverId={filterPopoverId}
         legendFreqs={legendFreqs}
         enabledFreqs={relationsEnabledFreqs}
+        isFullscreen={isFullscreen}
         onClose={() => setFilterAnchorEl(null)}
         onEnabledFreqToggle={handleFilterToggle}
       />
@@ -539,6 +538,7 @@ export function NetworkCallsignRelationsGraph({
         popoverId={`${headingId}-intensity-popover`}
         minIntensity={relationsMinIntensity}
         intensitySliderMax={intensitySliderMax}
+        isFullscreen={isFullscreen}
         onClose={handleCloseIntensitySettings}
         onMinIntensityChange={onMinIntensityChange}
       />

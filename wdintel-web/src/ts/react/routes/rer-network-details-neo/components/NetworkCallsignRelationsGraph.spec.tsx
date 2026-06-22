@@ -225,4 +225,54 @@ describe('NetworkCallsignRelationsGraph', () => {
     expect(filtersPopover?.textContent).toContain('652.111');
     expect(filtersPopover?.textContent).not.toContain('Інтенсивність');
   });
+
+  it('keeps wheel zoom working before fullscreen, during fullscreen, and after exit', async () => {
+    const view = renderGraph();
+    rendered.push(view);
+
+    const getNormalSvg = () => view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 });
+
+    const initialViewBox = getNormalSvg()?.getAttribute('viewBox');
+    expect(initialViewBox).not.toBeNull();
+
+    await act(async () => {
+      getNormalSvg()?.dispatchEvent(wheel);
+    });
+
+    const zoomedViewBox = getNormalSvg()?.getAttribute('viewBox');
+    expect(zoomedViewBox).not.toBe(initialViewBox);
+
+    const fullscreenButton = view.container.querySelector('button[aria-label="Розгорнути граф"]');
+    expect(fullscreenButton).not.toBeNull();
+
+    await act(async () => {
+      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const getFullscreenSvg = () => document.body.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
+    const fullscreenInitialViewBox = getFullscreenSvg()?.getAttribute('viewBox');
+    expect(fullscreenInitialViewBox).not.toBeNull();
+
+    await act(async () => {
+      getFullscreenSvg()?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }));
+    });
+
+    const fullscreenZoomedViewBox = getFullscreenSvg()?.getAttribute('viewBox');
+    expect(fullscreenZoomedViewBox).not.toBe(fullscreenInitialViewBox);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    const restoredSvg = getNormalSvg();
+    expect(restoredSvg).not.toBeNull();
+    const restoredViewBox = restoredSvg?.getAttribute('viewBox');
+
+    await act(async () => {
+      restoredSvg?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }));
+    });
+
+    expect(restoredSvg?.getAttribute('viewBox')).not.toBe(restoredViewBox);
+  });
 });

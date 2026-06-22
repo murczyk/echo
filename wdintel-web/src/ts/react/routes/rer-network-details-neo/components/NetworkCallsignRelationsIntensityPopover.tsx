@@ -9,6 +9,7 @@ type Props = {
   popoverId: string;
   minIntensity: number;
   intensitySliderMax: number;
+  isFullscreen: boolean;
   onClose: () => void;
   onMinIntensityChange: (value: number) => void;
 };
@@ -18,6 +19,7 @@ export function NetworkCallsignRelationsIntensityPopover({
   popoverId,
   minIntensity,
   intensitySliderMax,
+  isFullscreen,
   onClose,
   onMinIntensityChange,
 }: Props) {
@@ -35,7 +37,7 @@ export function NetworkCallsignRelationsIntensityPopover({
       slotProps={{
         root: {
           style: {
-            zIndex: NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1,
+            zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined,
           },
         },
         paper: {

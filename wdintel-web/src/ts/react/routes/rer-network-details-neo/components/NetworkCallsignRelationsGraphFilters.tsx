@@ -9,6 +9,7 @@ type Props = {
   popoverId: string;
   legendFreqs: NetworkCallsignRelationFreqView[];
   enabledFreqs: string[];
+  isFullscreen: boolean;
   onClose: () => void;
   onEnabledFreqToggle: (freq: string, checked: boolean) => void;
 };
@@ -18,6 +19,7 @@ export function NetworkCallsignRelationsGraphFilters({
   popoverId,
   legendFreqs,
   enabledFreqs,
+  isFullscreen,
   onClose,
   onEnabledFreqToggle,
 }: Props) {
@@ -35,7 +37,7 @@ export function NetworkCallsignRelationsGraphFilters({
       slotProps={{
         root: {
           style: {
-            zIndex: NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1,
+            zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined,
           },
         },
         paper: {

@@ -1,7 +1,7 @@
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { useTheme } from '@mui/material/styles';
-import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 
 import {
@@ -35,6 +35,7 @@ type Props = {
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onWheel: (event: WheelEvent) => void;
 };
 
 function renderNodeMarkerBadge(
@@ -76,11 +77,30 @@ export function NetworkCallsignRelationsGraphCanvas({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onWheel,
 }: Props) {
   const theme = useTheme();
+  const [svgElement, setSvgElement] = useState<SVGSVGElement | null>(null);
+
+  useEffect(() => {
+    if (!svgElement) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      onWheel(event);
+    };
+
+    svgElement.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      svgElement.removeEventListener('wheel', handleWheel);
+    };
+  }, [onWheel, svgElement]);
+
   return (
     <svg
-      ref={svgRef}
+      ref={(node) => {
+        svgRef.current = node;
+        setSvgElement(node);
+      }}
       role="img"
       aria-label="Граф зв'язків позивних"
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
