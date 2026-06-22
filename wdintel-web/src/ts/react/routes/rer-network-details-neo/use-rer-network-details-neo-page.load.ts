@@ -26,6 +26,7 @@ import {
   buildNetworkCallsignTabData,
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
+import { normalizeCallsignDisplay } from './network-callsigns.utils';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 
@@ -101,18 +102,28 @@ function buildCallsignSectionFlags(
 
 type CallsignSection = 'Catalog' | 'Intercepted';
 
-function mergeNetworkCallsignGroupsByCallsign(
+function getNetworkCallsignGroupKey(group: Pick<NetworkCallsignRes, 'callsign' | 'knownCallsigns'>): string {
+  const callsign = normalizeCallsignDisplay(group.callsign);
+  const knownCallsignIds = [...new Set((group.knownCallsigns ?? []).map((knownCallsign) => knownCallsign.id))].sort((left, right) => left - right);
+  if (knownCallsignIds.length > 0) {
+    return `catalog:${callsign}:${knownCallsignIds.join(',')}`;
+  }
+
+  return `intercepted:${callsign}`;
+}
+
+function mergeNetworkCallsignGroupsByKey(
   existing: NetworkCallsignRes[],
   next: NetworkCallsignRes[],
 ): NetworkCallsignRes[] {
   if (next.length === 0) return existing;
 
-  const byCallsign = new Map(existing.map((group) => [group.callsign, group] as const));
+  const byKey = new Map(existing.map((group) => [getNetworkCallsignGroupKey(group), group] as const));
   next.forEach((group) => {
-    byCallsign.set(group.callsign, group);
+    byKey.set(getNetworkCallsignGroupKey(group), group);
   });
 
-  return [...byCallsign.values()];
+  return [...byKey.values()];
 }
 
 function mergeNetworkCallsignGroups(
@@ -127,7 +138,7 @@ function mergeNetworkCallsignGroups(
 
   if (next.length === 0) return keepExisting;
 
-  return mergeNetworkCallsignGroupsByCallsign(keepExisting, next);
+  return mergeNetworkCallsignGroupsByKey(keepExisting, next);
 }
 
 function updateCallsignSectionState(
@@ -515,7 +526,7 @@ export function useRerNetworkDetailsNeoPageLoad(
       loadInterceptedCallsigns(targetNetworkId),
     ]);
 
-    const mergedCallsigns = mergeNetworkCallsignGroupsByCallsign(
+    const mergedCallsigns = mergeNetworkCallsignGroupsByKey(
       catalogCallsigns ?? [],
       interceptedCallsigns ?? [],
     );
