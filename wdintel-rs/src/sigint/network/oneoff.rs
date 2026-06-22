@@ -277,7 +277,7 @@ async fn freq_migration_pending(
         .query_one(Statement::from_string(
             DbBackend::Postgres,
             "SELECT 1 FROM sigint_network_freq \
-             WHERE modulation_id IS NOT NULL AND encryption_id IS NULL \
+             WHERE encryption_id IS NULL \
              LIMIT 1"
                 .to_string(),
         ))
