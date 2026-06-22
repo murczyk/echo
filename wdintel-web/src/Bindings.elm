@@ -3512,6 +3512,60 @@ goiUserIntegrationEncoder struct =
         ]
 
 
+type alias GoiReportTabOrderItem =
+    { aorId : Int
+    , aorName : String
+    , orderForReport : Float
+    }
+
+
+goiReportTabOrderItemEncoder : GoiReportTabOrderItem -> Json.Encode.Value
+goiReportTabOrderItemEncoder struct =
+    Json.Encode.object
+        [ ( "aor_id", (Json.Encode.int) struct.aorId )
+        , ( "aor_name", (Json.Encode.string) struct.aorName )
+        , ( "order_for_report", (Json.Encode.float) struct.orderForReport )
+        ]
+
+
+type alias GoiReportTabOrderListReq =
+    { integrationId : Maybe (Int)
+    }
+
+
+goiReportTabOrderListReqEncoder : GoiReportTabOrderListReq -> Json.Encode.Value
+goiReportTabOrderListReqEncoder struct =
+    Json.Encode.object
+        [ ( "integration_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.integrationId )
+        ]
+
+
+type alias GoiReportTabOrderListRsp =
+    { items : List (GoiReportTabOrderItem)
+    }
+
+
+goiReportTabOrderListRspEncoder : GoiReportTabOrderListRsp -> Json.Encode.Value
+goiReportTabOrderListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (goiReportTabOrderItemEncoder)) struct.items )
+        ]
+
+
+type alias GoiReportTabOrderUpdateReq =
+    { integrationId : Maybe (Int)
+    , items : List (GoiReportTabOrderItem)
+    }
+
+
+goiReportTabOrderUpdateReqEncoder : GoiReportTabOrderUpdateReq -> Json.Encode.Value
+goiReportTabOrderUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "integration_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.integrationId )
+        , ( "items", (Json.Encode.list (goiReportTabOrderItemEncoder)) struct.items )
+        ]
+
+
 type alias SettingsSaveReq =
     { sigintZoneId : Maybe (Int)
     }
@@ -10095,6 +10149,33 @@ goiUserIntegrationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_data_access" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_restart" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restart_unavailable_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+goiReportTabOrderItemDecoder : Json.Decode.Decoder GoiReportTabOrderItem
+goiReportTabOrderItemDecoder =
+    Json.Decode.succeed GoiReportTabOrderItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "order_for_report" (Json.Decode.float)))
+
+
+goiReportTabOrderListReqDecoder : Json.Decode.Decoder GoiReportTabOrderListReq
+goiReportTabOrderListReqDecoder =
+    Json.Decode.succeed GoiReportTabOrderListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+goiReportTabOrderListRspDecoder : Json.Decode.Decoder GoiReportTabOrderListRsp
+goiReportTabOrderListRspDecoder =
+    Json.Decode.succeed GoiReportTabOrderListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (goiReportTabOrderItemDecoder))))
+
+
+goiReportTabOrderUpdateReqDecoder : Json.Decode.Decoder GoiReportTabOrderUpdateReq
+goiReportTabOrderUpdateReqDecoder =
+    Json.Decode.succeed GoiReportTabOrderUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (goiReportTabOrderItemDecoder))))
 
 
 settingsSaveReqDecoder : Json.Decode.Decoder SettingsSaveReq

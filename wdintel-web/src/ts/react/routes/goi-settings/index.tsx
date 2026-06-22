@@ -20,9 +20,11 @@ import {
 } from '@mui/material';
 import React from 'react';
 
+import type { User } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { fetchCurrentUser } from '../../services/api/user';
 import {
   downloadCurrentUserGoiPalettes,
   GoiRestartService,
@@ -34,6 +36,7 @@ import {
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
+import { GoiReportTabOrderSection } from './GoiReportTabOrderSection';
 
 const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
 
@@ -487,23 +490,33 @@ function IntegrationCard(props: IntegrationCardProps) {
 }
 
 export function GoiSettingsPage() {
+  const [currentUser, setCurrentUser] = React.useState<User | null>(null);
   const [integrations, setIntegrations] = React.useState<GoiUserIntegration[]>([]);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [pendingKey, setPendingKey] = React.useState<string | null>(null);
   const [actionStatus, setActionStatus] = React.useState<ActionStatus>(null);
+  const isAdmin = currentUser?.roles.includes('Admin') ?? false;
 
   React.useEffect(() => {
     const abortController = new AbortController();
 
     void (async () => {
       try {
-        const nextIntegrations = await fetchCurrentUserGoiIntegrations(abortController.signal);
+        const nextCurrentUser = await fetchCurrentUser(abortController.signal);
+        if (abortController.signal.aborted) return;
+        setCurrentUser(nextCurrentUser);
+
+        const nextIntegrations = nextCurrentUser.roles.includes('Rer')
+          ? await fetchCurrentUserGoiIntegrations(abortController.signal)
+          : [];
         if (abortController.signal.aborted) return;
         setIntegrations(nextIntegrations);
         setLoadError(null);
       } catch (error) {
         if (abortController.signal.aborted || isAbortError(error)) return;
+        setCurrentUser(null);
+        setIntegrations([]);
         setLoadError(formatErrorMessage(error));
       } finally {
         if (!abortController.signal.aborted) {
@@ -625,7 +638,7 @@ export function GoiSettingsPage() {
 
       {loading ? <PowerAlert severity="info">Завантажую інтеграції ГОІ...</PowerAlert> : null}
       {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-      {!loading && !loadError && integrations.length === 0 ? (
+      {!loading && !loadError && !isAdmin && integrations.length === 0 ? (
         <PowerAlert severity="info">Для поточного користувача немає доступних інтеграцій ГОІ.</PowerAlert>
       ) : null}
 
@@ -641,6 +654,10 @@ export function GoiSettingsPage() {
           onUploadCategories={handleUploadCategories}
         />
       ))}
+
+      {!loading && !loadError && currentUser ? (
+        <GoiReportTabOrderSection integrations={integrations} isAdmin={isAdmin} />
+      ) : null}
     </Stack>
   );
 }

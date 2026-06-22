@@ -40,6 +40,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::area_of_responsibility_report_order::Entity")]
+    AreaOfResponsibilityReportOrder,
     #[sea_orm(has_many = "super::goi_association::Entity")]
     GoiAssociation,
     #[sea_orm(has_many = "super::goi_integration::Entity")]
@@ -68,6 +70,12 @@ pub enum Relation {
     PalitraAccessOrganism,
     #[sea_orm(has_many = "super::sigint_network_encryption_key::Entity")]
     SigintNetworkEncryptionKey,
+}
+
+impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AreaOfResponsibilityReportOrder.def()
+    }
 }
 
 impl Related<super::goi_association::Entity> for Entity {

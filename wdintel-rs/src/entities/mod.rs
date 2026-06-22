@@ -6,6 +6,7 @@ pub mod alert;
 pub mod aor_location_config;
 pub mod api_integration;
 pub mod area_of_responsibility;
+pub mod area_of_responsibility_report_order;
 pub mod bgtask;
 pub mod bgtask_res;
 pub mod callsign_additional_source;

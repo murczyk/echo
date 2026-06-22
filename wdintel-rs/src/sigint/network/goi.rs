@@ -1,8 +1,8 @@
 use crate::config::get_tz;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::sigint::aor::report_order;
 use crate::types::*;
-use actix_identity::Identity;
 use chrono::prelude::*;
 use rust_xlsxwriter::Workbook;
 use sea_orm::{prelude::Expr, *};
@@ -10,29 +10,44 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
 pub async fn report_xlsx_networks_goi(
-    _user: Identity,
     env: &Env,
     outpath: &PathBuf,
+    organism_id: Option<i64>,
 ) -> Result<(), AppError> {
-    let mut workbook = build_goi_report_workbook(env).await.c(h!())?;
+    let mut workbook =
+        build_goi_report_workbook(env, organism_id).await.c(h!())?;
     workbook.save(outpath).context(h!())?;
     Ok(())
 }
 
 pub async fn report_xlsx_networks_goi_to_buffer(
     env: &Env,
+    organism_id: Option<i64>,
 ) -> Result<Vec<u8>, AppError> {
-    let mut workbook = build_goi_report_workbook(env).await.c(h!())?;
+    let mut workbook =
+        build_goi_report_workbook(env, organism_id).await.c(h!())?;
     workbook
         .save_to_buffer()
         .context(h!())
         .map_err(AppError::from)
 }
 
+pub async fn login_organism_id(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+) -> Result<Option<i64>, AppError> {
+    Ok(login::Entity::find_by_id(user_id.to_string())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .and_then(|login| login.organism_id))
+}
+
 #[derive(FromQueryResult)]
 struct NetworkFreq {
     network_freq_id: i64,
     network_aor_id: i64,
+    aor_id: i64,
     freq: String,
     location: String,
     unit_name: Option<String>,
@@ -41,8 +56,11 @@ struct NetworkFreq {
     aor_order: f64,
 }
 
-async fn build_goi_report_workbook(env: &Env) -> Result<Workbook, AppError> {
-    let grouped = get_goi_report_freqs(env).await.context(h!())?;
+async fn build_goi_report_workbook(
+    env: &Env,
+    organism_id: Option<i64>,
+) -> Result<Workbook, AppError> {
+    let grouped = get_goi_report_freqs(env, organism_id).await.context(h!())?;
     let mut workbook = Workbook::new();
 
     let _enemy_sheet =
@@ -97,6 +115,7 @@ fn write_goi_report_sheet(
 
 async fn get_goi_report_freqs(
     env: &Env,
+    organism_id: Option<i64>,
 ) -> Result<Vec<(String, Vec<NetworkFreq>)>, AppError> {
     let today = Utc::now().with_timezone(&get_tz()).date_naive();
     let today_start_local = today.and_hms_opt(0, 0, 0).unwrap_or_default();
@@ -130,11 +149,15 @@ async fn get_goi_report_freqs(
         .select_only()
         .column_as(sigint_network_freq::Column::Id, "network_freq_id")
         .column_as(sigint_network_aor::Column::Id, "network_aor_id")
+        .column_as(area_of_responsibility::Column::Id, "aor_id")
         .column(sigint_network_freq::Column::Freq)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::Location)
         .column_as(area_of_responsibility::Column::Name, "aor_name")
-        .column_as(area_of_responsibility::Column::OrderForReport, "aor_order")
+        .column_as(
+            area_of_responsibility::Column::OrderForReportLegacy,
+            "aor_order",
+        )
         .column(sigint_network_freq::Column::CreatedAt)
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(
@@ -176,7 +199,17 @@ async fn get_goi_report_freqs(
     //     &q.build(DbBackend::Postgres).to_string()
     // );
 
-    let freqs = q.into_model::<NetworkFreq>().all(&env.dbx).await.c(h!())?;
+    let mut freqs =
+        q.into_model::<NetworkFreq>().all(&env.dbx).await.c(h!())?;
+    let order_by_aor_id =
+        report_order::effective_report_order_map(&env.dbx, organism_id)
+            .await
+            .c(h!())?;
+    for freq in &mut freqs {
+        if let Some(order_for_report) = order_by_aor_id.get(&freq.aor_id) {
+            freq.aor_order = *order_for_report;
+        }
+    }
     let freqs = keep_first_network_aor_per_freq(freqs);
 
     let mut grouped: Vec<(String, Vec<NetworkFreq>)> = Vec::new();
@@ -275,6 +308,7 @@ mod tests {
         NetworkFreq {
             network_freq_id,
             network_aor_id,
+            aor_id: network_aor_id,
             freq: freq.to_string(),
             location: "loc".to_string(),
             unit_name: unit_name.map(str::to_string),

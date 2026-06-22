@@ -3,12 +3,13 @@ use crate::entities::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
-use chrono::Utc;
 use milgeo_rs::coord_util::LatLng;
 use milgeo_rs::MilGeo;
 use sea_orm::*;
+use std::collections::BTreeMap;
 
 pub mod bl;
+pub mod report_order;
 pub mod types;
 pub mod worker;
 
@@ -125,26 +126,52 @@ pub async fn update_aor_report_order(
         .await
         .c(h!())?;
 
-    let txn = env.dbx.begin().await.c(h!())?;
-    let mut updated_aors = Vec::with_capacity(req.items.len());
-    for item in &req.items {
-        let aor = area_of_responsibility::Entity::find_by_id(item.id)
-            .filter(area_of_responsibility::Column::Deleted.eq(false))
-            .one(&txn)
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)?;
-        let mut aor = aor.into_active_model();
-        aor.order_for_report = Set(item.order_for_report);
-        aor.updated_by = Set(Some(user_id.clone()));
-        aor.updated_at = Set(Utc::now().naive_utc());
-        updated_aors.push(aor.update(&txn).await.c(h!())?);
-    }
-    txn.commit().await.c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Admin")
+        .await
+        .c(h!())?;
 
-    Ok(Json(
-        updated_aors.into_iter().map(render_aor).collect::<Vec<_>>(),
-    ))
+    let items = req
+        .items
+        .iter()
+        .map(|item| report_order::AorReportOrderUpdate {
+            aor_id: item.id,
+            order_for_report: item.order_for_report,
+        })
+        .collect::<Vec<_>>();
+    let rows =
+        report_order::update_report_order(&env.dbx, &user_id, None, &items)
+            .await
+            .c(h!())?;
+
+    let order_by_id = rows
+        .into_iter()
+        .map(|row| (row.aor_id, row.order_for_report))
+        .collect::<BTreeMap<_, _>>();
+    let mut updated_aors = area_of_responsibility::Entity::find()
+        .filter(
+            area_of_responsibility::Column::Id
+                .is_in(order_by_id.keys().copied().collect::<Vec<_>>()),
+        )
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(render_aor)
+        .map(|mut aor| {
+            if let Some(order_for_report) = order_by_id.get(&aor.id) {
+                aor.order_for_report = *order_for_report;
+            }
+            aor
+        })
+        .collect::<Vec<_>>();
+    updated_aors.sort_by(|left, right| {
+        left.order_for_report
+            .total_cmp(&right.order_for_report)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    Ok(Json(updated_aors))
 }
 
 pub async fn load_default_aor<'a, 'async_trait, C>(
@@ -221,7 +248,7 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
         right_bound: aor.right_bound,
         created_at: aor.created_at.and_utc().timestamp_millis(),
         is_top_level: aor.is_top_level,
-        order_for_report: aor.order_for_report,
+        order_for_report: aor.order_for_report_legacy,
         left_coordinates,
         right_coordinates,
     }
@@ -293,7 +320,7 @@ async fn map_insert(
         created_at: NotSet,
         deleted: Set(false),
         is_top_level: Set(req.is_top_level),
-        order_for_report: NotSet,
+        order_for_report_legacy: NotSet,
         is_default: NotSet,
         sigint_origin_id: NotSet,
         original_id: NotSet,

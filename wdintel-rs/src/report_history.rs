@@ -1026,9 +1026,16 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::GoiReport { .. } => {
+            let organism_id = crate::sigint::network::goi::login_organism_id(
+                &env.dbx,
+                &report_history.requested_by,
+            )
+            .await
+            .c(h!())?;
             let bytes =
                 crate::sigint::network::goi::report_xlsx_networks_goi_to_buffer(
                     env,
+                    organism_id,
                 )
                 .await
                 .c(h!())?;
