@@ -175,7 +175,7 @@ pub struct KnownCallsignRes {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, FromQueryResult)]
+#[derive(Debug, Clone, Default, FromQueryResult)]
 pub struct CallsignQueryResult {
     pub callsign: String,
     pub unit_id: Option<i64>,

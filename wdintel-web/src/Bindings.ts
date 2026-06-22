@@ -1379,14 +1379,14 @@ export type CreateLoginReq = {
   password: string;
   roles: Array<string>;
   sigintZoneId: number | null;
-  organismId: number | null;
+  organismId: number;
 };
 
 export type UpdateLoginReq = {
   login: string;
   roles: Array<string> | null;
   sigintZoneId: number | null;
-  organismId: number | null;
+  organismId: number;
   deleted: boolean | null;
   password: string | null;
   deltaLogin: string | null;

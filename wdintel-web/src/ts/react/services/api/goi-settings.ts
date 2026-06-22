@@ -1,4 +1,5 @@
-import { postJson } from './client';
+import { emitUnauthorizedEvent } from '../../auth-redirect';
+import { HttpRequestError, postBytes, postJson } from './client';
 
 export type GoiRestartService = 'swapp' | 'swapp_alt' | 'goi' | 'echo_swapp';
 export type GoiWhatsappService = 'swapp' | 'swapp_alt';
@@ -50,6 +51,10 @@ type RestartCurrentUserGoiServiceReqBody = {
 type UnlinkCurrentUserGoiWhatsappReqBody = {
   integration_id: number;
   service: GoiWhatsappService;
+};
+
+type DownloadGoiIntegrationPalettesReqBody = {
+  integration_id: number;
 };
 
 function normalizeNumber(value: number | string | null | undefined): number {
@@ -126,4 +131,50 @@ export async function unlinkCurrentUserGoiWhatsapp(
     integration_id: integrationId,
     service,
   } satisfies UnlinkCurrentUserGoiWhatsappReqBody);
+}
+
+export async function downloadCurrentUserGoiPalettes(
+  integrationId: number,
+): Promise<Blob> {
+  return postBytes('/api/goi/download-palettes', {
+    integration_id: integrationId,
+  } satisfies DownloadGoiIntegrationPalettesReqBody);
+}
+
+export async function uploadCurrentUserGoiCategories(
+  integrationId: number,
+  file: File,
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('file', file);
+  await postMultipartVoid(
+    `/api/goi/upload-categories/${integrationId}`,
+    formData,
+  );
+}
+
+function formatMultipartErrorMessage(status: number, text: string): string {
+  if (text.trim().length > 0) return text;
+  return `HTTP ${status}`;
+}
+
+async function postMultipartVoid(
+  url: string,
+  formData: FormData,
+): Promise<void> {
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      emitUnauthorizedEvent();
+    }
+    throw new HttpRequestError(
+      response.status,
+      formatMultipartErrorMessage(response.status, await response.text()),
+    );
+  }
 }

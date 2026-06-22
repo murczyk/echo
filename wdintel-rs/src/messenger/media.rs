@@ -1,13 +1,17 @@
 use crate::config::Config;
-use crate::entities::signal_message_media;
+use crate::entities::{signal_message_group, signal_message_media};
 use crate::error::AppError;
 use crate::h;
 use crate::storage;
 use crate::types::{error, warn};
 use crate::types::{Env, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use echo_im::types::MessageAttachmentF1;
 use opendal::Operator;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, NotSet, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
+};
 use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
@@ -140,6 +144,79 @@ pub async fn store_media_attachments(
         }
     }
     Ok(stored)
+}
+
+pub(crate) async fn ensure_media_access(
+    dbx: &DatabaseConnection,
+    login: &str,
+    signal_message_id: i64,
+) -> Result<(), AppError> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    let is_allowed = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_allowed {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("media access denied".into()))
+    }
+}
+
+pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
+    let ct = media.content_type.to_ascii_lowercase();
+    if ct.starts_with("audio/") {
+        return true;
+    }
+    if ct.contains("mpeg") || ct.contains("mp3") {
+        return true;
+    }
+    if let Some(ext) = media.file_ext.as_deref() {
+        if matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "mp3"
+                | "mpeg"
+                | "mpga"
+                | "wav"
+                | "ogg"
+                | "oga"
+                | "opus"
+                | "m4a"
+                | "aac"
+                | "flac"
+                | "webm"
+        ) {
+            return true;
+        }
+    }
+    if let Some(name) = media.file_name.as_deref() {
+        let name = name.to_ascii_lowercase();
+        if name.ends_with(".mp3")
+            || name.ends_with(".mpeg")
+            || name.ends_with(".wav")
+            || name.ends_with(".ogg")
+            || name.ends_with(".m4a")
+            || name.ends_with(".aac")
+            || name.ends_with(".flac")
+            || name.ends_with(".opus")
+        {
+            return true;
+        }
+    }
+    false
 }
 
 pub async fn fetch_media_bytes(

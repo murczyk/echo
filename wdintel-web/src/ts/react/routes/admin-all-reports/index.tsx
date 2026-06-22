@@ -8,6 +8,7 @@ export function AdminAllReportsPage() {
       title="Всі Звіти"
       tableId="admin-all-reports-v1"
       includeAuthor
+      fullHeight
       loadReportHistory={listAllReportHistory}
     />
   );

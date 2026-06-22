@@ -19,14 +19,14 @@ type CreateLoginReqBody = {
   password: string;
   roles: string[];
   sigint_zone_id: number | null;
-  organism_id: number | null;
+  organism_id: number;
 };
 
 type UpdateLoginReqBody = {
   login: string;
   roles: string[] | null;
   sigint_zone_id: number | null;
-  organism_id: number | null;
+  organism_id: number;
   deleted: boolean | null;
   password: string | null;
   delta_login: string | null;
