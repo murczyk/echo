@@ -52,7 +52,7 @@ type LoadArgs = {
   setAors: Dispatch<SetStateAction<AreaOfResponsibility[]>>;
   setUnitStats: Dispatch<SetStateAction<Array<{ unitId: number; count: number }>>>;
   setPosts: Dispatch<SetStateAction<Array<{ id: number; name: string }>>>;
-  setModulations: Dispatch<SetStateAction<EncryptionRec[]>>;
+  setEncryptions: Dispatch<SetStateAction<EncryptionRec[]>>;
   setStatus: Dispatch<SetStateAction<UiMessage>>;
   setStatusCounts: Dispatch<SetStateAction<{ active: number; inactive: number; archived: number } | null>>;
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
@@ -112,13 +112,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       if (lookupsPromise !== null) {
         (async () => {
           try {
-            const [unitsList, aorList, unitStatsList, postsList, modulationList] = await lookupsPromise;
+            const [unitsList, aorList, unitStatsList, postsList, encryptionList] = await lookupsPromise;
             if (args.requestSeqRef.current !== seq) return;
             args.setUnits(unitsList);
             args.setAors(aorList);
             args.setUnitStats(unitStatsList);
             args.setPosts(postsList);
-            args.setModulations(modulationList);
+            args.setEncryptions(encryptionList);
             args.bootstrapLoadedRef.current = true;
             args.setBootstrapLoaded(true);
           } catch (error) {

@@ -104,10 +104,6 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
   return null;
 }
 
-function extractFromParens(name: string): string | null {
-  const match = /\(([^)]+)\)$/.exec(name.trim());
-  return match ? match[1].trim() : null;
-}
 
 export function encryptionLabelFromKey(
   key: EncryptionKeyData,
@@ -144,8 +140,7 @@ export function encryptionLabelFromKeys(
   if (labels.length === 0 && encryptionId !== null && encryptionId !== undefined) {
     const encryptionName = encryptionsById.get(encryptionId) ?? null;
     if (encryptionName) {
-      const encryptionLabel =
-        encryptionLabelFromCandidate(encryptionName) ?? extractFromParens(encryptionName) ?? encryptionName;
+      const encryptionLabel = encryptionLabelFromCandidate(encryptionName) ?? encryptionName;
       labels.push(encryptionLabel);
     }
   }

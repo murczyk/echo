@@ -11,7 +11,7 @@ import type {
   NetworkEditForm,
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
-  NetworkFreqKind,
+  NetworkFreqTechDataForm,
   NetworkUpsertForm,
   NetworkPelengDateRange,
   NetworkRelationsDateRange,
@@ -49,8 +49,8 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     unitIds: [],
     postIds: [],
     freq: '',
-    kind: 'DMR',
-    modulationId: null,
+    modulation: 'DMR',
+    encryptionId: null,
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -117,8 +117,8 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     freqs: [
       {
         freq: form.freq.trim(),
-        modulation: toModulationString(form.kind),
-        encryptionId: form.modulationId,
+        modulation: form.modulation === 'DMRe' ? 'DMR' : form.modulation,
+        encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         description: null,
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
@@ -139,16 +139,11 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
   };
 }
 
-function toModulationString(kind: NetworkFreqKind): string {
-  return kind === 'DMRe' ? 'DMR' : kind;
-}
-
 export type NetworkUpsertValidationError = {
   name: string | null;
   location: string | null;
   aorIds: string | null;
   freq: string | null;
-  modulationId: string | null;
   activeFrom: string | null;
 };
 
@@ -162,7 +157,6 @@ export function getNetworkUpsertValidationError(
   const location = form.location.trim() === '' ? 'Район функціонування/розгортання є обовʼязковим' : null;
   const aorIds = form.aorIds.length === 0 ? 'Потрібно вибрати принаймні одну смугу' : null;
   const freq = options.includeFrequency ? getFrequencyFormatError(form.freq) : null;
-  const modulationId = options.includeFrequency && form.modulationId === null ? 'Потрібно вибрати модуляцію' : null;
   const activeFrom = options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
 
   const error = {
@@ -170,7 +164,6 @@ export function getNetworkUpsertValidationError(
     location,
     aorIds,
     freq,
-    modulationId,
     activeFrom,
   };
 

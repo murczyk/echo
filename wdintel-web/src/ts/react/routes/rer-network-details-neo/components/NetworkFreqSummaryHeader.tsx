@@ -3,7 +3,6 @@ import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { NetworkFreqsRes } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { formatNetworkFreqValue } from '../frequency-utils';
-import { typeLabelFromKind } from '../use-rer-network-details-neo-page.shared';
 
 type Props = {
   freq: NetworkFreqsRes | null;
@@ -32,7 +31,7 @@ export function NetworkFreqSummaryHeader({ freq }: Props) {
           <Typography variant="h4" fontWeight={800} sx={{ lineHeight: 1 }}>
             {formatNetworkFreqValue(freq.freq)}
           </Typography>
-          <Chip size="small" label={typeLabelFromKind(freq.modulation)} />
+          <Chip size="small" label={freq.modulation ?? ''} />
           <Chip size="small" label={freq.encryption ?? '—'} />
         </Stack>
         <Typography variant="body2" color="text.secondary" noWrap title={formatCallsigns(freq.callsigns)}>

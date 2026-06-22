@@ -38,7 +38,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [networks, setNetworks] = useState<Network[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
-  const [modulations, setModulations] = useState<EncryptionRec[]>([]);
+  const [encryptions, setEncryptions] = useState<EncryptionRec[]>([]);
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
@@ -190,7 +190,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setAors,
         setUnitStats,
         setPosts,
-        setModulations,
+        setEncryptions,
         setStatus,
         setStatusCounts,
         setNoMoreToLoad,
@@ -406,7 +406,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     downloadInFlight,
     runDownload: reportActions.runDownload,
     loadMoreNetworks,
-    modulations,
+    encryptions,
     editDialog,
     editSubmitting,
     editError,

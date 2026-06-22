@@ -112,8 +112,8 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
     unitIds: [],
     postIds: [],
     freq: '',
-    kind: 'DMR',
-    modulationId: null,
+    modulation: 'DMR',
+    encryptionId: null,
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -151,7 +151,7 @@ function renderDrawer(form: NetworkUpsertForm | null, mode: 'create' | 'edit' = 
         postOptions={[
           { id: 1, label: '_stihl_XN Пост' } as NetworkEditLookupOption,
         ]}
-        modulationOptions={[{ id: 11, label: 'FM' } as NetworkEditLookupOption]}
+        encryptionOptions={[{ id: 11, label: 'FM' } as NetworkEditLookupOption]}
         onClose={() => {}}
         onChange={nextSetForm}
         onSave={saveSpy}

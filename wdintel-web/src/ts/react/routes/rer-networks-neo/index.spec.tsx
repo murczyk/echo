@@ -163,7 +163,7 @@ beforeEach(() => {
     posts: [],
     unitOptions: [buildUnit(1, 'Unit 1')],
     postOptions: [],
-    modulations: [{ id: 11, label: 'FM' }],
+    encryptions: [{ id: 11, label: 'FM' }],
     unitStatsView: [],
     selectedSidebarUnitFilter: null,
     onPickUnitFilter: vi.fn(),

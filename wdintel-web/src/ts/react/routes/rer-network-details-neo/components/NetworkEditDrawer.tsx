@@ -45,14 +45,14 @@ type Props = {
   aorOptions: LookupOption[];
   unitOptions: LookupOption[];
   postOptions: LookupOption[];
-  modulationOptions: LookupOption[];
+  encryptionOptions: LookupOption[];
   onClose: () => void;
   onChange: (next: NetworkUpsertForm | null) => void;
   onSave: (form?: NetworkUpsertForm | null) => void;
   disableRestoreFocus?: boolean;
 };
 
-type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'modulationId' | 'activeFrom'>;
+type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'>;
 
 function buildSelectedOptions(options: LookupOption[], selectedIds: number[]): LookupOption[] {
   const optionsById = new Map(options.map((option) => [option.id, option]));
@@ -111,7 +111,7 @@ function NetworkEditDrawerComponent({
   aorOptions,
   unitOptions,
   postOptions,
-  modulationOptions,
+  encryptionOptions,
   onClose,
   onChange,
   onSave,
@@ -137,13 +137,13 @@ function NetworkEditDrawerComponent({
 
   const selectedAors = useMemo(() => (form ? buildSelectedOptions(aorOptions, form.aorIds) : []), [aorOptions, form]);
   const selectedPosts = useMemo(() => (form ? buildSelectedOptions(postOptions, form.postIds) : []), [form, postOptions]);
-  const selectedModulation = useMemo(() => {
-    if (!form || form.modulationId === null) {
+  const selectedEncryption = useMemo(() => {
+    if (!form || form.encryptionId === null) {
       return null;
     }
 
-    return modulationOptions.find((modulation) => modulation.id === form.modulationId) ?? null;
-  }, [form, modulationOptions]);
+    return encryptionOptions.find((enc) => enc.id === form.encryptionId) ?? null;
+  }, [form, encryptionOptions]);
 
   const showFieldError = (field: UpsertField) => submitted || touched[field] === true;
   const fieldError = (field: UpsertField): string | undefined => {
@@ -164,14 +164,16 @@ function NetworkEditDrawerComponent({
     onChange({ ...form, status: value as NetworkStatus });
   };
 
-  const handleKindChange = (value: string) => {
+  const handleModulationChange = (value: string) => {
     if (!form) return;
-    onChange({ ...form, kind: value as NetworkUpsertForm['kind'] });
+    const next = value as NetworkUpsertForm['modulation'];
+    const encryptionId = next === 'DMR' ? form.encryptionId : null;
+    onChange({ ...form, modulation: next, encryptionId });
   };
 
-  const handleModulationChange = (_event: SyntheticEvent, next: LookupOption | null) => {
+  const handleEncryptionChange = (_event: SyntheticEvent, next: LookupOption | null) => {
     if (!form) return;
-    onChange({ ...form, modulationId: next?.id ?? null });
+    onChange({ ...form, encryptionId: next?.id ?? null });
   };
 
   const handleSave = () => {
@@ -182,7 +184,6 @@ function NetworkEditDrawerComponent({
         location: true,
         aorIds: true,
         freq: true,
-        modulationId: true,
         activeFrom: true,
       });
       return;
@@ -415,46 +416,45 @@ function NetworkEditDrawerComponent({
                       />
 
                       <FormControl fullWidth size="small" disabled={formBlocked}>
-                        <InputLabel id="network-upsert-kind-label">Тип</InputLabel>
+                        <InputLabel id="network-upsert-modulation-label">Модуляція</InputLabel>
                         <Select
-                          labelId="network-upsert-kind-label"
-                          label="Тип"
-                          value={form.kind}
-                          onChange={(event) => handleKindChange(String(event.target.value))}
+                          labelId="network-upsert-modulation-label"
+                          label="Модуляція"
+                          value={form.modulation}
+                          onChange={(event) => handleModulationChange(String(event.target.value))}
                           MenuProps={NEO_SELECT_MENU_PROPS}
                         >
+                          <MenuItem value="NFM">NFM</MenuItem>
+                          <MenuItem value="AM">AM</MenuItem>
                           <MenuItem value="DMR">DMR</MenuItem>
                           <MenuItem value="DMRe">DMRe</MenuItem>
-                          <MenuItem value="NFM">NFM</MenuItem>
                         </Select>
                       </FormControl>
 
-                      <Autocomplete<LookupOption, false, false, false>
-                        fullWidth
-                        size="small"
-                        options={modulationOptions}
-                        value={selectedModulation}
-                        loading={referenceLoading}
-                        disabled={formBlocked}
-                        loadingText={LOADING_TEXT}
-                        noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
-                        getOptionLabel={(option) => option.label}
-                        isOptionEqualToValue={(option, value) => option.id === value.id}
-                        onChange={handleModulationChange}
-                        filterOptions={networkEditLookupFilterOptions}
-                        slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            label="Модуляція"
-                            size="small"
-                            required
-                            onBlur={() => markTouched('modulationId')}
-                            error={fieldError('modulationId') !== undefined}
-                            helperText={fieldError('modulationId')}
-                          />
-                        )}
-                      />
+                      {form.modulation === 'DMR' && (
+                        <Autocomplete<LookupOption, false, false, false>
+                          fullWidth
+                          size="small"
+                          options={encryptionOptions}
+                          value={selectedEncryption}
+                          loading={referenceLoading}
+                          disabled={formBlocked}
+                          loadingText={LOADING_TEXT}
+                          noOptionsText={referenceLoading ? LOADING_TEXT : 'Немає варіантів'}
+                          getOptionLabel={(option) => option.label}
+                          isOptionEqualToValue={(option, value) => option.id === value.id}
+                          onChange={handleEncryptionChange}
+                          filterOptions={networkEditLookupFilterOptions}
+                          slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Шифрування"
+                              size="small"
+                            />
+                          )}
+                        />
+                      )}
 
                       <NetworkFreqActivityPeriodControl
                         activeFrom={form.activeFrom}
