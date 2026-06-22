@@ -1,13 +1,42 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import { Box, Button, Tooltip } from '@mui/material';
+import { Box, Button, Tooltip, Typography } from '@mui/material';
 
 import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
+import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
 
-function isImageMediaAttachment(m: MessageMediaInfo): boolean {
-  const ct = String(m.contentType ?? '').trim();
+const AUDIO_FILE_EXTENSIONS = [
+  '.mp3',
+  '.mpeg',
+  '.mpga',
+  '.wav',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.m4a',
+  '.aac',
+  '.flac',
+  '.webm',
+] as const;
+
+const AUDIO_FILE_EXTENSION_RE = /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|webm)(\?|#|$)/i;
+
+type MessageMediaInfoRaw = MessageMediaInfo & {
+  content_type?: string | null;
+  file_name?: string | null;
+};
+
+export function mediaAttachmentContentType(m: MessageMediaInfo): string {
+  const raw = m as MessageMediaInfoRaw;
+  return String(m.contentType ?? raw.content_type ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+export function isImageMediaAttachment(m: MessageMediaInfo): boolean {
+  const ct = mediaAttachmentContentType(m);
   if (ct.startsWith('image/')) return true;
   if (ct !== '') return false;
   const href = String(m.href ?? '').toLowerCase();
@@ -59,11 +88,107 @@ export function MessagePictureThumb({ href }: { href: string }) {
   );
 }
 
+export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {
+  const ct = mediaAttachmentContentType(m);
+  if (ct.startsWith('video/')) return false;
+  if (ct.startsWith('audio/')) return true;
+  if (ct.includes('mpeg') || ct.includes('mp3')) return true;
+  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
+  if (AUDIO_FILE_EXTENSIONS.some((ext) => fileName.endsWith(ext))) return true;
+  const href = String(m.href ?? '').toLowerCase();
+  return AUDIO_FILE_EXTENSION_RE.test(href);
+}
+
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
-  const raw = m as MessageMediaInfo & { file_name?: string | null };
+  const raw = m as MessageMediaInfoRaw;
   const s = (m.fileName ?? raw.file_name ?? '').trim();
   if (s !== '') return s;
   return '<файл без назви>';
+}
+
+const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
+
+export function resolveMediaAttachmentId(attachment: MessageMediaInfo): string {
+  const id = String(attachment.id ?? '').trim();
+  if (id !== '') return id;
+  const match = MESSENGER_MEDIA_PATH_RE.exec(String(attachment.href ?? ''));
+  return match?.[1]?.trim() ?? '';
+}
+
+export function mediaAttachmentWaveUrl(mediaId: string): string {
+  return `/api/messenger/media/${mediaId}/wave`;
+}
+
+export function mediaAttachmentSpectrumUrl(mediaId: string): string {
+  return `/api/messenger/media/${mediaId}/spectrogram`;
+}
+
+export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' | 'dark') {
+  player.setAttribute('theme', paletteMode);
+}
+
+export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMediaInfo }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<HTMLElement | null>(null);
+  const paletteMode = useMuiPaletteMode();
+  const displayName = mediaAttachmentDisplayName(attachment);
+  const href = String(attachment.href ?? '');
+  const mediaId = resolveMediaAttachmentId(attachment);
+  const waveSrc = mediaId !== '' ? mediaAttachmentWaveUrl(mediaId) : '';
+  const spectrumSrc = mediaId !== '' ? mediaAttachmentSpectrumUrl(mediaId) : '';
+  const storageKey = `echo-inbox-${mediaId || displayName}`;
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host || href === '') return;
+
+    const player = document.createElement('custom-audio-player');
+    player.setAttribute('src', href);
+    player.setAttribute('mode', 'compact');
+    player.setAttribute('storage-key', storageKey);
+    player.setAttribute('theme', getMuiPaletteMode());
+    if (waveSrc !== '') {
+      player.setAttribute('wave-src', waveSrc);
+    }
+    if (spectrumSrc !== '') {
+      player.setAttribute('spectrum-src', spectrumSrc);
+    }
+    host.replaceChildren(player);
+    playerRef.current = player;
+
+    return () => {
+      playerRef.current = null;
+      host.replaceChildren();
+    };
+  }, [href, storageKey, waveSrc, spectrumSrc]);
+
+  useLayoutEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    syncAudioPlayerTheme(player, paletteMode);
+  }, [paletteMode]);
+
+  if (href === '') return null;
+
+  return (
+    <Box sx={{ mb: 0.5, width: '100%', maxWidth: 460, minWidth: 0 }}>
+      <Typography
+        variant="caption"
+        component="div"
+        title={displayName}
+        sx={{
+          mb: 0.25,
+          color: 'text.secondary',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {displayName}
+      </Typography>
+      <Box ref={hostRef} sx={{ width: '100%', minWidth: 0 }} />
+    </Box>
+  );
 }
 
 export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {

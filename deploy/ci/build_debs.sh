@@ -22,6 +22,7 @@ if [ -d "wdintel-web" ]; then
     cd wdintel-web
     # Reuse cached node_modules when possible (self-hosted CI keeps ignored files).
     if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+      bash "$REPO_ROOT/deploy/ci/require_github_packages_token.sh"
       npm ci
       touch "node_modules/.npm_installed"
     else

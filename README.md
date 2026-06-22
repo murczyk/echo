@@ -24,6 +24,7 @@ This enables repo-shared hooks in `.githooks/`, including a `pre-push` check tha
 Front-end:
 
 ```
+export GITHUB_TOKEN=ghp_...   # personal token with read:packages; see wdintel-web/.npmrc
 just dev-front
 ```
 

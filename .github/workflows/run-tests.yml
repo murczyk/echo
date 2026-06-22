@@ -11,12 +11,17 @@ jobs:
   build-test-and-publish:
     if: github.repository == 'echoua/echo'
     name: Build, test, and publish deb packages (amd64)
+    permissions:
+      contents: read
+      packages: read
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64]
     env:
       GIT_TERMINAL_PROMPT: 0
+      # Required for @echoua/echo-audio-player on npm.pkg.github.com (see README-NEWCOMERS.md).
+      ECHO_GITHUB_PACKAGES_TOKEN: ${{ secrets.ECHO_GITHUB_PACKAGES_TOKEN }}
       ECHO_BUILD_MAIN_SSH_TARGET: ${{ secrets.ECHO_BUILD_MAIN_SSH_TARGET || 'echo-build-main' }}
       ECHO_BUILD_MAIN_SSH_KEY: ${{ secrets.ECHO_BUILD_MAIN_SSH_KEY }}
       ECHO_BUILD_MAIN_WORKDIR: ${{ secrets.ECHO_BUILD_MAIN_WORKDIR || '~/workspace/echo' }}

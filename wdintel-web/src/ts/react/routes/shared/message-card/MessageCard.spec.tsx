@@ -1376,6 +1376,108 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Додати позивний');
   });
 
+  it('renders wav and ogg attachments with the custom audio player', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-wav',
+            href: 'https://example.test/files/recording.wav',
+            contentType: 'audio/wav',
+            fileName: 'recording.wav',
+            sizeBytes: 1024,
+          },
+          {
+            id: 'audio-ogg',
+            href: 'https://example.test/files/recording.ogg',
+            fileName: 'recording.ogg',
+            sizeBytes: 1024,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const players = view.container.querySelectorAll('custom-audio-player');
+    expect(players).toHaveLength(2);
+  });
+
+  it('does not treat video/mpeg attachments as audio', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'video-mpeg',
+            href: 'https://example.test/files/demo.mpeg',
+            contentType: 'video/mpeg',
+            fileName: 'demo.mpeg',
+            sizeBytes: 2048,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('custom-audio-player')).toBeNull();
+    expect(view.container.querySelector('button')).not.toBeNull();
+  });
+
+  it('renders audio attachments with the custom audio player instead of a download button', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-1',
+            href: 'https://example.test/files/recording.mp3',
+            contentType: 'audio/mpeg',
+            fileName: 'recording.mp3',
+            sizeBytes: 1024,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const player = view.container.querySelector('custom-audio-player');
+    expect(player).not.toBeNull();
+    expect(player?.getAttribute('src')).toBe('https://example.test/files/recording.mp3');
+    expect(player?.getAttribute('mode')).toBe('compact');
+    expect(player?.getAttribute('storage-key')).toBe('echo-inbox-audio-1');
+    expect(player?.getAttribute('wave-src')).toBe('/api/messenger/media/audio-1/wave');
+    expect(player?.getAttribute('spectrum-src')).toBe('/api/messenger/media/audio-1/spectrogram');
+    expect(view.container.querySelector('audio')).toBeNull();
+    expect(view.container.textContent).toContain('recording.mp3');
+    expect(
+      Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('recording.mp3')),
+    ).toBe(false);
+  });
+
+  it('renders audio attachments from snake_case API media fields', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-2',
+            href: '/api/messenger/media/audio-2',
+            content_type: 'audio/mpeg',
+            file_name: 'intercept.mp3',
+            size_bytes: 2048,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('custom-audio-player')).not.toBeNull();
+    expect(
+      Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('intercept.mp3')),
+    ).toBe(false);
+  });
+
   it('renders attachments with a download icon and consistent minimum width', async () => {
     const view = await renderCard({
       msg: {

@@ -76,6 +76,15 @@ cargo run --bin=wdintel-rs -- --mode debug oneoff-disable-im
 ```
 
 ## Build and start frontend (dev-front2)
+
+Private `@echoua/*` npm packages (for example `@echoua/echo-audio-player`) are installed from GitHub Packages. `wdintel-web/.npmrc` is already configured; before `npm install` / `npm ci`, export a **personal access token** with `read:packages` (and `repo` if the package is private):
+
+```bash
+export GITHUB_TOKEN=ghp_...
+```
+
+Create a token at [github.com/settings/tokens](https://github.com/settings/tokens).
+
 ```bash
 just dev-front2
 ```

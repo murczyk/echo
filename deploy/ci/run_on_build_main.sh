@@ -105,6 +105,7 @@ write_remote_env_file() {
     ECHO_CI_REPO
     ECHO_CI_DIST
     ECHO_CI_COMPONENT
+    ECHO_GITHUB_PACKAGES_TOKEN
   )
 
   for var_name in "${forwarded_vars[@]}"; do
@@ -112,6 +113,11 @@ write_remote_env_file() {
       printf 'export %s=%q\n' "$var_name" "${!var_name}" >> "$TMP_ENV_FILE"
     fi
   done
+
+  # wdintel-web/.npmrc reads GITHUB_TOKEN for @echoua/* on npm.pkg.github.com.
+  if [[ -n "${ECHO_GITHUB_PACKAGES_TOKEN:-}" ]]; then
+    printf 'export GITHUB_TOKEN=%q\n' "$ECHO_GITHUB_PACKAGES_TOKEN" >> "$TMP_ENV_FILE"
+  fi
 
   printf 'export GITHUB_ACTIONS=%q\n' "${GITHUB_ACTIONS:-true}" >> "$TMP_ENV_FILE"
   printf 'export ECHO_BUILD_MAIN_SSH_TARGET=%q\n' "$REMOTE_TARGET" >> "$TMP_ENV_FILE"
