@@ -26,7 +26,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "location-config-neo"
         }
 
 
@@ -77,7 +77,7 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: конфігурації локацій"
+    { title = "Адмін: файли населених пунктів AOR"
     , body =
         [ div [ class "w-full px-6 pt-6 pb-6" ]
             [ node "location-config-neo" [] [] ]

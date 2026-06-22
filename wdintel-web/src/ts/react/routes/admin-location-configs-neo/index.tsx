@@ -1,4 +1,4 @@
-import { Card, CardContent, CircularProgress, FormControl, MenuItem, Select, SelectChangeEvent, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Card, CardContent, Checkbox, FormControl, ListItemText, MenuItem, Select, SelectChangeEvent, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import { PageLoadingState } from '../../components/PageLoadingState';
@@ -21,6 +21,10 @@ type RowState = AorLocationConfigItem & {
 
 function areEqualStringArrays(left: string[], right: string[]): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function formatConfigName(config: string): string {
+  return config.split('/').pop() || config;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -129,7 +133,11 @@ export function AdminLocationConfigsNeoPage() {
       <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
         <div className="flex w-full min-w-0 flex-col gap-6">
           <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
-            Конфігурації локацій по смугах
+            Файли населених пунктів для AOR
+          </Typography>
+
+          <Typography color="text.secondary">
+            Оберіть один або кілька регіональних JSON-файлів, у яких ECHO шукатиме населені пункти для кожної смуги відповідальності. Порожній вибір використовує набір сервера за замовчуванням.
           </Typography>
 
           {loadStatus === 'loading' ? (
@@ -140,7 +148,11 @@ export function AdminLocationConfigsNeoPage() {
             <PowerAlert severity="error">{loadError || 'Помилка завантаження'}</PowerAlert>
           ) : null}
 
-          {loadStatus === 'success' ? (
+          {loadStatus === 'success' && availableConfigs.length === 0 ? (
+            <PowerAlert severity="warning">У каталозі settlements_json немає доступних регіональних файлів.</PowerAlert>
+          ) : null}
+
+          {loadStatus === 'success' && availableConfigs.length > 0 ? (
             <Table
               size="small"
               sx={{
@@ -150,8 +162,8 @@ export function AdminLocationConfigsNeoPage() {
             >
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ width: '10%' }}>Смуга</TableCell>
-                  <TableCell sx={{ width: '80%' }}>Конфігурація</TableCell>
+                  <TableCell sx={{ width: '20%' }}>AOR (смуга відповідальності)</TableCell>
+                  <TableCell sx={{ width: '70%' }}>Файли settlements.json</TableCell>
                   <TableCell sx={{ width: '10%' }}>Дія</TableCell>
                 </TableRow>
               </TableHead>
@@ -168,12 +180,13 @@ export function AdminLocationConfigsNeoPage() {
                         <FormControl size="small" fullWidth>
                           <Select
                             multiple
+                            displayEmpty
                             value={row.editedConfigs}
                             onChange={(event) => onSelectChange(row.aorId, event)}
                             renderValue={(selected) =>
                               selected.length > 0
-                                ? selected.join(', ')
-                                : 'За замовчуванням (config.toml)'
+                                ? selected.map(formatConfigName).join(', ')
+                                : 'Набір сервера за замовчуванням'
                             }
                             sx={{
                               '& .MuiSelect-select': {
@@ -185,7 +198,8 @@ export function AdminLocationConfigsNeoPage() {
                           >
                             {availableConfigs.map((config) => (
                               <MenuItem value={config} key={config}>
-                                {config}
+                                <Checkbox checked={row.editedConfigs.includes(config)} />
+                                <ListItemText primary={formatConfigName(config)} />
                               </MenuItem>
                             ))}
                           </Select>

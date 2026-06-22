@@ -131,7 +131,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
         crate::location::load_settlements_data_config(settlement_paths, mode)
-            .unwrap_or_default();
+            .c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
     let callsigns_whitelist =
         crate::sigint::callsign::load_whitelist_from_file(mode)
