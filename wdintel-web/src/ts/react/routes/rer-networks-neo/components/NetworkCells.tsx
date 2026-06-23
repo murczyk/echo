@@ -1,40 +1,8 @@
 import { Box, Stack, Tooltip } from '@mui/material';
 import type { PointerEvent } from 'react';
 
-import type { NetworkFreq } from '../../../../../Bindings';
-import { CompactPowerChip } from '../../../components/CompactPowerChip';
 import { PowerChip } from '../../../components/PowerChip';
 import { buildNetworkFrequencyDisplayGroups, getActivityBarHeight, type NetworkRowView } from '../helpers';
-
-const MAX_FREQUENCY_METADATA_LABEL_LENGTH = 16;
-
-function isShortFrequencyMetadataLabel(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    trimmed.length > 0 &&
-    trimmed.length <= MAX_FREQUENCY_METADATA_LABEL_LENGTH &&
-    !/[\r\n]/.test(trimmed) &&
-    !/(?:^|[\s/._-])(key|hash|keyid|rx|tx)(?:$|[\s/._-])/i.test(trimmed)
-  );
-}
-
-export function buildFrequencyMetadataLabels(freq: NetworkFreq): string[] {
-  const labels: string[] = [];
-  const pushLabel = (value: string | null | undefined) => {
-    const trimmed = value?.trim();
-    if (!trimmed || !isShortFrequencyMetadataLabel(trimmed) || labels.includes(trimmed)) {
-      return;
-    }
-    labels.push(trimmed);
-  };
-
-  pushLabel(freq.kind);
-  for (const encryptionKey of freq.encryptionKeys) {
-    pushLabel(encryptionKey.description);
-  }
-
-  return labels;
-}
 
 export function getLocationParts(location: string): string[] {
   return location
@@ -47,10 +15,10 @@ function RowLabel({ text }: { text: string }) {
   return (
     <Box
       sx={{
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
         fontWeight: 700,
-        whiteSpace: 'nowrap',
+        lineHeight: 1.25,
+        whiteSpace: 'normal',
+        overflowWrap: 'anywhere',
         width: '100%',
       }}
       title={text}
@@ -82,49 +50,9 @@ export function ActivityBars({ bars }: { bars: Array<{ value: number; title: str
   );
 }
 
-function FrequencyMetadataChips({ labels }: { labels: string[] }) {
-  if (labels.length === 0) {
-    return null;
-  }
-
-  return (
-    <Stack
-      direction="row"
-      spacing={0.5}
-      useFlexGap
-      sx={{
-        flexWrap: 'nowrap',
-        minWidth: 0,
-        maxWidth: '100%',
-        overflow: 'hidden',
-        justifyContent: 'flex-end',
-      }}
-    >
-      {labels.map((label) => (
-        <CompactPowerChip
-          key={label}
-          label={label}
-          interactive={false}
-          title={label}
-          sx={{
-            maxWidth: '100%',
-            minWidth: 0,
-            '& .MuiChip-label': {
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            },
-          }}
-        />
-      ))}
-    </Stack>
-  );
-}
-
 export function NetworkCell({ network }: { network: NetworkRowView }) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
+    <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
       <Tooltip title={network.statusLabel}>
         <Box
           sx={{
@@ -133,6 +61,7 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
             borderRadius: '50%',
             bgcolor: network.statusColor,
             flexShrink: 0,
+            alignSelf: 'center',
           }}
         />
       </Tooltip>
@@ -144,8 +73,8 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
         sx={{
           minWidth: 0,
           flex: 1,
-          display: 'inline-flex',
-          alignItems: 'center',
+          display: 'flex',
+          alignItems: 'flex-start',
           color: 'primary.main',
           textDecoration: 'none',
           '&:hover': {

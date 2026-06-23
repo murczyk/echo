@@ -1,6 +1,6 @@
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { NetworkCallsign, Source } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -25,6 +25,7 @@ import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
 import { NetworkCallsignsInterceptedPanel } from './NetworkCallsignsInterceptedPanel';
 import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
+import { NO_DATA_LABEL } from '../../../utils/misc';
 
 const SECTION_IDS = {
   network: 'network-callsigns-network',
@@ -36,27 +37,81 @@ function scrollToSection(sectionId: string) {
   document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function formatSectionCount(count: number, totalCount: number, searchActive: boolean): string {
+function formatSectionCount(count: number | null, totalCount: number | null, searchActive: boolean): string {
+  if (count === null || totalCount === null) return NO_DATA_LABEL;
   if (!searchActive) return formatCountLabel(count);
   return `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
 }
 
-const NETWORK_SECTION_TABLE_HEIGHT = {
-  xs: 500,
-  md: 'min(600px, 64vh)',
-} as const;
-
+const FIRST_TABLE_MIN_HEIGHT = 360;
+const FIRST_TABLE_MAX_HEIGHT = 4096;
+const FIRST_TABLE_BOTTOM_INSET = 8;
 const CATALOG_SECTION_TABLE_HEIGHT = {
   xs: 520,
   md: 'min(620px, 70vh)',
 } as const;
+
+function clampSectionHeight(value: number) {
+  if (value <= 0) return 0;
+  if (value < FIRST_TABLE_MIN_HEIGHT) return value;
+  return Math.min(value, FIRST_TABLE_MAX_HEIGHT);
+}
+
+function findVerticalScrollContainer(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current) {
+    const overflowY = window.getComputedStyle(current).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function getFirstTableAvailableHeight(firstTable: HTMLElement): number {
+  const topOffset = firstTable.getBoundingClientRect().top;
+  const scrollContainer = findVerticalScrollContainer(firstTable);
+  if (!scrollContainer) return window.innerHeight - topOffset - FIRST_TABLE_BOTTOM_INSET;
+
+  const containerStyle = window.getComputedStyle(scrollContainer);
+  const containerBottomPadding = Number.parseFloat(containerStyle.paddingBottom) || 0;
+  const containerBottom = scrollContainer.getBoundingClientRect().bottom;
+  return containerBottom - topOffset - containerBottomPadding - FIRST_TABLE_BOTTOM_INSET;
+}
+
+function useMeasuredFirstTableHeight(sectionMode: NetworkCallsignSectionMode) {
+  const firstTableRef = useRef<HTMLDivElement | null>(null);
+  const [firstTableHeight, setFirstTableHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const firstTable = firstTableRef.current;
+      if (!firstTable) return;
+      setFirstTableHeight(clampSectionHeight(getFirstTableAvailableHeight(firstTable)));
+    };
+
+    measure();
+    const animationFrame = window.requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', measure);
+    };
+  }, [sectionMode]);
+
+  return { firstTableRef, firstTableHeight };
+}
 
 export type Props = {
   sources: Source[];
   networkCallsigns: NetworkCallsign[];
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
   unknownInterceptedCallsigns: NetworkCallsignInterceptedView[];
-  loading: boolean;
+  networkCallsignsLoading: boolean;
+  networkCallsignsError: string | null;
+  catalogCallsignsLoading: boolean;
+  catalogCallsignsError: string | null;
+  interceptedCallsignsLoading: boolean;
+  interceptedCallsignsError: string | null;
   loadingError: string | null;
   canManage: boolean;
   sectionMode: NetworkCallsignSectionMode;
@@ -84,7 +139,12 @@ export function NetworkDetailsCallsignsPanel({
   networkCallsigns,
   catalogCallsignGroups,
   unknownInterceptedCallsigns,
-  loading,
+  networkCallsignsLoading,
+  networkCallsignsError,
+  catalogCallsignsLoading,
+  catalogCallsignsError,
+  interceptedCallsignsLoading,
+  interceptedCallsignsError,
   loadingError,
   canManage,
   sectionMode,
@@ -107,6 +167,7 @@ export function NetworkDetailsCallsignsPanel({
   inFlightDeleteIds,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
+  const { firstTableRef, firstTableHeight } = useMeasuredFirstTableHeight(sectionMode);
   const networkRows = useMemo(
     () => buildNetworkCallsignRowViews(networkCallsigns, new Map(sources.map((source) => [source.id, source] as const))),
     [networkCallsigns, sources],
@@ -132,6 +193,9 @@ export function NetworkDetailsCallsignsPanel({
       total: unknownInterceptedCallsigns.length,
     },
   } as const;
+  const networkLoadingActive = networkCallsignsLoading && networkCallsigns.length === 0;
+  const catalogLoadingActive = catalogCallsignsLoading && catalogCallsignGroups.length === 0;
+  const interceptedLoadingActive = interceptedCallsignsLoading && unknownInterceptedCallsigns.length === 0;
 
   const handleNavigateToSection = (nextSection: NetworkCallsignSectionMode) => {
     onSectionModeChange(nextSection);
@@ -209,13 +273,17 @@ export function NetworkDetailsCallsignsPanel({
           </Stack>
         </Stack>
         {canManage ? (
-          <Button variant="contained" onClick={onOpenCreateDrawer} disabled={loading}>
+          <Button
+            variant="contained"
+            onClick={onOpenCreateDrawer}
+            disabled={networkCallsignsLoading || catalogCallsignsLoading || interceptedCallsignsLoading}
+          >
             Додати
           </Button>
         ) : null}
       </Box>
 
-      {loadingError && networkCallsigns.length === 0 && catalogCallsignGroups.length === 0 && unknownInterceptedCallsigns.length === 0 ? (
+      {loadingError ? (
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
           <PowerAlert severity="error">{loadingError}</PowerAlert>
           <Button size="small" onClick={onReload}>
@@ -226,12 +294,13 @@ export function NetworkDetailsCallsignsPanel({
 
       <Stack spacing={2.5} sx={{ minHeight: 0, width: '100%' }}>
         <Stack id={SECTION_IDS.network} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
-          <Box sx={{ height: NETWORK_SECTION_TABLE_HEIGHT, minHeight: 420, maxHeight: 640, display: 'flex' }}>
+          <Box ref={firstTableRef} sx={{ height: firstTableHeight ?? 'auto', minHeight: 0, maxHeight: 'calc(100dvh - 16px)', display: 'flex' }}>
             <NetworkCallsignsNetworkTable
               title="Позивні мережі"
               rows={filteredNetworkRows}
-              loading={loading}
-              loadingError={loadingError}
+              countLabel={networkLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.network.filtered, sectionCounts.network.total, searchActive)}
+              loading={networkCallsignsLoading}
+              loadingError={networkCallsignsError}
               canManage={canManage}
               statusFilter={statusFilter}
               onStatusFilterChange={onStatusFilterChange}
@@ -249,10 +318,10 @@ export function NetworkDetailsCallsignsPanel({
           <Box sx={{ height: CATALOG_SECTION_TABLE_HEIGHT, minHeight: 420, maxHeight: 720, display: 'flex' }}>
             <NetworkCallsignsCatalogTable
               title="Співпадіння з каталогом"
-              countLabel={formatSectionCount(sectionCounts.catalog.filtered, sectionCounts.catalog.total, searchActive)}
+              countLabel={catalogLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.catalog.filtered, sectionCounts.catalog.total, searchActive)}
               rows={filteredCatalogRows}
-              loading={loading}
-              loadingError={loadingError}
+              loading={catalogCallsignsLoading}
+              loadingError={catalogCallsignsError}
               canManage={canManage}
               onAddKnownCallsign={onAddKnownCallsign}
               onReload={onReload}
@@ -266,17 +335,17 @@ export function NetworkDetailsCallsignsPanel({
             <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
               <Typography variant="h6">Присутні в перехопленнях</Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatSectionCount(sectionCounts.intercepted.filtered, sectionCounts.intercepted.total, searchActive)}
+                {interceptedLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.intercepted.filtered, sectionCounts.intercepted.total, searchActive)}
               </Typography>
             </Stack>
           </Stack>
-          {loadingError && unknownInterceptedCallsigns.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
           <Box sx={{ pb: 2 }}>
             <NetworkCallsignsInterceptedPanel
               rows={filteredInterceptedRows}
               canManage={canManage}
               expanded={interceptedExpanded}
-              loading={loading}
+              loading={interceptedCallsignsLoading}
+              loadingError={interceptedCallsignsError}
               mutationBusy={inFlightCreateCallsigns.length > 0}
               onToggleExpanded={onToggleInterceptedExpanded}
               onAddToDeveloping={onAddInterceptedToDeveloping}

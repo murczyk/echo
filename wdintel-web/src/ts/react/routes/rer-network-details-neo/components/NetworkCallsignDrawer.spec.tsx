@@ -135,7 +135,7 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm) {
         onClose={() => {}}
         onChange={(next) => setForm(next)}
         onSave={() => {
-          if (form?.sourceId === null) {
+          if (form && !form.developing && form.sourceId === null) {
             setError('Джерело є обовʼязковим');
           }
         }}
@@ -151,23 +151,10 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm) {
 }
 
 describe('NetworkCallsignDrawer', () => {
-  it('disables save when the callsign is filled but the source is missing', () => {
+  it('allows developing rows to save without a source', () => {
     const view = renderHarness({
       ...createDefaultNetworkCallsignDrawerForm(10, null),
       callsign: 'СОКІЛ',
-    });
-    rendered.push(view);
-
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
-
-    expect(saveButton?.disabled).toBe(true);
-  });
-
-  it('enables save when both the callsign and source are present', () => {
-    const view = renderHarness({
-      ...createDefaultNetworkCallsignDrawerForm(10, null),
-      callsign: 'СОКІЛ',
-      sourceId: 1,
     });
     rendered.push(view);
 
@@ -176,11 +163,36 @@ describe('NetworkCallsignDrawer', () => {
     expect(saveButton?.disabled).toBe(false);
   });
 
+  it('requires source for catalog rows before save', () => {
+    const view = renderHarness({
+      ...createDefaultNetworkCallsignDrawerForm(10, null),
+      callsign: 'СОКІЛ',
+      developing: false,
+    });
+    rendered.push(view);
+
+    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+
+    expect(saveButton?.disabled).toBe(true);
+  });
+
+  it('shows the source label without an asterisk for developing rows', () => {
+    const view = renderHarness({
+      ...createDefaultNetworkCallsignDrawerForm(10, null),
+      callsign: 'СОКІЛ',
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Джерело');
+    expect(view.container.textContent).not.toContain('Джерело *');
+  });
+
   it('shows the source validation hint when a selected source is cleared', () => {
     const view = renderHarness({
       ...createDefaultNetworkCallsignDrawerForm(10, null),
       callsign: 'СОКІЛ',
       sourceId: 1,
+      developing: false,
     });
     rendered.push(view);
 

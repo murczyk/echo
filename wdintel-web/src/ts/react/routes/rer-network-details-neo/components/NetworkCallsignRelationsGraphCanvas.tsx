@@ -1,7 +1,7 @@
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { useTheme } from '@mui/material/styles';
-import { type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 
 import {
@@ -35,6 +35,7 @@ type Props = {
   onPointerDown: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (event: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onWheel: (event: WheelEvent) => void;
 };
 
 function renderNodeMarkerBadge(
@@ -44,11 +45,14 @@ function renderNodeMarkerBadge(
   Icon: ComponentType<any>,
   fill: string,
 ) {
+  const badgeDiameter = 24;
+  const iconSize = 16;
+
   return (
     <g key={label} transform={`translate(${x} ${y})`} role="img" aria-label={label} style={{ pointerEvents: 'none' }}>
       <title>{label}</title>
-      <circle cx={0} cy={0} r={9} fill={fill} stroke="rgba(255,255,255,0.42)" strokeWidth={1} />
-      <Icon x={-6} y={-6} width={12} height={12} htmlColor="#ffffff" />
+      <circle cx={0} cy={0} r={badgeDiameter / 2} fill={fill} stroke="rgba(255,255,255,0.42)" strokeWidth={1} />
+      <Icon x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} htmlColor="#ffffff" />
     </g>
   );
 }
@@ -73,11 +77,30 @@ export function NetworkCallsignRelationsGraphCanvas({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onWheel,
 }: Props) {
   const theme = useTheme();
+  const [svgElement, setSvgElement] = useState<SVGSVGElement | null>(null);
+
+  useEffect(() => {
+    if (!svgElement) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      onWheel(event);
+    };
+
+    svgElement.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      svgElement.removeEventListener('wheel', handleWheel);
+    };
+  }, [onWheel, svgElement]);
+
   return (
     <svg
-      ref={svgRef}
+      ref={(node) => {
+        svgRef.current = node;
+        setSvgElement(node);
+      }}
       role="img"
       aria-label="Граф зв'язків позивних"
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
@@ -156,6 +179,7 @@ export function NetworkCallsignRelationsGraphCanvas({
         const opacity = selectedNodeId !== null || selectedEdgeId !== null ? (highlighted ? 1 : 0.28) : node.matchedSearch ? 1 : 0.9;
         const stroke = node.matchedSearch ? '#f0d2a0' : selected ? '#fff5df' : 'rgba(255,255,255,0.18)';
         const radius = Math.max(20, 22 + Math.min(node.weight, 24) * 0.65);
+        const markerOffset = 15;
 
         return (
           <g
@@ -178,8 +202,8 @@ export function NetworkCallsignRelationsGraphCanvas({
             />
             {node.mainRadioStation
               ? renderNodeMarkerBadge(
-                  position.x + radius * 0.56,
-                  position.y - radius * 0.72,
+                  node.commandControl ? position.x - markerOffset : position.x,
+                  position.y,
                   'Головна радіостанція',
                   StarIcon,
                   theme.palette.warning.main,
@@ -187,8 +211,8 @@ export function NetworkCallsignRelationsGraphCanvas({
               : null}
             {node.commandControl
               ? renderNodeMarkerBadge(
-                  node.mainRadioStation ? position.x - radius * 0.56 : position.x + radius * 0.56,
-                  position.y - radius * 0.72,
+                  node.mainRadioStation ? position.x + markerOffset : position.x,
+                  position.y,
                   'Ланка управління',
                   MilitaryTechOutlinedIcon,
                   theme.palette.info.main,

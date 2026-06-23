@@ -7,7 +7,7 @@ import type { MouseEvent, ReactElement, ReactNode } from 'react';
 import { PowerIconButton } from './PowerIconButton';
 import { PowerMenu } from './PowerMenu';
 
-type Tone = 'default' | 'danger';
+type Tone = 'default' | 'warning' | 'danger';
 type Layout = 'row' | 'grid';
 
 type Props = {
@@ -57,20 +57,23 @@ function runRowAction({
 }
 
 function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
-  if (tone === 'danger') {
+  if (tone !== 'default') {
+    const toneColor =
+      tone === 'danger' ? theme.palette.error.main : theme.palette.warning.main;
+
     return {
       width: 28,
       height: 28,
       borderRadius: '50%',
-      color: theme.palette.error.main,
+      color: toneColor,
       '&:hover': {
-        backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.22 : 0.14),
-        color: theme.palette.error.main,
+        backgroundColor: alpha(toneColor, theme.palette.mode === 'dark' ? 0.22 : 0.14),
+        color: toneColor,
       },
       '&:focus-visible': {
-        outline: `2px solid ${alpha(theme.palette.error.main, 0.8)}`,
+        outline: `2px solid ${alpha(toneColor, 0.8)}`,
         outlineOffset: 1,
-        backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.24 : 0.16),
+        backgroundColor: alpha(toneColor, theme.palette.mode === 'dark' ? 0.24 : 0.16),
       },
       '&.Mui-disabled': {
         color: theme.palette.action.disabled,
@@ -188,6 +191,12 @@ function isMrtRowActionElement(child: ReactNode): child is ActionElement {
   return isValidElement(child) && child.type === MrtRowActionButton;
 }
 
+function rowActionToneColor(theme: Theme, tone: Tone) {
+  if (tone === 'danger') return theme.palette.error.main;
+  if (tone === 'warning') return theme.palette.warning.main;
+  return theme.palette.text.primary;
+}
+
 function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClose: () => void }) {
   const { label, onClick, icon, disabled = false, tone = 'default', opensModal = false } = action.props;
 
@@ -205,7 +214,7 @@ function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClos
       onClick={handleClick}
       sx={(theme) => ({
         pl: 0.5,
-        ...(tone === 'danger' ? { color: theme.palette.error.main } : {}),
+        ...(tone !== 'default' ? { color: rowActionToneColor(theme, tone) } : {}),
       })}
     >
       <ListItemIcon
@@ -214,7 +223,7 @@ function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClos
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: tone === 'danger' ? theme.palette.error.main : theme.palette.text.primary,
+          color: rowActionToneColor(theme, tone),
           '& > *': {
             display: 'block',
           },

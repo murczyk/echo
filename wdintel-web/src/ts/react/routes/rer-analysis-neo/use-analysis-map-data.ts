@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { FreqDetailedPoint, InboxMessage, NetworkUnit, PalitraReadV2 } from '../../../../Bindings';
 import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/analysis';
-import { listPalitrasV2 } from '../../services/api/palitra';
+import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildInboxReq } from './helpers';
 import { buildMapAttrs } from './helpers-map';
@@ -128,7 +128,7 @@ export function useAnalysisMapData({
     setMapPalitrasLoaded(false);
 
     try {
-      const palitras = await listPalitrasV2();
+      const palitras = await listMapPalitrasV2();
       setMapPalitras(
         palitras.map((palitraRead) => ({
           ...palitraRead,

@@ -66,8 +66,8 @@ function buildPageTitle(
     return <Skeleton width={240} />;
   }
 
-    return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+  return (
+    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}>
       <Tooltip title={status.label} arrow placement="bottom-start">
         <Box
           component="span"
@@ -82,7 +82,7 @@ function buildPageTitle(
           }}
         />
       </Tooltip>
-      <Box component="span" sx={{ minWidth: 0 }}>
+      <Box component="span" sx={{ display: 'block', minWidth: 0, lineHeight: 'inherit' }}>
         {formatClassicNetworkHeaderName(network?.name, unitNames)}
       </Box>
     </Box>

@@ -1501,6 +1501,18 @@ signalGroupStatsTimelineRspEncoder struct =
         ]
 
 
+type alias SignalGroupArchiveReq =
+    { masterKey : String
+    }
+
+
+signalGroupArchiveReqEncoder : SignalGroupArchiveReq -> Json.Encode.Value
+signalGroupArchiveReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        ]
+
+
 type alias SignalGroupRsp =
     { name : Maybe (String)
     }
@@ -1577,6 +1589,7 @@ type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
     , groupStats : SignalGroupStats
@@ -1591,6 +1604,7 @@ orphanSignalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
@@ -3509,6 +3523,60 @@ goiUserIntegrationEncoder struct =
         , ( "has_data_access", (Json.Encode.bool) struct.hasDataAccess )
         , ( "can_restart", (Json.Encode.bool) struct.canRestart )
         , ( "restart_unavailable_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.restartUnavailableReason )
+        ]
+
+
+type alias GoiReportTabOrderItem =
+    { aorId : Int
+    , aorName : String
+    , orderForReport : Float
+    }
+
+
+goiReportTabOrderItemEncoder : GoiReportTabOrderItem -> Json.Encode.Value
+goiReportTabOrderItemEncoder struct =
+    Json.Encode.object
+        [ ( "aor_id", (Json.Encode.int) struct.aorId )
+        , ( "aor_name", (Json.Encode.string) struct.aorName )
+        , ( "order_for_report", (Json.Encode.float) struct.orderForReport )
+        ]
+
+
+type alias GoiReportTabOrderListReq =
+    { integrationId : Maybe (Int)
+    }
+
+
+goiReportTabOrderListReqEncoder : GoiReportTabOrderListReq -> Json.Encode.Value
+goiReportTabOrderListReqEncoder struct =
+    Json.Encode.object
+        [ ( "integration_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.integrationId )
+        ]
+
+
+type alias GoiReportTabOrderListRsp =
+    { items : List (GoiReportTabOrderItem)
+    }
+
+
+goiReportTabOrderListRspEncoder : GoiReportTabOrderListRsp -> Json.Encode.Value
+goiReportTabOrderListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (goiReportTabOrderItemEncoder)) struct.items )
+        ]
+
+
+type alias GoiReportTabOrderUpdateReq =
+    { integrationId : Maybe (Int)
+    , items : List (GoiReportTabOrderItem)
+    }
+
+
+goiReportTabOrderUpdateReqEncoder : GoiReportTabOrderUpdateReq -> Json.Encode.Value
+goiReportTabOrderUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "integration_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.integrationId )
+        , ( "items", (Json.Encode.list (goiReportTabOrderItemEncoder)) struct.items )
         ]
 
 
@@ -7178,9 +7246,26 @@ networkFreqCallsignsRspEncoder struct =
         ]
 
 
+type SingleNetworkCallsignsSection
+    = Everything
+    | Catalog
+    | Intercepted
+
+
+singleNetworkCallsignsSectionEncoder : SingleNetworkCallsignsSection -> Json.Encode.Value
+singleNetworkCallsignsSectionEncoder enum =
+    case enum of
+        Everything ->
+            Json.Encode.string "Everything"
+        Catalog ->
+            Json.Encode.string "Catalog"
+        Intercepted ->
+            Json.Encode.string "Intercepted"
+
 type alias SingleNetworkCallsignsReq =
     { networkId : Int
     , includeActivityInfo : Maybe (Bool)
+    , section : Maybe (SingleNetworkCallsignsSection)
     }
 
 
@@ -7189,6 +7274,7 @@ singleNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
+        , ( "section", (Maybe.withDefault Json.Encode.null << Maybe.map (singleNetworkCallsignsSectionEncoder)) struct.section )
         ]
 
 
@@ -9107,6 +9193,12 @@ signalGroupStatsTimelineRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "data" (Json.Decode.list (signalGroupStatsTimelineEntryDecoder))))
 
 
+signalGroupArchiveReqDecoder : Json.Decode.Decoder SignalGroupArchiveReq
+signalGroupArchiveReqDecoder =
+    Json.Decode.succeed SignalGroupArchiveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+
+
 signalGroupRspDecoder : Json.Decode.Decoder SignalGroupRsp
 signalGroupRspDecoder =
     Json.Decode.succeed SignalGroupRsp
@@ -9456,6 +9548,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
@@ -10095,6 +10188,33 @@ goiUserIntegrationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_data_access" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_restart" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restart_unavailable_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+goiReportTabOrderItemDecoder : Json.Decode.Decoder GoiReportTabOrderItem
+goiReportTabOrderItemDecoder =
+    Json.Decode.succeed GoiReportTabOrderItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "order_for_report" (Json.Decode.float)))
+
+
+goiReportTabOrderListReqDecoder : Json.Decode.Decoder GoiReportTabOrderListReq
+goiReportTabOrderListReqDecoder =
+    Json.Decode.succeed GoiReportTabOrderListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+goiReportTabOrderListRspDecoder : Json.Decode.Decoder GoiReportTabOrderListRsp
+goiReportTabOrderListRspDecoder =
+    Json.Decode.succeed GoiReportTabOrderListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (goiReportTabOrderItemDecoder))))
+
+
+goiReportTabOrderUpdateReqDecoder : Json.Decode.Decoder GoiReportTabOrderUpdateReq
+goiReportTabOrderUpdateReqDecoder =
+    Json.Decode.succeed GoiReportTabOrderUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "integration_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (goiReportTabOrderItemDecoder))))
 
 
 settingsSaveReqDecoder : Json.Decode.Decoder SettingsSaveReq
@@ -12568,11 +12688,44 @@ networkFreqCallsignsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
 
 
+singleNetworkCallsignsSectionDecoder : Json.Decode.Decoder SingleNetworkCallsignsSection
+singleNetworkCallsignsSectionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Everything" ->
+                            Json.Decode.succeed Everything
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Catalog" ->
+                            Json.Decode.succeed Catalog
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Intercepted" ->
+                            Json.Decode.succeed Intercepted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 singleNetworkCallsignsReqDecoder : Json.Decode.Decoder SingleNetworkCallsignsReq
 singleNetworkCallsignsReqDecoder =
     Json.Decode.succeed SingleNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.nullable (singleNetworkCallsignsSectionDecoder))))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp
@@ -13335,5 +13488,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

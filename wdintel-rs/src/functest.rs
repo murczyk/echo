@@ -675,6 +675,9 @@ pub mod tests {
         if out.is_secret == NotSet {
             out.is_secret = Set(false);
         }
+        if out.is_archived == NotSet {
+            out.is_archived = Set(false);
+        }
         out
     }
 

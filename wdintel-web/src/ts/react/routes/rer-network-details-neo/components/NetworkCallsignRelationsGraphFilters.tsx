@@ -1,19 +1,17 @@
-import { Box, Checkbox, Divider, FormControlLabel, Popover, Slider, Stack, Typography } from '@mui/material';
+import { Box, Checkbox, FormControlLabel, Popover, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { NetworkCallsignRelationFreqView } from '../network-relations';
-import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
+import { NETWORK_RELATIONS_FULLSCREEN_Z_INDEX, getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 
 type Props = {
   anchorEl: HTMLElement | null;
   popoverId: string;
   legendFreqs: NetworkCallsignRelationFreqView[];
   enabledFreqs: string[];
-  minIntensity: number;
-  intensitySliderMax: number;
+  isFullscreen: boolean;
   onClose: () => void;
   onEnabledFreqToggle: (freq: string, checked: boolean) => void;
-  onMinIntensityChange: (value: number) => void;
 };
 
 export function NetworkCallsignRelationsGraphFilters({
@@ -21,11 +19,9 @@ export function NetworkCallsignRelationsGraphFilters({
   popoverId,
   legendFreqs,
   enabledFreqs,
-  minIntensity,
-  intensitySliderMax,
+  isFullscreen,
   onClose,
   onEnabledFreqToggle,
-  onMinIntensityChange,
 }: Props) {
   const theme = useTheme();
   const graphTheme = getNetworkRelationsGraphTheme(theme);
@@ -38,19 +34,27 @@ export function NetworkCallsignRelationsGraphFilters({
       onClose={onClose}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{
-          paper: {
-            sx: {
-              borderRadius: 2,
-              overflow: 'hidden',
-              bgcolor: graphTheme.overlayBg,
-              border: `1px solid ${graphTheme.overlayBorder}`,
-              boxShadow: graphTheme.overlayShadow,
-            },
+      slotProps={{
+        paper: {
+          style: {
+            zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined,
           },
-        }}
+          sx: {
+            borderRadius: 2,
+            overflow: 'hidden',
+            bgcolor: graphTheme.overlayBg,
+            border: `1px solid ${graphTheme.overlayBorder}`,
+            boxShadow: graphTheme.overlayShadow,
+          },
+        },
+      }}
     >
-      <Box sx={{ width: 320, p: 2, color: graphTheme.overlayText, position: 'relative' }}>
+      <Box
+        data-testid="graph-filters-popover"
+        data-zindex={isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined}
+        style={{ zIndex: isFullscreen ? NETWORK_RELATIONS_FULLSCREEN_Z_INDEX + 1 : undefined }}
+        sx={{ width: 320, p: 2, color: graphTheme.overlayText, position: 'relative' }}
+      >
         <Stack spacing={1.5}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             Налаштування
@@ -72,36 +76,6 @@ export function NetworkCallsignRelationsGraphFilters({
                 />
               );
             })}
-          </Stack>
-          <Divider />
-          <Stack spacing={0.5}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Інтенсивність
-              </Typography>
-              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                {minIntensity}
-              </Typography>
-            </Stack>
-            <Slider
-              value={minIntensity}
-              min={1}
-              max={intensitySliderMax}
-              step={1}
-              track="normal"
-              onChange={(_, value) => onMinIntensityChange(Array.isArray(value) ? value[0] ?? minIntensity : value)}
-              sx={{
-                '& .MuiSlider-track': {
-                  border: 'none',
-                },
-                '& .MuiSlider-rail': {
-                  opacity: 0.38,
-                },
-                '& .MuiSlider-mark': {
-                  display: 'none',
-                },
-              }}
-            />
           </Stack>
         </Stack>
       </Box>

@@ -29,7 +29,12 @@ import {
   parseDateInputInTimeZone,
 } from '../../utils/misc';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
-import { readRequestedNetworkDetailsTab, resolveRequestedNetworkDetailsTab } from './network-details-tab-url';
+import {
+  getPublicNetworkDetailsTab,
+  readRequestedNetworkDetailsTab,
+  resolveRequestedNetworkDetailsTab,
+  updateCurrentNetworkDetailsTabUrl,
+} from './network-details-tab-url';
 
 function buildOptions<T extends { id: number; name: string }>(items: T[]): NetworkOption[] {
   return items.map((item) => ({ id: item.id, label: item.name }));
@@ -37,6 +42,7 @@ function buildOptions<T extends { id: number; name: string }>(items: T[]): Netwo
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
   const initialRequestedTab = typeof window === 'undefined' ? null : readRequestedNetworkDetailsTab(window.location.search);
+  const [requestedNetworkDetailsTab, setRequestedNetworkDetailsTab] = useState<string | null>(initialRequestedTab);
   const [state, setState] = useState<NetworkDetailsNeoPageState>(() => ({
     ...EMPTY_STATE,
     activeNetworkDetailsTab: initialRequestedTab === null
@@ -70,6 +76,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
+  const networkIdValue = state.network?.id ?? null;
 
   const aorOptions = useMemo(() => buildOptions(sortNetworkAorsForDisplay(state.aors)), [state.aors]);
   const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
@@ -203,6 +210,21 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setState((current) => ({ ...current, pelengHeatmapEnabled }));
   }, [setState]);
 
+  const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
+    setState((current) => {
+      if (current.activeNetworkDetailsTab === activeNetworkDetailsTab && current.callsignSectionMode === 'network') {
+        return current;
+      }
+      return {
+        ...current,
+        activeNetworkDetailsTab,
+        callsignSectionMode: 'network',
+      };
+    });
+    setRequestedNetworkDetailsTab(getPublicNetworkDetailsTab(activeNetworkDetailsTab));
+    updateCurrentNetworkDetailsTabUrl(activeNetworkDetailsTab, 'push');
+  }, [setState]);
+
   const relationsDateRangeValid = useMemo(() => {
     const since = parseDateInputInTimeZone(state.relationsSince);
     const till = parseDateInputInTimeZone(state.relationsTill);
@@ -218,33 +240,39 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [pelengSinceMs, pelengTillMs]);
 
   useEffect(() => {
-    if (state.network === null) return;
+    if (networkIdValue === null) return;
+    if (state.activeNetworkDetailsTab !== 'frequencies') return;
     if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
-    void actions.loadFrequencies(state.network.id);
-  }, [actions.loadFrequencies, state.freqsError, state.freqsLoaded, state.freqsLoading, state.network]);
+    void actions.loadFrequencies(networkIdValue);
+  }, [actions.loadFrequencies, networkIdValue, state.activeNetworkDetailsTab, state.freqsError, state.freqsLoaded, state.freqsLoading]);
 
   useEffect(() => {
-    if (state.network === null) return;
+    if (networkIdValue === null) return;
+    if (state.activeNetworkDetailsTab !== 'callsigns') return;
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
-    void loadCallsigns(state.network.id);
-  }, [loadCallsigns, state.callsignsError, state.callsignsLoaded, state.callsignsLoading, state.network]);
+    void loadCallsigns(networkIdValue);
+  }, [loadCallsigns, networkIdValue, state.activeNetworkDetailsTab, state.callsignsError, state.callsignsLoaded, state.callsignsLoading]);
 
   useEffect(() => {
-    if (state.network === null) return;
+    if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'relations') return;
+    if (!state.currentUserLoaded) return;
+    if (!canViewRelationsTab) return;
     if (!relationsDateRangeValid) return;
     if (state.relationsLoaded || state.relationsLoading || state.relationsError !== null) return;
     const since = parseDateInputInTimeZone(state.relationsSince);
     const till = parseDateInputExclusiveEndInTimeZone(state.relationsTill);
     if (since === null || till === null) return;
     void loadRelations(
-      state.network.id,
+      networkIdValue,
       since,
       till,
     );
   }, [
     loadRelations,
     state.activeNetworkDetailsTab,
+    canViewRelationsTab,
+    state.currentUserLoaded,
     state.network,
     state.relationsError,
     state.relationsLoaded,
@@ -252,24 +280,29 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.relationsSince,
     state.relationsTill,
     relationsDateRangeValid,
+    networkIdValue,
   ]);
 
   useEffect(() => {
-    if (state.network === null) return;
+    if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'activity') return;
+    if (!state.currentUserLoaded) return;
+    if (!canViewActivityTab) return;
     if (state.networkActivityLoaded || state.networkActivityLoading || state.networkActivityError !== null) return;
-    void loadNetworkActivity(state.network.id);
+    void loadNetworkActivity(networkIdValue);
   }, [
+    canViewActivityTab,
     loadNetworkActivity,
+    networkIdValue,
     state.activeNetworkDetailsTab,
-    state.network,
+    state.currentUserLoaded,
     state.networkActivityError,
     state.networkActivityLoaded,
     state.networkActivityLoading,
   ]);
 
   useEffect(() => {
-    if (state.network === null) return;
+    if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'direction-finding') return;
 
     const pelengWindowMatched =
@@ -278,14 +311,14 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
     if (pelengWindowMatched && (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)) return;
     if (!pelengDateRangeValid) return;
-    void loadPelengPoints(state.network.id, pelengSinceMs ?? 0, pelengTillMs);
+    void loadPelengPoints(networkIdValue, pelengSinceMs ?? 0, pelengTillMs);
   }, [
     loadPelengPoints,
     pelengDateRangeValid,
     pelengSinceMs,
     pelengTillMs,
     state.activeNetworkDetailsTab,
-    state.network,
+    networkIdValue,
     state.pelengPointsError,
     state.pelengPointsLoaded,
     state.pelengPointsLoading,
@@ -302,16 +335,50 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     return formatTransferTypeLabel(state.network?.freqs ?? [], modulationsById);
   }, [modulationsById, state.network?.freqs]);
 
-  const requestedTab = useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    return readRequestedNetworkDetailsTab(window.location.search);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      setRequestedNetworkDetailsTab(readRequestedNetworkDetailsTab(window.location.search));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   useEffect(() => {
-    if (!requestedTab) return;
-    const nextTab = resolveRequestedNetworkDetailsTab(requestedTab, canViewActivityTab, canViewRelationsTab);
+    if (requestedNetworkDetailsTab === null) {
+      if (typeof window === 'undefined') return;
+      const canonicalTab = getPublicNetworkDetailsTab(state.activeNetworkDetailsTab);
+      if (readRequestedNetworkDetailsTab(window.location.search) === canonicalTab) return;
+      updateCurrentNetworkDetailsTabUrl(state.activeNetworkDetailsTab, 'replace');
+      setRequestedNetworkDetailsTab(canonicalTab);
+      return;
+    }
+
+    const canResolveGatedTabs = state.currentUserLoaded;
+    const nextTab = resolveRequestedNetworkDetailsTab(
+      requestedNetworkDetailsTab,
+      canResolveGatedTabs ? canViewActivityTab : true,
+      canResolveGatedTabs ? canViewRelationsTab : true,
+    );
+
     setState((current) => (current.activeNetworkDetailsTab === nextTab ? current : { ...current, activeNetworkDetailsTab: nextTab }));
-  }, [canViewActivityTab, canViewRelationsTab, requestedTab]);
+
+    if (typeof window === 'undefined') return;
+    const canonicalTab = getPublicNetworkDetailsTab(nextTab);
+    if (readRequestedNetworkDetailsTab(window.location.search) === canonicalTab) return;
+    updateCurrentNetworkDetailsTabUrl(nextTab, 'replace');
+    setRequestedNetworkDetailsTab(canonicalTab);
+  }, [
+    canViewActivityTab,
+    canViewRelationsTab,
+    requestedNetworkDetailsTab,
+    state.activeNetworkDetailsTab,
+    state.currentUserLoaded,
+  ]);
 
   return buildRerNetworkDetailsNeoPageViewModel({
     state,
@@ -349,6 +416,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setPelengShowLabels,
     setPelengSatelliteEnabled,
     setPelengHeatmapEnabled,
+    setActiveNetworkDetailsTab,
     loadRelations,
     loadPelengPoints,
     loadNetworkActivity,

@@ -191,7 +191,11 @@ loadCatalogAndNetworkCallsigns networkId =
 
 loadCatalogCallsigns : Int -> Effect CallsignsMsg
 loadCatalogCallsigns networkId =
-    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId, includeActivityInfo = Just False }
+    E.getNetworkCallsigns CallsignsReturnedByApi
+        { networkId = networkId
+        , includeActivityInfo = Just False
+        , section = Just B.Everything
+        }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )

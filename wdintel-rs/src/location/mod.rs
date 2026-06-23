@@ -448,15 +448,52 @@ pub fn load_settlements_data_config(
         settlements_data_by_config
             .insert(source.clone(), Arc::new(settlements_data));
     }
+    let available_settlements_configs =
+        find_available_settlements_configs(mode).c(h!())?;
+    let available_settlements_configs =
+        if available_settlements_configs.is_empty() {
+            settlements_paths.clone()
+        } else {
+            available_settlements_configs
+        };
     Ok(SettlementsDataConfig {
         aor_id_to_settlements_data: HashMap::new(),
         aor_id_to_config_names: HashMap::new(),
         default_settlements_data,
         default_settlements_files: settlements_paths.clone(),
         settlements_data_by_config,
-        available_settlements_configs: settlements_paths,
+        available_settlements_configs,
         mode,
     })
+}
+
+fn find_available_settlements_configs(
+    mode: Mode,
+) -> anyhow::Result<Vec<String>> {
+    let settlements_dir = crate::config::get_data_folder(mode)
+        .c(h!())?
+        .join(crate::config::SETTLEMENTS_REGIONS_DIR);
+    if !settlements_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut configs = vec![];
+    for entry in fs::read_dir(settlements_dir).c(h!())? {
+        let path = entry.c(h!())?.path();
+        if !path.is_file()
+            || path.extension().and_then(|extension| extension.to_str())
+                != Some(crate::config::SETTLEMENTS_REGION_FILE_EXTENSION)
+        {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        configs
+            .push(format!("{}/{name}", crate::config::SETTLEMENTS_REGIONS_DIR));
+    }
+    configs.sort();
+    Ok(configs)
 }
 
 fn match_settlement(
@@ -563,6 +600,17 @@ fn deduplicate_settlement_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_all_regional_settlements_configs() {
+        let configs = find_available_settlements_configs(Mode::Test).unwrap();
+
+        assert!(configs
+            .contains(&"settlements_json/kharkivska_oblast.json".to_string()));
+        assert!(configs
+            .contains(&"settlements_json/kurska_oblast_rf.json".to_string()));
+        assert!(configs.windows(2).all(|pair| pair[0] < pair[1]));
+    }
 
     fn parse_location_with_aor_id(
         settlements: Arc<RwLock<SettlementsDataConfig>>,

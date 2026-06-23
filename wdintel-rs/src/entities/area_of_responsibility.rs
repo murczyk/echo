@@ -40,13 +40,15 @@ pub struct Model {
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
     #[sea_orm(column_type = "Double")]
-    pub order_for_report: f64,
+    pub order_for_report_legacy: f64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_one = "super::aor_location_config::Entity")]
     AorLocationConfig,
+    #[sea_orm(has_many = "super::area_of_responsibility_report_order::Entity")]
+    AreaOfResponsibilityReportOrder,
     #[sea_orm(has_many = "super::datasource::Entity")]
     Datasource,
     #[sea_orm(
@@ -86,6 +88,12 @@ pub enum Relation {
 impl Related<super::aor_location_config::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AorLocationConfig.def()
+    }
+}
+
+impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AreaOfResponsibilityReportOrder.def()
     }
 }
 

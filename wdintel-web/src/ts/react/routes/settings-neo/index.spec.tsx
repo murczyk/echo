@@ -160,15 +160,6 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
   SettingsSharedTagsLayoutCard: () => <div />,
 }));
 
-vi.mock('./SettingsReportsSection', () => ({
-  SettingsReportsSection: ({ userRoles, rolesLoading }: { userRoles: string[]; rolesLoading: boolean }) => (
-    <div>
-      <span>rolesLoading:{String(rolesLoading)}</span>
-      <span>{userRoles.join(',')}</span>
-    </div>
-  ),
-}));
-
 import { SettingsNeoPage } from './index';
 
 function deferred<T>() {
@@ -399,14 +390,14 @@ describe('SettingsNeoPage', () => {
     fetchCurrentUserMock.mockResolvedValueOnce({ sigintZoneId: 1, roles: ['Admin'] });
 
     await act(async () => {
-      root.render(<SettingsNeoPage section="reports" />);
+      root.render(<SettingsNeoPage section="analysis" />);
     });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('rolesLoading:false');
-    expect(container.textContent).toContain('Admin');
+    expect(container.textContent).toContain('Аналіз');
+    expect(container.textContent).toContain('Мапа');
   });
 });

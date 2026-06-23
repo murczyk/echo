@@ -143,6 +143,9 @@ pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
 pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
+pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
+pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
+pub const SETTLEMENTS_REGION_FILE_EXTENSION: &str = "json";
 pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
@@ -179,6 +182,10 @@ pub const PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC: u64 = 60;
 pub const ORGANISM_GOI_SSH_PORT_DEFAULT: i32 = 22;
 pub const ORGANISM_GOI_API_PORT_DEFAULT: i32 = 8088;
 pub const ORGANISM_GOI_PATH_DEFAULT: &str = "/etc/goi/data/palettes";
+pub const ORGANISM_GOI_PALETTES_DIR_NAME: &str = "palettes";
+pub const ORGANISM_GOI_CATEGORIES_FILE_NAME: &str = "categories.json";
+pub const ORGANISM_GOI_CATEGORIES_UPLOAD_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const ORGANISM_GOI_INTEGRATION_TYPE_SIMPLE: &str = "simple";
 pub const ORGANISM_GOI_INTEGRATION_TYPE_FULL: &str = "full";
 pub const ORGANISM_GOI_INTEGRATION_TYPE_DEFAULT: &str =
@@ -348,7 +355,7 @@ impl Config {
 pub fn get_settlement_paths(
     m_settlement_path: Option<String>,
 ) -> Result<Vec<String>> {
-    let old = vec!["settlements.json".to_string()];
+    let old = vec![SETTLEMENTS_LEGACY_FILE.to_string()];
     let settlement_paths = match m_settlement_path {
         // old settlements.json logic (all in one file)
         None => old,
@@ -357,7 +364,12 @@ pub fn get_settlement_paths(
                 old
             } else {
                 v.split(',')
-                    .map(|s| format!("settlements_json/{}.json", s.trim()))
+                    .map(|s| {
+                        format!(
+                            "{SETTLEMENTS_REGIONS_DIR}/{}.{SETTLEMENTS_REGION_FILE_EXTENSION}",
+                            s.trim()
+                        )
+                    })
                     .collect()
             }
         }

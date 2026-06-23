@@ -57,7 +57,13 @@ pub async fn zones_datasources_list(
     .await?;
     let zone_id: i64 = req.into_inner();
     let xs = sigint_zone_datasource::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_zone_datasource::Relation::SignalGroup.def(),
+        )
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -146,6 +152,15 @@ pub async fn zones_datasources_group_add(
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
+    signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .filter(signal_group::Column::MasterKey.eq(&req.master_key))
+        .one(&txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
     let szd = sigint_zone_datasource::ActiveModel {
         sigint_zone_id: Set(req.zone_id),
         datasource_id: Set(req.datasource_id),
@@ -189,6 +204,7 @@ pub async fn zones_datasources_group_add(
     // Fetch the group name and notes
     let group_name = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
         .column(signal_group::Column::Name)
@@ -288,6 +304,7 @@ pub async fn my_admin_groups(
         .filter(signal_group_admin::Column::Deleted.eq(false))
         .filter(signal_group_admin::Column::Login.eq(&login))
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
         .select_only()
         .column_as(signal_group::Column::MasterKey, "master_key")
         .column_as(signal_group::Column::Name, "name")

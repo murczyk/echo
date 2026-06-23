@@ -3,11 +3,11 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type { AddNetworkFreqReq, Network, NetworkFreqsRes } from '../../../../Bindings';
 import {
-  addFreqToNetwork,
+  addFreqToNetworkV2,
   deleteNetworkFreq,
   getNetworkFreqsActivity,
   getSingleNetworkFreqs,
-  updateNetworkFreq,
+  updateNetworkFreqV2,
 } from '../../services/api/networks';
 import {
   formatErrorMessage,
@@ -18,7 +18,7 @@ import {
   toNetworkFreqTechDataForm,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
-import { buildNetworkFreqActivityByFreq } from './frequency-utils';
+import { buildNetworkFreqActivityByFreq, sortNetworkFreqsByTableOrder } from './frequency-utils';
 import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm, NetworkFreqTechDataForm } from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
@@ -92,6 +92,37 @@ function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: numbe
   return state.freqs.find((freq) => freq.networkFreqId === networkFreqId) ?? null;
 }
 
+function upsertNetworkFreqRow(freqs: NetworkFreqsRes[], freq: NetworkFreqsRes): NetworkFreqsRes[] {
+  return sortNetworkFreqsByTableOrder([
+    ...freqs.filter((currentFreq) => currentFreq.networkFreqId !== freq.networkFreqId),
+    freq,
+  ]);
+}
+
+function applyNetworkFreqMutationResponse(
+  state: NetworkDetailsNeoPageState,
+  responseFreq: NetworkFreqsRes | null,
+  mode: 'create' | 'edit',
+): Pick<NetworkDetailsNeoPageState, 'freqs' | 'freqActivityByFreq'> | null {
+  if (!responseFreq) {
+    return null;
+  }
+
+  const freqs = upsertNetworkFreqRow(state.freqs, responseFreq);
+  const freqActivityByFreq =
+    mode === 'create'
+      ? {
+          ...state.freqActivityByFreq,
+          [responseFreq.networkFreqId]: state.freqActivityByFreq[responseFreq.networkFreqId] ?? [],
+        }
+      : state.freqActivityByFreq;
+
+  return {
+    freqs,
+    freqActivityByFreq,
+  };
+}
+
 export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration, currentNetworkIdRef }: Args) {
   const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
     setState((current) => ({
@@ -127,7 +158,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
 
       setState((current) => ({
         ...current,
-        freqs: freqsResponse.freqs,
+        freqs: sortNetworkFreqsByTableOrder(freqsResponse.freqs),
         freqActivityByFreq: buildNetworkFreqActivityByFreq(activityResponse, freqsResponse.freqs),
         freqsLoading: false,
         freqsLoaded: true,
@@ -291,13 +322,30 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     }));
 
     try {
-      const updatedNetwork = await addFreqToNetwork(toCreateNetworkFreqReq(form, network.id));
-      setState((current) => ({
-        ...current,
-        ...resetFreqCreateWizardState(current),
-        network: updatedNetwork,
-      }));
-      await loadFrequencies(network.id);
+      const response = await addFreqToNetworkV2(toCreateNetworkFreqReq(form, network.id));
+      setState((current) => {
+        const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'create');
+        if (!updatedState) {
+          return {
+            ...current,
+            ...resetFreqCreateWizardState(current),
+            network: response.network,
+          };
+        }
+
+        return {
+          ...current,
+          ...resetFreqCreateWizardState(current),
+          network: response.network,
+          freqs: updatedState?.freqs ?? current.freqs,
+          freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
+          freqsLoaded: true,
+        };
+      });
+
+      if (!response.freq) {
+        await loadFrequencies(network.id);
+      }
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -330,7 +378,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     }));
 
     try {
-      const updatedNetwork = await updateNetworkFreq({
+      const response = await updateNetworkFreqV2({
         networkId: network.id,
         networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
@@ -340,13 +388,29 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
         activeTo: parseNetworkDetailsDateInput(form.activeTo),
       });
+      setState((current) => {
+        const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'edit');
+        if (!updatedState) {
+          return {
+            ...current,
+            ...resetFreqEditDrawerState(current),
+            network: response.network,
+          };
+        }
 
-      setState((current) => ({
-        ...current,
-        ...resetFreqEditDrawerState(current),
-        network: updatedNetwork,
-      }));
-      await loadFrequencies(network.id);
+        return {
+          ...current,
+          ...resetFreqEditDrawerState(current),
+          network: response.network,
+          freqs: updatedState?.freqs ?? current.freqs,
+          freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
+          freqsLoaded: true,
+        };
+      });
+
+      if (!response.freq) {
+        await loadFrequencies(network.id);
+      }
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -379,7 +443,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     }));
 
     try {
-      const updatedNetwork = await updateNetworkFreq({
+      const response = await updateNetworkFreqV2({
         networkId: network.id,
         networkFreqId: currentFreq.networkFreqId,
         freq: currentFreq.freq,
@@ -389,13 +453,29 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         activeFrom: currentFreq.activeFrom,
         activeTo: currentFreq.activeTo,
       });
+      setState((current) => {
+        const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'edit');
+        if (!updatedState) {
+          return {
+            ...current,
+            ...resetFreqTechDrawerState(current),
+            network: response.network,
+          };
+        }
 
-      setState((current) => ({
-        ...current,
-        ...resetFreqTechDrawerState(current),
-        network: updatedNetwork,
-      }));
-      await loadFrequencies(network.id);
+        return {
+          ...current,
+          ...resetFreqTechDrawerState(current),
+          network: response.network,
+          freqs: updatedState?.freqs ?? current.freqs,
+          freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
+          freqsLoaded: true,
+        };
+      });
+
+      if (!response.freq) {
+        await loadFrequencies(network.id);
+      }
     } catch (error) {
       setState((current) => ({
         ...current,

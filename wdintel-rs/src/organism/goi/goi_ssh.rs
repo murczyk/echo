@@ -471,7 +471,7 @@ fn goi_auth_with_pubkey_file(
     ))
 }
 
-fn goi_shell_quote_single(value: &str) -> String {
+pub(super) fn goi_shell_quote_single(value: &str) -> String {
     let escaped = value.replace('\'', "'\\''");
     format!("'{escaped}'")
 }

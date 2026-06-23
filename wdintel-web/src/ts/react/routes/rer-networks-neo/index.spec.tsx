@@ -12,7 +12,6 @@ import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
   RerNetworksNeoPage,
-  buildFrequencyMetadataLabels,
   getLocationParts,
   useHoverPopoverState,
 } from './index';
@@ -355,6 +354,60 @@ it('keeps MRT filter modes disabled on the networks table', () => {
 
 });
 
+it('wraps long network labels without truncating the status chip row', () => {
+  if (!container) throw new Error('container not initialized');
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(RerNetworksNeoPage));
+  });
+
+  const networkCell = (capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>).find((column) => column.id === 'network');
+  const renderedNetworkCell = ((networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any)?.type as (
+    props: any,
+  ) => any)(
+    (networkCell?.Cell?.({
+      row: {
+        original: {
+          id: 42,
+          network: { name: 'Network 1' },
+          networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
+          unitLabels: ['1 АК'],
+          developing: true,
+          statusLabel: 'Активна',
+          statusColor: '#54c06c',
+          statusKey: 'active',
+          aorLabels: [],
+          activeFrequencies: [],
+          inactiveFrequencies: [],
+          activityBars: [],
+          lastActivityLabel: '—',
+          lastActivityDetail: 'невідомий',
+          lastActivityTooltip: '—',
+          createdAtLabel: '—',
+        },
+      },
+    } as never) as any).props,
+  );
+
+  const networkAnchor = renderedNetworkCell.props.children[1];
+  const rowLabel = networkAnchor.props.children;
+  const rowLabelBox = (rowLabel?.type as (props: any) => any)(rowLabel?.props);
+  const statusDot = renderedNetworkCell.props.children[0];
+  const statusDotBox = statusDot.props.children;
+  expect(renderedNetworkCell.props.alignItems).toBe('flex-start');
+  expect(statusDotBox.props.sx).toEqual(expect.objectContaining({ alignSelf: 'center' }));
+  expect(networkAnchor.props.sx).toEqual(expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }));
+  expect(rowLabelBox.props.sx).toEqual(
+    expect.objectContaining({
+      whiteSpace: 'normal',
+      overflowWrap: 'anywhere',
+      lineHeight: 1.25,
+    }),
+  );
+  expect(rowLabelBox.props.title).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+});
+
 it('refreshes AOR filter options after lookup data loads', () => {
   if (!container) throw new Error('container not initialized');
   if (defaultPageReturn === null) throw new Error('default page mock not initialized');
@@ -536,43 +589,6 @@ it('hides load more and expands the first-load frame to full height', () => {
 
 it('splits location text into visible lines', () => {
   expect(getLocationParts('Пункт зв’язку, Місто, Район')).toEqual(['Пункт зв’язку', 'Місто', 'Район']);
-});
-
-it('keeps only short frequency metadata labels', () => {
-  expect(
-    buildFrequencyMetadataLabels({
-      id: 1,
-      networkId: 2,
-      freq: '123.45',
-      deleted: false,
-      activeFrom: 0,
-      activeTo: null,
-      createdAt: 0,
-      kind: 'VHF',
-      modulationId: null,
-      encryptionKeys: [
-        { id: 1, sigintNetworkFreqIds: [], sigintNetworkId: null, key: 'ABC', keyHash: null, description: 'AES', modulationId: null },
-        {
-          id: 2,
-          sigintNetworkFreqIds: [],
-          sigintNetworkId: null,
-          key: 'LONG-RAW-KEY',
-          keyHash: 'HASH-123',
-          description: 'Very long free-form description that should be dropped',
-          modulationId: null,
-        },
-        {
-          id: 3,
-          sigintNetworkFreqIds: [],
-          sigintNetworkId: null,
-          key: null,
-          keyHash: null,
-          description: 'RX/TX long description',
-          modulationId: null,
-        },
-      ],
-    } as never),
-  ).toEqual(['VHF', 'AES']);
 });
 
 it('uses top-first placement for the frequency hover popper', () => {

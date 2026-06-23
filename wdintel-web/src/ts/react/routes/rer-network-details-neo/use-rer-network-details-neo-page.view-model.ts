@@ -39,6 +39,7 @@ type ViewModelArgs = {
   setPelengShowLabels: (pelengShowLabels: boolean) => void;
   setPelengSatelliteEnabled: (pelengSatelliteEnabled: boolean) => void;
   setPelengHeatmapEnabled: (pelengHeatmapEnabled: boolean) => void;
+  setActiveNetworkDetailsTab: (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => void;
   loadRelations: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
   loadPelengPoints: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
@@ -83,6 +84,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
   setPelengShowLabels,
   setPelengSatelliteEnabled,
   setPelengHeatmapEnabled,
+  setActiveNetworkDetailsTab,
   loadRelations,
   loadPelengPoints,
   loadNetworkActivity,
@@ -112,7 +114,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     confirmationDescriptions,
     signDescriptions,
     activeNetworkDetailsTab: state.activeNetworkDetailsTab,
-    setActiveNetworkDetailsTab: actions.setActiveNetworkDetailsTab,
+    setActiveNetworkDetailsTab,
     loadFrequencies: actions.loadFrequencies,
     loadCallsigns: actions.loadCallsigns,
     expandedDescriptionIds: state.expandedDescriptionIds,
@@ -178,6 +180,15 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     networkCallsigns: state.networkCallsigns,
     catalogCallsignGroups: state.catalogCallsignGroups,
     unknownInterceptedCallsigns: state.unknownInterceptedCallsigns,
+    networkCallsignsLoaded: state.networkCallsignsLoaded,
+    networkCallsignsLoading: state.networkCallsignsLoading,
+    networkCallsignsError: state.networkCallsignsError,
+    catalogCallsignsLoaded: state.catalogCallsignsLoaded,
+    catalogCallsignsLoading: state.catalogCallsignsLoading,
+    catalogCallsignsError: state.catalogCallsignsError,
+    interceptedCallsignsLoaded: state.interceptedCallsignsLoaded,
+    interceptedCallsignsLoading: state.interceptedCallsignsLoading,
+    interceptedCallsignsError: state.interceptedCallsignsError,
     callsignsLoaded: state.callsignsLoaded,
     callsignsLoading: state.callsignsLoading,
     callsignsError: state.callsignsError,

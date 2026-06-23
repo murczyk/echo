@@ -131,7 +131,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
         crate::location::load_settlements_data_config(settlement_paths, mode)
-            .unwrap_or_default();
+            .c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
     let callsigns_whitelist =
         crate::sigint::callsign::load_whitelist_from_file(mode)
@@ -494,6 +494,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
             .service(crate::messenger::group::handlers::orphan_signal_groups)
+            .service(crate::messenger::group::handlers::archived_signal_groups)
+            .service(crate::messenger::group::handlers::signal_group_archive)
+            .service(crate::messenger::group::handlers::signal_group_unarchive)
             .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
             .service(crate::rer_importer::signal_profile_info_batch)
@@ -625,8 +628,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::organism::goi::integrations::check_goi_integration_connection)
             .service(crate::organism::goi::integrations::setup_goi_integration_worker)
             .service(crate::organism::goi::integrations::list_current_user_goi_integrations)
+            .service(crate::organism::goi::integrations::list_goi_report_tab_order)
+            .service(crate::organism::goi::integrations::update_goi_report_tab_order)
             .service(crate::organism::goi::integrations::restart_current_user_goi_service)
             .service(crate::organism::goi::integrations::unlink_current_user_goi_whatsapp)
+            .service(crate::organism::goi::integrations::download_current_user_goi_palettes)
+            .service(crate::organism::goi::integrations::upload_current_user_goi_categories)
             .service(crate::organism::goi::integrations::list_current_user_goi_associations)
             .service(crate::organism::goi::integrations::list_current_user_goi_knowledge)
             .service(crate::organism::my_scope)
@@ -688,7 +695,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::delete_network)
             .service(crate::sigint::network::delete_network_freq)
             .service(crate::sigint::network::update_network_freq)
+            .service(crate::sigint::network::update_network_freq_v2)
             .service(crate::sigint::network::add_network_freq)
+            .service(crate::sigint::network::add_network_freq_v2)
             .service(crate::sigint::network::reactivate_network_freq)
             .service(crate::sigint::network::network_unit_stats)
             .service(crate::sigint::network::update_network)
@@ -762,6 +771,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::list_all_palitras_v2)
+            .service(crate::palitra::list_map_palitras_v2)
             .service(crate::palitra::list_all_palitras_detailed)
             .service(crate::palitra::read_palitra_v2)
             .service(crate::palitra::list_palitra_points)

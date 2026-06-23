@@ -181,3 +181,71 @@ async fn test_bl_szd_groups_list_01() {
 
     txn.rollback().await.unwrap();
 }
+
+#[serial]
+#[tokio::test]
+async fn test_bl_szd_groups_list_excludes_archived_groups() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+
+    let zone = mk_sigint_zone(
+        &txn,
+        sigint_zone::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let datasource = mk_datasource(
+        &txn,
+        datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let active_group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let archived_group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            is_archived: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    for group in [&active_group, &archived_group] {
+        mk_sigint_zone_datasource(
+            &txn,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(zone.id),
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(group.master_key.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let res = bl_szd_groups_list(zone.id, datasource.id, &txn)
+        .await
+        .unwrap();
+    let group_keys = res
+        .groups
+        .into_iter()
+        .map(|group| group.group_master_key)
+        .collect::<Vec<_>>();
+
+    assert_eq!(group_keys, vec![active_group.master_key]);
+
+    txn.rollback().await.unwrap();
+}

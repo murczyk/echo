@@ -567,6 +567,10 @@ export type SignalGroupStatsTimelineRsp = {
   data: Array<SignalGroupStatsTimelineEntry>;
 };
 
+export type SignalGroupArchiveReq = {
+  masterKey: string;
+};
+
 export type SignalGroupRsp = {
   name: string | null;
 };
@@ -597,6 +601,7 @@ export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
   groupStats: SignalGroupStats;
@@ -1335,6 +1340,25 @@ export type GoiUserIntegration = {
   hasDataAccess: boolean;
   canRestart: boolean;
   restartUnavailableReason: string | null;
+};
+
+export type GoiReportTabOrderItem = {
+  aorId: number;
+  aorName: string;
+  orderForReport: number;
+};
+
+export type GoiReportTabOrderListReq = {
+  integrationId: number | null;
+};
+
+export type GoiReportTabOrderListRsp = {
+  items: Array<GoiReportTabOrderItem>;
+};
+
+export type GoiReportTabOrderUpdateReq = {
+  integrationId: number | null;
+  items: Array<GoiReportTabOrderItem>;
 };
 
 export type SettingsSaveReq = {
@@ -2762,9 +2786,16 @@ export type NetworkFreqCallsignsRsp = {
   callsigns: Array<string>;
 };
 
+export type SingleNetworkCallsignsSection =
+  | 'Everything'
+  | 'Catalog'
+  | 'Intercepted'
+;
+
 export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
+  section: SingleNetworkCallsignsSection | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {

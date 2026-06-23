@@ -343,6 +343,12 @@ export async function listPalitrasV2(): Promise<PalitraReadV2[]> {
   return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
 }
 
+export async function listMapPalitrasV2(): Promise<PalitraReadV2[]> {
+  const data = await postJson<PalitraReadV2Like[]>('/api/palitra/v2/list-map');
+
+  return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
+}
+
 async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {
   const cached = primaryGeometryIdByPalitraId.get(palitraId);
   if (cached !== undefined) {

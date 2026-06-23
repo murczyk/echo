@@ -425,9 +425,12 @@ async fn push_goi_report(
     integration: &goi_integration::Model,
 ) -> Result<ImportSignedFrequenciesRsp, AppError> {
     let report_xlsx =
-        crate::sigint::network::goi::report_xlsx_networks_goi_to_buffer(env)
-            .await
-            .c(h!())?;
+        crate::sigint::network::goi::report_xlsx_networks_goi_to_buffer(
+            env,
+            Some(integration.owner_organism_id),
+        )
+        .await
+        .c(h!())?;
     Ok(post_goi_report(env, integration, report_xlsx)
         .await
         .c(h!())?)

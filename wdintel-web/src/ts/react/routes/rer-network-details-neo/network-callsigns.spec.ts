@@ -18,8 +18,10 @@ import {
 import {
   createDefaultNetworkCallsignDrawerForm,
   createNetworkCallsignDrawerForm,
+  hasNetworkCallsignMarker,
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
+  isNetworkCallsignSourceRequired,
   getNetworkCallsignDrawerSaveError,
 } from './network-callsigns.forms';
 import {
@@ -184,10 +186,15 @@ describe('network-callsigns helpers', () => {
     expect(Boolean(form.mainRadioStation && form.commandControl)).toBe(false);
   });
 
-  it('requires a callsign, source and RO radio frequency before saving a drawer form', () => {
+  it('requires a callsign and RO radio frequency before saving a drawer form, and only requires source for catalog rows', () => {
     expect(getNetworkCallsignDrawerSaveError(null)).toBeNull();
     expect(getNetworkCallsignDrawerSaveError({ ...createDefaultNetworkCallsignDrawerForm(10, null), callsign: '  ' })).toBe('Позивний є обовʼязковим');
-    expect(getNetworkCallsignDrawerSaveError({ ...createDefaultNetworkCallsignDrawerForm(10, null), callsign: 'СОКІЛ' })).toBe('Джерело є обовʼязковим');
+    expect(getNetworkCallsignDrawerSaveError({ ...createDefaultNetworkCallsignDrawerForm(10, null), callsign: 'СОКІЛ' })).toBeNull();
+    expect(getNetworkCallsignDrawerSaveError({
+      ...createDefaultNetworkCallsignDrawerForm(10, null),
+      callsign: 'СОКІЛ',
+      developing: false,
+    })).toBe('Джерело є обовʼязковим');
     expect(
       getNetworkCallsignDrawerSaveError({
         ...createDefaultNetworkCallsignDrawerForm(10, null),
@@ -203,6 +210,12 @@ describe('network-callsigns helpers', () => {
         radioFreq: '145.5000',
       }),
     ).toBeNull();
+  });
+
+  it('shows the clear-marker action only when a marker exists', () => {
+    expect(hasNetworkCallsignMarker({ mainRadioStation: false, commandControl: false })).toBe(false);
+    expect(hasNetworkCallsignMarker({ mainRadioStation: true, commandControl: false })).toBe(true);
+    expect(hasNetworkCallsignMarker({ mainRadioStation: false, commandControl: true })).toBe(true);
   });
 
   it('flattens catalog rows and excludes callsigns already present in the network', () => {

@@ -2527,7 +2527,8 @@ fn build_networks_query_for_login(
             JoinType::InnerJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
         )
-        .filter(signal_group::Column::Deleted.eq(false));
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false));
     let effective_groups =
         effective_groups_with_access(&req.selected_groups, &master_keys);
     let groups_q = if effective_groups.is_empty() {

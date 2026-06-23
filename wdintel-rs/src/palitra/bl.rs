@@ -217,6 +217,28 @@ pub async fn list_all_palitras_v2(
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
     let palitra_ids =
         collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    list_palitras_v2_by_ids(palitra_ids, dbx).await.c(h!())
+}
+
+pub async fn list_map_palitras_v2(
+    login: String,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraReadV2>> {
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    let unarchived_palitra_ids =
+        filter_unarchived_palitra_ids(palitra_ids, dbx)
+            .await
+            .c(h!())?;
+    list_palitras_v2_by_ids(unarchived_palitra_ids, dbx)
+        .await
+        .c(h!())
+}
+
+async fn list_palitras_v2_by_ids(
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraReadV2>> {
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
         result.push(
@@ -226,6 +248,31 @@ pub async fn list_all_palitras_v2(
         );
     }
     Ok(result)
+}
+
+async fn filter_unarchived_palitra_ids(
+    palitra_ids: Vec<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<i64>> {
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let unarchived_palitra_ids = palitra::Entity::find()
+        .select_only()
+        .column(palitra::Column::Id)
+        .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra::Column::IsArchived.eq(false))
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    Ok(palitra_ids
+        .into_iter()
+        .filter(|palitra_id| unarchived_palitra_ids.contains(palitra_id))
+        .collect())
 }
 
 pub async fn read_palitra_v2(
@@ -2482,7 +2529,8 @@ mod tests {
     };
     use crate::palitra::bl::{
         collect_accessible_palitra_ids,
-        collect_accessible_palitra_ids_in_folder, normalize_palitra_folder,
+        collect_accessible_palitra_ids_in_folder, list_all_palitras_v2,
+        list_map_palitras_v2, normalize_palitra_folder,
         normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
         replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
@@ -2894,6 +2942,32 @@ mod tests {
                 .unwrap();
 
         assert!(palitra_ids.contains(&palitra.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_map_palitras_v2_excludes_archived_palitras() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let palitra_id = palitra.id;
+
+        let mut palitra = palitra.into_active_model();
+        palitra.is_archived = Set(true);
+        palitra.update(&env.dbx).await.unwrap();
+
+        let all_palitras = list_all_palitras_v2(login.login.clone(), &env.dbx)
+            .await
+            .unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.login, &env.dbx).await.unwrap();
+
+        assert!(all_palitras
+            .iter()
+            .any(|item| item.palitra.id == palitra_id));
+        assert!(!map_palitras
+            .iter()
+            .any(|item| item.palitra.id == palitra_id));
     }
 
     async fn create_palitra_search_request(

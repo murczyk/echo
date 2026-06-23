@@ -19,7 +19,7 @@ import {
   resolveAorFilterSelectOptions,
   sanitizeNetworkColumnFilters,
 } from './helpers';
-import { buildFrequencyMetadataLabels, getLocationParts } from './components/NetworkCells';
+import { getLocationParts } from './components/NetworkCells';
 
 const DEFAULT_NETWORKS_SORTING: MRT_SortingState = [{ id: 'network', desc: false }];
 const columnOrder = buildDefaultColumnOrder({
@@ -28,7 +28,7 @@ const columnOrder = buildDefaultColumnOrder({
   withRowActions: true,
 });
 
-export { FREQUENCY_HOVER_POPPER_MODIFIERS, FREQUENCY_HOVER_POPPER_PLACEMENT, buildFrequencyMetadataLabels, getLocationParts, useHoverPopoverState };
+export { FREQUENCY_HOVER_POPPER_MODIFIERS, FREQUENCY_HOVER_POPPER_PLACEMENT, getLocationParts, useHoverPopoverState };
 
 function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerNetworksNeoPage({ authUserRoles });
