@@ -191,6 +191,7 @@ where
             freq: i.freq,
             unit: i.unit_v2,
             parsed_unit_v2: i.parsed_unit_v2,
+            post_id: i.post_id,
         })
         .collect::<Vec<_>>();
     let network_ids_per_item =
