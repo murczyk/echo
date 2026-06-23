@@ -992,9 +992,8 @@ update shared msg model =
         EncryptionsReturnedByApi (Ok res) ->
             let
                 keyModulationNames =
-                    [ "DMR (ARC40)"
-                    , "DMR (AES256)"
-                    , "HYTERA (256 bit)"
+                    [ "ARC40"
+                    , "AES256"
                     , "TYT (16 bit)"
                     , "TYT (128 bit)"
                     ]
