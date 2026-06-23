@@ -3848,6 +3848,34 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_count_overall_uses_distinct_live_count_for_open_filters()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.till_date_noninclusive_ms =
+        req.since_date_inclusive_ms + 30 * 60 * 1000;
+    let req = Json(req);
+    let master_keys =
+        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
+            .await
+            .unwrap();
+
+    let (count_overall, count_selected) = stats::fetch_counts_for_login(
+        &req,
+        &test_identity.login,
+        &fixture.env,
+        master_keys,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(count_overall, 7);
+    assert_eq!(count_selected, 7);
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_deleted_messages_do_not_contribute_to_filter_values() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;

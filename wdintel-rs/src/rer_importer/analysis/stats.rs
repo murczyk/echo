@@ -2689,7 +2689,6 @@ pub async fn fetch_counts_for_login(
         login_str,
         master_keys.clone(),
         replica_conn,
-        &env.config,
     )
     .await
     {
@@ -2706,7 +2705,6 @@ pub async fn fetch_counts_for_login(
                 login_str,
                 master_keys,
                 env.dbx.clone(),
-                &env.config,
             )
             .await
         }
@@ -2719,7 +2717,6 @@ async fn fetch_counts_for_login_with_conn(
     login_str: &str,
     master_keys: Vec<String>,
     db_conn: DatabaseConnection,
-    config: &Config,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -2728,15 +2725,10 @@ async fn fetch_counts_for_login_with_conn(
         req.include_peleng_locations.unwrap_or(false);
 
     let instant = std::time::Instant::now();
-    let count_overall: i64 = fetch_count_overall(
-        &db_conn,
-        dt_since,
-        dt_till,
-        master_keys.clone(),
-        config,
-    )
-    .await
-    .context(h!())?;
+    let count_overall: i64 =
+        fetch_count_overall(&db_conn, dt_since, dt_till, master_keys.clone())
+            .await
+            .context(h!())?;
 
     if instant.elapsed().as_secs() > 1 {
         debug!("count overall op took: {:?}", instant.elapsed());
@@ -2850,16 +2842,7 @@ async fn fetch_count_overall(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-    config: &Config,
 ) -> anyhow::Result<i64> {
-    if can_read_stats_aggregated(config, dt_since, dt_till) {
-        let stats =
-            read_group_stats_aggregated(db, master_keys, dt_since, dt_till)
-                .await
-                .c(h!())?;
-        let result: i64 = stats.into_iter().map(|x| x.count).sum();
-        return Ok(result);
-    }
     #[derive(FromQueryResult)]
     struct OverallCountRes {
         count: i64,
