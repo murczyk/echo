@@ -4,7 +4,7 @@ import type { NetworkCallsignRelationsRsp, NetworkCallsignRes } from '../../../.
 
 import { listAors } from '../../services/api/aor';
 import { getNetworkById, getNetworkCallsignRelations, getNetworkGroupsActivityOne, listNetworkPoints } from '../../services/api/networks';
-import { getEncryptions } from '../../services/api/modulations';
+import { getEncryptions } from '../../services/api/encryptions';
 import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity, listSources } from '../../services/api/callsigns';
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
