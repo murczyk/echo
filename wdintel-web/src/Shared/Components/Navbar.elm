@@ -165,10 +165,10 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
             , internalMenu Route.Path.Admin_DirectionsNeo "zones" "Напрямки"
+            , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти AOR"
             , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
             , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "Панель керування"
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
-            , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти AOR"
             , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
             , MenuSeparator
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
