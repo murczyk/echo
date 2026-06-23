@@ -404,14 +404,7 @@ pub async fn my_admin_group_edit_reference(
         .await
         .c(h!())?;
 
-    let logins = login::Entity::find()
-        .filter(login::Column::Deleted.eq(false))
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .select_only()
-        .column(login::Column::Login)
-        .order_by_asc(login::Column::Login)
-        .into_tuple::<String>()
-        .all(&env.dbx)
+    let logins = collect_active_organism_logins(&env.dbx, &login)
         .await
         .c(h!())?;
 
@@ -452,6 +445,19 @@ pub async fn my_admin_group_update(
         .c(h!())?;
     let admin_logins =
         normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
+    let allowed_admin_logins =
+        collect_active_organism_logins(&txn, &login).await.c(h!())?;
+    let existing_admin_logins =
+        bl::collect_signal_group_admins(vec![req.master_key.clone()], &txn)
+            .await
+            .c(h!())?
+            .remove(&req.master_key)
+            .unwrap_or_default();
+    ensure_added_my_admin_group_admin_logins_allowed(
+        &admin_logins,
+        &allowed_admin_logins,
+        &existing_admin_logins,
+    )?;
 
     let user_logins = if req.is_secret {
         req.user_logins
@@ -498,6 +504,67 @@ fn normalize_my_admin_group_admin_logins(
     }
 
     Ok(admin_logins)
+}
+
+async fn collect_active_organism_logins<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login_s: &str,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(login_s))
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::Unauthenticated)?;
+
+    let mut query = login::Entity::find()
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(login::Column::Login)
+        .order_by_asc(login::Column::Login);
+
+    query = match login_obj.organism_id {
+        Some(organism_id) => {
+            query.filter(login::Column::OrganismId.eq(organism_id))
+        }
+        None => query.filter(login::Column::Login.eq(login_obj.login)),
+    };
+
+    Ok(query.into_tuple::<String>().all(dbx).await.c(h!())?)
+}
+
+fn ensure_added_my_admin_group_admin_logins_allowed(
+    admin_logins: &[String],
+    allowed_admin_logins: &[String],
+    existing_admin_logins: &[String],
+) -> Result<(), AppError> {
+    let allowed_admin_logins =
+        allowed_admin_logins.iter().collect::<HashSet<_>>();
+    let existing_admin_logins =
+        existing_admin_logins.iter().collect::<HashSet<_>>();
+    let disallowed_admin_logins = admin_logins
+        .iter()
+        .filter(|login| {
+            !allowed_admin_logins.contains(login)
+                && !existing_admin_logins.contains(login)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !disallowed_admin_logins.is_empty() {
+        return Err(AppError::Forbidden(format!(
+            "new signal group admins must be active users from your organism: {}",
+            disallowed_admin_logins.join(", ")
+        )));
+    }
+
+    Ok(())
 }
 
 async fn ensure_my_admin_group_access<'a, 'async_trait, C>(

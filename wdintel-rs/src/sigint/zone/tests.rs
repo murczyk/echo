@@ -24,6 +24,106 @@ fn test_normalize_my_admin_group_admin_logins_trims_and_deduplicates() {
     assert_eq!(admin_logins, vec!["admin-a", "admin-b"]);
 }
 
+#[test]
+fn test_reject_new_my_admin_group_admin_outside_organism() {
+    let err = ensure_added_my_admin_group_admin_logins_allowed(
+        &["current".to_string(), "outside".to_string()],
+        &["current".to_string(), "same-org".to_string()],
+        &[],
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, AppError::Forbidden(_)));
+}
+
+#[test]
+fn test_keep_existing_my_admin_group_admin_outside_organism() {
+    ensure_added_my_admin_group_admin_logins_allowed(
+        &["current".to_string(), "outside".to_string()],
+        &["current".to_string(), "same-org".to_string()],
+        &["outside".to_string()],
+    )
+    .unwrap();
+}
+
+#[serial]
+#[tokio::test]
+async fn test_collect_active_organism_logins_excludes_deleted() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("my-admin-org".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("my-admin-other-org".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    for login in ["current-admin", "same-org"] {
+        mk_login(
+            &txn,
+            login::ActiveModel {
+                login: Set(login.to_string()),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("other-org".to_string()),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("deleted-same-org".to_string()),
+            organism_id: Set(Some(organism.id)),
+            deleted: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("permanently-deleted-same-org".to_string()),
+            organism_id: Set(Some(organism.id)),
+            deleted_permanently: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let logins = collect_active_organism_logins(&txn, "current-admin")
+        .await
+        .unwrap();
+
+    assert_eq!(logins, vec!["current-admin", "same-org"]);
+
+    txn.rollback().await.unwrap();
+}
+
 /// Test updating a zone datasource group is working
 #[serial]
 #[tokio::test]
