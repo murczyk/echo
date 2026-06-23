@@ -124,6 +124,13 @@ adminRouteIsBlocked path user =
     isAdminRoutePath path && not (adminMenuIsVisible user)
 
 
+goiMenuIsVisible : User -> SharedModel.Model -> Bool
+goiMenuIsVisible user shared =
+    serverModeIs "live" shared.serverInfo
+        && hasRole "Rer" user
+        && not (List.isEmpty user.goiIntegrations)
+
+
 isAdminRoutePath : Route.Path.Path -> Bool
 isAdminRoutePath path =
     let
@@ -263,7 +270,7 @@ navBar user shared activeName props =
                     [ menuWithSubs "analysis" "Аналіз" analysisSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menuWithSubs "database" "База даних" databaseSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user && user.goiConfiguredForOrganism)
+                , ifOrEmpty (goiMenuIsVisible user shared)
                     [ menuWithSubs "goi" "ГОІ" goiSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "import" "Імпорт" importSubs ]
