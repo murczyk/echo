@@ -1143,7 +1143,7 @@ mod tests {
             seed_message_with_media(&env, &datasource_group, None, "plain")
                 .await
                 .unwrap();
-        let other_media_message = seed_message_with_media(
+        let pdf_message = seed_message_with_media(
             &env,
             &datasource_group,
             Some("application/pdf"),
@@ -1185,12 +1185,12 @@ mod tests {
         let media_ids =
             media_messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
 
-        assert_eq!(media_messages.len(), 3);
+        assert_eq!(media_messages.len(), 4);
         assert!(media_ids.contains(&image_message.id));
         assert!(media_ids.contains(&audio_message.id));
         assert!(media_ids.contains(&video_message.id));
+        assert!(media_ids.contains(&pdf_message.id));
         assert!(!media_ids.contains(&no_media_message.id));
-        assert!(!media_ids.contains(&other_media_message.id));
     }
 
     #[serial]

@@ -38,8 +38,6 @@ fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
 }
 
 fn message_has_media_exists() -> SimpleExpr {
-    let content_type_expr =
-        Expr::cust("lower(signal_message_media.content_type)");
     let media_query = Query::select()
         .expr(Expr::value(1))
         .from(signal_message_media::Entity)
@@ -49,13 +47,6 @@ fn message_has_media_exists() -> SimpleExpr {
                 signal_message_media::Column::SignalMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .and_where(
-            content_type_expr
-                .clone()
-                .like("image/%")
-                .or(content_type_expr.clone().like("audio/%"))
-                .or(content_type_expr.like("video/%")),
         )
         .to_owned();
 
