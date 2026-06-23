@@ -611,15 +611,21 @@ fn unit_specificity(unit: &UnitScope) -> Option<usize> {
 }
 
 fn unit_is_same_or_child(parent: &UnitScope, child: &UnitScope) -> bool {
-    if unit_specificity(parent).is_none() {
+    let Some(parent_specificity) = unit_specificity(parent) else {
         return false;
-    }
+    };
 
-    unit_values(parent).into_iter().zip(unit_values(child)).all(
-        |(parent_value, child_value)| {
-            parent_value.is_empty() || parent_value == child_value
-        },
-    )
+    unit_values(parent)
+        .into_iter()
+        .zip(unit_values(child))
+        .enumerate()
+        .all(|(level, (parent_value, child_value))| {
+            if !parent_value.is_empty() {
+                return parent_value == child_value;
+            }
+
+            level > parent_specificity || child_value.is_empty()
+        })
 }
 
 fn unit_parent_boundary_level(unit: &UnitScope) -> Option<usize> {
@@ -1209,6 +1215,14 @@ mod tests {
         assert_eq!(unit_scope_distance(&network_unit, &sibling), None);
         assert_eq!(unit_scope_distance(&network_unit, &other_regiment), None);
         assert_eq!(unit_scope_distance(&network_unit, &parent_division), None);
+    }
+
+    #[test]
+    fn unit_scope_does_not_treat_missing_ancestors_as_wildcards() {
+        let network_unit = unit_scope("", "", "", "1 мсб", "");
+        let catalog_unit = unit_scope("", "", "283 мсп", "1 мсб", "");
+
+        assert_eq!(unit_scope_distance(&network_unit, &catalog_unit), None);
     }
 
     #[test]
