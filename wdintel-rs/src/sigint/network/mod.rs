@@ -1771,7 +1771,11 @@ pub async fn add_network_freq_v2(
         .one(&txn)
         .await
         .context(h!())?;
-
+    let kind = if &req.freq_rec.modulation == "DMR" {
+        &req.freq_rec.modulation
+    } else {
+        &"VHF".to_string()
+    };
     let network_freq = if existing_freq.is_none() {
         let active_from = req
             .freq_rec
@@ -1785,16 +1789,18 @@ pub async fn add_network_freq_v2(
             &txn,
             &req.freq_rec.modulation,
             req.freq_rec.encryption_id,
-        ).await.context(h!())?;
+        )
+        .await
+        .context(h!())?;
         sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
+            kind: Set(SigintNetworkKind::try_from_value(kind)?),
             modulation: Set(req.freq_rec.modulation.clone()),
-            modulation_id: Set(req.freq_rec.modulation_id),
+            modulation_id: Set(None),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
@@ -2221,11 +2227,17 @@ pub async fn update_network_freq_v2(
             &txn,
             &req.modulation,
             req.encryption_id,
-        ).await.context(h!())?;
+        )
+        .await
+        .context(h!())?;
 
-        let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
-        model.modulation_id = Set(req.modulation_id);
+        let kind = if &req.modulation == "DMR" {
+            &req.modulation
+        } else {
+            &"VHF".to_string()
+        };        let mut model = network_freq_model.into_active_model();
+        model.kind = Set(SigintNetworkKind::try_from_value(kind)?);
+        model.modulation_id = Set(None);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
         model.encryption_id = Set(normalized_encryption_id);
@@ -2436,14 +2448,13 @@ pub async fn delete_network_freq(
                     .context(h!())?,
             );
 
-            if let Err(e) =
-                etalon_calc::invalidate_network_inbox(
-                    network,
-                    vec![freq_records[0].freq.clone()],
-                    &env.dbx,
-                    format!("deleted network {}", network_id),
-                )
-                .await
+            if let Err(e) = etalon_calc::invalidate_network_inbox(
+                network,
+                vec![freq_records[0].freq.clone()],
+                &env.dbx,
+                format!("deleted network {}", network_id),
+            )
+            .await
             {
                 error!("invalidate_network_inbox failed: {:#?}", e);
             }

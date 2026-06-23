@@ -445,7 +445,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
-        activeTo: parseNetworkDetailsDateInput(form.activeTo),
+        activeTo: parseNetworkDetailsDateInput(form.activeTo)
       });
       if (currentNetworkIdRef.current !== targetNetworkId) {
         return;

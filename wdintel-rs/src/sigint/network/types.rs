@@ -636,8 +636,6 @@ pub struct AddNetworkFreq {
     pub description: Option<AddNetworkFrequencyDescription>,
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
-    pub modulation_id: Option<i32>,
-    pub kind: String,
 }
 
 #[derive(
@@ -652,8 +650,6 @@ pub struct UpdateNetworkFreqReq {
     pub encryption_key_ids: Vec<i64>,
     pub active_from: i64,
     pub active_to: Option<i64>,
-    pub modulation_id: Option<i32>,
-    pub kind: String,
 }
 
 #[derive(
