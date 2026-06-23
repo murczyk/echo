@@ -183,10 +183,23 @@ pub fn should_read_stats_aggregated(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<bool> {
-    if !can_read_stats_aggregated(&env.config, dt_since, dt_till) {
-        return Ok(false);
-    }
-    Ok(req_allows_stats_aggregated(req))
+    Ok(should_read_stats_aggregated_for_config(
+        req,
+        &env.config,
+        dt_since,
+        dt_till,
+    ))
+}
+
+pub fn should_read_stats_aggregated_for_config(
+    req: &AnalysisStatsReq,
+    config: &Config,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> bool {
+    can_read_stats_aggregated(config, dt_since, dt_till)
+        && is_5min_stats_bucket_range_aligned(dt_since, dt_till)
+        && req_allows_stats_aggregated(req)
 }
 
 fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
@@ -493,6 +506,108 @@ pub async fn read_group_stats_aggregated(
         result.push(AnalysisStatsGroup { master_key, count });
     }
     Ok(result)
+}
+
+pub async fn read_total_stats_aggregated(
+    dbx: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<i64> {
+    if master_keys.is_empty() {
+        return Ok(0);
+    }
+
+    let (intervals_5min, days) =
+        collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
+    let batches = collect_signal_group_batches(master_keys, dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect_vec();
+    if batch_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let count_5min =
+        read_stats_group_5min_total(dbx, &batch_ids, intervals_5min)
+            .await
+            .c(h!())?;
+    let count_day = read_stats_group_day_total(dbx, &batch_ids, days)
+        .await
+        .c(h!())?;
+    Ok(count_5min + count_day)
+}
+
+#[derive(FromQueryResult)]
+struct StatsCountRes {
+    count: i64,
+}
+
+async fn read_stats_group_5min_total(
+    dbx: &DatabaseConnection,
+    batch_ids: &[i64],
+    intervals_5min: Vec<(NaiveDateTime, NaiveDateTime)>,
+) -> anyhow::Result<i64> {
+    if intervals_5min.is_empty() {
+        return Ok(0);
+    }
+
+    let mut interval_filter = Condition::any();
+    for (since, till) in intervals_5min {
+        let filter = stats_group_5min::Column::Dt
+            .gte(since)
+            .and(stats_group_5min::Column::Dt.lt(till));
+        interval_filter = interval_filter.add(filter);
+    }
+
+    let count = stats_group_5min::Entity::find()
+        .select_only()
+        .expr_as(Expr::cust("COALESCE(SUM(quantity), 0)"), "count")
+        .filter(interval_filter)
+        .filter(
+            stats_group_5min::Column::SignalGroupBatchId
+                .eq_any(batch_ids.to_vec()),
+        )
+        .into_model::<StatsCountRes>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|row| row.count)
+        .unwrap_or(0);
+
+    Ok(count)
+}
+
+async fn read_stats_group_day_total(
+    dbx: &DatabaseConnection,
+    batch_ids: &[i64],
+    days: Vec<NaiveDate>,
+) -> anyhow::Result<i64> {
+    if days.is_empty() {
+        return Ok(0);
+    }
+
+    let mut day_filter = Condition::any();
+    for day in days {
+        day_filter = day_filter.add(stats_group_day::Column::Dt.eq(day));
+    }
+
+    let count = stats_group_day::Entity::find()
+        .select_only()
+        .expr_as(Expr::cust("COALESCE(SUM(quantity), 0)"), "count")
+        .filter(day_filter)
+        .filter(
+            stats_group_day::Column::SignalGroupBatchId
+                .eq_any(batch_ids.to_vec()),
+        )
+        .into_model::<StatsCountRes>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|row| row.count)
+        .unwrap_or(0);
+
+    Ok(count)
 }
 
 pub async fn read_aor_stats_aggregated(
@@ -1196,6 +1311,20 @@ pub(crate) fn round_to_5min(
     let minute = minute_raw - minute_raw % 5;
     let time = NaiveTime::from_hms_opt(hour, minute, 0).c(h!())?;
     Ok(NaiveDateTime::new(ts.date(), time))
+}
+
+pub fn is_5min_stats_bucket_range_aligned(
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> bool {
+    is_5min_stats_bucket_boundary(dt_since)
+        && is_5min_stats_bucket_boundary(dt_till)
+}
+
+fn is_5min_stats_bucket_boundary(ts: NaiveDateTime) -> bool {
+    ts.time().minute().is_multiple_of(5)
+        && ts.time().second() == 0
+        && ts.time().nanosecond() == 0
 }
 
 pub async fn recalculate_group_stats(
@@ -3257,7 +3386,7 @@ fn collect_time_intervals_for_stats(
         intervals_5min.push((dt_till_sod, dt_till));
 
         let mut date = date_after_since_dt;
-        while date <= date_till_dt {
+        while date < date_till_dt {
             days.push(date);
             date += Duration::days(1);
         }
@@ -3507,6 +3636,25 @@ mod tests {
     }
 
     #[test]
+    fn test_should_read_stats_aggregated_false_for_unaligned_range() {
+        let req = analysis_stats_req0();
+        let config = stats_aggregated_config();
+
+        assert!(should_read_stats_aggregated_for_config(
+            &req,
+            &config,
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!should_read_stats_aggregated_for_config(
+            &req,
+            &config,
+            ndt(2025, 10, 10, 10, 1),
+            ndt(2025, 10, 10, 10, 16),
+        ));
+    }
+
+    #[test]
     fn test_collect_time_intervals_for_stats_short_duration_if_branch() {
         // 2 days and 1 second
         let dt_since = ndt(2025, 10, 10, 10, 0);
@@ -3530,7 +3678,7 @@ mod tests {
         let dt_since = ndt(2015, 10, 10, 10, 30); // TODO fix year to 2025
         let dt_till = ndt(2025, 10, 15, 5, 15);
         assert!(dt_till - dt_since >= Duration::days(STATS_5MIN_MAX_NUM_DAYS));
-        let (intervals, _days) =
+        let (intervals, days) =
             collect_time_intervals_for_stats(dt_since, dt_till).unwrap();
         let tz = get_tz();
         let date_after_since_dt =
@@ -3554,15 +3702,31 @@ mod tests {
             (dt_till_sod, dt_till),
             "Second interval should be from start of the till day to dt_till."
         );
-        // TODO uncomment
-        // let expected_days = vec![
-        //     NaiveDate::from_ymd_opt(2025, 10, 11).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 12).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 13).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 14).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 15).unwrap(),
-        // ];
-        // assert_eq!(_days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
+        assert_eq!(days.first(), Some(&date_after_since_dt));
+        assert_eq!(days.last(), Some(&(date_till_dt - Duration::days(1))));
+        assert_eq!(
+            days.len(),
+            date_till_dt
+                .signed_duration_since(date_after_since_dt)
+                .num_days() as usize
+        );
+        assert!(!days.contains(&date_till_dt));
+    }
+
+    #[test]
+    fn test_is_5min_stats_bucket_range_aligned() {
+        assert!(is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 1),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 16),
+        ));
     }
 
     #[test]
@@ -3651,5 +3815,23 @@ mod tests {
             .unwrap()
             .and_hms_opt(hour, minute, 0)
             .unwrap()
+    }
+
+    fn stats_aggregated_config() -> Config {
+        toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+feature_group_stats_aggregated = true
+"#,
+        )
+        .unwrap()
     }
 }

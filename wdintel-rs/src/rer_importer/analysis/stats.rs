@@ -2688,8 +2688,8 @@ pub async fn fetch_counts_for_login(
         req,
         login_str,
         master_keys.clone(),
+        env,
         replica_conn,
-        &env.config,
     )
     .await
     {
@@ -2705,8 +2705,8 @@ pub async fn fetch_counts_for_login(
                 req,
                 login_str,
                 master_keys,
+                env,
                 env.dbx.clone(),
-                &env.config,
             )
             .await
         }
@@ -2718,14 +2718,17 @@ async fn fetch_counts_for_login_with_conn(
     req: &Json<AnalysisStatsReq>,
     login_str: &str,
     master_keys: Vec<String>,
+    env: &Env,
     db_conn: DatabaseConnection,
-    config: &Config,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let read_stats_aggregated =
+        can_read_stats_aggregated(&env.config, dt_since, dt_till)
+            && is_5min_stats_bucket_range_aligned(dt_since, dt_till);
 
     let instant = std::time::Instant::now();
     let count_overall: i64 = fetch_count_overall(
@@ -2733,13 +2736,23 @@ async fn fetch_counts_for_login_with_conn(
         dt_since,
         dt_till,
         master_keys.clone(),
-        config,
+        read_stats_aggregated,
     )
     .await
     .context(h!())?;
 
     if instant.elapsed().as_secs() > 1 {
         debug!("count overall op took: {:?}", instant.elapsed());
+    }
+    if read_stats_aggregated
+        && should_read_stats_aggregated_for_config(
+            &req.0,
+            &env.config,
+            dt_since,
+            dt_till,
+        )
+    {
+        return Ok((count_overall, count_overall));
     }
     let instant = std::time::Instant::now();
 
@@ -2850,16 +2863,14 @@ async fn fetch_count_overall(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-    config: &Config,
+    read_stats_aggregated: bool,
 ) -> anyhow::Result<i64> {
-    if can_read_stats_aggregated(config, dt_since, dt_till) {
-        let stats =
-            read_group_stats_aggregated(db, master_keys, dt_since, dt_till)
-                .await
-                .c(h!())?;
-        let result: i64 = stats.into_iter().map(|x| x.count).sum();
-        return Ok(result);
+    if read_stats_aggregated {
+        return read_total_stats_aggregated(db, master_keys, dt_since, dt_till)
+            .await
+            .context(h!());
     }
+
     #[derive(FromQueryResult)]
     struct OverallCountRes {
         count: i64,
