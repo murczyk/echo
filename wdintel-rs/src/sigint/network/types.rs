@@ -484,6 +484,21 @@ pub struct NetworkFreqCallsignsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct NetworkFreqCallsignsBatchReq {
+    pub network_freq_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFreqCallsignsBatchRsp {
+    pub callsigns_by_network_freq_id:
+        std::collections::HashMap<String, Vec<String>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ModulationRec {
     pub id: i32,
     pub name: String,

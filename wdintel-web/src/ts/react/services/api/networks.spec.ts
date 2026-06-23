@@ -11,6 +11,8 @@ import {
   addFreqToNetworkV2,
   getNetworksList,
   getNetworkCallsignRelationMessages,
+  getNetworkFreqCallsigns,
+  getNetworkFreqCallsignsBatch,
   getNetworksGroupsActivity,
   listNetworks,
   launchNetworkEtalonkaBatchReportTask,
@@ -385,6 +387,26 @@ describe('networks API etalonka report download', () => {
       { signal: controller.signal },
     );
   });
+
+  it('encodes the batch callsigns request and normalizes string keys to numeric ids', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      callsigns_by_network_freq_id: {
+        '7': ['ALPHA'],
+        '9': [],
+      },
+    });
+
+    const callsignsById = await getNetworkFreqCallsignsBatch([7, 9]);
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-freq-callsigns-batch',
+      expect.objectContaining({
+        network_freq_ids: [7, 9],
+      }),
+    );
+    expect(callsignsById.get(7)).toEqual(['ALPHA']);
+    expect(callsignsById.get(9)).toEqual([]);
+  });
 });
 
 describe('networks API list helper', () => {
@@ -505,6 +527,22 @@ describe('networks API v2 frequency mutations', () => {
         freq: '123.4000',
       }),
       undefined,
+    );
+  });
+
+  it('normalizes the single frequency callsign response', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      network_freq_id: 7,
+      callsigns: ['ALPHA'],
+    });
+
+    await expect(getNetworkFreqCallsigns(7)).resolves.toEqual(['ALPHA']);
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/sigint/network-freq-callsigns',
+      expect.objectContaining({
+        network_freq_id: 7,
+      }),
     );
   });
 });

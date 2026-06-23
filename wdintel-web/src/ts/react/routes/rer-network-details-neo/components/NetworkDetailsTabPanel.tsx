@@ -32,6 +32,8 @@ type Props = {
   freqsLoaded: boolean;
   freqsLoading: boolean;
   freqsError: string | null;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
   networkActivity: Record<string, Record<string, number>>;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
@@ -111,6 +113,8 @@ export function NetworkDetailsTabPanel({
   freqsLoaded,
   freqsLoading,
   freqsError,
+  freqCallsignsById,
+  freqCallsignsStatus,
   networkActivity,
   networkActivityLoaded,
   networkActivityLoading,
@@ -224,6 +228,8 @@ export function NetworkDetailsTabPanel({
               freqsLoaded={freqsLoaded}
               freqsLoading={freqsLoading}
               freqsError={freqsError}
+              freqCallsignsById={freqCallsignsById}
+              freqCallsignsStatus={freqCallsignsStatus}
               modulations={modulations}
               expandedFrequencyGroupIds={expandedFrequencyGroupIds}
               onToggleFrequencyGroupExpanded={toggleFrequencyGroupExpanded}

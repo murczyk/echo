@@ -136,6 +136,8 @@ export function NetworkDetailsNeoPageBody({
       freqsLoaded={page.freqsLoaded}
       freqsLoading={page.freqsLoading}
       freqsError={page.freqsError}
+      freqCallsignsById={page.freqCallsignsById}
+      freqCallsignsStatus={page.freqCallsignsStatus}
       networkActivity={page.networkActivity}
       networkActivityLoaded={page.networkActivityLoaded}
       networkActivityLoading={page.networkActivityLoading}

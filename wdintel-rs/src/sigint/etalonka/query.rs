@@ -1651,6 +1651,116 @@ pub async fn get_callsigns_for_network_freq(
         .collect())
 }
 
+pub async fn get_callsigns_for_network_freq_batch(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_freq_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    if network_freq_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let nf = Alias::new("network_freqs");
+    let join_condition =
+        build_network_freq_join_condition(None, true).c(h!())?;
+
+    let callsigns_lateral_sub_query = Query::select()
+        .expr_as(
+            Expr::cust(
+                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
+            ),
+            Alias::new("callsign"),
+        )
+        .to_owned();
+
+    let query = Query::select()
+        .distinct()
+        .expr_as(
+            Expr::col((nf.clone(), SigintNetworkFreq::Id)),
+            Alias::new("network_freq_id"),
+        )
+        .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
+        .from(SignalMessage::Table)
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItem::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::Id))
+                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            DatasourceGroup::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
+                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItemNetwork::Table,
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            )),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            SigintNetworkFreq::Table,
+            nf.clone(),
+            join_condition,
+        )
+        .join_lateral(
+            JoinType::InnerJoin,
+            callsigns_lateral_sub_query,
+            Alias::new("c"),
+            Expr::cust("true"),
+        )
+        .and_where(
+            datasource_group::Column::GroupMasterKey.eq_any(groups.clone()),
+        )
+        .and_where(
+            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+        )
+        .and_where(
+            Expr::col((nf.clone(), SigintNetworkFreq::Deleted)).eq(false),
+        )
+        .and_where(
+            Expr::col((nf.clone(), SigintNetworkFreq::Id))
+                .is_in(network_freq_ids.to_vec()),
+        )
+        .and_where(Expr::cust("btrim(callsign) <> ''"))
+        .order_by_expr(
+            Expr::col((nf.clone(), SigintNetworkFreq::Id)).into(),
+            Order::Asc,
+        )
+        .order_by_expr(Expr::cust("callsign"), Order::Asc)
+        .to_owned();
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?;
+
+    let mut callsigns_by_network_freq_id = network_freq_ids
+        .iter()
+        .copied()
+        .map(|network_freq_id| (network_freq_id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    for row in rows {
+        let network_freq_id: i64 =
+            row.try_get("", "network_freq_id").context(h!())?;
+        let callsign: String = row.try_get("", "callsign").context(h!())?;
+        callsigns_by_network_freq_id
+            .entry(network_freq_id)
+            .or_default()
+            .push(callsign);
+    }
+
+    Ok(callsigns_by_network_freq_id)
+}
+
 /// Function to filter out duplicate callsigns
 /// and keep only the ones with known callsigns
 /// or the first occurrence of each callsign

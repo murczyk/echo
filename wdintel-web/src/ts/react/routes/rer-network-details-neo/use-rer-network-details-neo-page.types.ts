@@ -90,6 +90,8 @@ export type NetworkFreqEditForm = {
   encryptionKeyIds: number[];
 };
 
+export type NetworkFreqCallsignsStatus = 'idle' | 'loading' | 'success' | 'error';
+
 export type NetworkDetailsNeoPageState = {
   network: Network | null;
   sources: Source[];
@@ -98,6 +100,8 @@ export type NetworkDetailsNeoPageState = {
   freqsLoading: boolean;
   freqsError: string | null;
   freqActivityByFreq: NetworkFreqActivityByFreq;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: NetworkFreqCallsignsStatus;
   networkActivity: Record<string, Record<string, number>>;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
@@ -236,6 +240,8 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqsLoading: false,
   freqsError: null,
   freqActivityByFreq: {},
+  freqCallsignsById: new Map(),
+  freqCallsignsStatus: 'idle',
   networkActivity: {},
   networkActivityLoaded: false,
   networkActivityLoading: false,

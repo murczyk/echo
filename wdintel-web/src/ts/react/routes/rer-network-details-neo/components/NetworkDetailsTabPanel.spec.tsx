@@ -55,6 +55,8 @@ function renderPanel(): Rendered {
     freqsLoaded: false,
     freqsLoading: false,
     freqsError: null,
+    freqCallsignsById: new Map(),
+    freqCallsignsStatus: 'idle',
     networkActivity: {},
     networkActivityLoaded: false,
     networkActivityLoading: false,
@@ -167,6 +169,8 @@ describe('NetworkDetailsTabPanel', () => {
           freqsLoaded={false}
           freqsLoading={false}
           freqsError={null}
+          freqCallsignsById={new Map()}
+          freqCallsignsStatus="idle"
           networkActivity={{}}
           networkActivityLoaded={false}
           networkActivityLoading={false}

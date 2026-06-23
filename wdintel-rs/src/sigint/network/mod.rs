@@ -3050,6 +3050,47 @@ pub async fn network_freq_callsigns(
     }))
 }
 
+#[post("/api/sigint/network-freq-callsigns-batch")]
+pub async fn network_freq_callsigns_batch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkFreqCallsignsBatchReq>,
+) -> Result<Json<NetworkFreqCallsignsBatchRsp>, AppError> {
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await?;
+
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    let callsigns_by_network_freq_id = get_callsigns_for_network_freq_batch(
+        &env.dbx,
+        &groups,
+        &req.network_freq_ids,
+    )
+    .await
+    .context(h!())?;
+
+    let callsigns_by_network_freq_id = callsigns_by_network_freq_id
+        .into_iter()
+        .map(|(network_freq_id, callsigns)| {
+            (network_freq_id.to_string(), callsigns)
+        })
+        .collect();
+
+    Ok(Json(NetworkFreqCallsignsBatchRsp {
+        callsigns_by_network_freq_id,
+    }))
+}
+
 #[post("/api/sigint/modulations-list")]
 pub async fn modulations_list(
     env: actix_web::web::Data<Env>,
