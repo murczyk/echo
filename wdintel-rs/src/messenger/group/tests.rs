@@ -126,3 +126,92 @@ async fn test_insert_group_aor_respects_existing_assignments() {
 
     txn.rollback().await.unwrap();
 }
+
+#[serial]
+#[tokio::test]
+async fn test_set_signal_group_archived_deletes_direction_links() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+
+    let datasource = mk_datasource(
+        &txn,
+        datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let zone = mk_sigint_zone(
+        &txn,
+        sigint_zone::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            datasource_id: Set(Some(datasource.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            sigint_zone_id: Set(zone.id),
+            datasource_id: Set(datasource.id),
+            group_master_key: Set(group.master_key.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    set_signal_group_archived(&txn, &group.master_key, true)
+        .await
+        .unwrap();
+
+    let group = signal_group::Entity::find_by_id(group.master_key.clone())
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(group.is_archived);
+
+    let direction_links = sigint_zone_datasource::Entity::find()
+        .filter(
+            sigint_zone_datasource::Column::GroupMasterKey
+                .eq(&group.master_key),
+        )
+        .count(&txn)
+        .await
+        .unwrap();
+    assert_eq!(direction_links, 0);
+
+    set_signal_group_archived(&txn, &group.master_key, false)
+        .await
+        .unwrap();
+
+    let group = signal_group::Entity::find_by_id(group.master_key.clone())
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!group.is_archived);
+
+    let direction_links = sigint_zone_datasource::Entity::find()
+        .filter(
+            sigint_zone_datasource::Column::GroupMasterKey
+                .eq(&group.master_key),
+        )
+        .count(&txn)
+        .await
+        .unwrap();
+    assert_eq!(direction_links, 0);
+
+    txn.rollback().await.unwrap();
+}

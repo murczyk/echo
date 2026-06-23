@@ -7,6 +7,7 @@ import {
   SignalGroupLogin,
   OrphanSignalGroupEntry,
   SigintZone,
+  SignalGroupArchiveReq,
   SignalGroupEntry,
   SignalGroupStats,
   SignalGroupStatsTimelineReq,
@@ -84,6 +85,8 @@ type OrphanSignalGroupEntryLike = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  isArchived?: boolean;
+  is_archived?: boolean;
   datasourceId?: number | null;
   datasource_id?: number | null;
   createdAt?: number;
@@ -233,6 +236,10 @@ type SignalGroupStatsTimelineReqBody = {
   period_hours: number | null;
 };
 
+type SignalGroupArchiveReqBody = {
+  master_key: string;
+};
+
 function normalizeNumber(value: number | string | null | undefined): number {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim() !== '') return Number(value);
@@ -306,6 +313,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
+    isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
@@ -425,6 +433,12 @@ function toSignalGroupStatsTimelineReqBody(req: SignalGroupStatsTimelineReq): Si
   };
 }
 
+function toSignalGroupArchiveReqBody(req: SignalGroupArchiveReq): SignalGroupArchiveReqBody {
+  return {
+    master_key: req.masterKey,
+  };
+}
+
 function normalizeSignalGroupsRsp(raw: SignalGroupsRspLike): SignalGroupEntry[] {
   return (raw.data ?? []).map(normalizeSignalGroupEntry);
 }
@@ -525,6 +539,19 @@ export async function listMyAdminGroups(signal?: AbortSignal): Promise<MyAdminSi
 export async function listOrphanSignalGroups(): Promise<OrphanSignalGroupEntry[]> {
   const data = await postJson<OrphanSignalGroupEntryLike[]>('/api/rer-importer/orphan-signal-groups');
   return (data || []).map(normalizeOrphanSignalGroupEntry);
+}
+
+export async function listArchivedSignalGroups(): Promise<OrphanSignalGroupEntry[]> {
+  const data = await postJson<OrphanSignalGroupEntryLike[]>('/api/rer-importer/archived-signal-groups');
+  return (data || []).map(normalizeOrphanSignalGroupEntry);
+}
+
+export async function archiveSignalGroup(req: SignalGroupArchiveReq): Promise<void> {
+  await postVoid('/api/rer-importer/signal-group-archive', toSignalGroupArchiveReqBody(req));
+}
+
+export async function unarchiveSignalGroup(req: SignalGroupArchiveReq): Promise<void> {
+  await postVoid('/api/rer-importer/signal-group-unarchive', toSignalGroupArchiveReqBody(req));
 }
 
 export async function fetchSignalGroupInfoBatch(keys: string[]): Promise<SignalGroupEntry[]> {

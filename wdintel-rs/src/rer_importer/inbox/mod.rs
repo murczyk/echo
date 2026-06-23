@@ -950,8 +950,9 @@ mod tests {
     use super::*;
     use crate::entities::{
         datasource_group, login, organism, sigint_inbox_item,
-        sigint_inbox_item_tag, sigint_zone_datasource, signal_group,
-        signal_message, signal_message_group, tag,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag,
+        sigint_zone_datasource, signal_group, signal_message,
+        signal_message_group, tag,
     };
     use crate::functest::tests::*;
     use chrono::Utc;
@@ -1071,6 +1072,71 @@ mod tests {
             .find(|t| t.login == Some(login.login.clone()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_excludes_archived_palitra_point_tokens() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let message = seed_message_with_tags(
+            &env,
+            &datasource_group,
+            &tag,
+            std::slice::from_ref(&login),
+        )
+        .await
+        .unwrap();
+
+        sigint_inbox_item_point_token::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            palitra_id: Set(palitra.id),
+            point_tokens: Set(json!([{
+                "begin": 0,
+                "end": 4,
+                "etalon": "test",
+                "text": "test"
+            }])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let logins =
+            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+                .await
+                .unwrap();
+        let messages =
+            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
+                .await
+                .unwrap();
+        assert_eq!(messages[0].1.point_tokens.as_ref().unwrap().len(), 1);
+
+        let mut palitra = palitra.into_active_model();
+        palitra.is_archived = Set(true);
+        palitra.update(&env.dbx).await.unwrap();
+
+        let messages =
+            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
+                .await
+                .unwrap();
+        assert!(messages[0]
+            .1
+            .point_tokens
+            .as_deref()
+            .unwrap_or(&[])
+            .is_empty());
+        assert!(!messages[0].1.text_marked.as_ref().unwrap().iter().any(
+            |node| matches!(
+                node,
+                crate::rer_importer::highlight::ContentNode::CNPointC(_)
+            )
+        ));
     }
 
     #[serial]

@@ -13,6 +13,7 @@ pub struct OrphanSignalGroupEntry {
     pub name: String,
     /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
     pub ignore_operativny: bool,
+    pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
     /// Час створення групи (в мілісекундах від epoch)
@@ -89,6 +90,13 @@ pub struct SignalGroupStatsTimelineEntry {
 )]
 pub struct SignalGroupStatsTimelineRsp {
     pub data: Vec<SignalGroupStatsTimelineEntry>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalGroupArchiveReq {
+    pub master_key: String,
 }
 
 #[derive(

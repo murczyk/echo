@@ -9,6 +9,7 @@ export function AdminAllReportsPage() {
       tableId="admin-all-reports-v1"
       includeAuthor
       fullHeight
+      showReportCount
       loadReportHistory={listAllReportHistory}
     />
   );

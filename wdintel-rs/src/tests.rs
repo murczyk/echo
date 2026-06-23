@@ -16,6 +16,7 @@ pub mod test {
     static INIT_LOGGING: Once = Once::new();
     static DB_INIT: AtomicBool = AtomicBool::new(false);
     static DB_INIT_MUTEX: Mutex<()> = Mutex::new(());
+    const SKIP_DB_INIT_ENV: &str = "WDINTEL_SKIP_TEST_DB_INIT";
 
     pub fn init_logging() {
         INIT_LOGGING.call_once(|| {
@@ -32,6 +33,10 @@ pub mod test {
 
     pub async fn init() {
         init_logging();
+
+        if std::env::var_os(SKIP_DB_INIT_ENV).is_some() {
+            return;
+        }
 
         if DB_INIT.load(Ordering::Acquire) {
             return;

@@ -131,7 +131,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
         crate::location::load_settlements_data_config(settlement_paths, mode)
-            .unwrap_or_default();
+            .c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
     let callsigns_whitelist =
         crate::sigint::callsign::load_whitelist_from_file(mode)
@@ -494,6 +494,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
             .service(crate::messenger::group::handlers::orphan_signal_groups)
+            .service(crate::messenger::group::handlers::archived_signal_groups)
+            .service(crate::messenger::group::handlers::signal_group_archive)
+            .service(crate::messenger::group::handlers::signal_group_unarchive)
             .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
             .service(crate::rer_importer::signal_profile_info_batch)
@@ -769,6 +772,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::list_all_palitras_v2)
+            .service(crate::palitra::list_map_palitras_v2)
             .service(crate::palitra::list_all_palitras_detailed)
             .service(crate::palitra::read_palitra_v2)
             .service(crate::palitra::list_palitra_points)

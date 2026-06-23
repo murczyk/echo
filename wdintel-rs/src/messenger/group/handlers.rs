@@ -1,6 +1,8 @@
 use super::types::*;
 use crate::entities::*;
-use crate::messenger::group::{collect_group_admin_data, collect_group_stats};
+use crate::messenger::group::{
+    collect_group_admin_data, collect_group_stats, set_signal_group_archived,
+};
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
@@ -9,7 +11,8 @@ use chrono::{Duration, Utc};
 use echo_migration::JoinType;
 use itertools::Itertools;
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+    RelationTrait, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -28,6 +31,36 @@ pub async fn orphan_signal_groups(
         .await
         .context(h!())?;
 
+    Ok(Json(
+        collect_orphan_signal_groups(&env.dbx, false)
+            .await
+            .context(h!())?,
+    ))
+}
+
+#[post("/api/rer-importer/archived-signal-groups")]
+pub async fn archived_signal_groups(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .context(h!())?;
+
+    Ok(Json(
+        collect_orphan_signal_groups(&env.dbx, true)
+            .await
+            .context(h!())?,
+    ))
+}
+
+async fn collect_orphan_signal_groups<'a, 'async_trait, C>(
+    dbx: &'a C,
+    is_archived: bool,
+) -> Result<Vec<OrphanSignalGroupEntry>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     // Отримати всі master_key, які вже прив'язані
     let assigned_keys = sigint_zone_datasource::Entity::find()
         .select_only()
@@ -35,7 +68,7 @@ pub async fn orphan_signal_groups(
         .column(sigint_zone_datasource::Column::GroupMasterKey)
         .column(sigint_zone_datasource::Column::DatasourceId)
         .into_tuple::<(String, i64)>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -49,14 +82,18 @@ pub async fn orphan_signal_groups(
                 JoinType::InnerJoin,
                 datasource_group::Relation::Datasource.def(),
             )
+            .filter(datasource_group::Column::Deleted.eq(false))
             .filter(datasource::Column::Deleted.eq(false))
-            .all(&env.dbx)
+            .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::IsArchived.eq(is_archived))
+            .all(dbx)
             .await
             .context(h!())?
             .into_iter()
             .filter_map(|(dg, m_group)| m_group.map(|g| (g, dg.datasource_id)))
             .filter(|(g, dsid)| {
-                !assigned_keys.contains(&(g.master_key.clone(), *dsid))
+                is_archived
+                    || !assigned_keys.contains(&(g.master_key.clone(), *dsid))
             })
             .collect();
 
@@ -66,15 +103,11 @@ pub async fn orphan_signal_groups(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let stats = collect_group_stats(keys.clone(), &env.dbx)
-        .await
-        .context(h!())?;
-    let group_aors = collect_group_aors(keys.clone(), &env.dbx)
-        .await
-        .context(h!())?;
-    let group_admin_data = collect_group_admin_data(keys, &env.dbx)
-        .await
-        .context(h!())?;
+    let stats = collect_group_stats(keys.clone(), dbx).await.context(h!())?;
+    let group_aors =
+        collect_group_aors(keys.clone(), dbx).await.context(h!())?;
+    let group_admin_data =
+        collect_group_admin_data(keys, dbx).await.context(h!())?;
     let data: Vec<OrphanSignalGroupEntry> = orphan_pairs
         .into_iter()
         .filter_map(|(g, dsid)| {
@@ -86,6 +119,7 @@ pub async fn orphan_signal_groups(
                 name,
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
+                is_archived: g.is_archived,
                 datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
@@ -95,7 +129,47 @@ pub async fn orphan_signal_groups(
         })
         .collect();
 
-    Ok(Json(data))
+    Ok(data)
+}
+
+#[post("/api/rer-importer/signal-group-archive")]
+pub async fn signal_group_archive(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SignalGroupArchiveReq>,
+) -> Result<Json<()>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .context(h!())?;
+
+    let req = req.into_inner();
+    let master_key = req.master_key.trim().to_string();
+    let txn = env.dbx.begin().await.c(h!())?;
+    set_signal_group_archived(&txn, &master_key, true)
+        .await
+        .context(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
+#[post("/api/rer-importer/signal-group-unarchive")]
+pub async fn signal_group_unarchive(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SignalGroupArchiveReq>,
+) -> Result<Json<()>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .context(h!())?;
+
+    let req = req.into_inner();
+    let master_key = req.master_key.trim().to_string();
+    let txn = env.dbx.begin().await.c(h!())?;
+    set_signal_group_archived(&txn, &master_key, false)
+        .await
+        .context(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
 }
 
 #[post("/api/rer-importer/group-stats-timeline")]

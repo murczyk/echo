@@ -237,7 +237,7 @@ export async function installAnalysisNeoApiMocks(page: Page, options: AnalysisNe
       return;
     }
 
-    if (pathname === '/api/palitra/v2/list') {
+    if (pathname === '/api/palitra/v2/list-map') {
       await fulfillJson(route, emptyPalitrasResponse());
       return;
     }

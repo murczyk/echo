@@ -30,6 +30,7 @@ export type ReportHistoryTableSectionProps = {
   labelledBy?: string;
   includeAuthor?: boolean;
   fullHeight?: boolean;
+  showReportCount?: boolean;
   loadReportHistory?: LoadReportHistory;
 };
 
@@ -190,6 +191,7 @@ export function ReportHistoryTableSection({
   labelledBy,
   includeAuthor = false,
   fullHeight = false,
+  showReportCount = false,
   loadReportHistory = listReportHistory,
 }: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
@@ -362,9 +364,16 @@ export function ReportHistoryTableSection({
           sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
         >
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-            <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
-              {title}
-            </Typography>
+            <Stack direction="row" alignItems="baseline" gap={1}>
+              <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+                {title}
+              </Typography>
+              {showReportCount && loadState === 'success' ? (
+                <Typography component="span" variant="subtitle1" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {rows.length}
+                </Typography>
+              ) : null}
+            </Stack>
             <Tooltip title="Оновити">
               <span>
                 <IconButton size="small" disabled={loadState === 'loading'} onClick={() => void loadRows()}>

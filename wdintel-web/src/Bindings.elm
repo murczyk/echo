@@ -1501,6 +1501,18 @@ signalGroupStatsTimelineRspEncoder struct =
         ]
 
 
+type alias SignalGroupArchiveReq =
+    { masterKey : String
+    }
+
+
+signalGroupArchiveReqEncoder : SignalGroupArchiveReq -> Json.Encode.Value
+signalGroupArchiveReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        ]
+
+
 type alias SignalGroupRsp =
     { name : Maybe (String)
     }
@@ -1577,6 +1589,7 @@ type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
     , groupStats : SignalGroupStats
@@ -1591,6 +1604,7 @@ orphanSignalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
@@ -9203,6 +9217,12 @@ signalGroupStatsTimelineRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "data" (Json.Decode.list (signalGroupStatsTimelineEntryDecoder))))
 
 
+signalGroupArchiveReqDecoder : Json.Decode.Decoder SignalGroupArchiveReq
+signalGroupArchiveReqDecoder =
+    Json.Decode.succeed SignalGroupArchiveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+
+
 signalGroupRspDecoder : Json.Decode.Decoder SignalGroupRsp
 signalGroupRspDecoder =
     Json.Decode.succeed SignalGroupRsp
@@ -9552,6 +9572,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))

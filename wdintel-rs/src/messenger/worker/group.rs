@@ -157,6 +157,7 @@ pub async fn sync_groups(
                     master_key: Set(group_id.clone()),
                     is_secret: NotSet,
                     deleted: NotSet,
+                    is_archived: NotSet,
                 };
                 crate::messenger::group::add_group(model, txn)
                     .await

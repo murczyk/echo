@@ -579,6 +579,21 @@ pub async fn list_all_palitras_v2(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/v2/list-map")]
+pub async fn list_map_palitras_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra = bl::list_map_palitras_v2(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
 #[post("/api/palitra/list-detailed")] // TODO implement filter
 pub async fn list_all_palitras_detailed(
     user: actix_identity::Identity,
