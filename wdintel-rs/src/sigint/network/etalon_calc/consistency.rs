@@ -16,6 +16,7 @@ pub struct InboxItem {
     pub freq: Option<String>,
     pub unit: Option<String>,
     pub parsed_unit_v2: bool,
+    pub post_id: Option<i64>,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -113,6 +114,7 @@ where
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit")
         .column_as(sigint_inbox_item::Column::ParsedUnitV2, "parsed_unit_v2")
+        .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(day_start))
         .filter(sigint_inbox_item::Column::Datetime.lt(day_end))
@@ -241,6 +243,9 @@ where
     for nf in &networks_freqs {
         network_ids.insert(nf.network_id);
     }
+    let network_posts = load_network_posts_by_network_id(db, &network_ids)
+        .await
+        .c(h!())?;
 
     // Step 5: Load AORs for networks
     let network_aors = sigint_network_aor::Entity::find()
@@ -273,6 +278,7 @@ where
         networks_freqs,
         &network_units,
         &message_units,
+        &network_posts,
     )
     .context(h!())?;
 
@@ -316,6 +322,35 @@ where
             .entry(nf.network_id)
             .or_insert_with(Vec::new)
             .push(unit.clone());
+    }
+    Ok(result)
+}
+
+async fn load_network_posts_by_network_id<'a, 'async_trait, C>(
+    db: &'a C,
+    network_ids: &HashSet<i64>,
+) -> anyhow::Result<HashMap<i64, HashSet<i64>>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let network_posts = sigint_network_post::Entity::find()
+        .filter(
+            sigint_network_post::Column::NetworkId
+                .is_in(network_ids.iter().copied().collect_vec()),
+        )
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut result: HashMap<i64, HashSet<i64>> = HashMap::new();
+    for network_post in network_posts {
+        result
+            .entry(network_post.network_id)
+            .or_default()
+            .insert(network_post.post_id);
     }
     Ok(result)
 }
@@ -371,6 +406,7 @@ fn match_network_ids_for_messages(
     networks_freqs: Vec<NetworkFreqResult>,
     network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
     message_units: &HashMap<String, Vec<sigint_unit::Model>>,
+    network_posts: &HashMap<i64, HashSet<i64>>,
 ) -> anyhow::Result<HashMap<i64, Vec<i64>>> {
     let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
         HashMap::new();
@@ -473,11 +509,27 @@ fn match_network_ids_for_messages(
             message_units,
             &network_unit_names,
         );
+        matched = filter_networks_by_post(msg.post_id, matched, network_posts);
 
         result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
     }
 
     Ok(result)
+}
+
+fn filter_networks_by_post(
+    message_post_id: Option<i64>,
+    matched_networks: HashSet<i64>,
+    network_posts: &HashMap<i64, HashSet<i64>>,
+) -> HashSet<i64> {
+    matched_networks
+        .into_iter()
+        .filter(|network_id| match network_posts.get(network_id) {
+            Some(post_ids) if !post_ids.is_empty() => message_post_id
+                .is_some_and(|post_id| post_ids.contains(&post_id)),
+            _ => true,
+        })
+        .collect()
 }
 
 fn try_discard_by_unit(
@@ -709,6 +761,39 @@ mod tests {
                 &message_units,
                 &network_units,
             ),
+            HashSet::from([2])
+        );
+    }
+
+    #[test]
+    fn post_filter_keeps_unrestricted_networks() {
+        let matched_networks = HashSet::from([1, 2]);
+        let network_posts = HashMap::from([(2, HashSet::from([11]))]);
+
+        assert_eq!(
+            filter_networks_by_post(Some(11), matched_networks, &network_posts),
+            HashSet::from([1, 2])
+        );
+    }
+
+    #[test]
+    fn post_filter_removes_networks_for_other_posts() {
+        let matched_networks = HashSet::from([1, 2]);
+        let network_posts = HashMap::from([(1, HashSet::from([11]))]);
+
+        assert_eq!(
+            filter_networks_by_post(Some(22), matched_networks, &network_posts),
+            HashSet::from([2])
+        );
+    }
+
+    #[test]
+    fn post_filter_removes_restricted_networks_without_message_post() {
+        let matched_networks = HashSet::from([1, 2]);
+        let network_posts = HashMap::from([(1, HashSet::from([11]))]);
+
+        assert_eq!(
+            filter_networks_by_post(None, matched_networks, &network_posts),
             HashSet::from([2])
         );
     }

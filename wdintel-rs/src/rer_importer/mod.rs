@@ -689,7 +689,13 @@ pub async fn oneoff_reprocess_inbox_posts(
                 post_id: Set(new_post_id),
                 ..Default::default()
             };
-            inbox_item.update(&dbx).await.c(h!())?;
+            let inbox_item = inbox_item.update(&dbx).await.c(h!())?;
+            crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+                vec![inbox_item],
+                &dbx,
+            )
+            .await
+            .c(h!())?;
         }
     }
 
