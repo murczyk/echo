@@ -386,6 +386,152 @@ pub async fn my_admin_groups(
     Ok(Json(MyAdminSignalGroupsRsp { groups }))
 }
 
+#[post("/api/sigint/zones/my-admin-group-edit-reference")]
+pub async fn my_admin_group_edit_reference(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+    req: Json<MyAdminSignalGroupEditReferenceReq>,
+) -> Result<Json<MyAdminSignalGroupEditReferenceRsp>, AppError> {
+    if !env.config.feature_my_admin_groups_edit.unwrap_or(false) {
+        return Err(AppError::Forbidden(
+            "feature_my_admin_groups_edit is disabled".to_string(),
+        ));
+    }
+
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    ensure_my_admin_group_access(&env.dbx, &login, &req.master_key)
+        .await
+        .c(h!())?;
+
+    let logins = login::Entity::find()
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(login::Column::Login)
+        .order_by_asc(login::Column::Login)
+        .into_tuple::<String>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    let areas_of_responsibility = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(area_of_responsibility::Column::Name)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(render_aor)
+        .collect();
+
+    Ok(Json(MyAdminSignalGroupEditReferenceRsp {
+        logins,
+        areas_of_responsibility,
+    }))
+}
+
+#[post("/api/sigint/zones/my-admin-group-update")]
+pub async fn my_admin_group_update(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+    req: Json<MyAdminSignalGroupUpdateReq>,
+) -> Result<Json<()>, AppError> {
+    if !env.config.feature_my_admin_groups_edit.unwrap_or(false) {
+        return Err(AppError::Forbidden(
+            "feature_my_admin_groups_edit is disabled".to_string(),
+        ));
+    }
+
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let txn = env.dbx.begin().await.c(h!())?;
+
+    ensure_my_admin_group_access(&txn, &login, &req.master_key)
+        .await
+        .c(h!())?;
+    let admin_logins =
+        normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
+
+    let user_logins = if req.is_secret {
+        req.user_logins
+    } else {
+        vec![]
+    };
+    bl::update_signal_group_access_and_admins(
+        user_logins,
+        admin_logins,
+        req.is_secret,
+        &req.master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+
+    crate::messenger::bl::upsert_group_area_of_responsibility(
+        &txn,
+        &req.master_key,
+        req.area_of_responsibility_ids,
+    )
+    .await
+    .c(h!())?;
+
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
+fn normalize_my_admin_group_admin_logins(
+    admin_logins: Vec<String>,
+) -> Result<Vec<String>, AppError> {
+    let mut admin_logins = admin_logins
+        .into_iter()
+        .map(|login| login.trim().to_string())
+        .filter(|login| !login.is_empty())
+        .collect::<Vec<_>>();
+    admin_logins.sort();
+    admin_logins.dedup();
+
+    if admin_logins.is_empty() {
+        return Err(AppError::BL {
+            msg: "signal group must have at least one admin".to_string(),
+        });
+    }
+
+    Ok(admin_logins)
+}
+
+async fn ensure_my_admin_group_access<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &str,
+    master_key: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let has_access = signal_group_admin::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_admin::Relation::SignalGroup.def(),
+        )
+        .filter(signal_group_admin::Column::Deleted.eq(false))
+        .filter(signal_group_admin::Column::Login.eq(login))
+        .filter(signal_group_admin::Column::SignalGroupId.eq(master_key))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+
+    if !has_access {
+        return Err(AppError::Forbidden(format!(
+            "user {login} is not admin of signal group {master_key}"
+        )));
+    }
+
+    Ok(())
+}
+
 fn render_group_logins(
     logins: Vec<String>,
     login_delta_map: &HashMap<String, Option<String>>,

@@ -105,6 +105,32 @@ pub struct MyAdminSignalGroup {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct MyAdminSignalGroupUpdateReq {
+    pub master_key: String,
+    pub is_secret: bool,
+    pub user_logins: Vec<String>,
+    pub admin_logins: Vec<String>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyAdminSignalGroupEditReferenceReq {
+    pub master_key: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyAdminSignalGroupEditReferenceRsp {
+    pub logins: Vec<String>,
+    pub areas_of_responsibility: Vec<AreaOfResponsibility>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MyAdminSignalGroupsRsp {
     pub groups: Vec<MyAdminSignalGroup>,
 }

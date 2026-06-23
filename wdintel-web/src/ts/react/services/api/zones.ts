@@ -3,7 +3,10 @@ import {
   BatchSignalGroupReq,
   Datasource,
   MyAdminSignalGroup,
+  MyAdminSignalGroupEditReferenceReq,
+  MyAdminSignalGroupEditReferenceRsp,
   MyAdminSignalGroupsRsp,
+  MyAdminSignalGroupUpdateReq,
   SignalGroupLogin,
   OrphanSignalGroupEntry,
   SigintZone,
@@ -179,6 +182,12 @@ type MyAdminSignalGroupsRspLike = {
   groups?: MyAdminSignalGroupLike[] | null;
 };
 
+type MyAdminSignalGroupEditReferenceRspLike = {
+  logins?: string[] | null;
+  areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
+  areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+};
+
 type ZoneDatasourceGroupAddRspLike = {
   zoneId?: number;
   zone_id?: number;
@@ -224,6 +233,18 @@ type ZoneDatasourceGroupUpdateReqBody = {
 type ZoneDatasourceGroupsReqBody = {
   zone_id: number;
   datasource_id: number;
+};
+
+type MyAdminSignalGroupUpdateReqBody = {
+  master_key: string;
+  is_secret: boolean;
+  user_logins: string[];
+  admin_logins: string[];
+  area_of_responsibility_ids: number[] | null;
+};
+
+type MyAdminSignalGroupEditReferenceReqBody = {
+  master_key: string;
 };
 
 type BatchSignalGroupReqBody = {
@@ -419,6 +440,24 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
   };
 }
 
+function toMyAdminSignalGroupUpdateReqBody(req: MyAdminSignalGroupUpdateReq): MyAdminSignalGroupUpdateReqBody {
+  return {
+    master_key: req.masterKey,
+    is_secret: req.isSecret,
+    user_logins: req.userLogins,
+    admin_logins: req.adminLogins,
+    area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
+  };
+}
+
+function toMyAdminSignalGroupEditReferenceReqBody(
+  req: MyAdminSignalGroupEditReferenceReq,
+): MyAdminSignalGroupEditReferenceReqBody {
+  return {
+    master_key: req.masterKey,
+  };
+}
+
 function toBatchSignalGroupReqBody(req: BatchSignalGroupReq): BatchSignalGroupReqBody {
   return {
     groups: req.groups.map((group) => ({ master_key: group.masterKey })),
@@ -534,6 +573,21 @@ export async function listMyAdminGroups(signal?: AbortSignal): Promise<MyAdminSi
     { signal },
   );
   return { groups: (data?.groups ?? []).map(normalizeMyAdminSignalGroup) };
+}
+
+export async function updateMyAdminGroup(req: MyAdminSignalGroupUpdateReq): Promise<void> {
+  await postVoid('/api/sigint/zones/my-admin-group-update', toMyAdminSignalGroupUpdateReqBody(req));
+}
+
+export async function fetchMyAdminGroupEditReference(masterKey: string): Promise<MyAdminSignalGroupEditReferenceRsp> {
+  const data = await postJson<MyAdminSignalGroupEditReferenceRspLike>(
+    '/api/sigint/zones/my-admin-group-edit-reference',
+    toMyAdminSignalGroupEditReferenceReqBody({ masterKey }),
+  );
+  return {
+    logins: data?.logins ?? [],
+    areasOfResponsibility: (data?.areasOfResponsibility ?? data?.areas_of_responsibility ?? []).map(normalizeAor),
+  };
 }
 
 export async function listOrphanSignalGroups(): Promise<OrphanSignalGroupEntry[]> {

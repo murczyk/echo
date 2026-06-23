@@ -27,6 +27,7 @@ pub struct ServerInfo {
     pub feature_delta: bool,
     pub feature_analysis_map: bool,
     pub feature_strict_networks: bool,
+    pub feature_my_admin_groups_edit: bool,
     pub version: String,
 }
 
@@ -43,6 +44,10 @@ async fn server_info(
         feature_strict_networks: env
             .config
             .feature_strict_networks
+            .unwrap_or(false),
+        feature_my_admin_groups_edit: env
+            .config
+            .feature_my_admin_groups_edit
             .unwrap_or(false),
         version: env.version.clone(),
     }))

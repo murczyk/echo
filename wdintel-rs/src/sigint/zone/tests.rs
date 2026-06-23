@@ -1,6 +1,29 @@
 use super::*;
 use crate::functest::tests::*;
 
+#[test]
+fn test_normalize_my_admin_group_admin_logins_rejects_empty() {
+    let err = normalize_my_admin_group_admin_logins(vec![
+        " ".to_string(),
+        "".to_string(),
+    ])
+    .unwrap_err();
+
+    assert!(matches!(err, AppError::BL { .. }));
+}
+
+#[test]
+fn test_normalize_my_admin_group_admin_logins_trims_and_deduplicates() {
+    let admin_logins = normalize_my_admin_group_admin_logins(vec![
+        " admin-b ".to_string(),
+        "admin-a".to_string(),
+        "admin-b".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(admin_logins, vec!["admin-a", "admin-b"]);
+}
+
 /// Test updating a zone datasource group is working
 #[serial]
 #[tokio::test]
