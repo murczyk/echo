@@ -442,7 +442,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
       const response = await updateNetworkFreqV2({
         networkId: network.id,
         networkFreqId: currentFreq.networkFreqId,
-        freq: form.freq.trim(),
+        freq: currentFreq.freq,
         kind: toBackendNetworkFreqKind(form.kind),
         modulationId: form.modulationId,
         encryptionKeyIds: [...form.encryptionKeyIds],

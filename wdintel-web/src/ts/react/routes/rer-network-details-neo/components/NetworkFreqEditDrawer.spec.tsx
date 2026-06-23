@@ -49,10 +49,10 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   ButtonGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean }) => (
+  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean } }) => (
     <label>
       <span>{label}{required ? ' *' : ''}</span>
-      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={readOnly ?? onChange === undefined} />
+      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined} disabled={disabled ?? false} />
     </label>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -189,7 +189,7 @@ describe('NetworkFreqEditDrawer', () => {
     expect(rxField?.value).toBe('148.2500');
   });
 
-  it('lets frequency be edited and validates it', () => {
+  it('keeps frequency read-only in edit mode', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -218,15 +218,9 @@ describe('NetworkFreqEditDrawer', () => {
     rendered.push({ container, root });
 
     const freqField = container.querySelector('input[aria-label="Частота *"]') as HTMLInputElement | null;
-
-    act(() => {
-      if (!freqField) return;
-      freqField.value = '149.0000';
-      freqField.dispatchEvent(new Event('input', { bubbles: true }));
-      freqField.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    expect(container.querySelector('input[aria-label="Частота *"]')?.value).toBe('149.0000');
+    expect(freqField?.disabled).toBe(true);
+    expect(freqField?.readOnly).toBe(true);
+    expect(freqField?.value).toBe('148.2500');
   });
 
   it('marks the new key field as required', () => {

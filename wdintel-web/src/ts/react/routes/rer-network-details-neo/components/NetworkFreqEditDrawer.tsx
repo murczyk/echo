@@ -12,7 +12,7 @@ import type { EncryptionKeyData, ModulationRec } from '../../../../../Bindings';
 import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { formatErrorMessage, getFrequencyFormatError, type NetworkFreqEditForm, parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
+import { formatErrorMessage, type NetworkFreqEditForm, parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
 import { NetworkFreqFormFields } from './NetworkFreqFormFields';
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqNewKeyDialog } from './NetworkFreqNewKeyDialog';
@@ -70,7 +70,6 @@ function NetworkFreqEditDrawerComponent({
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [newKeySaving, setNewKeySaving] = useState(false);
   const [newKeyTouched, setNewKeyTouched] = useState(false);
-  const [freqTouched, setFreqTouched] = useState(false);
   const [activePeriodTouched, setActivePeriodTouched] = useState(false);
   const addNewKeyButtonRef = useRef<HTMLButtonElement | null>(null);
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
@@ -80,19 +79,16 @@ function NetworkFreqEditDrawerComponent({
   });
 
   const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
-  const freqValidationError = form ? getFrequencyFormatError(form.freq) : null;
-  const freqError = freqTouched ? freqValidationError : null;
   const newKeyValidationError = validateNetworkFreqNewKey(newKeyForm.key);
   const newKeyError = newKeyTouched ? newKeyValidationError : null;
   const activeFromValidationError = form && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
   const activeToValidationError = form && form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
   const activeFromError = activePeriodTouched ? activeFromValidationError : null;
   const activeToError = activePeriodTouched ? activeToValidationError : null;
-  const saveDisabled = saving || !form || freqValidationError !== null || activeFromValidationError !== null || activeToValidationError !== null;
+  const saveDisabled = saving || !form || activeFromValidationError !== null || activeToValidationError !== null;
 
   useEffect(() => {
     if (!open) return;
-    setFreqTouched(false);
     setActivePeriodTouched(false);
   }, [open, form?.networkFreqId]);
 
@@ -189,9 +185,8 @@ function NetworkFreqEditDrawerComponent({
   };
 
   const handleSave = () => {
-    setFreqTouched(true);
     setActivePeriodTouched(true);
-    if (freqValidationError !== null || activeFromValidationError !== null || activeToValidationError !== null) {
+    if (activeFromValidationError !== null || activeToValidationError !== null) {
       return;
     }
     onSave();
@@ -240,7 +235,6 @@ function NetworkFreqEditDrawerComponent({
               freq={form.freq}
               activeFrom={form.activeFrom}
               activeTo={form.activeTo}
-              freqError={freqError}
               activeFromError={activeFromError}
               activeToError={activeToError}
               onKindChange={(nextKind) => onChange({ ...form, kind: nextKind })}
@@ -248,7 +242,6 @@ function NetworkFreqEditDrawerComponent({
               onModulationChange={(modulationId) => onChange({ ...form, modulationId })}
               onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
               onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
-              onFreqBlur={() => setFreqTouched(true)}
               onActiveFromBlur={() => setActivePeriodTouched(true)}
               onActiveToBlur={() => setActivePeriodTouched(true)}
               modulations={modulations}

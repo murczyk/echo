@@ -54,10 +54,10 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean }) => (
+  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean } }) => (
     <label>
       <span>{label}{required ? ' *' : ''}</span>
-      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={readOnly ?? onChange === undefined} />
+      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined} disabled={disabled ?? false} />
     </label>
   ),
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,

@@ -362,7 +362,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
 
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalledWith(expect.objectContaining({
-      freq: '22.0000',
+      freq: '20.0000',
       encryptionKeyIds: [13],
     }));
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
