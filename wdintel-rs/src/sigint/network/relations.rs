@@ -29,7 +29,13 @@ struct CatalogCallsignRow {
     id: i64,
     callsign: String,
     position: Option<String>,
+    unit_id: i64,
     unit_name: Option<String>,
+    army: String,
+    division: String,
+    regiment: String,
+    battalion: String,
+    company: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -39,6 +45,7 @@ struct NodeEnrichment {
     known_callsign_id: Option<i64>,
     main_radio_station: bool,
     command_control: bool,
+    source: NetworkCallsignRelationEnrichmentSource,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -50,6 +57,44 @@ struct EdgeAggregation {
 #[derive(Debug, Clone, Default)]
 struct EdgeFreqAggregation {
     weight: i64,
+}
+
+#[derive(Debug, Clone)]
+struct UnitScope {
+    army: String,
+    division: String,
+    regiment: String,
+    battalion: String,
+    company: String,
+}
+
+impl UnitScope {
+    fn from_unit(unit: &sigint_unit::Model) -> Self {
+        Self {
+            army: normalize_unit_part(&unit.army),
+            division: normalize_unit_part(&unit.division),
+            regiment: normalize_unit_part(&unit.regiment),
+            battalion: normalize_unit_part(&unit.battalion),
+            company: normalize_unit_part(&unit.company),
+        }
+    }
+
+    fn from_catalog_row(row: &CatalogCallsignRow) -> Self {
+        Self {
+            army: normalize_unit_part(&row.army),
+            division: normalize_unit_part(&row.division),
+            regiment: normalize_unit_part(&row.regiment),
+            battalion: normalize_unit_part(&row.battalion),
+            company: normalize_unit_part(&row.company),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CatalogMatchRank {
+    distance: usize,
+    specificity: usize,
+    unit_id: i64,
 }
 
 #[post("/api/sigint/network-callsigns/relations")]
@@ -97,9 +142,10 @@ pub async fn network_callsigns_relations(
         .iter()
         .flat_map(|message| message.callsigns.iter().cloned())
         .collect::<BTreeSet<_>>();
-    let catalog_callsigns = load_catalog_callsigns(&env.dbx, &node_ids)
-        .await
-        .context(h!())?;
+    let catalog_callsigns =
+        load_catalog_callsigns(&env.dbx, network_id, &node_ids)
+            .await
+            .context(h!())?;
 
     let rsp = aggregate_network_callsign_relations(
         messages,
@@ -403,6 +449,7 @@ async fn load_network_callsigns(
                 known_callsign_id: network_callsign.known_callsign_id,
                 main_radio_station: network_callsign.main_radio_station,
                 command_control: network_callsign.command_control,
+                source: NetworkCallsignRelationEnrichmentSource::RelationEnrichmentNetwork,
             },
         );
     }
@@ -412,9 +459,17 @@ async fn load_network_callsigns(
 
 async fn load_catalog_callsigns(
     dbx: &DatabaseConnection,
+    network_id: i64,
     callsigns: &BTreeSet<String>,
 ) -> Result<HashMap<String, NodeEnrichment>, AppError> {
     if callsigns.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let network_unit_scopes = load_network_unit_scopes(dbx, network_id)
+        .await
+        .context(h!())?;
+    if network_unit_scopes.is_empty() {
         return Ok(HashMap::new());
     }
 
@@ -427,15 +482,37 @@ async fn load_catalog_callsigns(
         .column_as(sigint_callsign::Column::Id, "id")
         .column_as(sigint_callsign::Column::Callsign, "callsign")
         .column_as(sigint_callsign::Column::Position, "position")
+        .column_as(sigint_callsign::Column::UnitId, "unit_id")
         .column_as(
             Expr::col((sigint_unit::Entity, sigint_unit::Column::Name)),
             "unit_name",
         )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Army)),
+            "army",
+        )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Division)),
+            "division",
+        )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Regiment)),
+            "regiment",
+        )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Battalion)),
+            "battalion",
+        )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Company)),
+            "company",
+        )
         .join(
-            JoinType::LeftJoin,
+            JoinType::InnerJoin,
             sigint_callsign::Relation::SigintUnit.def(),
         )
         .filter(sigint_callsign::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(
             Expr::cust("lower(sigint_callsign.callsign)")
                 .is_in(lower_callsigns.clone()),
@@ -445,25 +522,163 @@ async fn load_catalog_callsigns(
         .await
         .context(h!())?;
 
-    let mut result = HashMap::new();
+    let mut ranked_result: HashMap<String, (CatalogMatchRank, NodeEnrichment)> =
+        HashMap::new();
     for row in rows {
         let callsign = normalize_callsign(&row.callsign);
         if callsign.is_empty() {
             continue;
         }
-        result.insert(
-            callsign,
-            NodeEnrichment {
-                position: row.position.clone(),
-                unit_name: row.unit_name.clone(),
-                known_callsign_id: Some(row.id),
-                main_radio_station: false,
-                command_control: false,
-            },
-        );
+        let catalog_unit_scope = UnitScope::from_catalog_row(&row);
+        let Some(distance) = closest_unit_scope_distance(
+            &network_unit_scopes,
+            &catalog_unit_scope,
+        ) else {
+            continue;
+        };
+        let Some(specificity) = unit_specificity(&catalog_unit_scope) else {
+            continue;
+        };
+        let rank = CatalogMatchRank {
+            distance,
+            specificity,
+            unit_id: row.unit_id,
+        };
+        let enrichment = NodeEnrichment {
+            position: row.position.clone(),
+            unit_name: row.unit_name.clone(),
+            known_callsign_id: Some(row.id),
+            main_radio_station: false,
+            command_control: false,
+            source:
+                NetworkCallsignRelationEnrichmentSource::RelationEnrichmentCatalog,
+        };
+
+        match ranked_result.get(&callsign) {
+            Some((current_rank, _))
+                if !is_better_catalog_rank(rank, *current_rank) => {}
+            _ => {
+                ranked_result.insert(callsign, (rank, enrichment));
+            }
+        }
     }
 
-    Ok(result)
+    Ok(ranked_result
+        .into_iter()
+        .map(|(callsign, (_rank, enrichment))| (callsign, enrichment))
+        .collect())
+}
+
+async fn load_network_unit_scopes(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+) -> Result<Vec<UnitScope>, AppError> {
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
+        )
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    Ok(units.iter().map(UnitScope::from_unit).collect())
+}
+
+fn normalize_unit_part(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn unit_values(unit: &UnitScope) -> [&str; 5] {
+    [
+        &unit.army,
+        &unit.division,
+        &unit.regiment,
+        &unit.battalion,
+        &unit.company,
+    ]
+}
+
+fn unit_specificity(unit: &UnitScope) -> Option<usize> {
+    unit_values(unit)
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_level, value)| !value.is_empty())
+        .map(|(level, _value)| level)
+}
+
+fn unit_is_same_or_child(parent: &UnitScope, child: &UnitScope) -> bool {
+    if unit_specificity(parent).is_none() {
+        return false;
+    }
+
+    unit_values(parent).into_iter().zip(unit_values(child)).all(
+        |(parent_value, child_value)| {
+            parent_value.is_empty() || parent_value == child_value
+        },
+    )
+}
+
+fn unit_parent_boundary_level(unit: &UnitScope) -> Option<usize> {
+    if !unit.regiment.is_empty() {
+        Some(2)
+    } else if !unit.division.is_empty() || !unit.army.is_empty() {
+        Some(0)
+    } else {
+        unit_specificity(unit)
+    }
+}
+
+fn unit_is_allowed_parent(child: &UnitScope, parent: &UnitScope) -> bool {
+    let Some(parent_specificity) = unit_specificity(parent) else {
+        return false;
+    };
+    let Some(boundary_level) = unit_parent_boundary_level(child) else {
+        return false;
+    };
+
+    parent_specificity >= boundary_level && unit_is_same_or_child(parent, child)
+}
+
+fn unit_scope_distance(
+    network_unit: &UnitScope,
+    catalog_unit: &UnitScope,
+) -> Option<usize> {
+    if !unit_is_same_or_child(network_unit, catalog_unit)
+        && !unit_is_allowed_parent(network_unit, catalog_unit)
+    {
+        return None;
+    }
+
+    let network_specificity = unit_specificity(network_unit)?;
+    let catalog_specificity = unit_specificity(catalog_unit)?;
+    Some(network_specificity.abs_diff(catalog_specificity))
+}
+
+fn closest_unit_scope_distance(
+    network_units: &[UnitScope],
+    catalog_unit: &UnitScope,
+) -> Option<usize> {
+    network_units
+        .iter()
+        .filter_map(|network_unit| {
+            unit_scope_distance(network_unit, catalog_unit)
+        })
+        .min()
+}
+
+fn is_better_catalog_rank(
+    next: CatalogMatchRank,
+    current: CatalogMatchRank,
+) -> bool {
+    next.distance < current.distance
+        || (next.distance == current.distance
+            && (next.specificity > current.specificity
+                || (next.specificity == current.specificity
+                    && next.unit_id < current.unit_id)))
 }
 
 fn aggregate_relation_messages(
@@ -682,6 +897,7 @@ fn aggregate_network_callsign_relations(
                 position: enrichment.position,
                 unit_name: enrichment.unit_name,
                 known_callsign_id: enrichment.known_callsign_id,
+                enrichment_source: enrichment.source,
             }
         })
         .collect::<Vec<_>>();
@@ -882,6 +1098,7 @@ mod tests {
                 known_callsign_id: Some(12),
                 main_radio_station: true,
                 command_control: false,
+                source: NetworkCallsignRelationEnrichmentSource::RelationEnrichmentNetwork,
             },
         );
         let mut catalog_callsigns = HashMap::new();
@@ -893,6 +1110,7 @@ mod tests {
                 known_callsign_id: Some(99),
                 main_radio_station: false,
                 command_control: true,
+                source: NetworkCallsignRelationEnrichmentSource::RelationEnrichmentCatalog,
             },
         );
 
@@ -905,8 +1123,147 @@ mod tests {
         assert_eq!(alpha.position.as_deref(), Some("КР"));
         assert_eq!(alpha.unit_name.as_deref(), Some("1 мб"));
         assert_eq!(alpha.known_callsign_id, Some(12));
+        assert_eq!(
+            alpha.enrichment_source,
+            NetworkCallsignRelationEnrichmentSource::RelationEnrichmentNetwork
+        );
         assert!(alpha.main_radio_station);
         assert!(!alpha.command_control);
+    }
+
+    #[test]
+    fn aggregate_relations_marks_catalog_enrichment() {
+        let messages = vec![relation_message_for_test(
+            1,
+            1000,
+            Some("652.111"),
+            "one",
+            &["alpha", "beta"],
+        )];
+        let mut catalog_callsigns = HashMap::new();
+        catalog_callsigns.insert(
+            "ALPHA".to_string(),
+            NodeEnrichment {
+                position: Some("КП".to_string()),
+                unit_name: Some("2 мб".to_string()),
+                known_callsign_id: Some(99),
+                main_radio_station: false,
+                command_control: false,
+                source: NetworkCallsignRelationEnrichmentSource::RelationEnrichmentCatalog,
+            },
+        );
+
+        let graph = aggregate_network_callsign_relations(
+            messages,
+            &HashMap::new(),
+            &catalog_callsigns,
+        );
+        let alpha = graph.nodes.iter().find(|node| node.id == "ALPHA").unwrap();
+        let beta = graph.nodes.iter().find(|node| node.id == "BETA").unwrap();
+        assert_eq!(alpha.position.as_deref(), Some("КП"));
+        assert_eq!(
+            alpha.enrichment_source,
+            NetworkCallsignRelationEnrichmentSource::RelationEnrichmentCatalog
+        );
+        assert_eq!(
+            beta.enrichment_source,
+            NetworkCallsignRelationEnrichmentSource::RelationEnrichmentNone
+        );
+    }
+
+    fn unit_scope(
+        army: &str,
+        division: &str,
+        regiment: &str,
+        battalion: &str,
+        company: &str,
+    ) -> UnitScope {
+        UnitScope {
+            army: normalize_unit_part(army),
+            division: normalize_unit_part(division),
+            regiment: normalize_unit_part(regiment),
+            battalion: normalize_unit_part(battalion),
+            company: normalize_unit_part(company),
+        }
+    }
+
+    #[test]
+    fn unit_scope_includes_same_parents_and_children() {
+        let network_unit = unit_scope("", "", "283 мсп", "1 мсб", "3 мср");
+        let same = unit_scope("", "", "283 мсп", "1 мсб", "3 мср");
+        let parent_battalion = unit_scope("", "", "283 мсп", "1 мсб", "");
+        let parent_regiment = unit_scope("", "", "283 мсп", "", "");
+        let sibling = unit_scope("", "", "283 мсп", "1 мсб", "2 мср");
+        let other_regiment = unit_scope("", "", "423 мсп", "", "");
+        let parent_division = unit_scope("", "42 мсд", "", "", "");
+
+        assert_eq!(unit_scope_distance(&network_unit, &same), Some(0));
+        assert_eq!(
+            unit_scope_distance(&network_unit, &parent_battalion),
+            Some(1)
+        );
+        assert_eq!(
+            unit_scope_distance(&network_unit, &parent_regiment),
+            Some(2)
+        );
+        assert_eq!(unit_scope_distance(&network_unit, &sibling), None);
+        assert_eq!(unit_scope_distance(&network_unit, &other_regiment), None);
+        assert_eq!(unit_scope_distance(&network_unit, &parent_division), None);
+    }
+
+    #[test]
+    fn unit_scope_uses_division_or_army_as_parent_boundary_without_regiment() {
+        let division_network_unit =
+            unit_scope("1 армія", "42 мсд", "", "1 мсб", "");
+        let division_parent = unit_scope("1 армія", "42 мсд", "", "", "");
+        let army_parent = unit_scope("1 армія", "", "", "", "");
+        let other_division_parent = unit_scope("1 армія", "43 мсд", "", "", "");
+
+        assert_eq!(
+            unit_scope_distance(&division_network_unit, &division_parent),
+            Some(1)
+        );
+        assert_eq!(
+            unit_scope_distance(&division_network_unit, &army_parent),
+            Some(2)
+        );
+        assert_eq!(
+            unit_scope_distance(&division_network_unit, &other_division_parent),
+            None
+        );
+    }
+
+    #[test]
+    fn catalog_rank_prefers_closest_then_more_specific_then_lower_unit_id() {
+        let current = CatalogMatchRank {
+            distance: 2,
+            specificity: 2,
+            unit_id: 10,
+        };
+        assert!(is_better_catalog_rank(
+            CatalogMatchRank {
+                distance: 1,
+                specificity: 1,
+                unit_id: 20,
+            },
+            current
+        ));
+        assert!(is_better_catalog_rank(
+            CatalogMatchRank {
+                distance: 2,
+                specificity: 3,
+                unit_id: 20,
+            },
+            current
+        ));
+        assert!(is_better_catalog_rank(
+            CatalogMatchRank {
+                distance: 2,
+                specificity: 2,
+                unit_id: 9,
+            },
+            current
+        ));
     }
 
     #[test]

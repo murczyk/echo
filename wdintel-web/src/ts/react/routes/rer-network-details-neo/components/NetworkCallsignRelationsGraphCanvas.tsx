@@ -1,4 +1,5 @@
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { useTheme } from '@mui/material/styles';
 import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
@@ -9,6 +10,7 @@ import {
   getRelationEdgeStroke,
   getRelationNodeFill,
   isPointVisibleInRelationViewBox,
+  isCatalogRelationNode,
   type NetworkCallsignRelationFreqView,
   type NetworkCallsignRelationsGraphView,
   type RelationGraphLayout,
@@ -180,6 +182,7 @@ export function NetworkCallsignRelationsGraphCanvas({
         const stroke = node.matchedSearch ? '#f0d2a0' : selected ? '#fff5df' : 'rgba(255,255,255,0.18)';
         const radius = Math.max(20, 22 + Math.min(node.weight, 24) * 0.65);
         const markerOffset = 15;
+        const catalogMarkerOffset = 18;
 
         return (
           <g
@@ -200,6 +203,15 @@ export function NetworkCallsignRelationsGraphCanvas({
               strokeWidth={selected ? 4 : 2}
               filter={`url(#${headingId}-node-shadow)`}
             />
+            {isCatalogRelationNode(node)
+              ? renderNodeMarkerBadge(
+                  position.x,
+                  position.y - catalogMarkerOffset,
+                  'Збіг з каталогу, не підтверджено в мережі',
+                  InfoOutlinedIcon,
+                  theme.palette.secondary.main,
+                )
+              : null}
             {node.mainRadioStation
               ? renderNodeMarkerBadge(
                   node.commandControl ? position.x - markerOffset : position.x,

@@ -269,6 +269,24 @@ pub struct NetworkCallsignRelationMessagesRsp {
 }
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
+)]
+pub enum NetworkCallsignRelationEnrichmentSource {
+    #[default]
+    RelationEnrichmentNone,
+    RelationEnrichmentNetwork,
+    RelationEnrichmentCatalog,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct NetworkCallsignRelationNode {
@@ -282,6 +300,7 @@ pub struct NetworkCallsignRelationNode {
     pub position: Option<String>,
     pub unit_name: Option<String>,
     pub known_callsign_id: Option<i64>,
+    pub enrichment_source: NetworkCallsignRelationEnrichmentSource,
 }
 
 #[derive(
