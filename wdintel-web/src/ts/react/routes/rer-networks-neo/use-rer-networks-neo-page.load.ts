@@ -5,7 +5,7 @@ import type { AreaOfResponsibility, EncryptionRec, Network, Unit } from '../../.
 import { isUnauthorizedError } from '../../services/api/client';
 import { listAors } from '../../services/api/aor';
 import { listPosts } from '../../services/api/posts';
-import { getEncryptions } from '../../services/api/modulations';
+import { getEncryptions } from '../../services/api/encryptions';
 import { getUnitsList } from '../../services/api/units';
 import { getNetworkUnitStats, getNetworksGroupsActivity, listNetworks } from '../../services/api/networks';
 import {

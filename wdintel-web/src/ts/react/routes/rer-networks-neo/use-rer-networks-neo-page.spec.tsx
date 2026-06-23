@@ -113,7 +113,7 @@ vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
 }));
 
-vi.mock('../../services/api/modulations', () => ({
+vi.mock('../../services/api/encryptions', () => ({
   getEncryptions: apiMock.getEncryptions,
 }));
 
