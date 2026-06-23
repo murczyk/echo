@@ -1312,6 +1312,20 @@ pub(crate) fn round_to_5min(
     Ok(NaiveDateTime::new(ts.date(), time))
 }
 
+pub fn is_5min_stats_bucket_range_aligned(
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> bool {
+    is_5min_stats_bucket_boundary(dt_since)
+        && is_5min_stats_bucket_boundary(dt_till)
+}
+
+fn is_5min_stats_bucket_boundary(ts: NaiveDateTime) -> bool {
+    ts.time().minute().is_multiple_of(5)
+        && ts.time().second() == 0
+        && ts.time().nanosecond() == 0
+}
+
 pub async fn recalculate_group_stats(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,
@@ -3371,7 +3385,7 @@ fn collect_time_intervals_for_stats(
         intervals_5min.push((dt_till_sod, dt_till));
 
         let mut date = date_after_since_dt;
-        while date <= date_till_dt {
+        while date < date_till_dt {
             days.push(date);
             date += Duration::days(1);
         }
@@ -3644,7 +3658,7 @@ mod tests {
         let dt_since = ndt(2015, 10, 10, 10, 30); // TODO fix year to 2025
         let dt_till = ndt(2025, 10, 15, 5, 15);
         assert!(dt_till - dt_since >= Duration::days(STATS_5MIN_MAX_NUM_DAYS));
-        let (intervals, _days) =
+        let (intervals, days) =
             collect_time_intervals_for_stats(dt_since, dt_till).unwrap();
         let tz = get_tz();
         let date_after_since_dt =
@@ -3668,15 +3682,31 @@ mod tests {
             (dt_till_sod, dt_till),
             "Second interval should be from start of the till day to dt_till."
         );
-        // TODO uncomment
-        // let expected_days = vec![
-        //     NaiveDate::from_ymd_opt(2025, 10, 11).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 12).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 13).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 14).unwrap(),
-        //     NaiveDate::from_ymd_opt(2025, 10, 15).unwrap(),
-        // ];
-        // assert_eq!(_days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
+        assert_eq!(days.first(), Some(&date_after_since_dt));
+        assert_eq!(days.last(), Some(&(date_till_dt - Duration::days(1))));
+        assert_eq!(
+            days.len(),
+            date_till_dt
+                .signed_duration_since(date_after_since_dt)
+                .num_days() as usize
+        );
+        assert!(!days.contains(&date_till_dt));
+    }
+
+    #[test]
+    fn test_is_5min_stats_bucket_range_aligned() {
+        assert!(is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 1),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 16),
+        ));
     }
 
     #[test]

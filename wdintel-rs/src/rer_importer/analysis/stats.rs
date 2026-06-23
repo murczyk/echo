@@ -2726,6 +2726,9 @@ async fn fetch_counts_for_login_with_conn(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let read_stats_aggregated =
+        can_read_stats_aggregated(&env.config, dt_since, dt_till)
+            && is_5min_stats_bucket_range_aligned(dt_since, dt_till);
 
     let instant = std::time::Instant::now();
     let count_overall: i64 = fetch_count_overall(
@@ -2733,7 +2736,7 @@ async fn fetch_counts_for_login_with_conn(
         dt_since,
         dt_till,
         master_keys.clone(),
-        can_read_stats_aggregated(&env.config, dt_since, dt_till),
+        read_stats_aggregated,
     )
     .await
     .context(h!())?;
@@ -2741,12 +2744,14 @@ async fn fetch_counts_for_login_with_conn(
     if instant.elapsed().as_secs() > 1 {
         debug!("count overall op took: {:?}", instant.elapsed());
     }
-    if should_read_stats_aggregated_for_config(
-        &req.0,
-        &env.config,
-        dt_since,
-        dt_till,
-    ) {
+    if read_stats_aggregated
+        && should_read_stats_aggregated_for_config(
+            &req.0,
+            &env.config,
+            dt_since,
+            dt_till,
+        )
+    {
         return Ok((count_overall, count_overall));
     }
     let instant = std::time::Instant::now();
