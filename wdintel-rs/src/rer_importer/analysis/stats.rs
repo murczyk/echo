@@ -2688,6 +2688,7 @@ pub async fn fetch_counts_for_login(
         req,
         login_str,
         master_keys.clone(),
+        env,
         replica_conn,
     )
     .await
@@ -2704,6 +2705,7 @@ pub async fn fetch_counts_for_login(
                 req,
                 login_str,
                 master_keys,
+                env,
                 env.dbx.clone(),
             )
             .await
@@ -2716,6 +2718,7 @@ async fn fetch_counts_for_login_with_conn(
     req: &Json<AnalysisStatsReq>,
     login_str: &str,
     master_keys: Vec<String>,
+    env: &Env,
     db_conn: DatabaseConnection,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
@@ -2725,13 +2728,26 @@ async fn fetch_counts_for_login_with_conn(
         req.include_peleng_locations.unwrap_or(false);
 
     let instant = std::time::Instant::now();
-    let count_overall: i64 =
-        fetch_count_overall(&db_conn, dt_since, dt_till, master_keys.clone())
-            .await
-            .context(h!())?;
+    let count_overall: i64 = fetch_count_overall(
+        &db_conn,
+        dt_since,
+        dt_till,
+        master_keys.clone(),
+        can_read_stats_aggregated(&env.config, dt_since, dt_till),
+    )
+    .await
+    .context(h!())?;
 
     if instant.elapsed().as_secs() > 1 {
         debug!("count overall op took: {:?}", instant.elapsed());
+    }
+    if should_read_stats_aggregated_for_config(
+        &req.0,
+        &env.config,
+        dt_since,
+        dt_till,
+    ) {
+        return Ok((count_overall, count_overall));
     }
     let instant = std::time::Instant::now();
 
@@ -2842,7 +2858,14 @@ async fn fetch_count_overall(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    read_stats_aggregated: bool,
 ) -> anyhow::Result<i64> {
+    if read_stats_aggregated {
+        return read_total_stats_aggregated(db, master_keys, dt_since, dt_till)
+            .await
+            .context(h!());
+    }
+
     #[derive(FromQueryResult)]
     struct OverallCountRes {
         count: i64,

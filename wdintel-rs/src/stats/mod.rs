@@ -183,10 +183,22 @@ pub fn should_read_stats_aggregated(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<bool> {
-    if !can_read_stats_aggregated(&env.config, dt_since, dt_till) {
-        return Ok(false);
-    }
-    Ok(req_allows_stats_aggregated(req))
+    Ok(should_read_stats_aggregated_for_config(
+        req,
+        &env.config,
+        dt_since,
+        dt_till,
+    ))
+}
+
+pub fn should_read_stats_aggregated_for_config(
+    req: &AnalysisStatsReq,
+    config: &Config,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> bool {
+    can_read_stats_aggregated(config, dt_since, dt_till)
+        && req_allows_stats_aggregated(req)
 }
 
 fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
@@ -493,6 +505,108 @@ pub async fn read_group_stats_aggregated(
         result.push(AnalysisStatsGroup { master_key, count });
     }
     Ok(result)
+}
+
+pub async fn read_total_stats_aggregated(
+    dbx: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<i64> {
+    if master_keys.is_empty() {
+        return Ok(0);
+    }
+
+    let (intervals_5min, days) =
+        collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
+    let batches = collect_signal_group_batches(master_keys, dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect_vec();
+    if batch_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let count_5min =
+        read_stats_group_5min_total(dbx, &batch_ids, intervals_5min)
+            .await
+            .c(h!())?;
+    let count_day = read_stats_group_day_total(dbx, &batch_ids, days)
+        .await
+        .c(h!())?;
+    Ok(count_5min + count_day)
+}
+
+#[derive(FromQueryResult)]
+struct StatsCountRes {
+    count: i64,
+}
+
+async fn read_stats_group_5min_total(
+    dbx: &DatabaseConnection,
+    batch_ids: &[i64],
+    intervals_5min: Vec<(NaiveDateTime, NaiveDateTime)>,
+) -> anyhow::Result<i64> {
+    if intervals_5min.is_empty() {
+        return Ok(0);
+    }
+
+    let mut interval_filter = Condition::any();
+    for (since, till) in intervals_5min {
+        let filter = stats_group_5min::Column::Dt
+            .gte(since)
+            .and(stats_group_5min::Column::Dt.lt(till));
+        interval_filter = interval_filter.add(filter);
+    }
+
+    let count = stats_group_5min::Entity::find()
+        .select_only()
+        .expr_as(Expr::cust("COALESCE(SUM(quantity), 0)"), "count")
+        .filter(interval_filter)
+        .filter(
+            stats_group_5min::Column::SignalGroupBatchId
+                .eq_any(batch_ids.to_vec()),
+        )
+        .into_model::<StatsCountRes>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|row| row.count)
+        .unwrap_or(0);
+
+    Ok(count)
+}
+
+async fn read_stats_group_day_total(
+    dbx: &DatabaseConnection,
+    batch_ids: &[i64],
+    days: Vec<NaiveDate>,
+) -> anyhow::Result<i64> {
+    if days.is_empty() {
+        return Ok(0);
+    }
+
+    let mut day_filter = Condition::any();
+    for day in days {
+        day_filter = day_filter.add(stats_group_day::Column::Dt.eq(day));
+    }
+
+    let count = stats_group_day::Entity::find()
+        .select_only()
+        .expr_as(Expr::cust("COALESCE(SUM(quantity), 0)"), "count")
+        .filter(day_filter)
+        .filter(
+            stats_group_day::Column::SignalGroupBatchId
+                .eq_any(batch_ids.to_vec()),
+        )
+        .into_model::<StatsCountRes>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|row| row.count)
+        .unwrap_or(0);
+
+    Ok(count)
 }
 
 pub async fn read_aor_stats_aggregated(

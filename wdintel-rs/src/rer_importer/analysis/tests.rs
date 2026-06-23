@@ -3848,13 +3848,34 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_count_overall_uses_distinct_live_count_for_open_filters()
-{
+async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.till_date_noninclusive_ms =
         req.since_date_inclusive_ms + 30 * 60 * 1000;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).unwrap();
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).unwrap();
+    crate::stats::recalculate_group_stats(
+        &fixture.env.dbx,
+        dt_since,
+        dt_till,
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+    mk_analysis_message(
+        &fixture.env.dbx,
+        "msg-after-stats",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
     let req = Json(req);
     let master_keys =
         get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
