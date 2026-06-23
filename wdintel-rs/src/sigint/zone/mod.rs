@@ -445,7 +445,7 @@ pub async fn my_admin_group_update(
         .c(h!())?;
     let admin_logins =
         normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
-    let allowed_admin_logins =
+    let allowed_organism_logins =
         collect_active_organism_logins(&txn, &login).await.c(h!())?;
     let existing_admin_logins =
         bl::collect_signal_group_admins(vec![req.master_key.clone()], &txn)
@@ -455,11 +455,22 @@ pub async fn my_admin_group_update(
             .unwrap_or_default();
     ensure_added_my_admin_group_admin_logins_allowed(
         &admin_logins,
-        &allowed_admin_logins,
+        &allowed_organism_logins,
         &existing_admin_logins,
     )?;
 
     let user_logins = if req.is_secret {
+        let existing_user_logins =
+            collect_secret_group_users(vec![req.master_key.clone()], &txn)
+                .await
+                .c(h!())?
+                .remove(&req.master_key)
+                .unwrap_or_default();
+        ensure_added_my_admin_group_user_logins_allowed(
+            &req.user_logins,
+            &allowed_organism_logins,
+            &existing_user_logins,
+        )?;
         req.user_logins
     } else {
         vec![]
@@ -561,6 +572,34 @@ fn ensure_added_my_admin_group_admin_logins_allowed(
         return Err(AppError::Forbidden(format!(
             "new signal group admins must be active users from your organism: {}",
             disallowed_admin_logins.join(", ")
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_added_my_admin_group_user_logins_allowed(
+    user_logins: &[String],
+    allowed_user_logins: &[String],
+    existing_user_logins: &[String],
+) -> Result<(), AppError> {
+    let allowed_user_logins =
+        allowed_user_logins.iter().collect::<HashSet<_>>();
+    let existing_user_logins =
+        existing_user_logins.iter().collect::<HashSet<_>>();
+    let disallowed_user_logins = user_logins
+        .iter()
+        .filter(|login| {
+            !allowed_user_logins.contains(login)
+                && !existing_user_logins.contains(login)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !disallowed_user_logins.is_empty() {
+        return Err(AppError::Forbidden(format!(
+            "new signal group users must be active users from your organism: {}",
+            disallowed_user_logins.join(", ")
         )));
     }
 

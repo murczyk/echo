@@ -46,6 +46,28 @@ fn test_keep_existing_my_admin_group_admin_outside_organism() {
     .unwrap();
 }
 
+#[test]
+fn test_reject_new_my_admin_group_user_outside_organism() {
+    let err = ensure_added_my_admin_group_user_logins_allowed(
+        &["current".to_string(), "outside".to_string()],
+        &["current".to_string(), "same-org".to_string()],
+        &[],
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, AppError::Forbidden(_)));
+}
+
+#[test]
+fn test_keep_existing_my_admin_group_user_outside_organism() {
+    ensure_added_my_admin_group_user_logins_allowed(
+        &["current".to_string(), "outside".to_string()],
+        &["current".to_string(), "same-org".to_string()],
+        &["outside".to_string()],
+    )
+    .unwrap();
+}
+
 #[serial]
 #[tokio::test]
 async fn test_collect_active_organism_logins_excludes_deleted() {
