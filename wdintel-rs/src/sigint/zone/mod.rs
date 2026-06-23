@@ -386,6 +386,258 @@ pub async fn my_admin_groups(
     Ok(Json(MyAdminSignalGroupsRsp { groups }))
 }
 
+#[post("/api/sigint/zones/my-admin-group-edit-reference")]
+pub async fn my_admin_group_edit_reference(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+    req: Json<MyAdminSignalGroupEditReferenceReq>,
+) -> Result<Json<MyAdminSignalGroupEditReferenceRsp>, AppError> {
+    if !env.config.feature_my_admin_groups_edit.unwrap_or(false) {
+        return Err(AppError::Forbidden(
+            "feature_my_admin_groups_edit is disabled".to_string(),
+        ));
+    }
+
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    ensure_my_admin_group_access(&env.dbx, &login, &req.master_key)
+        .await
+        .c(h!())?;
+
+    let logins = collect_active_organism_logins(&env.dbx, &login)
+        .await
+        .c(h!())?;
+
+    let areas_of_responsibility = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(area_of_responsibility::Column::Name)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(render_aor)
+        .collect();
+
+    Ok(Json(MyAdminSignalGroupEditReferenceRsp {
+        logins,
+        areas_of_responsibility,
+    }))
+}
+
+#[post("/api/sigint/zones/my-admin-group-update")]
+pub async fn my_admin_group_update(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+    req: Json<MyAdminSignalGroupUpdateReq>,
+) -> Result<Json<()>, AppError> {
+    if !env.config.feature_my_admin_groups_edit.unwrap_or(false) {
+        return Err(AppError::Forbidden(
+            "feature_my_admin_groups_edit is disabled".to_string(),
+        ));
+    }
+
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let txn = env.dbx.begin().await.c(h!())?;
+
+    ensure_my_admin_group_access(&txn, &login, &req.master_key)
+        .await
+        .c(h!())?;
+    let admin_logins =
+        normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
+    let allowed_organism_logins =
+        collect_active_organism_logins(&txn, &login).await.c(h!())?;
+    let existing_admin_logins =
+        bl::collect_signal_group_admins(vec![req.master_key.clone()], &txn)
+            .await
+            .c(h!())?
+            .remove(&req.master_key)
+            .unwrap_or_default();
+    ensure_added_my_admin_group_admin_logins_allowed(
+        &admin_logins,
+        &allowed_organism_logins,
+        &existing_admin_logins,
+    )?;
+
+    let user_logins = if req.is_secret {
+        let existing_user_logins =
+            collect_secret_group_users(vec![req.master_key.clone()], &txn)
+                .await
+                .c(h!())?
+                .remove(&req.master_key)
+                .unwrap_or_default();
+        ensure_added_my_admin_group_user_logins_allowed(
+            &req.user_logins,
+            &allowed_organism_logins,
+            &existing_user_logins,
+        )?;
+        req.user_logins
+    } else {
+        vec![]
+    };
+    bl::update_signal_group_access_and_admins(
+        user_logins,
+        admin_logins,
+        req.is_secret,
+        &req.master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+
+    crate::messenger::bl::upsert_group_area_of_responsibility(
+        &txn,
+        &req.master_key,
+        req.area_of_responsibility_ids,
+    )
+    .await
+    .c(h!())?;
+
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
+fn normalize_my_admin_group_admin_logins(
+    admin_logins: Vec<String>,
+) -> Result<Vec<String>, AppError> {
+    let mut admin_logins = admin_logins
+        .into_iter()
+        .map(|login| login.trim().to_string())
+        .filter(|login| !login.is_empty())
+        .collect::<Vec<_>>();
+    admin_logins.sort();
+    admin_logins.dedup();
+
+    if admin_logins.is_empty() {
+        return Err(AppError::BL {
+            msg: "signal group must have at least one admin".to_string(),
+        });
+    }
+
+    Ok(admin_logins)
+}
+
+async fn collect_active_organism_logins<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login_s: &str,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(login_s))
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::Unauthenticated)?;
+
+    let mut query = login::Entity::find()
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(login::Column::Login)
+        .order_by_asc(login::Column::Login);
+
+    query = match login_obj.organism_id {
+        Some(organism_id) => {
+            query.filter(login::Column::OrganismId.eq(organism_id))
+        }
+        None => query.filter(login::Column::Login.eq(login_obj.login)),
+    };
+
+    Ok(query.into_tuple::<String>().all(dbx).await.c(h!())?)
+}
+
+fn ensure_added_my_admin_group_admin_logins_allowed(
+    admin_logins: &[String],
+    allowed_admin_logins: &[String],
+    existing_admin_logins: &[String],
+) -> Result<(), AppError> {
+    let allowed_admin_logins =
+        allowed_admin_logins.iter().collect::<HashSet<_>>();
+    let existing_admin_logins =
+        existing_admin_logins.iter().collect::<HashSet<_>>();
+    let disallowed_admin_logins = admin_logins
+        .iter()
+        .filter(|login| {
+            !allowed_admin_logins.contains(login)
+                && !existing_admin_logins.contains(login)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !disallowed_admin_logins.is_empty() {
+        return Err(AppError::Forbidden(format!(
+            "new signal group admins must be active users from your organism: {}",
+            disallowed_admin_logins.join(", ")
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_added_my_admin_group_user_logins_allowed(
+    user_logins: &[String],
+    allowed_user_logins: &[String],
+    existing_user_logins: &[String],
+) -> Result<(), AppError> {
+    let allowed_user_logins =
+        allowed_user_logins.iter().collect::<HashSet<_>>();
+    let existing_user_logins =
+        existing_user_logins.iter().collect::<HashSet<_>>();
+    let disallowed_user_logins = user_logins
+        .iter()
+        .filter(|login| {
+            !allowed_user_logins.contains(login)
+                && !existing_user_logins.contains(login)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !disallowed_user_logins.is_empty() {
+        return Err(AppError::Forbidden(format!(
+            "new signal group users must be active users from your organism: {}",
+            disallowed_user_logins.join(", ")
+        )));
+    }
+
+    Ok(())
+}
+
+async fn ensure_my_admin_group_access<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &str,
+    master_key: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let has_access = signal_group_admin::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_admin::Relation::SignalGroup.def(),
+        )
+        .filter(signal_group_admin::Column::Deleted.eq(false))
+        .filter(signal_group_admin::Column::Login.eq(login))
+        .filter(signal_group_admin::Column::SignalGroupId.eq(master_key))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+
+    if !has_access {
+        return Err(AppError::Forbidden(format!(
+            "user {login} is not admin of signal group {master_key}"
+        )));
+    }
+
+    Ok(())
+}
+
 fn render_group_logins(
     logins: Vec<String>,
     login_delta_map: &HashMap<String, Option<String>>,

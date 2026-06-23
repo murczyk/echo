@@ -147,22 +147,48 @@ pub async fn bl_zones_datasources_group_update_or_add(
         group_data.long_note = Set(long_note);
         group_data.update(txn).await.c(h!())?;
 
-        // Update the group's secret status
-        let mut active_group: signal_group::ActiveModel = group.into();
-        active_group.is_secret = Set(is_secret);
-        active_group.update(txn).await.c(h!())?;
+        update_signal_group_access_and_admins(
+            user_logins,
+            admin_logins,
+            is_secret,
+            &master_key,
+            txn,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
 
-        // Delete all current users for this group
+pub async fn update_signal_group_access_and_admins(
+    user_logins: Vec<String>,
+    admin_logins: Vec<String>,
+    is_secret: bool,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .filter(signal_group::Column::MasterKey.eq(master_key))
+        .one(txn)
+        .await
+        .c(h!())?;
+
+    if let Some(group) = group {
+        let mut group = group.into_active_model();
+        group.is_secret = Set(is_secret);
+        group.update(txn).await.c(h!())?;
+
         secret_group_user::Entity::delete_many()
-            .filter(secret_group_user::Column::MasterKey.eq(&master_key))
+            .filter(secret_group_user::Column::MasterKey.eq(master_key))
             .exec(txn)
             .await
             .c(h!())?;
 
-        // Add all new users from the request
         for login in user_logins {
             secret_group_user::ActiveModel {
-                master_key: Set(master_key.clone()),
+                master_key: Set(master_key.to_string()),
                 login: Set(login),
                 ..Default::default()
             }
@@ -171,7 +197,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
             .c(h!())?;
         }
 
-        replace_group_admin_logins(txn, &master_key, admin_logins)
+        replace_group_admin_logins(txn, master_key, admin_logins)
             .await
             .c(h!())?;
     }

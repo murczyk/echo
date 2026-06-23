@@ -792,6 +792,7 @@ type alias ServerInfo =
     , featureDelta : Bool
     , featureAnalysisMap : Bool
     , featureStrictNetworks : Bool
+    , featureMyAdminGroupsEdit : Bool
     , version : String
     }
 
@@ -805,6 +806,7 @@ serverInfoEncoder struct =
         , ( "feature_delta", (Json.Encode.bool) struct.featureDelta )
         , ( "feature_analysis_map", (Json.Encode.bool) struct.featureAnalysisMap )
         , ( "feature_strict_networks", (Json.Encode.bool) struct.featureStrictNetworks )
+        , ( "feature_my_admin_groups_edit", (Json.Encode.bool) struct.featureMyAdminGroupsEdit )
         , ( "version", (Json.Encode.string) struct.version )
         ]
 
@@ -4634,6 +4636,52 @@ myAdminSignalGroupEncoder struct =
         , ( "allowed_users", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUsers )
         , ( "admin_logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.adminLogins )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        ]
+
+
+type alias MyAdminSignalGroupUpdateReq =
+    { masterKey : String
+    , isSecret : Bool
+    , userLogins : List (String)
+    , adminLogins : List (String)
+    , areaOfResponsibilityIds : Maybe (List (Int))
+    }
+
+
+myAdminSignalGroupUpdateReqEncoder : MyAdminSignalGroupUpdateReq -> Json.Encode.Value
+myAdminSignalGroupUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "is_secret", (Json.Encode.bool) struct.isSecret )
+        , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
+        , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
+        ]
+
+
+type alias MyAdminSignalGroupEditReferenceReq =
+    { masterKey : String
+    }
+
+
+myAdminSignalGroupEditReferenceReqEncoder : MyAdminSignalGroupEditReferenceReq -> Json.Encode.Value
+myAdminSignalGroupEditReferenceReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        ]
+
+
+type alias MyAdminSignalGroupEditReferenceRsp =
+    { logins : List (String)
+    , areasOfResponsibility : List (AreaOfResponsibility)
+    }
+
+
+myAdminSignalGroupEditReferenceRspEncoder : MyAdminSignalGroupEditReferenceRsp -> Json.Encode.Value
+myAdminSignalGroupEditReferenceRspEncoder struct =
+    Json.Encode.object
+        [ ( "logins", (Json.Encode.list (Json.Encode.string)) struct.logins )
+        , ( "areas_of_responsibility", (Json.Encode.list (areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
 
 
@@ -8829,6 +8877,7 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_strict_networks" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_my_admin_groups_edit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
 
 
@@ -11013,6 +11062,29 @@ myAdminSignalGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+
+
+myAdminSignalGroupUpdateReqDecoder : Json.Decode.Decoder MyAdminSignalGroupUpdateReq
+myAdminSignalGroupUpdateReqDecoder =
+    Json.Decode.succeed MyAdminSignalGroupUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+
+
+myAdminSignalGroupEditReferenceReqDecoder : Json.Decode.Decoder MyAdminSignalGroupEditReferenceReq
+myAdminSignalGroupEditReferenceReqDecoder =
+    Json.Decode.succeed MyAdminSignalGroupEditReferenceReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+
+
+myAdminSignalGroupEditReferenceRspDecoder : Json.Decode.Decoder MyAdminSignalGroupEditReferenceRsp
+myAdminSignalGroupEditReferenceRspDecoder =
+    Json.Decode.succeed MyAdminSignalGroupEditReferenceRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.list (areaOfResponsibilityDecoder))))
 
 
 myAdminSignalGroupsRspDecoder : Json.Decode.Decoder MyAdminSignalGroupsRsp
@@ -13488,4 +13560,3 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-

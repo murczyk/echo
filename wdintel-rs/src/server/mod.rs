@@ -650,6 +650,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::zones_datasources_group_add)
             .service(crate::sigint::zone::zones_datasources_group_delete)
             .service(crate::sigint::zone::my_admin_groups)
+            .service(crate::sigint::zone::my_admin_group_edit_reference)
+            .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)

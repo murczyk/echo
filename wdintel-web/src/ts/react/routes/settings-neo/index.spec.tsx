@@ -13,17 +13,30 @@ const saveUserDutySettings = vi.hoisted(() => vi.fn());
 const fetchServerInfoMock = vi.hoisted(() => vi.fn().mockResolvedValue({ version: '1.0.0' }));
 const fetchCurrentUserMock = vi.hoisted(() => vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }));
 const listMyAdminGroupsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
+const updateMyAdminGroupMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() => vi.fn().mockResolvedValue({ logins: [], areasOfResponsibility: [] }));
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CircularProgress: () => <span>loading</span>,
+  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div role="dialog">{children}</div> : null),
+  DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
     <div>
       {control}
       {label}
     </div>
+  ),
+  ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  ListItemText: ({ primary }: { primary?: ReactNode }) => <span>{primary}</span>,
+  MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: (event: any) => void }) => (
+    <button type="button" onClick={(event) => onClick?.(event)}>
+      {children}
+    </button>
   ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Table: ({ children }: { children: ReactNode }) => <table>{children}</table>,
@@ -40,6 +53,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -53,6 +67,30 @@ vi.mock('../../components/PowerButton', () => ({
       {props.children}
     </button>
   ),
+}));
+
+vi.mock('../../components/PowerIconButton', () => ({
+  PowerIconButton: ({
+    children,
+    onClick,
+    disabled,
+    type,
+    ...rest
+  }: {
+    children: ReactNode;
+    onClick?: (event: any) => void;
+    disabled?: boolean;
+    type?: 'button';
+    [key: string]: unknown;
+  }) => (
+    <button {...rest} type={type ?? 'button'} onClick={(event) => onClick?.(event)} disabled={disabled}>
+      {children}
+    </button>
+  ),
+}));
+
+vi.mock('../../components/PowerMenu', () => ({
+  PowerMenu: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
 }));
 
 vi.mock('../../components/PowerAlert', () => ({
@@ -69,7 +107,11 @@ vi.mock('material-react-table', () => ({
       {table.data.map((row: any) => (
         <div key={row.masterKey}>
           {table.columns.map((column: any) => (
-            <span key={column.id ?? column.accessorKey}>{String(column.accessorFn ? column.accessorFn(row) : row[column.accessorKey] ?? '')}</span>
+            <span key={column.id ?? column.accessorKey}>
+              {column.Cell
+                ? column.Cell({ row: { original: row } })
+                : String(column.accessorFn ? column.accessorFn(row) : row[column.accessorKey] ?? '')}
+            </span>
           ))}
         </div>
       ))}
@@ -138,6 +180,8 @@ vi.mock('../../services/api/user-settings', () => ({
 vi.mock('../../services/api/zones', () => ({
   listSigintZones: vi.fn().mockResolvedValue([[1, { name: 'Zone 1' } as SigintZone]]),
   listMyAdminGroups: listMyAdminGroupsMock,
+  updateMyAdminGroup: updateMyAdminGroupMock,
+  fetchMyAdminGroupEditReference: fetchMyAdminGroupEditReferenceMock,
 }));
 
 vi.mock('./SettingsDutySection', () => ({
@@ -185,6 +229,10 @@ describe('SettingsNeoPage', () => {
     fetchCurrentUserMock.mockResolvedValue({ sigintZoneId: 1, roles: [] });
     listMyAdminGroupsMock.mockReset();
     listMyAdminGroupsMock.mockResolvedValue({ groups: [] });
+    updateMyAdminGroupMock.mockReset();
+    updateMyAdminGroupMock.mockResolvedValue(undefined);
+    fetchMyAdminGroupEditReferenceMock.mockReset();
+    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({ logins: [], areasOfResponsibility: [] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -380,9 +428,127 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('AOR 1');
     expect(container.textContent).toContain('Є приватною');
     expect(container.textContent).toContain('так');
+    expect(container.textContent).not.toContain('Дії');
     expect(container.textContent).not.toContain('приватна');
     expect(container.textContent).toContain('DeltaUser (AdminDelta)');
     expect(container.textContent).toContain('user-a (DeltaUserA), user-b');
+  });
+
+  it('shows the my groups edit action behind the feature flag', async () => {
+    fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
+    listMyAdminGroupsMock.mockResolvedValue({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: null,
+          datasourceKind: 'signal',
+          isGroupSecret: true,
+          allowedUsers: [{ login: 'user-a', deltaLogin: null }],
+          adminLogins: [{ login: 'admin-a', deltaLogin: null }],
+          areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
+        },
+      ],
+    });
+    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
+      logins: ['admin-a', 'user-a'],
+      areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="myGroups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Дії');
+
+    const actionsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.getAttribute('aria-label')?.includes('Дії'),
+    );
+    expect(actionsButton).toBeTruthy();
+
+    await act(async () => {
+      actionsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('Редагувати');
+
+    const editButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Редагувати'),
+    );
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Редагувати групу');
+    expect(container.textContent).toContain('Прихована група');
+    expect(container.textContent).not.toContain('Коротка нотатка');
+    expect(container.textContent).not.toContain('Довга нотатка');
+  });
+
+  it('does not save my group edits without admins', async () => {
+    fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
+    listMyAdminGroupsMock.mockResolvedValue({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: null,
+          datasourceKind: 'signal',
+          isGroupSecret: false,
+          allowedUsers: [],
+          adminLogins: [],
+          areasOfResponsibility: null,
+        },
+      ],
+    });
+    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
+      logins: ['admin-a'],
+      areasOfResponsibility: [],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="myGroups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const actionsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.getAttribute('aria-label')?.includes('Дії'),
+    );
+    await act(async () => {
+      actionsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const editButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Редагувати'),
+    );
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Зберегти'),
+    );
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(updateMyAdminGroupMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Потрібно залишити щонайменше одного адміністратора групи');
   });
 
   it('keeps required settings loaded when server info fails', async () => {

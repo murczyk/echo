@@ -17,6 +17,7 @@ export type GlobalSettingsHook = {
   saveSuccess: string | null;
   saveInProgress: boolean;
   versionText: string;
+  featureMyAdminGroupsEdit: boolean;
   userRoles: string[];
   isDirty: boolean;
   setZoneId: (value: number | null) => void;
@@ -38,6 +39,7 @@ export function useGlobalSetting(): GlobalSettingsHook {
   const [zoneId, setZoneIdState] = useState<number | null>(null);
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
   const [versionText, setVersionText] = useState<string>('невідома версія');
+  const [featureMyAdminGroupsEdit, setFeatureMyAdminGroupsEdit] = useState(false);
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
@@ -72,10 +74,12 @@ export function useGlobalSetting(): GlobalSettingsHook {
           .then((serverInfo) => {
             if (abortController.signal.aborted) return;
             setVersionText(serverInfo.version || 'невідома версія');
+            setFeatureMyAdminGroupsEdit(Boolean(serverInfo.featureMyAdminGroupsEdit));
           })
           .catch(() => {
             if (abortController.signal.aborted) return;
             setVersionText('невідома версія');
+            setFeatureMyAdminGroupsEdit(false);
           });
       } catch (error) {
         if (abortController.signal.aborted) return;
@@ -125,6 +129,7 @@ export function useGlobalSetting(): GlobalSettingsHook {
     saveSuccess,
     saveInProgress,
     versionText,
+    featureMyAdminGroupsEdit,
     userRoles,
     isDirty,
     setZoneId,

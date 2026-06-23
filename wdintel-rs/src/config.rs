@@ -286,6 +286,7 @@ pub struct Config {
     pub session_activity_greptime_query_timeout_ms: Option<u64>,
     pub feature_tmp_in_memory: Option<bool>,
     pub feature_strict_networks: Option<bool>,
+    pub feature_my_admin_groups_edit: Option<bool>,
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub replicas: Option<Vec<ReplicaConfig>>,

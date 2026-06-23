@@ -1,11 +1,36 @@
-import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import {
+  Autocomplete,
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  ListItemIcon,
+  ListItemText,
+  MenuItem,
+  Stack,
+  Switch,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { MRT_ColumnDef } from 'material-react-table';
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
 
-import type { MyAdminSignalGroup, SignalGroupLogin } from '../../../../Bindings';
+import type { AreaOfResponsibility, MyAdminSignalGroup, SignalGroupLogin } from '../../../../Bindings';
 import { ELLIPSIS } from '../../utils/misc';
+import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
+import { PowerMenu } from '../../components/PowerMenu';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { fetchMyAdminGroupEditReference, updateMyAdminGroup } from '../../services/api/zones';
 import { SettingsNeoTable } from './SettingsNeoTable';
 
 const DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY = {
@@ -14,6 +39,11 @@ const DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY = {
   admins: true,
   privacy: true,
   allowedUsers: true,
+};
+
+const DEFAULT_MY_GROUPS_EDIT_COLUMNS_VISIBILITY = {
+  actions: true,
+  ...DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY,
 };
 
 const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
@@ -25,8 +55,30 @@ const DEFAULT_MY_GROUPS_COLUMN_ORDER = [
   'allowedUsers',
 ];
 
+const DEFAULT_MY_GROUPS_EDIT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'actions',
+  'name',
+  'aors',
+  'admins',
+  'privacy',
+  'allowedUsers',
+];
+
 const MY_GROUPS_SETUP_FLOW_IMAGE_ALT =
   'Схема додавання групи: 1. Додайте номер бота до групи Signal або WhatsApp. 2. Напишіть в підтримку "Додано групу ...". 3. Вкажіть тип групи: приватна група — користувачі Delta1, Delta2; смугова група — смуга АК33, АК34.';
+
+type ReferenceDataStatus = 'idle' | 'loading' | 'success' | 'error';
+
+type MyGroupEditState = {
+  group: MyAdminSignalGroup;
+  isSecret: boolean;
+  selectedUsers: string[];
+  selectedAdmins: string[];
+  selectedAorIds: number[];
+  isSaving: boolean;
+  error: string | null;
+};
 
 function formatAors(group: MyAdminSignalGroup): string {
   const aors = group.areasOfResponsibility ?? [];
@@ -51,9 +103,94 @@ function formatAllowedUsers(group: MyAdminSignalGroup): string {
   return formatGroupLogins(group.allowedUsers);
 }
 
-function useMyGroupsColumns() {
+function groupLoginValues(logins: SignalGroupLogin[]): string[] {
+  return logins.map((login) => login.login);
+}
+
+function MyGroupActions(props: { group: MyAdminSignalGroup; onEdit: (group: MyAdminSignalGroup) => void }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const menuButtonId = useId();
+  const menuLabelId = `${menuButtonId}-trigger`;
+  const menuOpen = Boolean(anchorEl);
+
+  function handleMenuOpen(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    setAnchorEl(event.currentTarget);
+  }
+
+  function handleEdit(event: MouseEvent<HTMLLIElement>) {
+    event.stopPropagation();
+    setAnchorEl(null);
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    window.setTimeout(() => props.onEdit(props.group), 0);
+  }
+
+  return (
+    <>
+      <Tooltip title="Дії">
+        <span style={{ display: 'inline-flex' }}>
+          <PowerIconButton
+            id={menuLabelId}
+            size="small"
+            aria-label="Дії"
+            aria-controls={menuOpen ? menuButtonId : undefined}
+            aria-expanded={menuOpen ? 'true' : undefined}
+            aria-haspopup="menu"
+            onClick={handleMenuOpen}
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              color: 'text.primary',
+            }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </PowerIconButton>
+        </span>
+      </Tooltip>
+      <PowerMenu
+        id={menuButtonId}
+        anchorEl={anchorEl}
+        open={menuOpen}
+        onClose={() => setAnchorEl(null)}
+        slotProps={{ list: { 'aria-labelledby': menuLabelId } }}
+      >
+        <MenuItem onClick={handleEdit} sx={{ pl: 0.5 }}>
+          <ListItemIcon
+            sx={{
+              minWidth: 40,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Редагувати" />
+        </MenuItem>
+      </PowerMenu>
+    </>
+  );
+}
+
+function useMyGroupsColumns(enableEditActions: boolean, onEdit: (group: MyAdminSignalGroup) => void) {
   return useMemo<MRT_ColumnDef<MyAdminSignalGroup>[]>(
     () => [
+      ...(enableEditActions
+        ? [
+            {
+              header: 'Дії',
+              id: 'actions',
+              Cell: ({ row }) => <MyGroupActions group={row.original} onEdit={onEdit} />,
+              enableColumnActions: false,
+              enableColumnFilter: false,
+              enableSorting: false,
+              size: 56,
+            } satisfies MRT_ColumnDef<MyAdminSignalGroup>,
+          ]
+        : []),
       {
         header: 'Група',
         id: 'name',
@@ -88,12 +225,17 @@ function useMyGroupsColumns() {
         size: 250,
       },
     ],
-    [],
+    [enableEditActions, onEdit],
   );
 }
 
-function SettingsMyGroupsTable(props: { groups: MyAdminSignalGroup[]; loading: boolean }) {
-  const columns = useMyGroupsColumns();
+function SettingsMyGroupsTable(props: {
+  groups: MyAdminSignalGroup[];
+  loading: boolean;
+  enableEditActions: boolean;
+  onEdit: (group: MyAdminSignalGroup) => void;
+}) {
+  const columns = useMyGroupsColumns(props.enableEditActions, props.onEdit);
   return <SettingsNeoTable columns={columns} data={props.groups} loading={props.loading} />;
 }
 
@@ -119,10 +261,190 @@ export type SettingsMyGroupsSectionProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
   groups: MyAdminSignalGroup[];
   error: string | null;
+  enableEditActions: boolean;
+  onGroupsChanged: () => Promise<void>;
 };
 
-export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGroupsSectionProps) {
+function MyGroupEditDialog(props: {
+  editDialog: MyGroupEditState | null;
+  setEditDialog: (editDialog: MyGroupEditState | null) => void;
+  logins: string[];
+  aorOptions: AreaOfResponsibility[];
+  referenceDataStatus: ReferenceDataStatus;
+  onSave: () => void;
+}) {
+  const { editDialog, setEditDialog } = props;
+
+  if (!editDialog) return null;
+
+  return (
+    <Dialog open onClose={() => setEditDialog(null)} maxWidth="md" fullWidth disableRestoreFocus>
+      <DialogTitle>Редагувати групу</DialogTitle>
+      <DialogContent className="space-y-4">
+        {editDialog?.error ? <PowerAlert severity="error">{editDialog.error}</PowerAlert> : null}
+        {props.referenceDataStatus === 'loading' ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CircularProgress size={18} />
+            <Typography variant="body2" color="text.secondary">
+              Завантаження даних{ELLIPSIS}
+            </Typography>
+          </Box>
+        ) : null}
+        <div className="text-sm text-muted-foreground">Група: {editDialog?.group.name}</div>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={editDialog?.isSecret ?? false}
+              onChange={(event) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  isSecret: event.target.checked,
+                })
+              }
+            />
+          }
+          label="Прихована група"
+        />
+        {editDialog?.isSecret ? (
+          <Autocomplete
+            multiple
+            options={props.logins}
+            value={editDialog?.selectedUsers ?? []}
+            onChange={(_, value) => editDialog && setEditDialog({ ...editDialog, selectedUsers: value })}
+            renderInput={(params) => <TextField {...params} label="Користувачі" />}
+          />
+        ) : null}
+        <Autocomplete
+          multiple
+          options={props.logins}
+          value={editDialog?.selectedAdmins ?? []}
+          onChange={(_, value) => editDialog && setEditDialog({ ...editDialog, selectedAdmins: value })}
+          renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
+        />
+        <Autocomplete
+          multiple
+          options={props.aorOptions}
+          getOptionLabel={(option) => option.name}
+          value={
+            (editDialog?.selectedAorIds ?? [])
+              .map((id) => props.aorOptions.find((aor) => aor.id === id))
+              .filter(Boolean) as AreaOfResponsibility[]
+          }
+          onChange={(_, value) =>
+            editDialog &&
+            setEditDialog({
+              ...editDialog,
+              selectedAorIds: value.map((aor) => aor.id),
+            })
+          }
+          renderOption={(optionProps, option) => {
+            const { key: _unusedKey, ...restOptionProps } = optionProps;
+            return (
+              <Box component="li" {...restOptionProps} key={option.id}>
+                {option.name}
+              </Box>
+            );
+          }}
+          renderInput={(params) => <TextField {...params} label="Смуги відповідальності" />}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+        />
+      </DialogContent>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <PowerButton variant="outlined" onClick={() => setEditDialog(null)} disabled={editDialog?.isSaving}>
+          Скасувати
+        </PowerButton>
+        <PowerButton
+          variant="contained"
+          onClick={props.onSave}
+          disabled={editDialog?.isSaving || props.referenceDataStatus === 'loading'}
+        >
+          Зберегти
+        </PowerButton>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+export function SettingsMyGroupsSection({
+  status,
+  groups,
+  error,
+  enableEditActions,
+  onGroupsChanged,
+}: SettingsMyGroupsSectionProps) {
   const hasGroups = groups.length > 0;
+  const [editDialog, setEditDialog] = useState<MyGroupEditState | null>(null);
+  const [logins, setLogins] = useState<string[]>([]);
+  const [aorOptions, setAorOptions] = useState<AreaOfResponsibility[]>([]);
+  const [referenceDataStatus, setReferenceDataStatus] = useState<ReferenceDataStatus>('idle');
+
+  async function ensureReferenceDataLoaded(masterKey: string) {
+    if (referenceDataStatus === 'loading' || referenceDataStatus === 'success') return;
+
+    setReferenceDataStatus('loading');
+    try {
+      const reference = await fetchMyAdminGroupEditReference(masterKey);
+      setLogins(reference.logins);
+      setAorOptions(reference.areasOfResponsibility);
+      setReferenceDataStatus('success');
+    } catch {
+      setReferenceDataStatus('error');
+      setEditDialog((current) =>
+        current
+          ? {
+              ...current,
+              error: 'Не вдалося завантажити дані для редагування',
+            }
+          : current,
+      );
+    }
+  }
+
+  function openEditDialog(group: MyAdminSignalGroup) {
+    setEditDialog({
+      group,
+      isSecret: group.isGroupSecret,
+      selectedUsers: groupLoginValues(group.allowedUsers),
+      selectedAdmins: groupLoginValues(group.adminLogins),
+      selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
+      isSaving: false,
+      error: null,
+    });
+    void ensureReferenceDataLoaded(group.masterKey);
+  }
+
+  async function handleSaveGroupEdit() {
+    if (!editDialog) return;
+    const selectedAdmins = Array.from(new Set(editDialog.selectedAdmins.map((login) => login.trim()).filter(Boolean)));
+    if (selectedAdmins.length === 0) {
+      setEditDialog({
+        ...editDialog,
+        error: 'Потрібно залишити щонайменше одного адміністратора групи',
+      });
+      return;
+    }
+
+    setEditDialog({ ...editDialog, isSaving: true, error: null });
+
+    try {
+      await updateMyAdminGroup({
+        masterKey: editDialog.group.masterKey,
+        isSecret: editDialog.isSecret,
+        userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
+        adminLogins: selectedAdmins,
+        areaOfResponsibilityIds: editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
+      });
+      await onGroupsChanged();
+      setEditDialog(null);
+    } catch {
+      setEditDialog({
+        ...editDialog,
+        isSaving: false,
+        error: 'Не вдалося зберегти групу',
+      });
+    }
+  }
 
   return (
     <Box role="tabpanel" id="settings-neo-panel-my-groups" aria-labelledby="settings-neo-tab-my-groups">
@@ -158,13 +480,20 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
 
           {status === 'success' && hasGroups ? (
             <TableStateProvider
-              tableId="settings-neo-my-groups-v2"
-              defaultColumnOrder={DEFAULT_MY_GROUPS_COLUMN_ORDER}
-              defaultColumnVisibility={DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY}
+              tableId={enableEditActions ? 'settings-neo-my-groups-v3' : 'settings-neo-my-groups-v2'}
+              defaultColumnOrder={enableEditActions ? DEFAULT_MY_GROUPS_EDIT_COLUMN_ORDER : DEFAULT_MY_GROUPS_COLUMN_ORDER}
+              defaultColumnVisibility={
+                enableEditActions ? DEFAULT_MY_GROUPS_EDIT_COLUMNS_VISIBILITY : DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY
+              }
               defaultEnableColumnOrdering={false}
             >
               <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
-                <SettingsMyGroupsTable groups={groups} loading={false} />
+                <SettingsMyGroupsTable
+                  groups={groups}
+                  loading={false}
+                  enableEditActions={enableEditActions}
+                  onEdit={openEditDialog}
+                />
               </Box>
             </TableStateProvider>
           ) : null}
@@ -191,6 +520,14 @@ export function SettingsMyGroupsSection({ status, groups, error }: SettingsMyGro
           ) : null}
         </Stack>
       </Box>
+      <MyGroupEditDialog
+        editDialog={editDialog}
+        setEditDialog={setEditDialog}
+        logins={logins}
+        aorOptions={aorOptions}
+        referenceDataStatus={referenceDataStatus}
+        onSave={handleSaveGroupEdit}
+      />
     </Box>
   );
 }

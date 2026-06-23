@@ -1,5 +1,5 @@
 import { Box, Card, FormControlLabel, Stack, Switch, Tab, Tabs, Typography } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import type { MyAdminSignalGroup } from '../../../../Bindings';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -53,6 +53,23 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
   const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
 
+  const loadMyGroups = useCallback(async (signal?: AbortSignal) => {
+    setMyGroupsStatus('loading');
+    setMyGroupsError(null);
+
+    try {
+      const rsp = await listMyAdminGroups(signal);
+      if (signal?.aborted) return;
+      setMyGroups(rsp.groups);
+      setMyGroupsStatus('success');
+    } catch (error) {
+      if (signal?.aborted) return;
+      setMyGroups([]);
+      setMyGroupsStatus('error');
+      setMyGroupsError(`Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`);
+    }
+  }, []);
+
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
     setSettingsSection(parseSettingsSection(section));
@@ -72,26 +89,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
   useEffect(() => {
     const abortController = new AbortController();
-    setMyGroupsStatus('loading');
-    setMyGroupsError(null);
-
-    void listMyAdminGroups(abortController.signal)
-      .then((rsp) => {
-        if (abortController.signal.aborted) return;
-        setMyGroups(rsp.groups);
-        setMyGroupsStatus('success');
-      })
-      .catch((error) => {
-        if (abortController.signal.aborted) return;
-        setMyGroups([]);
-        setMyGroupsStatus('error');
-        setMyGroupsError(`Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`);
-      });
+    void loadMyGroups(abortController.signal);
 
     return () => {
       abortController.abort();
     };
-  }, []);
+  }, [loadMyGroups]);
 
   function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
@@ -157,6 +160,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               status={myGroupsStatus}
               groups={myGroups}
               error={myGroupsError}
+              enableEditActions={globalSettings.featureMyAdminGroupsEdit}
+              onGroupsChanged={() => loadMyGroups()}
             />
           ) : null}
 

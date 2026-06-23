@@ -286,6 +286,7 @@ export type ServerInfo = {
   featureDelta: boolean;
   featureAnalysisMap: boolean;
   featureStrictNetworks: boolean;
+  featureMyAdminGroupsEdit: boolean;
   version: string;
 };
 
@@ -1772,6 +1773,23 @@ export type MyAdminSignalGroup = {
   allowedUsers: Array<SignalGroupLogin>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+};
+
+export type MyAdminSignalGroupUpdateReq = {
+  masterKey: string;
+  isSecret: boolean;
+  userLogins: Array<string>;
+  adminLogins: Array<string>;
+  areaOfResponsibilityIds: Array<number> | null;
+};
+
+export type MyAdminSignalGroupEditReferenceReq = {
+  masterKey: string;
+};
+
+export type MyAdminSignalGroupEditReferenceRsp = {
+  logins: Array<string>;
+  areasOfResponsibility: Array<AreaOfResponsibility>;
 };
 
 export type MyAdminSignalGroupsRsp = {
