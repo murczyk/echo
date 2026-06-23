@@ -429,6 +429,23 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             .collect();
     }
 
+    let network_ids = data
+        .networks_data
+        .values()
+        .flat_map(|unit_networks| {
+            unit_networks.iter().map(|network| network.id)
+        })
+        .collect::<Vec<_>>();
+    let network_descriptions_by_id = if include_sigint_signs
+        || include_confirmation
+    {
+        crate::sigint::network::bl::get_networks_descriptions(dbx, &network_ids)
+            .await
+            .context(h!())?
+    } else {
+        Default::default()
+    };
+
     let show_logs = progress.is_none();
     let mut units_remaining = data.networks_data.len();
     for (unit_key, unit_networks) in data.networks_data.iter() {
@@ -519,14 +536,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             entry.unique_modulation = unique_modulation;
             entry.freqs = freqs;
             if include_sigint_signs || include_confirmation {
-                let network_descriptions_map =
-                    crate::sigint::network::bl::get_networks_descriptions(
-                        dbx,
-                        &[network_id],
-                    )
-                    .await
-                    .context(h!())?;
-                let network_descriptions = network_descriptions_map
+                let network_descriptions = network_descriptions_by_id
                     .get(&network_id)
                     .cloned()
                     .unwrap_or_default();
