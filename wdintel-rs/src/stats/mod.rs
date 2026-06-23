@@ -198,6 +198,7 @@ pub fn should_read_stats_aggregated_for_config(
     dt_till: NaiveDateTime,
 ) -> bool {
     can_read_stats_aggregated(config, dt_since, dt_till)
+        && is_5min_stats_bucket_range_aligned(dt_since, dt_till)
         && req_allows_stats_aggregated(req)
 }
 
@@ -3635,6 +3636,25 @@ mod tests {
     }
 
     #[test]
+    fn test_should_read_stats_aggregated_false_for_unaligned_range() {
+        let req = analysis_stats_req0();
+        let config = stats_aggregated_config();
+
+        assert!(should_read_stats_aggregated_for_config(
+            &req,
+            &config,
+            ndt(2025, 10, 10, 10, 0),
+            ndt(2025, 10, 10, 10, 15),
+        ));
+        assert!(!should_read_stats_aggregated_for_config(
+            &req,
+            &config,
+            ndt(2025, 10, 10, 10, 1),
+            ndt(2025, 10, 10, 10, 16),
+        ));
+    }
+
+    #[test]
     fn test_collect_time_intervals_for_stats_short_duration_if_branch() {
         // 2 days and 1 second
         let dt_since = ndt(2025, 10, 10, 10, 0);
@@ -3795,5 +3815,23 @@ mod tests {
             .unwrap()
             .and_hms_opt(hour, minute, 0)
             .unwrap()
+    }
+
+    fn stats_aggregated_config() -> Config {
+        toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+feature_group_stats_aggregated = true
+"#,
+        )
+        .unwrap()
     }
 }
