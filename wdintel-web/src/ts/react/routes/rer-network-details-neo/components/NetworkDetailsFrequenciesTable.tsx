@@ -1,4 +1,3 @@
-import BuildIcon from '@mui/icons-material/Build';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -173,7 +172,6 @@ export type NetworkDetailsFrequenciesTableProps = {
   onToggleFrequencyGroupExpanded: (groupId: string) => void;
   onOpenFreqCreateWizard: () => void;
   onOpenFreqEditDrawer: (freq: NetworkFreqsRes) => void;
-  onOpenFreqTechDrawer: (freq: NetworkFreqsRes) => void;
   onOpenDeleteFreqDialog: (freq: NetworkFreqsRes) => void;
   onOpenFreqRowActions: (anchorEl: HTMLElement, freqId: number) => void;
   onCloseFreqRowActions: () => void;
@@ -256,7 +254,6 @@ function NetworkDetailsFrequenciesTableContent({
   onToggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
   onOpenFreqEditDrawer,
-  onOpenFreqTechDrawer,
   onOpenDeleteFreqDialog,
   onOpenFreqRowActions,
   onCloseFreqRowActions,
@@ -357,7 +354,6 @@ function NetworkDetailsFrequenciesTableContent({
       return (
         <MrtRowActions>
           <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} opensModal />
-          <MrtRowActionButton label="Редагувати тех. дані" onClick={() => onOpenFreqTechDrawer(freqRow)} icon={<BuildIcon fontSize="small" />} opensModal />
           <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" opensModal />
         </MrtRowActions>
       );

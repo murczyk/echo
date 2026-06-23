@@ -3,31 +3,27 @@ import {
   Button,
   CircularProgress,
   Drawer,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Typography,
 } from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material/Select';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ModulationRec, NetworkFreqsRes } from '../../../../../Bindings';
+import type { EncryptionKeyData, ModulationRec } from '../../../../../Bindings';
+import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { type NetworkFreqEditForm } from '../use-rer-network-details-neo-page.shared';
-import { parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
-import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
-import { NetworkFreqSummaryHeader } from './NetworkFreqSummaryHeader';
-import { NEO_SELECT_MENU_PROPS } from './dropdownProps';
+import { formatErrorMessage, getFrequencyFormatError, type NetworkFreqEditForm, parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
+import { NetworkFreqFormFields } from './NetworkFreqFormFields';
+import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
+import { NetworkFreqNewKeyDialog } from './NetworkFreqNewKeyDialog';
+import { validateNetworkFreqNewKey } from '../network-freq-new-key';
 
 type Props = {
   open: boolean;
   form: NetworkFreqEditForm | null;
-  freq: NetworkFreqsRes | null;
   saving: boolean;
   error: string | null;
+  networkId: number | null;
   modulations: ModulationRec[];
   onClose: () => void;
   onChange: (next: NetworkFreqEditForm | null) => void;
@@ -35,12 +31,32 @@ type Props = {
   disableRestoreFocus?: boolean;
 };
 
+type NewKeyForm = {
+  key: string;
+  description: string;
+  modulationId: number | null;
+};
+
+function formatKeyLabel(key: EncryptionKeyData): string {
+  const parts = [key.description?.trim(), key.key?.trim()].filter((value) => value && value !== '');
+  if (parts.length === 0) {
+    return `#${key.id ?? '—'}`;
+  }
+
+  return parts.join(' • ');
+}
+
+function buildSelectedKeys(keys: EncryptionKeyData[], selectedIds: number[]): EncryptionKeyData[] {
+  const keysById = new Map(keys.map((key) => [key.id, key]));
+  return selectedIds.map((keyId) => keysById.get(keyId)).filter((key): key is EncryptionKeyData => Boolean(key));
+}
+
 function NetworkFreqEditDrawerComponent({
   open,
   form,
-  freq,
   saving,
   error,
+  networkId,
   modulations,
   onClose,
   onChange,
@@ -48,34 +64,137 @@ function NetworkFreqEditDrawerComponent({
   disableRestoreFocus = false,
 }: Props) {
   const titleId = 'network-freq-edit-drawer-title';
+  const [keys, setKeys] = useState<EncryptionKeyData[]>([]);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [keysError, setKeysError] = useState<string | null>(null);
+  const [newKeyOpen, setNewKeyOpen] = useState(false);
+  const [newKeySaving, setNewKeySaving] = useState(false);
+  const [newKeyTouched, setNewKeyTouched] = useState(false);
+  const [freqTouched, setFreqTouched] = useState(false);
   const [activePeriodTouched, setActivePeriodTouched] = useState(false);
+  const addNewKeyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
+    key: '',
+    description: '',
+    modulationId: null,
+  });
 
-  useEffect(() => {
-    if (!open) return;
-    setActivePeriodTouched(false);
-  }, [open, form?.networkFreqId]);
-
+  const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
+  const freqValidationError = form ? getFrequencyFormatError(form.freq) : null;
+  const freqError = freqTouched ? freqValidationError : null;
+  const newKeyValidationError = validateNetworkFreqNewKey(newKeyForm.key);
+  const newKeyError = newKeyTouched ? newKeyValidationError : null;
   const activeFromValidationError = form && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
   const activeToValidationError = form && form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
   const activeFromError = activePeriodTouched ? activeFromValidationError : null;
   const activeToError = activePeriodTouched ? activeToValidationError : null;
-  const formBlocked = saving;
-  const saveDisabled = saving || !form || activeFromValidationError !== null || activeToValidationError !== null;
+  const saveDisabled = saving || !form || freqValidationError !== null || activeFromValidationError !== null || activeToValidationError !== null;
 
-  const modulationItems = useMemo(
-    () =>
-      modulations.map((modulation) => (
-        <MenuItem key={modulation.id} value={String(modulation.id)}>
-          {modulation.name}
-        </MenuItem>
-      )),
-    [modulations],
-  );
+  useEffect(() => {
+    if (!open) return;
+    setFreqTouched(false);
+    setActivePeriodTouched(false);
+  }, [open, form?.networkFreqId]);
 
-  const handleModulationChange = (event: SelectChangeEvent<string>) => {
+  useEffect(() => {
+    if (!open || !networkId) return;
+
+    let active = true;
+    setKeysLoading(true);
+    setKeys([]);
+    setKeysError(null);
+
+    void listKeys({ sigintNetworkId: networkId })
+      .then((response) => {
+        if (!active) return;
+        setKeys(response.keys);
+      })
+      .catch((loadError) => {
+        if (!active) return;
+        setKeysError(formatErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (!active) return;
+        setKeysLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [networkId, open]);
+
+  const handleSelectedKeysChange = (_event: unknown, next: EncryptionKeyData[]) => {
     if (!form) return;
-    const value = event.target.value.trim();
-    onChange({ ...form, modulationId: value === '' ? null : Number(value) });
+    onChange({ ...form, encryptionKeyIds: next.flatMap((key) => (key.id === null ? [] : [key.id])) });
+  };
+
+  const restoreAddNewKeyFocus = () => {
+    const focusTrigger = () => addNewKeyButtonRef.current?.focus();
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(focusTrigger);
+      return;
+    }
+    window.setTimeout(focusTrigger, 0);
+  };
+
+  const openNewKeyDialog = () => {
+    addNewKeyButtonRef.current?.blur();
+    setNewKeyOpen(true);
+  };
+
+  const closeNewKeyDialog = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setNewKeyOpen(false);
+    setNewKeyTouched(false);
+    restoreAddNewKeyFocus();
+  };
+
+  const handleCreateKey = async () => {
+    if (!form || !networkId || newKeySaving || newKeyValidationError !== null) {
+      setNewKeyTouched(true);
+      return;
+    }
+
+    setNewKeySaving(true);
+    try {
+      const createdKey = await createKey({
+        sigintNetworkId: networkId,
+        sigintNetworkFreqIds: [],
+        key: newKeyForm.key.trim() === '' ? null : newKeyForm.key.trim(),
+        keyHash: null,
+        description: newKeyForm.description.trim() === '' ? null : newKeyForm.description.trim(),
+        modulationId: newKeyForm.modulationId,
+      });
+
+      setKeys((current) => {
+        if (createdKey.id === null) return current;
+        if (current.some((key) => key.id === createdKey.id)) return current;
+        return [...current, createdKey];
+      });
+
+      if (createdKey.id !== null) {
+        onChange({
+          ...form,
+          encryptionKeyIds: [...new Set([...form.encryptionKeyIds, createdKey.id])],
+        });
+      }
+
+      closeNewKeyDialog();
+      setNewKeyForm({ key: '', description: '', modulationId: null });
+    } catch (createError) {
+      setKeysError(formatErrorMessage(createError));
+    } finally {
+      setNewKeySaving(false);
+    }
+  };
+
+  const handleSave = () => {
+    setFreqTouched(true);
+    setActivePeriodTouched(true);
+    if (freqValidationError !== null || activeFromValidationError !== null || activeToValidationError !== null) {
+      return;
+    }
+    onSave();
   };
 
   return (
@@ -93,7 +212,7 @@ function NetworkFreqEditDrawerComponent({
         paper: {
           'aria-labelledby': titleId,
           sx: {
-            width: { xs: '100vw', sm: 640 },
+            width: { xs: '100vw', sm: 720 },
             maxWidth: '100vw',
             display: 'flex',
             backgroundColor: 'background.default',
@@ -108,66 +227,47 @@ function NetworkFreqEditDrawerComponent({
         </Typography>
       </Box>
 
-      <NetworkFreqSummaryHeader freq={freq} />
-
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
           {form ? (
-            <>
-              <FormControl fullWidth size="small" disabled={formBlocked}>
-                <InputLabel id="network-freq-edit-kind-label">Тип</InputLabel>
-                <Select
-                  labelId="network-freq-edit-kind-label"
-                  label="Тип"
-                  value={form.kind}
-                  onChange={(event) => onChange({ ...form, kind: String(event.target.value) as NetworkFreqEditForm['kind'] })}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                >
-                  <MenuItem value="DMR">DMR</MenuItem>
-                  <MenuItem value="DMRe">DMRe</MenuItem>
-                  <MenuItem value="NFM">NFM</MenuItem>
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth size="small" disabled={formBlocked}>
-                <InputLabel id="network-freq-edit-modulation-label" shrink>
-                  Модуляція
-                </InputLabel>
-                <Select
-                  labelId="network-freq-edit-modulation-label"
-                  label="Модуляція"
-                  displayEmpty
-                  value={form.modulationId === null ? '' : String(form.modulationId)}
-                  onChange={handleModulationChange}
-                  MenuProps={NEO_SELECT_MENU_PROPS}
-                  renderValue={(value) => {
-                    if (value === '') {
-                      return <span style={{ opacity: 0.7 }}>Виберіть модуляцію</span>;
-                    }
-
-                    return modulations.find((modulation) => String(modulation.id) === String(value))?.name ?? value;
-                  }}
-                >
-                  {modulationItems}
-                </Select>
-              </FormControl>
-
-              <NetworkFreqActivityPeriodControl
-                activeFrom={form.activeFrom}
-                activeTo={form.activeTo}
-                onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
-                onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
-                onActiveFromBlur={() => setActivePeriodTouched(true)}
-                onActiveToBlur={() => setActivePeriodTouched(true)}
-                disabled={formBlocked}
-                activeFromError={activeFromError !== null}
-                activeFromHelperText={activeFromError ?? undefined}
-                activeToError={activeToError !== null}
-                activeToHelperText={activeToError ?? undefined}
-              />
-            </>
+            <NetworkFreqFormFields
+              mode="edit"
+              saving={saving}
+              kind={form.kind}
+              modulationId={form.modulationId}
+              freq={form.freq}
+              activeFrom={form.activeFrom}
+              activeTo={form.activeTo}
+              freqError={freqError}
+              activeFromError={activeFromError}
+              activeToError={activeToError}
+              onKindChange={(nextKind) => onChange({ ...form, kind: nextKind })}
+              onFreqChange={(nextValue) => onChange({ ...form, freq: nextValue })}
+              onModulationChange={(modulationId) => onChange({ ...form, modulationId })}
+              onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
+              onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
+              onFreqBlur={() => setFreqTouched(true)}
+              onActiveFromBlur={() => setActivePeriodTouched(true)}
+              onActiveToBlur={() => setActivePeriodTouched(true)}
+              modulations={modulations}
+              keysSection={(
+                <NetworkFreqKeysSection
+                  canManageKeys={Boolean(networkId)}
+                  saving={saving}
+                  networkId={networkId}
+                  keysLoading={keysLoading}
+                  keysError={keysError}
+                  keys={keys}
+                  selectedKeys={selectedKeys}
+                  onSelectedKeysChange={handleSelectedKeysChange}
+                  onAddNewKey={openNewKeyDialog}
+                  addNewKeyButtonRef={addNewKeyButtonRef}
+                  formatKeyLabel={formatKeyLabel}
+                />
+              )}
+            />
           ) : null}
         </Stack>
       </Box>
@@ -182,13 +282,36 @@ function NetworkFreqEditDrawerComponent({
           gap: 2,
         }}
       >
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={onClose} disabled={saving || newKeySaving}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant="contained" disabled={saveDisabled}>
+        <Button onClick={handleSave} variant="contained" disabled={saveDisabled}>
           {saving ? <CircularProgress size={16} color="inherit" /> : 'Зберегти'}
         </Button>
       </Box>
+
+      <NetworkFreqNewKeyDialog
+        open={newKeyOpen}
+        title="Новий ключ"
+        saving={newKeySaving}
+        keyValue={newKeyForm.key}
+        descriptionValue={newKeyForm.description}
+        modulationId={newKeyForm.modulationId}
+        modulationOptions={modulations}
+        keyError={newKeyError}
+        onClose={() => {
+          closeNewKeyDialog();
+        }}
+        onKeyChange={(nextValue) => {
+          setNewKeyForm((current) => ({ ...current, key: nextValue }));
+        }}
+        onKeyBlur={() => setNewKeyTouched(true)}
+        onDescriptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, description: nextValue }))}
+        onModulationChange={(nextValue) => setNewKeyForm((current) => ({ ...current, modulationId: nextValue }))}
+        onCreate={handleCreateKey}
+        createDisabled={newKeyValidationError !== null}
+        disableRestoreFocus
+      />
     </Drawer>
   );
 }

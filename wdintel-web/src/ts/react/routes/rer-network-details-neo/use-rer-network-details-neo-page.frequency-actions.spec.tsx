@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Network, NetworkFreqsRes } from '../../../../Bindings';
-import { EMPTY_STATE, type NetworkDetailsNeoPageState, type NetworkFreqCreateWizardForm, type NetworkFreqEditForm, type NetworkFreqTechDataForm } from './use-rer-network-details-neo-page.types';
+import { EMPTY_STATE, type NetworkDetailsNeoPageState, type NetworkFreqCreateWizardForm, type NetworkFreqEditForm } from './use-rer-network-details-neo-page.types';
 import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 const apiMock = vi.hoisted(() => ({
@@ -87,7 +87,6 @@ function buildCreateForm(): NetworkFreqCreateWizardForm {
     freq: '10.0000',
     kind: 'VHF',
     modulationId: null,
-    description: '',
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -97,17 +96,12 @@ function buildCreateForm(): NetworkFreqCreateWizardForm {
 function buildEditForm(freq: NetworkFreqsRes): NetworkFreqEditForm {
   return {
     networkFreqId: freq.networkFreqId,
+    freq: freq.freq,
     kind: 'VHF',
     modulationId: freq.modulationId,
     activeFrom: '1970-01-01',
     activeTo: '',
-  };
-}
-
-function buildTechForm(freq: NetworkFreqsRes): NetworkFreqTechDataForm {
-  return {
-    networkFreqId: freq.networkFreqId,
-    encryptionKeyIds: [13],
+    encryptionKeyIds: [],
   };
 }
 
@@ -279,7 +273,11 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       freqActivityByFreq: { 7: [{ day: '2026-06-01', messageCount: 3 }] },
       freqs: [buildFreq()],
       freqEditDrawerOpen: true,
-      freqEditDrawerForm: buildEditForm(buildFreq()),
+      freqEditDrawerForm: {
+        ...buildEditForm(buildFreq()),
+        freq: '22.0000',
+        encryptionKeyIds: [13],
+      },
       freqEditDrawerSaving: false,
     });
 
@@ -288,40 +286,14 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     });
 
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
+    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalledWith(expect.objectContaining({
+      freq: '22.0000',
+      encryptionKeyIds: [13],
+    }));
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
     expect(latestState?.freqs[0]?.modulationId).toBe(12);
     expect(latestState?.freqActivityByFreq[7]).toEqual([{ day: '2026-06-01', messageCount: 3 }]);
     expect(latestState?.freqEditDrawerOpen).toBe(false);
-  });
-
-  it('replaces a frequency row in place when editing technical data', async () => {
-    apiMock.updateNetworkFreqV2.mockResolvedValueOnce({
-      network: buildNetwork(),
-      freq: buildFreq({ networkFreqId: 7, encryptionKeyIds: [13] }),
-    });
-
-    const freq = buildFreq();
-    renderHarness({
-      ...EMPTY_STATE,
-      network: buildNetwork(),
-      freqsLoaded: true,
-      freqActivityByFreq: { 7: [{ day: '2026-06-01', messageCount: 3 }] },
-      freqs: [freq],
-      freqTechDrawerOpen: true,
-      freqTechDrawerForm: buildTechForm(freq),
-      freqTechDrawerSaving: false,
-    });
-
-    await act(async () => {
-      await latestActions?.saveFreqTechDrawer();
-    });
-
-    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
-    expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
-    expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
-    expect(latestState?.freqs[0]?.encryptionKeyIds).toEqual([13]);
-    expect(latestState?.freqActivityByFreq[7]).toEqual([{ day: '2026-06-01', messageCount: 3 }]);
-    expect(latestState?.freqTechDrawerOpen).toBe(false);
   });
 });

@@ -111,7 +111,6 @@ describe('NetworkDetailsFrequenciesPanel', () => {
           onToggleFrequencyGroupExpanded: vi.fn(),
           onOpenFreqCreateWizard: vi.fn(),
           onOpenFreqEditDrawer: vi.fn(),
-          onOpenFreqTechDrawer: vi.fn(),
           onOpenDeleteFreqDialog: vi.fn(),
           onOpenFreqRowActions: vi.fn(),
           onCloseFreqRowActions: vi.fn(),

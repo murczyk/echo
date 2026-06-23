@@ -115,12 +115,6 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const classicHref = buildRerNetworkDetailsHref(networkId, 'classic');
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
-  const editFreq = page.freqEditDrawerForm
-    ? page.freqs.find((freq) => freq.networkFreqId === page.freqEditDrawerForm?.networkFreqId) ?? null
-    : null;
-  const techFreq = page.freqTechDrawerForm
-    ? page.freqs.find((freq) => freq.networkFreqId === page.freqTechDrawerForm?.networkFreqId) ?? null
-    : null;
   const title = buildPageTitle(page.network, page.unitNames, page.status);
   const toggleSidePanelLabel = isTopPanel
     ? 'Панель відображається зверху'
@@ -233,7 +227,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       onSetTopPanelCollapsed={setTopPanelCollapsed}
       onToggleTopPanelCollapsed={() => setTopPanelCollapsed((current) => !current)}
     />
-      <NetworkDetailsNeoPageDialogs page={page} editFreq={editFreq} techFreq={techFreq} />
+      <NetworkDetailsNeoPageDialogs page={page} />
     </Box>
   );
 }

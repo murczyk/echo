@@ -15,11 +15,10 @@ import {
   parseNetworkDetailsDateInput,
   toNetworkFreqCreateWizardForm,
   toNetworkFreqEditForm,
-  toNetworkFreqTechDataForm,
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import { buildNetworkFreqActivityByFreq, sortNetworkFreqsByTableOrder } from './frequency-utils';
-import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm, NetworkFreqTechDataForm } from './use-rer-network-details-neo-page.shared';
+import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm } from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -34,7 +33,6 @@ function resetFreqCreateWizardState(current: NetworkDetailsNeoPageState): Networ
   return {
     ...current,
     freqCreateWizardOpen: false,
-    freqCreateWizardStep: 1,
     freqCreateWizardForm: toNetworkFreqCreateWizardForm(),
     freqCreateWizardSaving: false,
     freqCreateWizardError: null,
@@ -51,16 +49,6 @@ function resetFreqEditDrawerState(current: NetworkDetailsNeoPageState): NetworkD
   };
 }
 
-function resetFreqTechDrawerState(current: NetworkDetailsNeoPageState): NetworkDetailsNeoPageState {
-  return {
-    ...current,
-    freqTechDrawerOpen: false,
-    freqTechDrawerForm: null,
-    freqTechDrawerSaving: false,
-    freqTechDrawerError: null,
-  };
-}
-
 function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId: number): AddNetworkFreqReq {
   return {
     networkId,
@@ -69,15 +57,7 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
       kind: toBackendNetworkFreqKind(freqForm.kind),
       modulationId: freqForm.modulationId,
       encryptionKeyIds: [...freqForm.encryptionKeyIds],
-      description:
-        freqForm.description.trim() === ''
-          ? null
-          : {
-              descrType: 'Confirmation',
-              topic: null,
-              description: freqForm.description.trim(),
-              freq: freqForm.freq.trim(),
-            },
+      description: null,
       activeFrom: parseNetworkDetailsDateInput(freqForm.activeFrom),
       activeTo: parseNetworkDetailsDateInput(freqForm.activeTo),
     },
@@ -179,7 +159,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     setState((current) => ({
       ...current,
       freqCreateWizardOpen: true,
-      freqCreateWizardStep: 1,
       freqCreateWizardForm: toNetworkFreqCreateWizardForm(),
       freqCreateWizardSaving: false,
       freqCreateWizardError: null,
@@ -195,10 +174,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
 
   const setFreqCreateWizardForm = useCallback((freqCreateWizardForm: NetworkFreqCreateWizardForm) => {
     setState((current) => ({ ...current, freqCreateWizardForm }));
-  }, [setState]);
-
-  const setFreqCreateWizardStep = useCallback((freqCreateWizardStep: 1 | 2) => {
-    setState((current) => ({ ...current, freqCreateWizardStep }));
   }, [setState]);
 
   const openFreqEditDrawer = useCallback((freq: NetworkFreqsRes) => {
@@ -222,29 +197,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
 
   const setFreqEditDrawerForm = useCallback((freqEditDrawerForm: NetworkFreqEditForm | null) => {
     setState((current) => ({ ...current, freqEditDrawerForm }));
-  }, [setState]);
-
-  const openFreqTechDrawer = useCallback((freq: NetworkFreqsRes) => {
-    setState((current) => ({
-      ...current,
-      freqTechDrawerOpen: true,
-      freqTechDrawerForm: toNetworkFreqTechDataForm(freq),
-      freqTechDrawerSaving: false,
-      freqTechDrawerError: null,
-      freqRowActionMenuAnchorEl: null,
-      freqRowActionTargetId: null,
-    }));
-  }, [setState]);
-
-  const closeFreqTechDrawer = useCallback(() => {
-    setState((current) => {
-      if (current.freqTechDrawerSaving) return current;
-      return resetFreqTechDrawerState(current);
-    });
-  }, [setState]);
-
-  const setFreqTechDrawerForm = useCallback((freqTechDrawerForm: NetworkFreqTechDataForm | null) => {
-    setState((current) => ({ ...current, freqTechDrawerForm }));
   }, [setState]);
 
   const openFreqRowActions = useCallback((anchorEl: HTMLElement, freqId: number) => {
@@ -381,10 +333,10 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
       const response = await updateNetworkFreqV2({
         networkId: network.id,
         networkFreqId: currentFreq.networkFreqId,
-        freq: currentFreq.freq,
+        freq: form.freq.trim(),
         kind: toBackendNetworkFreqKind(form.kind),
         modulationId: form.modulationId,
-        encryptionKeyIds: [...currentFreq.encryptionKeyIds],
+        encryptionKeyIds: [...form.encryptionKeyIds],
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
         activeTo: parseNetworkDetailsDateInput(form.activeTo),
       });
@@ -419,71 +371,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
       }));
     }
   }, [loadFrequencies, state.freqEditDrawerForm, state.freqEditDrawerSaving, state.freqs, state.network, setState]);
-
-  const saveFreqTechDrawer = useCallback(async () => {
-    const network = state.network;
-    const form = state.freqTechDrawerForm;
-
-    if (!network || !form || state.freqTechDrawerSaving) return;
-
-    const currentFreq = findNetworkFreq(state, form.networkFreqId);
-    if (!currentFreq) {
-      setState((current) => ({
-        ...current,
-        freqTechDrawerSaving: false,
-        freqTechDrawerError: 'Не вдалося знайти частоту для редагування',
-      }));
-      return;
-    }
-
-    setState((current) => ({
-      ...current,
-      freqTechDrawerSaving: true,
-      freqTechDrawerError: null,
-    }));
-
-    try {
-      const response = await updateNetworkFreqV2({
-        networkId: network.id,
-        networkFreqId: currentFreq.networkFreqId,
-        freq: currentFreq.freq,
-        kind: currentFreq.kind ?? 'VHF',
-        modulationId: currentFreq.modulationId,
-        encryptionKeyIds: [...form.encryptionKeyIds],
-        activeFrom: currentFreq.activeFrom,
-        activeTo: currentFreq.activeTo,
-      });
-      setState((current) => {
-        const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'edit');
-        if (!updatedState) {
-          return {
-            ...current,
-            ...resetFreqTechDrawerState(current),
-            network: response.network,
-          };
-        }
-
-        return {
-          ...current,
-          ...resetFreqTechDrawerState(current),
-          network: response.network,
-          freqs: updatedState?.freqs ?? current.freqs,
-          freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
-          freqsLoaded: true,
-        };
-      });
-
-      if (!response.freq) {
-        await loadFrequencies(network.id);
-      }
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        freqTechDrawerSaving: false,
-        freqTechDrawerError: formatErrorMessage(error),
-      }));
-    }
-  }, [loadFrequencies, state.freqTechDrawerForm, state.freqTechDrawerSaving, state.freqs, state.network, setState]);
 
   const deleteFreq = useCallback(async () => {
     const network = state.network;
@@ -528,13 +415,9 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     openFreqCreateWizard,
     closeFreqCreateWizard,
     setFreqCreateWizardForm,
-    setFreqCreateWizardStep,
     openFreqEditDrawer,
     closeFreqEditDrawer,
     setFreqEditDrawerForm,
-    openFreqTechDrawer,
-    closeFreqTechDrawer,
-    setFreqTechDrawerForm,
     openFreqRowActions,
     closeFreqRowActions,
     openDeleteFreqDialog,
@@ -542,7 +425,6 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     toggleFrequencyGroupExpanded,
     saveFreqCreateWizard,
     saveFreqEditDrawer,
-    saveFreqTechDrawer,
     deleteFreq,
   };
 }

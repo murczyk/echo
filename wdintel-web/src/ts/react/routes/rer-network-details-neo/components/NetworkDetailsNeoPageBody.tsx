@@ -151,7 +151,6 @@ export function NetworkDetailsNeoPageBody({
       toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}
       onOpenFreqCreateWizard={page.openFreqCreateWizard}
       onOpenFreqEditDrawer={page.openFreqEditDrawer}
-      onOpenFreqTechDrawer={page.openFreqTechDrawer}
       onOpenDeleteFreqDialog={page.openDeleteFreqDialog}
       onOpenFreqRowActions={page.openFreqRowActions}
       onCloseFreqRowActions={page.closeFreqRowActions}

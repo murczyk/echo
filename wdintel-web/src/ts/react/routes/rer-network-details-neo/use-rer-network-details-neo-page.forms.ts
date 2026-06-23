@@ -11,7 +11,6 @@ import type {
   NetworkEditForm,
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
-  NetworkFreqTechDataForm,
   NetworkFreqKind,
   NetworkUpsertForm,
   NetworkPelengDateRange,
@@ -63,7 +62,6 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
     freq: '',
     kind: 'DMR',
     modulationId: null,
-    description: '',
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -87,16 +85,11 @@ export function formatDateInputValue(value: number | null | undefined): string {
 export function toNetworkFreqEditForm(freq: NetworkFreqsRes): NetworkFreqEditForm {
   return {
     networkFreqId: freq.networkFreqId,
+    freq: freq.freq,
     kind: typeLabelFromKind(freq.kind),
     modulationId: freq.modulationId,
     activeFrom: formatDateInputValue(freq.activeFrom),
     activeTo: formatDateInputValue(freq.activeTo),
-  };
-}
-
-export function toNetworkFreqTechDataForm(freq: NetworkFreqsRes): NetworkFreqTechDataForm {
-  return {
-    networkFreqId: freq.networkFreqId,
     encryptionKeyIds: [...freq.encryptionKeyIds],
   };
 }

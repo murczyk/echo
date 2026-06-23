@@ -5,9 +5,8 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDescriptionDrawer } from './NetworkDescriptionDrawer';
 import { NetworkEditDrawer } from './NetworkEditDrawer';
 import { NetworkCallsignDrawer } from './NetworkCallsignDrawer';
-import { NetworkFreqCreateWizard } from './NetworkFreqCreateWizard';
+import { NetworkFreqCreateDrawer } from './NetworkFreqCreateDrawer';
 import { NetworkFreqEditDrawer } from './NetworkFreqEditDrawer';
-import { NetworkFreqTechDataDrawer } from './NetworkFreqTechDataDrawer';
 import { NetworkEtalonkaReportDialog } from './NetworkEtalonkaReportDialog';
 import { formatClassicNetworkHeaderName } from '../use-rer-network-details-neo-page.shared';
 import type { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
@@ -16,8 +15,6 @@ type Page = ReturnType<typeof useRerNetworkDetailsNeoPage>;
 
 type Props = {
   page: Page;
-  editFreq: Page['freqs'][number] | null;
-  techFreq: Page['freqs'][number] | null;
 };
 
 function buildDeleteDescriptionTitle(descrType: 'Confirmation' | 'Sign'): string {
@@ -42,7 +39,7 @@ function buildDeleteDescriptionMessage(
     : 'Ви впевнені, що хочете видалити це обґрунтування?';
 }
 
-export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props) {
+export function NetworkDetailsNeoPageDialogs({ page }: Props) {
   const deleteDescriptionTitle = buildDeleteDescriptionTitle(page.deleteDescriptionTarget?.descrType ?? 'Confirmation');
   const deleteDescriptionMessage = buildDeleteDescriptionMessage(page.deleteDescriptionTarget);
 
@@ -142,9 +139,8 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
-      <NetworkFreqCreateWizard
+      <NetworkFreqCreateDrawer
         open={page.freqCreateWizardOpen}
-        step={page.freqCreateWizardStep}
         form={page.freqCreateWizardForm}
         saving={page.freqCreateWizardSaving}
         error={page.freqCreateWizardError}
@@ -153,36 +149,19 @@ export function NetworkDetailsNeoPageDialogs({ page, editFreq, techFreq }: Props
         modulations={page.modulations}
         onClose={page.closeFreqCreateWizard}
         onChange={page.setFreqCreateWizardForm}
-        onStepChange={page.setFreqCreateWizardStep}
         onSave={page.saveFreqCreateWizard}
       />
 
       <NetworkFreqEditDrawer
         open={page.freqEditDrawerOpen}
         form={page.freqEditDrawerForm}
-        freq={editFreq}
         saving={page.freqEditDrawerSaving}
         error={page.freqEditDrawerError}
+        networkId={page.network?.id ?? null}
         modulations={page.modulations}
         onClose={page.closeFreqEditDrawer}
         onChange={page.setFreqEditDrawerForm}
         onSave={page.saveFreqEditDrawer}
-        {...MRT_ROW_ACTION_MODAL_PROPS}
-      />
-
-      <NetworkFreqTechDataDrawer
-        open={page.freqTechDrawerOpen}
-        networkId={page.network?.id ?? null}
-        freq={techFreq}
-        form={page.freqTechDrawerForm}
-        saving={page.freqTechDrawerSaving}
-        error={page.freqTechDrawerError}
-        canManageKeys={page.canEdit}
-        modulations={page.modulations}
-        onClose={page.closeFreqTechDrawer}
-        onChange={page.setFreqTechDrawerForm}
-        onSave={page.saveFreqTechDrawer}
-        onReloadFrequencies={page.loadFrequencies}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
