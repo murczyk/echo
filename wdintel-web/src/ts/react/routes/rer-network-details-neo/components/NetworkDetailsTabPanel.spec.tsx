@@ -55,6 +55,8 @@ function renderPanel(): Rendered {
     freqsLoaded: false,
     freqsLoading: false,
     freqsError: null,
+    freqCallsignsById: new Map(),
+    freqCallsignsStatus: 'idle',
     networkActivity: {},
     networkActivityLoaded: false,
     networkActivityLoading: false,
@@ -105,7 +107,6 @@ function renderPanel(): Rendered {
     toggleFrequencyGroupExpanded: vi.fn(),
     onOpenFreqCreateWizard: vi.fn(),
     onOpenFreqEditDrawer: vi.fn(),
-    onOpenFreqTechDrawer: vi.fn(),
     onOpenDeleteFreqDialog: vi.fn(),
     onOpenFreqRowActions: vi.fn(),
     onCloseFreqRowActions: vi.fn(),
@@ -168,6 +169,8 @@ describe('NetworkDetailsTabPanel', () => {
           freqsLoaded={false}
           freqsLoading={false}
           freqsError={null}
+          freqCallsignsById={new Map()}
+          freqCallsignsStatus="idle"
           networkActivity={{}}
           networkActivityLoaded={false}
           networkActivityLoading={false}
@@ -218,7 +221,6 @@ describe('NetworkDetailsTabPanel', () => {
           toggleFrequencyGroupExpanded={vi.fn()}
           onOpenFreqCreateWizard={vi.fn()}
           onOpenFreqEditDrawer={vi.fn()}
-          onOpenFreqTechDrawer={vi.fn()}
           onOpenDeleteFreqDialog={vi.fn()}
           onOpenFreqRowActions={vi.fn()}
           onCloseFreqRowActions={vi.fn()}

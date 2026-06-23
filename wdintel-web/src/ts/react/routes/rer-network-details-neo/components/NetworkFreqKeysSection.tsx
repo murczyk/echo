@@ -10,7 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { createFilterOptions } from '@mui/material/Autocomplete';
-import { memo } from 'react';
+import { memo, type Ref } from 'react';
 
 import type { EncryptionKeyData } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -24,6 +24,55 @@ const keyAutocompleteFilterOptions = createFilterOptions<EncryptionKeyData>({
   limit: 10,
 });
 
+const compactAutocompleteSx = (theme: any, hasSelectedKeys: boolean) => ({
+  '& .MuiAutocomplete-root': {
+    minWidth: 0,
+  },
+  '& .MuiOutlinedInput-root': {
+    height: hasSelectedKeys ? 'auto' : 40,
+    minHeight: 40,
+    alignItems: 'center',
+    padding: '0 46px 0 14px !important',
+    fontSize: '0.875rem',
+    lineHeight: 1.4,
+    '&.Mui-disabled': {
+      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      '& .MuiOutlinedInput-notchedOutline': {
+        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+      },
+    },
+  },
+  '& .MuiAutocomplete-inputRoot': {
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    rowGap: hasSelectedKeys ? 0.5 : 0,
+  },
+  '& .MuiAutocomplete-input': {
+    minWidth: 0,
+    height: 40,
+    lineHeight: '20px',
+    padding: '0 !important',
+    margin: 0,
+    boxSizing: 'border-box',
+    fontSize: '0.875rem',
+    fontWeight: 400,
+  },
+  '& .MuiAutocomplete-input::placeholder': {
+    opacity: 1,
+    color: theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary,
+    fontWeight: 400,
+  },
+  '& .MuiAutocomplete-tag': {
+    margin: '2px 4px 2px 0',
+    maxWidth: '100%',
+  },
+  '& .MuiAutocomplete-endAdornment': {
+    top: '50%',
+    right: 10,
+    transform: 'translateY(-50%)',
+  },
+});
+
 type Props = {
   canManageKeys: boolean;
   saving: boolean;
@@ -34,6 +83,7 @@ type Props = {
   selectedKeys: EncryptionKeyData[];
   onSelectedKeysChange: (_event: unknown, next: EncryptionKeyData[]) => void;
   onAddNewKey: () => void;
+  addNewKeyButtonRef?: Ref<HTMLButtonElement>;
   formatKeyLabel: (key: EncryptionKeyData) => string;
 };
 
@@ -47,14 +97,19 @@ function NetworkFreqKeysSectionComponent({
   selectedKeys,
   onSelectedKeysChange,
   onAddNewKey,
+  addNewKeyButtonRef,
   formatKeyLabel,
 }: Props) {
+  const hasSelectedKeys = selectedKeys.length > 0;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 0 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-        <Typography variant="subtitle2">Ключі</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+          Ключі
+        </Typography>
         {canManageKeys ? (
-          <Button size="small" startIcon={<AddIcon />} onClick={onAddNewKey} disabled={saving || networkId === null}>
+          <Button ref={addNewKeyButtonRef} size="small" startIcon={<AddIcon />} onClick={onAddNewKey} disabled={saving || networkId === null}>
             Додати новий ключ
           </Button>
         ) : null}
@@ -84,13 +139,11 @@ function NetworkFreqKeysSectionComponent({
               onChange={onSelectedKeysChange}
               noOptionsText="Немає доступних ключів"
               slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
+              sx={(theme) => compactAutocompleteSx(theme, hasSelectedKeys)}
               renderInput={(params) => (
-                <TextField {...params} placeholder="Пошук і вибір ключів" />
+                <TextField {...params} placeholder="Пошук і вибір ключів" size="small" />
               )}
             />
-            <Typography variant="caption" color="text.secondary">
-              Можна додати кілька ключів до однієї частоти.
-            </Typography>
           </>
         )
       ) : (

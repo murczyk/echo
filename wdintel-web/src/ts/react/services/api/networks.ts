@@ -16,6 +16,8 @@ import type {
   ListNetworkPointsReq,
   ListNetworkPointsRsp,
   NetworkFreqCallsignsReq,
+  NetworkFreqCallsignsBatchReq,
+  NetworkFreqCallsignsBatchRsp,
   NetworkFreqsActivityReq,
   NetworkFreqsRes,
   ReactivateNetworkFreqReq,
@@ -150,6 +152,29 @@ export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<st
   } satisfies NetworkFreqCallsignsReq));
   const normalized = transformSnakeToCamel<{ networkFreqId: number; callsigns: string[] }>(data);
   return normalized.callsigns ?? [];
+}
+
+export async function getNetworkFreqCallsignsBatch(networkFreqIds: number[]): Promise<Map<number, string[]>> {
+  if (networkFreqIds.length === 0) {
+    return new Map();
+  }
+
+  const data = await postJson<NetworkFreqCallsignsBatchRsp>('/api/sigint/network-freq-callsigns-batch', transformCamelToSnake({
+    networkFreqIds,
+  } satisfies NetworkFreqCallsignsBatchReq));
+  const normalized = transformSnakeToCamel<NetworkFreqCallsignsBatchRsp>(data);
+  const callsignsByNetworkFreqId = normalized.callsignsByNetworkFreqId ?? {};
+
+  return new Map(
+    Object.entries(callsignsByNetworkFreqId)
+      .map(([networkFreqId, callsigns]) => {
+        const parsedNetworkFreqId = Number(networkFreqId);
+        return Number.isFinite(parsedNetworkFreqId)
+          ? [parsedNetworkFreqId, Array.isArray(callsigns) ? callsigns : []]
+          : null;
+      })
+      .filter((entry): entry is [number, string[]] => entry !== null),
+  );
 }
 
 export async function getNetworkCallsignRelations(

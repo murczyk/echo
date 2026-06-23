@@ -7294,6 +7294,30 @@ networkFreqCallsignsRspEncoder struct =
         ]
 
 
+type alias NetworkFreqCallsignsBatchReq =
+    { networkFreqIds : List (Int)
+    }
+
+
+networkFreqCallsignsBatchReqEncoder : NetworkFreqCallsignsBatchReq -> Json.Encode.Value
+networkFreqCallsignsBatchReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_freq_ids", (Json.Encode.list (Json.Encode.int)) struct.networkFreqIds )
+        ]
+
+
+type alias NetworkFreqCallsignsBatchRsp =
+    { callsignsByNetworkFreqId : Dict String (List (String))
+    }
+
+
+networkFreqCallsignsBatchRspEncoder : NetworkFreqCallsignsBatchRsp -> Json.Encode.Value
+networkFreqCallsignsBatchRspEncoder struct =
+    Json.Encode.object
+        [ ( "callsigns_by_network_freq_id", (Json.Encode.dict identity (Json.Encode.list (Json.Encode.string))) struct.callsignsByNetworkFreqId )
+        ]
+
+
 type SingleNetworkCallsignsSection
     = Everything
     | Catalog
@@ -12758,6 +12782,18 @@ networkFreqCallsignsRspDecoder =
     Json.Decode.succeed NetworkFreqCallsignsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+
+
+networkFreqCallsignsBatchReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsBatchReq
+networkFreqCallsignsBatchReqDecoder =
+    Json.Decode.succeed NetworkFreqCallsignsBatchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+networkFreqCallsignsBatchRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsBatchRsp
+networkFreqCallsignsBatchRspDecoder =
+    Json.Decode.succeed NetworkFreqCallsignsBatchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_by_network_freq_id" (Json.Decode.dict (Json.Decode.list (Json.Decode.string)))))
 
 
 singleNetworkCallsignsSectionDecoder : Json.Decode.Decoder SingleNetworkCallsignsSection

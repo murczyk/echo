@@ -45,17 +45,29 @@ export function NetworkFreqActivityPeriodControl({
   };
 
   return (
-    <Stack spacing={3} aria-labelledby={labelId}>
+    <Stack spacing={2} aria-labelledby={labelId}>
       <Box>
         <Typography id={labelId} variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600 }}>
           Активність
         </Typography>
 
-        <ButtonGroup size="small" disabled={disabled} sx={{ width: 'fit-content', mt: 1 }}>
-          <Button variant={isActive ? 'contained' : 'outlined'} onClick={handleActivate} disabled={disabled}>
+        <ButtonGroup
+          size="small"
+          disabled={disabled}
+          sx={{
+            width: 'fit-content',
+            mt: 1,
+            height: 40,
+            '& .MuiButton-root': {
+              height: 40,
+              px: 2,
+            },
+          }}
+        >
+          <Button variant={isActive ? 'contained' : 'outlined'} onClick={handleActivate} disabled={disabled} sx={{ fontSize: '0.875rem' }}>
             Активна
           </Button>
-          <Button variant={!isActive ? 'contained' : 'outlined'} onClick={handleDeactivate} disabled={disabled}>
+          <Button variant={!isActive ? 'contained' : 'outlined'} onClick={handleDeactivate} disabled={disabled} sx={{ fontSize: '0.875rem' }}>
             Неактивна
           </Button>
         </ButtonGroup>

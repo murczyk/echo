@@ -16,16 +16,25 @@ import { listMyAdminGroups } from '../../services/api/zones';
 export type SettingsSection = 'general' | 'myGroups' | 'duty' | 'analysis' | 'myReports';
 
 type SettingsNeoPageProps = {
-  section?: SettingsSection;
+  section?: string;
 };
 
 const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
+function serializeSettingsSection(section: SettingsSection): string {
+  if (section === 'myGroups') return 'my-groups';
+  if (section === 'myReports') return 'my-reports';
+  return section;
+}
+
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === 'myGroups' || section === 'my-groups') {
+  if (section === 'my-groups') {
     return 'myGroups';
   }
-  if (section === 'duty' || section === 'analysis' || section === 'myReports') {
+  if (section === 'my-reports') {
+    return 'myReports';
+  }
+  if (section === 'duty' || section === 'analysis') {
     return section;
   }
   return 'myGroups';
@@ -37,9 +46,38 @@ function readSettingsSectionFromUrl(): SettingsSection {
 
 function buildSettingsSectionUrl(section: SettingsSection): string {
   const url = new URL(window.location.href);
-  url.searchParams.set(SETTINGS_SECTION_QUERY_PARAM, section);
+  url.searchParams.set(SETTINGS_SECTION_QUERY_PARAM, serializeSettingsSection(section));
   url.hash = '';
   return url.pathname + url.search + url.hash;
+}
+
+function renderMyReportsTabLabel() {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}>
+      <span>Мої звіти</span>
+      <Box
+        component="span"
+        sx={(theme) => ({
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          px: 0.5,
+          py: 0.15,
+          borderRadius: 9999,
+          border: 1,
+          borderColor: theme.palette.mode === 'dark' ? 'var(--ochre-normal)' : '#d28b1d',
+          bgcolor: theme.palette.mode === 'dark' ? 'var(--ochre-dark)' : '#f0c97a',
+          color: theme.palette.mode === 'dark' ? 'var(--ochre-light)' : '#8a4f00',
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          lineHeight: 1,
+          minHeight: 22,
+        })}
+      >
+        BETA
+      </Box>
+    </Box>
+  );
 }
 
 export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
@@ -149,7 +187,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
             <Tab
               value="myReports"
-              label="Мої Звіти (бета)"
+              label={renderMyReportsTabLabel()}
               id="settings-neo-tab-my-reports"
               aria-controls="settings-neo-panel-my-reports"
             />

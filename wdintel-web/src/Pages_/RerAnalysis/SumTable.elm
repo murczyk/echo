@@ -407,9 +407,9 @@ sumTableBlock2 model shared route sumTable =
                 --     [ text <| String.fromInt kmzDotsNum ]
                 ]
             , a
-                [ href "/settings-neo?section=myReports"
+                [ href "/settings-neo?section=my-reports"
                 , class "text-sm align-self-center"
                 ]
-                [ text "Переглядайте свої звіти в Налаштування -> Мої Звіти" ]
+                [ text "Переглядайте свої звіти в Налаштування > Мої звіти" ]
             ]
         ]

@@ -42,7 +42,7 @@ settingsSection : Route () -> String
 settingsSection route =
     route.query
         |> Dict.get "section"
-        |> Maybe.withDefault "myGroups"
+        |> Maybe.withDefault "my-groups"
 
 
 toLayout : Auth.User -> Route () -> Model -> Layouts.Layout Msg
@@ -57,7 +57,7 @@ toLayout user route _ =
                 "analysis" ->
                     "settings-neo-analysis"
 
-                "reports" ->
+                "my-reports" ->
                     "settings-neo"
 
                 _ ->

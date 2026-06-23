@@ -7,6 +7,7 @@ import type { Palitra } from '../../../../../Bindings';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
   getDefaultMrtContainerProps,
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
@@ -200,11 +201,15 @@ export function PalitraTable({
       },
     },
     muiTablePaperProps: ({ table }) => {
-      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'list' });
+      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
       return {
         ...paperProps,
         sx: {
           ...((paperProps as { sx?: object }).sx ?? {}),
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           ...(isInitialLoading
             ? {
                 backgroundImage: 'none',
@@ -222,7 +227,7 @@ export function PalitraTable({
     muiTableContainerProps: ({ table }) =>
       getDefaultMrtContainerProps({
         loading: showTableOverlay,
-        layout: 'list',
+        layout: 'workspace',
         fullScreen: table.getState().isFullScreen,
         hasRows: rows.length > 0,
       }),
@@ -268,6 +273,9 @@ export function PalitraTable({
   return (
     <Box
       sx={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
         height: '100%',
         minHeight: 0,
         overflowY: showTableOverlay ? 'hidden' : 'auto',

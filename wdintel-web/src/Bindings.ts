@@ -2804,6 +2804,14 @@ export type NetworkFreqCallsignsRsp = {
   callsigns: Array<string>;
 };
 
+export type NetworkFreqCallsignsBatchReq = {
+  networkFreqIds: Array<number>;
+};
+
+export type NetworkFreqCallsignsBatchRsp = {
+  callsignsByNetworkFreqId: Record<string, Array<string>>;
+};
+
 export type SingleNetworkCallsignsSection =
   | 'Everything'
   | 'Catalog'

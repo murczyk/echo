@@ -961,10 +961,10 @@ view user model shared route =
                         ]
                     |> Button.view
                 , a
-                    [ href "/settings-neo?section=myReports"
+                    [ href "/settings-neo?section=my-reports"
                     , class "text-sm"
                     ]
-                    [ text "Переглядайте свої звіти в Налаштування -> Мої Звіти" ]
+                    [ text "Переглядайте свої звіти в Налаштування > Мої звіти" ]
                 ]
             ]
 

@@ -136,6 +136,8 @@ export function NetworkDetailsNeoPageBody({
       freqsLoaded={page.freqsLoaded}
       freqsLoading={page.freqsLoading}
       freqsError={page.freqsError}
+      freqCallsignsById={page.freqCallsignsById}
+      freqCallsignsStatus={page.freqCallsignsStatus}
       networkActivity={page.networkActivity}
       networkActivityLoaded={page.networkActivityLoaded}
       networkActivityLoading={page.networkActivityLoading}
@@ -151,7 +153,6 @@ export function NetworkDetailsNeoPageBody({
       toggleFrequencyGroupExpanded={page.toggleFrequencyGroupExpanded}
       onOpenFreqCreateWizard={page.openFreqCreateWizard}
       onOpenFreqEditDrawer={page.openFreqEditDrawer}
-      onOpenFreqTechDrawer={page.openFreqTechDrawer}
       onOpenDeleteFreqDialog={page.openDeleteFreqDialog}
       onOpenFreqRowActions={page.openFreqRowActions}
       onCloseFreqRowActions={page.closeFreqRowActions}

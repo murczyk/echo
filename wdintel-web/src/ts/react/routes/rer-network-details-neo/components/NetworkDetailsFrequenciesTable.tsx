@@ -1,9 +1,8 @@
-import BuildIcon from '@mui/icons-material/Build';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Box, Button, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -168,12 +167,13 @@ export type NetworkDetailsFrequenciesTableProps = {
   freqsLoaded: boolean;
   freqsLoading: boolean;
   freqsError: string | null;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
   modulations: ModulationRec[];
   expandedFrequencyGroupIds: string[];
   onToggleFrequencyGroupExpanded: (groupId: string) => void;
   onOpenFreqCreateWizard: () => void;
   onOpenFreqEditDrawer: (freq: NetworkFreqsRes) => void;
-  onOpenFreqTechDrawer: (freq: NetworkFreqsRes) => void;
   onOpenDeleteFreqDialog: (freq: NetworkFreqsRes) => void;
   onOpenFreqRowActions: (anchorEl: HTMLElement, freqId: number) => void;
   onCloseFreqRowActions: () => void;
@@ -183,7 +183,10 @@ export type NetworkDetailsFrequenciesTableProps = {
   onReloadFrequencies: () => void;
 };
 
-function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
+function buildColumns(
+  freqCallsignsById: Map<number, string[]>,
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error',
+): MRT_ColumnDef<NetworkFreqTableRow>[] {
   return [
     {
       header: 'Частота',
@@ -225,6 +228,22 @@ function buildColumns(): MRT_ColumnDef<NetworkFreqTableRow>[] {
       enableSorting: false,
       Cell: ({ row }) => {
         const label = getRowCallsignLabel(row.original);
+        const freqIds = row.original.kind === 'group' ? row.original.freqIds : [row.original.freq.networkFreqId];
+        const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
+        if (freqCallsignsStatus === 'loading' && !isLoaded) {
+          return <CircularProgress size={14} />;
+        }
+        if (freqCallsignsStatus === 'error' && !isLoaded) {
+          return (
+            <Tooltip title="Позивні не завантажено" arrow>
+              <Box component="span" aria-label="Не завантажено">
+                <Typography variant="body2" color="error" fontWeight={600} noWrap>
+                  Не завантажено
+                </Typography>
+              </Box>
+            </Tooltip>
+          );
+        }
         return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
       },
     },
@@ -251,12 +270,13 @@ function NetworkDetailsFrequenciesTableContent({
   freqsLoaded,
   freqsLoading,
   freqsError,
+  freqCallsignsById,
+  freqCallsignsStatus,
   modulations,
   expandedFrequencyGroupIds,
   onToggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
   onOpenFreqEditDrawer,
-  onOpenFreqTechDrawer,
   onOpenDeleteFreqDialog,
   onOpenFreqRowActions,
   onCloseFreqRowActions,
@@ -273,9 +293,9 @@ function NetworkDetailsFrequenciesTableContent({
       statusFilterValue === 'Усі'
         ? freqs
         : freqs.filter((freq) => (statusFilterValue === 'active' ? freq.isActive : !freq.isActive));
-    const groupedRows = buildNetworkFreqRows(filteredFreqs, modulationsById, expandedFrequencyGroupIds);
+    const groupedRows = buildNetworkFreqRows(filteredFreqs, modulationsById, freqCallsignsById, expandedFrequencyGroupIds);
     return sortNetworkFreqRowsByTableOrder(groupedRows, tableStateContext.sorting, statusFilterValue);
-  }, [expandedFrequencyGroupIds, freqs, modulationsById, statusFilterValue, tableStateContext.sorting]);
+  }, [expandedFrequencyGroupIds, freqs, freqCallsignsById, modulationsById, statusFilterValue, tableStateContext.sorting]);
   const loadingRows = useMemo(() => buildLoadingRows(), []);
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
@@ -304,8 +324,8 @@ function NetworkDetailsFrequenciesTableContent({
   );
 
   const columns = useMemo<MRT_ColumnDef<NetworkFreqTableRow>[]>(() => {
-    return [...buildColumns()];
-  }, []);
+    return [...buildColumns(freqCallsignsById, freqCallsignsStatus)];
+  }, [freqCallsignsById, freqCallsignsStatus]);
   const table = useMaterialReactTable({
     columns,
     data: isInitialLoading && rows.length === 0 ? loadingRows : rows,
@@ -357,7 +377,6 @@ function NetworkDetailsFrequenciesTableContent({
       return (
         <MrtRowActions>
           <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} opensModal />
-          <MrtRowActionButton label="Редагувати тех. дані" onClick={() => onOpenFreqTechDrawer(freqRow)} icon={<BuildIcon fontSize="small" />} opensModal />
           <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" opensModal />
         </MrtRowActions>
       );

@@ -173,6 +173,11 @@ function joinCallsigns(callsigns: Array<string> | null | undefined): string {
   return uniqueValues.join(', ');
 }
 
+function joinCallsignsByFreqIds(freqIds: number[], callsignsById: Map<number, string[]>): string {
+  const callsigns = freqIds.flatMap((freqId) => callsignsById.get(freqId) ?? []);
+  return joinCallsigns(callsigns);
+}
+
 function compareFreqsByUnits(left: NetworkFreqsRes, right: NetworkFreqsRes): number {
   if (left.isActive !== right.isActive) {
     return left.isActive ? -1 : 1;
@@ -371,7 +376,11 @@ function buildGroupId(freqs: NetworkFreqsRes[]): string {
   return `freq-group:${freqs.map((freq) => freq.networkFreqId).join('-')}`;
 }
 
-function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, string>): NetworkFreqGroupRow {
+function buildGroupRow(
+  freqs: NetworkFreqsRes[],
+  modulationsById: Map<number, string>,
+  callsignsById: Map<number, string[]>,
+): NetworkFreqGroupRow {
   const firstFreq = freqs[0] ?? null;
   const typeLabels = freqs.map((freq) => typeLabelFromKind(freq.kind));
   const encryptionLabels = freqs.map((freq) =>
@@ -393,7 +402,7 @@ function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, st
     typeLabel: collectUniqueLabels(typeLabels) ?? 'Змішано',
     encryptionLabel: collectUniqueLabels(encryptionLabels) ?? 'Змішано',
     messageCount: counts.reduce((sum, value) => sum + value, 0),
-    callsignLabel: joinCallsigns(freqs.flatMap((freq) => freq.callsigns ?? [])),
+    callsignLabel: joinCallsignsByFreqIds(freqs.map((freq) => freq.networkFreqId), callsignsById),
     lastDatetime,
     isActive: freqs.every((freq) => freq.isActive),
     sortFreqUnits: firstFreq ? parseNetworkFreqUnits(firstFreq.freq) : null,
@@ -404,6 +413,7 @@ function buildGroupRow(freqs: NetworkFreqsRes[], modulationsById: Map<number, st
 function buildFreqRow(
   freq: NetworkFreqsRes,
   modulationsById: Map<number, string>,
+  callsignsById: Map<number, string[]>,
   parentGroupId: string | null = null,
 ): NetworkFreqRow {
   return {
@@ -414,7 +424,7 @@ function buildFreqRow(
     displayFreq: normalizeFrequencyLabel(freq.freq),
     typeLabel: typeLabelFromKind(freq.kind),
     encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], modulationsById, freq.modulationId, freq.modulation),
-    callsignLabel: joinCallsigns(freq.callsigns),
+    callsignLabel: joinCallsignsByFreqIds([freq.networkFreqId], callsignsById),
     sortFreqUnits: parseNetworkFreqUnits(freq.freq),
     sortNetworkFreqId: freq.networkFreqId,
   };
@@ -423,6 +433,7 @@ function buildFreqRow(
 export function buildNetworkFreqRows(
   freqs: NetworkFreqsRes[],
   modulationsById: Map<number, string>,
+  callsignsById: Map<number, string[]>,
   expandedGroupIds: string[],
 ): NetworkFreqTableRow[] {
   const sortedFreqs = sortNetworkFreqsByFrequencyOrder(freqs);
@@ -434,7 +445,7 @@ export function buildNetworkFreqRows(
     const startUnits = parseNetworkFreqUnits(startFreq.freq);
 
     if (startUnits === null) {
-      rows.push(buildFreqRow(startFreq, modulationsById));
+      rows.push(buildFreqRow(startFreq, modulationsById, callsignsById));
       continue;
     }
 
@@ -451,16 +462,16 @@ export function buildNetworkFreqRows(
     }
 
     if (cluster.length === 1) {
-      rows.push(buildFreqRow(startFreq, modulationsById));
+      rows.push(buildFreqRow(startFreq, modulationsById, callsignsById));
       continue;
     }
 
-    const groupRow = buildGroupRow(cluster, modulationsById);
+    const groupRow = buildGroupRow(cluster, modulationsById, callsignsById);
     rows.push(groupRow);
 
     if (expandedGroupIdSet.has(groupRow.groupId)) {
       for (const freq of cluster) {
-        rows.push(buildFreqRow(freq, modulationsById, groupRow.groupId));
+        rows.push(buildFreqRow(freq, modulationsById, callsignsById, groupRow.groupId));
       }
     }
 

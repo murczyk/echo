@@ -42,6 +42,11 @@ describe('frequency utils', () => {
   });
 
   it('groups adjacent frequencies within the spread threshold', () => {
+    const callsignsById = new Map<number, string[]>([
+      [10, ['Alpha']],
+      [11, ['Bravo']],
+      [12, ['Charlie']],
+    ]);
     const rows = buildNetworkFreqRows(
       [
         createFreq({ networkFreqId: 10, freq: '652.1111', messageCount: 2, callsigns: ['Alpha'], kind: 'VHF' }),
@@ -49,6 +54,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], kind: 'DMR' }),
       ],
       new Map(),
+      callsignsById,
       [],
     );
 
@@ -85,6 +91,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 20, freq: '652.5100', isActive: false }),
       ],
       new Map(),
+      new Map(),
       [],
     );
 
@@ -102,6 +109,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 20, freq: '652.5100', isActive: false }),
       ],
       new Map(),
+      new Map(),
       [],
     );
 
@@ -118,6 +126,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 20, freq: '652.9000', messageCount: 5, isActive: true }),
       ],
       new Map(),
+      new Map(),
       ['freq-group:10-11'],
     );
 
@@ -132,6 +141,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 10, freq: '652.1111', kind: 'DMRe' }),
         createFreq({ networkFreqId: 11, freq: '652.1500', kind: 'DMR' }),
       ],
+      new Map(),
       new Map(),
       [],
     );
@@ -148,6 +158,7 @@ describe('frequency utils', () => {
         createFreq({ networkFreqId: 10, freq: '652.1111', isActive: true }),
         createFreq({ networkFreqId: 11, freq: '652.1200', isActive: false }),
       ],
+      new Map(),
       new Map(),
       [],
     );

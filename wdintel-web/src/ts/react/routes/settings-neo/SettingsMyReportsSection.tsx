@@ -10,7 +10,6 @@ import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
 import { downloadReportHistory, listReportHistory, retryReportHistory } from '../../services/api/report-history';
 import { PowerAlert } from '../../components/PowerAlert';
-import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
 
@@ -105,6 +104,14 @@ const REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX = {
   flexDirection: 'column',
 } as const;
 
+const REPORT_LOADING_ROW_COUNT = 8;
+
+const REPORTS_LOADING_TABLE_WRAPPER_SX = {
+  height: 384,
+  minHeight: 384,
+  maxHeight: 384,
+} as const;
+
 const REPORT_STATUS_LABELS: Record<string, string> = {
   planned: 'В черзі',
   in_progress: 'Формується',
@@ -157,7 +164,7 @@ function statusColor(status: string): 'default' | 'primary' | 'success' | 'error
 }
 
 function buildReportLoadingRows(): ReportHistoryRow[] {
-  return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+  return Array.from({ length: REPORT_LOADING_ROW_COUNT }, (_, index) => ({
     id: -index - 1,
     reportKind: '',
     requestedBy: '',
@@ -175,7 +182,7 @@ export function SettingsMyReportsSection({ active }: Props) {
   return (
     <ReportHistoryTableSection
       active={active}
-      title="Мої Звіти"
+      title="Мої звіти"
       tableId="settings-neo-my-reports-v1"
       panelId="settings-neo-panel-my-reports"
       labelledBy="settings-neo-tab-my-reports"
@@ -396,6 +403,7 @@ export function ReportHistoryTableSection({
             <Box
               sx={{
                 ...REPORTS_TABLE_WRAPPER_SX,
+                ...(loadState === 'loading' && !fullHeight ? REPORTS_LOADING_TABLE_WRAPPER_SX : {}),
                 ...(fullHeight ? REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX : {}),
               }}
             >

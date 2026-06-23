@@ -75,7 +75,6 @@ export type NetworkFreqCreateWizardForm = {
   freq: string;
   kind: NetworkFreqKind;
   modulationId: number | null;
-  description: string;
   activeFrom: string;
   activeTo: string;
   encryptionKeyIds: number[];
@@ -83,16 +82,15 @@ export type NetworkFreqCreateWizardForm = {
 
 export type NetworkFreqEditForm = {
   networkFreqId: number;
+  freq: string;
   kind: NetworkFreqKind;
   modulationId: number | null;
   activeFrom: string;
   activeTo: string;
-};
-
-export type NetworkFreqTechDataForm = {
-  networkFreqId: number;
   encryptionKeyIds: number[];
 };
+
+export type NetworkFreqCallsignsStatus = 'idle' | 'loading' | 'success' | 'error';
 
 export type NetworkDetailsNeoPageState = {
   network: Network | null;
@@ -102,6 +100,8 @@ export type NetworkDetailsNeoPageState = {
   freqsLoading: boolean;
   freqsError: string | null;
   freqActivityByFreq: NetworkFreqActivityByFreq;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: NetworkFreqCallsignsStatus;
   networkActivity: Record<string, Record<string, number>>;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
@@ -194,7 +194,6 @@ export type NetworkDetailsNeoPageState = {
   freqRowActionMenuAnchorEl: HTMLElement | null;
   freqRowActionTargetId: number | null;
   freqCreateWizardOpen: boolean;
-  freqCreateWizardStep: 1 | 2;
   freqCreateWizardForm: NetworkFreqCreateWizardForm;
   freqCreateWizardSaving: boolean;
   freqCreateWizardError: string | null;
@@ -202,10 +201,6 @@ export type NetworkDetailsNeoPageState = {
   freqEditDrawerForm: NetworkFreqEditForm | null;
   freqEditDrawerSaving: boolean;
   freqEditDrawerError: string | null;
-  freqTechDrawerOpen: boolean;
-  freqTechDrawerForm: NetworkFreqTechDataForm | null;
-  freqTechDrawerSaving: boolean;
-  freqTechDrawerError: string | null;
   freqDeleteDialogOpen: boolean;
   freqDeleteTarget: NetworkFreqsRes | null;
   freqDeleteSubmitting: boolean;
@@ -245,6 +240,8 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqsLoading: false,
   freqsError: null,
   freqActivityByFreq: {},
+  freqCallsignsById: new Map(),
+  freqCallsignsStatus: 'idle',
   networkActivity: {},
   networkActivityLoaded: false,
   networkActivityLoading: false,
@@ -341,12 +338,10 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqRowActionMenuAnchorEl: null,
   freqRowActionTargetId: null,
   freqCreateWizardOpen: false,
-  freqCreateWizardStep: 1,
   freqCreateWizardForm: {
     freq: '',
     kind: 'DMR',
     modulationId: null,
-    description: '',
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -357,10 +352,6 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqEditDrawerForm: null,
   freqEditDrawerSaving: false,
   freqEditDrawerError: null,
-  freqTechDrawerOpen: false,
-  freqTechDrawerForm: null,
-  freqTechDrawerSaving: false,
-  freqTechDrawerError: null,
   freqDeleteDialogOpen: false,
   freqDeleteTarget: null,
   freqDeleteSubmitting: false,

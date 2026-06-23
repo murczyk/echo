@@ -123,9 +123,8 @@ vi.mock('./components/NetworkDetailsTabPanel', () => ({
 vi.mock('./components/NetworkDescriptionDrawer', () => ({ NetworkDescriptionDrawer: () => null }));
 vi.mock('./components/NetworkEditDrawer', () => ({ NetworkEditDrawer: () => null }));
 vi.mock('./components/NetworkCallsignDrawer', () => ({ NetworkCallsignDrawer: () => null }));
-vi.mock('./components/NetworkFreqCreateWizard', () => ({ NetworkFreqCreateWizard: () => null }));
+vi.mock('./components/NetworkFreqCreateDrawer', () => ({ NetworkFreqCreateDrawer: () => null }));
 vi.mock('./components/NetworkFreqEditDrawer', () => ({ NetworkFreqEditDrawer: () => null }));
-vi.mock('./components/NetworkFreqTechDataDrawer', () => ({ NetworkFreqTechDataDrawer: () => null }));
 vi.mock('./components/NetworkEtalonkaReportDialog', () => ({ NetworkEtalonkaReportDialog: () => null }));
 
 vi.mock('@mui/icons-material/ContentCopyOutlined', () => ({ default: () => <span /> }));
@@ -185,16 +184,11 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     openFreqCreateWizard: noop,
     closeFreqCreateWizard: noop,
     setFreqCreateWizardForm: noop,
-    setFreqCreateWizardStep: noop,
     saveFreqCreateWizard: noop,
     openFreqEditDrawer: noop,
     closeFreqEditDrawer: noop,
     setFreqEditDrawerForm: noop,
     saveFreqEditDrawer: noop,
-    openFreqTechDrawer: noop,
-    closeFreqTechDrawer: noop,
-    setFreqTechDrawerForm: noop,
-    saveFreqTechDrawer: noop,
     openFreqRowActions: noop,
     closeFreqRowActions: noop,
     openDeleteFreqDialog: noop,
@@ -286,12 +280,10 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     freqRowActionMenuAnchorEl: null,
     freqRowActionTargetId: null,
     freqCreateWizardOpen: false,
-    freqCreateWizardStep: 1,
     freqCreateWizardForm: {
       freq: '',
       kind: 'DMR',
       modulationId: null,
-      description: '',
       activeFrom: '',
       activeTo: '',
       encryptionKeyIds: [],
@@ -302,10 +294,6 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     freqEditDrawerForm: null,
     freqEditDrawerSaving: false,
     freqEditDrawerError: null,
-    freqTechDrawerOpen: false,
-    freqTechDrawerForm: null,
-    freqTechDrawerSaving: false,
-    freqTechDrawerError: null,
     freqDeleteDialogOpen: false,
     freqDeleteTarget: null,
     freqDeleteSubmitting: false,

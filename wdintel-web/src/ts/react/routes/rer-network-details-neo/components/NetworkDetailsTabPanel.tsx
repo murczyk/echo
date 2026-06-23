@@ -32,6 +32,8 @@ type Props = {
   freqsLoaded: boolean;
   freqsLoading: boolean;
   freqsError: string | null;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
   networkActivity: Record<string, Record<string, number>>;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
@@ -82,7 +84,6 @@ type Props = {
   toggleFrequencyGroupExpanded: (groupId: string) => void;
   onOpenFreqCreateWizard: () => void;
   onOpenFreqEditDrawer: (freq: NetworkFreqsRes) => void;
-  onOpenFreqTechDrawer: (freq: NetworkFreqsRes) => void;
   onOpenDeleteFreqDialog: (freq: NetworkFreqsRes) => void;
   onOpenFreqRowActions: (anchorEl: HTMLElement, freqId: number) => void;
   onCloseFreqRowActions: () => void;
@@ -112,6 +113,8 @@ export function NetworkDetailsTabPanel({
   freqsLoaded,
   freqsLoading,
   freqsError,
+  freqCallsignsById,
+  freqCallsignsStatus,
   networkActivity,
   networkActivityLoaded,
   networkActivityLoading,
@@ -162,7 +165,6 @@ export function NetworkDetailsTabPanel({
   toggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
   onOpenFreqEditDrawer,
-  onOpenFreqTechDrawer,
   onOpenDeleteFreqDialog,
   onOpenFreqRowActions,
   onCloseFreqRowActions,
@@ -226,12 +228,13 @@ export function NetworkDetailsTabPanel({
               freqsLoaded={freqsLoaded}
               freqsLoading={freqsLoading}
               freqsError={freqsError}
+              freqCallsignsById={freqCallsignsById}
+              freqCallsignsStatus={freqCallsignsStatus}
               modulations={modulations}
               expandedFrequencyGroupIds={expandedFrequencyGroupIds}
               onToggleFrequencyGroupExpanded={toggleFrequencyGroupExpanded}
               onOpenFreqCreateWizard={onOpenFreqCreateWizard}
               onOpenFreqEditDrawer={onOpenFreqEditDrawer}
-              onOpenFreqTechDrawer={onOpenFreqTechDrawer}
               onOpenDeleteFreqDialog={onOpenDeleteFreqDialog}
               onOpenFreqRowActions={onOpenFreqRowActions}
               onCloseFreqRowActions={onCloseFreqRowActions}
