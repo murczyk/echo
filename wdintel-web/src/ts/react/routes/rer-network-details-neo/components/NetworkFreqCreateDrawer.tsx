@@ -84,12 +84,12 @@ function NetworkFreqCreateDrawerComponent({
 
   const selectedKeys = useMemo(() => buildSelectedKeys(keys, form.encryptionKeyIds), [form.encryptionKeyIds, keys]);
   const freqValidationError = getFrequencyFormatError(form.freq);
+  const freqError = freqTouched ? freqValidationError : null;
   const newKeyValidationError = validateNetworkFreqNewKey(newKeyForm.key);
   const newKeyError = newKeyTouched ? newKeyValidationError : null;
   const newKeyCreateDisabled = newKeyValidationError !== null;
   const activeFromValidationError = parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
   const activeToValidationError = form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
-  const freqError = freqTouched ? freqValidationError : null;
   const activeFromError = activeFromTouched ? activeFromValidationError : null;
   const activeToError = activeToTouched ? activeToValidationError : null;
   const saveDisabled = saving

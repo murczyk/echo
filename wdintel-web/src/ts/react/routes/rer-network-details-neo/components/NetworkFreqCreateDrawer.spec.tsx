@@ -54,10 +54,11 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean } }) => (
+  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps, helperText }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean }; helperText?: ReactNode }) => (
     <label>
       <span>{label}{required ? ' *' : ''}</span>
       <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined} disabled={disabled ?? false} />
+      {helperText ? <div data-testid="helper-text">{helperText}</div> : null}
     </label>
   ),
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -230,6 +231,22 @@ describe('NetworkFreqCreateDrawer', () => {
 
     expect(view.container.textContent).toContain('Основні дані');
     expect(view.container.textContent).not.toContain("Опис (необов'язково)");
+  });
+
+  it('keeps the frequency error hidden until the field is touched', async () => {
+    const view = renderDrawer(buildForm({ freq: '' }));
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="helper-text"]')).toBeNull();
+
+    const freqInput = view.container.querySelector('input[aria-label="Частота *"]') as HTMLInputElement | null;
+    await act(async () => {
+      freqInput?.focus();
+      freqInput?.blur();
+      await Promise.resolve();
+    });
+
+    expect(view.container.querySelector('[data-testid="helper-text"]')?.textContent).toContain("Це поле обов");
   });
 
   it('marks the new key field as required', () => {

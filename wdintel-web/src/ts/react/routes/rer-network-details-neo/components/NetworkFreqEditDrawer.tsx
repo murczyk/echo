@@ -238,7 +238,6 @@ function NetworkFreqEditDrawerComponent({
               activeFromError={activeFromError}
               activeToError={activeToError}
               onKindChange={(nextKind) => onChange({ ...form, kind: nextKind })}
-              onFreqChange={(nextValue) => onChange({ ...form, freq: nextValue })}
               onModulationChange={(modulationId) => onChange({ ...form, modulationId })}
               onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
               onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}

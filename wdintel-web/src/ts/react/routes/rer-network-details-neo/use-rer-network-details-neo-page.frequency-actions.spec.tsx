@@ -407,6 +407,76 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(latestState?.freqs[0]?.modulationId).toBe(12);
   });
 
+  it('keeps existing callsigns when the edit response omits them and the refresh is still pending', async () => {
+    const pendingCallsigns = createDeferred<string[]>();
+    apiMock.updateNetworkFreqV2.mockResolvedValueOnce({
+      network: buildNetwork(),
+      freq: buildFreq({ networkFreqId: 7, modulationId: 12, freq: '20.0000', callsigns: null }),
+    });
+    apiMock.getNetworkFreqCallsigns.mockReturnValueOnce(pendingCallsigns.promise);
+
+    renderHarness({
+      ...EMPTY_STATE,
+      network: buildNetwork(),
+      freqsLoaded: true,
+      freqActivityByFreq: { 7: [] },
+      freqs: [buildFreq()],
+      freqCallsignsById: new Map([[7, ['ALPHA']]]),
+      freqCallsignsStatus: 'success',
+      freqEditDrawerOpen: true,
+      freqEditDrawerForm: {
+        ...buildEditForm(buildFreq()),
+        freq: '22.0000',
+        encryptionKeyIds: [13],
+      },
+      freqEditDrawerSaving: false,
+    });
+
+    await act(async () => {
+      await latestActions?.saveFreqEditDrawer();
+      await Promise.resolve();
+    });
+
+    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
+    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(7);
+    expect(latestState?.freqCallsignsById.get(7)).toEqual(['ALPHA']);
+    expect(latestState?.freqs[0]?.modulationId).toBe(12);
+  });
+
+  it('uses response callsigns immediately when the edit response includes them', async () => {
+    const pendingCallsigns = createDeferred<string[]>();
+    apiMock.updateNetworkFreqV2.mockResolvedValueOnce({
+      network: buildNetwork(),
+      freq: buildFreq({ networkFreqId: 7, modulationId: 12, freq: '20.0000', callsigns: ['BRAVO'] }),
+    });
+    apiMock.getNetworkFreqCallsigns.mockReturnValueOnce(pendingCallsigns.promise);
+
+    renderHarness({
+      ...EMPTY_STATE,
+      network: buildNetwork(),
+      freqsLoaded: true,
+      freqActivityByFreq: { 7: [] },
+      freqs: [buildFreq()],
+      freqCallsignsById: new Map([[7, ['ALPHA']]]),
+      freqCallsignsStatus: 'success',
+      freqEditDrawerOpen: true,
+      freqEditDrawerForm: {
+        ...buildEditForm(buildFreq()),
+        freq: '22.0000',
+        encryptionKeyIds: [13],
+      },
+      freqEditDrawerSaving: false,
+    });
+
+    await act(async () => {
+      await latestActions?.saveFreqEditDrawer();
+      await Promise.resolve();
+    });
+
+    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
+    expect(latestState?.freqCallsignsById.get(7)).toEqual(['BRAVO']);
+  });
+
   it('keeps fresher single-row callsigns when batch hydration resolves later for the same freq', async () => {
     const singleCallsigns = createDeferred<string[]>();
     const batchCallsigns = createDeferred<Map<number, string[]>>();

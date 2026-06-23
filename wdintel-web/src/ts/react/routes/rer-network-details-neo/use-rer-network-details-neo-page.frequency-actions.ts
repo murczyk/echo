@@ -92,9 +92,11 @@ function applyNetworkFreqMutationResponse(
   }
 
   const freqs = upsertNetworkFreqRow(state.freqs, responseFreq);
+  const existingCallsigns = state.freqCallsignsById.get(responseFreq.networkFreqId) ?? [];
+  const nextCallsigns = responseFreq.callsigns ?? existingCallsigns;
   const freqCallsignsById = new Map([
     ...state.freqCallsignsById,
-    [responseFreq.networkFreqId, []],
+    [responseFreq.networkFreqId, nextCallsigns],
   ]);
   const freqActivityByFreq =
     mode === 'create'

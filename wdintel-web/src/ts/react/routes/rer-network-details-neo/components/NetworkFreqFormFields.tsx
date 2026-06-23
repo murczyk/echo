@@ -6,7 +6,6 @@ import type { ModulationRec } from '../../../../../Bindings';
 import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { PowerChip } from '../../../components/PowerChip';
 import type { NetworkFreqKind } from '../use-rer-network-details-neo-page.types';
-import { getFrequencyFormatError } from '../use-rer-network-details-neo-page.shared';
 
 type Props = {
   mode: 'create' | 'edit';
@@ -16,6 +15,7 @@ type Props = {
   freq: string;
   activeFrom: string;
   activeTo: string;
+  freqError?: string | null;
   activeFromError?: string | null;
   activeToError?: string | null;
   onKindChange: (kind: NetworkFreqKind) => void;
@@ -189,6 +189,7 @@ export function NetworkFreqFormFields({
   freq,
   activeFrom,
   activeTo,
+  freqError,
   activeFromError,
   activeToError,
   onKindChange,
@@ -209,7 +210,6 @@ export function NetworkFreqFormFields({
   const freqDisabled = saving || mode === 'edit';
   const deviationSelectValue = freq.trim();
   const showDeviationPlaceholder = deviationSelectValue === '';
-  const freqValidationError = mode === 'create' ? getFrequencyFormatError(freq) : null;
 
   useEffect(() => {
     if (!isDmrModulation) {
@@ -238,8 +238,8 @@ export function NetworkFreqFormFields({
         inputProps={mode === 'edit' ? { readOnly: true } : undefined}
         size="small"
         fullWidth
-        error={freqValidationError !== null && freqValidationError !== undefined}
-        helperText={freqValidationError ?? undefined}
+        error={freqError !== null && freqError !== undefined}
+        helperText={freqError ?? undefined}
         sx={compactTextFieldSx}
       />
 
