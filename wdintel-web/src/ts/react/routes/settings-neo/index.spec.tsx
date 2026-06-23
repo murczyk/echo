@@ -160,6 +160,10 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
   SettingsSharedTagsLayoutCard: () => <div />,
 }));
 
+vi.mock('./SettingsMyReportsSection', () => ({
+  SettingsMyReportsSection: ({ active }: { active: boolean }) => <div>{active ? 'reports-active' : 'reports-inactive'}</div>,
+}));
+
 import { SettingsNeoPage } from './index';
 
 function deferred<T>() {
@@ -177,6 +181,7 @@ describe('SettingsNeoPage', () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    window.history.replaceState({}, '', '/settings-neo');
     saveUserDutySettings.mockReset();
     saveUserDutySettings.mockResolvedValue(undefined);
     fetchServerInfoMock.mockReset();
@@ -287,6 +292,33 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Мої групи');
   });
 
+  it('renders the my reports tab with a beta badge', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="my-groups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Мої звіти');
+    expect(container.textContent).toContain('BETA');
+    expect(container.textContent).not.toContain('(бета)');
+  });
+
+  it('accepts canonical kebab-case section values', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="my-reports" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('reports-active');
+    expect(container.textContent).not.toContain('Груп не знайдено');
+  });
+
   it('always shows the my groups tab after an empty successful load', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="duty" />);
@@ -333,7 +365,7 @@ describe('SettingsNeoPage', () => {
 
   it('shows an empty state on the direct my groups section when there are no groups', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="myGroups" />);
+      root.render(<SettingsNeoPage section="my-groups" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -365,7 +397,7 @@ describe('SettingsNeoPage', () => {
     });
 
     await act(async () => {
-      root.render(<SettingsNeoPage section="myGroups" />);
+      root.render(<SettingsNeoPage section="my-groups" />);
     });
     await act(async () => {
       await Promise.resolve();

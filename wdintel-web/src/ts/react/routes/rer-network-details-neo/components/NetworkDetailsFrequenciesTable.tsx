@@ -233,6 +233,17 @@ function buildColumns(
         if (freqCallsignsStatus === 'loading' && !isLoaded) {
           return <CircularProgress size={14} />;
         }
+        if (freqCallsignsStatus === 'error' && !isLoaded) {
+          return (
+            <Tooltip title="Позивні не завантажено" arrow>
+              <Box component="span" aria-label="Не завантажено">
+                <Typography variant="body2" color="error" fontWeight={600} noWrap>
+                  Не завантажено
+                </Typography>
+              </Box>
+            </Tooltip>
+          );
+        }
         return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
       },
     },

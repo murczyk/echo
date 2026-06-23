@@ -1,11 +1,11 @@
 import { ThemeProvider } from "@mui/material/styles";
 import { createRoot, Root } from "react-dom/client";
 
-import { SettingsNeoPage, type SettingsSection } from "./routes/settings-neo";
+import { SettingsNeoPage } from "./routes/settings-neo";
 import { useNeoMuiTheme } from "./mui-theme";
 
 type SettingsNeoRootProps = {
-  section: SettingsSection;
+  section: string;
 };
 
 function SettingsNeoRoot({ section }: SettingsNeoRootProps) {
@@ -47,7 +47,7 @@ class SettingsNeoElement extends HTMLElement {
 
   private renderRoot() {
     if (!this.root) return;
-    const section = (this.getAttribute("data-settings-section") ?? "myGroups") as SettingsSection;
+    const section = this.getAttribute("data-settings-section") ?? "my-groups";
     this.root.render(<SettingsNeoRoot section={section} />);
   }
 }
