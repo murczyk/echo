@@ -431,6 +431,7 @@ getBasicInboxParams model =
     , withoutMetadata = Nothing
     , sortBy = Just B.ImsTimestamp
     , reportTagsOnlyThisUnit = Nothing
+    , onlyWithMedia = Just False
     , ignoreImportedCoords = Just True
     , calculateFreqPelengsSummary = Nothing
     , skipGroupStats = Just True

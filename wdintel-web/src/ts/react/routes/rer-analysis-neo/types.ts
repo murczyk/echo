@@ -62,6 +62,7 @@ export type AnalysisQueryState = Omit<RerAnalysisQueryState, 'dateFromStr' | 'ti
   toDateTimeStr: string;
   filterTagsOption: TagFilterOption;
   includeOnlyNewFreqs: boolean;
+  onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;
 };
 

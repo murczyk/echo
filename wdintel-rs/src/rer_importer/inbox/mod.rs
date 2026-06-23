@@ -952,7 +952,7 @@ mod tests {
         datasource_group, login, organism, sigint_inbox_item,
         sigint_inbox_item_point_token, sigint_inbox_item_tag,
         sigint_zone_datasource, signal_group, signal_message,
-        signal_message_group, tag,
+        signal_message_group, signal_message_media, tag,
     };
     use crate::functest::tests::*;
     use chrono::Utc;
@@ -960,6 +960,7 @@ mod tests {
     use serde_json::json;
     use serial_test::serial;
     use std::sync::Arc;
+    use uuid::Uuid;
 
     async fn seed_message_with_tags(
         env: &Arc<Env>,
@@ -1032,6 +1033,164 @@ mod tests {
         }
 
         Ok(message)
+    }
+
+    async fn seed_message_with_media(
+        env: &Arc<Env>,
+        datasource_group: &datasource_group::Model,
+        content_type: Option<&str>,
+        label: &str,
+    ) -> Result<signal_message::Model, AppError> {
+        let now = Utc::now().naive_utc();
+        let uid = format!("uid-{label}-{}", now.and_utc().timestamp_millis());
+
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("test message {label}"))),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some(uid.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(
+                datasource_group.group_master_key.clone(),
+            )),
+            sender: Set(Some("sender".to_string())),
+            message_uid: Set(Some(uid)),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .context(h!())?;
+
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("123.45".to_string())),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        if let Some(content_type) = content_type {
+            signal_message_media::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                signal_message_id: Set(message.id),
+                content_type: Set(content_type.to_string()),
+                file_ext: Set(None),
+                file_name: Set(None),
+                size_bytes: Set(1),
+                created_at: Set(now),
+            }
+            .insert(&env.dbx)
+            .await
+            .context(h!())?;
+        }
+
+        Ok(message)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_get_inbox_messages_filters_only_with_media() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let image_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("image/png"),
+            "image",
+        )
+        .await
+        .unwrap();
+        let audio_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("audio/ogg"),
+            "audio",
+        )
+        .await
+        .unwrap();
+        let video_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("video/mp4"),
+            "video",
+        )
+        .await
+        .unwrap();
+        let no_media_message =
+            seed_message_with_media(&env, &datasource_group, None, "plain")
+                .await
+                .unwrap();
+        let other_media_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("application/pdf"),
+            "pdf",
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone()];
+        let base_req = InboxMessagesReq {
+            nolimit: Some(true),
+            ..Default::default()
+        };
+
+        let all_messages =
+            get_inbox_messages(&login.login, &logins, &env, &base_req)
+                .await
+                .unwrap();
+        assert_eq!(all_messages.len(), 5);
+
+        let false_req = InboxMessagesReq {
+            only_with_media: Some(false),
+            ..base_req.clone()
+        };
+        let false_messages =
+            get_inbox_messages(&login.login, &logins, &env, &false_req)
+                .await
+                .unwrap();
+        assert_eq!(false_messages.len(), 5);
+
+        let media_req = InboxMessagesReq {
+            only_with_media: Some(true),
+            ..base_req
+        };
+        let media_messages =
+            get_inbox_messages(&login.login, &logins, &env, &media_req)
+                .await
+                .unwrap();
+        let media_ids =
+            media_messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+
+        assert_eq!(media_messages.len(), 3);
+        assert!(media_ids.contains(&image_message.id));
+        assert!(media_ids.contains(&audio_message.id));
+        assert!(media_ids.contains(&video_message.id));
+        assert!(!media_ids.contains(&no_media_message.id));
+        assert!(!media_ids.contains(&other_media_message.id));
     }
 
     #[serial]

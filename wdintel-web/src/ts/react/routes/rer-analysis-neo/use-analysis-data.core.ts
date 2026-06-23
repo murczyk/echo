@@ -30,7 +30,7 @@ export function useAnalysisData({
   const referenceState = useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns });
   const optionsFreqValues = useMemo(() => referenceState.options.freqs.map((option) => option.value), [referenceState.options.freqs]);
   const reloadTriggerKey = useMemo(
-    () => `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}`,
+    () => `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}`,
     [newestFirst, optionsFreqValues, queryState],
   );
   const [filtersLoading, setFiltersLoading] = useState(false);
@@ -206,6 +206,7 @@ export function useAnalysisData({
     groupsActivityLoadedPeriod: sidebarData.groupsActivityLoadedPeriod,
     groupsActivityLoading: sidebarData.groupsActivityLoading,
     hasLoadedInitialMessages: messageList.hasLoadedInitialMessages,
+    // Exposed for map/report flows; `onlyWithMedia` is message-list-only and is applied at message fetch call sites.
     inboxReq: buildInboxReq(queryState, optionsFreqValues),
     botTagAction: messageActionState.botTagAction,
     loadCallsignGraph: sidebarData.loadCallsignGraph,

@@ -1376,7 +1376,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Додати позивний');
   });
 
-  it('renders wav and ogg attachments with the custom audio player', async () => {
+  it('renders wav and ogg attachments with a compact audio host and top padding for the unavailable state', async () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
@@ -1401,6 +1401,9 @@ describe('MessageCard', () => {
 
     const players = view.container.querySelectorAll('custom-audio-player');
     expect(players).toHaveLength(2);
+    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-min-height-px')).toBe('120');
+    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-top-padding-px')).toBe('12');
+    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-z-index')).toBe('0');
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -1647,6 +1650,33 @@ describe('MessageCard', () => {
       expect(link?.getAttribute('target')).toBe('_blank');
       expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
       expect(link?.getAttribute('href')?.startsWith('data:image/svg+xml')).toBe(true);
+      expect(link?.getAttribute('data-picture-thumb-state')).toBe('loaded');
     });
+  });
+
+  it('keeps the image thumbnail footprint visible when the image fails to load', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/broken.png'],
+      },
+    });
+    rendered.push(view);
+
+    const img = view.container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img?.closest('a')?.getAttribute('data-picture-thumb-state')).toBe('loading');
+    expect(view.container.textContent).toContain('Зображення');
+
+    await act(async () => {
+      img?.dispatchEvent(new Event('error', { bubbles: true }));
+    });
+
+    expect(view.container.querySelector('img')).not.toBeNull();
+    const link = view.container.querySelector('a');
+    expect(link?.getAttribute('href')).toBe('https://example.test/files/broken.png');
+    expect(link?.getAttribute('data-picture-thumb-state')).toBe('failed');
+    expect(link?.getAttribute('data-picture-thumb-error-height-px')).toBe('36');
+    expect(view.container.textContent).toContain('Зображення недоступне');
   });
 });
