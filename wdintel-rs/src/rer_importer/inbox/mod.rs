@@ -526,6 +526,9 @@ async fn delete_message(
         }
     };
     txn.commit().await.c(h!())?;
+    if result.is_ok() {
+        fanout_inbox_changed(&env, vec![req.id]).await;
+    }
     result
 }
 
@@ -1322,6 +1325,13 @@ async fn fanout_inbox_changed(env: &Data<Env>, inbox_ids: Vec<i64>) {
         .collect();
     if events.is_empty() {
         return;
+    }
+    if let Err(e) = crate::sigint::network::invalidate_find_live_networks_cache(
+        &mut env.redis.clone(),
+    )
+    .await
+    {
+        warn!("failed to invalidate find-live networks cache: {:#?}", e);
     }
     if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
         warn!("failed to send to redis: {:#?}", e);

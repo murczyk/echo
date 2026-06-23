@@ -8,26 +8,42 @@
 cp .env.example .env
 ```
 
-У `.env.example` `ECHO_*` значення вказані для staging. Для production інтеграції потрібно запросити production base URL, login і password. `CHUMAK_*` значення описують тестовий payload.
+Для staging інтеграції можна використовувати `.env.example` як `.env`: запишіть вміст `.env.example` у `.env`, як у команді вище. У `.env.example` `ECHO_*` значення вказані для staging. Для production інтеграції потрібно запросити production base URL, login і password. `CHUMAK_*` значення описують тестовий payload.
 
 ## Команди
 
 Увійти в Echo і вивести отримані session cookies:
 
 ```sh
-just login
+python3 test_chumak.py login
+```
+
+Очікуваний output:
+
+```text
+PASS: logged in as <ECHO_LOGIN>
+Cookie: <cookie-name>=<session-cookie>; ...
 ```
 
 Знайти активні мережі за обов'язковою частотою та необов'язковими AOR/color code:
 
 ```sh
-just find-networks
+python3 test_chumak.py find-networks
+```
+
+Очікуваний output без збігів:
+
+```text
+Request payload: {"freq": "145.0260", "aor_id": 1, "color_code": "1"}
+{
+  "networks": []
+}
 ```
 
 Створити нове повідомлення Chumak в inbox:
 
 ```sh
-just submit-message
+python3 test_chumak.py submit-message
 ```
 
 ## Пошук активних мереж
@@ -111,7 +127,7 @@ POST /api/rer-importer/inbox/chumak-submit
 Можна надіслати цей payload напряму або використати команду:
 
 ```sh
-just submit-message
+python3 test_chumak.py submit-message
 ```
 
 Приклад request payload:
