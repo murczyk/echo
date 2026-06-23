@@ -33,7 +33,7 @@
     "@tmcw/togeojson": "^5.8.1",
     "bootstrap": "^5.3.3",
     "clsx": "^2.1.1",
-    "@echoua/echo-audio-player": "git+ssh://git@github.com/echoua/milgeo-rs.git#chore/echo-2525-npm-player-package",
+    "@echoua/echo-audio-player": "git+ssh://git@github.com/echoua/milgeo-rs.git#f9fea674777a59c809ccc72bd0377a8830514897",
     "d3": "^7.9.0",
     "dayjs": "^1.11.13",
     "echarts": "^6.1.0",
