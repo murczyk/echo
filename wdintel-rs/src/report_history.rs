@@ -1,4 +1,9 @@
-use crate::config::REPORT_HISTORY_LIST_LIMIT;
+use crate::config::{
+    DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_ETALONKA_WORKER_COUNT,
+    REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
+    REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
+};
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{bgtask, prelude::*, report_history};
 use crate::error::AppError;
@@ -25,6 +30,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
+use std::time::Duration as StdDuration;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -42,6 +48,7 @@ pub const KIND_GOI: &str = "goi";
 const MAX_RETRY_COUNT: i32 = 0;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
 const REPORT_OBJECT_PREFIX: &str = "reports";
+const REPORT_TIMEOUT_LOGIN: &str = "system";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
@@ -584,14 +591,29 @@ pub async fn report_history_download(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<HttpResponse, AppError> {
-    let report_history = find_current_user_report(&env, &user, req.id).await?;
+    let user_login = user.id().c(h!())?;
+    download_report_for_user_login(&env, &user_login, req.id).await
+}
+
+pub async fn download_report_for_user_login(
+    env: &Env,
+    user_login: &str,
+    report_history_id: i64,
+) -> Result<HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, user_login, "Rer")
+        .await
+        .c(h!())?;
+    let report_history =
+        find_report_for_user(&env.dbx, report_history_id, user_login)
+            .await?
+            .ok_or(AppError::NotFound)?;
     if report_history.status != STATUS_DONE {
         return Err(AppError::BL {
             msg: "Report is not ready".to_string(),
         });
     }
     let s3_id = report_history.s3_id.clone().ok_or(AppError::NotFound)?;
-    let bytes = download_report_bytes(&env, &s3_id).await?;
+    let bytes = download_report_bytes(env, &s3_id).await?;
     Ok(make_download_response(
         report_history
             .file_name
@@ -665,6 +687,9 @@ fn make_download_response(
 }
 
 pub async fn reset_in_progress_nofail(env: &Env) {
+    if let Err(err) = fail_timed_out_reports(env).await {
+        error!("failed to fail timed-out report history rows: {err:?}");
+    }
     let res = ReportHistory::update_many()
         .col_expr(
             report_history::Column::Status,
@@ -684,15 +709,42 @@ pub fn spawn_report_history_workers(
     env: std::sync::Arc<Env>,
 ) {
     for (worker_name, report_kind) in worker_report_kinds() {
-        let env = env.clone();
-        let report_kind = report_kind.to_string();
-        crate::utils::worker_watch::spawn_named_worker(
-            worker_name,
-            bg_set,
-            async move {
-                run_report_history_worker_nofail(env, report_kind).await;
-            },
-        );
+        for worker_idx in 0..report_worker_count(report_kind) {
+            let env = env.clone();
+            let report_kind = report_kind.to_string();
+            let worker_name = report_worker_name(worker_name, worker_idx);
+            crate::utils::worker_watch::spawn_named_worker(
+                worker_name,
+                bg_set,
+                async move {
+                    run_report_history_worker_nofail(env, report_kind).await;
+                },
+            );
+        }
+    }
+    let timeout_env = env.clone();
+    crate::utils::worker_watch::spawn_named_worker(
+        "report_history_timeout_worker",
+        bg_set,
+        async move {
+            run_report_history_timeout_worker_nofail(timeout_env).await;
+        },
+    );
+}
+
+fn report_worker_count(report_kind: &str) -> usize {
+    if report_kind == KIND_ETALONKA {
+        REPORT_HISTORY_ETALONKA_WORKER_COUNT
+    } else {
+        1
+    }
+}
+
+fn report_worker_name(worker_name: &str, worker_idx: usize) -> String {
+    if worker_idx == 0 {
+        worker_name.to_string()
+    } else {
+        format!("{worker_name}_{worker_idx}")
     }
 }
 
@@ -723,6 +775,18 @@ async fn run_report_history_worker_nofail(
                 .await;
             }
         }
+    }
+}
+
+async fn run_report_history_timeout_worker_nofail(env: std::sync::Arc<Env>) {
+    loop {
+        if let Err(err) = fail_timed_out_reports(env.as_ref()).await {
+            error!("report history timeout worker failed: {err:?}");
+        }
+        tokio::time::sleep(StdDuration::from_secs(
+            REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
+        ))
+        .await;
     }
 }
 
@@ -760,6 +824,7 @@ async fn take_next_report(
     report_kind: &str,
 ) -> Result<Option<report_history::Model>, AppError> {
     let txn = dbx.begin().await.c(h!())?;
+    let serialize_by_user = report_kind == KIND_ETALONKA;
     let stmt = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -769,6 +834,38 @@ async fn take_next_report(
             where status = 'planned'
               and report_kind = $1
               and (planned_for_ts is null or planned_for_ts <= now() at time zone 'utc')
+              and (
+                  $2 = false
+                  or (
+                      not exists (
+                          select 1
+                          from report_history active_report
+                          where active_report.status = 'in_progress'
+                            and active_report.report_kind = report_history.report_kind
+                            and active_report.requested_by = report_history.requested_by
+                      )
+                      and not exists (
+                          select 1
+                          from report_history earlier_report
+                          where earlier_report.status = 'planned'
+                            and earlier_report.report_kind = report_history.report_kind
+                            and earlier_report.requested_by = report_history.requested_by
+                            and (
+                                earlier_report.planned_for_ts is null
+                                or earlier_report.planned_for_ts <= now() at time zone 'utc'
+                            )
+                            and (
+                                coalesce(earlier_report.planned_for_ts, earlier_report.created_at),
+                                earlier_report.created_at,
+                                earlier_report.id
+                            ) < (
+                                coalesce(report_history.planned_for_ts, report_history.created_at),
+                                report_history.created_at,
+                                report_history.id
+                            )
+                      )
+                  )
+              )
             order by coalesce(planned_for_ts, created_at), created_at, id
             for update skip locked
             limit 1
@@ -783,7 +880,7 @@ async fn take_next_report(
         where id in (select id from next_report)
         returning *
         "#,
-        [report_kind.into()],
+        [report_kind.into(), serialize_by_user.into()],
     );
     let report_history = report_history::Model::find_by_statement(stmt)
         .one(&txn)
@@ -799,14 +896,35 @@ async fn process_report(
 ) -> Result<(), AppError> {
     let bgtask = create_running_bgtask(&env.dbx).await?;
     set_report_bgtask(env, report_history.id, bgtask.id).await?;
-    let res = generate_and_store_report(env, &report_history, bgtask.id).await;
+    let (res, timed_out) =
+        run_report_with_timeout(env, &report_history, bgtask.id).await;
     let _ = finish_bgtask(Some(bgtask.id), &env.dbx, &res).await;
     match res {
         Ok(()) => Ok(()),
         Err(err) => {
-            handle_report_failure(env, report_history.id, err).await?;
+            if timed_out {
+                handle_report_timeout(env, &report_history, err).await?;
+            } else {
+                handle_report_failure(env, report_history.id, err).await?;
+            }
             Ok(())
         }
+    }
+}
+
+async fn run_report_with_timeout(
+    env: &Env,
+    report_history: &report_history::Model,
+    bgtask_id: i64,
+) -> (Result<(), AppError>, bool) {
+    match tokio::time::timeout(
+        StdDuration::from_secs(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS),
+        generate_and_store_report(env, report_history, bgtask_id),
+    )
+    .await
+    {
+        Ok(res) => (res, false),
+        Err(_) => (Err(report_timeout_error(report_history)), true),
     }
 }
 
@@ -852,14 +970,41 @@ async fn generate_and_store_report(
         .await
         .c(h!())?;
     let s3_id = upload_report_bytes(env, &generated).await?;
-    let mut report_history = report_history.clone().into_active_model();
-    report_history.status = Set(STATUS_DONE.to_string());
-    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-    report_history.s3_id = Set(Some(s3_id));
-    report_history.file_name = Set(Some(generated.file_name));
-    report_history.content_type = Set(Some(generated.content_type));
-    report_history.last_error = Set(None);
-    report_history.update(&env.dbx).await.c(h!())?;
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_DONE.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(report_history::Column::S3Id, Expr::value(Some(s3_id)))
+        .col_expr(
+            report_history::Column::FileName,
+            Expr::value(Some(generated.file_name)),
+        )
+        .col_expr(
+            report_history::Column::ContentType,
+            Expr::value(Some(generated.content_type)),
+        )
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(None::<String>),
+        )
+        .filter(report_history::Column::Id.eq(report_history.id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        return Err(AppError::BL {
+            msg: format!(
+                "Report history row {} was already finished or timed out",
+                report_history.id
+            ),
+        });
+    }
     bgtask_log(Some(bgtask_id), "[3/3] Готово до завантаження", &env.dbx)
         .await
         .c(h!())?;
@@ -1111,6 +1256,136 @@ async fn download_report_bytes(
         s3_id,
     )
     .await
+}
+
+fn report_timeout_message(report_history: &report_history::Model) -> String {
+    format!(
+        "Report generation timed out after {} seconds: id={}, kind={}, requested_by={}",
+        REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS,
+        report_history.id,
+        report_history.report_kind,
+        report_history.requested_by,
+    )
+}
+
+fn report_timeout_error(report_history: &report_history::Model) -> AppError {
+    AppError::BL {
+        msg: report_timeout_message(report_history),
+    }
+}
+
+async fn fail_timed_out_reports(env: &Env) -> Result<(), AppError> {
+    let cutoff = Utc::now().naive_utc()
+        - Duration::seconds(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS as i64);
+    let timed_out_reports = ReportHistory::find()
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .filter(report_history::Column::StartedAt.lte(cutoff))
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    for report_history in timed_out_reports {
+        let err_msg = report_timeout_message(&report_history);
+        if let Some(report_history) =
+            fail_in_progress_report(env, report_history.id, err_msg.clone())
+                .await?
+        {
+            let res: Result<(), AppError> = Err(AppError::BL {
+                msg: err_msg.clone(),
+            });
+            let _ =
+                finish_bgtask(report_history.bgtask_id, &env.dbx, &res).await;
+            notify_report_timeout_nofail(env, &report_history, &err_msg).await;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_report_timeout(
+    env: &Env,
+    report_history: &report_history::Model,
+    err: AppError,
+) -> Result<(), AppError> {
+    let err_msg = format!("{err:#?}");
+    if let Some(report_history) =
+        fail_in_progress_report(env, report_history.id, err_msg.clone()).await?
+    {
+        notify_report_timeout_nofail(env, &report_history, &err_msg).await;
+    }
+    Ok(())
+}
+
+async fn fail_in_progress_report(
+    env: &Env,
+    report_history_id: i64,
+    err_msg: String,
+) -> Result<Option<report_history::Model>, AppError> {
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update report_history
+        set
+            status = $1,
+            completed_at = now() at time zone 'utc',
+            last_error = $2,
+            log = coalesce(log, '[]'::jsonb) || jsonb_build_array(
+                jsonb_build_object(
+                    'login', $3,
+                    'timestamp', now() at time zone 'utc',
+                    'message', $2
+                )
+            )
+        where id = $4
+          and status = $5
+        returning *
+        "#,
+        [
+            STATUS_FAILED.into(),
+            err_msg.into(),
+            REPORT_TIMEOUT_LOGIN.into(),
+            report_history_id.into(),
+            STATUS_IN_PROGRESS.into(),
+        ],
+    );
+    Ok(report_history::Model::find_by_statement(stmt)
+        .one(&env.dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn notify_report_timeout_nofail(
+    env: &Env,
+    report_history: &report_history::Model,
+    err_msg: &str,
+) {
+    let content = format!(
+        "Report timed out at echo server {}: id={}, kind={}, requested_by={}\n{}",
+        env.config.public_host,
+        report_history.id,
+        report_history.report_kind,
+        report_history.requested_by,
+        err_msg,
+    );
+    let result = tokio::time::timeout(
+        StdDuration::from_secs(REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC),
+        crate::server::discord::discord_notify(
+            &env.config,
+            DISCORD_WEBHOOK_ALERT,
+            &content,
+        ),
+    )
+    .await;
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => error!(
+            "failed to send report timeout discord alert for report {}: {err:?}",
+            report_history.id
+        ),
+        Err(err) => error!(
+            "timed out sending report timeout discord alert for report {}: {err:?}",
+            report_history.id
+        ),
+    }
 }
 
 async fn handle_report_failure(

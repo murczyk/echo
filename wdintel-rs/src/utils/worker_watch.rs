@@ -139,12 +139,13 @@ fn log_snapshot() {
 }
 
 pub fn spawn_named_worker<F>(
-    name: &'static str,
+    name: impl Into<String>,
     bg_set: &mut JoinSet<()>,
     fut: F,
 ) where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
+    let name = name.into();
     bg_set.spawn(async move {
         info!(target: "worker", "starting {name}");
         fut.await;

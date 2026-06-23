@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration as StdDuration;
 
 use crate::config::CLEANUP_REPORT_DAYS;
 use crate::entities::*;
@@ -9,7 +10,7 @@ use crate::types::*;
 use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
-use actix_web::{post, HttpRequest, HttpResponse};
+use actix_web::{post, HttpResponse};
 use chrono::{Days, NaiveDateTime, Utc};
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
@@ -415,36 +416,11 @@ pub(crate) async fn save_report_log(
     Ok(())
 }
 
-async fn ensure_editor_report_permissions(
-    env: &Env,
-    user_login: &str,
-) -> Result<Option<HttpResponse>, AppError> {
-    match crate::users::has_any_role(
-        &env.dbx,
-        user_login,
-        vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
-    )
-    .await
-    {
-        Ok(()) => Ok(None),
-        Err(AppError::Forbidden(_)) => Ok(Some(
-            HttpResponse::Forbidden()
-                .insert_header((
-                    crate::config::RER_REPORT_ERROR_CODE_HEADER_NAME,
-                    crate::config::RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
-                ))
-                .body("Forbidden"),
-        )),
-        Err(err) => Err(err),
-    }
-}
-
 /// Generates report in docx format using docx-rs library looking similar to html produced by the report_generate_html function
 #[post("/api/rer/report-docx")]
 pub async fn report_docx(
     user: Identity,
     env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
     req: Json<types::ReportPreviewReq>,
 ) -> Result<HttpResponse, AppError> {
     info!("> Start RER report generation...");
@@ -455,187 +431,67 @@ pub async fn report_docx(
         .c(h!())?;
     let mut req = req.into_inner().clone();
     req.req.nolimit = Some(true);
-    let history_request =
-        crate::report_history::ReportHistoryRequest::AnalysisReport {
-            payload: Box::new(req.clone()),
-        };
+    if let Err(err) =
+        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind).await
+    {
+        if matches!(err, AppError::Forbidden(_)) {
+            return Ok(HttpResponse::Forbidden()
+                .insert_header((
+                    crate::config::RER_REPORT_ERROR_CODE_HEADER_NAME,
+                    crate::config::RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
+                ))
+                .body("Forbidden"));
+        }
+        return Err(err);
+    }
+
     let report_kind = req.kind.clone();
-    let result = report_docx_inner(&user_login, &env, &http_req, req).await;
-    let failed_msg = match &result {
-        Ok(resp) if !resp.status().is_success() => Some(format!(
-            "report generation returned HTTP status {}",
-            resp.status()
-        )),
-        Err(err) => Some(format!("{err:#?}")),
-        _ => None,
-    };
-    if let Some(failed_msg) = failed_msg {
-        crate::report_history::record_failed_report_nofail(
-            &env,
-            &user_login,
-            &report_kind,
-            history_request,
-            failed_msg,
-        )
-        .await;
-    }
-    result
-}
-
-async fn report_docx_inner(
-    user_login: &str,
-    env: &actix_web::web::Data<Env>,
-    http_req: &HttpRequest,
-    req: types::ReportPreviewReq,
-) -> Result<HttpResponse, AppError> {
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-
-    let storage_dir =
-        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
-    let outfolder = storage_dir.join("reports_log");
-    let _ = std::fs::create_dir_all(&outfolder);
-    let file_extension = report_file_extension(&req);
-    let content_type = report_content_type(file_extension).to_string();
-    let filename = format!(
-        "report_{}.{}",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
-        file_extension
-    );
-    let outpath = outfolder.join(&filename);
-    if req.kind == kinds::TAGS {
-        self::tag::report_docx_kind_tag(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::INTERCEPTION {
-        self::interception::report_xlsx_kind_interception(
-            user_login, env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::BABAK {
-        self::babak::report_docx_kind_babak(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::MOUSE {
-        self::mouse::report_docx_kind_mouse(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::PELENGS {
-        self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
-            user_login, env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::SENDERS || req.kind == kinds::POSTS {
-        let (aggregation, advanced_freqs) = match &req.report_type {
-            Some(types::ReportType::Senders(settings)) => {
-                (settings.aggregation.clone(), settings.advanced_freqs)
-            }
-            _ => (
-                if req.kind == kinds::POSTS {
-                    types::ReportAggregation::ByPost
-                } else {
-                    types::ReportAggregation::ByProfile
-                },
-                false,
-            ),
-        };
-        self::senders::report_xlsx_kind_senders(
-            aggregation,
-            advanced_freqs,
-            user_login,
-            env,
-            &req.req,
-            &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::NAUSHNOM {
-        self::naushnom::report_docx_kind_naushnom(
-            user_login, env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::REO {
-        if let Some(resp) =
-            ensure_editor_report_permissions(env, user_login).await?
-        {
-            return Ok(resp);
-        }
-        self::revo::report_docx_kind_revo(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::DIGEST {
-        if let Some(resp) =
-            ensure_editor_report_permissions(env, user_login).await?
-        {
-            return Ok(resp);
-        }
-        self::digest::report_docx_kind_digest(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::POSTS_DOCX {
-        self::posts::report_docx_kind_posts(user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
-    } else if req.kind == kinds::ACTIVE_NETWORKS {
-        if let Some(resp) =
-            ensure_editor_report_permissions(env, user_login).await?
-        {
-            return Ok(resp);
-        }
-        self::active_networks::report_docx_kind_active_networks(
-            env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::NETWORK_FREQUENCIES {
-        if let Some(resp) =
-            ensure_editor_report_permissions(env, user_login).await?
-        {
-            return Ok(resp);
-        }
-        self::network_frequencies::report_docx_kind_network_frequencies(
-            env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == kinds::REPORT_1213 {
-        if let Some(resp) =
-            ensure_editor_report_permissions(env, user_login).await?
-        {
-            return Ok(resp);
-        }
-        self::report_1213::report_docx_kind_report_1213(
-            user_login, env, &req, &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else {
-        return Err(format!("Unknown report kind {}", req.kind).into());
-    }
-    let file = actix_files::NamedFile::open(&outpath)?;
-    save_report_log(
+    let report_history = crate::report_history::enqueue_report(
         &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        user_login,
+        &user_login,
+        &report_kind,
+        crate::report_history::ReportHistoryRequest::AnalysisReport {
+            payload: Box::new(req),
+        },
+        None,
+        None,
     )
     .await
     .context(h!())?;
-    crate::report_history::record_completed_report_file_nofail(
-        env,
-        user_login,
-        &req.kind,
-        crate::report_history::ReportHistoryRequest::AnalysisReport {
-            payload: Box::new(req.clone()),
-        },
-        filename.clone(),
-        content_type,
-        &outpath,
+    wait_queued_report_completion(&env, report_history.id).await?;
+    crate::report_history::download_report_for_user_login(
+        &env,
+        &user_login,
+        report_history.id,
     )
-    .await;
-    Ok(file.into_response(http_req))
+    .await
+}
+
+async fn wait_queued_report_completion(
+    env: &Env,
+    report_history_id: i64,
+) -> Result<(), AppError> {
+    loop {
+        let report_history =
+            report_history::Entity::find_by_id(report_history_id)
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?;
+        match report_history.status.as_str() {
+            crate::report_history::STATUS_DONE => return Ok(()),
+            crate::report_history::STATUS_FAILED => {
+                return Err(AppError::BL {
+                    msg: report_history.last_error.unwrap_or_else(|| {
+                        "Report generation failed".to_string()
+                    }),
+                });
+            }
+            _ => {
+                tokio::time::sleep(StdDuration::from_secs(1)).await;
+            }
+        }
+    }
 }
 
 /// Fills the comp_freq table with data about when the frequency was first seen.
