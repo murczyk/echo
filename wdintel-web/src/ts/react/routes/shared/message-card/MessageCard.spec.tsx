@@ -1980,10 +1980,6 @@ describe('MessageCard', () => {
     expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).toBeNull();
 
-    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
-    expect(Number(image.getAttribute('data-image-preview-pan-x') ?? '0')).not.toBe(0);
-    expect(Number(image.getAttribute('data-image-preview-pan-y') ?? '0')).not.toBe(0);
-
     const closeButton = getButton(dialog as HTMLElement, 'Закрити');
     await click(closeButton);
 
@@ -1998,6 +1994,42 @@ describe('MessageCard', () => {
     expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-pan-y')).toBe('0');
 
     await click(getButton(reopenedDialog as HTMLElement, 'Закрити'));
+  });
+
+  it('keeps fullscreen active when navigating to the next image', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    const image = dialog?.querySelector('img[data-image-preview-image]') as HTMLImageElement | null;
+    if (image == null) throw new Error('preview image not found');
+
+    await click(dialog?.querySelector('button[aria-label="Повноекранний режим"]') as HTMLElement);
+
+    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+
+    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-2.png',
+    );
+    expect(image.getAttribute('data-image-preview-zoom')).toBe('100');
+    expect(image.getAttribute('data-image-preview-pan-x')).toBe('0');
+    expect(image.getAttribute('data-image-preview-pan-y')).toBe('0');
   });
 
   it('keeps legacy image order while merging media metadata by href', async () => {

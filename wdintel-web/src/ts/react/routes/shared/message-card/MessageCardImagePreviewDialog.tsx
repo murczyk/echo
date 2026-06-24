@@ -90,7 +90,7 @@ export function MessageImagePreviewDialog({
     pointerListenersRef.current = null;
   }, []);
 
-  const resetPreviewState = useCallback(() => {
+  const resetImageState = useCallback(() => {
     removePointerListeners();
     dragRef.current = null;
     setZoom(ZOOM_MIN);
@@ -99,8 +99,12 @@ export function MessageImagePreviewDialog({
     setFailedHref(null);
     setImageSize(null);
     setInfoAnchorEl(null);
-    setIsFullscreen(false);
   }, [removePointerListeners]);
+
+  const resetPreviewState = useCallback(() => {
+    resetImageState();
+    setIsFullscreen(false);
+  }, [resetImageState]);
 
   const addPointerListeners = useCallback(() => {
     removePointerListeners();
@@ -173,8 +177,8 @@ export function MessageImagePreviewDialog({
   };
 
   useEffect(() => {
-    resetPreviewState();
-  }, [currentHref, resetPreviewState]);
+    resetImageState();
+  }, [currentHref, resetImageState]);
 
   useEffect(() => {
     if (!open) {
