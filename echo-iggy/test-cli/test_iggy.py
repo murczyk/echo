@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import asyncio
 import base64
 import binascii
 import json
@@ -16,13 +17,16 @@ from pathlib import Path
 
 
 ENV_PATH = Path(__file__).with_name(".env")
-REQUIRED_ENV = (
-    "IGGY_HTTP_URL",
-    "IGGY_USERNAME",
-    "IGGY_PASSWORD",
+TOPIC_ENV = (
     "IGGY_STREAM",
     "IGGY_INBOX_TOPIC",
     "IGGY_ANALYTICS_TOPIC",
+)
+HTTP_ENV = (
+    "IGGY_HTTP_URL",
+    "IGGY_USERNAME",
+    "IGGY_PASSWORD",
+    *TOPIC_ENV,
 )
 
 
@@ -71,7 +75,7 @@ def positive_number(name: str, default: str, number_type):
 
 class IggyHttpClient:
     def __init__(self) -> None:
-        for name in REQUIRED_ENV:
+        for name in HTTP_ENV:
             required_env(name)
         self.base_url = required_env("IGGY_HTTP_URL").rstrip("/")
         self.username = required_env("IGGY_USERNAME")
@@ -300,11 +304,116 @@ def print_new(topic: str) -> None:
     connected_client().print_new(topic)
 
 
+def default_tcp_url() -> str:
+    http_url = os.environ.get("IGGY_HTTP_URL", "").strip()
+    if not http_url:
+        return "iggy://127.0.0.1:8090"
+
+    parsed = urllib.parse.urlsplit(http_url)
+    if not parsed.hostname:
+        return "iggy://127.0.0.1:8090"
+
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    return f"iggy://{host}:8090"
+
+
+def native_connection_string() -> str:
+    connection_string = os.environ.get("IGGY_CONNECTION_STRING", "").strip()
+    if connection_string:
+        return connection_string
+
+    return connection_string_from_url(
+        os.environ.get("IGGY_TCP_URL", "").strip() or default_tcp_url(),
+        required_env("IGGY_USERNAME"),
+        required_env("IGGY_PASSWORD"),
+    )
+
+
+def connection_string_from_url(url: str, username: str, password: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    if not parsed.scheme or not parsed.hostname:
+        raise TestError(f"Invalid IGGY_TCP_URL: {url}")
+
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise TestError(f"Invalid IGGY_TCP_URL port: {url}") from error
+    host = f"{host}:{port}" if port is not None else host
+
+    username = urllib.parse.quote(username, safe="")
+    password = urllib.parse.quote(password, safe="")
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            f"{username}:{password}@{host}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+async def wait_for_native(action: str, awaitable):
+    timeout = positive_number("IGGY_TIMEOUT_SECONDS", "10", float)
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout)
+    except asyncio.TimeoutError as error:
+        raise TestError(f"Native Iggy {action} timed out") from error
+    except Exception as error:
+        raise TestError(f"Native Iggy {action} failed: {error!r}") from error
+
+
+async def test_native_connection_async() -> None:
+    try:
+        from apache_iggy import IggyClient
+    except ImportError as error:
+        raise TestError(
+            "Missing apache-iggy package. Install it with: "
+            "python3 -m pip install apache-iggy"
+        ) from error
+
+    for name in TOPIC_ENV:
+        required_env(name)
+
+    connection_string = native_connection_string()
+    try:
+        client = IggyClient.from_connection_string(connection_string)
+    except Exception as error:
+        raise TestError(f"Invalid native Iggy connection string: {error!r}") from error
+
+    await wait_for_native("connect", client.connect())
+    stream = required_env("IGGY_STREAM")
+    stream_details = await wait_for_native("get_stream", client.get_stream(stream))
+    if stream_details is None:
+        raise TestError(f"Iggy stream does not exist: {stream}")
+
+    for topic in (required_env("IGGY_INBOX_TOPIC"), required_env("IGGY_ANALYTICS_TOPIC")):
+        topic_details = await wait_for_native(
+            f"get_topic {stream}/{topic}",
+            client.get_topic(stream, topic),
+        )
+        if topic_details is None:
+            raise TestError(f"Iggy topic does not exist: {stream}/{topic}")
+        if topic_details.name != topic:
+            raise TestError(f"Iggy returned unexpected topic data for {topic}")
+
+    print("PASS: native apache-iggy client can read the configured stream and topics")
+
+
+def test_native_connection() -> None:
+    asyncio.run(test_native_connection_async())
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test an Apache Iggy HTTP server")
+    parser = argparse.ArgumentParser(description="Test an Apache Iggy server")
     parser.add_argument(
         "command",
-        choices=("check", "test-inbox", "test-analytics", "send", "print-new"),
+        choices=("check", "test-inbox", "test-analytics", "test-native", "send", "print-new"),
     )
     parser.add_argument("topic", nargs="?")
     args = parser.parse_args()
@@ -320,6 +429,7 @@ def main() -> int:
             "check": check,
             "test-inbox": test_inbox,
             "test-analytics": test_analytics,
+            "test-native": test_native_connection,
             "send": lambda: send(args.topic),
             "print-new": lambda: print_new(args.topic),
         }
