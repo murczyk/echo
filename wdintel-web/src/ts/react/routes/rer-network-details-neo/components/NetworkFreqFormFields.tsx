@@ -221,6 +221,15 @@ export function NetworkFreqFormFields({
     }
   }, [isDmrModulation]);
 
+  useEffect(() => {
+    const bezEnc = encryptions.find((e) => e.name === 'Без шифрування');
+    if (bezEnc && encryptionId !== bezEnc.id && (!isDmrModulation || encryptionId === null)) {
+      onEncryptionChange(bezEnc.id);
+    }
+    // Run only when modulation type changes or encryptions list loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDmrModulation, encryptions]);
+
   const encryptionItems = useMemo<ChipOption[]>(
     () => encryptions.map((encryption) => ({
       value: String(encryption.id),
