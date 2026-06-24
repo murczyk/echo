@@ -95,6 +95,20 @@ def normalize_permissions(permissions):
     return normalized
 
 
+def permissions_for_existing_user(configured_permissions, existing_user):
+    permissions = normalize_permissions(configured_permissions)
+    if permissions is None:
+        return None
+
+    if configured_permissions.get("streams") is None:
+        existing_permissions = existing_user.get("permissions") or {}
+        existing_streams = existing_permissions.get("streams")
+        if existing_streams is not None:
+            permissions["streams"] = existing_streams
+
+    return permissions
+
+
 def request(method, path, body=None, token=None):
     headers = {"Accept": "application/json"}
     data = None
@@ -150,12 +164,17 @@ ordered_users = initial_users[1:] + initial_users[:1]
 for user in ordered_users:
     username = user["username"]
     existing_user = existing_users.get(username)
-    permissions = normalize_permissions(user.get("permissions"))
+    configured_permissions = user.get("permissions")
     if existing_user is not None:
         user_id = existing_user["id"]
         if user_id == 0:
             print(f"Iggy root user unchanged: {username}")
             continue
+        existing_user = request("GET", f"/users/{user_id}", token=token)
+        permissions = permissions_for_existing_user(
+            configured_permissions,
+            existing_user,
+        )
         request(
             "PUT",
             f"/users/{user_id}",
@@ -174,6 +193,7 @@ for user in ordered_users:
         print(f"Updated Iggy user: {username}")
         continue
 
+    permissions = normalize_permissions(configured_permissions)
     request(
         "POST",
         "/users",
