@@ -1,19 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import {
-  Box,
-  Button,
-  ButtonBase,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Tooltip, Typography } from '@mui/material';
 
-import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
+import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 
-const PREVIEW_IMAGE_HEIGHT_PX = 100;
-const PREVIEW_IMAGE_MIN_WIDTH_PX = 160;
-const PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX = 36;
 const AUDIO_PLAYER_MIN_HEIGHT_PX = 120;
 const AUDIO_PLAYER_TOP_PADDING_PX = 12;
 const AUDIO_PLAYER_Z_INDEX = 0;
@@ -52,100 +43,6 @@ export function isImageMediaAttachment(m: MessageMediaInfo): boolean {
   if (ct !== '') return false;
   const href = String(m.href ?? '').toLowerCase();
   return /\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
-}
-
-export function collectMessageImageHrefs(msg: InboxMessage): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const add = (href: string) => {
-    if (seen.has(href)) return;
-    seen.add(href);
-    out.push(href);
-  };
-  for (const href of msg.images ?? []) add(href);
-  for (const attachment of msg.media ?? []) {
-    if (isImageMediaAttachment(attachment)) add(attachment.href);
-  }
-  return out;
-}
-
-export function MessagePictureThumb({ href, onOpen }: { href: string; onOpen: () => void }) {
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const canOpen = href.trim() !== '';
-
-  return (
-    <Box component="span" sx={{ display: 'inline-flex', mr: 0.5, mb: 0.5, lineHeight: 0, verticalAlign: 'top' }}>
-      <ButtonBase
-        component="button"
-        type="button"
-        onClick={canOpen ? onOpen : undefined}
-        disabled={!canOpen}
-        data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
-        data-picture-thumb-error-height-px={failed ? PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX : undefined}
-        aria-label="Відкрити зображення"
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          width: 'fit-content',
-          maxWidth: '100%',
-          alignSelf: 'flex-start',
-          minWidth: failed ? 'auto' : loaded ? PREVIEW_IMAGE_MIN_WIDTH_PX : 'auto',
-          minHeight: failed ? PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX : loaded ? PREVIEW_IMAGE_HEIGHT_PX : PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX,
-          px: failed ? 1.25 : 0.75,
-          py: failed ? 0.75 : 0.25,
-          overflow: 'visible',
-          cursor: canOpen ? 'pointer' : 'default',
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 1,
-          backgroundColor: 'action.hover',
-          color: 'text.secondary',
-          textAlign: 'left',
-          '&:disabled': {
-            color: 'text.disabled',
-          },
-        }}
-      >
-        <Box
-          component="img"
-          src={href}
-          alt="Зображення повідомлення"
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
-          sx={{
-            display: 'block',
-            visibility: loaded && !failed ? 'visible' : 'hidden',
-            height: loaded && !failed ? PREVIEW_IMAGE_HEIGHT_PX : 0,
-            minHeight: loaded && !failed ? PREVIEW_IMAGE_HEIGHT_PX : 0,
-            minWidth: loaded && !failed ? PREVIEW_IMAGE_MIN_WIDTH_PX : 0,
-            width: loaded && !failed ? 'auto' : 0,
-            maxWidth: '100%',
-            objectFit: 'contain',
-            verticalAlign: 'middle',
-          }}
-        />
-        {!loaded || failed ? (
-          <Typography
-            variant="caption"
-            component="span"
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              textAlign: 'left',
-              lineHeight: 1.2,
-              maxWidth: '100%',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {failed ? 'Зображення недоступне' : 'Зображення'}
-          </Typography>
-        ) : null}
-      </ButtonBase>
-    </Box>
-  );
 }
 
 export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {

@@ -9,14 +9,14 @@ import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
 import {
-  collectMessageImageHrefs,
   isAudioMediaAttachment,
   mediaAttachmentContentType,
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
-  MessagePictureThumb,
 } from './MessageCardMedia';
 import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
+import { collectMessageImages } from './message-card-image-utils';
+import { MessageCardImageList } from './MessageCardImageList';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -55,9 +55,9 @@ export function MessageCardMessageBody({
   messageComments?: MessageComment[];
   searchText?: string | null;
 }) {
-  const imageHrefs = collectMessageImageHrefs(msg);
+  const images = collectMessageImages(msg);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
-  const imageHrefSet = new Set(imageHrefs);
+  const imageHrefSet = new Set(images.map((image) => image.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
     if (imageHrefSet.has(href)) return false;
@@ -76,18 +76,14 @@ export function MessageCardMessageBody({
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
-      {imageHrefs.length > 0 ? (
-        <Box className="m-1" sx={{ lineHeight: 0 }}>
-          {imageHrefs.map((href, index) => (
-            <MessagePictureThumb key={href} href={href} onOpen={() => setImagePreviewIndex(index)} />
-          ))}
-        </Box>
+      {images.length > 0 ? (
+        <MessageCardImageList images={images} onOpen={(index) => setImagePreviewIndex(index)} />
       ) : null}
       <MessageImagePreviewDialog
-        imageHrefs={imageHrefs}
+        imageHrefs={images}
         initialIndex={imagePreviewIndex ?? 0}
         currentIndex={imagePreviewIndex ?? 0}
-        open={imagePreviewIndex != null && imageHrefs.length > 0}
+        open={imagePreviewIndex != null && images.length > 0}
         onClose={() => setImagePreviewIndex(null)}
         onIndexChange={(index) => setImagePreviewIndex(index)}
       />

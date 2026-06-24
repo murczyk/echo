@@ -191,6 +191,8 @@ vi.mock('@mui/material', () => ({
   DialogActions: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
   DialogContent: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
   DialogTitle: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
+  ImageList: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
+  ImageListItem: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
   Link: ({ children, href, ...props }: { children?: ReactNode; href?: string } & Record<string, unknown>) => (
     <a href={href} {...omitMuiLayoutProps(props)}>
       {children}
@@ -234,7 +236,46 @@ vi.mock('@mui/material', () => ({
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
+  Slider: ({
+    value,
+    onChange,
+    min,
+    max,
+    step,
+    marks,
+    ...props
+  }: {
+    value?: number;
+    onChange?: (event: { currentTarget: HTMLInputElement }, value: number | number[]) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    marks?: Array<{ value: number; label?: ReactNode }>;
+  } & Record<string, unknown>) => (
+    <input
+      type="range"
+      value={value ?? 0}
+      min={min}
+      max={max}
+      step={step}
+      data-marks={JSON.stringify(marks ?? [])}
+      onChange={(event) => onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))}
+      onInput={(event) => onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))}
+      {...omitMuiLayoutProps(props)}
+    />
+  ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Skeleton: ({ children }: { children?: ReactNode }) => <span>{children ?? 'skeleton'}</span>,
+  useTheme: () => ({
+    breakpoints: {
+      down: () => '(max-width: 600px)',
+    },
+    palette: {
+      grey: { 900: '#111827' },
+      background: { default: '#0b0f14' },
+    },
+  }),
+  useMediaQuery: () => false,
   TextField: ({
     label,
     value,
@@ -1722,6 +1763,27 @@ describe('MessageCard', () => {
       'https://example.test/files/preview-1.png',
     );
 
+    const stage = dialog?.querySelector('[data-image-preview-stage]') as HTMLElement | null;
+    if (stage == null) throw new Error('preview stage not found');
+
+    await act(async () => {
+      stage.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+    });
+
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('125');
+    expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).not.toBeNull();
+    expect(dialog?.querySelector('[data-image-preview-nav="next"]')).not.toBeNull();
+
+    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
+    if (zoomSlider == null) throw new Error('zoom slider not found');
+
+    await act(async () => {
+      zoomSlider.value = '400';
+      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('400');
+
     const nextButton = dialog?.querySelector('button[aria-label="Наступне"]');
     expect(nextButton).not.toBeNull();
     await click(nextButton as HTMLElement);
@@ -1776,5 +1838,206 @@ describe('MessageCard', () => {
       'https://example.test/files/%E0%A4%A.png',
     );
     expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('%E0%A4%A.png');
+  });
+
+  it('navigates preview images from window arrow keys', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-1.png',
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-2.png',
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    });
+
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-1.png',
+    );
+  });
+
+  it('shows image metadata, fullscreen controls, and updates zoom in the preview dialog', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'image-1',
+            href: 'https://example.test/files/scan-1.png',
+            contentType: 'image/png',
+            fileName: 'scan-1.png',
+            sizeBytes: 1536,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    const image = dialog?.querySelector('img[data-image-preview-image]') as HTMLImageElement | null;
+    if (image == null) throw new Error('preview image not found');
+
+    Object.defineProperty(image, 'naturalWidth', { configurable: true, value: 1920 });
+    Object.defineProperty(image, 'naturalHeight', { configurable: true, value: 1080 });
+
+    await act(async () => {
+      image.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    const infoButton = dialog?.querySelector('button[aria-label="Інформація"]');
+    expect(infoButton).not.toBeNull();
+    await click(infoButton as HTMLElement);
+
+    expect(dialog?.querySelector('[data-image-preview-counter]')?.textContent).toBe('1 / 1');
+    expect(dialog?.textContent).toContain('URL');
+    expect(dialog?.textContent).toContain('scan-1.png');
+    expect(dialog?.textContent).toContain('Розмір файлу');
+    expect(dialog?.textContent).toContain('1920 × 1080');
+    expect(dialog?.textContent).toContain('1.5 KB');
+    expect(dialog?.textContent).toContain('Тип');
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Закрити"]')).toBeNull();
+
+    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
+    if (zoomSlider == null) throw new Error('zoom slider not found');
+    expect(JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map((mark: { label?: string }) => mark.label)).toContain('300%');
+
+    expect(dialog?.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Скинути масштаб"]')).toBeNull();
+
+    await act(async () => {
+      zoomSlider.value = '200';
+      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
+    expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).toBeNull();
+    expect(dialog?.querySelector('[data-image-preview-nav="next"]')).toBeNull();
+
+    const stage = dialog?.querySelector('[data-image-preview-stage]') as HTMLElement | null;
+    if (stage == null) throw new Error('preview stage not found');
+
+    Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 400 });
+    Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
+
+    await act(async () => {
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 1,
+          clientX: 40,
+          clientY: 40,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          pointerId: 1,
+          clientX: 140,
+          clientY: 120,
+        }),
+      );
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 140, clientY: 120 }));
+    });
+
+    expect(Number(image.getAttribute('data-image-preview-pan-x') ?? '0')).not.toBe(0);
+    expect(Number(image.getAttribute('data-image-preview-pan-y') ?? '0')).not.toBe(0);
+
+    const fullscreenButton = dialog?.querySelector('button[aria-label="Повноекранний режим"]');
+    if (!(fullscreenButton instanceof HTMLButtonElement)) throw new Error('fullscreen button not found');
+    await click(fullscreenButton);
+
+    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).toBeNull();
+
+    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
+    expect(Number(image.getAttribute('data-image-preview-pan-x') ?? '0')).not.toBe(0);
+    expect(Number(image.getAttribute('data-image-preview-pan-y') ?? '0')).not.toBe(0);
+
+    const closeButton = getButton(dialog as HTMLElement, 'Закрити');
+    await click(closeButton);
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const reopenedDialog = document.body.querySelector('[role="dialog"]');
+    expect(reopenedDialog).not.toBeNull();
+    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('100');
+    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-pan-x')).toBe('0');
+    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-pan-y')).toBe('0');
+
+    await click(getButton(reopenedDialog as HTMLElement, 'Закрити'));
+  });
+
+  it('prefers image media metadata when image hrefs overlap', async () => {
+    const sharedHref = 'https://example.test/files/merged-image.png';
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: [sharedHref],
+        media: [
+          {
+            id: 'media-image-1',
+            href: sharedHref,
+            contentType: 'image/png',
+            fileName: 'merged-from-media.png',
+            sizeBytes: 4096,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(thumb).not.toBeNull();
+
+    const downloadLink = dialog?.querySelector('a[download]');
+    expect(downloadLink?.getAttribute('download')).toBe('merged-from-media.png');
+
+    const infoButton = dialog?.querySelector('button[aria-label="Інформація"]');
+    expect(infoButton).not.toBeNull();
+    await click(infoButton as HTMLElement);
+
+    expect(dialog?.textContent).toContain('merged-from-media.png');
+    expect(dialog?.textContent).toContain(sharedHref);
+    expect(dialog?.textContent).toContain('image/png');
+    expect(dialog?.textContent).toContain('4.0 KB');
+    expect(dialog?.textContent).toContain('media-image-1');
+    expect(view.container.querySelectorAll('button[aria-label="Відкрити зображення"]')).toHaveLength(1);
   });
 });
