@@ -63,6 +63,10 @@ export function MessageImagePreviewDialog({
   const currentHrefRef = useRef(currentHref);
   const zoomRef = useRef(zoom);
   const dragRef = useRef<DragState | null>(null);
+  const pointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void;
+    end: (event: PointerEvent) => void;
+  } | null>(null);
   const infoOpen = infoAnchorEl !== null;
   const previewFileName = useMemo(
     () => (currentImage != null ? derivePreviewFileName(currentImage, resolvedIndex) : `image-${resolvedIndex + 1}`),
@@ -77,7 +81,18 @@ export function MessageImagePreviewDialog({
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
     : `linear-gradient(135deg, ${theme.palette.grey[900]} 0%, ${theme.palette.background.default} 100%)`;
 
+  const removePointerListeners = useCallback(() => {
+    const listeners = pointerListenersRef.current;
+    if (listeners === null) return;
+    window.removeEventListener('pointermove', listeners.move as EventListener);
+    window.removeEventListener('pointerup', listeners.end as EventListener);
+    window.removeEventListener('pointercancel', listeners.end as EventListener);
+    pointerListenersRef.current = null;
+  }, []);
+
   const resetPreviewState = useCallback(() => {
+    removePointerListeners();
+    dragRef.current = null;
     setZoom(ZOOM_MIN);
     zoomRef.current = ZOOM_MIN;
     setPan({ x: 0, y: 0 });
@@ -85,7 +100,39 @@ export function MessageImagePreviewDialog({
     setImageSize(null);
     setInfoAnchorEl(null);
     setIsFullscreen(false);
-  }, []);
+  }, [removePointerListeners]);
+
+  const addPointerListeners = useCallback(() => {
+    removePointerListeners();
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (drag === null || event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      const nextPan = clampPan(
+        {
+          x: drag.origin.x + (event.clientX - drag.startX),
+          y: drag.origin.y + (event.clientY - drag.startY),
+        },
+        drag.stageWidth,
+        drag.stageHeight,
+        zoomRef.current,
+      );
+      setPan(nextPan);
+    };
+
+    const handlePointerEnd = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (drag === null || event.pointerId !== drag.pointerId) return;
+      dragRef.current = null;
+      removePointerListeners();
+    };
+
+    pointerListenersRef.current = { move: handlePointerMove, end: handlePointerEnd };
+    window.addEventListener('pointermove', handlePointerMove as EventListener, { passive: false });
+    window.addEventListener('pointerup', handlePointerEnd as EventListener);
+    window.addEventListener('pointercancel', handlePointerEnd as EventListener);
+  }, [removePointerListeners]);
 
   const closeDialog = () => {
     resetPreviewState();
@@ -205,41 +252,7 @@ export function MessageImagePreviewDialog({
     };
   }, [open, stageEl]);
 
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (drag === null || event.pointerId !== drag.pointerId) return;
-      event.preventDefault();
-      const nextPan = clampPan(
-        {
-          x: drag.origin.x + (event.clientX - drag.startX),
-          y: drag.origin.y + (event.clientY - drag.startY),
-        },
-        drag.stageWidth,
-        drag.stageHeight,
-        zoom,
-      );
-      setPan(nextPan);
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (drag === null || event.pointerId !== drag.pointerId) return;
-      dragRef.current = null;
-      window.removeEventListener('pointermove', handlePointerMove as EventListener);
-      window.removeEventListener('pointerup', handlePointerUp as EventListener);
-      window.removeEventListener('pointercancel', handlePointerUp as EventListener);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove as EventListener, { passive: false });
-    window.addEventListener('pointerup', handlePointerUp as EventListener);
-    window.addEventListener('pointercancel', handlePointerUp as EventListener);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove as EventListener);
-      window.removeEventListener('pointerup', handlePointerUp as EventListener);
-      window.removeEventListener('pointercancel', handlePointerUp as EventListener);
-    };
-  }, [zoom]);
+  useEffect(() => removePointerListeners, [removePointerListeners]);
 
   if (!open || imageCount === 0 || currentImage === null) return null;
 
@@ -280,6 +293,7 @@ export function MessageImagePreviewDialog({
       stageWidth: stage.clientWidth,
       stageHeight: stage.clientHeight,
     };
+    addPointerListeners();
     (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
   };
 
@@ -287,6 +301,7 @@ export function MessageImagePreviewDialog({
     const drag = dragRef.current;
     if (drag === null || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    removePointerListeners();
     try {
       (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
     } catch {

@@ -24,15 +24,18 @@ function rgbaToCssColor([r, g, b, a]: Uint8ClampedArray): string {
 }
 
 export function sampleCornerColors(image: HTMLImageElement): StagePalette | null {
+  if (image.naturalWidth <= 0 || image.naturalHeight <= 0) return null;
+
   try {
     const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    canvas.width = 2;
+    canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (context == null) return null;
-    context.drawImage(image, 0, 0);
+    context.drawImage(image, 0, 0, 1, 1, 0, 0, 1, 1);
+    context.drawImage(image, image.naturalWidth - 1, image.naturalHeight - 1, 1, 1, 1, 0, 1, 1);
     const topLeft = context.getImageData(0, 0, 1, 1).data;
-    const bottomRight = context.getImageData(Math.max(image.naturalWidth - 1, 0), Math.max(image.naturalHeight - 1, 0), 1, 1).data;
+    const bottomRight = context.getImageData(1, 0, 1, 1).data;
     return {
       start: rgbaToCssColor(topLeft),
       end: rgbaToCssColor(bottomRight),
