@@ -10,7 +10,7 @@ import {
   launchNetworkEtalonkaBatchReportTask,
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
-import { getBgtaskProgress } from '../../services/api/bgtask';
+import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
@@ -76,7 +76,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           logs = logs.concat(rsp.loglines);
           serverLogSkip += rsp.loglines.length;
         }
-        const progress = getBgtaskProgress(logs);
+        const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
         args.setEtalonkaReport((current) => ({
           ...current,
           taskId,

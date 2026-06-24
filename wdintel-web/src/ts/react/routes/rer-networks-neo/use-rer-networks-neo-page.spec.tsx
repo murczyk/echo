@@ -104,6 +104,15 @@ vi.mock('../../services/api/bgtask', () => ({
     curr: loglines.length > 0 ? 1 : 1,
     overall: 4,
   }),
+  getBgtaskProgressFromPercent: (loglines: string[], progress?: number) => {
+    if (typeof progress === 'number' && Number.isFinite(progress)) {
+      return { curr: Math.max(0, Math.min(100, Math.round(progress))), overall: 100 };
+    }
+    return {
+      curr: loglines.length > 0 ? 1 : 1,
+      overall: 4,
+    };
+  },
 }));
 
 vi.mock('../../services/api/report-history', () => ({

@@ -39,6 +39,7 @@ export async function fetchReportHistoryTaskStatus(id: number, skip: number): Pr
       loglines: skip === 0 ? ['[1/3] В черзі...'] : [],
       finishedWithError: null,
       finishedWithErrorCode: null,
+      progress: row.progress,
     };
   }
 
@@ -49,9 +50,15 @@ export async function fetchReportHistoryTaskStatus(id: number, skip: number): Pr
         loglines: skip === 0 ? ['[1/3] Формування звіту'] : [],
         finishedWithError: null,
         finishedWithErrorCode: null,
+        progress: row.progress,
       };
     }
-    return fetchBgtaskStatusAndLogs(row.bgtaskId, skip);
+    const rsp = await fetchBgtaskStatusAndLogs(row.bgtaskId, skip);
+    return {
+      ...rsp,
+      finishedWithError: rsp.finishedWithError ? 'Помилка' : null,
+      progress: rsp.progress ?? row.progress,
+    };
   }
 
   if (row.status === 'failed') {
@@ -60,6 +67,7 @@ export async function fetchReportHistoryTaskStatus(id: number, skip: number): Pr
       loglines: [],
       finishedWithError: 'Помилка',
       finishedWithErrorCode: null,
+      progress: row.progress,
     };
   }
 
@@ -68,5 +76,6 @@ export async function fetchReportHistoryTaskStatus(id: number, skip: number): Pr
     loglines: [],
     finishedWithError: null,
     finishedWithErrorCode: null,
+    progress: row.progress,
   };
 }

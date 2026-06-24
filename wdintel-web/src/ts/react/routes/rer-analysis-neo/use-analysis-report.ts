@@ -10,6 +10,7 @@ import {
   launchAnalysisReportTask,
   launchAnalysisSummaryTableTask,
 } from '../../services/api/analysis';
+import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   buildReportFilename,
@@ -76,20 +77,6 @@ function toErrorMessage(error: unknown): string {
   }
   if (error instanceof Error) return error.message || 'Сталася помилка під час формування звіту.';
   return 'Сталася помилка під час формування звіту.';
-}
-
-function parseLastProgress(logs: string[]): { curr: number; overall: number } {
-  for (let index = logs.length - 1; index >= 0; index -= 1) {
-    const line = logs[index];
-    const match = /\[(\d+)\/(\d+)\]/.exec(line);
-    if (!match) continue;
-    const curr = Number(match[1]);
-    const overall = Number(match[2]);
-    if (Number.isFinite(curr) && Number.isFinite(overall) && overall > 0) {
-      return { curr, overall };
-    }
-  }
-  return { curr: 1, overall: 4 };
 }
 
 export function useAnalysisReport({
@@ -297,7 +284,8 @@ export function useAnalysisReport({
             logs = logs.concat(rsp.loglines);
             skip = logs.length;
           }
-          const progress = parseLastProgress(logs);
+          const progress =
+            getBgtaskProgressFromPercent(logs, rsp.progress);
           updateReportTaskRuns((current) =>
             current.map((run) =>
               run.id !== runId
