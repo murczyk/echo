@@ -34,7 +34,7 @@ python3 test_chumak.py find-networks
 Очікуваний output без збігів:
 
 ```text
-Request payload: {"freq": "145.0260", "aor_id": 1, "color_code": "1"}
+Request payload: {"freq": "145.0260", "color_code": "1"}
 {
   "networks": []
 }
@@ -59,7 +59,6 @@ POST /api/sigint/network/find-live
 ```json
 {
   "freq": "145.0260",
-  "aor_id": 1,
   "color_code": "1"
 }
 ```
@@ -72,7 +71,7 @@ POST /api/sigint/network/find-live
     {
       "details": {
         "id": 123,
-        "name": "Chumak test network",
+        "name": "Управління 12омбр 58А",
         "location": "ЛИМАН ПЕРШИЙ",
         "radio_station": "Motorola DP4800",
         "purpose": "Ретрансляція голосового зв'язку",
