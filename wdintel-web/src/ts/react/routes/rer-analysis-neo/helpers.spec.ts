@@ -4,12 +4,16 @@ import type { SavedFilter } from '../../../../Bindings';
 import {
   buildAnalysisReq,
   createInitialQueryState,
+  createResetQueryState,
   buildInboxReq,
+  hasMeaningfulFiltersBeyondDateRange,
+  hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   emptyQueryState,
   normalizeQueryState,
   queryStateComparisonKey,
   queryStateReloadKey,
+  queryStateUiComparisonKey,
   queryStateFromSavedFilter,
   queryStateMatchesSavedFilter,
   pushQueryStateToUrl,
@@ -105,6 +109,7 @@ describe('rer-analysis-neo helpers', () => {
       metadataSender: ['sender-1'],
       metadataReceiver: ['receiver-1'],
       metadataHash: ['hash-1'],
+      onlyWithMedia: true,
     });
 
     pushQueryStateToUrl(state);
@@ -116,6 +121,7 @@ describe('rer-analysis-neo helpers', () => {
     expect(nextUrl.searchParams.getAll('metadataSender')).toEqual(['sender-1']);
     expect(nextUrl.searchParams.getAll('metadataReceiver')).toEqual(['receiver-1']);
     expect(nextUrl.searchParams.getAll('metadataHash')).toEqual(['hash-1']);
+    expect(nextUrl.searchParams.get('only_with_media')).toBe('true');
     expect(parseQueryStateFromWindow()).toMatchObject({
       withoutNetwork: true,
       networksSelected: ['7'],
@@ -124,6 +130,7 @@ describe('rer-analysis-neo helpers', () => {
       metadataSender: ['sender-1'],
       metadataReceiver: ['receiver-1'],
       metadataHash: ['hash-1'],
+      onlyWithMedia: true,
     });
 
     expect(buildAnalysisReq(state)).toMatchObject({
@@ -135,6 +142,7 @@ describe('rer-analysis-neo helpers', () => {
       metadataReceiver: null,
       metadataHash: null,
     });
+    expect(buildInboxReq(state, [], true)?.onlyWithMedia).toBe(true);
     delete (globalThis as { window?: Window }).window;
   });
 
@@ -158,6 +166,17 @@ describe('rer-analysis-neo helpers', () => {
     expect(queryStateComparisonKey(changedState)).not.toBe(queryStateComparisonKey(createQueryState()));
   });
 
+  it('includes onlyWithMedia in the ui comparison key and dirty state while ignoring it for saved filters', () => {
+    const baseState = createResetQueryState();
+    const savedFilter = createSavedFilter(baseState);
+    const mediaState = { ...baseState, onlyWithMedia: true };
+
+    expect(queryStateUiComparisonKey(mediaState)).not.toBe(queryStateUiComparisonKey(baseState));
+    expect(queryStateMatchesSavedFilter(mediaState, savedFilter)).toBe(true);
+    expect(hasMeaningfulFiltersBeyondDateRange(mediaState)).toBe(false);
+    expect(hasMeaningfulUiFiltersBeyondDateRange(mediaState)).toBe(true);
+  });
+
   it('preserves null unitsExactMatchOnly for server-default requests', () => {
     const state = createQueryState({ unitsExactMatchOnly: null, unitsSelected: ['Unit A'] });
     const analysisReq = buildAnalysisReq(state);
@@ -165,6 +184,16 @@ describe('rer-analysis-neo helpers', () => {
 
     expect(analysisReq?.unitsExactMatchOnly).toBeNull();
     expect(inboxReq?.unitsExactMatchOnly).toBeNull();
+  });
+
+  it('keeps inbox-only media filtering out of the analysis request while passing it to the inbox request', () => {
+    const state = createQueryState({ onlyWithMedia: true });
+
+    expect(buildAnalysisReq(state)).toMatchObject({
+      onlyWithMetadata: false,
+      withoutMetadata: false,
+    });
+    expect(buildInboxReq(state, [], true)?.onlyWithMedia).toBe(true);
   });
 
   it('starts neo query state with unitsExactMatchOnly unset', () => {

@@ -461,8 +461,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     > => {
       const analysisReq = buildAnalysisReq(params.queryState, allFrequencies);
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
+      const messageInboxReq = buildInboxReq(params.queryState, allFrequencies, true);
 
-      if (isNullOrUndefined(analysisReq) || isNullOrUndefined(inboxReq)) {
+      if (isNullOrUndefined(analysisReq) || isNullOrUndefined(inboxReq) || isNullOrUndefined(messageInboxReq)) {
         params.invalidateSummaryLoads?.();
         params.invalidateTopSidebarLoads?.();
         params.clearAnalysisResults();
@@ -484,7 +485,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       const countsPromise = fetchAnalysisCount(analysisReq, params.signal ? { signal: params.signal } : undefined);
       countsPromise.catch(() => undefined);
-      const inboxPromise = fetchInboxMessages({ ...inboxReq, newestFirst: params.newestFirst }, params.signal ? { signal: params.signal } : undefined);
+      const inboxPromise = fetchInboxMessages(
+        { ...messageInboxReq, newestFirst: params.newestFirst },
+        params.signal ? { signal: params.signal } : undefined,
+      );
       const freqsPromise = fetchAnalysisFreqs(analysisReq, params.signal ? { signal: params.signal } : undefined);
       void freqsPromise.catch(() => undefined);
 
@@ -530,10 +534,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.optionsFreqsRef.current = nextFrequencies;
         const rebuiltAnalysisReq = buildAnalysisReq(params.queryState, nextFrequencies);
         const rebuiltInboxReq = buildInboxReq(params.queryState, nextFrequencies);
-        if (isPresent(rebuiltAnalysisReq) && isPresent(rebuiltInboxReq)) {
+        const rebuiltMessageInboxReq = buildInboxReq(params.queryState, nextFrequencies, true);
+        if (isPresent(rebuiltAnalysisReq) && isPresent(rebuiltInboxReq) && isPresent(rebuiltMessageInboxReq)) {
           try {
             const rebuiltInboxRsp = await fetchInboxMessages(
-              { ...rebuiltInboxReq, newestFirst: params.newestFirst },
+              { ...rebuiltMessageInboxReq, newestFirst: params.newestFirst },
               params.signal ? { signal: params.signal } : undefined,
             );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(rebuiltAnalysisReq, params.signal ? { signal: params.signal } : undefined);

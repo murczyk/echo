@@ -267,6 +267,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     metadata_hash: req.metadataHash,
     only_with_metadata: req.onlyWithMetadata,
     without_metadata: req.withoutMetadata,
+    only_with_media: req.onlyWithMedia,
     sort_by: req.sortBy,
     report_tags_only_this_unit: req.reportTagsOnlyThisUnit,
     ignore_imported_coords: req.ignoreImportedCoords,

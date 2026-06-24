@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#2593](https://github.com/echoua/echo/issues/2593) ✅ Аналіз (нова): додано фільтрацію повідомлень з медіа.
 - [#2544](https://github.com/echoua/echo/issues/2544) ✅ Мережа (нова): оптимізація створення, редагування та швидкодії частот.
 - [#2573](https://github.com/echoua/echo/issues/2573) ✅ Адмін: відновлено settlements.json для смуг, задокументовано цю фічу.
 - [#2526](https://github.com/echoua/echo/issues/2526) ✅ Адмін: додано вкладку АРХІВ для прив'язок груп.

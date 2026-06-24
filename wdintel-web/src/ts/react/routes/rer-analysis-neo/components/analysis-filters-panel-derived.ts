@@ -173,6 +173,7 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
 
   const importantSelectedCount =
     Number(queryState.orWithExtendedForm) +
+    Number(queryState.onlyWithMedia) +
     Number(queryState.orBookmarked) +
     Number(queryState.orImportant) +
     Number(queryState.orWithCoords);

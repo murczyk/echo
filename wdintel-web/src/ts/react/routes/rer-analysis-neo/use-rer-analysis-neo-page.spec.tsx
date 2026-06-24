@@ -462,6 +462,20 @@ describe('useRerAnalysisNeoPage', () => {
     expect(savedFilters.applySavedFilter).toHaveBeenCalledWith(null);
   });
 
+  it('marks the page resettable when only the media checkbox changes', async () => {
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.canResetFilters).toBe(false);
+
+    await act(async () => {
+      latest?.updateQueryState({ onlyWithMedia: true });
+    });
+    await flushEffects();
+
+    expect(latest?.canResetFilters).toBe(true);
+  });
+
   it('fully invalidates filter sections before applying a saved filter', async () => {
     const savedFilters = buildSavedFilters();
     useAnalysisSavedFiltersMock.mockImplementation(() => savedFilters);

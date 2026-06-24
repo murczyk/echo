@@ -259,6 +259,7 @@ pub struct InboxMessagesReq {
     pub metadata_hash: Option<Vec<String>>,
     pub only_with_metadata: Option<bool>,
     pub without_metadata: Option<bool>,
+    pub only_with_media: Option<bool>,
     pub sort_by: Option<InboxMessagesSortBy>,
     /// report type "tags" specific param:
     pub report_tags_only_this_unit: Option<bool>,

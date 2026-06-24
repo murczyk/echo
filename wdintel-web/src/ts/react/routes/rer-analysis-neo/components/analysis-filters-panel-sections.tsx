@@ -355,6 +355,11 @@ export function AnalysisFiltersPanelSections({
             sx={compactCheckboxLabelSx}
           />
           <FormControlLabel
+            control={<Checkbox checked={queryState.onlyWithMedia} onChange={(_event, value) => updateQueryState({ onlyWithMedia: value })} />}
+            label="З медіа"
+            sx={compactCheckboxLabelSx}
+          />
+          <FormControlLabel
             control={<Checkbox checked={queryState.orBookmarked} onChange={(_event, value) => updateQueryState({ orBookmarked: value })} />}
             label="Збережені"
             sx={compactCheckboxLabelSx}

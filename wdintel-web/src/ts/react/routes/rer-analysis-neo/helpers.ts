@@ -13,11 +13,19 @@ export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 // Keep old and new analysis pages grouped in session activity while both coexist.
 export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
+const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
 
 /** Duty / deep links append `?showMap=true` so the map center tab opens (see `buildRerAnalysisNeoHref` in rer-duty-neo). */
 export function shouldOpenAnalysisMapFromSearchParams(searchParams: URLSearchParams): boolean {
   const v = searchParams.get('showMap');
   return v === 'true';
+}
+
+function parseOptionalBooleanParam(value: string | null): boolean | null {
+  if (value == null) return null;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  return null;
 }
 
 function findAllAdjacentFreqs(allFrequencies: string[], selectedFrequencies: string[], range: number): string[] {
@@ -70,6 +78,7 @@ export function emptyQueryState(): AnalysisQueryState {
     withoutModelTags: false,
     filterTagsOption: 'OneOfTags',
     reportTagsOnlyThisUnit: false,
+    onlyWithMedia: false,
   };
 }
 
@@ -88,10 +97,12 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
 
   const url = new URL(window.location.href);
   const flatStateFromUrl = parseRerAnalysisQueryStateFromSearchParams(url.searchParams);
+  const onlyWithMedia = parseOptionalBooleanParam(url.searchParams.get(ONLY_WITH_MEDIA_PARAM));
 
   return {
     ...emptyQueryState(),
     ...(flatStateFromUrl ?? {}),
+    ...(onlyWithMedia != null ? { onlyWithMedia } : {}),
   };
 }
 
@@ -122,10 +133,23 @@ export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): 
   return stateKey !== defaultKey;
 }
 
+export function hasMeaningfulUiFiltersBeyondDateRange(state: AnalysisQueryState): boolean {
+  const stateKey = queryStateUiComparisonKey(state);
+  const defaultKey = queryStateUiComparisonKey(createResetQueryState());
+  if (isNullOrUndefined(stateKey) || isNullOrUndefined(defaultKey)) return false;
+
+  return stateKey !== defaultKey;
+}
+
 export function pushQueryStateToUrl(state: AnalysisQueryState) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
+  if (state.onlyWithMedia) {
+    url.searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');
+  } else {
+    url.searchParams.delete(ONLY_WITH_MEDIA_PARAM);
+  }
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
 
@@ -209,7 +233,13 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
   };
 }
 
-export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[] = []): InboxMessagesReq | null {
+export function buildInboxReq(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+  // `onlyWithMedia` is intentionally opt-in: it filters only the Messages tab,
+  // while map/report consumers should keep using the broader analysis request.
+  includeOnlyWithMedia = false,
+): InboxMessagesReq | null {
   const req = buildAnalysisReq(state, allFrequencies);
   if (isNullOrUndefined(req)) return null;
 
@@ -268,6 +298,7 @@ export function buildInboxReq(state: AnalysisQueryState, allFrequencies: string[
     filterTagsOption: req.filterTagsOption,
     pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
     withoutModelTags: req.withoutModelTags,
+    onlyWithMedia: includeOnlyWithMedia ? state.onlyWithMedia : false,
   };
 }
 
@@ -413,6 +444,16 @@ export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencie
   if (isNullOrUndefined(req)) return null;
 
   return analysisReqComparisonKey(req, allFrequencies);
+}
+
+export function queryStateUiComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+  const analysisKey = queryStateComparisonKey(state, allFrequencies);
+  if (isNullOrUndefined(analysisKey)) return null;
+
+  return JSON.stringify({
+    analysisKey,
+    onlyWithMedia: state.onlyWithMedia,
+  });
 }
 
 export function queryStateReloadKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {

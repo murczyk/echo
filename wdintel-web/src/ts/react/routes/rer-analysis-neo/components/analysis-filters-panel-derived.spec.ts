@@ -30,6 +30,7 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
       queryState: {
         ...emptyQueryState(),
         orWithExtendedForm: true,
+        onlyWithMedia: true,
         orBookmarked: true,
         orImportant: true,
         orWithCoords: true,
@@ -39,7 +40,7 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
       tagsMap: {},
     });
 
-    expect(derived.importantSelectedCount).toBe(4);
+    expect(derived.importantSelectedCount).toBe(5);
     expect(derived.tagsSelectedCount).toBe(2);
   });
 

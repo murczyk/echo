@@ -325,6 +325,7 @@ export function buildInboxReq(opts: {
     filterTagsOption: null,
     pageId: PAGE_ID,
     withoutModelTags: null,
+    onlyWithMedia: false,
   };
 }
 

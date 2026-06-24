@@ -375,6 +375,7 @@ getInboxReq model =
     , filterTagsOption = Just model.filterTagsOption
     , pageId = Just "rer-analysis"
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+    , onlyWithMedia = Just False
     , selectedNetworks =
         if model.withoutNetwork then
             Nothing

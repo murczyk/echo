@@ -724,8 +724,10 @@ describe('AnalysisFiltersPanel', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ withoutNetwork: true });
 
     await setChecked(findLabelInput(view.container, 'З пеленгом'), true);
+    await setChecked(findLabelInput(view.container, 'З медіа'), true);
 
     expect(updateQueryState).toHaveBeenCalledWith({ orWithCoords: true, orWithoutCoords: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMedia: true });
   });
 
   it('maps the metadata mode buttons into the query state updates and helper text', async () => {

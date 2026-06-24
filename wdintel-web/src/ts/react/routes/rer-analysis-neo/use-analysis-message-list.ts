@@ -74,7 +74,7 @@ export function useAnalysisMessageList({
   );
 
   const loadAllMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
     if (isNullOrUndefined(inboxReq)) return;
 
     setMessagesPaging(true);
@@ -96,7 +96,7 @@ export function useAnalysisMessageList({
   }, [loadMessageComments, loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState, setSummaryCallsignsInfo]);
 
   const loadMoreMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, optionsFreqValues);
+    const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
     const lastMessage = messages.at(-1);
     if (isNullOrUndefined(inboxReq) || isNullOrUndefined(lastMessage)) return;
 

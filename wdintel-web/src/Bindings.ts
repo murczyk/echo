@@ -474,6 +474,7 @@ export type InboxMessagesReq = {
   metadataHash: Array<string> | null;
   onlyWithMetadata: boolean | null;
   withoutMetadata: boolean | null;
+  onlyWithMedia: boolean | null;
   sortBy: InboxMessagesSortBy | null;
   reportTagsOnlyThisUnit: boolean | null;
   ignoreImportedCoords: boolean | null;

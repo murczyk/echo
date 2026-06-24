@@ -1198,6 +1198,7 @@ type alias InboxMessagesReq =
     , metadataHash : Maybe (List (String))
     , onlyWithMetadata : Maybe (Bool)
     , withoutMetadata : Maybe (Bool)
+    , onlyWithMedia : Maybe (Bool)
     , sortBy : Maybe (InboxMessagesSortBy)
     , reportTagsOnlyThisUnit : Maybe (Bool)
     , ignoreImportedCoords : Maybe (Bool)
@@ -1258,6 +1259,7 @@ inboxMessagesReqEncoder struct =
         , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataHash )
         , ( "only_with_metadata", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithMetadata )
         , ( "without_metadata", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutMetadata )
+        , ( "only_with_media", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithMedia )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (inboxMessagesSortByEncoder)) struct.sortBy )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.reportTagsOnlyThisUnit )
         , ( "ignore_imported_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.ignoreImportedCoords )
@@ -9138,6 +9140,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_metadata" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_media" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (inboxMessagesSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_imported_coords" (Json.Decode.nullable (Json.Decode.bool))))
@@ -12797,7 +12800,7 @@ networkFreqCallsignsBatchRspDecoder =
 
 
 singleNetworkCallsignsSectionDecoder : Json.Decode.Decoder SingleNetworkCallsignsSection
-singleNetworkCallsignsSectionDecoder =
+singleNetworkCallsignsSectionDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -13596,3 +13599,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
+
+

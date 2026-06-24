@@ -10,11 +10,11 @@ import {
   buildAnalysisReq,
   createInitialQueryState,
   createResetQueryState,
-  hasMeaningfulFiltersBeyondDateRange,
+  hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   normalizeQueryState,
-  queryStateComparisonKey,
+  queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
 } from './helpers';
 import type { User } from '../../../../Bindings';
@@ -44,7 +44,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
   const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(null);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
-    hasMeaningfulFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
+    hasMeaningfulUiFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
   const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
@@ -327,8 +327,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
-    const queryStateKey = queryStateComparisonKey(queryState);
-    const lastResetStateKey = queryStateComparisonKey(lastResetState);
+    const queryStateKey = queryStateUiComparisonKey(queryState);
+    const lastResetStateKey = queryStateUiComparisonKey(lastResetState);
     if (isNullOrUndefined(queryStateKey) || isNullOrUndefined(lastResetStateKey)) return false;
 
     return queryStateKey !== lastResetStateKey;

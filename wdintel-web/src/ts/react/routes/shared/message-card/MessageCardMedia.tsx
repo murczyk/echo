@@ -6,6 +6,11 @@ import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 
 const PREVIEW_IMAGE_HEIGHT_PX = 100;
+const PREVIEW_IMAGE_MIN_WIDTH_PX = 160;
+const PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX = 36;
+const AUDIO_PLAYER_MIN_HEIGHT_PX = 120;
+const AUDIO_PLAYER_TOP_PADDING_PX = 12;
+const AUDIO_PLAYER_Z_INDEX = 0;
 
 const AUDIO_FILE_EXTENSIONS = [
   '.mp3',
@@ -62,27 +67,69 @@ export function MessagePictureThumb({ href }: { href: string }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  if (failed) return null;
-
   return (
-    <Box component="span" sx={{ display: 'inline-block', mr: 0.5, mb: 0.5, lineHeight: 0 }}>
-      <Box component="a" href={href} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block' }}>
+    <Box component="span" sx={{ display: 'inline-flex', mr: 0.5, mb: 0.5, lineHeight: 0, verticalAlign: 'top' }}>
+      <Box
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
+        data-picture-thumb-error-height-px={failed ? PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX : undefined}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          width: 'fit-content',
+          maxWidth: '100%',
+          alignSelf: 'flex-start',
+          minWidth: failed ? 'auto' : loaded ? PREVIEW_IMAGE_MIN_WIDTH_PX : 'auto',
+          minHeight: failed ? PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX : loaded ? PREVIEW_IMAGE_HEIGHT_PX : PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX,
+          px: failed ? 1.25 : 0.75,
+          py: failed ? 0.75 : 0.25,
+          overflow: 'visible',
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+          backgroundColor: 'action.hover',
+          color: 'text.secondary',
+        }}
+      >
         <Box
           component="img"
           src={href}
-          alt=""
+          alt="Зображення повідомлення"
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
           sx={{
-            display: loaded ? 'block' : 'none',
-            height: PREVIEW_IMAGE_HEIGHT_PX,
-            minHeight: PREVIEW_IMAGE_HEIGHT_PX,
-            width: 'auto',
+            display: 'block',
+            visibility: loaded && !failed ? 'visible' : 'hidden',
+            height: loaded && !failed ? PREVIEW_IMAGE_HEIGHT_PX : 0,
+            minHeight: loaded && !failed ? PREVIEW_IMAGE_HEIGHT_PX : 0,
+            minWidth: loaded && !failed ? PREVIEW_IMAGE_MIN_WIDTH_PX : 0,
+            width: loaded && !failed ? 'auto' : 0,
             maxWidth: '100%',
             objectFit: 'contain',
             verticalAlign: 'middle',
           }}
         />
+        {!loaded || failed ? (
+          <Typography
+            variant="caption"
+            component="span"
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              textAlign: 'left',
+              lineHeight: 1.2,
+              maxWidth: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {failed ? 'Зображення недоступне' : 'Зображення'}
+          </Typography>
+        ) : null}
       </Box>
     </Box>
   );
@@ -177,7 +224,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
         component="div"
         title={displayName}
         sx={{
-          mb: 0.25,
+          mb: 2,
           color: 'text.secondary',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -186,7 +233,25 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
       >
         {displayName}
       </Typography>
-      <Box ref={hostRef} sx={{ width: '100%', minWidth: 0 }} />
+      <Box
+        ref={hostRef}
+        data-audio-player-host
+        data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
+        data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
+        data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
+        sx={{
+          position: 'relative',
+          zIndex: AUDIO_PLAYER_Z_INDEX,
+          width: '100%',
+          minWidth: 0,
+          minHeight: AUDIO_PLAYER_MIN_HEIGHT_PX,
+          pt: `${AUDIO_PLAYER_TOP_PADDING_PX}px`,
+          pb: 0.5,
+          display: 'flex',
+          alignItems: 'stretch',
+          overflow: 'visible',
+        }}
+      />
     </Box>
   );
 }

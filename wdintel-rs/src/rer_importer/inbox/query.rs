@@ -37,6 +37,22 @@ fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
     }
 }
 
+fn message_has_media_exists() -> SimpleExpr {
+    let media_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_media::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_media::Entity,
+                signal_message_media::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+
+    Expr::exists(media_query)
+}
+
 pub(crate) async fn build_inbox_query(
     login: &str,
     env: &Env,
@@ -141,6 +157,9 @@ pub(crate) async fn build_inbox_query(
         include_peleng_locations,
     )?;
     q = filter_selected_metadata_for_inbox_messages(q, req)?;
+    if req.only_with_media == Some(true) {
+        q = q.filter(message_has_media_exists());
+    }
 
     if req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()
