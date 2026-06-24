@@ -12,7 +12,7 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
-import type { ModulationRec } from '../../../../../Bindings';
+import type { EncryptionRec } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 
 type Props = {
@@ -21,14 +21,14 @@ type Props = {
   saving: boolean;
   keyValue: string;
   descriptionValue: string;
-  modulationId: number | null;
-  modulationOptions: ModulationRec[];
+  encryptionId: number | null;
+  encryptionOptions: EncryptionRec[];
   keyError?: string | null;
   onClose: () => void;
   onKeyChange: (nextValue: string) => void;
   onKeyBlur: () => void;
   onDescriptionChange: (nextValue: string) => void;
-  onModulationChange: (nextValue: number | null) => void;
+  onEncryptionChange: (nextValue: number | null) => void;
   onCreate: () => void;
   createDisabled?: boolean;
   disableRestoreFocus?: boolean;
@@ -88,14 +88,14 @@ export function NetworkFreqNewKeyDialog({
   saving,
   keyValue,
   descriptionValue,
-  modulationId,
-  modulationOptions,
+  encryptionId,
+  encryptionOptions,
   keyError,
   onClose,
   onKeyChange,
   onKeyBlur,
   onDescriptionChange,
-  onModulationChange,
+  onEncryptionChange,
   onCreate,
   createDisabled = false,
   disableRestoreFocus = false,
@@ -133,17 +133,17 @@ export function NetworkFreqNewKeyDialog({
             <Select
               labelId="network-freq-new-key-modulation-label"
               label="Модуляція"
-              value={modulationId === null ? '' : String(modulationId)}
+              value={encryptionId === null ? '' : String(encryptionId)}
               onChange={(event) => {
                 const value = event.target.value.trim();
-                onModulationChange(value === '' ? null : Number(value));
+                onEncryptionChange(value === '' ? null : Number(value));
               }}
               sx={compactSelectSx}
             >
               <MenuItem value="">
                 <em>Не вибрано</em>
               </MenuItem>
-              {modulationOptions.map((modulation) => (
+              {encryptionOptions.map((modulation) => (
                 <MenuItem key={modulation.id} value={String(modulation.id)}>
                   {modulation.name}
                 </MenuItem>

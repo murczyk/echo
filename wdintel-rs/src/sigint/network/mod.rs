@@ -2235,7 +2235,8 @@ pub async fn update_network_freq_v2(
             &req.modulation
         } else {
             &"VHF".to_string()
-        };        let mut model = network_freq_model.into_active_model();
+        };
+        let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(kind)?);
         model.modulation_id = Set(None);
         model.active_from = Set(updated_freq_active_from);

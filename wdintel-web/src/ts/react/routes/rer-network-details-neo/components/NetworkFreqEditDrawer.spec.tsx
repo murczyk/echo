@@ -149,7 +149,7 @@ function renderManagedDrawer(form: NetworkFreqEditForm): Rendered {
         saving={false}
         error={null}
         networkId={1}
-        modulations={[{ id: 11, name: 'DMR' }]}
+        encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
         onChange={setCurrentForm}
         onSave={() => {}}
@@ -203,7 +203,7 @@ describe('NetworkFreqEditDrawer', () => {
           saving={false}
           error={null}
           networkId={null}
-          modulations={[{ id: 11, name: 'DMR' }]}
+          encryptions={[{ id: 11, name: 'DMR' }]}
           onClose={() => {}}
           onChange={setCurrentForm}
           onSave={() => {}}
@@ -242,7 +242,7 @@ describe('NetworkFreqEditDrawer', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Основні дані');
-    expect(view.container.textContent).toContain('Тип *');
+    expect(view.container.textContent).toContain('Модуляція *');
     expect(view.container.textContent).toContain('Модуляція');
     expect(view.container.textContent).toContain('Ключі');
     expect(view.container.textContent).not.toContain('Шифрування *');
@@ -256,7 +256,7 @@ describe('NetworkFreqEditDrawer', () => {
     const text = view.container.textContent ?? '';
     expect(text.indexOf('Активна з')).toBeLessThan(text.indexOf('Ключі'));
     expect(text.indexOf('Ключі')).toBeLessThan(text.indexOf('ТЕХНІЧНІ ДАНІ'));
-    expect(text.indexOf('Тип *')).toBeLessThan(text.indexOf('ТЕХНІЧНІ ДАНІ'));
+    expect(text.indexOf('Модуляція *')).toBeLessThan(text.indexOf('ТЕХНІЧНІ ДАНІ'));
   });
 
   it('disables save when the start date is empty', () => {
@@ -289,7 +289,7 @@ describe('NetworkFreqEditDrawer', () => {
   });
 
   it('renders keys without expanding the technical section', async () => {
-    const view = renderManagedDrawer(buildForm({ modulationId: null }));
+    const view = renderManagedDrawer(buildForm({ encryptionId: null }));
     rendered.push(view);
 
     await act(async () => {
