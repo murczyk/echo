@@ -31,13 +31,13 @@ export function collectMessageImages(msg: InboxMessage): MessageCardImage[] {
     imagesByHref.set(href, existing == null ? { ...image, href } : { ...existing, ...image, href });
   };
 
+  for (const href of msg.images ?? []) {
+    add({ href });
+  }
+
   for (const attachment of msg.media ?? []) {
     if (!isImageMediaAttachment(attachment)) continue;
     add(mapMessageMediaImage(attachment));
-  }
-
-  for (const href of msg.images ?? []) {
-    add({ href });
   }
 
   return Array.from(imagesByHref.values());

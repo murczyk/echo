@@ -43,6 +43,7 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.color;
   delete clone.onChange;
   delete clone.onKeyDown;
+  delete clone.valueLabelDisplay;
   delete clone.anchorEl;
   delete clone.onClose;
   delete clone.open;
@@ -1999,12 +2000,14 @@ describe('MessageCard', () => {
     await click(getButton(reopenedDialog as HTMLElement, 'Закрити'));
   });
 
-  it('prefers image media metadata when image hrefs overlap', async () => {
-    const sharedHref = 'https://example.test/files/merged-image.png';
+  it('keeps legacy image order while merging media metadata by href', async () => {
+    const imageA = 'https://example.test/files/image-a.png';
+    const sharedHref = 'https://example.test/files/shared-image.png';
+    const imageB = 'https://example.test/files/image-b.png';
     const view = await renderCard({
       msg: {
         ...buildMessage(),
-        images: [sharedHref],
+        images: [imageA, sharedHref],
         media: [
           {
             id: 'media-image-1',
@@ -2013,21 +2016,36 @@ describe('MessageCard', () => {
             fileName: 'merged-from-media.png',
             sizeBytes: 4096,
           },
+          {
+            id: 'media-image-2',
+            href: imageB,
+            contentType: 'image/jpeg',
+            fileName: 'image-b-from-media.jpg',
+            sizeBytes: 8192,
+          },
         ] as InboxMessage['media'],
       },
     });
     rendered.push(view);
+
+    const thumbnails = Array.from(view.container.querySelectorAll('button[aria-label="Відкрити зображення"]'));
+    expect(thumbnails).toHaveLength(3);
+    expect(thumbnails[0]?.querySelector('img')?.getAttribute('src')).toBe(imageA);
+    expect(thumbnails[1]?.querySelector('img')?.getAttribute('src')).toBe(sharedHref);
+    expect(thumbnails[2]?.querySelector('img')?.getAttribute('src')).toBe(imageB);
 
     await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
 
-    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
-    expect(thumb).not.toBeNull();
-
     const downloadLink = dialog?.querySelector('a[download]');
-    expect(downloadLink?.getAttribute('download')).toBe('merged-from-media.png');
+    expect(downloadLink?.getAttribute('download')).toBe('image-a.png');
+
+    await click(thumbnails[1] as HTMLElement);
+
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(sharedHref);
+    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('merged-from-media.png');
 
     const infoButton = dialog?.querySelector('button[aria-label="Інформація"]');
     expect(infoButton).not.toBeNull();
@@ -2038,6 +2056,7 @@ describe('MessageCard', () => {
     expect(dialog?.textContent).toContain('image/png');
     expect(dialog?.textContent).toContain('4.0 KB');
     expect(dialog?.textContent).toContain('media-image-1');
-    expect(view.container.querySelectorAll('button[aria-label="Відкрити зображення"]')).toHaveLength(1);
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(sharedHref);
+    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('merged-from-media.png');
   });
 });
