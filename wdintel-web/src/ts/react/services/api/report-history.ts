@@ -8,9 +8,27 @@ export async function listReportHistory(options?: { signal?: AbortSignal }): Pro
   return transformSnakeToCamel<ReportHistoryRow[]>(raw) ?? [];
 }
 
-export async function listAllReportHistory(options?: { signal?: AbortSignal }): Promise<ReportHistoryRow[]> {
-  const raw = await postJson<unknown>('/api/admin/report-history/list', undefined, options);
-  return transformSnakeToCamel<ReportHistoryRow[]>(raw) ?? [];
+export type ReportHistoryQueryState = {
+  globalFilter: string;
+  columnFilters: Array<{ id: string; value: unknown }>;
+  sorting: Array<{ id: string; desc: boolean }>;
+};
+
+export type ReportHistoryBatchReq = ReportHistoryQueryState & {
+  offset: number;
+  limit: number;
+};
+
+export type ReportHistoryBatchRsp = {
+  rows: ReportHistoryRow[];
+  total: number;
+  hasMore: boolean;
+  nextOffset: number;
+};
+
+export async function listAllReportHistory(req: ReportHistoryBatchReq, options?: { signal?: AbortSignal }): Promise<ReportHistoryBatchRsp> {
+  const raw = await postJson<unknown>('/api/admin/report-history/list', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<ReportHistoryBatchRsp>(raw);
 }
 
 export async function fetchReportHistoryStatus(id: number): Promise<ReportHistoryRow> {

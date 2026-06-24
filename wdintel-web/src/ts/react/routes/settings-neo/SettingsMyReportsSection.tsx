@@ -15,12 +15,12 @@ import {
   Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type MRT_ColumnDef } from 'material-react-table';
+import { type MRT_ColumnDef, type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
-import { downloadReportHistory, listReportHistory, retryReportHistory } from '../../services/api/report-history';
+import { downloadReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
@@ -28,6 +28,17 @@ import { SettingsNeoTable } from './SettingsNeoTable';
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
 type LoadReportHistory = (options?: { signal?: AbortSignal }) => Promise<ReportHistoryRow[]>;
+
+type ReportHistoryQueryState = {
+  globalFilter: string;
+  columnFilters: MRT_ColumnFiltersState;
+  sorting: MRT_SortingState;
+};
+
+type LoadReportHistoryBatch = (
+  req: ReportHistoryQueryState & { offset: number; limit: number },
+  options?: { signal?: AbortSignal },
+) => Promise<ReportHistoryBatchRsp>;
 
 type Props = {
   active: boolean;
@@ -43,6 +54,7 @@ export type ReportHistoryTableSectionProps = {
   fullHeight?: boolean;
   showReportCount?: boolean;
   loadReportHistory?: LoadReportHistory;
+  loadReportHistoryBatch?: LoadReportHistoryBatch;
 };
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
@@ -82,7 +94,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'actions',
 ];
 
-const DEFAULT_REPORTS_SORTING = [{ id: 'createdAt', desc: true }];
+const DEFAULT_REPORTS_SORTING: MRT_SortingState = [{ id: 'createdAt', desc: true }];
 
 const REPORTS_FULL_HEIGHT_ROOT_SX = {
   height: '100%',
@@ -122,6 +134,7 @@ const REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX = {
 } as const;
 
 const REPORT_LOADING_ROW_COUNT = 8;
+const REPORT_HISTORY_BATCH_SIZE = 200;
 
 const REPORTS_LOADING_TABLE_WRAPPER_SX = {
   height: 384,
@@ -235,27 +248,59 @@ export function ReportHistoryTableSection({
   fullHeight = false,
   showReportCount = false,
   loadReportHistory = listReportHistory,
+  loadReportHistoryBatch,
 }: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<number | null>(null);
   const [errorLogRow, setErrorLogRow] = useState<ReportHistoryRow | null>(null);
+  const [queryState, setQueryState] = useState<ReportHistoryQueryState>({
+    globalFilter: '',
+    columnFilters: [],
+    sorting: DEFAULT_REPORTS_SORTING,
+  });
+  const [totalRows, setTotalRows] = useState<number | null>(null);
+  const [hasMoreRows, setHasMoreRows] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadRows = useCallback(async (signal?: AbortSignal) => {
-    setLoadState((current) => (current === 'success' ? current : 'loading'));
+  const loadRows = useCallback(async (signal?: AbortSignal, append = false, offset = 0) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadState((current) => (current === 'success' ? current : 'loading'));
+    }
     setError(null);
     try {
-      const nextRows = await loadReportHistory(signal ? { signal } : undefined);
-      setRows(nextRows);
+      if (loadReportHistoryBatch) {
+        const rsp = await loadReportHistoryBatch(
+          { ...queryState, offset, limit: REPORT_HISTORY_BATCH_SIZE },
+          signal ? { signal } : undefined,
+        );
+        setRows((current) => (append ? [...current, ...rsp.rows] : rsp.rows));
+        setTotalRows(rsp.total);
+        setHasMoreRows(rsp.hasMore);
+        setNextOffset(rsp.nextOffset);
+      } else {
+        const nextRows = await loadReportHistory(signal ? { signal } : undefined);
+        setRows(nextRows);
+        setTotalRows(nextRows.length);
+        setHasMoreRows(false);
+        setNextOffset(nextRows.length);
+      }
       setLoadState('success');
     } catch (loadError) {
       if (signal?.aborted) return;
-      setRows([]);
-      setLoadState('error');
+      if (!append) {
+        setRows([]);
+        setLoadState('error');
+      }
       setError(formatErrorMessage(loadError));
+    } finally {
+      setLoadingMore(false);
     }
-  }, [loadReportHistory]);
+  }, [loadReportHistory, loadReportHistoryBatch, queryState]);
 
   useEffect(() => {
     if (!active) return;
@@ -267,7 +312,7 @@ export function ReportHistoryTableSection({
   }, [active, loadRows]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || loadReportHistoryBatch) return;
     let stopped = false;
     let timeoutId: number | null = null;
     let abortController: AbortController | null = null;
@@ -289,7 +334,7 @@ export function ReportHistoryTableSection({
       }
       abortController?.abort();
     };
-  }, [active, loadRows]);
+  }, [active, loadReportHistoryBatch, loadRows]);
 
   useEffect(() => {
     if (!active) {
@@ -298,8 +343,21 @@ export function ReportHistoryTableSection({
       setError(null);
       setActionInFlight(null);
       setErrorLogRow(null);
+      setTotalRows(null);
+      setHasMoreRows(false);
+      setNextOffset(0);
+      setLoadingMore(false);
     }
   }, [active]);
+
+  const handleQueryStateChange = useCallback((nextQueryState: ReportHistoryQueryState) => {
+    setQueryState((current) => (JSON.stringify(current) === JSON.stringify(nextQueryState) ? current : nextQueryState));
+  }, []);
+
+  const handleLoadMore = useCallback(() => {
+    if (!loadReportHistoryBatch || loadingMore || !hasMoreRows) return;
+    void loadRows(undefined, true, nextOffset);
+  }, [hasMoreRows, loadReportHistoryBatch, loadingMore, loadRows, nextOffset]);
 
   async function handleDownload(row: ReportHistoryRow) {
     if (!row.hasFile || row.status !== 'done') return;
@@ -339,6 +397,8 @@ export function ReportHistoryTableSection({
         {
           accessorKey: 'details',
           header: 'Деталі',
+          enableSorting: false,
+          enableColumnFilter: false,
           Cell: ({ row }) =>
             row.original.details ? (
               <Tooltip title={row.original.details}>
@@ -361,6 +421,8 @@ export function ReportHistoryTableSection({
             id: 'errorLog',
             accessorFn: (row) => (row.errorLog && row.errorLog.length > 0 ? 'Переглянути' : ''),
             header: 'Помилки',
+            enableSorting: false,
+            enableColumnFilter: false,
             Cell: ({ row }) => {
               if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
               return (
@@ -471,13 +533,13 @@ export function ReportHistoryTableSection({
               </Typography>
               {showReportCount && loadState === 'success' ? (
                 <Typography component="span" variant="subtitle1" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {rows.length}
+                  {totalRows === null ? rows.length : `${rows.length}/${totalRows}`}
                 </Typography>
               ) : null}
             </Stack>
             <Tooltip title="Оновити">
               <span>
-                <IconButton size="small" disabled={loadState === 'loading'} onClick={() => void loadRows()}>
+                <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
                   <RefreshIcon fontSize="small" />
                 </IconButton>
               </span>
@@ -507,8 +569,18 @@ export function ReportHistoryTableSection({
                 loading={loadState === 'loading'}
                 loadingRows={buildReportLoadingRows()}
                 layoutMode={fullHeight ? 'grid' : undefined}
+                manualFiltering={loadReportHistoryBatch !== undefined}
+                manualSorting={loadReportHistoryBatch !== undefined}
+                onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
               />
             </Box>
+            {loadReportHistoryBatch && hasMoreRows ? (
+              <Stack direction="row" justifyContent="center">
+                <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
+                  {loadingMore ? 'Завантаження...' : 'Load more'}
+                </Button>
+              </Stack>
+            ) : null}
           </TableStateProvider>
         </Stack>
       </Box>
