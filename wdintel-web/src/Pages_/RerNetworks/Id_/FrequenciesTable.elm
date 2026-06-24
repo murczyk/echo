@@ -602,6 +602,18 @@ update _ msg model =
                     , activeFrom = Nothing
                     , activeTo = Nothing
                     }
+                , freqCreateKindSelect =
+                    let
+                        select =
+                            model.freqCreateKindSelect
+                    in
+                    { select | selected = NetworksUtils.NFM }
+                , freqCreateModulationSelect =
+                    let
+                        select =
+                            model.freqCreateModulationSelect
+                    in
+                    { select | selected = Nothing }
                 , freqCreateKeySelect =
                     let
                         select =
@@ -894,6 +906,18 @@ update _ msg model =
                     , activeFrom = Nothing
                     , activeTo = Nothing
                     }
+                , freqCreateKindSelect =
+                    let
+                        select =
+                            model.freqCreateKindSelect
+                    in
+                    { select | selected = NetworksUtils.NFM }
+                , freqCreateModulationSelect =
+                    let
+                        select =
+                            model.freqCreateModulationSelect
+                    in
+                    { select | selected = Nothing }
                 , freqCreateKeySelect =
                     let
                         select =

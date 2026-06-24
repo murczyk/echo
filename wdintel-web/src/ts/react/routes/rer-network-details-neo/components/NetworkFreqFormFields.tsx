@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { EncryptionRec } from '../../../../../Bindings';
 import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { PowerChip } from '../../../components/PowerChip';
-import type { NetworkFreqKind } from '../use-rer-network-details-neo-page.types';
 
 type Props = {
   mode: 'create' | 'edit';
@@ -42,7 +41,6 @@ type DrawerSectionProps = {
 type ChipOption = {
   value: string;
   label: string;
-  disabled?: boolean;
 };
 
 const compactTextFieldSx = (theme: any) => ({
@@ -155,18 +153,15 @@ function ChipChoiceGroup({
         {required ? ' *' : ''}
       </Typography>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-        {options.map((option) => {
-          const optionDisabled = disabled || Boolean(option.disabled);
-          return (
-            <PowerChip
-              key={option.value}
-              label={option.label}
-              selected={option.value === value}
-              interactive={!optionDisabled}
-              onClick={optionDisabled ? undefined : () => onChange(option.value)}
-            />
-          );
-        })}
+        {options.map((option) => (
+          <PowerChip
+            key={option.value}
+            label={option.label}
+            selected={option.value === value}
+            interactive={!disabled}
+            onClick={disabled ? undefined : () => onChange(option.value)}
+          />
+        ))}
       </Box>
     </Box>
   );
@@ -231,11 +226,11 @@ export function NetworkFreqFormFields({
   }, [isDmrModulation, encryptions]);
 
   const encryptionItems = useMemo<ChipOption[]>(
-    () => encryptions.map((encryption) => ({
-      value: String(encryption.id),
-      label: encryption.name,
-      disabled: !isDmrModulation && encryption.name !== 'Без шифрування',
-    })),
+    () => {
+      const all = encryptions.map((enc) => ({ value: String(enc.id), label: enc.name }));
+      if (isDmrModulation) return all;
+      return all.filter((enc) => enc.label === 'Без шифрування');
+    },
     [encryptions, isDmrModulation],
   );
 
