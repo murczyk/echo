@@ -12,6 +12,7 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
+import { useEffect } from 'react';
 import type { EncryptionRec } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 
@@ -100,6 +101,13 @@ export function NetworkFreqNewKeyDialog({
   createDisabled = false,
   disableRestoreFocus = false,
 }: Props) {
+  useEffect(() => {
+    if (!open || encryptionId !== null) return;
+    const nezv = encryptionOptions.find((e) => e.name === 'Не визначено');
+    if (nezv) onEncryptionChange(nezv.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, encryptionOptions]);
+
   return (
     <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm" disableRestoreFocus={disableRestoreFocus}>
       <DialogTitle>{title}</DialogTitle>
@@ -129,10 +137,10 @@ export function NetworkFreqNewKeyDialog({
             sx={compactTextFieldSx}
           />
           <FormControl fullWidth disabled={saving} size="small">
-            <InputLabel id="network-freq-new-key-modulation-label">Модуляція</InputLabel>
+            <InputLabel id="network-freq-new-key-ecnryption-label">Шифрування</InputLabel>
             <Select
-              labelId="network-freq-new-key-modulation-label"
-              label="Модуляція"
+              labelId="network-freq-new-key-ecnryption-label"
+              label="Шифрування"
               value={encryptionId === null ? '' : String(encryptionId)}
               onChange={(event) => {
                 const value = event.target.value.trim();
@@ -140,14 +148,14 @@ export function NetworkFreqNewKeyDialog({
               }}
               sx={compactSelectSx}
             >
-              <MenuItem value="">
-                <em>Не вибрано</em>
-              </MenuItem>
-              {encryptionOptions.map((modulation) => (
-                <MenuItem key={modulation.id} value={String(modulation.id)}>
-                  {modulation.name}
-                </MenuItem>
-              ))}
+              {encryptionOptions
+                .filter((enc) => enc.name !== 'Без шифрування')
+                .sort((a, b) => (a.name === 'Не визначено' ? -1 : b.name === 'Не визначено' ? 1 : 0))
+                .map((enc) => (
+                  <MenuItem key={enc.id} value={String(enc.id)}>
+                    {enc.name}
+                  </MenuItem>
+                ))}
             </Select>
           </FormControl>
           <PowerAlert severity="info" autoHideDuration={null}>

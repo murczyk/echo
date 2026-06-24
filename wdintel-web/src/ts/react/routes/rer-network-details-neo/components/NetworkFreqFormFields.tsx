@@ -218,7 +218,7 @@ export function NetworkFreqFormFields({
 
   useEffect(() => {
     const bezEnc = encryptions.find((e) => e.name === 'Без шифрування');
-    if (bezEnc && encryptionId !== bezEnc.id && (!isDmrModulation || encryptionId === null)) {
+    if (bezEnc && !isDmrModulation && encryptionId !== bezEnc.id) {
       onEncryptionChange(bezEnc.id);
     }
     // Run only when modulation type changes or encryptions list loads.

@@ -142,6 +142,7 @@ function NetworkFreqEditDrawerComponent({
     (document.activeElement as HTMLElement | null)?.blur();
     setNewKeyOpen(false);
     setNewKeyTouched(false);
+    setNewKeyForm({ key: '', description: '', encryptionId: null });
     restoreAddNewKeyFocus();
   };
 
