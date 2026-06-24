@@ -1,6 +1,7 @@
 import type { CallsignInfoRes, InboxMessage, MessageComment, Network, Tag, Unit } from '../../../../../Bindings';
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import { useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import { getPointEtalonsFromMessage, messageHasPalitraTag, type TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { renderMarkedText } from './MarkedText';
@@ -15,6 +16,7 @@ import {
   MessageMediaDownloadLink,
   MessagePictureThumb,
 } from './MessageCardMedia';
+import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -54,6 +56,7 @@ export function MessageCardMessageBody({
   searchText?: string | null;
 }) {
   const imageHrefs = collectMessageImageHrefs(msg);
+  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const imageHrefSet = new Set(imageHrefs);
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
@@ -75,11 +78,19 @@ export function MessageCardMessageBody({
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
       {imageHrefs.length > 0 ? (
         <Box className="m-1" sx={{ lineHeight: 0 }}>
-          {imageHrefs.map((href) => (
-            <MessagePictureThumb key={href} href={href} />
+          {imageHrefs.map((href, index) => (
+            <MessagePictureThumb key={href} href={href} onOpen={() => setImagePreviewIndex(index)} />
           ))}
         </Box>
       ) : null}
+      <MessageImagePreviewDialog
+        imageHrefs={imageHrefs}
+        initialIndex={imagePreviewIndex ?? 0}
+        currentIndex={imagePreviewIndex ?? 0}
+        open={imagePreviewIndex != null && imageHrefs.length > 0}
+        onClose={() => setImagePreviewIndex(null)}
+        onIndexChange={(index) => setImagePreviewIndex(index)}
+      />
       {audioAttachments.length > 0 || downloadAttachments.length > 0 ? (
         <Box className="mt-1" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
           {audioAttachments.map((attachment) => (

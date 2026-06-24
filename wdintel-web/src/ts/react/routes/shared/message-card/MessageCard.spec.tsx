@@ -146,6 +146,14 @@ vi.mock('@mui/material', () => ({
       {endIcon}
     </button>
   ),
+  ButtonBase: ({ children, component, ...props }: PrimitiveProps) => {
+    const Component = component ?? 'button';
+    return (
+      <Component {...(Component === 'button' ? { type: 'button' } : {})} {...omitMuiLayoutProps(props)}>
+        {children}
+      </Component>
+    );
+  },
   ButtonGroup: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
@@ -164,9 +172,25 @@ vi.mock('@mui/material', () => ({
       ) : null}
     </span>
   ),
-  IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
-    <button {...omitMuiLayoutProps(props)}>{children}</button>
-  ),
+  IconButton: ({ children, component, href, target, rel, ...props }: { children?: ReactNode; component?: string } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return (
+      <Component
+        {...(Component === 'button' ? { type: 'button' } : {})}
+        href={href}
+        target={target}
+        rel={rel}
+        {...omitMuiLayoutProps(props)}
+      >
+        {children}
+      </Component>
+    );
+  },
+  Dialog: ({ children, open }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+    open ? <div role="dialog">{children}</div> : null,
+  DialogActions: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
+  DialogContent: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
+  DialogTitle: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
   Link: ({ children, href, ...props }: { children?: ReactNode; href?: string } & Record<string, unknown>) => (
     <a href={href} {...omitMuiLayoutProps(props)}>
       {children}
@@ -1636,7 +1660,7 @@ describe('MessageCard', () => {
     expect(contrastRatio(theme.palette.text.primary, cardBg)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('renders mock image thumbnails with links opening full image in a new tab', async () => {
+  it('renders mock image thumbnails as preview buttons', async () => {
     const view = await renderCard({
       msg: { ...buildMessage(), ...inboxMessageWithMockImages() },
     });
@@ -1645,12 +1669,10 @@ describe('MessageCard', () => {
     const imgs = view.container.querySelectorAll('img');
     expect(imgs.length).toBe(2);
     imgs.forEach((img) => {
-      const link = img.closest('a');
-      expect(link).not.toBeNull();
-      expect(link?.getAttribute('target')).toBe('_blank');
-      expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
-      expect(link?.getAttribute('href')?.startsWith('data:image/svg+xml')).toBe(true);
-      expect(link?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+      const thumb = img.closest('button');
+      expect(thumb).not.toBeNull();
+      expect(thumb?.getAttribute('aria-label')).toBe('Відкрити зображення');
+      expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
     });
   });
 
@@ -1665,7 +1687,7 @@ describe('MessageCard', () => {
 
     const img = view.container.querySelector('img');
     expect(img).not.toBeNull();
-    expect(img?.closest('a')?.getAttribute('data-picture-thumb-state')).toBe('loading');
+    expect(img?.closest('button')?.getAttribute('data-picture-thumb-state')).toBe('loading');
     expect(view.container.textContent).toContain('Зображення');
 
     await act(async () => {
@@ -1673,10 +1695,86 @@ describe('MessageCard', () => {
     });
 
     expect(view.container.querySelector('img')).not.toBeNull();
-    const link = view.container.querySelector('a');
-    expect(link?.getAttribute('href')).toBe('https://example.test/files/broken.png');
-    expect(link?.getAttribute('data-picture-thumb-state')).toBe('failed');
-    expect(link?.getAttribute('data-picture-thumb-error-height-px')).toBe('36');
+    const thumb = img?.closest('button');
+    expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
+    expect(thumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('36');
     expect(view.container.textContent).toContain('Зображення недоступне');
+  });
+
+  it('opens the preview dialog and lets the carousel change the current image', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+      },
+    });
+    rendered.push(view);
+
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(thumb).not.toBeNull();
+
+    await click(thumb as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('1 / 2');
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-1.png',
+    );
+
+    const nextButton = dialog?.querySelector('button[aria-label="Наступне"]');
+    expect(nextButton).not.toBeNull();
+    await click(nextButton as HTMLElement);
+
+    expect(dialog?.textContent).toContain('2 / 2');
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/preview-2.png',
+    );
+
+    const downloadLink = dialog?.querySelector('a[download]');
+    expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/preview-2.png');
+    expect(downloadLink?.getAttribute('download')).toBe('preview-2.png');
+
+    const rawLink = dialog?.querySelector('a[aria-label="Відкрити в новій вкладці"]');
+    expect(rawLink?.getAttribute('href')).toBe('https://example.test/files/preview-2.png');
+    expect(rawLink?.getAttribute('target')).toBe('_blank');
+    expect(rawLink?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('does not show carousel controls for a single-image preview', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/single-image.png'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('1 / 1');
+    expect(dialog?.querySelector('button[aria-label="Попереднє"]')).toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Наступне"]')).toBeNull();
+  });
+
+  it('keeps malformed hrefs from crashing preview download name derivation', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/%E0%A4%A.png'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      'https://example.test/files/%E0%A4%A.png',
+    );
+    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('%E0%A4%A.png');
   });
 });

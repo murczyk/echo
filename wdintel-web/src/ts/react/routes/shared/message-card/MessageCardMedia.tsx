@@ -1,6 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import { Box, Button, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  ButtonBase,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 
 import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
@@ -63,19 +69,21 @@ export function collectMessageImageHrefs(msg: InboxMessage): string[] {
   return out;
 }
 
-export function MessagePictureThumb({ href }: { href: string }) {
+export function MessagePictureThumb({ href, onOpen }: { href: string; onOpen: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const canOpen = href.trim() !== '';
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', mr: 0.5, mb: 0.5, lineHeight: 0, verticalAlign: 'top' }}>
-      <Box
-        component="a"
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
+      <ButtonBase
+        component="button"
+        type="button"
+        onClick={canOpen ? onOpen : undefined}
+        disabled={!canOpen}
         data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
         data-picture-thumb-error-height-px={failed ? PREVIEW_IMAGE_ERROR_MIN_HEIGHT_PX : undefined}
+        aria-label="Відкрити зображення"
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -88,11 +96,16 @@ export function MessagePictureThumb({ href }: { href: string }) {
           px: failed ? 1.25 : 0.75,
           py: failed ? 0.75 : 0.25,
           overflow: 'visible',
+          cursor: canOpen ? 'pointer' : 'default',
           border: '1px solid',
           borderColor: 'divider',
           borderRadius: 1,
           backgroundColor: 'action.hover',
           color: 'text.secondary',
+          textAlign: 'left',
+          '&:disabled': {
+            color: 'text.disabled',
+          },
         }}
       >
         <Box
@@ -130,7 +143,7 @@ export function MessagePictureThumb({ href }: { href: string }) {
             {failed ? 'Зображення недоступне' : 'Зображення'}
           </Typography>
         ) : null}
-      </Box>
+      </ButtonBase>
     </Box>
   );
 }
