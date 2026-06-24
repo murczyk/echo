@@ -314,26 +314,23 @@ describe('NetworkFreqCreateDrawer', () => {
   });
 
   it('shows the tech section as unavailable for non-DMR modes', () => {
-    const view = renderDrawerWithEncryptions(buildForm({ modulation: 'DMR' }), [{ id: 11, name: 'FM' }]);
+    const view = renderDrawer(buildForm({ modulation: 'NFM' }));
     rendered.push(view);
 
     expect(view.container.textContent).toContain('доступно лише для DMR');
     expect(view.container.querySelector('[data-testid="keys-section"]')).not.toBeNull();
   });
 
-  it('enables the tech section when the selected modulation is DMR even if kind is non-DMR', () => {
-    const view = renderDrawerWithEncryptions(buildForm({ modulation: 'NFM' }), [
-      { id: 11, name: 'DMR' },
-      { id: 12, name: 'FM' },
-    ]);
+  it('enables the tech section when modulation is DMR', () => {
+    const view = renderDrawer(buildForm({ modulation: 'DMR' }));
     rendered.push(view);
 
     const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
     expect(techToggle?.disabled).toBe(false);
   });
 
-  it('disables the tech section when no modulation is selected', () => {
-    const view = renderDrawer(buildForm({ encryptionId: null }));
+  it('disables the tech section when modulation is AM', () => {
+    const view = renderDrawer(buildForm({ modulation: 'AM' }));
     rendered.push(view);
 
     const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;

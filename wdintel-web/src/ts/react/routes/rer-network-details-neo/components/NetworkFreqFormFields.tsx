@@ -42,6 +42,7 @@ type DrawerSectionProps = {
 type ChipOption = {
   value: string;
   label: string;
+  disabled?: boolean;
 };
 
 const compactTextFieldSx = (theme: any) => ({
@@ -154,15 +155,18 @@ function ChipChoiceGroup({
         {required ? ' *' : ''}
       </Typography>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-        {options.map((option) => (
-          <PowerChip
-            key={option.value}
-            label={option.label}
-            selected={option.value === value}
-            interactive={!disabled}
-            onClick={disabled ? undefined : () => onChange(option.value)}
-          />
-        ))}
+        {options.map((option) => {
+          const optionDisabled = disabled || Boolean(option.disabled);
+          return (
+            <PowerChip
+              key={option.value}
+              label={option.label}
+              selected={option.value === value}
+              interactive={!optionDisabled}
+              onClick={optionDisabled ? undefined : () => onChange(option.value)}
+            />
+          );
+        })}
       </Box>
     </Box>
   );
@@ -205,7 +209,7 @@ export function NetworkFreqFormFields({
 }: Props) {
   const [technicalExpanded, setTechnicalExpanded] = useState(false);
   const [deviationMode, setDeviationMode] = useState<'central' | 'offset'>('central');
-  const isDmrModulation = isDmrModulationId(encryptions, encryptionId);
+  const isDmrModulation = modulation.toUpperCase().startsWith('DMR');
   const freqLabel = 'Частота *';
   const freqDisabled = saving || mode === 'edit';
   const deviationSelectValue = freq.trim();
@@ -218,8 +222,12 @@ export function NetworkFreqFormFields({
   }, [isDmrModulation]);
 
   const encryptionItems = useMemo<ChipOption[]>(
-    () => [{ value: '', label: 'Не визначено' }, ...encryptions.map((encryption) => ({ value: String(encryption.id), label: encryption.name }))],
-    [encryptions],
+    () => encryptions.map((encryption) => ({
+      value: String(encryption.id),
+      label: encryption.name,
+      disabled: !isDmrModulation && encryption.name !== 'Без шифрування',
+    })),
+    [encryptions, isDmrModulation],
   );
 
   return (
@@ -265,14 +273,14 @@ export function NetworkFreqFormFields({
         disabled={saving}
         options={[
           { value: 'DMR', label: 'DMR' },
-          { value: 'DMRe', label: 'DMRe' },
           { value: 'NFM', label: 'NFM' },
+          { value: 'AM', label: 'AM' },
         ]}
         onChange={(nextValue) => onModulationChange(nextValue as string)}
       />
 
       <ChipChoiceGroup
-        label="Модуляція"
+        label="Шифрування"
         value={encryptionId === null ? '' : String(encryptionId)}
         disabled={saving}
         options={encryptionItems}
