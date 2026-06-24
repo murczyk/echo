@@ -39,50 +39,7 @@ impl MigrationTrait for Migration {
                     REFERENCES encryption(id) ON DELETE SET NULL;
             ALTER TABLE sigint_network_encryption_key
                 ADD COLUMN IF NOT EXISTS encryption_id BIGINT
-                    REFERENCES encryption(id) ON DELETE NO ACTION;
-            WITH freq_mods AS (
-                SELECT snf.id, snf.kind::text AS kind, m.name AS old_mod
-                FROM sigint_network_freq snf
-                LEFT JOIN modulation m ON m.id = snf.modulation_id
-            )
-            UPDATE sigint_network_freq snf
-            SET
-                modulation = CASE
-                    WHEN fm.kind = 'VHF'
-                         AND (fm.old_mod IS NULL OR fm.old_mod = 'NFM') THEN 'NFM'
-                    WHEN fm.kind = 'VHF' AND fm.old_mod = 'AM'         THEN 'AM'
-                    ELSE 'DMR'
-                END,
-                encryption_id = (
-                    SELECT e.id FROM encryption e
-                    WHERE e.name = CASE
-                        WHEN fm.old_mod = 'DMR (ARC40)'                             THEN 'ARC40'
-                        WHEN fm.old_mod IN ('DMR (AES256)', 'HYTERA (256 bit)')     THEN 'AES256'
-                        WHEN fm.old_mod IN ('TYT', 'TYT (128 bit)')                THEN 'TYT (128 bit)'
-                        WHEN fm.old_mod = 'TYT (16 bit)'                           THEN 'TYT (16 bit)'
-                        WHEN fm.kind = 'VHF'
-                             AND (fm.old_mod IS NULL
-                                  OR fm.old_mod IN ('NFM', 'AM', 'DMR'))           THEN 'Без шифрування'
-                        ELSE 'Не визначено'
-                    END
-                    LIMIT 1
-                )
-            FROM freq_mods fm
-            WHERE snf.id = fm.id;
-            UPDATE sigint_network_encryption_key k
-            SET encryption_id = (
-                SELECT e.id FROM encryption e
-                WHERE e.name = CASE
-                    WHEN m.name = 'DMR (ARC40)'                             THEN 'ARC40'
-                    WHEN m.name IN ('DMR (AES256)', 'HYTERA (256 bit)')     THEN 'AES256'
-                    WHEN m.name IN ('TYT', 'TYT (128 bit)')                THEN 'TYT (128 bit)'
-                    WHEN m.name = 'TYT (16 bit)'                           THEN 'TYT (16 bit)'
-                    ELSE 'Не визначено'
-                END
-                LIMIT 1
-            )
-            FROM modulation m
-            WHERE k.modulation_id = m.id AND k.encryption_id IS NULL;",
+                    REFERENCES encryption(id) ON DELETE NO ACTION;",
         )
         .await?;
         Ok(())
