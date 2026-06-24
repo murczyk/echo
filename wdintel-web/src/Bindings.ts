@@ -328,6 +328,13 @@ export type ReportHistoryRow = {
   lastError: string | null;
   details: string;
   progress: number;
+  errorLog: Array<ReportHistoryLogEntry> | null;
+};
+
+export type ReportHistoryLogEntry = {
+  login: string;
+  timestamp: string;
+  message: string;
 };
 
 export type ReportHistoryIdReq = {
