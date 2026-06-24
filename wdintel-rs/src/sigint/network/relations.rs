@@ -61,6 +61,8 @@ struct EdgeFreqAggregation {
 
 #[derive(Debug, Clone)]
 struct UnitScope {
+    unit_id: Option<i64>,
+    unit_name: String,
     army: String,
     division: String,
     regiment: String,
@@ -71,6 +73,8 @@ struct UnitScope {
 impl UnitScope {
     fn from_unit(unit: &sigint_unit::Model) -> Self {
         Self {
+            unit_id: Some(unit.id),
+            unit_name: normalize_unit_part(&unit.name),
             army: normalize_unit_part(&unit.army),
             division: normalize_unit_part(&unit.division),
             regiment: normalize_unit_part(&unit.regiment),
@@ -81,6 +85,12 @@ impl UnitScope {
 
     fn from_catalog_row(row: &CatalogCallsignRow) -> Self {
         Self {
+            unit_id: Some(row.unit_id),
+            unit_name: row
+                .unit_name
+                .as_deref()
+                .map(normalize_unit_part)
+                .unwrap_or_default(),
             army: normalize_unit_part(&row.army),
             division: normalize_unit_part(&row.division),
             regiment: normalize_unit_part(&row.regiment),
@@ -536,7 +546,9 @@ async fn load_catalog_callsigns(
         ) else {
             continue;
         };
-        let Some(specificity) = unit_specificity(&catalog_unit_scope) else {
+        let Some(specificity) =
+            catalog_unit_rank_specificity(&catalog_unit_scope)
+        else {
             continue;
         };
         let rank = CatalogMatchRank {
@@ -601,7 +613,7 @@ fn unit_values(unit: &UnitScope) -> [&str; 5] {
     ]
 }
 
-fn unit_specificity(unit: &UnitScope) -> Option<usize> {
+fn unit_hierarchy_specificity(unit: &UnitScope) -> Option<usize> {
     unit_values(unit)
         .iter()
         .enumerate()
@@ -610,8 +622,25 @@ fn unit_specificity(unit: &UnitScope) -> Option<usize> {
         .map(|(level, _value)| level)
 }
 
+fn unit_has_identity(unit: &UnitScope) -> bool {
+    unit.unit_id.is_some() || !unit.unit_name.is_empty()
+}
+
+fn catalog_unit_rank_specificity(unit: &UnitScope) -> Option<usize> {
+    unit_hierarchy_specificity(unit)
+        .or_else(|| unit_has_identity(unit).then_some(0))
+}
+
+fn unit_identity_matches(left: &UnitScope, right: &UnitScope) -> bool {
+    if left.unit_id.is_some() && left.unit_id == right.unit_id {
+        return true;
+    }
+
+    !left.unit_name.is_empty() && left.unit_name == right.unit_name
+}
+
 fn unit_is_same_or_child(parent: &UnitScope, child: &UnitScope) -> bool {
-    let Some(parent_specificity) = unit_specificity(parent) else {
+    let Some(parent_specificity) = unit_hierarchy_specificity(parent) else {
         return false;
     };
 
@@ -634,12 +663,12 @@ fn unit_parent_boundary_level(unit: &UnitScope) -> Option<usize> {
     } else if !unit.division.is_empty() || !unit.army.is_empty() {
         Some(0)
     } else {
-        unit_specificity(unit)
+        unit_hierarchy_specificity(unit)
     }
 }
 
 fn unit_is_allowed_parent(child: &UnitScope, parent: &UnitScope) -> bool {
-    let Some(parent_specificity) = unit_specificity(parent) else {
+    let Some(parent_specificity) = unit_hierarchy_specificity(parent) else {
         return false;
     };
     let Some(boundary_level) = unit_parent_boundary_level(child) else {
@@ -649,19 +678,48 @@ fn unit_is_allowed_parent(child: &UnitScope, parent: &UnitScope) -> bool {
     parent_specificity >= boundary_level && unit_is_same_or_child(parent, child)
 }
 
+fn unit_hierarchy_distance(
+    left: &UnitScope,
+    right: &UnitScope,
+) -> Option<usize> {
+    let left_specificity = unit_hierarchy_specificity(left)?;
+    let right_specificity = unit_hierarchy_specificity(right)?;
+    if left_specificity == right_specificity {
+        return Some(0);
+    }
+
+    let (parent_specificity, child) = if left_specificity < right_specificity {
+        (left_specificity, right)
+    } else {
+        (right_specificity, left)
+    };
+
+    Some(
+        unit_values(child)
+            .into_iter()
+            .enumerate()
+            .filter(|(level, value)| {
+                *level > parent_specificity && !value.is_empty()
+            })
+            .count(),
+    )
+}
+
 fn unit_scope_distance(
     network_unit: &UnitScope,
     catalog_unit: &UnitScope,
 ) -> Option<usize> {
+    if unit_identity_matches(network_unit, catalog_unit) {
+        return Some(0);
+    }
+
     if !unit_is_same_or_child(network_unit, catalog_unit)
         && !unit_is_allowed_parent(network_unit, catalog_unit)
     {
         return None;
     }
 
-    let network_specificity = unit_specificity(network_unit)?;
-    let catalog_specificity = unit_specificity(catalog_unit)?;
-    Some(network_specificity.abs_diff(catalog_specificity))
+    unit_hierarchy_distance(network_unit, catalog_unit)
 }
 
 fn closest_unit_scope_distance(
@@ -1185,11 +1243,21 @@ mod tests {
         company: &str,
     ) -> UnitScope {
         UnitScope {
+            unit_id: None,
+            unit_name: String::new(),
             army: normalize_unit_part(army),
             division: normalize_unit_part(division),
             regiment: normalize_unit_part(regiment),
             battalion: normalize_unit_part(battalion),
             company: normalize_unit_part(company),
+        }
+    }
+
+    fn unit_scope_with_identity(unit_id: i64, unit_name: &str) -> UnitScope {
+        UnitScope {
+            unit_id: Some(unit_id),
+            unit_name: normalize_unit_part(unit_name),
+            ..unit_scope("", "", "", "", "")
         }
     }
 
@@ -1221,6 +1289,32 @@ mod tests {
     fn unit_scope_does_not_treat_missing_ancestors_as_wildcards() {
         let network_unit = unit_scope("", "", "", "1 мсб", "");
         let catalog_unit = unit_scope("", "", "283 мсп", "1 мсб", "");
+
+        assert_eq!(unit_scope_distance(&network_unit, &catalog_unit), None);
+    }
+
+    #[test]
+    fn unit_scope_matches_same_unit_id_without_hierarchy() {
+        let network_unit = unit_scope_with_identity(1, "network unit");
+        let catalog_unit = unit_scope_with_identity(1, "catalog unit");
+
+        assert_eq!(unit_scope_distance(&network_unit, &catalog_unit), Some(0));
+        assert_eq!(catalog_unit_rank_specificity(&catalog_unit), Some(0));
+    }
+
+    #[test]
+    fn unit_scope_matches_same_unit_name_without_hierarchy() {
+        let network_unit = unit_scope_with_identity(1, "Imported Unit");
+        let catalog_unit = unit_scope_with_identity(2, " imported unit ");
+
+        assert_eq!(unit_scope_distance(&network_unit, &catalog_unit), Some(0));
+        assert_eq!(catalog_unit_rank_specificity(&catalog_unit), Some(0));
+    }
+
+    #[test]
+    fn unit_scope_rejects_different_units_without_hierarchy() {
+        let network_unit = unit_scope_with_identity(1, "network unit");
+        let catalog_unit = unit_scope_with_identity(2, "catalog unit");
 
         assert_eq!(unit_scope_distance(&network_unit, &catalog_unit), None);
     }
