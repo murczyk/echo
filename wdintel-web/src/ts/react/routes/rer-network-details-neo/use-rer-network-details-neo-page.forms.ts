@@ -116,7 +116,7 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     freqs: [
       {
         freq: form.freq.trim(),
-        modulation: form.modulation === 'DMRe' ? 'DMR' : form.modulation,
+        modulation: form.modulation,
         encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         description: null,

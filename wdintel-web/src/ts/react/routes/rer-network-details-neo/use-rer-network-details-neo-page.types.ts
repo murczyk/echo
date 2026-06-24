@@ -45,7 +45,7 @@ export type NetworkUpsertForm = {
   unitIds: number[];
   postIds: number[];
   freq: string;
-  modulation: 'DMR' | 'DMRe' | 'NFM' | 'AM';
+  modulation: 'DMR' | 'NFM' | 'AM';
   encryptionId: number | null;
   activeFrom: string;
   activeTo: string;
@@ -54,7 +54,7 @@ export type NetworkUpsertForm = {
 
 export type NetworkEditForm = NetworkUpsertForm;
 
-export type NetworkFreqKind = 'DMR' | 'DMRe' | 'NFM';
+export type NetworkFreqKind = 'DMR' | 'NFM' | 'AM';
 
 export type NetworkDescriptionForm = {
   topic: string;

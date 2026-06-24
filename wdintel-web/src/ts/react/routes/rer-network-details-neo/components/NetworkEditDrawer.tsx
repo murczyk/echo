@@ -427,7 +427,6 @@ function NetworkEditDrawerComponent({
                           <MenuItem value="NFM">NFM</MenuItem>
                           <MenuItem value="AM">AM</MenuItem>
                           <MenuItem value="DMR">DMR</MenuItem>
-                          <MenuItem value="DMRe">DMRe</MenuItem>
                         </Select>
                       </FormControl>
 

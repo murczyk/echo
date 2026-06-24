@@ -61,7 +61,7 @@ export function displayNetworkType(modulation: string | null | undefined): strin
     case 'DMR':
       return 'DMR';
     case 'DMRe':
-      return 'DMRe';
+      return 'DMR';
     case 'AM':
       return 'AM';
     default:
