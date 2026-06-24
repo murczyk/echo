@@ -92,8 +92,9 @@ function NetworkFreqCreateDrawerComponent({
   const activeToValidationError = form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
   const activeFromError = activeFromTouched ? activeFromValidationError : null;
   const activeToError = activeToTouched ? activeToValidationError : null;
+  const isDmrModulation = form.modulation.toUpperCase().startsWith('DMR');
   const saveDisabled = saving
-    || form.encryptionId === null
+    || (isDmrModulation && form.encryptionId === null)
     || freqValidationError !== null
     || activeFromValidationError !== null
     || activeToValidationError !== null;
