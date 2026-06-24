@@ -959,6 +959,7 @@ pub async fn main_bgworker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
+    crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();
