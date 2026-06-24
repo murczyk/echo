@@ -5,7 +5,7 @@ import {
   downloadNetworkEtalonkaReportTaskResult,
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
-import { getBgtaskProgress } from '../../services/api/bgtask';
+import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { fetchReportHistoryTaskStatus } from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
@@ -68,7 +68,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
             logs = logs.concat(rsp.loglines);
             serverLogSkip += rsp.loglines.length;
           }
-          const progress = getBgtaskProgress(logs);
+          const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
           updateReportState(setState, (current) => ({
             ...current,
             taskId,

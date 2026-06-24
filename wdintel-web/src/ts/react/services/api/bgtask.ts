@@ -6,6 +6,7 @@ export type BgtaskStatusAndLogsRsp = {
   loglines: string[];
   finishedWithError: string | null;
   finishedWithErrorCode: string | null;
+  progress?: number;
 };
 
 export type BgtaskProgressStage = {
@@ -36,11 +37,22 @@ export function getBgtaskProgress(loglines: string[]): { curr: number; overall: 
   return { curr: lastStage.index, overall: lastStage.overall };
 }
 
+export function getBgtaskProgressFromPercent(
+  loglines: string[],
+  progress?: number,
+): { curr: number; overall: number } {
+  if (typeof progress === 'number' && Number.isFinite(progress)) {
+    return { curr: Math.max(0, Math.min(100, Math.round(progress))), overall: 100 };
+  }
+  return getBgtaskProgress(loglines);
+}
+
 export async function fetchBgtaskStatusAndLogs(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
   const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
   const rsp = transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
   return {
     ...rsp,
     finishedWithErrorCode: rsp.finishedWithErrorCode ?? null,
+    progress: rsp.progress ?? 0,
   };
 }

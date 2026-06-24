@@ -2,7 +2,7 @@ import DownloadIcon from '@mui/icons-material/DownloadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import { Box, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type MRT_ColumnDef } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
@@ -35,8 +35,10 @@ export type ReportHistoryTableSectionProps = {
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   reportKind: true,
+  details: true,
   createdAt: true,
   status: true,
+  progress: true,
   completedAt: true,
   actions: true,
 };
@@ -44,8 +46,10 @@ const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
 const DEFAULT_REPORTS_COLUMN_ORDER = [
   'mrt-row-numbers',
   'reportKind',
+  'details',
   'createdAt',
   'status',
+  'progress',
   'completedAt',
   'actions',
 ];
@@ -59,8 +63,10 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'mrt-row-numbers',
   'reportKind',
   'requestedBy',
+  'details',
   'createdAt',
   'status',
+  'progress',
   'completedAt',
   'actions',
 ];
@@ -163,6 +169,20 @@ function statusColor(status: string): 'default' | 'primary' | 'success' | 'error
   return 'default';
 }
 
+function formatReportKind(reportKind: string): string {
+  return REPORT_KIND_LABELS[reportKind] ?? reportKind;
+}
+
+function formatReportProgress(progress: number): string {
+  return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+}
+
+function formatReportStatus(row: ReportHistoryRow): string {
+  const label = REPORT_STATUS_LABELS[row.status] ?? row.status;
+  if (row.status !== 'in_progress') return label;
+  return `${label} ${formatReportProgress(row.progress)}`;
+}
+
 function buildReportLoadingRows(): ReportHistoryRow[] {
   return Array.from({ length: REPORT_LOADING_ROW_COUNT }, (_, index) => ({
     id: -index - 1,
@@ -175,6 +195,9 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
     fileName: null,
     contentType: null,
     bgtaskId: null,
+    lastError: null,
+    details: '',
+    progress: 0,
   }));
 }
 
@@ -206,7 +229,7 @@ export function ReportHistoryTableSection({
   const [error, setError] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<number | null>(null);
 
-  async function loadRows(signal?: AbortSignal) {
+  const loadRows = useCallback(async (signal?: AbortSignal) => {
     setLoadState((current) => (current === 'success' ? current : 'loading'));
     setError(null);
     try {
@@ -219,7 +242,7 @@ export function ReportHistoryTableSection({
       setLoadState('error');
       setError(formatErrorMessage(loadError));
     }
-  }
+  }, [loadReportHistory]);
 
   useEffect(() => {
     if (!active) return;
@@ -228,19 +251,41 @@ export function ReportHistoryTableSection({
     return () => {
       abortController.abort();
     };
-  }, [active]);
+  }, [active, loadRows]);
 
   useEffect(() => {
     if (!active) return;
-    const hasRunningRows = rows.some((row) => row.status === 'planned' || row.status === 'in_progress');
-    if (!hasRunningRows) return;
-    const intervalId = window.setInterval(() => {
-      void loadRows();
-    }, 5000);
-    return () => {
-      window.clearInterval(intervalId);
+    let stopped = false;
+    let timeoutId: number | null = null;
+    let abortController: AbortController | null = null;
+
+    const poll = async () => {
+      abortController?.abort();
+      abortController = new AbortController();
+      await loadRows(abortController.signal);
+      if (!stopped) {
+        timeoutId = window.setTimeout(poll, 5000);
+      }
     };
-  }, [active, rows]);
+
+    timeoutId = window.setTimeout(poll, 5000);
+    return () => {
+      stopped = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      abortController?.abort();
+    };
+  }, [active, loadRows]);
+
+  useEffect(() => {
+    if (!active) {
+      setRows([]);
+      setLoadState('idle');
+      setError(null);
+      setActionInFlight(null);
+    }
+  }, [active]);
 
   async function handleDownload(row: ReportHistoryRow) {
     if (!row.hasFile || row.status !== 'done') return;
@@ -272,9 +317,15 @@ export function ReportHistoryTableSection({
     () => {
       const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
         {
-          accessorKey: 'reportKind',
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
           header: 'Вид',
-          Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
+          Cell: ({ row }) => formatReportKind(row.original.reportKind),
+        },
+        {
+          accessorKey: 'details',
+          header: 'Деталі',
+          Cell: ({ row }) => row.original.details,
         },
       ];
 
@@ -293,16 +344,29 @@ export function ReportHistoryTableSection({
           Cell: ({ row }) => formatReportDate(row.original.createdAt),
         },
         {
-          accessorKey: 'status',
+          id: 'status',
+          accessorFn: (row) => formatReportStatus(row),
           header: 'Статус',
-          Cell: ({ row }) => (
-            <Chip
-              size="small"
-              color={statusColor(row.original.status)}
-              label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
-              variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
-            />
-          ),
+          Cell: ({ row }) => {
+            const chip = (
+              <Chip
+                size="small"
+                color={statusColor(row.original.status)}
+                label={formatReportStatus(row.original)}
+                variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
+              />
+            );
+            if (!includeAuthor || row.original.status !== 'failed' || !row.original.lastError) {
+              return chip;
+            }
+            return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
+          },
+        },
+        {
+          id: 'progress',
+          accessorFn: (row) => formatReportProgress(row.progress),
+          header: 'Прогрес',
+          Cell: ({ row }) => formatReportProgress(row.original.progress),
         },
         {
           accessorKey: 'completedAt',

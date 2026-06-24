@@ -307,6 +307,7 @@ export type BgtaskStatusAndLogsRsp = {
   loglines: Array<string>;
   finishedWithError: string | null;
   finishedWithErrorCode: BgtaskErrorCode | null;
+  progress: number;
 };
 
 export type BgtaskStatusAndLogsQuery = {
@@ -324,6 +325,9 @@ export type ReportHistoryRow = {
   fileName: string | null;
   contentType: string | null;
   bgtaskId: number | null;
+  lastError: string | null;
+  details: string;
+  progress: number;
 };
 
 export type ReportHistoryIdReq = {

@@ -5,10 +5,12 @@ use crate::config::{
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
 };
 use crate::delta::{bgtask_log, finish_bgtask};
-use crate::entities::{bgtask, prelude::*, report_history};
+use crate::entities::{
+    area_of_responsibility, bgtask, prelude::*, report_history,
+};
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::reports::types::ReportPreviewReq;
+use crate::rer_importer::reports::types::{ReportPreviewReq, ReportType};
 use crate::rer_importer::types::AnalysisStatsReq;
 use crate::sigint::etalonka::types::{
     EtalonkaJimForksReq, EtalonkaNetworkBatchReq,
@@ -29,6 +31,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration as StdDuration;
 use tokio::task::JoinSet;
@@ -82,6 +85,9 @@ pub struct ReportHistoryRow {
     pub file_name: Option<String>,
     pub content_type: Option<String>,
     pub bgtask_id: Option<i64>,
+    pub last_error: Option<String>,
+    pub details: String,
+    pub progress: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -96,6 +102,341 @@ struct GeneratedReport {
     bytes: Vec<u8>,
 }
 
+#[derive(Debug, Default, Clone)]
+struct ReportHistoryDetailRefs {
+    aor_ids: Vec<i64>,
+    network_ids: Vec<i64>,
+}
+
+#[derive(Debug, Default)]
+struct ReportHistoryDetailLookup {
+    aor_names_by_id: HashMap<i64, String>,
+    network_labels_by_id: HashMap<i64, Vec<String>>,
+    progress_by_bgtask_id: HashMap<i64, i64>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct ReportHistoryNetworkDetailRow {
+    network_id: i64,
+    network_name: String,
+    unit_name: Option<String>,
+}
+
+impl ReportHistoryDetailLookup {
+    fn format_details(&self, refs: &ReportHistoryDetailRefs) -> String {
+        let mut lines = vec![];
+
+        let aor_names = refs
+            .aor_ids
+            .iter()
+            .map(|id| {
+                self.aor_names_by_id
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| id.to_string())
+            })
+            .collect::<Vec<_>>();
+        if !aor_names.is_empty() {
+            lines.push(format!(
+                "смуги відповідальності: {}",
+                aor_names.join(", ")
+            ));
+        }
+
+        let network_labels = refs
+            .network_ids
+            .iter()
+            .flat_map(|id| {
+                self.network_labels_by_id
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![id.to_string()])
+            })
+            .collect::<Vec<_>>();
+        if !network_labels.is_empty() {
+            lines.push(format!("мережі: {}", network_labels.join(", ")));
+        }
+
+        lines.join("; ")
+    }
+
+    fn report_history_progress(
+        &self,
+        report_history: &report_history::Model,
+    ) -> i64 {
+        if report_history.status == STATUS_DONE {
+            return 100;
+        }
+        let progress = report_history
+            .bgtask_id
+            .and_then(|bgtask_id| {
+                self.progress_by_bgtask_id.get(&bgtask_id).copied()
+            })
+            .unwrap_or(0);
+        progress.clamp(0, 100)
+    }
+}
+
+async fn build_report_history_rows(
+    dbx: &DatabaseConnection,
+    report_histories: Vec<report_history::Model>,
+    expose_last_error: bool,
+) -> Result<Vec<ReportHistoryRow>, AppError> {
+    let detail_refs = report_histories
+        .iter()
+        .map(|report_history| {
+            report_history_detail_refs(&report_history.request)
+        })
+        .collect::<Vec<_>>();
+    let lookup =
+        load_report_history_detail_lookup(dbx, &report_histories, &detail_refs)
+            .await?;
+
+    Ok(report_histories
+        .into_iter()
+        .zip(detail_refs.iter())
+        .map(|(report_history, refs)| {
+            let progress = lookup.report_history_progress(&report_history);
+            to_report_history_row(
+                report_history,
+                lookup.format_details(refs),
+                progress,
+                expose_last_error,
+            )
+        })
+        .collect())
+}
+
+async fn build_report_history_row(
+    dbx: &DatabaseConnection,
+    report_history: report_history::Model,
+    expose_last_error: bool,
+) -> Result<ReportHistoryRow, AppError> {
+    let mut rows =
+        build_report_history_rows(dbx, vec![report_history], expose_last_error)
+            .await?;
+    Ok(rows.remove(0))
+}
+
+fn to_report_history_row(
+    report_history: report_history::Model,
+    details: String,
+    progress: i64,
+    expose_last_error: bool,
+) -> ReportHistoryRow {
+    ReportHistoryRow {
+        id: report_history.id,
+        report_kind: report_history.report_kind,
+        requested_by: report_history.requested_by,
+        created_at: report_history.created_at.to_string(),
+        status: report_history.status,
+        completed_at: report_history
+            .completed_at
+            .map(|completed_at| completed_at.to_string()),
+        has_file: report_history.s3_id.is_some(),
+        file_name: report_history.file_name,
+        content_type: report_history.content_type,
+        bgtask_id: report_history.bgtask_id,
+        last_error: if expose_last_error {
+            report_history.last_error
+        } else {
+            None
+        },
+        details,
+        progress,
+    }
+}
+
+fn report_history_detail_refs(
+    request: &serde_json::Value,
+) -> ReportHistoryDetailRefs {
+    let Ok(request) =
+        serde_json::from_value::<ReportHistoryRequest>(request.clone())
+    else {
+        return ReportHistoryDetailRefs::default();
+    };
+
+    let mut refs = ReportHistoryDetailRefs::default();
+    match request {
+        ReportHistoryRequest::AnalysisReport { payload } => {
+            extend_unique_i64(
+                &mut refs.aor_ids,
+                payload.req.selected_aors.iter().flatten().copied(),
+            );
+            extend_unique_i64(
+                &mut refs.network_ids,
+                payload.req.selected_networks.iter().flatten().copied(),
+            );
+            if let Some(report_type) = &payload.report_type {
+                match report_type {
+                    ReportType::ActiveNetworks(settings) => {
+                        extend_unique_i64(
+                            &mut refs.aor_ids,
+                            settings.aor_ids.iter().copied(),
+                        );
+                    }
+                    ReportType::NetworkFrequencies(settings) => {
+                        extend_unique_i64(
+                            &mut refs.aor_ids,
+                            settings.aor_ids.iter().copied(),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        ReportHistoryRequest::AnalysisExport { payload } => {
+            extend_unique_i64(
+                &mut refs.aor_ids,
+                payload.selected_aors.iter().flatten().copied(),
+            );
+            extend_unique_i64(
+                &mut refs.network_ids,
+                payload.selected_networks.iter().flatten().copied(),
+            );
+        }
+        ReportHistoryRequest::EtalonkaFilter { payload } => {
+            extend_unique_i64(
+                &mut refs.aor_ids,
+                payload.req.aor_ids.iter().flatten().copied(),
+            );
+            extend_unique_i64(
+                &mut refs.network_ids,
+                payload.req.ids.iter().flatten().copied(),
+            );
+        }
+        ReportHistoryRequest::EtalonkaBatch { payload } => {
+            extend_unique_i64(
+                &mut refs.network_ids,
+                payload.network_ids.iter().copied(),
+            );
+        }
+        ReportHistoryRequest::GoiReport { .. } => {}
+    }
+    refs
+}
+
+fn extend_unique_i64(
+    target: &mut Vec<i64>,
+    values: impl IntoIterator<Item = i64>,
+) {
+    for value in values {
+        if !target.contains(&value) {
+            target.push(value);
+        }
+    }
+}
+
+async fn load_report_history_detail_lookup(
+    dbx: &DatabaseConnection,
+    report_histories: &[report_history::Model],
+    detail_refs: &[ReportHistoryDetailRefs],
+) -> Result<ReportHistoryDetailLookup, AppError> {
+    let mut aor_ids = vec![];
+    let mut network_ids = vec![];
+    for refs in detail_refs {
+        extend_unique_i64(&mut aor_ids, refs.aor_ids.iter().copied());
+        extend_unique_i64(&mut network_ids, refs.network_ids.iter().copied());
+    }
+
+    Ok(ReportHistoryDetailLookup {
+        aor_names_by_id: load_report_history_aor_names(dbx, &aor_ids).await?,
+        network_labels_by_id: load_report_history_network_labels(
+            dbx,
+            &network_ids,
+        )
+        .await?,
+        progress_by_bgtask_id: load_report_history_bgtask_progress(
+            dbx,
+            report_histories,
+        )
+        .await?,
+    })
+}
+
+async fn load_report_history_aor_names(
+    dbx: &DatabaseConnection,
+    aor_ids: &[i64],
+) -> Result<HashMap<i64, String>, AppError> {
+    if aor_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    Ok(AreaOfResponsibility::find()
+        .filter(area_of_responsibility::Column::Id.is_in(aor_ids.to_vec()))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|aor| (aor.id, aor.name))
+        .collect())
+}
+
+async fn load_report_history_network_labels(
+    dbx: &DatabaseConnection,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    if network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        select
+            sn.id as network_id,
+            sn.name as network_name,
+            nullif(trim(su.name), '') as unit_name
+        from sigint_network sn
+        left join sigint_network_unit snu on snu.network_id = sn.id
+        left join sigint_unit su on su.id = snu.unit_id
+        where sn.id = any($1)
+        order by sn.id, su.name
+        "#,
+        vec![network_ids.to_vec().into()],
+    );
+    let rows = ReportHistoryNetworkDetailRow::find_by_statement(stmt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut seen = HashSet::new();
+    let mut labels_by_id: HashMap<i64, Vec<String>> = HashMap::new();
+    for row in rows {
+        let unit_name = row.unit_name.as_deref().unwrap_or("НВ");
+        let label = format!("{} {}", row.network_name.trim(), unit_name.trim())
+            .trim()
+            .to_string();
+        if seen.insert((row.network_id, label.clone())) {
+            labels_by_id.entry(row.network_id).or_default().push(label);
+        }
+    }
+    Ok(labels_by_id)
+}
+
+async fn load_report_history_bgtask_progress(
+    dbx: &DatabaseConnection,
+    report_histories: &[report_history::Model],
+) -> Result<HashMap<i64, i64>, AppError> {
+    let mut bgtask_ids = vec![];
+    for report_history in report_histories {
+        if let Some(bgtask_id) = report_history.bgtask_id {
+            extend_unique_i64(&mut bgtask_ids, [bgtask_id]);
+        }
+    }
+    if bgtask_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    Ok(Bgtask::find()
+        .filter(bgtask::Column::Id.is_in(bgtask_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|bgtask| (bgtask.id, bgtask.progress.clamp(0, 100)))
+        .collect())
+}
+
 async fn read_and_remove_generated_report_file(
     path: &Path,
 ) -> Result<Vec<u8>, AppError> {
@@ -107,25 +448,6 @@ async fn read_and_remove_generated_report_file(
         );
     }
     Ok(bytes)
-}
-
-impl From<report_history::Model> for ReportHistoryRow {
-    fn from(report_history: report_history::Model) -> Self {
-        Self {
-            id: report_history.id,
-            report_kind: report_history.report_kind,
-            requested_by: report_history.requested_by,
-            created_at: report_history.created_at.to_string(),
-            status: report_history.status,
-            completed_at: report_history
-                .completed_at
-                .map(|completed_at| completed_at.to_string()),
-            has_file: report_history.s3_id.is_some(),
-            file_name: report_history.file_name,
-            content_type: report_history.content_type,
-            bgtask_id: report_history.bgtask_id,
-        }
-    }
 }
 
 pub async fn record_failed_report_nofail(
@@ -505,16 +827,15 @@ pub async fn report_history_list(
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
-    let rows = ReportHistory::find()
+    let report_histories = ReportHistory::find()
         .filter(report_history::Column::RequestedBy.eq(user_login))
         .order_by_desc(report_history::Column::CreatedAt)
         .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
-        .c(h!())?
-        .into_iter()
-        .map(ReportHistoryRow::from)
-        .collect();
+        .c(h!())?;
+    let rows =
+        build_report_history_rows(&env.dbx, report_histories, false).await?;
     Ok(Json(rows))
 }
 
@@ -527,16 +848,15 @@ pub async fn report_history_admin_list(
     crate::users::has_role(&env.dbx, &user_login, "Admin")
         .await
         .c(h!())?;
-    let rows = ReportHistory::find()
+    let report_histories = ReportHistory::find()
         .order_by_desc(report_history::Column::CreatedAt)
         .order_by_desc(report_history::Column::Id)
         .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
         .await
-        .c(h!())?
-        .into_iter()
-        .map(ReportHistoryRow::from)
-        .collect();
+        .c(h!())?;
+    let rows =
+        build_report_history_rows(&env.dbx, report_histories, true).await?;
     Ok(Json(rows))
 }
 
@@ -547,7 +867,9 @@ pub async fn report_history_status(
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
     let report_history = find_current_user_report(&env, &user, req.id).await?;
-    Ok(Json(report_history.into()))
+    Ok(Json(
+        build_report_history_row(&env.dbx, report_history, false).await?,
+    ))
 }
 
 #[post("/api/report-history/retry")]
@@ -582,7 +904,9 @@ pub async fn report_history_retry(
         "user requested another attempt for a failed task",
     ));
     let report_history = report_history.update(&env.dbx).await.c(h!())?;
-    Ok(Json(report_history.into()))
+    Ok(Json(
+        build_report_history_row(&env.dbx, report_history, false).await?,
+    ))
 }
 
 #[post("/api/report-history/download")]
@@ -957,18 +1281,44 @@ async fn set_report_bgtask(
     Ok(())
 }
 
+async fn set_bgtask_progress(
+    dbx: &DatabaseConnection,
+    bgtask_id: i64,
+    progress: i64,
+) -> Result<(), AppError> {
+    Bgtask::update_many()
+        .col_expr(
+            bgtask::Column::Progress,
+            Expr::value(progress.clamp(0, 100)),
+        )
+        .filter(bgtask::Column::Id.eq(bgtask_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn bgtask_log_progress(
+    bgtask_id: i64,
+    progress: i64,
+    logline: &str,
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    set_bgtask_progress(dbx, bgtask_id, progress).await?;
+    bgtask_log(Some(bgtask_id), logline, dbx).await.c(h!())?;
+    Ok(())
+}
+
 async fn generate_and_store_report(
     env: &Env,
     report_history: &report_history::Model,
     bgtask_id: i64,
 ) -> Result<(), AppError> {
-    bgtask_log(Some(bgtask_id), "[1/3] Формування звіту", &env.dbx)
-        .await
-        .c(h!())?;
+    bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
+        .await?;
     let generated = generate_report(env, report_history, bgtask_id).await?;
-    bgtask_log(Some(bgtask_id), "[2/3] Збереження звіту", &env.dbx)
-        .await
-        .c(h!())?;
+    bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
+        .await?;
     let s3_id = upload_report_bytes(env, &generated).await?;
     let res = ReportHistory::update_many()
         .col_expr(
@@ -1005,9 +1355,13 @@ async fn generate_and_store_report(
             ),
         });
     }
-    bgtask_log(Some(bgtask_id), "[3/3] Готово до завантаження", &env.dbx)
-        .await
-        .c(h!())?;
+    bgtask_log_progress(
+        bgtask_id,
+        100,
+        "[3/3] Готово до завантаження",
+        &env.dbx,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1097,9 +1451,8 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaFilter { payload } => {
-            bgtask_log(Some(bgtask_id), "[1/5] Пошук мереж", &env.dbx)
-                .await
-                .c(h!())?;
+            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
+                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_data(
@@ -1110,13 +1463,13 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log(
-                Some(bgtask_id),
+            bgtask_log_progress(
+                bgtask_id,
+                60,
                 "[2/5] Формування еталонного опису",
                 &env.dbx,
             )
-            .await
-            .c(h!())?;
+            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,
@@ -1134,9 +1487,8 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaBatch { payload } => {
-            bgtask_log(Some(bgtask_id), "[1/5] Пошук мереж", &env.dbx)
-                .await
-                .c(h!())?;
+            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
+                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_batch_id_data(
@@ -1147,13 +1499,13 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log(
-                Some(bgtask_id),
+            bgtask_log_progress(
+                bgtask_id,
+                60,
                 "[2/5] Формування еталонного опису",
                 &env.dbx,
             )
-            .await
-            .c(h!())?;
+            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,

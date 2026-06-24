@@ -850,6 +850,7 @@ type alias BgtaskStatusAndLogsRsp =
     , loglines : List (String)
     , finishedWithError : Maybe (String)
     , finishedWithErrorCode : Maybe (BgtaskErrorCode)
+    , progress : Int
     }
 
 
@@ -860,6 +861,7 @@ bgtaskStatusAndLogsRspEncoder struct =
         , ( "loglines", (Json.Encode.list (Json.Encode.string)) struct.loglines )
         , ( "finished_with_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.finishedWithError )
         , ( "finished_with_error_code", (Maybe.withDefault Json.Encode.null << Maybe.map (bgtaskErrorCodeEncoder)) struct.finishedWithErrorCode )
+        , ( "progress", (Json.Encode.int) struct.progress )
         ]
 
 
@@ -886,6 +888,9 @@ type alias ReportHistoryRow =
     , fileName : Maybe (String)
     , contentType : Maybe (String)
     , bgtaskId : Maybe (Int)
+    , lastError : Maybe (String)
+    , details : String
+    , progress : Int
     }
 
 
@@ -902,6 +907,9 @@ reportHistoryRowEncoder struct =
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
         , ( "content_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentType )
         , ( "bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.bgtaskId )
+        , ( "last_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "details", (Json.Encode.string) struct.details )
+        , ( "progress", (Json.Encode.int) struct.progress )
         ]
 
 
@@ -8940,6 +8948,7 @@ bgtaskStatusAndLogsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loglines" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finished_with_error" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finished_with_error_code" (Json.Decode.nullable (bgtaskErrorCodeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "progress" (Json.Decode.int)))
 
 
 bgtaskStatusAndLogsQueryDecoder : Json.Decode.Decoder BgtaskStatusAndLogsQuery
