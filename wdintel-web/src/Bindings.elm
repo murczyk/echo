@@ -891,6 +891,7 @@ type alias ReportHistoryRow =
     , lastError : Maybe (String)
     , details : String
     , progress : Int
+    , errorLog : Maybe (List (ReportHistoryLogEntry))
     }
 
 
@@ -910,6 +911,23 @@ reportHistoryRowEncoder struct =
         , ( "last_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
         , ( "details", (Json.Encode.string) struct.details )
         , ( "progress", (Json.Encode.int) struct.progress )
+        , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )
+        ]
+
+
+type alias ReportHistoryLogEntry =
+    { login : String
+    , timestamp : String
+    , message : String
+    }
+
+
+reportHistoryLogEntryEncoder : ReportHistoryLogEntry -> Json.Encode.Value
+reportHistoryLogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "login", (Json.Encode.string) struct.login )
+        , ( "timestamp", (Json.Encode.string) struct.timestamp )
+        , ( "message", (Json.Encode.string) struct.message )
         ]
 
 

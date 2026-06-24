@@ -1,5 +1,6 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
     REPORT_HISTORY_ETALONKA_WORKER_COUNT,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
@@ -88,6 +89,14 @@ pub struct ReportHistoryRow {
     pub last_error: Option<String>,
     pub details: String,
     pub progress: i64,
+    pub error_log: Option<Vec<ReportHistoryLogEntry>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct ReportHistoryLogEntry {
+    pub login: String,
+    pub timestamp: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -137,10 +146,7 @@ impl ReportHistoryDetailLookup {
             })
             .collect::<Vec<_>>();
         if !aor_names.is_empty() {
-            lines.push(format!(
-                "смуги відповідальності: {}",
-                aor_names.join(", ")
-            ));
+            lines.push(format!("смуги: {}", aor_names.join(", ")));
         }
 
         let network_labels = refs
@@ -224,6 +230,8 @@ fn to_report_history_row(
     progress: i64,
     expose_last_error: bool,
 ) -> ReportHistoryRow {
+    let error_log =
+        report_history_error_log(&report_history, expose_last_error);
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
@@ -244,7 +252,49 @@ fn to_report_history_row(
         },
         details,
         progress,
+        error_log,
     }
+}
+
+fn report_history_error_log(
+    report_history: &report_history::Model,
+    expose_last_error: bool,
+) -> Option<Vec<ReportHistoryLogEntry>> {
+    if !expose_last_error || report_history.last_error.is_none() {
+        return None;
+    }
+    let mut entries = report_history
+        .log
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(report_history_log_entry)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if entries.is_empty() {
+        entries.push(ReportHistoryLogEntry {
+            login: "system".to_string(),
+            timestamp: report_history
+                .completed_at
+                .or(report_history.started_at)
+                .unwrap_or(report_history.created_at)
+                .to_string(),
+            message: report_history.last_error.clone().unwrap_or_default(),
+        });
+    }
+    Some(entries)
+}
+
+fn report_history_log_entry(
+    value: &serde_json::Value,
+) -> Option<ReportHistoryLogEntry> {
+    Some(ReportHistoryLogEntry {
+        login: value.get("login")?.as_str()?.to_string(),
+        timestamp: value.get("timestamp")?.as_str()?.to_string(),
+        message: value.get("message")?.as_str()?.to_string(),
+    })
 }
 
 fn report_history_detail_refs(
@@ -1242,7 +1292,9 @@ async fn run_report_with_timeout(
     bgtask_id: i64,
 ) -> (Result<(), AppError>, bool) {
     match tokio::time::timeout(
-        StdDuration::from_secs(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS),
+        StdDuration::from_secs(report_timeout_secs(
+            &report_history.report_kind,
+        )),
         generate_and_store_report(env, report_history, bgtask_id),
     )
     .await
@@ -1611,9 +1663,10 @@ async fn download_report_bytes(
 }
 
 fn report_timeout_message(report_history: &report_history::Model) -> String {
+    let timeout_secs = report_timeout_secs(&report_history.report_kind);
     format!(
         "Report generation timed out after {} seconds: id={}, kind={}, requested_by={}",
-        REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS,
+        timeout_secs,
         report_history.id,
         report_history.report_kind,
         report_history.requested_by,
@@ -1626,15 +1679,32 @@ fn report_timeout_error(report_history: &report_history::Model) -> AppError {
     }
 }
 
+fn report_timeout_secs(report_kind: &str) -> u64 {
+    if report_kind == KIND_ETALONKA {
+        REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS
+    } else {
+        REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS
+    }
+}
+
 async fn fail_timed_out_reports(env: &Env) -> Result<(), AppError> {
-    let cutoff = Utc::now().naive_utc()
-        - Duration::seconds(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS as i64);
+    let now = Utc::now().naive_utc();
     let timed_out_reports = ReportHistory::find()
         .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
-        .filter(report_history::Column::StartedAt.lte(cutoff))
         .all(&env.dbx)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .filter(|report_history| {
+            let Some(started_at) = report_history.started_at else {
+                return false;
+            };
+            let timeout = Duration::seconds(report_timeout_secs(
+                &report_history.report_kind,
+            ) as i64);
+            started_at <= now - timeout
+        })
+        .collect::<Vec<_>>();
 
     for report_history in timed_out_reports {
         let err_msg = report_timeout_message(&report_history);
