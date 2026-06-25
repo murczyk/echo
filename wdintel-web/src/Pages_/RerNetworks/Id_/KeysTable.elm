@@ -1371,15 +1371,7 @@ encryptionLabelById model encryptionId =
 
 normalizeEncryptionId : Maybe Int -> Maybe Int
 normalizeEncryptionId selectedId =
-    Maybe.andThen
-        (\encryptionId ->
-            if encryptionId == Modulations.undefinedModulationId then
-                Nothing
-
-            else
-                Just encryptionId
-        )
-        selectedId
+    selectedId
 
 
 type alias KeyRules =

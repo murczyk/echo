@@ -119,7 +119,9 @@ pub async fn create_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_encryption_id(&txn, req.encryption_id).await.c(h!())?,
+        normalize_encryption_id(&txn, req.encryption_id)
+            .await
+            .c(h!())?,
         organism_id,
     )
     .await
@@ -172,7 +174,9 @@ pub async fn update_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_encryption_id(&txn, req.encryption_id).await.c(h!())?,
+        normalize_encryption_id(&txn, req.encryption_id)
+            .await
+            .c(h!())?,
         key.organism_id,
     )
     .await
