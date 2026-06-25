@@ -15,10 +15,7 @@ import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 const apiMock = vi.hoisted(() => ({
   createNetwork: vi.fn(),
   deleteNetwork: vi.fn(),
-  downloadNetworkEtalonkaReport: vi.fn(),
-  downloadNetworksEtalonkaReport: vi.fn(),
   downloadNetworkEtalonkaReportTaskResult: vi.fn(),
-  downloadNetworkGoiReport: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
   getModulations: vi.fn(),
@@ -84,10 +81,7 @@ vi.mock('../../services/api/posts', () => ({
 vi.mock('../../services/api/networks', () => ({
   createNetwork: apiMock.createNetwork,
   deleteNetwork: apiMock.deleteNetwork,
-  downloadNetworkEtalonkaReport: apiMock.downloadNetworkEtalonkaReport,
-  downloadNetworksEtalonkaReport: apiMock.downloadNetworksEtalonkaReport,
   downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
-  downloadNetworkGoiReport: apiMock.downloadNetworkGoiReport,
   getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
   getNetworkUnitStats: apiMock.getNetworkUnitStats,
   listNetworks: apiMock.listNetworks,
@@ -210,10 +204,7 @@ describe('useRerNetworksNeoPage', () => {
 
     apiMock.deleteNetwork.mockReset();
     apiMock.createNetwork.mockReset();
-    apiMock.downloadNetworkEtalonkaReport.mockReset();
-    apiMock.downloadNetworksEtalonkaReport.mockReset();
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
-    apiMock.downloadNetworkGoiReport.mockReset();
     apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
     apiMock.launchNetworksEtalonkaReportTask.mockReset();
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
@@ -235,10 +226,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
     apiMock.getModulations.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
-    apiMock.downloadNetworkEtalonkaReport.mockResolvedValue(new Blob(['report']));
-    apiMock.downloadNetworksEtalonkaReport.mockResolvedValue(new Blob(['report']));
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
-    apiMock.downloadNetworkGoiReport.mockResolvedValue(new Blob(['goi']));
     apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(123);
     apiMock.launchNetworksEtalonkaReportTask.mockResolvedValue(456);
     bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValue({

@@ -5,11 +5,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
-use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, save_report_log,
-};
-use std::str::FromStr;
-
 use crate::sigint;
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
@@ -19,8 +14,8 @@ use crate::sigint::network::merge::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
+use actix_web::post;
 use actix_web::web::Json;
-use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
@@ -3600,47 +3595,6 @@ pub async fn delete_network_description(
     }
 
     Ok(Json(network_detail[0].clone()))
-}
-
-/// Generate GOI report for network freqs active in the last month
-#[post("/api/sigint/network/report-networks-goi")]
-pub async fn report_networks_goi(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
-) -> Result<HttpResponse, AppError> {
-    info!("> Start GOI report generation...");
-
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
-        .await
-        .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-
-    let storage_dir =
-        std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
-    let outfolder = storage_dir.join("reports_log");
-    let _ = std::fs::create_dir_all(&outfolder);
-    let filename = format!(
-        "goi_report_{}.xlsx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
-    );
-    let outpath = outfolder.join(&filename);
-
-    let organism_id = self::goi::login_organism_id(&env.dbx, &user_id)
-        .await
-        .c(h!())?;
-    self::goi::report_xlsx_networks_goi(&env, &outpath, organism_id)
-        .await
-        .c(h!())?;
-
-    let file = actix_files::NamedFile::open(&outpath)?;
-    save_report_log(&env.dbx, format!("reports_log/{filename}"), "", &user_id)
-        .await
-        .c(h!())?;
-
-    info!("> GOI report generation done");
-    Ok(file.into_response(&http_req))
 }
 
 #[post("/api/sigint/network/report-networks-goi-task-launch")]

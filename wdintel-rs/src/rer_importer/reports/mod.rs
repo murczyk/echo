@@ -1,20 +1,17 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::time::Duration as StdDuration;
-
 use crate::config::CLEANUP_REPORT_DAYS;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use actix_identity::Identity;
-use actix_web::http::header;
+use actix_web::post;
 use actix_web::web::Json;
-use actix_web::{post, HttpResponse};
 use chrono::{Days, NaiveDateTime, Utc};
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 mod active_networks;
 pub mod babak;
@@ -107,23 +104,11 @@ pub(crate) async fn cleanup_old_reports_nofail(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ReportTaskResultMeta {
-    filename: String,
-    content_type: String,
-    user_login: String,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ReportTaskGenerated {
     pub filename: String,
     pub content_type: String,
     pub path: PathBuf,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReportTaskDownloadReq {
-    pub bgtask_id: i64,
 }
 
 fn report_file_extension(req: &types::ReportPreviewReq) -> &'static str {
@@ -344,60 +329,6 @@ pub async fn report_docx_task_launch(
     Ok(Json(report_history.id))
 }
 
-#[post("/api/rer/report-docx-task-download")]
-pub async fn report_docx_task_download(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<ReportTaskDownloadReq>,
-) -> Result<HttpResponse, AppError> {
-    let user_login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    let bgtask_res = bgtask_res::Entity::find_by_id(req.bgtask_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(format!("Result not found for task id: {}", req.bgtask_id))?;
-    let result_meta_value = bgtask_res.res_json.clone().ok_or(format!(
-        "res_json must be non empty for task id: {}",
-        req.bgtask_id
-    ))?;
-    let result_meta: ReportTaskResultMeta =
-        serde_json::from_value(result_meta_value).c(h!())?;
-    if result_meta.user_login != user_login {
-        return Err(AppError::Forbidden(
-            "Task result belongs to another user".to_string(),
-        ));
-    }
-    let data = if let Some(bytes) = bgtask_res.res_bytes.clone() {
-        let mut bgtask_res = bgtask_res.into_active_model();
-        bgtask_res.res_bytes = Set(None);
-        bgtask_res.update(&env.dbx).await.c(h!())?;
-        bytes
-    } else {
-        let storage_dir =
-            std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
-        let outpath =
-            storage_dir.join("reports_log").join(&result_meta.filename);
-        std::fs::read(outpath).c(h!())?
-    };
-    let content_disposition = header::ContentDisposition {
-        disposition: header::DispositionType::Attachment,
-        parameters: vec![header::DispositionParam::FilenameExt(
-            header::ExtendedValue {
-                charset: header::Charset::Ext("UTF-8".into()),
-                language_tag: None,
-                value: result_meta.filename.clone().into_bytes(),
-            },
-        )],
-    };
-    Ok(HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, result_meta.content_type))
-        .insert_header(content_disposition)
-        .body(data))
-}
-
 pub(crate) async fn save_report_log(
     dbx: &DatabaseConnection,
     filepath_relative_to_storage: String,
@@ -414,84 +345,6 @@ pub(crate) async fn save_report_log(
     };
     log_active_model.insert(dbx).await.context(h!())?;
     Ok(())
-}
-
-/// Generates report in docx format using docx-rs library looking similar to html produced by the report_generate_html function
-#[post("/api/rer/report-docx")]
-pub async fn report_docx(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<types::ReportPreviewReq>,
-) -> Result<HttpResponse, AppError> {
-    info!("> Start RER report generation...");
-
-    let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    let mut req = req.into_inner().clone();
-    req.req.nolimit = Some(true);
-    if let Err(err) =
-        ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind).await
-    {
-        if matches!(err, AppError::Forbidden(_)) {
-            return Ok(HttpResponse::Forbidden()
-                .insert_header((
-                    crate::config::RER_REPORT_ERROR_CODE_HEADER_NAME,
-                    crate::config::RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
-                ))
-                .body("Forbidden"));
-        }
-        return Err(err);
-    }
-
-    let report_kind = req.kind.clone();
-    let report_history = crate::report_history::enqueue_report(
-        &env.dbx,
-        &user_login,
-        &report_kind,
-        crate::report_history::ReportHistoryRequest::AnalysisReport {
-            payload: Box::new(req),
-        },
-        None,
-        None,
-    )
-    .await
-    .context(h!())?;
-    wait_queued_report_completion(&env, report_history.id).await?;
-    crate::report_history::download_report_for_user_login(
-        &env,
-        &user_login,
-        report_history.id,
-    )
-    .await
-}
-
-async fn wait_queued_report_completion(
-    env: &Env,
-    report_history_id: i64,
-) -> Result<(), AppError> {
-    loop {
-        let report_history =
-            report_history::Entity::find_by_id(report_history_id)
-                .one(&env.dbx)
-                .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)?;
-        match report_history.status.as_str() {
-            crate::report_history::STATUS_DONE => return Ok(()),
-            crate::report_history::STATUS_FAILED => {
-                return Err(AppError::BL {
-                    msg: report_history.last_error.unwrap_or_else(|| {
-                        "Report generation failed".to_string()
-                    }),
-                });
-            }
-            _ => {
-                tokio::time::sleep(StdDuration::from_secs(1)).await;
-            }
-        }
-    }
 }
 
 /// Fills the comp_freq table with data about when the frequency was first seen.

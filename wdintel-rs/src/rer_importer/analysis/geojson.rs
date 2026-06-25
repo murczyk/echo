@@ -1,7 +1,6 @@
 use super::*;
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
-use actix_web::post;
 use chrono_tz::Tz;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -47,52 +46,6 @@ fn split_geojson_comment_index(comment: &str) -> usize {
 
 fn trim_leading_newline(comment: &str) -> &str {
     comment.strip_prefix('\n').unwrap_or(comment)
-}
-
-/// Summary table showing row-per-frequency
-#[post("/api/rer/analysis/download-geojson")]
-pub async fn rer_analysis_download_geojson(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<AnalysisStatsReq>,
-) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
-    let req = req.into_inner();
-    let history_request =
-        crate::report_history::ReportHistoryRequest::AnalysisExport {
-            payload: Box::new(req.clone()),
-        };
-    let bytes =
-        match rer_analysis_geojson_bytes(&login, &env, req.clone()).await {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                crate::report_history::record_failed_report_nofail(
-                    &env,
-                    &login,
-                    crate::report_history::KIND_GEOJSON,
-                    history_request,
-                    format!("{err:#?}"),
-                )
-                .await;
-                return Err(err);
-            }
-        };
-    crate::report_history::record_completed_report_nofail(
-        &env,
-        &login,
-        crate::report_history::KIND_GEOJSON,
-        history_request,
-        "analysis.geojson".to_string(),
-        "application/geo+json".to_string(),
-        &bytes,
-    )
-    .await;
-    Ok(HttpResponse::Ok()
-        .insert_header(("Content-Type", "application/geo+json"))
-        .body(bytes))
 }
 
 pub(crate) async fn rer_analysis_geojson_bytes(
