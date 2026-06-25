@@ -122,6 +122,7 @@ export const MessageCardImagePreviewStage = forwardRef<
         draggable={false}
         onLoad={onImageLoad}
         onError={onImageError}
+        decoding="async"
         sx={{
           display: failedHref === currentHref ? 'none' : 'block',
           maxWidth: '100%',

@@ -18,6 +18,36 @@ type ThumbnailLimits = {
   placeholderHeight: number;
 };
 
+type CachedThumbnailState = {
+  naturalSize: Size | null;
+};
+
+const THUMBNAIL_CACHE_LIMIT = 500;
+const thumbnailStateCache = new Map<string, CachedThumbnailState>();
+const thumbnailStateCacheOrder: string[] = [];
+
+function getCachedThumbnailState(href: string): CachedThumbnailState | null {
+  return thumbnailStateCache.get(href) ?? null;
+}
+
+function cacheThumbnailState(href: string, state: CachedThumbnailState) {
+  if (href.trim() === '') return;
+  if (thumbnailStateCache.has(href)) {
+    thumbnailStateCache.set(href, state);
+    return;
+  }
+
+  thumbnailStateCache.set(href, state);
+  thumbnailStateCacheOrder.push(href);
+
+  while (thumbnailStateCacheOrder.length > THUMBNAIL_CACHE_LIMIT) {
+    const oldestHref = thumbnailStateCacheOrder.shift();
+    if (oldestHref != null) {
+      thumbnailStateCache.delete(oldestHref);
+    }
+  }
+}
+
 function fitContainedSize(naturalSize: Size, limits: ThumbnailLimits): Size {
   const widthScale = limits.maxWidth / naturalSize.width;
   const heightScale = limits.maxHeight / naturalSize.height;
@@ -76,15 +106,21 @@ export function MessageCardImageThumb({
   const theme = useTheme();
   const compactViewport = useMediaQuery(theme.breakpoints.down('sm'));
   const thumbLimits = useMemo(() => getThumbnailLimits(variant, compact || compactViewport), [compact, compactViewport, variant]);
+  const cachedState = useMemo(() => getCachedThumbnailState(image.href), [image.href]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [naturalSize, setNaturalSize] = useState<Size | null>(null);
+  const [naturalSize, setNaturalSize] = useState<Size | null>(cachedState?.naturalSize ?? null);
   const canOpen = image.href.trim() !== '';
   const renderedSize = naturalSize != null ? fitContainedSize(naturalSize, thumbLimits) : {
     width: thumbLimits.placeholderWidth,
     height: thumbLimits.placeholderHeight,
   };
   const showImage = loaded && !failed;
+  const imageLoadingProps = {
+    loading: 'lazy',
+    decoding: 'async',
+    fetchpriority: 'low',
+  } as const;
 
   return (
     <ButtonBase
@@ -145,23 +181,36 @@ export function MessageCardImageThumb({
           alt="Зображення повідомлення"
           onLoad={(event) => {
             const target = event.currentTarget;
+            let nextNaturalSize = naturalSize;
             if (target.naturalWidth > 0 && target.naturalHeight > 0) {
-              setNaturalSize({ width: target.naturalWidth, height: target.naturalHeight });
+              nextNaturalSize = { width: target.naturalWidth, height: target.naturalHeight };
+              setNaturalSize(nextNaturalSize);
             }
             setLoaded(true);
+            setFailed(false);
+            cacheThumbnailState(image.href, { naturalSize: nextNaturalSize });
           }}
-          onError={() => setFailed(true)}
+          onError={() => {
+            setFailed(true);
+            setLoaded(false);
+          }}
+          {...imageLoadingProps}
           sx={{
-            display: showImage ? 'block' : 'none',
+            display: 'block',
             width: '100%',
             height: '100%',
             objectFit: 'contain',
+            opacity: showImage ? 1 : 0,
             transition: 'opacity 120ms ease-out',
+            pointerEvents: 'none',
           }}
         />
         {!loaded || failed ? (
           <Box
             sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1,
               width: '100%',
               height: '100%',
               display: 'flex',

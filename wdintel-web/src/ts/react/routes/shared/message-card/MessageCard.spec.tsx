@@ -1749,6 +1749,114 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Зображення недоступне');
   });
 
+  it('reuses cached thumbnail state and size after remount', async () => {
+    const href = 'https://example.test/files/cache-loaded.png';
+    const firstView = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: [href],
+      },
+    });
+    rendered.push(firstView);
+
+    const firstThumb = firstView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const firstImage = firstThumb?.querySelector('img');
+    if (!(firstImage instanceof HTMLImageElement)) throw new Error('thumbnail image not found');
+    Object.defineProperty(firstImage, 'naturalWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(firstImage, 'naturalHeight', { configurable: true, value: 800 });
+
+    await act(async () => {
+      firstImage.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    expect(firstThumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+    expect(firstThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
+    expect(firstThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
+
+    await act(async () => {
+      firstView.root.unmount();
+    });
+    firstView.container.remove();
+
+    const secondView = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: [href],
+      },
+    });
+    rendered.push(secondView);
+
+    const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
+    expect(secondThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
+    expect(secondThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
+    expect(secondThumb?.querySelector('img')).not.toBeNull();
+
+    const secondImage = secondThumb?.querySelector('img');
+    if (!(secondImage instanceof HTMLImageElement)) throw new Error('thumbnail image not found after remount');
+    Object.defineProperty(secondImage, 'naturalWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(secondImage, 'naturalHeight', { configurable: true, value: 800 });
+
+    await act(async () => {
+      secondImage.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+    expect(secondThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
+    expect(secondThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
+  });
+
+  it('reuses cached failed thumbnail state after remount', async () => {
+    const href = 'https://example.test/files/cache-failed.png';
+    const firstView = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: [href],
+      },
+    });
+    rendered.push(firstView);
+
+    const firstThumb = firstView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const firstImage = firstThumb?.querySelector('img');
+    if (firstImage == null) throw new Error('thumbnail image not found');
+
+    await act(async () => {
+      firstImage.dispatchEvent(new Event('error', { bubbles: true }));
+    });
+
+    expect(firstThumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
+    expect(firstThumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
+
+    await act(async () => {
+      firstView.root.unmount();
+    });
+    firstView.container.remove();
+
+    const secondView = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: [href],
+      },
+    });
+    rendered.push(secondView);
+
+    const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
+    expect(secondThumb?.getAttribute('data-picture-thumb-error-height-px')).toBeNull();
+    expect(secondThumb?.querySelector('img')).not.toBeNull();
+
+    const secondImage = secondThumb?.querySelector('img');
+    if (secondImage == null) throw new Error('thumbnail image not found after remount');
+
+    await act(async () => {
+      secondImage.dispatchEvent(new Event('error', { bubbles: true }));
+    });
+
+    expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
+    expect(secondThumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
+    expect(secondView.container.textContent).toContain('Зображення недоступне');
+  });
+
   it('renders a bounded single-image preview and opens the dialog', async () => {
     const view = await renderCard({
       msg: {
@@ -1776,6 +1884,9 @@ describe('MessageCard', () => {
     expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
     expect(thumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
     expect(thumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
+    expect(image.getAttribute('loading')).toBe('lazy');
+    expect(image.getAttribute('decoding')).toBe('async');
+    expect(image.getAttribute('fetchpriority')).toBe('low');
 
     await click(thumb as HTMLElement);
 
@@ -1784,6 +1895,9 @@ describe('MessageCard', () => {
     expect(dialog?.textContent).toContain('1 / 1');
     expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).toBeNull();
     expect(dialog?.querySelector('[data-image-preview-nav="next"]')).toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('decoding')).toBe('async');
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('loading')).toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('fetchpriority')).toBeNull();
   });
 
   it('fits vertical single images within the height cap', async () => {
