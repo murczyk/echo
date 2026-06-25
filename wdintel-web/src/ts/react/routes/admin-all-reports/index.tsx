@@ -10,7 +10,7 @@ export function AdminAllReportsPage() {
       includeAuthor
       fullHeight
       showReportCount
-      loadReportHistory={listAllReportHistory}
+      loadReportHistoryBatch={listAllReportHistory}
     />
   );
 }

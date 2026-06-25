@@ -22,6 +22,13 @@ type SettingsNeoTableProps<TData extends MRT_RowData> = {
   loading?: boolean;
   loadingRows?: TData[];
   layoutMode?: MRT_TableOptions<TData>['layoutMode'];
+  manualFiltering?: boolean;
+  manualSorting?: boolean;
+  onQueryStateChange?: (state: {
+    globalFilter: string;
+    columnFilters: Array<{ id: string; value: unknown }>;
+    sorting: Array<{ id: string; desc: boolean }>;
+  }) => void;
 };
 
 export function SettingsNeoTable<TData extends MRT_RowData>({
@@ -30,6 +37,9 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   loading = false,
   loadingRows,
   layoutMode = 'grid-no-grow',
+  manualFiltering = false,
+  manualSorting = false,
+  onQueryStateChange,
 }: SettingsNeoTableProps<TData>) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -47,6 +57,8 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
     enableColumnFilterModes: true,
     enableFacetedValues: true,
     enableRowVirtualization: false,
+    manualFiltering,
+    manualSorting,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     columnFilterDisplayMode: 'popover',
@@ -107,6 +119,14 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   useEffect(() => {
     tableStateContext.onTableInitialized(table);
   }, [table]);
+
+  useEffect(() => {
+    onQueryStateChange?.({
+      globalFilter: tableStateContext.globalFilter,
+      columnFilters: tableStateContext.columnFilters as Array<{ id: string; value: unknown }>,
+      sorting: tableStateContext.sorting as Array<{ id: string; desc: boolean }>,
+    });
+  }, [onQueryStateChange, tableStateContext.columnFilters, tableStateContext.globalFilter, tableStateContext.sorting]);
 
   return <MaterialReactTable table={table} />;
 }

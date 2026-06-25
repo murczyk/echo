@@ -24,11 +24,12 @@ use actix_web::{post, HttpResponse};
 use chrono::{Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, warn};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, FromQueryResult, IntoActiveModel, NotSet, QueryFilter,
-    QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, NotSet,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set,
+    Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -102,6 +103,37 @@ pub struct ReportHistoryLogEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct ReportHistoryIdReq {
     pub id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistoryAdminListReq {
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+    pub global_filter: Option<String>,
+    #[serde(default)]
+    pub column_filters: Vec<ReportHistoryColumnFilter>,
+    #[serde(default)]
+    pub sorting: Vec<ReportHistorySorting>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistoryColumnFilter {
+    pub id: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistorySorting {
+    pub id: String,
+    pub desc: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReportHistoryAdminListRsp {
+    pub rows: Vec<ReportHistoryRow>,
+    pub total: u64,
+    pub has_more: bool,
+    pub next_offset: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -485,6 +517,236 @@ async fn load_report_history_bgtask_progress(
         .into_iter()
         .map(|bgtask| (bgtask.id, bgtask.progress.clamp(0, 100)))
         .collect())
+}
+
+fn report_history_list_offset(req: &ReportHistoryAdminListReq) -> u64 {
+    req.offset.unwrap_or(0)
+}
+
+fn report_history_list_batch_size(req: &ReportHistoryAdminListReq) -> u64 {
+    req.limit
+        .unwrap_or(REPORT_HISTORY_LIST_LIMIT)
+        .clamp(1, REPORT_HISTORY_LIST_LIMIT)
+}
+
+fn report_history_escape_like(value: &str) -> String {
+    value
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+}
+
+fn report_history_like_value(value: &str) -> String {
+    format!(
+        "%{}%",
+        report_history_escape_like(&value.trim().to_lowercase())
+    )
+}
+
+fn report_history_like_expr(sql: &str, value: &str) -> SimpleExpr {
+    Expr::cust_with_values(
+        format!("lower({sql}) like $1"),
+        vec![report_history_like_value(value)],
+    )
+}
+
+fn report_history_filter_strings(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(value) => vec![value.clone()],
+        serde_json::Value::Number(value) => vec![value.to_string()],
+        serde_json::Value::Bool(value) => vec![value.to_string()],
+        serde_json::Value::Array(values) => values
+            .iter()
+            .flat_map(report_history_filter_strings)
+            .collect(),
+        _ => vec![],
+    }
+    .into_iter()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+    .collect()
+}
+
+fn report_history_text_condition(
+    sql: &str,
+    values: Vec<String>,
+) -> Option<Condition> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut condition = Condition::any();
+    for value in values {
+        condition = condition.add(report_history_like_expr(sql, &value));
+    }
+    Some(condition)
+}
+
+fn report_history_column_filter_condition(
+    filter: &ReportHistoryColumnFilter,
+) -> Option<Condition> {
+    let values = report_history_filter_strings(&filter.value);
+    match filter.id.as_str() {
+        "id" => {
+            report_history_text_condition("report_history.id::text", values)
+        }
+        "reportKind" => {
+            report_history_text_condition("report_history.report_kind", values)
+        }
+        "requestedBy" => {
+            report_history_text_condition("report_history.requested_by", values)
+        }
+        "createdAt" => report_history_text_condition(
+            "report_history.created_at::text",
+            values,
+        ),
+        "status" => {
+            report_history_text_condition("report_history.status", values)
+        }
+        "completedAt" => report_history_text_condition(
+            "report_history.completed_at::text",
+            values,
+        ),
+        "fileName" => {
+            report_history_text_condition("report_history.file_name", values)
+        }
+        "contentType" => {
+            report_history_text_condition("report_history.content_type", values)
+        }
+        "bgtaskId" => report_history_text_condition(
+            "report_history.bgtask_id::text",
+            values,
+        ),
+        "lastError" => {
+            report_history_text_condition("report_history.last_error", values)
+        }
+        _ => None,
+    }
+}
+
+fn report_history_global_filter_condition(value: &str) -> Option<Condition> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(
+        Condition::any()
+            .add(report_history_like_expr("report_history.id::text", value))
+            .add(report_history_like_expr(
+                "report_history.report_kind",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.requested_by",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.created_at::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.status", value))
+            .add(report_history_like_expr(
+                "report_history.completed_at::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.file_name", value))
+            .add(report_history_like_expr(
+                "report_history.content_type",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.bgtask_id::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.last_error", value)),
+    )
+}
+
+fn apply_report_history_admin_filters(
+    mut query: Select<report_history::Entity>,
+    req: &ReportHistoryAdminListReq,
+) -> Select<report_history::Entity> {
+    if let Some(global_filter) = req.global_filter.as_deref() {
+        if let Some(condition) =
+            report_history_global_filter_condition(global_filter)
+        {
+            query = query.filter(condition);
+        }
+    }
+
+    for filter in &req.column_filters {
+        if let Some(condition) = report_history_column_filter_condition(filter)
+        {
+            query = query.filter(condition);
+        }
+    }
+
+    query
+}
+
+fn report_history_sort_column(id: &str) -> Option<report_history::Column> {
+    match id {
+        "id" => Some(report_history::Column::Id),
+        "reportKind" => Some(report_history::Column::ReportKind),
+        "requestedBy" => Some(report_history::Column::RequestedBy),
+        "createdAt" => Some(report_history::Column::CreatedAt),
+        "status" => Some(report_history::Column::Status),
+        "completedAt" => Some(report_history::Column::CompletedAt),
+        "fileName" => Some(report_history::Column::FileName),
+        "contentType" => Some(report_history::Column::ContentType),
+        "bgtaskId" => Some(report_history::Column::BgtaskId),
+        "lastError" => Some(report_history::Column::LastError),
+        _ => None,
+    }
+}
+
+fn apply_report_history_admin_sorting(
+    mut query: Select<report_history::Entity>,
+    sorting: &[ReportHistorySorting],
+) -> Select<report_history::Entity> {
+    let mut applied_sorting = false;
+    for sorting in sorting {
+        let Some(column) = report_history_sort_column(&sorting.id) else {
+            continue;
+        };
+        query = if sorting.desc {
+            query.order_by_desc(column)
+        } else {
+            query.order_by_asc(column)
+        };
+        applied_sorting = true;
+    }
+
+    if !applied_sorting {
+        query = query.order_by_desc(report_history::Column::CreatedAt);
+    }
+    query.order_by_desc(report_history::Column::Id)
+}
+
+async fn list_admin_report_histories(
+    dbx: &DatabaseConnection,
+    req: &ReportHistoryAdminListReq,
+) -> Result<ReportHistoryAdminListRsp, AppError> {
+    let offset = report_history_list_offset(req);
+    let limit = report_history_list_batch_size(req);
+    let filtered_query =
+        apply_report_history_admin_filters(ReportHistory::find(), req);
+    let total = filtered_query.clone().count(dbx).await.c(h!())?;
+
+    let report_histories =
+        apply_report_history_admin_sorting(filtered_query, &req.sorting)
+            .offset(offset)
+            .limit(limit)
+            .all(dbx)
+            .await
+            .c(h!())?;
+    let next_offset = offset + report_histories.len() as u64;
+    let rows = build_report_history_rows(dbx, report_histories, true).await?;
+
+    Ok(ReportHistoryAdminListRsp {
+        rows,
+        total,
+        has_more: next_offset < total,
+        next_offset,
+    })
 }
 
 async fn read_and_remove_generated_report_file(
@@ -893,21 +1155,13 @@ pub async fn report_history_list(
 pub async fn report_history_admin_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
-) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
+    req: Json<ReportHistoryAdminListReq>,
+) -> Result<Json<ReportHistoryAdminListRsp>, AppError> {
     let user_login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Admin")
         .await
         .c(h!())?;
-    let report_histories = ReportHistory::find()
-        .order_by_desc(report_history::Column::CreatedAt)
-        .order_by_desc(report_history::Column::Id)
-        .limit(REPORT_HISTORY_LIST_LIMIT)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let rows =
-        build_report_history_rows(&env.dbx, report_histories, true).await?;
-    Ok(Json(rows))
+    Ok(Json(list_admin_report_histories(&env.dbx, &req).await?))
 }
 
 #[post("/api/report-history/status")]
