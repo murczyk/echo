@@ -129,49 +129,66 @@ def network_payload() -> dict:
 
 
 def submit_payload() -> dict:
-    timestamp = datetime.now().replace(microsecond=0).isoformat()
+    timestamp = datetime.now().replace(microsecond=0)
+    timestamp_text = timestamp.isoformat()
+    timestamp_ms = int(timestamp.timestamp() * 1000)
     freq = required_env("CHUMAK_FREQ")
     color_code = int(optional_env("CHUMAK_COLOR_CODE", "1"))
     sender_id = 110
-    abonent_id = 50
+    call_group_id = 50
+    sender_callsign = optional_env("CHUMAK_CALLSIGN_FROM", "ЯРУС")
+    receiver_callsign = optional_env("CHUMAK_CALLSIGN_TO", "СВЕТЛЫЙ")
     location = optional_env("CHUMAK_LOCATION", "ЛИМАН ПЕРШИЙ")
-    unit = optional_env("CHUMAK_UNIT", "Підрозділ 1")
+    unit = optional_env("CHUMAK_UNIT", "УКХ р/м вБпЛА 121 мсп 68 мсд 6 А")
+    network_name = optional_env("CHUMAK_NETWORK_NAME", unit)
+    no_headers_body = (
+        f"1.{sender_callsign} {receiver_callsign} на приеме.\n"
+        "2.ТУМАН в гараже. Оттуда вернулся, нормально вроде.\n"
+        "1.Принял."
+    )
     message = (
-        f"{timestamp} F={freq} (МГц)\n"
-        f"УКХ р/м СС:{color_code} CG:{abonent_id}\n"
-        f"ID➡️:{sender_id}(ЯРУС)\n"
-        "Тестове повідомлення Chumak"
+        f"{timestamp_text} F={freq} (МГц)\n"
+        'Отримано з поста "SC1"\n'
+        f"{unit} 🆓 ({location}) СС:{color_code} CG:{call_group_id}\n"
+        f"ID➡️:{sender_id}({sender_callsign})\n"
+        f"ID(CG)⬅️:{call_group_id}({receiver_callsign})\n"
+        f"{sender_callsign}\n"
+        f"{receiver_callsign}\n"
+        f"{no_headers_body}"
     )
     return {
-        "ID": required_env("CHUMAK_ID"),
-        "message": message,
-        "timestamp": timestamp,
-        "freq": freq,
-        "locations": [location] if location else [],
-        "tags": ["chumak-test"],
-        "no_headers_body": "Тестове повідомлення Chumak",
-        "media": [],
-        "coordinates": "",
-        "signals": "dmr",
-        "callsign_from": str(sender_id),
-        "callsign_to": str(abonent_id),
-        "callsigns_other": [],
-        "network_name": "Chumak test network",
-        "unit": unit or None,
-        "group_names": [required_env("CHUMAK_GROUP")],
-        "sender": optional_env("CHUMAK_SENDER", "chumak"),
-        "post": optional_env("CHUMAK_POST") or None,
-        "network": {"signal_name": "dmr", "cc": color_code, "name": "Chumak test network"},
-        "dmr": [
+        "messages": [
             {
-                "timestamp": timestamp,
-                "cc": color_code,
+                "text": message,
+                "date": timestamp.strftime("%d.%m.%Y"),
+                "time": timestamp.strftime("%H:%M:%S"),
                 "freq": freq,
-                "signal_name": "Dmr",
-                "sender_id": sender_id,
-                "abonent_id": abonent_id,
+                "coords": "",
+                "callsigns": [sender_callsign, receiver_callsign],
+                "checked": True,
+                "timestamp": timestamp_ms,
+                "sender": optional_env("CHUMAK_SENDER", "chumak"),
+                "extended_form": f"Сигнали: dmr\nМережа: {network_name}",
+                "post": optional_env("CHUMAK_POST") or None,
+                "unit": unit or None,
+                "location": location or None,
+                "group_names": [required_env("CHUMAK_GROUP")],
+                "source": "chumak",
+                "network": {"signal_name": "dmr", "cc": color_code, "name": network_name},
+                "dmr": [
+                    {
+                        "timestamp": timestamp_text,
+                        "cc": color_code,
+                        "freq": freq,
+                        "signal_name": "dmr",
+                        "sender_id": sender_id,
+                        "sender_name": sender_callsign,
+                        "call_group_id": call_group_id,
+                        "call_group_name": receiver_callsign,
+                    }
+                ],
             }
-        ],
+        ]
     }
 
 
@@ -193,9 +210,9 @@ def submit_message() -> None:
     client = connected_client()
     payload = submit_payload()
     print(f"Request payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-    response = client.request("POST", "/api/rer-importer/inbox/chumak-submit", payload)
+    response = client.request("POST", "/api/rer-importer/inbox/submit", payload)
     print(json.dumps(response, ensure_ascii=False, indent=2))
-    print("PASS: submitted Chumak inbox message")
+    print("PASS: submitted inbox message")
 
 
 def main() -> int:

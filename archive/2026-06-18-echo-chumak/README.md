@@ -71,7 +71,7 @@ POST /api/sigint/network/find-live
     {
       "details": {
         "id": 123,
-        "name": "Управління 12омбр 58А",
+        "name": "УКХ р/м вБпЛА 121 мсп 68 мсд 6 А",
         "location": "ЛИМАН ПЕРШИЙ",
         "radio_station": "Motorola DP4800",
         "purpose": "Ретрансляція голосового зв'язку",
@@ -81,12 +81,12 @@ POST /api/sigint/network/find-live
         "created_at": 1781851200000,
         "active_from": 1781851200000,
         "active_to": 1781937600000,
-        "units": ["Підрозділ 1"],
+        "units": ["121 мсп 68 мсд 6 А"],
         "aor_ids": [1],
         "post_ids": [5]
       },
-      "live_freqs": ["145.026"],
-      "callsigns": ["110", "50"],
+      "live_freqs": ["145.0260"],
+      "callsigns": ["ярус", "светлый"],
       "signals": ["dmr"],
       "pelengs": [
         {
@@ -120,10 +120,10 @@ POST /api/sigint/network/find-live
 Endpoint:
 
 ```text
-POST /api/rer-importer/inbox/chumak-submit
+POST /api/rer-importer/inbox/submit
 ```
 
-Можна надіслати цей payload напряму або використати команду:
+Можна надіслати generic submit payload напряму або використати команду:
 
 ```sh
 python3 test_chumak.py submit-message
@@ -133,49 +133,63 @@ python3 test_chumak.py submit-message
 
 ```json
 {
-  "ID": "123",
-  "message": "2026-06-19T14:00:00 F=145.0260 (МГц)\nУКХ р/м СС:1 CG:50\nID➡️:110(ЯРУС)\nТестове повідомлення Chumak",
-  "timestamp": "2026-06-19T14:00:00",
-  "freq": "145.0260",
-  "locations": ["ЛИМАН ПЕРШИЙ"],
-  "tags": ["chumak-test"],
-  "no_headers_body": "Тестове повідомлення Chumak",
-  "media": [],
-  "coordinates": "",
-  "signals": "dmr",
-  "callsign_from": "110",
-  "callsign_to": "50",
-  "callsigns_other": [],
-  "network_name": "Chumak test network",
-  "unit": "Підрозділ 1",
-  "group_names": ["Chumak test group"],
-  "sender": "chumak",
-  "post": "Chumak",
-  "network": {
-    "signal_name": "dmr",
-    "cc": 1,
-    "name": "Chumak test network"
-  },
-  "dmr": [
+  "messages": [
     {
-      "timestamp": "2026-06-19T14:00:00",
-      "cc": 1,
+      "text": "2026-02-18T08:49:00 F=145.0260 (МГц)\nОтримано з поста \"SC1\"\nУКХ р/м вБпЛА 121 мсп 68 мсд 6 А 🆓 (ЛИМАН ПЕРШИЙ) СС:1 CG:50\nID➡️:110(ЯРУС)\nID(CG)⬅️:50(СВЕТЛЫЙ)\nЯРУС\nСВЕТЛЫЙ\n1.ЯРУС СВЕТЛОМУ\n2.СВЕТЛЫЙ ЯРУС на приеме.\n1.ТУМАН у вас?\n2.ТУМАН в гараже. Оттуда вернулся, нормально вроде.\n1.Принял.",
+      "date": "18.02.2026",
+      "time": "08:49:00",
       "freq": "145.0260",
-      "signal_name": "Dmr",
-      "sender_id": 110,
-      "abonent_id": 50
+      "coords": "",
+      "callsigns": ["ЯРУС", "СВЕТЛЫЙ"],
+      "checked": true,
+      "timestamp": 1771404540000,
+      "sender": "chumak",
+      "extended_form": "Сигнали: dmr\nМережа: УКХ р/м вБпЛА 121 мсп 68 мсд 6 А",
+      "post": "SC1",
+      "unit": "УКХ р/м вБпЛА 121 мсп 68 мсд 6 А",
+      "location": "ЛИМАН ПЕРШИЙ",
+      "group_names": ["SC1"],
+      "source": "chumak",
+      "network": {
+        "signal_name": "dmr",
+        "cc": 1,
+        "name": "УКХ р/м вБпЛА 121 мсп 68 мсд 6 А"
+      },
+      "dmr": [
+        {
+          "timestamp": "2026-02-18T08:49:00",
+          "cc": 1,
+          "freq": "145.0260",
+          "signal_name": "dmr",
+          "sender_id": 110,
+          "sender_name": "ЯРУС",
+          "call_group_id": 50,
+          "call_group_name": "СВЕТЛЫЙ"
+        }
+      ]
     }
   ]
 }
 ```
 
-Поле `ID` обов'язкове: Echo зберігає його як `signal_message.external_id`, щоб потім знайти і простежити це повідомлення в Echo. `ID` передається як текст, але має містити число.
+`callsigns` передавайте як текстові позивні. Якщо джерело має і текстовий позивний, і DMR ID, текстовий позивний іде в `callsigns`, `dmr.sender_name` або `dmr.call_group_name`, а числовий DMR ID іде в `dmr.sender_id` або `dmr.call_group_id`.
+
+Перший запис у `dmr` є primary record. Echo використовує його `cc` як основний color code. Якщо наступні `dmr` записи або `network.cc` мають інший `cc`, Echo зберігає primary `cc` і повертає warning у response.
+
+Частоти нормалізуються до чотирьох знаків після крапки: `145.026` буде збережено як `145.0260`, а зайві знаки будуть обрізані.
+
+Echo синхронно створює `signal_message`, inbox item і повертає власний opaque string ID повідомлення. Не розбирайте його як число: значення може містити літери.
 
 Приклад response payload для успішного запиту:
 
 ```json
 {
-  "external_id": 123
+  "messages": [
+    {
+      "message_id": "msg-a1208-6734-2879"
+    }
+  ],
+  "warnings": []
 }
 ```
 

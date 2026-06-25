@@ -536,10 +536,10 @@ async fn delete_message(
 async fn inbox_submit(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<InboxSubmitReq>,
-) -> Result<Json<()>, AppError> {
+    req: Json<InboxSubmitEndpointReq>,
+) -> Result<Json<InboxSubmitRsp>, AppError> {
     match do_submit_inbox(user, &env, req).await {
-        Ok(_) => Ok(Json(())),
+        Ok(rsp) => Ok(Json(rsp)),
         Err(e) => {
             error!("failed to submit inbox: {:?}", e);
             Err(e)
@@ -547,156 +547,107 @@ async fn inbox_submit(
     }
 }
 
-#[post("/api/rer-importer/inbox/chumak-submit")]
-async fn chumak_inbox_submit(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<ChumakSubmitMessageReq>,
-) -> Result<Json<ChumakSubmitMessageRsp>, AppError> {
-    let req = req.into_inner();
-    let external_id = req.id.clone();
-    match do_submit_chumak_inbox(user, &env, req).await {
-        Ok(rsp) => Ok(Json(rsp)),
-        Err(e) => {
-            error!(
-                "failed to submit Chumak inbox external_id={}: {:?}",
-                external_id, e
-            );
-            Err(e)
-        }
-    }
+struct SubmittedInboxItem {
+    message_id: String,
+    inbox_id: i64,
+    warnings: Vec<InboxSubmitWarning>,
 }
 
-async fn do_submit_chumak_inbox(
-    user: Identity,
+async fn submit_generic_inbox_item(
     env: &Data<Env>,
-    req: ChumakSubmitMessageReq,
-) -> Result<ChumakSubmitMessageRsp, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_any_role(
-        &env.dbx,
-        &login,
-        vec!["Rer", "Api", "ApiAgent"],
+    txn: &DatabaseTransaction,
+    datasource: &datasource::Model,
+    login: &str,
+    logins: &Vec<String>,
+    item: InboxSubmitItem,
+) -> Result<SubmittedInboxItem, AppError> {
+    validate_generic_submit_item(&item)?;
+    let groups = ensure_submit_groups(
+        txn,
+        datasource,
+        login,
+        item.group_names.as_deref().unwrap_or(&[]),
     )
     .await
     .c(h!())?;
-    let external_id = validate_chumak_submit_req(&req)?;
-
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
-    let timestamp = parse_chumak_timestamp(&req.timestamp)?;
-    let txn = env.dbx.begin().await.c(h!())?;
-
-    let datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(&login))
-        .one(&txn)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    let groups =
-        ensure_chumak_groups(&txn, &datasource, &login, &req.group_names)
+    let mut message = InboxMessage::from(item.payload);
+    let post = normalized_optional_string(message.post.as_deref());
+    let post_id = match message.post_id {
+        Some(post_id) => Some(post_id),
+        None => crate::sigint::post::get_or_create_post_id(txn, &post)
             .await
-            .c(h!())?;
-    let post = normalized_optional_string(req.post.as_deref());
-    let post_id = crate::sigint::post::get_or_create_post_id(&txn, &post)
-        .await
+            .c(h!())?,
+    };
+    message.group_master_key = groups.first().map(|(key, _)| key.clone());
+    message.post = post;
+    message.post_id = post_id;
+    prepare_submit_body_for_coordinate_extraction(&mut message)?;
+    let timestamp = message
+        .timestamp
+        .map(crate::utils::dt_from_millis)
+        .transpose()
         .c(h!())?;
-    let signal_message = insert_chumak_signal_message(
-        &txn,
+
+    let signal_message = upsert_submit_signal_message(
+        txn,
         &env.config,
-        &req,
+        item.message_id.as_deref(),
+        &message,
         timestamp,
-        external_id,
         &groups,
     )
     .await
     .c(h!())?;
-    let message =
-        map_chumak_inbox_message(&req, timestamp, &groups, post, post_id)?;
+    let message_id = signal_message.message_uid.clone().c(h!())?;
     let inbox_id = submit_upsert_inbox_item(
         env.settlements.clone(),
-        &txn,
+        txn,
         signal_message.id,
         &message,
-        &login,
-        &logins,
+        login,
+        logins,
     )
     .await
     .c(h!())?;
-    save_chumak_metadata(inbox_id, &req, &txn).await.c(h!())?;
+    let warnings = save_submit_dmr_metadata(
+        inbox_id,
+        item.network.as_ref(),
+        item.dmr,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
-    txn.commit().await.c(h!())?;
-    fanout_inbox_changed(env, vec![inbox_id]).await;
-    Ok(ChumakSubmitMessageRsp { external_id })
+    Ok(SubmittedInboxItem {
+        message_id,
+        inbox_id,
+        warnings,
+    })
 }
 
-fn validate_chumak_submit_req(
-    req: &ChumakSubmitMessageReq,
-) -> Result<i64, AppError> {
-    let external_id = req.id.trim();
-    if external_id.is_empty() {
+fn validate_generic_submit_item(
+    item: &InboxSubmitItem,
+) -> Result<(), AppError> {
+    if item.payload.text.trim().is_empty() {
         return Err(AppError::BL {
-            msg: "Chumak submit requires ID".to_string(),
+            msg: "Inbox submit requires message text".to_string(),
         });
     }
-    let external_id = external_id.parse::<i64>().map_err(|e| AppError::BL {
-        msg: format!("Chumak submit ID must be an integer: {e}"),
-    })?;
-    if req.group_names.iter().all(|group| group.trim().is_empty()) {
+    if item
+        .group_names
+        .as_ref()
+        .is_none_or(|groups| groups.iter().all(|group| group.trim().is_empty()))
+    {
         return Err(AppError::BL {
-            msg: "Chumak submit requires at least one group name".to_string(),
+            msg: "Inbox submit requires at least one group name".to_string(),
         });
     }
-    let Some(network) = req.network.as_ref() else {
-        return Ok(external_id);
-    };
-    if !network.signal_name.eq_ignore_ascii_case("dmr") {
-        return Err(AppError::BL {
-            msg: format!(
-                "Unsupported Chumak network signal name: {}",
-                network.signal_name
-            ),
-        });
-    }
-    if req.dmr.iter().any(|metadata| metadata.cc != network.cc) {
-        return Err(AppError::BL {
-            msg: "Chumak network color code does not match DMR metadata"
-                .to_string(),
-        });
-    }
-    Ok(external_id)
+    validate_submit_network(item.network.as_ref())?;
+    validate_submit_dmr_signal_names(&item.dmr)?;
+    Ok(())
 }
 
-fn parse_chumak_timestamp(timestamp: &str) -> Result<NaiveDateTime, AppError> {
-    if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
-        return Ok(dt.naive_utc());
-    }
-
-    let local_datetime =
-        NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S")
-            .or_else(|_| {
-                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S")
-            })
-            .or_else(|_| {
-                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S%.f")
-            })
-            .or_else(|_| {
-                NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S%.f")
-            })
-            .map_err(|e| AppError::BL {
-                msg: format!("Invalid Chumak timestamp {timestamp}: {e}"),
-            })?;
-    let zoned = local_datetime
-        .and_local_timezone(crate::config::get_tz())
-        .single()
-        .ok_or_else(|| AppError::BL {
-            msg: format!("Ambiguous Chumak timestamp: {timestamp}"),
-        })?;
-    Ok(zoned.to_utc().naive_utc())
-}
-
-async fn ensure_chumak_groups(
+async fn ensure_submit_groups(
     txn: &DatabaseTransaction,
     datasource: &datasource::Model,
     login: &str,
@@ -708,9 +659,9 @@ async fn ensure_chumak_groups(
         if group_name.is_empty() {
             continue;
         }
-        let group_master_key = chumak_group_master_key(login, group_name);
+        let group_master_key = submit_group_master_key(login, group_name);
         let (group_master_key, datasource_group_id) =
-            ensure_chumak_datasource_group(
+            ensure_submit_datasource_group(
                 txn,
                 datasource.id,
                 &group_master_key,
@@ -718,7 +669,7 @@ async fn ensure_chumak_groups(
             )
             .await
             .c(h!())?;
-        ensure_chumak_group_aor(
+        ensure_submit_group_aor(
             txn,
             datasource.default_aor_id,
             &group_master_key,
@@ -730,12 +681,12 @@ async fn ensure_chumak_groups(
     Ok(groups)
 }
 
-fn chumak_group_master_key(login: &str, group_name: &str) -> String {
+fn submit_group_master_key(login: &str, group_name: &str) -> String {
     let digest = sha256::digest(format!("{login}:{group_name}"));
     format!("echo.{}", &digest[..32])
 }
 
-async fn ensure_chumak_datasource_group(
+async fn ensure_submit_datasource_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     group_master_key: &str,
@@ -798,7 +749,7 @@ async fn ensure_chumak_datasource_group(
     Ok((datasource_group.group_master_key, datasource_group.id))
 }
 
-async fn ensure_chumak_group_aor(
+async fn ensure_submit_group_aor(
     txn: &DatabaseTransaction,
     aor_id: Option<i64>,
     group_master_key: &str,
@@ -826,38 +777,89 @@ async fn ensure_chumak_group_aor(
     Ok(())
 }
 
-async fn insert_chumak_signal_message(
+async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
-    req: &ChumakSubmitMessageReq,
-    timestamp: NaiveDateTime,
-    external_id: i64,
+    message_id: Option<&str>,
+    message: &InboxMessage,
+    timestamp: Option<NaiveDateTime>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
         groups.first().cloned().c(h!())?;
-    let signal_message = signal_message::ActiveModel {
-        id: NotSet,
-        body: Set(Some(req.message.clone())),
-        datasource_group_id: Set(Some(datasource_group_id)),
-        created_at: NotSet,
-        timestamp: Set(Some(timestamp)),
-        sender: Set(req.sender.clone()),
-        format: NotSet,
-        deleted: Set(false),
-        external_id: Set(Some(external_id)),
-        message_uid: NotSet,
-    }
-    .insert(txn)
-    .await
-    .c(h!())?;
+    let signal_message = match normalized_optional_string(message_id) {
+        Some(message_id) => {
+            let signal_message = SignalMessage::find()
+                .filter(signal_message::Column::MessageUid.eq(message_id))
+                .one(txn)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?;
+            let mut signal_message = signal_message.into_active_model();
+            signal_message.body = Set(Some(message.text.clone()));
+            signal_message.datasource_group_id = Set(Some(datasource_group_id));
+            signal_message.timestamp = Set(timestamp);
+            signal_message.sender = Set(message.sender.clone());
+            signal_message.deleted = Set(false);
+            signal_message.update(txn).await.c(h!())?
+        }
+        None => signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(message.text.clone())),
+            datasource_group_id: Set(Some(datasource_group_id)),
+            created_at: NotSet,
+            timestamp: Set(timestamp),
+            sender: Set(message.sender.clone()),
+            format: NotSet,
+            deleted: Set(false),
+            external_id: Set(None),
+            message_uid: NotSet,
+        }
+        .insert(txn)
+        .await
+        .c(h!())?,
+    };
 
+    let signal_message =
+        ensure_signal_message_model_uid(txn, config, signal_message)
+            .await
+            .c(h!())?;
+    ensure_submit_signal_message_groups(txn, &signal_message, groups).await?;
+    Ok(signal_message)
+}
+
+async fn ensure_submit_signal_message_groups(
+    txn: &DatabaseTransaction,
+    signal_message: &signal_message::Model,
+    groups: &[(String, i64)],
+) -> Result<(), AppError> {
     for (group_master_key, datasource_group_id) in groups {
+        let existing = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message.id),
+            )
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group_master_key.clone()),
+            )
+            .one(txn)
+            .await
+            .c(h!())?;
+        if let Some(existing) = existing {
+            let mut existing = existing.into_active_model();
+            existing.sender = Set(signal_message.sender.clone());
+            existing.message_uid = Set(signal_message.message_uid.clone());
+            existing.datasource_group_id = Set(Some(*datasource_group_id));
+            existing.update(txn).await.c(h!())?;
+            continue;
+        }
+
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(signal_message.id),
             group_master_key: Set(Some(group_master_key.clone())),
-            sender: Set(req.sender.clone()),
+            sender: Set(signal_message.sender.clone()),
             message_uid: Set(signal_message.message_uid.clone()),
             datasource_group_id: Set(Some(*datasource_group_id)),
             created_at: Set(signal_message.created_at),
@@ -866,81 +868,7 @@ async fn insert_chumak_signal_message(
         .await
         .c(h!())?;
     }
-
-    Ok(crate::messenger::id::update_message_with_uid(
-        txn,
-        config,
-        signal_message,
-    )
-    .await
-    .c(h!())?)
-}
-
-fn map_chumak_inbox_message(
-    req: &ChumakSubmitMessageReq,
-    timestamp: NaiveDateTime,
-    groups: &[(String, i64)],
-    post: Option<String>,
-    post_id: Option<i64>,
-) -> Result<InboxMessage, AppError> {
-    let no_headers_source = if req.no_headers_body.trim().is_empty() {
-        req.message.as_str()
-    } else {
-        req.no_headers_body.as_str()
-    };
-    let no_headers_body =
-        crate::rer_importer::body_noheader::extract_text(no_headers_source)?;
-    let extended_form = chumak_extended_form(req);
-    let callsigns = chumak_callsigns(req);
-    let (date, time) = chumak_display_date_time(timestamp);
-
-    Ok(InboxMessage {
-        message_uid: None,
-        text: req.message.clone(),
-        media: vec![],
-        images: vec![],
-        image_recognized: vec![],
-        date: Some(date),
-        time: Some(time),
-        freq: req
-            .freq
-            .as_ref()
-            .map(|freq| crate::rer_importer::frequency::etalon(freq)),
-        coords: req.coordinates.clone(),
-        callsigns,
-        callsigns_alg2: vec![],
-        checked: true,
-        important: false,
-        bookmarked: false,
-        timestamp: Some(timestamp.and_utc().timestamp_millis()),
-        group_master_key: groups.first().map(|(key, _)| key.clone()),
-        sender: req.sender.clone(),
-        extended_form,
-        post,
-        post_id,
-        unit: req.unit.clone(),
-        callsign_tokens: None,
-        signal_tokens: None,
-        point_tokens: None,
-        no_headers_body: Some(no_headers_body),
-        keyword_tokens: None,
-        text_marked: None,
-        datasource_id: None,
-        location: chumak_location(req),
-        tags: None,
-        network_ids: None,
-        inbox_tags: None,
-        metadata: vec![],
-    })
-}
-
-fn chumak_display_date_time(timestamp: NaiveDateTime) -> (String, String) {
-    let local_timestamp =
-        timestamp.and_utc().with_timezone(&crate::config::get_tz());
-    (
-        local_timestamp.format("%d.%m.%Y").to_string(),
-        local_timestamp.format("%H:%M:%S").to_string(),
-    )
+    Ok(())
 }
 
 fn normalized_optional_string(value: Option<&str>) -> Option<String> {
@@ -950,74 +878,41 @@ fn normalized_optional_string(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn chumak_callsigns(req: &ChumakSubmitMessageReq) -> Vec<String> {
-    req.callsign_from
-        .clone()
-        .into_iter()
-        .chain(req.callsign_to.clone())
-        .chain(req.callsigns_other.clone())
-        .map(|callsign| callsign.trim().to_lowercase())
-        .filter(|callsign| !callsign.is_empty())
-        .unique()
-        .collect()
-}
-
-fn chumak_location(req: &ChumakSubmitMessageReq) -> Option<String> {
-    let locations = req
-        .locations
-        .iter()
-        .map(|location| location.trim())
-        .filter(|location| !location.is_empty())
-        .unique()
-        .collect::<Vec<_>>();
-    if locations.is_empty() {
-        None
-    } else {
-        Some(locations.join(", "))
-    }
-}
-
-fn chumak_extended_form(req: &ChumakSubmitMessageReq) -> Option<String> {
-    let mut lines = vec![];
-    if !req.tags.is_empty() {
-        lines.push(format!("Теги: {}", req.tags.join(", ")));
-    }
-    if let Some(signals) = req.signals.as_ref().filter(|s| !s.trim().is_empty())
-    {
-        lines.push(format!("Сигнали: {}", signals.trim()));
-    }
-    if let Some(network_name) =
-        req.network_name.as_ref().filter(|s| !s.trim().is_empty())
-    {
-        lines.push(format!("Мережа: {}", network_name.trim()));
-    }
-    if lines.is_empty() {
-        None
-    } else {
-        Some(lines.join("\n"))
-    }
-}
-
-async fn save_chumak_metadata(
-    inbox_id: i64,
-    req: &ChumakSubmitMessageReq,
-    txn: &DatabaseTransaction,
+fn prepare_submit_body_for_coordinate_extraction(
+    message: &mut InboxMessage,
 ) -> Result<(), AppError> {
-    let mut entries = req
-        .dmr
+    message.coords = normalized_optional_string(message.coords.as_deref());
+    if message.coords.is_some() {
+        message.no_headers_body = None;
+        return Ok(());
+    }
+    if message.no_headers_body.is_none() {
+        message.no_headers_body = Some(
+            crate::rer_importer::body_noheader::extract_text(&message.text)
+                .c(h!())?,
+        );
+    }
+    Ok(())
+}
+
+async fn save_submit_dmr_metadata(
+    inbox_id: i64,
+    network: Option<&SubmitNetwork>,
+    dmr: Vec<SubmitDmrMetadata>,
+    txn: &DatabaseTransaction,
+) -> Result<Vec<InboxSubmitWarning>, AppError> {
+    let (dmr, warnings) = normalize_submit_dmr_metadata(network, dmr)?;
+    let mut entries = dmr
         .iter()
-        .map(|metadata| chumak_metadata_model(inbox_id, metadata))
+        .map(|metadata| submit_dmr_metadata_model(inbox_id, metadata))
         .collect::<Vec<_>>();
 
-    if let Some(network) = req.network.as_ref() {
-        let cc = network.cc.to_string();
-        let already_saved =
-            req.dmr.iter().any(|metadata| metadata.cc.to_string() == cc);
-        if !already_saved {
+    if entries.is_empty() {
+        if let Some(cc) = network.as_ref().and_then(|network| network.cc) {
             entries.push(sigint_inbox_item_metadata::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(inbox_id),
-                color_code: Set(Some(cc)),
+                color_code: Set(Some(cc.to_string())),
                 created_at: NotSet,
                 ..Default::default()
             });
@@ -1025,21 +920,21 @@ async fn save_chumak_metadata(
     }
 
     let mut existing_metadata_keys =
-        load_chumak_metadata_keys(inbox_id, txn).await.c(h!())?;
+        load_submit_metadata_keys(inbox_id, txn).await.c(h!())?;
     entries.retain(|entry| {
-        existing_metadata_keys.insert(chumak_metadata_key_from_active(entry))
+        existing_metadata_keys.insert(submit_metadata_key_from_active(entry))
     });
     if entries.is_empty() {
-        return Ok(());
+        return Ok(warnings);
     }
     sigint_inbox_item_metadata::Entity::insert_many(entries)
         .exec(txn)
         .await
         .c(h!())?;
-    Ok(())
+    Ok(warnings)
 }
 
-type ChumakMetadataKey = (
+type SubmitMetadataKey = (
     Option<String>,
     Option<String>,
     Option<String>,
@@ -1048,10 +943,10 @@ type ChumakMetadataKey = (
     Option<String>,
 );
 
-async fn load_chumak_metadata_keys(
+async fn load_submit_metadata_keys(
     inbox_id: i64,
     txn: &DatabaseTransaction,
-) -> Result<BTreeSet<ChumakMetadataKey>, AppError> {
+) -> Result<BTreeSet<SubmitMetadataKey>, AppError> {
     Ok(sigint_inbox_item_metadata::Entity::find()
         .filter(
             sigint_inbox_item_metadata::Column::SigintInboxItemId.eq(inbox_id),
@@ -1060,13 +955,13 @@ async fn load_chumak_metadata_keys(
         .await
         .c(h!())?
         .into_iter()
-        .map(chumak_metadata_key_from_model)
+        .map(submit_metadata_key_from_model)
         .collect())
 }
 
-fn chumak_metadata_key_from_model(
+fn submit_metadata_key_from_model(
     metadata: sigint_inbox_item_metadata::Model,
-) -> ChumakMetadataKey {
+) -> SubmitMetadataKey {
     (
         metadata.color_code,
         metadata.call_group_id,
@@ -1077,9 +972,9 @@ fn chumak_metadata_key_from_model(
     )
 }
 
-fn chumak_metadata_key_from_active(
+fn submit_metadata_key_from_active(
     metadata: &sigint_inbox_item_metadata::ActiveModel,
-) -> ChumakMetadataKey {
+) -> SubmitMetadataKey {
     (
         active_optional_string(&metadata.color_code),
         active_optional_string(&metadata.call_group_id),
@@ -1099,16 +994,219 @@ fn active_optional_string(
     }
 }
 
-fn chumak_metadata_model(
+fn normalize_submit_dmr_metadata(
+    network: Option<&SubmitNetwork>,
+    dmr: Vec<SubmitDmrMetadata>,
+) -> Result<(Vec<SubmitDmrMetadata>, Vec<InboxSubmitWarning>), AppError> {
+    validate_submit_network(network)?;
+    validate_submit_dmr_signal_names(&dmr)?;
+    let dmr = dmr
+        .into_iter()
+        .map(normalize_submit_dmr_metadata_values)
+        .collect::<Vec<_>>();
+    let primary_cc = dmr
+        .first()
+        .and_then(|metadata| metadata.cc)
+        .or_else(|| network.and_then(|network| network.cc));
+    let Some(primary_cc) = primary_cc else {
+        return Ok((reduce_submit_dmr_metadata(dmr), vec![]));
+    };
+
+    let mut warnings = vec![];
+    if dmr.first().is_some_and(|metadata| metadata.cc.is_none()) {
+        warnings.push(InboxSubmitWarning {
+            code: "dmr_primary_cc_missing".to_string(),
+            message: format!(
+                "Primary DMR metadata color code is missing; using {primary_cc}"
+            ),
+        });
+    }
+    if let Some(network_cc) = network.and_then(|network| network.cc) {
+        if network_cc != primary_cc {
+            warnings.push(InboxSubmitWarning {
+                code: "dmr_network_cc_conflict".to_string(),
+                message: format!(
+                    "DMR network color code {network_cc} differs from primary color code {primary_cc}; using {primary_cc}"
+                ),
+            });
+        }
+    }
+
+    let dmr = dmr
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut metadata)| {
+            match metadata.cc {
+                Some(cc) if cc != primary_cc => {
+                    warnings.push(InboxSubmitWarning {
+                        code: "dmr_metadata_cc_conflict".to_string(),
+                        message: format!(
+                            "DMR metadata record {index} color code {cc} differs from primary color code {primary_cc}; using {primary_cc}"
+                        ),
+                    });
+                    metadata.cc = Some(primary_cc);
+                }
+                None => {
+                    warnings.push(InboxSubmitWarning {
+                        code: "dmr_metadata_cc_missing".to_string(),
+                        message: format!(
+                            "DMR metadata record {index} color code is missing; using {primary_cc}"
+                        ),
+                    });
+                    metadata.cc = Some(primary_cc);
+                }
+                _ => {}
+            }
+            metadata
+        })
+        .collect();
+
+    Ok((reduce_submit_dmr_metadata(dmr), warnings))
+}
+
+fn validate_submit_network(
+    network: Option<&SubmitNetwork>,
+) -> Result<(), AppError> {
+    if let Some(network) = network {
+        validate_submit_signal_name(&network.signal_name)?;
+    }
+    Ok(())
+}
+
+fn validate_submit_dmr_signal_names(
+    dmr: &[SubmitDmrMetadata],
+) -> Result<(), AppError> {
+    for metadata in dmr {
+        validate_submit_signal_name(&metadata.signal_name)?;
+    }
+    Ok(())
+}
+
+fn validate_submit_signal_name(signal_name: &str) -> Result<(), AppError> {
+    if signal_name.trim().eq_ignore_ascii_case("dmr") {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: format!("Unsupported DMR metadata signal name: {signal_name}"),
+    })
+}
+
+fn normalize_submit_dmr_metadata_values(
+    mut metadata: SubmitDmrMetadata,
+) -> SubmitDmrMetadata {
+    metadata.freq = crate::rer_importer::frequency::etalon(&metadata.freq);
+    metadata.sender_name = normalize_submit_metadata_text(metadata.sender_name);
+    metadata.call_group_name =
+        normalize_submit_metadata_text(metadata.call_group_name);
+    metadata.hash_id = normalize_submit_metadata_text(metadata.hash_id)
+        .map(|hash_id| hash_id.to_lowercase());
+    metadata
+}
+
+fn normalize_submit_metadata_text(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value =
+            crate::rer_importer::inbox::metadata::normalize_metadata_digits(
+                &value,
+            );
+        crate::rer_importer::inbox::metadata::normalize_metadata_value(&value)
+    })
+}
+
+fn reduce_submit_dmr_metadata(
+    mut items: Vec<SubmitDmrMetadata>,
+) -> Vec<SubmitDmrMetadata> {
+    loop {
+        if items.len() <= 1 {
+            return items;
+        }
+
+        let mut removed = false;
+        'outer: for idx in 0..items.len() {
+            for other_idx in 0..items.len() {
+                if idx == other_idx {
+                    continue;
+                }
+                if submit_dmr_metadata_matches(&items[idx], &items[other_idx]) {
+                    items.remove(idx);
+                    removed = true;
+                    break 'outer;
+                }
+            }
+        }
+
+        if !removed {
+            return items;
+        }
+    }
+}
+
+fn submit_dmr_metadata_matches(
+    left: &SubmitDmrMetadata,
+    right: &SubmitDmrMetadata,
+) -> bool {
+    submit_dmr_metadata_has_some_value(left)
+        && matches_optional_value(left.cc.as_ref(), right.cc.as_ref())
+        && matches_optional_value(
+            left.call_group_id.as_ref(),
+            right.call_group_id.as_ref(),
+        )
+        && matches_optional_value(
+            left.call_group_name.as_ref(),
+            right.call_group_name.as_ref(),
+        )
+        && matches_optional_value(
+            left.sender_id.as_ref(),
+            right.sender_id.as_ref(),
+        )
+        && matches_optional_value(
+            left.sender_name.as_ref(),
+            right.sender_name.as_ref(),
+        )
+        && matches_optional_value(left.hash_id.as_ref(), right.hash_id.as_ref())
+}
+
+fn submit_dmr_metadata_has_some_value(metadata: &SubmitDmrMetadata) -> bool {
+    metadata.cc.is_some()
+        || metadata.sender_id.is_some()
+        || metadata
+            .sender_name
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
+        || metadata.call_group_id.is_some()
+        || metadata
+            .call_group_name
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
+        || metadata
+            .hash_id
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
+}
+
+fn matches_optional_value<T: PartialEq>(
+    left: Option<&T>,
+    right: Option<&T>,
+) -> bool {
+    match left {
+        Some(left) => right.is_some_and(|right| left == right),
+        None => true,
+    }
+}
+
+fn submit_dmr_metadata_model(
     inbox_id: i64,
-    metadata: &ChumakMetadata,
+    metadata: &SubmitDmrMetadata,
 ) -> sigint_inbox_item_metadata::ActiveModel {
     sigint_inbox_item_metadata::ActiveModel {
         id: NotSet,
         sigint_inbox_item_id: Set(inbox_id),
-        color_code: Set(Some(metadata.cc.to_string())),
-        call_group_id: Set(metadata.abonent_id.map(|id| id.to_string())),
-        sender_id: Set(Some(metadata.sender_id.to_string())),
+        color_code: Set(metadata.cc.map(|cc| cc.to_string())),
+        call_group_id: Set(metadata.call_group_id.map(|id| id.to_string())),
+        call_group_name: Set(metadata.call_group_name.clone()),
+        sender_id: Set(metadata.sender_id.map(|id| id.to_string())),
+        sender_name: Set(metadata.sender_name.clone()),
+        hash_id: Set(metadata.hash_id.clone()),
         created_at: NotSet,
         ..Default::default()
     }
@@ -1253,8 +1351,23 @@ async fn comment_save(
 async fn do_submit_inbox(
     user: Identity,
     env: &Data<Env>,
-    req: Json<InboxSubmitReq>,
-) -> Result<(), AppError> {
+    req: Json<InboxSubmitEndpointReq>,
+) -> Result<InboxSubmitRsp, AppError> {
+    match req.into_inner() {
+        InboxSubmitEndpointReq::Legacy(req) => {
+            submit_legacy_inbox(user, env, req).await
+        }
+        InboxSubmitEndpointReq::Generic(req) => {
+            submit_generic_inbox(user, env, req).await
+        }
+    }
+}
+
+async fn submit_legacy_inbox(
+    user: Identity,
+    env: &Data<Env>,
+    req: InboxSubmitReq,
+) -> Result<InboxSubmitRsp, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
@@ -1262,8 +1375,77 @@ async fn do_submit_inbox(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
+    submit_legacy_inbox_messages(env, &login, &logins, req).await
+}
+
+async fn submit_generic_inbox(
+    user: Identity,
+    env: &Data<Env>,
+    req: GenericInboxSubmitReq,
+) -> Result<InboxSubmitRsp, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", "Api", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
+    submit_generic_inbox_messages(env, &login, &logins, req).await
+}
+
+async fn submit_generic_inbox_messages(
+    env: &Data<Env>,
+    login: &str,
+    logins: &Vec<String>,
+    req: GenericInboxSubmitReq,
+) -> Result<InboxSubmitRsp, AppError> {
+    let txn = env.dbx.begin().await.c(h!())?;
+    let datasource = datasource::Entity::find()
+        .filter(datasource::Column::ApiLogin.eq(login))
+        .one(&txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let mut changed_inbox_ids = vec![];
+    let mut messages = vec![];
+    let mut warnings = vec![];
+
+    for item in req.messages {
+        let submitted = submit_generic_inbox_item(
+            env,
+            &txn,
+            &datasource,
+            login,
+            logins,
+            item,
+        )
+        .await
+        .c(h!())?;
+        changed_inbox_ids.push(submitted.inbox_id);
+        messages.push(InboxSubmitMessageRsp {
+            message_id: submitted.message_id,
+        });
+        warnings.extend(submitted.warnings);
+    }
+
+    txn.commit().await.c(h!())?;
+    fanout_inbox_changed(env, changed_inbox_ids).await;
+    Ok(InboxSubmitRsp { messages, warnings })
+}
+
+async fn submit_legacy_inbox_messages(
+    env: &Data<Env>,
+    login: &str,
+    logins: &Vec<String>,
+    req: InboxSubmitReq,
+) -> Result<InboxSubmitRsp, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let mut changed_inbox_ids = vec![];
+    let mut submitted_messages = vec![];
 
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
@@ -1294,12 +1476,16 @@ async fn do_submit_inbox(
                 &txn,
                 *id,
                 &message,
-                &login,
-                &logins,
+                login,
+                logins,
             )
             .await
             .c(h!())?;
             changed_inbox_ids.push(inbox_id);
+            let message_id = ensure_signal_message_uid(&txn, &env.config, *id)
+                .await
+                .c(h!())?;
+            submitted_messages.push(InboxSubmitMessageRsp { message_id });
         }
         do_palitra_highlight(
             all_ids,
@@ -1312,7 +1498,47 @@ async fn do_submit_inbox(
     }
     txn.commit().await.c(h!())?;
     fanout_inbox_changed(env, changed_inbox_ids).await;
-    Ok(())
+    Ok(InboxSubmitRsp {
+        messages: submitted_messages,
+        warnings: vec![],
+    })
+}
+
+async fn ensure_signal_message_uid(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    signal_message_id: i64,
+) -> Result<String, AppError> {
+    let signal_message = SignalMessage::find_by_id(signal_message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let signal_message =
+        ensure_signal_message_model_uid(txn, config, signal_message).await?;
+    Ok(signal_message.message_uid.c(h!())?)
+}
+
+async fn ensure_signal_message_model_uid(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    signal_message: signal_message::Model,
+) -> Result<signal_message::Model, AppError> {
+    if signal_message
+        .message_uid
+        .as_ref()
+        .is_some_and(|message_uid| !message_uid.is_empty())
+    {
+        return Ok(signal_message);
+    }
+
+    Ok(crate::messenger::id::update_message_with_uid(
+        txn,
+        config,
+        signal_message,
+    )
+    .await
+    .c(h!())?)
 }
 
 async fn fanout_inbox_changed(env: &Data<Env>, inbox_ids: Vec<i64>) {
@@ -1545,9 +1771,9 @@ mod tests {
     use super::*;
     use crate::entities::{
         datasource_group, login, organism, sigint_inbox_item,
-        sigint_inbox_item_point_token, sigint_inbox_item_tag,
-        sigint_zone_datasource, signal_group, signal_message,
-        signal_message_group, signal_message_media, tag,
+        sigint_inbox_item_metadata, sigint_inbox_item_point_token,
+        sigint_inbox_item_tag, sigint_zone_datasource, signal_group,
+        signal_message, signal_message_group, signal_message_media, tag,
     };
     use crate::functest::tests::*;
     use chrono::Utc;
@@ -1556,6 +1782,383 @@ mod tests {
     use serial_test::serial;
     use std::sync::Arc;
     use uuid::Uuid;
+
+    fn submit_dmr_metadata(cc: Option<i32>) -> SubmitDmrMetadata {
+        SubmitDmrMetadata {
+            timestamp: "2026-06-25T12:34:56".to_string(),
+            cc,
+            freq: "145.0260".to_string(),
+            signal_name: "dmr".to_string(),
+            sender_id: Some(110),
+            sender_name: Some("ЯРУС".to_string()),
+            call_group_id: Some(50),
+            call_group_name: Some("СВЕТЛЫЙ".to_string()),
+            hash_id: Some("2324d327".to_string()),
+        }
+    }
+
+    fn warning_codes(warnings: &[InboxSubmitWarning]) -> Vec<&str> {
+        warnings
+            .iter()
+            .map(|warning| warning.code.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn submit_dmr_metadata_model_stringifies_numeric_ids_for_storage() {
+        let metadata = submit_dmr_metadata(Some(5));
+
+        let metadata = submit_dmr_metadata_model(42, &metadata);
+
+        assert_eq!(
+            active_optional_string(&metadata.color_code).as_deref(),
+            Some("5")
+        );
+        assert_eq!(
+            active_optional_string(&metadata.sender_id).as_deref(),
+            Some("110")
+        );
+        assert_eq!(
+            active_optional_string(&metadata.sender_name).as_deref(),
+            Some("ЯРУС")
+        );
+        assert_eq!(
+            active_optional_string(&metadata.call_group_id).as_deref(),
+            Some("50")
+        );
+        assert_eq!(
+            active_optional_string(&metadata.call_group_name).as_deref(),
+            Some("СВЕТЛЫЙ")
+        );
+        assert_eq!(
+            active_optional_string(&metadata.hash_id).as_deref(),
+            Some("2324d327")
+        );
+    }
+
+    #[test]
+    fn normalize_submit_dmr_metadata_uses_primary_cc_for_conflicts() {
+        let mut conflicting_metadata = submit_dmr_metadata(Some(7));
+        conflicting_metadata.sender_id = Some(111);
+        let (dmr, warnings) = normalize_submit_dmr_metadata(
+            None,
+            vec![submit_dmr_metadata(Some(5)), conflicting_metadata],
+        )
+        .unwrap();
+
+        assert_eq!(dmr[0].cc, Some(5));
+        assert_eq!(dmr[1].cc, Some(5));
+        assert_eq!(warning_codes(&warnings), vec!["dmr_metadata_cc_conflict"]);
+    }
+
+    #[test]
+    fn normalize_submit_dmr_metadata_warns_on_network_cc_conflict() {
+        let network = SubmitNetwork {
+            signal_name: "dmr".to_string(),
+            cc: Some(7),
+            name: Some("DMR SC1".to_string()),
+        };
+
+        let (dmr, warnings) = normalize_submit_dmr_metadata(
+            Some(&network),
+            vec![submit_dmr_metadata(Some(5))],
+        )
+        .unwrap();
+
+        assert_eq!(dmr[0].cc, Some(5));
+        assert_eq!(warning_codes(&warnings), vec!["dmr_network_cc_conflict"]);
+    }
+
+    #[test]
+    fn normalize_submit_dmr_metadata_normalizes_blank_values_and_freq() {
+        let mut metadata = submit_dmr_metadata(Some(5));
+        metadata.freq = "145.02678".to_string();
+        metadata.sender_name = Some(" НВ ".to_string());
+        metadata.call_group_name = Some(" hb ".to_string());
+        metadata.hash_id = Some("2324D327".to_string());
+
+        let (dmr, warnings) =
+            normalize_submit_dmr_metadata(None, vec![metadata]).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(dmr[0].freq, "145.0267");
+        assert_eq!(dmr[0].sender_name, None);
+        assert_eq!(dmr[0].call_group_name, None);
+        assert_eq!(dmr[0].hash_id.as_deref(), Some("2324d327"));
+    }
+
+    #[test]
+    fn normalize_submit_dmr_metadata_drops_duplicate_subset_rows() {
+        let subset = SubmitDmrMetadata {
+            sender_id: None,
+            sender_name: None,
+            call_group_name: None,
+            hash_id: None,
+            ..submit_dmr_metadata(Some(5))
+        };
+        let rich = submit_dmr_metadata(Some(5));
+
+        let (dmr, warnings) =
+            normalize_submit_dmr_metadata(None, vec![subset, rich]).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(dmr.len(), 1);
+        assert_eq!(dmr[0].sender_id, Some(110));
+        assert_eq!(dmr[0].call_group_id, Some(50));
+    }
+
+    #[test]
+    fn normalize_submit_dmr_metadata_rejects_unsupported_signal_names() {
+        let mut metadata = submit_dmr_metadata(Some(5));
+        metadata.signal_name = "tetra".to_string();
+
+        assert!(normalize_submit_dmr_metadata(None, vec![metadata]).is_err());
+    }
+
+    #[test]
+    fn validate_generic_submit_item_requires_group_names() {
+        let item = InboxSubmitItem {
+            payload: InboxInsertPayload {
+                text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+                ..Default::default()
+            },
+            group_names: Some(vec![" ".to_string()]),
+            ..Default::default()
+        };
+
+        assert!(validate_generic_submit_item(&item).is_err());
+    }
+
+    #[test]
+    fn validate_generic_submit_item_rejects_missing_message_text() {
+        let item = InboxSubmitItem {
+            payload: InboxInsertPayload {
+                text: " ".to_string(),
+                ..Default::default()
+            },
+            group_names: Some(vec!["SC1".to_string()]),
+            ..Default::default()
+        };
+
+        assert!(validate_generic_submit_item(&item).is_err());
+    }
+
+    #[test]
+    fn prepare_submit_body_for_coordinate_extraction_skips_body_when_coords_present(
+    ) {
+        let mut message = InboxMessage::from(InboxInsertPayload {
+            text: "Отримано з поста \"SC1\"\nТекст повідомлення".to_string(),
+            coords: Some(" 49.12345, 37.12345 ".to_string()),
+            no_headers_body: Some(
+                crate::rer_importer::body_noheader::extract_text(
+                    "47.11111, 37.22222",
+                )
+                .unwrap(),
+            ),
+            ..Default::default()
+        });
+
+        prepare_submit_body_for_coordinate_extraction(&mut message).unwrap();
+
+        assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(message.no_headers_body, None);
+    }
+
+    #[test]
+    fn prepare_submit_body_for_coordinate_extraction_derives_body_without_coords(
+    ) {
+        let mut message = InboxMessage::from(InboxInsertPayload {
+            text: "Отримано з поста \"SC1\"\nТекст повідомлення".to_string(),
+            coords: Some(" ".to_string()),
+            ..Default::default()
+        });
+
+        prepare_submit_body_for_coordinate_extraction(&mut message).unwrap();
+
+        assert_eq!(message.coords, None);
+        assert_eq!(
+            message
+                .no_headers_body
+                .as_ref()
+                .map(|body| body.body.as_str()),
+            Some("Текст повідомлення")
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_legacy_regular_submit_returns_message_id_and_updates_inbox() {
+        let env = cleanup().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy draft".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy sender".to_string())),
+                message_uid: Set(None),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy regular submit".to_string(),
+            freq: Some("123.45".to_string()),
+            callsigns: vec!["Alpha".to_string()],
+            checked: true,
+            timestamp: Some(now.and_utc().timestamp_millis()),
+            group_master_key: Some(datasource_group.group_master_key.clone()),
+            sender: Some("legacy sender".to_string()),
+            post: Some("SC1".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+
+        let rsp = submit_legacy_inbox_messages(
+            &env_data,
+            &login.login,
+            &logins,
+            InboxSubmitReq {
+                messages: vec![(message.id, inbox_message)],
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rsp.messages.len(), 1);
+        assert!(rsp.warnings.is_empty());
+        let message_id = rsp.messages[0].message_id.clone();
+        assert!(!message_id.is_empty());
+
+        let message = signal_message::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.message_uid.as_deref(), Some(message_id.as_str()));
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some("123.4500"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_generic_external_submit_creates_message_groups_inbox_metadata_and_warnings(
+    ) {
+        let env = cleanup().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let logins = vec![login.login.clone()];
+        let now = Utc::now().naive_utc();
+        let mut primary = submit_dmr_metadata(Some(5));
+        primary.freq = "145.02678".to_string();
+        let mut next = submit_dmr_metadata(Some(7));
+        next.sender_id = Some(111);
+        next.sender_name = Some("ФАКЕЛ".to_string());
+        next.call_group_id = Some(51);
+        next.call_group_name = Some("ВОСТОК".to_string());
+        next.hash_id = Some("ABCDEF01".to_string());
+        let item = InboxSubmitItem {
+            message_id: None,
+            payload: InboxInsertPayload {
+                text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+                freq: Some("145.02678".to_string()),
+                callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
+                checked: true,
+                timestamp: Some(now.and_utc().timestamp_millis()),
+                sender: Some("generic submit".to_string()),
+                post: Some("SC1".to_string()),
+                ..Default::default()
+            },
+            group_names: Some(vec!["SC1".to_string(), "SC2".to_string()]),
+            source: Some("test".to_string()),
+            integration: Some("generic".to_string()),
+            network: Some(SubmitNetwork {
+                signal_name: "dmr".to_string(),
+                cc: Some(9),
+                name: Some("DMR SC1".to_string()),
+            }),
+            dmr: vec![primary, next],
+        };
+        let txn = env.dbx.begin().await.unwrap();
+
+        let submitted = submit_generic_inbox_item(
+            &env_data,
+            &txn,
+            &datasource,
+            &login.login,
+            &logins,
+            item,
+        )
+        .await
+        .unwrap();
+
+        txn.commit().await.unwrap();
+        assert_eq!(
+            warning_codes(&submitted.warnings),
+            vec!["dmr_network_cc_conflict", "dmr_metadata_cc_conflict"]
+        );
+        let message = signal_message::Entity::find()
+            .filter(
+                signal_message::Column::MessageUid
+                    .eq(submitted.message_id.clone()),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            message.body.as_deref(),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
+        );
+        let groups = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(groups.len(), 2);
+        assert!(groups.iter().all(|group| {
+            group.message_uid.as_deref() == Some(submitted.message_id.as_str())
+        }));
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some("145.0267"));
+        let metadata = sigint_inbox_item_metadata::Entity::find()
+            .filter(
+                sigint_inbox_item_metadata::Column::SigintInboxItemId
+                    .eq(submitted.inbox_id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(metadata.len(), 2);
+        assert!(metadata
+            .iter()
+            .all(|metadata| metadata.color_code.as_deref() == Some("5")));
+        let mut sender_ids = metadata
+            .iter()
+            .filter_map(|metadata| metadata.sender_id.clone())
+            .collect::<Vec<_>>();
+        sender_ids.sort();
+        assert_eq!(sender_ids, vec!["110".to_string(), "111".to_string()]);
+    }
 
     async fn seed_message_with_tags(
         env: &Arc<Env>,

@@ -4,7 +4,6 @@ use crate::error::AppError;
 use crate::utils::*;
 use lazy_static::lazy_static;
 use regex::Regex;
-use substring::Substring;
 
 pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
     // crazy and stupid NITRO format like "Частота: 449.500.000"
@@ -91,19 +90,9 @@ pub fn etalon(freq: &str) -> String {
             let Some(part_b) = m_cap_s(&capts, "freq_b") else {
                 break '_if;
             };
-            let zeroes =
-                "0".repeat(4 - if part_b.len() < 4 { part_b.len() } else { 4 });
-            let mut part_b = format!("{part_b}{zeroes}");
-            if part_b.len() > 4 {
-                let to_cut = part_b.len() - 4;
-                let all_zeroes: bool = part_b
-                    .substring(part_b.len() - to_cut, part_b.len())
-                    .chars()
-                    .all(|x| x == '0');
-                if all_zeroes {
-                    part_b =
-                        part_b.substring(0, part_b.len() - to_cut).to_string();
-                }
+            let mut part_b = part_b.chars().take(4).collect::<String>();
+            while part_b.chars().count() < 4 {
+                part_b.push('0');
             }
             return format!("{part_a}.{part_b}");
         }
@@ -164,6 +153,16 @@ mod tests {
         let res = extract_freq(input).unwrap();
         let expected = Some("145.5524".to_string());
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn etalon_pads_frequency_to_four_fraction_digits() {
+        assert_eq!(etalon("123.45"), "123.4500");
+    }
+
+    #[test]
+    fn etalon_truncates_frequency_to_four_fraction_digits() {
+        assert_eq!(etalon("123.45678"), "123.4567");
     }
 
     #[test]
