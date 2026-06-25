@@ -769,6 +769,7 @@ pub struct BgtaskStatusAndLogsRsp {
     pub loglines: Vec<String>,
     pub finished_with_error: Option<String>,
     pub finished_with_error_code: Option<BgtaskErrorCode>,
+    pub progress: i64,
 }
 
 #[derive(
@@ -1142,6 +1143,7 @@ async fn bgtask_get_status_and_logs(
                 finished_with_error_code: bgtask_error_code_from_message(
                     bgtask.finished_with_error.as_ref(),
                 ),
+                progress: bgtask.progress.clamp(0, 100),
             }))
         }
     }

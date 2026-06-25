@@ -10,7 +10,7 @@ use clap::Parser;
 use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
 use rustls::crypto::ring;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
@@ -73,6 +73,17 @@ macro_rules! h {
 }
 
 static RUNTIME_THREAD_INDEX: AtomicUsize = AtomicUsize::new(0);
+static PG_POOL_MAX_CONNECTIONS: AtomicU32 =
+    AtomicU32::new(PG_POOL_DEFAULT_MAX_CONNECTIONS);
+
+pub fn use_bgworker_pg_pool_limits() {
+    PG_POOL_MAX_CONNECTIONS
+        .store(PG_POOL_BGWORKER_MAX_CONNECTIONS, Ordering::Relaxed);
+}
+
+fn pg_pool_max_connections() -> u32 {
+    PG_POOL_MAX_CONNECTIONS.load(Ordering::Relaxed)
+}
 
 pub async fn renew_tailscale_cert(
     mode: Mode,
@@ -707,7 +718,7 @@ async fn new_pg_pool_from_conn_string(
     conn_string: String,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
-    opt.max_connections(30)
+    opt.max_connections(pg_pool_max_connections())
         .min_connections(0)
         .idle_timeout(core::time::Duration::from_secs(30))
         .sqlx_logging(true)

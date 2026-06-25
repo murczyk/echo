@@ -17,6 +17,35 @@
 - Моніторинг:
   - monitor `pg_last_xact_replay_timestamp`, `pg_stat_wal_receiver`. if the standby lags too much for failover purposes, shorten the delay or move those jobs elsewhere
 
+## Systemd OOM policy
+
+PostgreSQL cluster units must not use systemd's default `OOMPolicy=stop` for
+the whole service. If one backend is killed by OOM, stopping the whole cluster
+also takes the database down.
+
+Fresh installs get the fix from:
+
+```
+sudo echo-install-utils setup-postgresql ...
+```
+
+Existing installs can repair only the drop-in:
+
+```
+sudo echo-install-utils setup-postgresql-oom-policy --pg-version 14
+systemctl show postgresql@14-main.service -p OOMPolicy -p Restart -p RestartUSec -p DropInPaths
+```
+
+Requires `echo-install-utils >= 0.1.1-rc.202606250929` (`ee9dea2`).
+
+Expected values:
+
+```
+OOMPolicy=continue
+Restart=on-failure
+RestartUSec=5s
+```
+
 ## БЕКАПИ pgBackRest
 
 - [ ] backup to b2 https://gemini.google.com/app/88850bd30883101d

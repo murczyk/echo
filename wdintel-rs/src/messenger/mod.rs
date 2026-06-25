@@ -1,16 +1,22 @@
-use crate::entities::{datasource, group_admin_data, signal_group};
+use crate::entities::{
+    datasource, datasource_group, group_admin_data, signal_group,
+};
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::bl::load_echo_account;
+use crate::messenger::group::types::SignalGroupStatsTimelinePoint;
 use crate::messenger::types::*;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
+use chrono::{Duration, Utc};
 use echo_im::entities::sea_orm_active_enums::SignalCliMode;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub mod bl;
 pub mod dedupe;
@@ -36,6 +42,99 @@ pub async fn list_messengers(
     let accounts = bl::list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(AccountsRsp { accounts }))
+}
+
+#[post("/api/messenger/accounts-stats-timeline")]
+pub async fn accounts_stats_timeline(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AccountStatsTimelineReq>,
+) -> Result<Json<AccountStatsTimelineRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
+        .await?;
+    let req = req.into_inner();
+    let mut seen = HashSet::new();
+    let datasource_ids = req
+        .datasource_ids
+        .into_iter()
+        .filter(|datasource_id| seen.insert(*datasource_id))
+        .collect::<Vec<_>>();
+    let period_hours = req.period_hours.unwrap_or(24 * 90).clamp(1, 24 * 90);
+    let dt_till = Utc::now().naive_utc();
+    let dt_since = dt_till - Duration::hours(period_hours);
+
+    let datasource_groups = if datasource_ids.is_empty() {
+        vec![]
+    } else {
+        datasource_group::Entity::find()
+            .filter(
+                datasource_group::Column::DatasourceId
+                    .eq_any(datasource_ids.clone()),
+            )
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+    };
+    let mut keys_by_datasource = datasource_ids
+        .iter()
+        .map(|datasource_id| (*datasource_id, HashSet::new()))
+        .collect::<HashMap<_, _>>();
+    for datasource_group in datasource_groups {
+        keys_by_datasource
+            .entry(datasource_group.datasource_id)
+            .or_default()
+            .insert(datasource_group.group_master_key);
+    }
+    let master_keys = keys_by_datasource
+        .values()
+        .flat_map(|keys| keys.iter().cloned())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let timelines = crate::stats::read_group_stats_timeline_cached(
+        &env.dbx,
+        master_keys,
+        dt_since,
+        dt_till,
+    )
+    .await
+    .c(h!())?;
+    let timeline_by_key = timelines
+        .into_iter()
+        .map(|timeline| (timeline.master_key, timeline.points))
+        .collect::<HashMap<_, _>>();
+    let data = datasource_ids
+        .into_iter()
+        .map(|datasource_id| {
+            let mut counts_by_timestamp = BTreeMap::<i64, i64>::new();
+            for master_key in keys_by_datasource
+                .get(&datasource_id)
+                .into_iter()
+                .flat_map(|keys| keys.iter())
+            {
+                for point in
+                    timeline_by_key.get(master_key).into_iter().flatten()
+                {
+                    *counts_by_timestamp.entry(point.timestamp).or_insert(0) +=
+                        point.count;
+                }
+            }
+            let points = counts_by_timestamp
+                .into_iter()
+                .map(|(timestamp, count)| SignalGroupStatsTimelinePoint {
+                    timestamp,
+                    count,
+                })
+                .collect();
+            AccountStatsTimelineEntry {
+                datasource_id,
+                points,
+            }
+        })
+        .collect();
+
+    Ok(Json(AccountStatsTimelineRsp { data }))
 }
 
 #[post("/api/messenger/qr")]

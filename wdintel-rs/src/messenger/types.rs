@@ -1,5 +1,7 @@
 use crate::entities::signal_message;
-use crate::messenger::group::types::SignalGroupStats;
+use crate::messenger::group::types::{
+    SignalGroupStats, SignalGroupStatsTimelinePoint,
+};
 use crate::sigint::aor::types::AreaOfResponsibility;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -82,6 +84,23 @@ pub struct QrCodeRsp {
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct AccountsRsp {
     pub accounts: Vec<EchoAccountF1>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct AccountStatsTimelineReq {
+    pub datasource_ids: Vec<i64>,
+    pub period_hours: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct AccountStatsTimelineEntry {
+    pub datasource_id: i64,
+    pub points: Vec<SignalGroupStatsTimelinePoint>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct AccountStatsTimelineRsp {
+    pub data: Vec<AccountStatsTimelineEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]

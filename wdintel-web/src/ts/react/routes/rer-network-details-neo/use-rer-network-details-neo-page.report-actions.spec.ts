@@ -44,6 +44,20 @@ vi.mock('../../services/api/bgtask', () => ({
     const match = stage ? /^\[(\d+)\/(\d+)\]/.exec(stage) : null;
     return match ? { curr: Number(match[1]), overall: Number(match[2]) } : { curr: 1, overall: 4 };
   },
+  getBgtaskProgressFromPercent: (loglines: string[], progress?: number) => {
+    if (typeof progress === 'number' && Number.isFinite(progress)) {
+      return { curr: Math.max(0, Math.min(100, Math.round(progress))), overall: 100 };
+    }
+    let stage: string | null = null;
+    for (let index = loglines.length - 1; index >= 0; index -= 1) {
+      if (/^\[(\d+)\/(\d+)\]/.test(loglines[index])) {
+        stage = loglines[index];
+        break;
+      }
+    }
+    const match = stage ? /^\[(\d+)\/(\d+)\]/.exec(stage) : null;
+    return match ? { curr: Number(match[1]), overall: Number(match[2]) } : { curr: 1, overall: 4 };
+  },
 }));
 
 vi.mock('../../services/api/report-history', () => ({

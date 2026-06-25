@@ -1,8 +1,20 @@
 import DownloadIcon from '@mui/icons-material/DownloadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
-import { Box, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type MRT_ColumnDef } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
@@ -35,6 +47,7 @@ export type ReportHistoryTableSectionProps = {
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   reportKind: true,
+  details: true,
   createdAt: true,
   status: true,
   completedAt: true,
@@ -44,6 +57,7 @@ const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
 const DEFAULT_REPORTS_COLUMN_ORDER = [
   'mrt-row-numbers',
   'reportKind',
+  'details',
   'createdAt',
   'status',
   'completedAt',
@@ -53,15 +67,18 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
   requestedBy: true,
+  errorLog: true,
 };
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'mrt-row-numbers',
   'reportKind',
   'requestedBy',
+  'details',
   'createdAt',
   'status',
   'completedAt',
+  'errorLog',
   'actions',
 ];
 
@@ -163,6 +180,20 @@ function statusColor(status: string): 'default' | 'primary' | 'success' | 'error
   return 'default';
 }
 
+function formatReportKind(reportKind: string): string {
+  return REPORT_KIND_LABELS[reportKind] ?? reportKind;
+}
+
+function formatReportProgress(progress: number): string {
+  return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+}
+
+function formatReportStatus(row: ReportHistoryRow): string {
+  const label = REPORT_STATUS_LABELS[row.status] ?? row.status;
+  if (row.status !== 'in_progress') return label;
+  return `${label} ${formatReportProgress(row.progress)}`;
+}
+
 function buildReportLoadingRows(): ReportHistoryRow[] {
   return Array.from({ length: REPORT_LOADING_ROW_COUNT }, (_, index) => ({
     id: -index - 1,
@@ -175,6 +206,10 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
     fileName: null,
     contentType: null,
     bgtaskId: null,
+    lastError: null,
+    details: '',
+    progress: 0,
+    errorLog: null,
   }));
 }
 
@@ -205,8 +240,9 @@ export function ReportHistoryTableSection({
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<number | null>(null);
+  const [errorLogRow, setErrorLogRow] = useState<ReportHistoryRow | null>(null);
 
-  async function loadRows(signal?: AbortSignal) {
+  const loadRows = useCallback(async (signal?: AbortSignal) => {
     setLoadState((current) => (current === 'success' ? current : 'loading'));
     setError(null);
     try {
@@ -219,7 +255,7 @@ export function ReportHistoryTableSection({
       setLoadState('error');
       setError(formatErrorMessage(loadError));
     }
-  }
+  }, [loadReportHistory]);
 
   useEffect(() => {
     if (!active) return;
@@ -228,19 +264,42 @@ export function ReportHistoryTableSection({
     return () => {
       abortController.abort();
     };
-  }, [active]);
+  }, [active, loadRows]);
 
   useEffect(() => {
     if (!active) return;
-    const hasRunningRows = rows.some((row) => row.status === 'planned' || row.status === 'in_progress');
-    if (!hasRunningRows) return;
-    const intervalId = window.setInterval(() => {
-      void loadRows();
-    }, 5000);
-    return () => {
-      window.clearInterval(intervalId);
+    let stopped = false;
+    let timeoutId: number | null = null;
+    let abortController: AbortController | null = null;
+
+    const poll = async () => {
+      abortController?.abort();
+      abortController = new AbortController();
+      await loadRows(abortController.signal);
+      if (!stopped) {
+        timeoutId = window.setTimeout(poll, 5000);
+      }
     };
-  }, [active, rows]);
+
+    timeoutId = window.setTimeout(poll, 5000);
+    return () => {
+      stopped = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      abortController?.abort();
+    };
+  }, [active, loadRows]);
+
+  useEffect(() => {
+    if (!active) {
+      setRows([]);
+      setLoadState('idle');
+      setError(null);
+      setActionInFlight(null);
+      setErrorLogRow(null);
+    }
+  }, [active]);
 
   async function handleDownload(row: ReportHistoryRow) {
     if (!row.hasFile || row.status !== 'done') return;
@@ -272,18 +331,46 @@ export function ReportHistoryTableSection({
     () => {
       const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
         {
-          accessorKey: 'reportKind',
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
           header: 'Вид',
-          Cell: ({ row }) => REPORT_KIND_LABELS[row.original.reportKind] ?? row.original.reportKind,
+          Cell: ({ row }) => formatReportKind(row.original.reportKind),
+        },
+        {
+          accessorKey: 'details',
+          header: 'Деталі',
+          Cell: ({ row }) =>
+            row.original.details ? (
+              <Tooltip title={row.original.details}>
+                <Typography component="span" variant="body2">
+                  {row.original.details}
+                </Typography>
+              </Tooltip>
+            ) : null,
         },
       ];
 
       if (includeAuthor) {
-        nextColumns.push({
-          accessorKey: 'requestedBy',
-          header: 'Автор',
-          Cell: ({ row }) => row.original.requestedBy,
-        });
+        nextColumns.push(
+          {
+            accessorKey: 'requestedBy',
+            header: 'Автор',
+            Cell: ({ row }) => row.original.requestedBy,
+          },
+          {
+            id: 'errorLog',
+            accessorFn: (row) => (row.errorLog && row.errorLog.length > 0 ? 'Переглянути' : ''),
+            header: 'Помилки',
+            Cell: ({ row }) => {
+              if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
+              return (
+                <Button size="small" variant="outlined" onClick={() => setErrorLogRow(row.original)}>
+                  Переглянути
+                </Button>
+              );
+            },
+          },
+        );
       }
 
       nextColumns.push(
@@ -293,16 +380,23 @@ export function ReportHistoryTableSection({
           Cell: ({ row }) => formatReportDate(row.original.createdAt),
         },
         {
-          accessorKey: 'status',
+          id: 'status',
+          accessorFn: (row) => formatReportStatus(row),
           header: 'Статус',
-          Cell: ({ row }) => (
-            <Chip
-              size="small"
-              color={statusColor(row.original.status)}
-              label={REPORT_STATUS_LABELS[row.original.status] ?? row.original.status}
-              variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
-            />
-          ),
+          Cell: ({ row }) => {
+            const chip = (
+              <Chip
+                size="small"
+                color={statusColor(row.original.status)}
+                label={formatReportStatus(row.original)}
+                variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
+              />
+            );
+            if (!includeAuthor || row.original.status !== 'failed' || !row.original.lastError) {
+              return chip;
+            }
+            return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
+          },
         },
         {
           accessorKey: 'completedAt',
@@ -418,6 +512,38 @@ export function ReportHistoryTableSection({
           </TableStateProvider>
         </Stack>
       </Box>
+      <Dialog open={errorLogRow !== null} onClose={() => setErrorLogRow(null)} fullWidth maxWidth="md">
+        <DialogTitle>Помилки</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            {(errorLogRow?.errorLog ?? []).map((entry, index) => (
+              <Box key={`${entry.timestamp}-${index}`}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                  <Chip size="small" label={entry.login || 'system'} />
+                  <Typography variant="body2" color="text.secondary">
+                    {formatReportDate(entry.timestamp)}
+                  </Typography>
+                </Stack>
+                <Typography
+                  component="pre"
+                  variant="body2"
+                  sx={{
+                    m: 0,
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {entry.message}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setErrorLogRow(null)}>Закрити</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

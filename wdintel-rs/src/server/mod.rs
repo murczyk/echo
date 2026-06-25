@@ -764,6 +764,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
             .service(crate::messenger::list_messengers)
+            .service(crate::messenger::accounts_stats_timeline)
             .service(crate::messenger::get_qr)
             .service(crate::messenger::is_linked)
             .service(crate::messenger::edit)
@@ -959,6 +960,7 @@ pub async fn main_bgworker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
+    crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();

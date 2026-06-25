@@ -477,9 +477,9 @@ async fn inbox_messages_count(
     {
         req.since_date_inclusive_ms = Some(0);
     }
-    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
-    let q = format!(
-        "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
+    let q = build_inbox_digest_query(&login, &env, &req)
+        .await
+        .context(h!())?;
 
     let query_res: Option<QueryResult> = env
         .dbx

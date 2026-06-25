@@ -873,6 +873,9 @@ deploy-from-local _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
 
+    echo "Building frontend assets..."
+    (cd "{{ justfile_directory() }}" && just build-front)
+
     echo "Building local wdintel-rs deb package..."
     (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs)
 
@@ -1603,7 +1606,7 @@ deploy-geo-screenshot server="" builder="" branch="main":
 
     # TODO: determine version from Cargo.toml
     rsync --progress ~/Downloads/geo-screenshot_0.1.0-1_amd64.deb "${SERVER}":Downloads/
-    ssh "${SERVER}" 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
+    ssh "${SERVER}" 'sudo apt-get install -y xvfb libxcursor1 libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
     ssh "${SERVER}" 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
     echo "geo-screenshot deploy completed succesfully"
 
