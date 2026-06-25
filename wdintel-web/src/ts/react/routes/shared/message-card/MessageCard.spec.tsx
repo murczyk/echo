@@ -1715,6 +1715,9 @@ describe('MessageCard', () => {
       expect(thumb).not.toBeNull();
       expect(thumb?.getAttribute('aria-label')).toBe('Відкрити зображення');
       expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+      expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('multi');
+      expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('200');
+      expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('140');
     });
   });
 
@@ -1730,6 +1733,9 @@ describe('MessageCard', () => {
     const img = view.container.querySelector('img');
     expect(img).not.toBeNull();
     expect(img?.closest('button')?.getAttribute('data-picture-thumb-state')).toBe('loading');
+    expect(img?.closest('button')?.getAttribute('data-picture-thumb-layout')).toBe('single');
+    expect(img?.closest('button')?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
+    expect(img?.closest('button')?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
     expect(view.container.textContent).toContain('Зображення');
 
     await act(async () => {
@@ -1739,8 +1745,73 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('img')).not.toBeNull();
     const thumb = img?.closest('button');
     expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
-    expect(thumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('36');
+    expect(thumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
     expect(view.container.textContent).toContain('Зображення недоступне');
+  });
+
+  it('renders a bounded single-image preview and opens the dialog', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/single-image.png'],
+      },
+    });
+    rendered.push(view);
+
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(thumb).not.toBeNull();
+    expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('single');
+    expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
+    expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
+
+    const image = thumb?.querySelector('img');
+    if (image == null) throw new Error('thumbnail image not found');
+    Object.defineProperty(image, 'naturalWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(image, 'naturalHeight', { configurable: true, value: 800 });
+
+    await act(async () => {
+      image.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+    expect(thumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
+    expect(thumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
+
+    await click(thumb as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('1 / 1');
+    expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).toBeNull();
+    expect(dialog?.querySelector('[data-image-preview-nav="next"]')).toBeNull();
+  });
+
+  it('fits vertical single images within the height cap', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/vertical-image.png'],
+      },
+    });
+    rendered.push(view);
+
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    expect(thumb).not.toBeNull();
+
+    const image = thumb?.querySelector('img');
+    if (image == null) throw new Error('thumbnail image not found');
+    Object.defineProperty(image, 'naturalWidth', { configurable: true, value: 800 });
+    Object.defineProperty(image, 'naturalHeight', { configurable: true, value: 1200 });
+
+    await act(async () => {
+      image.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
+    expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
+    expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
+    expect(Number(thumb?.getAttribute('data-picture-thumb-width-px') ?? '0')).toBeLessThanOrEqual(160);
+    expect(thumb?.getAttribute('data-picture-thumb-height-px')).toBe('240');
   });
 
   it('opens the preview dialog and lets the carousel change the current image', async () => {
