@@ -53,11 +53,11 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
-pub(crate) async fn build_inbox_query(
+async fn build_filtered_inbox_query(
     login: &str,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<String, AppError> {
+) -> Result<Select<signal_message::Entity>, AppError> {
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
@@ -90,7 +90,7 @@ pub(crate) async fn build_inbox_query(
         )
         .to_owned();
 
-    q = add_inbox_message_columns(q)
+    q = q
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::Id.in_subquery(access_subquery));
 
@@ -172,6 +172,36 @@ pub(crate) async fn build_inbox_query(
     }
 
     q = get_pagination_filters(env, req, q).await.c(h!())?;
+    Ok(q)
+}
+
+pub(crate) async fn build_inbox_digest_query(
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    let q = build_filtered_inbox_query(login, env, req)
+        .await
+        .context(h!())?
+        .select_only()
+        .column_as(Expr::cust("COUNT(*)"), "count")
+        .column_as(
+            Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+            "first_element_ts",
+        );
+
+    Ok(q.build(DatabaseBackend::Postgres).to_string())
+}
+
+pub(crate) async fn build_inbox_query(
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    let q = build_filtered_inbox_query(login, env, req)
+        .await
+        .context(h!())?;
+    let q = add_inbox_message_columns(q);
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
