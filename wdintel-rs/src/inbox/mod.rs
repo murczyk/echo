@@ -272,9 +272,6 @@ where
         }
     }
 
-    let event = EventMsg::new(EventType::ETInboxChanged(message.id));
-    fanout(redis, event).await.c(h!())?;
-
     tag_suggestion_worker_queue::Entity::insert(
         tag_suggestion_worker_queue::ActiveModel {
             sigint_inbox_item_id: Set(message.id),
@@ -291,6 +288,10 @@ where
     )
     .await
     .c(h!())?;
+
+    fanout_inbox_changed_and_invalidate_find_live_cache(redis, message.id)
+        .await
+        .c(h!())?;
 
     palitra_highlight_worker_job::Entity::insert(
         palitra_highlight_worker_job::ActiveModel {
@@ -343,6 +344,19 @@ fn extract_generic_body_datetime(
             None
         }
     })
+}
+async fn fanout_inbox_changed_and_invalidate_find_live_cache(
+    redis: &mut redis::aio::ConnectionManager,
+    inbox_item_id: i64,
+) -> Result<(), AppError> {
+    if let Err(e) =
+        crate::sigint::network::invalidate_find_live_networks_cache(redis).await
+    {
+        warn!("failed to invalidate find-live networks cache: {:#?}", e);
+    }
+    let event = EventMsg::new(EventType::ETInboxChanged(inbox_item_id));
+    fanout(redis, event).await.c(h!())?;
+    Ok(())
 }
 
 async fn find_unit_v2<'a, 'async_trait, C>(
