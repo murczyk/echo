@@ -38,6 +38,7 @@ const bgtaskMock = vi.hoisted(() => ({
 }));
 
 const reportHistoryMock = vi.hoisted(() => ({
+  fetchReportHistoryStatus: vi.fn(),
   fetchReportHistoryTaskStatus: vi.fn(),
 }));
 
@@ -116,6 +117,7 @@ vi.mock('../../services/api/bgtask', () => ({
 }));
 
 vi.mock('../../services/api/report-history', () => ({
+  fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
   fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
 }));
 
@@ -217,6 +219,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
     apiMock.launchNetworksEtalonkaReportTask.mockReset();
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
     reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
@@ -798,18 +801,52 @@ describe('useRerNetworksNeoPage', () => {
     await flushEffects();
 
     vi.useFakeTimers();
-    reportHistoryMock.fetchReportHistoryTaskStatus
+    reportHistoryMock.fetchReportHistoryStatus
       .mockResolvedValueOnce({
-        running: true,
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: null,
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'planned',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: null,
+        lastError: null,
+        details: '',
+        progress: 0,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'in_progress',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: null,
+        details: '',
+        progress: 45,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs
+      .mockResolvedValueOnce({
+        running: false,
         loglines: ['backend step'],
         finishedWithError: null,
         finishedWithErrorCode: null,
-      })
-      .mockResolvedValueOnce({
-        running: false,
-        loglines: [],
-        finishedWithError: null,
-        finishedWithErrorCode: null,
+        progress: 100,
       });
 
     await act(async () => {
@@ -830,7 +867,7 @@ describe('useRerNetworksNeoPage', () => {
 
     await act(async () => {
       const downloadPromise = latest?.downloadEtalonkaReport();
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
       await downloadPromise;
     });
     vi.useRealTimers();
@@ -868,8 +905,9 @@ describe('useRerNetworksNeoPage', () => {
         },
       },
     });
-    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(1, 456, 0);
-    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(2, 456, 1);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(1, 456);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(2, 456);
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 77, 0);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
   });

@@ -73,6 +73,29 @@ function formatElapsedTime(startedAtMs: number | null): string | null {
   return `${minutes} хв ${seconds} с`;
 }
 
+function parseReportDateTime(value: string | null | undefined): Date | null {
+  if (value == null || value.trim() === '') return null;
+  const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDurationSinceIso(value: string | null | undefined): string | null {
+  const startedAt = parseReportDateTime(value);
+  if (startedAt === null) return null;
+  const startedAtMs = startedAt.getTime();
+  return formatElapsedTime(startedAtMs);
+}
+
+function formatDateTimeLabel(value: string | null | undefined): string | null {
+  const date = parseReportDateTime(value);
+  if (date === null) return null;
+  return date.toLocaleString('uk-UA', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
 function getLatestProgressStage(stages: BgtaskProgressStage[]): BgtaskProgressStage | null {
   return stages.at(-1) ?? null;
 }
@@ -138,13 +161,29 @@ export function NetworkEtalonkaReportDialog({
   disableRestoreFocus = false,
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
+  const historyRow = report.historyRow ?? null;
+  const hasBgtask = historyRow?.bgtaskId != null;
+  const isQueued = report.running && !hasBgtask;
   const dateTimeDisabled = report.running || !isExtended;
   const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
   const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
   const progressStages = parseBgtaskProgressStages(report.logs);
   const latestProgressStage = getLatestProgressStage(progressStages);
   const elapsedTime = formatElapsedTime(report.startedAtMs);
-  const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const createdAtMs = parseReportDateTime(historyRow?.createdAt)?.getTime() ?? null;
+  const queuedForTime = formatDurationSinceIso(historyRow?.createdAt);
+  const startedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
+  const plannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
+  const showLongRunningHint = report.running && hasBgtask && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const showQueueWarning = isQueued && createdAtMs !== null && Date.now() - createdAtMs >= 5 * 60 * 1000;
+  const progressVariant = hasBgtask && !report.error && !isQueued ? 'determinate' : 'indeterminate';
+  const progressLabel = report.error
+    ? 'Помилка'
+    : isQueued
+      ? 'Очікує запуску'
+      : report.running
+        ? 'Формування'
+        : 'Готово';
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -167,7 +206,13 @@ export function NetworkEtalonkaReportDialog({
   return (
     <Dialog
       open={report.dialogOpen}
-      onClose={handleClose}
+      onClose={(_event, reason) => {
+        if (report.running && (reason === 'backdropClick' || reason === 'escapeKeyDown')) {
+          return;
+        }
+        handleClose();
+      }}
+      disableEscapeKeyDown={report.running}
       fullWidth
       maxWidth={false}
       disableRestoreFocus={disableRestoreFocus}
@@ -333,20 +378,20 @@ export function NetworkEtalonkaReportDialog({
               <Stack spacing={1.5}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    {report.running ? 'Формування' : report.error ? 'Помилка' : 'Готово'}
+                    {progressLabel}
                   </Typography>
                 </Stack>
 
                 <LinearProgress
-                  variant="determinate"
+                  variant={progressVariant}
                   color={report.error ? 'error' : report.running ? 'primary' : 'success'}
-                  value={progressPercent}
-                  sx={report.running ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                  value={progressVariant === 'determinate' ? progressPercent : undefined}
+                  sx={report.running && progressVariant === 'determinate' ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
                 />
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="body2" color="text.secondary">
-                    {report.curr} / {report.overall}
+                    {isQueued ? 'Звіт додано в чергу' : `${report.curr} / ${report.overall}`}
                   </Typography>
                   <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
@@ -367,10 +412,50 @@ export function NetworkEtalonkaReportDialog({
                 >
                   <Stack spacing={0.25}>
                     <Typography variant="caption" color="text.secondary">
-                      Завдання
+                      ID звіту
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {report.taskId !== null ? `#${report.taskId}` : 'очікує запуску'}
+                      {report.taskId !== null ? `#${report.taskId}` : '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Черга
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Очікує
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {queuedForTime ?? '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Початок
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {startedAtLabel ?? '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Bgtask
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      Заплановано
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {plannedForLabel ?? '—'}
                     </Typography>
                   </Stack>
                   <Stack spacing={0.25}>
@@ -432,21 +517,29 @@ export function NetworkEtalonkaReportDialog({
                           </Stack>
                         );
                       })}
-                      {report.logs
-                        .filter((line) => !/^\[\d+\/\d+\]/.test(line))
-                        .map((line) => (
-                          <Typography key={line} variant="caption" color="text.secondary">
-                            {line}
-                          </Typography>
-                        ))}
+                      {report.logs.length > 0
+                        ? report.logs
+                            .filter((line) => !/^\[\d+\/\d+\]/.test(line))
+                            .map((line) => (
+                              <Typography key={line} variant="caption" color="text.secondary">
+                                {line}
+                              </Typography>
+                            ))
+                        : null}
                     </Stack>
                   </Paper>
                 ) : null}
 
                 {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
+                {isQueued ? <PowerAlert severity="info">Звіт додано в чергу.</PowerAlert> : null}
+                {showQueueWarning ? (
+                  <PowerAlert severity="warning">
+                    Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.
+                  </PowerAlert>
+                ) : null}
                 {showLongRunningHint ? (
                   <PowerAlert severity="info">
-                    Формування може тривати кілька хвилин. Можна закрити вікно, звіт завантажиться автоматично після завершення.
+                    Формування може тривати кілька хвилин. Звіт можна переглянути та завантажити пізніше в Налаштування &gt; Мої звіти.
                   </PowerAlert>
                 ) : null}
               </Stack>
@@ -475,7 +568,7 @@ export function NetworkEtalonkaReportDialog({
             variant="contained"
             startIcon={report.running ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />}
           >
-            {report.running ? 'Формування...' : 'Завантажити'}
+            {isQueued ? 'Очікує запуску' : report.running ? 'Формування...' : 'Завантажити'}
           </Button>
         </Stack>
       </DialogActions>

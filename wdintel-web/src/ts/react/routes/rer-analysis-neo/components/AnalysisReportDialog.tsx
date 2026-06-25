@@ -43,6 +43,7 @@ import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 
 const FORMING_TEXT = `Формується${ELLIPSIS}`;
 const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
+const QUEUED_TEXT = 'Очікує запуску';
 const REPORT_HISTORY_URL = "/settings-neo?section=my-reports";
 
 type Props = {
@@ -96,11 +97,39 @@ function getStageStatus(run: AnalysisReportTaskRun, stageIndex: number): StageSt
   return 'success';
 }
 
-function formatRunStartedAt(iso: string): string {
+function parseReportDateTime(value: string | null | undefined): Date | null {
+  if (value == null || value.trim() === '') return null;
+  const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatElapsedTime(startedAtMs: number | null): string | null {
+  if (startedAtMs === null) return null;
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds} с`;
+  }
+
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes} хв ${seconds} с`;
+}
+
+function formatDurationSinceIso(value: string | null | undefined): string | null {
+  const startedAt = parseReportDateTime(value);
+  if (startedAt === null) return null;
+  return formatElapsedTime(startedAt.getTime());
+}
+
+function formatDateTimeLabel(value: string | null | undefined): string | null {
+  const date = parseReportDateTime(value);
+  if (date === null) return null;
   return new Intl.DateTimeFormat('uk-UA', {
     dateStyle: 'short',
     timeStyle: 'short',
-  }).format(new Date(iso));
+  }).format(date);
 }
 
 const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
@@ -204,6 +233,19 @@ export function AnalysisReportDialog({
   const latestTaskRunCancelled = latestTaskRunDone && latestTaskRun?.cancelled === true;
   const latestTaskRunSuccess = latestTaskRunDone && !latestTaskRunCancelled && latestTaskRun.error == null;
   const historyTaskRuns = taskRuns.length > 1 ? taskRuns.slice(0, -1) : [];
+  const historyRow = latestTaskRun?.historyRow ?? null;
+  const isQueued =
+    latestTaskRun != null &&
+    latestTaskRun.running &&
+    (historyRow == null || historyRow.status === 'planned' || (historyRow.status === 'in_progress' && historyRow.bgtaskId == null));
+  const hasBgtask = historyRow?.bgtaskId != null;
+  const isDialogLocked = downloadInFlight || latestTaskRun?.running === true;
+  const reportCreatedAtLabel = formatDateTimeLabel(historyRow?.createdAt ?? null);
+  const reportQueuedForLabel = formatDurationSinceIso(historyRow?.createdAt ?? null);
+  const reportStartedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
+  const reportPlannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
+  const progressVariant = isQueued || !hasBgtask ? 'indeterminate' : 'determinate';
+  const progressPercent = Math.max(1, Math.min(100, Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100)));
   const downloadButtonLabel =
     builderMode === 'exports'
       ? 'Завантажити'
@@ -216,7 +258,19 @@ export function AnalysisReportDialog({
           : 'Завантажити docx/xlsx';
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" aria-labelledby={titleId}>
+    <Dialog
+      open={open}
+      onClose={(_event, reason) => {
+        if ((reason === 'backdropClick' || reason === 'escapeKeyDown') && isDialogLocked) {
+          return;
+        }
+        onClose();
+      }}
+      disableEscapeKeyDown={isDialogLocked}
+      fullWidth
+      maxWidth="lg"
+      aria-labelledby={titleId}
+    >
       <DialogTitle id={titleId}>Конструктор звітів</DialogTitle>
       <DialogContent dividers sx={{ pt: 0 }}>
         <Stack spacing={3}>
@@ -452,18 +506,20 @@ export function AnalysisReportDialog({
                     color: latestTaskRun.error ? 'error.main' : latestTaskRunCancelled ? 'warning.main' : latestTaskRunSuccess ? 'success.main' : 'text.secondary',
                   }}
                 >
-                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : latestTaskRun.running ? FORMING_TEXT : 'Готово'}
+                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : isQueued ? QUEUED_TEXT : latestTaskRun.running ? FORMING_TEXT : 'Готово'}
                 </Typography>
               </Stack>
+
               <LinearProgress
-                variant="determinate"
+                variant={progressVariant}
                 color={latestTaskRun.error ? 'error' : latestTaskRunCancelled ? 'warning' : latestTaskRunSuccess ? 'success' : 'primary'}
-                value={Math.max(1, Math.min(100, Math.round((latestTaskRun.curr / Math.max(1, latestTaskRun.overall)) * 100)))}
-                sx={latestTaskRun.running ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                value={progressVariant === 'determinate' ? progressPercent : undefined}
+                sx={latestTaskRun.running && progressVariant === 'determinate' ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
               />
+
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                 <Typography variant="body2" color="text.secondary">
-                  {latestTaskRun.curr} / {latestTaskRun.overall}
+                  {isQueued ? 'Звіт додано в чергу' : `${latestTaskRun.curr} / ${latestTaskRun.overall}`}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
@@ -474,10 +530,113 @@ export function AnalysisReportDialog({
                   </Button>
                 </Stack>
               </Stack>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                  gap: 1,
+                  p: 1.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'background.default',
+                }}
+              >
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    ID звіту
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {historyRow?.id != null ? `#${historyRow.id}` : '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Черга
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Створено
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {reportCreatedAtLabel ?? '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Очікує
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {reportQueuedForLabel ?? '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Початок
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {reportStartedAtLabel ?? '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Заплановано
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {reportPlannedForLabel ?? '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Bgtask
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Триває
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {formatElapsedTime(
+                      isQueued
+                        ? parseReportDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null
+                        : latestTaskRun.startedAt
+                          ? parseReportDateTime(latestTaskRun.startedAt)?.getTime() ?? null
+                          : null,
+                    ) ?? '—'}
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Логи
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {latestTaskRun.logs.length}
+                  </Typography>
+                </Stack>
+              </Box>
+
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
-                  {progressExpanded ? (
+              {isQueued ? <Alert severity="info">Звіт додано в чергу. Переглянути його можна в Налаштування &gt; Мої звіти.</Alert> : null}
+              {isQueued && historyRow?.createdAt != null && Date.now() - parseReportDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
+                <Alert severity="warning">Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.</Alert>
+              ) : null}
+
+              {progressExpanded ? (
                 <Stack spacing={1}>
                   {[latestTaskRun, ...historyTaskRuns.slice().reverse()].map((run) => {
+                    const runQueued =
+                      run.running &&
+                      (run.historyRow == null ||
+                        run.historyRow.status === 'planned' ||
+                        (run.historyRow.status === 'in_progress' && run.historyRow.bgtaskId == null));
                     const stages = extractStages(run.logs);
                     return (
                       <Accordion
@@ -495,11 +654,11 @@ export function AnalysisReportDialog({
                                 {run.reportTitle}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {formatRunStartedAt(run.startedAt)}
+                                {run.startedAt ? formatDateTimeLabel(run.startedAt) ?? '—' : '—'}
                               </Typography>
                             </Stack>
                             <Typography variant="caption" color={run.error ? 'error.main' : run.cancelled ? 'warning.main' : run.running ? 'warning.main' : 'success.main'}>
-                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : run.running ? FORMING_TEXT : 'Успішно'}
+                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : runQueued ? QUEUED_TEXT : run.running ? FORMING_TEXT : 'Успішно'}
                             </Typography>
                           </Stack>
                         </AccordionSummary>

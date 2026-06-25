@@ -62,6 +62,10 @@ const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   details: true,
   createdAt: true,
   status: true,
+  plannedForTs: true,
+  startedAt: true,
+  queuePosition: true,
+  bgtaskId: true,
   completedAt: true,
   actions: true,
 };
@@ -72,6 +76,10 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
   'details',
   'createdAt',
   'status',
+  'plannedForTs',
+  'startedAt',
+  'queuePosition',
+  'bgtaskId',
   'completedAt',
   'actions',
 ];
@@ -89,6 +97,10 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'details',
   'createdAt',
   'status',
+  'plannedForTs',
+  'startedAt',
+  'queuePosition',
+  'bgtaskId',
   'completedAt',
   'errorLog',
   'actions',
@@ -143,7 +155,7 @@ const REPORTS_LOADING_TABLE_WRAPPER_SX = {
 } as const;
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
-  planned: 'В черзі',
+  planned: 'Очікує запуску',
   in_progress: 'Формується',
   done: 'Готово',
   failed: 'Помилка',
@@ -185,6 +197,14 @@ function formatReportDate(value: string | null): string {
   });
 }
 
+function formatReportDateOrDash(value: string | null | undefined): string {
+  return formatReportDate(value ?? null) || '—';
+}
+
+function formatReportId(value: number | null | undefined): string {
+  return value == null ? '—' : `#${value}`;
+}
+
 function statusColor(status: string): 'default' | 'primary' | 'success' | 'error' | 'warning' {
   if (status === 'done') return 'success';
   if (status === 'failed') return 'error';
@@ -223,6 +243,9 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
     details: '',
     progress: 0,
     errorLog: null,
+    startedAt: null,
+    plannedForTs: null,
+    queuePosition: null,
   }));
 }
 
@@ -459,6 +482,26 @@ export function ReportHistoryTableSection({
             }
             return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
           },
+        },
+        {
+          accessorKey: 'plannedForTs',
+          header: 'План',
+          Cell: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
+        },
+        {
+          accessorKey: 'startedAt',
+          header: 'Почато',
+          Cell: ({ row }) => formatReportDateOrDash(row.original.startedAt),
+        },
+        {
+          accessorKey: 'queuePosition',
+          header: 'Черга',
+          Cell: ({ row }) => formatReportId(row.original.queuePosition),
+        },
+        {
+          accessorKey: 'bgtaskId',
+          header: 'Bgtask',
+          Cell: ({ row }) => formatReportId(row.original.bgtaskId),
         },
         {
           accessorKey: 'completedAt',

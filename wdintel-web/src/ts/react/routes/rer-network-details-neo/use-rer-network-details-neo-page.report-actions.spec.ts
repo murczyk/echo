@@ -21,7 +21,7 @@ const bgtaskMock = vi.hoisted(() => ({
 }));
 
 const reportHistoryMock = vi.hoisted(() => ({
-  fetchReportHistoryTaskStatus: vi.fn(),
+  fetchReportHistoryStatus: vi.fn(),
 }));
 
 const downloadBlobMock = vi.hoisted(() => vi.fn());
@@ -61,7 +61,7 @@ vi.mock('../../services/api/bgtask', () => ({
 }));
 
 vi.mock('../../services/api/report-history', () => ({
-  fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
+  fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
 }));
 
 vi.mock('../../utils/download-blob', () => ({
@@ -124,22 +124,82 @@ beforeEach(() => {
   apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
   apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
   bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
-  reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
+  reportHistoryMock.fetchReportHistoryStatus.mockReset();
   downloadBlobMock.mockReset();
   apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(555);
   apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
-  reportHistoryMock.fetchReportHistoryTaskStatus
+  reportHistoryMock.fetchReportHistoryStatus
+    .mockResolvedValueOnce({
+      id: 555,
+      reportKind: 'etalonka',
+      requestedBy: 'user',
+      createdAt: '2026-05-01T10:00:00',
+      startedAt: null,
+      plannedForTs: null,
+      queuePosition: 1,
+      status: 'planned',
+      completedAt: null,
+      hasFile: false,
+      fileName: null,
+      contentType: null,
+      bgtaskId: null,
+      lastError: null,
+      details: '',
+      progress: 0,
+      errorLog: null,
+    })
+    .mockResolvedValueOnce({
+      id: 555,
+      reportKind: 'etalonka',
+      requestedBy: 'user',
+      createdAt: '2026-05-01T10:00:00',
+      startedAt: '2026-05-01T10:00:02',
+      plannedForTs: null,
+      queuePosition: null,
+      status: 'in_progress',
+      completedAt: null,
+      hasFile: false,
+      fileName: null,
+      contentType: null,
+      bgtaskId: 91,
+      lastError: null,
+      details: '',
+      progress: 12,
+      errorLog: null,
+    })
+    .mockResolvedValueOnce({
+      id: 555,
+      reportKind: 'etalonka',
+      requestedBy: 'user',
+      createdAt: '2026-05-01T10:00:00',
+      startedAt: '2026-05-01T10:00:02',
+      plannedForTs: null,
+      queuePosition: null,
+      status: 'done',
+      completedAt: '2026-05-01T10:00:10',
+      hasFile: true,
+      fileName: 'etalonka_network_77.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      bgtaskId: 91,
+      lastError: null,
+      details: '',
+      progress: 100,
+      errorLog: null,
+    });
+  bgtaskMock.fetchBgtaskStatusAndLogs
     .mockResolvedValueOnce({
       running: true,
       loglines: ['backend step'],
       finishedWithError: null,
       finishedWithErrorCode: null,
+      progress: 12,
     })
     .mockResolvedValueOnce({
       running: false,
       loglines: [],
       finishedWithError: null,
       finishedWithErrorCode: null,
+      progress: 100,
     });
 
   container = document.createElement('div');
@@ -175,7 +235,7 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
     expect((latestState as typeof EMPTY_STATE & { progressExpanded?: boolean })?.progressExpanded).toBeUndefined();
   });
 
-  it('skips synthetic log lines when polling the task status', async () => {
+  it('polls queue state and waits for a real bgtask before showing progress', async () => {
     if (!latestActions) throw new Error('actions not ready');
 
     const promise = latestActions.downloadEtalonkaReport();
@@ -186,7 +246,7 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(3000);
       await promise;
     });
 
@@ -201,8 +261,11 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
         },
       },
     });
-    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(1, 555, 0);
-    expect(reportHistoryMock.fetchReportHistoryTaskStatus).toHaveBeenNthCalledWith(2, 555, 1);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(1, 555);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(2, 555);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(3, 555);
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 91, 0);
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(2, 91, 1);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(555);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_network_77.docx');
     expect(latestState?.etalonkaReport.progressExpanded).toBe(false);

@@ -319,6 +319,9 @@ export type ReportHistoryRow = {
   reportKind: string;
   requestedBy: string;
   createdAt: string;
+  startedAt: string | null;
+  plannedForTs: string | null;
+  queuePosition: number | null;
   status: string;
   completedAt: string | null;
   hasFile: boolean;

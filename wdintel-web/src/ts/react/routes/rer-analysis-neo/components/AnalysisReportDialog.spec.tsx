@@ -1,0 +1,207 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act, createElement } from 'react';
+import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { AnalysisReportState } from '../report-helpers';
+import { createDefaultReportState } from '../report-helpers';
+import { createResetQueryState } from '../helpers';
+import { AnalysisReportDialog } from './AnalysisReportDialog';
+
+const dialogProps: Array<Record<string, unknown>> = [];
+
+vi.mock('@mui/material', async () => {
+  const actual = await vi.importActual<typeof import('@mui/material')>('@mui/material');
+  return {
+    ...actual,
+    Dialog: (props: Record<string, unknown> & { children?: ReactNode }) => {
+      dialogProps.push(props);
+      return <div data-testid="dialog">{props.children}</div>;
+    },
+  };
+});
+
+function buildReport(overrides: Partial<AnalysisReportState> = {}): AnalysisReportState {
+  return {
+    ...createDefaultReportState(),
+    ...overrides,
+  };
+}
+
+function renderDialog(
+  overrides: Partial<Parameters<typeof AnalysisReportDialog>[0]> = {},
+) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  const onDownload = vi.fn();
+  const onRepeatTaskRun = vi.fn().mockResolvedValue(undefined);
+  const onSetProgressExpanded = vi.fn();
+  const onToggleTaskRunLogs = vi.fn();
+  const onUpdate = vi.fn();
+
+  const props: Parameters<typeof AnalysisReportDialog>[0] = {
+    aors: [],
+    downloadInFlight: false,
+    progressExpanded: true,
+    taskRuns: [],
+    open: true,
+    currentUser: null,
+    report: buildReport(),
+    queryState: createResetQueryState(),
+    onClose,
+    onDownload,
+    onRepeatTaskRun,
+    onSetProgressExpanded,
+    onToggleTaskRunLogs,
+    onUpdate,
+    ...overrides,
+  };
+
+  act(() => {
+    root.render(createElement(AnalysisReportDialog, props));
+  });
+
+  return {
+    container,
+    root,
+    props,
+    onClose,
+    onDownload,
+    onRepeatTaskRun,
+    onSetProgressExpanded,
+    onToggleTaskRunLogs,
+    onUpdate,
+  };
+}
+
+describe('AnalysisReportDialog', () => {
+  afterEach(() => {
+    dialogProps.splice(0);
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('blocks backdrop and escape close while queued', () => {
+    const view = renderDialog({
+      report: buildReport({
+        open: true,
+      }),
+      taskRuns: [
+        {
+          id: 1,
+          reportTitle: 'Донесення',
+          reportName: 'report.docx',
+          headerTitle: 'Звіт Донесення: report.docx',
+          running: true,
+          cancelled: false,
+          curr: 0,
+          overall: 100,
+          logs: [],
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+          expanded: true,
+          historyRow: {
+            id: 41,
+            reportKind: 'tags',
+            requestedBy: 'tester',
+            createdAt: '2026-05-01T10:00:00',
+            startedAt: null,
+            plannedForTs: null,
+            queuePosition: 2,
+            status: 'planned',
+            completedAt: null,
+            hasFile: false,
+            fileName: null,
+            contentType: null,
+            bgtaskId: null,
+            lastError: null,
+            details: '',
+            progress: 0,
+            errorLog: null,
+          },
+        },
+      ],
+    });
+
+    const dialog = dialogProps.at(-1);
+    expect(dialog?.disableEscapeKeyDown).toBe(true);
+
+    act(() => {
+      (dialog?.onClose as ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined)?.({}, 'backdropClick');
+      (dialog?.onClose as ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined)?.({}, 'escapeKeyDown');
+    });
+
+    expect(view.onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      view.container.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+        if (button.textContent?.trim() === 'Закрити') {
+          button.click();
+        }
+      });
+    });
+
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
+
+  it('shows queued diagnostics instead of progress stages before backend pickup', () => {
+    const view = renderDialog({
+      taskRuns: [
+        {
+          id: 1,
+          reportTitle: 'Донесення',
+          reportName: 'report.docx',
+          headerTitle: 'Звіт Донесення: report.docx',
+          running: true,
+          cancelled: false,
+          curr: 0,
+          overall: 100,
+          logs: [],
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+          expanded: true,
+          historyRow: {
+            id: 41,
+            reportKind: 'tags',
+            requestedBy: 'tester',
+            createdAt: '2026-05-01T10:00:00',
+            startedAt: null,
+            plannedForTs: null,
+            queuePosition: 2,
+            status: 'planned',
+            completedAt: null,
+            hasFile: false,
+            fileName: null,
+            contentType: null,
+            bgtaskId: null,
+            lastError: null,
+            details: '',
+            progress: 0,
+            errorLog: null,
+          },
+        },
+      ],
+    });
+
+    expect(document.body.textContent).toContain('Очікує запуску');
+    expect(document.body.textContent).toContain('Звіт додано в чергу');
+    expect(document.body.textContent).not.toContain('Формується');
+    expect(document.body.textContent).toContain('#41');
+    expect(document.body.textContent).toContain('#2');
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
+});

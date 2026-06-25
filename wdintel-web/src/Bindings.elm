@@ -882,6 +882,9 @@ type alias ReportHistoryRow =
     , reportKind : String
     , requestedBy : String
     , createdAt : String
+    , startedAt : Maybe (String)
+    , plannedForTs : Maybe (String)
+    , queuePosition : Maybe (Int)
     , status : String
     , completedAt : Maybe (String)
     , hasFile : Bool
@@ -902,6 +905,9 @@ reportHistoryRowEncoder struct =
         , ( "report_kind", (Json.Encode.string) struct.reportKind )
         , ( "requested_by", (Json.Encode.string) struct.requestedBy )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.startedAt )
+        , ( "planned_for_ts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.plannedForTs )
+        , ( "queue_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queuePosition )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
         , ( "has_file", (Json.Encode.bool) struct.hasFile )

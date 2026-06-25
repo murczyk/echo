@@ -18,6 +18,7 @@ import type {
   TagFilterOption,
   User,
   Unit,
+  ReportHistoryRow,
 } from '../../../../Bindings';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -34,9 +35,10 @@ export type AnalysisReportTaskRun = {
   overall: number;
   logs: string[];
   error: string | null;
-  startedAt: string;
+  startedAt: string | null;
   finishedAt: string | null;
   expanded: boolean;
+  historyRow: ReportHistoryRow | null;
 };
 
 export type AnalysisCountItem = {

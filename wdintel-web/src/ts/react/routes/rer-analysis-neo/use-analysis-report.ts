@@ -10,8 +10,9 @@ import {
   launchAnalysisReportTask,
   launchAnalysisSummaryTableTask,
 } from '../../services/api/analysis';
-import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadBlob } from '../../utils/download-blob';
+import { fetchReportHistoryStatus } from '../../services/api/report-history';
 import {
   buildReportFilename,
   buildReportRequest,
@@ -252,13 +253,14 @@ export function useAnalysisReport({
             headerTitle,
             running: true,
             cancelled: false,
-            curr: 1,
-            overall: 4,
-            logs: [headerTitle],
+            curr: 0,
+            overall: 100,
+            logs: [],
             error: null,
-            startedAt: new Date().toISOString(),
+            startedAt: null,
             finishedAt: null,
             expanded: true,
+            historyRow: null,
           },
         ]);
 
@@ -275,17 +277,90 @@ export function useAnalysisReport({
             finalizeAbortedReportTaskRun(runId);
             return;
           }
-          const rsp = await fetchAnalysisReportTaskStatus(taskId, skip);
+          const historyRow = await fetchReportHistoryStatus(taskId);
           if (shouldStopRun()) {
             finalizeAbortedReportTaskRun(runId);
             return;
           }
+          if (historyRow.status === 'failed') {
+            const message = toErrorMessage(
+              new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null),
+            );
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: false,
+                      cancelled: false,
+                      curr: 0,
+                      overall: 100,
+                      logs,
+                      error: message,
+                      startedAt: historyRow.startedAt ?? run.startedAt,
+                      finishedAt: new Date().toISOString(),
+                      expanded: true,
+                      historyRow,
+                    },
+              ),
+            );
+            throw new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null);
+          }
+          if (historyRow.status === 'done') {
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: false,
+                      cancelled: false,
+                      curr: 100,
+                      overall: 100,
+                      logs,
+                      error: null,
+                      startedAt: historyRow.startedAt ?? run.startedAt,
+                      finishedAt: new Date().toISOString(),
+                      expanded: true,
+                      historyRow,
+                    },
+              ),
+            );
+            running = false;
+            break;
+          }
+
+          if (historyRow.bgtaskId === null) {
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: true,
+                      cancelled: false,
+                      curr: 0,
+                      overall: 100,
+                      logs: [],
+                      error: null,
+                      startedAt: historyRow.startedAt ?? null,
+                      finishedAt: null,
+                      expanded: true,
+                      historyRow,
+                    },
+              ),
+            );
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
+            continue;
+          }
+
+          const rsp = await fetchBgtaskStatusAndLogs(historyRow.bgtaskId, skip);
           if (rsp.loglines.length > 0) {
             logs = logs.concat(rsp.loglines);
             skip = logs.length;
           }
-          const progress =
-            getBgtaskProgressFromPercent(logs, rsp.progress);
+          const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
           updateReportTaskRuns((current) =>
             current.map((run) =>
               run.id !== runId
@@ -296,7 +371,7 @@ export function useAnalysisReport({
                     cancelled: false,
                     curr: rsp.running ? progress.curr : rsp.finishedWithError ? progress.curr : progress.overall,
                     overall: progress.overall,
-                    logs: [run.headerTitle, ...logs],
+                    logs,
                     error: rsp.finishedWithError
                       ? toErrorMessage(
                           new ReportTaskError(
@@ -307,6 +382,8 @@ export function useAnalysisReport({
                       : null,
                     finishedAt: rsp.running ? null : new Date().toISOString(),
                     expanded: rsp.running ? true : rsp.finishedWithError != null,
+                    historyRow,
+                    startedAt: historyRow.startedAt ?? run.startedAt,
                   },
             ),
           );

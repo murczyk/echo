@@ -21,7 +21,7 @@ use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, warn};
 use sea_orm::sea_query::{Expr, SimpleExpr};
@@ -81,6 +81,9 @@ pub struct ReportHistoryRow {
     pub report_kind: String,
     pub requested_by: String,
     pub created_at: String,
+    pub started_at: Option<String>,
+    pub planned_for_ts: Option<String>,
+    pub queue_position: Option<i64>,
     pub status: String,
     pub completed_at: Option<String>,
     pub has_file: bool,
@@ -229,16 +232,20 @@ async fn build_report_history_rows(
     let lookup =
         load_report_history_detail_lookup(dbx, &report_histories, &detail_refs)
             .await?;
+    let queue_position_by_id =
+        report_history_queue_positions(dbx, &report_histories).await?;
 
     Ok(report_histories
         .into_iter()
         .zip(detail_refs.iter())
         .map(|(report_history, refs)| {
+            let report_history_id = report_history.id;
             let progress = lookup.report_history_progress(&report_history);
             to_report_history_row(
                 report_history,
                 lookup.format_details(refs),
                 progress,
+                queue_position_by_id.get(&report_history_id).copied(),
                 expose_last_error,
             )
         })
@@ -260,6 +267,7 @@ fn to_report_history_row(
     report_history: report_history::Model,
     details: String,
     progress: i64,
+    queue_position: Option<i64>,
     expose_last_error: bool,
 ) -> ReportHistoryRow {
     let error_log =
@@ -269,6 +277,13 @@ fn to_report_history_row(
         report_kind: report_history.report_kind,
         requested_by: report_history.requested_by,
         created_at: report_history.created_at.to_string(),
+        started_at: report_history
+            .started_at
+            .map(|started_at| started_at.to_string()),
+        planned_for_ts: report_history
+            .planned_for_ts
+            .map(|planned_for_ts| planned_for_ts.to_string()),
+        queue_position,
         status: report_history.status,
         completed_at: report_history
             .completed_at
@@ -286,6 +301,129 @@ fn to_report_history_row(
         progress,
         error_log,
     }
+}
+
+fn report_history_queue_sort_key(
+    report_history: &report_history::Model,
+) -> (u8, NaiveDateTime, NaiveDateTime, i64) {
+    match report_history.status.as_str() {
+        STATUS_IN_PROGRESS => (
+            0,
+            report_history
+                .started_at
+                .unwrap_or(report_history.created_at),
+            report_history.created_at,
+            report_history.id,
+        ),
+        STATUS_PLANNED => (
+            1,
+            report_history
+                .planned_for_ts
+                .unwrap_or(report_history.created_at),
+            report_history.created_at,
+            report_history.id,
+        ),
+        _ => (
+            2,
+            report_history.created_at,
+            report_history.created_at,
+            report_history.id,
+        ),
+    }
+}
+
+async fn report_history_queue_positions(
+    dbx: &DatabaseConnection,
+    report_histories: &[report_history::Model],
+) -> Result<HashMap<i64, i64>, AppError> {
+    let queue_keys = report_history_queue_keys(report_histories);
+    if queue_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let queue_rows = ReportHistory::find()
+        .filter(
+            Condition::any()
+                .add(report_history::Column::Status.eq(STATUS_PLANNED))
+                .add(report_history::Column::Status.eq(STATUS_IN_PROGRESS)),
+        )
+        .filter(report_history_queue_key_condition(&queue_keys))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(report_history_queue_positions_from_rows(&queue_rows))
+}
+
+fn report_history_queue_keys(
+    report_histories: &[report_history::Model],
+) -> HashSet<(String, String)> {
+    report_histories
+        .iter()
+        .filter(|report_history| {
+            report_history.status == STATUS_PLANNED
+                || report_history.status == STATUS_IN_PROGRESS
+        })
+        .map(|report_history| {
+            (
+                report_history.requested_by.clone(),
+                report_history.report_kind.clone(),
+            )
+        })
+        .collect()
+}
+
+fn report_history_queue_key_condition(
+    queue_keys: &HashSet<(String, String)>,
+) -> Condition {
+    queue_keys.iter().fold(
+        Condition::any(),
+        |condition, (requested_by, report_kind)| {
+            condition.add(
+                Condition::all()
+                    .add(
+                        report_history::Column::RequestedBy
+                            .eq(requested_by.clone()),
+                    )
+                    .add(
+                        report_history::Column::ReportKind
+                            .eq(report_kind.clone()),
+                    ),
+            )
+        },
+    )
+}
+
+fn report_history_queue_positions_from_rows(
+    report_histories: &[report_history::Model],
+) -> HashMap<i64, i64> {
+    let mut grouped: HashMap<(String, String), Vec<report_history::Model>> =
+        HashMap::new();
+    for report_history in report_histories {
+        if report_history.status != STATUS_PLANNED
+            && report_history.status != STATUS_IN_PROGRESS
+        {
+            continue;
+        }
+        grouped
+            .entry((
+                report_history.requested_by.clone(),
+                report_history.report_kind.clone(),
+            ))
+            .or_default()
+            .push(report_history.clone());
+    }
+
+    let mut queue_position_by_id = HashMap::new();
+    for mut report_histories in grouped.into_values() {
+        report_histories.sort_by_key(|report_history| {
+            report_history_queue_sort_key(report_history)
+        });
+        for (index, report_history) in report_histories.iter().enumerate() {
+            queue_position_by_id.insert(report_history.id, (index + 1) as i64);
+        }
+    }
+
+    queue_position_by_id
 }
 
 fn report_history_error_log(
@@ -1172,7 +1310,7 @@ pub async fn report_history_status(
 ) -> Result<Json<ReportHistoryRow>, AppError> {
     let report_history = find_current_user_report(&env, &user, req.id).await?;
     Ok(Json(
-        build_report_history_row(&env.dbx, report_history, false).await?,
+        build_report_history_row(&env.dbx, report_history, true).await?,
     ))
 }
 
@@ -2116,4 +2254,200 @@ fn append_log_entry(
         "message": message,
     }));
     json!(log)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use sea_orm::ActiveValue::{NotSet, Set};
+    use sea_orm::{ActiveModelTrait, EntityTrait};
+    use serde_json::json;
+    use serial_test::serial;
+
+    async fn insert_report_history(
+        dbx: &DatabaseConnection,
+        requested_by: &str,
+        report_kind: &str,
+        status: &str,
+        created_at: chrono::NaiveDateTime,
+        started_at: Option<chrono::NaiveDateTime>,
+        planned_for_ts: Option<chrono::NaiveDateTime>,
+    ) -> Result<report_history::Model, AppError> {
+        Ok(report_history::ActiveModel {
+            id: NotSet,
+            report_kind: Set(report_kind.to_string()),
+            requested_by: Set(requested_by.to_string()),
+            request: Set(serde_json::to_value(
+                ReportHistoryRequest::GoiReport { payload: json!({}) },
+            )
+            .c(h!())?),
+            created_at: Set(created_at),
+            status: Set(status.to_string()),
+            retry_count: Set(0),
+            planned_for_ts: Set(planned_for_ts),
+            started_at: Set(started_at),
+            completed_at: Set(None),
+            s3_id: Set(None),
+            bgtask_id: Set(None),
+            file_name: Set(None),
+            content_type: Set(None),
+            last_error: Set(None),
+            log: Set(json!([])),
+            legacy_log_id: Set(None),
+            legacy_report_path: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn planned_row_after_same_user_in_progress_gets_second_queue_position(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let blocker = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let planned = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![blocker, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn queue_positions_are_independent_across_users_and_kinds(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let blocker = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let alice_planned = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+        let bob_planned = insert_report_history(
+            &env.dbx,
+            "bob",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(3),
+            None,
+            Some(created_at + Duration::minutes(3)),
+        )
+        .await?;
+        let alice_other_kind = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(4),
+            None,
+            Some(created_at + Duration::minutes(4)),
+        )
+        .await?;
+
+        let rows = build_report_history_rows(
+            &env.dbx,
+            vec![blocker, alice_planned, bob_planned, alice_other_kind],
+            false,
+        )
+        .await?;
+
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[2].queue_position, Some(1));
+        assert_eq!(rows[3].queue_position, Some(1));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn page_slice_still_sees_earlier_blocker_from_database(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _blocker = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let planned = insert_report_history(
+            &env.dbx,
+            "alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![planned], false).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].queue_position, Some(2));
+        Ok(())
+    }
 }

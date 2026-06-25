@@ -51,26 +51,17 @@ export async function downloadReportHistory(id: number): Promise<Blob> {
 export async function fetchReportHistoryTaskStatus(id: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
   const row = await fetchReportHistoryStatus(id);
 
-  if (row.status === 'planned') {
+  if (row.status === 'planned' || (row.status === 'in_progress' && row.bgtaskId === null)) {
     return {
       running: true,
-      loglines: skip === 0 ? ['[1/3] В черзі...'] : [],
+      loglines: [],
       finishedWithError: null,
       finishedWithErrorCode: null,
       progress: row.progress,
     };
   }
 
-  if (row.status === 'in_progress') {
-    if (row.bgtaskId === null) {
-      return {
-        running: true,
-        loglines: skip === 0 ? ['[1/3] Формування звіту'] : [],
-        finishedWithError: null,
-        finishedWithErrorCode: null,
-        progress: row.progress,
-      };
-    }
+  if (row.status === 'in_progress' && row.bgtaskId !== null) {
     const rsp = await fetchBgtaskStatusAndLogs(row.bgtaskId, skip);
     return {
       ...rsp,
