@@ -119,7 +119,7 @@ pub async fn create_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_encryption_id(req.encryption_id),
+        normalize_encryption_id(&txn, req.encryption_id).await.c(h!())?,
         organism_id,
     )
     .await
@@ -172,7 +172,7 @@ pub async fn update_key(
         req.key.clone(),
         req.key_hash.clone(),
         req.description.clone(),
-        normalize_encryption_id(req.encryption_id),
+        normalize_encryption_id(&txn, req.encryption_id).await.c(h!())?,
         key.organism_id,
     )
     .await
@@ -664,10 +664,23 @@ where
     Ok(by_key)
 }
 
-fn normalize_encryption_id(encryption_id: Option<i64>) -> Option<i64> {
+async fn normalize_encryption_id(
+    db: &impl ConnectionTrait,
+    encryption_id: Option<i64>,
+) -> Result<Option<i64>, AppError> {
     match encryption_id {
-        Some(-1) => None,
-        _ => encryption_id,
+        Some(-1) => {
+            let enc_id = encryption::Entity::find()
+                .filter(encryption::Column::Name.eq("Не визначено"))
+                .select_only()
+                .column(encryption::Column::Id)
+                .into_tuple::<i32>()
+                .one(db)
+                .await
+                .context(h!())?;
+            Ok(enc_id.map(|id| id as i64))
+        }
+        other => Ok(other),
     }
 }
 

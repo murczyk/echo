@@ -2108,6 +2108,7 @@ pub async fn update_network_freq(
         .context(h!())?;
         let mut model = network_freq_model.into_active_model();
         model.modulation = Set(req.modulation.clone());
+        model.kind = Set(kind_from_modulation(&req.modulation));
         model.encryption_id = Set(encryption_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);

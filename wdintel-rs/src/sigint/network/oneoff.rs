@@ -270,9 +270,7 @@ async fn table_exists(
         .is_some())
 }
 
-async fn migration_pending(
-    db: &DatabaseConnection,
-) -> Result<bool, AppError> {
+async fn migration_pending(db: &DatabaseConnection) -> Result<bool, AppError> {
     let freq_pending = db
         .query_one(Statement::from_string(
             DbBackend::Postgres,
