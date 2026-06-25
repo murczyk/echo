@@ -217,21 +217,30 @@ export function NetworkFreqFormFields({
   }, [isDmrModulation]);
 
   useEffect(() => {
-    const bezEnc = encryptions.find((e) => e.name === 'Без шифрування');
-    if (bezEnc && !isDmrModulation && encryptionId !== bezEnc.id) {
-      onEncryptionChange(bezEnc.id);
+    if (isDmrModulation) return;
+    if (modulation === '') {
+      const nezvEnc = encryptions.find((e) => e.name === 'Не визначено');
+      if (nezvEnc && encryptionId !== nezvEnc.id) onEncryptionChange(nezvEnc.id);
+    } else {
+      const bezEnc = encryptions.find((e) => e.name === 'Без шифрування');
+      if (bezEnc && encryptionId !== bezEnc.id) onEncryptionChange(bezEnc.id);
     }
     // Run only when modulation type changes or encryptions list loads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDmrModulation, encryptions]);
+  }, [isDmrModulation, encryptions, modulation]);
 
   const encryptionItems = useMemo<ChipOption[]>(
-    () => {
-      const all = encryptions.map((enc) => ({ value: String(enc.id), label: enc.name }));
-      if (isDmrModulation) return all;
-      return all.filter((enc) => enc.label === 'Без шифрування');
-    },
-    [encryptions, isDmrModulation],
+    () =>
+      encryptions
+        .map((enc) => ({ value: String(enc.id), label: enc.name }))
+        .sort((a, b) => {
+          if (a.label === 'Без шифрування') return -1;
+          if (b.label === 'Без шифрування') return 1;
+          if (a.label === 'Не визначено') return -1;
+          if (b.label === 'Не визначено') return 1;
+          return 0;
+        }),
+    [encryptions],
   );
 
   return (
@@ -276,6 +285,7 @@ export function NetworkFreqFormFields({
         value={modulation}
         disabled={saving}
         options={[
+          { value: '', label: 'Не визначено' },
           { value: 'DMR', label: 'DMR' },
           { value: 'NFM', label: 'NFM' },
           { value: 'AM', label: 'AM' },
@@ -283,13 +293,15 @@ export function NetworkFreqFormFields({
         onChange={(nextValue) => onModulationChange(nextValue as string)}
       />
 
-      <ChipChoiceGroup
-        label="Шифрування"
-        value={encryptionId === null ? '' : String(encryptionId)}
-        disabled={saving}
-        options={encryptionItems}
-        onChange={(nextValue) => onEncryptionChange(nextValue === '' ? null : Number(nextValue))}
-      />
+      {isDmrModulation ? (
+        <ChipChoiceGroup
+          label="Шифрування"
+          value={encryptionId === null ? '' : String(encryptionId)}
+          disabled={saving}
+          options={encryptionItems}
+          onChange={(nextValue) => onEncryptionChange(nextValue === '' ? null : Number(nextValue))}
+        />
+      ) : null}
 
       {keysSection}
 

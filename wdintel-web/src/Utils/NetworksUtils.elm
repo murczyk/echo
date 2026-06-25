@@ -66,11 +66,12 @@ renderNetwork network masterUnits =
 
 networkKinds : List NetworkKind
 networkKinds =
-    [ NFM, AM, DMR ]
+    [ Unknown, DMR, NFM, AM ]
 
 
 type NetworkKind
-    = NFM
+    = Unknown
+    | NFM
     | AM
     | DMR
 
@@ -91,12 +92,15 @@ networkKindFromString str =
             NFM
 
         _ ->
-            NFM
+            Unknown
 
 
 networkKindToString : NetworkKind -> String
 networkKindToString networkKind =
     case networkKind of
+        Unknown ->
+            ""
+
         DMR ->
             "DMR"
 
@@ -110,6 +114,9 @@ networkKindToString networkKind =
 networkKindToLabel : NetworkKind -> String
 networkKindToLabel networkKind =
     case networkKind of
+        Unknown ->
+            "Не визначено"
+
         DMR ->
             "DMR"
 

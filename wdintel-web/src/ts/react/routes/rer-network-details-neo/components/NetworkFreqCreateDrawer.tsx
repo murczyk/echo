@@ -258,7 +258,7 @@ function NetworkFreqCreateDrawerComponent({
             freqError={freqError}
             activeFromError={activeFromError}
             activeToError={activeToError}
-            onModulationChange={(modulation) => onChange({ ...form, modulation: modulation as 'DMR' | 'NFM' | 'AM' })}
+            onModulationChange={(modulation) => onChange({ ...form, modulation: modulation as 'DMR' | 'NFM' | 'AM' | '' })}
             onEncryptionChange={(encryptionId) => onChange({ ...form, encryptionId })}
             onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
             onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}

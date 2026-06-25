@@ -2310,8 +2310,9 @@ fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
 }
 
 /// Normalise encryption_id based on modulation type:
-///   NFM / AM  → always "Без шифрування" (ignores what the client sent)
 ///   DMR / DMRe → keep client-supplied id; if null, default to "Не визначено"
+///   "" (unknown) → always "Не визначено"
+///   NFM / AM / other → always "Без шифрування" (ignores what the client sent)
 async fn normalize_encryption_id_for_modulation(
     db: &impl ConnectionTrait,
     modulation: &str,
@@ -2319,10 +2320,22 @@ async fn normalize_encryption_id_for_modulation(
 ) -> Result<Option<i32>, AppError> {
     let is_dmr = modulation.eq_ignore_ascii_case("DMR")
         || modulation.eq_ignore_ascii_case("DMRe");
+    let is_unknown = modulation.trim().is_empty();
     if is_dmr {
         if requested_id.is_some() {
             return Ok(requested_id);
         }
+        let enc_id = encryption::Entity::find()
+            .filter(encryption::Column::Name.eq("Не визначено"))
+            .select_only()
+            .column(encryption::Column::Id)
+            .into_tuple::<i32>()
+            .one(db)
+            .await
+            .context(h!())?;
+        return Ok(enc_id);
+    }
+    if is_unknown {
         let enc_id = encryption::Entity::find()
             .filter(encryption::Column::Name.eq("Не визначено"))
             .select_only()
@@ -3884,7 +3897,7 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
 
 fn kind_from_modulation(modulation: &str) -> SigintNetworkKind {
     match modulation {
-        "NFM" | "AM" => SigintNetworkKind::Vhf,
+        "NFM" | "AM" | "" => SigintNetworkKind::Vhf,
         _ => SigintNetworkKind::Dmr,
     }
 }

@@ -67,11 +67,12 @@ export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' | 'AM' {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' | 'AM' | '' {
   const normalized = kind?.trim().toUpperCase() ?? '';
   if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  if (normalized === 'NFM') return 'NFM';
   if (normalized === 'AM') return 'AM';
-  return 'NFM';
+  return '';
 }
 
 export function formatDateInputValue(value: number | null | undefined): string {

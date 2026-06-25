@@ -238,7 +238,7 @@ function NetworkFreqEditDrawerComponent({
               activeTo={form.activeTo}
               activeFromError={activeFromError}
               activeToError={activeToError}
-              onModulationChange={(nextModulation) => onChange({ ...form, modulation: nextModulation as 'DMR' | 'NFM' | 'AM' })}
+              onModulationChange={(nextModulation) => onChange({ ...form, modulation: nextModulation as 'DMR' | 'NFM' | 'AM' | '' })}
               onEncryptionChange={(encryptionId) => onChange({ ...form, encryptionId })}
               onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
               onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}

@@ -45,7 +45,7 @@ export type NetworkUpsertForm = {
   unitIds: number[];
   postIds: number[];
   freq: string;
-  modulation: 'DMR' | 'NFM' | 'AM';
+  modulation: 'DMR' | 'NFM' | 'AM' | '';
   encryptionId: number | null;
   activeFrom: string;
   activeTo: string;
@@ -54,7 +54,7 @@ export type NetworkUpsertForm = {
 
 export type NetworkEditForm = NetworkUpsertForm;
 
-export type NetworkFreqKind = 'DMR' | 'NFM' | 'AM';
+export type NetworkFreqKind = 'DMR' | 'NFM' | 'AM' | '';
 
 export type NetworkDescriptionForm = {
   topic: string;
@@ -73,7 +73,7 @@ export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'call
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;
-  modulation: 'DMR' | 'NFM' | 'AM';
+  modulation: 'DMR' | 'NFM' | 'AM' | '';
   encryptionId: number | null;
   activeFrom: string;
   activeTo: string;
@@ -83,7 +83,7 @@ export type NetworkFreqCreateWizardForm = {
 export type NetworkFreqEditForm = {
   networkFreqId: number;
   freq: string;
-  modulation: 'DMR' | 'NFM' | 'AM';
+  modulation: 'DMR' | 'NFM' | 'AM' | '';
   encryptionId: number | null;
   activeFrom: string;
   activeTo: string;

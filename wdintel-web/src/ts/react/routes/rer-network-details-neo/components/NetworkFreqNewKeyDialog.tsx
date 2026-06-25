@@ -150,7 +150,7 @@ export function NetworkFreqNewKeyDialog({
             >
               {encryptionOptions
                 .filter((enc) => enc.name !== 'Без шифрування')
-                .sort((a, b) => (a.name === 'Не визначено' ? -1 : b.name === 'Не визначено' ? 1 : 0))
+                .sort((a, b) => (a.name === 'Не визначено' ? 1 : b.name === 'Не визначено' ? -1 : 0))
                 .map((enc) => (
                   <MenuItem key={enc.id} value={String(enc.id)}>
                     {enc.name}
