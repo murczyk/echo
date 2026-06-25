@@ -546,7 +546,8 @@ async fn run_data_migration(
                  LIMIT 1
              )
          FROM freq_mods fm
-         WHERE snf.id = fm.id;",
+         WHERE snf.id = fm.id
+           AND snf.encryption_id IS NULL;",
     )
     .await
     .c(h!())?;
