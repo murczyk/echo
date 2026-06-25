@@ -64,6 +64,10 @@ export function displayNetworkType(modulation: string | null | undefined): strin
       return 'DMR';
     case 'AM':
       return 'AM';
+    case '':
+    case null:
+    case undefined:
+      return 'Не визначено';
     default:
       return normalizeLookupName(modulation);
   }

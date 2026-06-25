@@ -200,7 +200,7 @@ pub async fn oneoff_migrate_modulation_to_encryption(
         });
     }
 
-    let needs_full_migration = freq_migration_pending(&db).await?;
+    let needs_full_migration = migration_pending(&db).await?;
 
     if needs_full_migration {
         if !modulation_exists {
@@ -270,10 +270,10 @@ async fn table_exists(
         .is_some())
 }
 
-async fn freq_migration_pending(
+async fn migration_pending(
     db: &DatabaseConnection,
 ) -> Result<bool, AppError> {
-    Ok(db
+    let freq_pending = db
         .query_one(Statement::from_string(
             DbBackend::Postgres,
             "SELECT 1 FROM sigint_network_freq \
@@ -283,7 +283,25 @@ async fn freq_migration_pending(
         ))
         .await
         .c(h!())?
-        .is_some())
+        .is_some();
+
+    if freq_pending {
+        return Ok(true);
+    }
+
+    let key_pending = db
+        .query_one(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT 1 FROM sigint_network_encryption_key \
+             WHERE modulation_id IS NOT NULL AND encryption_id IS NULL \
+             LIMIT 1"
+                .to_string(),
+        ))
+        .await
+        .c(h!())?
+        .is_some();
+
+    Ok(key_pending)
 }
 
 async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {

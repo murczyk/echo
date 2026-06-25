@@ -378,7 +378,7 @@ function buildGroupRow(
   callsignsById: Map<number, string[]>,
 ): NetworkFreqGroupRow {
     const firstFreq = freqs[0] ?? null;
-    const typeLabels = freqs.map((freq) => freq.modulation ?? '');
+    const typeLabels = freqs.map((freq) => freq.modulation || 'Не визначено');
   const encryptionLabels = freqs.map((freq) =>
     encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
   );
@@ -418,7 +418,7 @@ function buildFreqRow(
     parentGroupId,
     freq,
     displayFreq: normalizeFrequencyLabel(freq.freq),
-    typeLabel: freq.modulation ?? '',
+    typeLabel: freq.modulation || 'Не визначено',
     encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
     callsignLabel: joinCallsignsByFreqIds([freq.networkFreqId], callsignsById),
     sortFreqUnits: parseNetworkFreqUnits(freq.freq),

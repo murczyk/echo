@@ -31,7 +31,7 @@ export function NetworkFreqSummaryHeader({ freq }: Props) {
           <Typography variant="h4" fontWeight={800} sx={{ lineHeight: 1 }}>
             {formatNetworkFreqValue(freq.freq)}
           </Typography>
-          <Chip size="small" label={freq.modulation ?? ''} />
+          <Chip size="small" label={freq.modulation || 'Не визначено'} />
           <Chip size="small" label={freq.encryption ?? '—'} />
         </Stack>
         <Typography variant="body2" color="text.secondary" noWrap title={formatCallsigns(freq.callsigns)}>
