@@ -1,4 +1,7 @@
-use crate::config::CLEANUP_REPORT_DAYS;
+use crate::config::{
+    CLEANUP_REPORT_DAYS, RER_REPORT_ERROR_CODE_HEADER_NAME,
+    RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
+};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -311,9 +314,12 @@ pub async fn report_docx_task_launch(
     let user_login = user.id().c(h!())?;
     let req_inner = req.into_inner();
     let report_kind = req_inner.kind.clone();
-    ensure_report_launch_permissions(&env.dbx, &user_login, &report_kind)
-        .await
-        .c(h!())?;
+    ensure_report_launch_permissions_with_error_code_header(
+        &env.dbx,
+        &user_login,
+        &report_kind,
+    )
+    .await?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &user_login,
@@ -327,6 +333,22 @@ pub async fn report_docx_task_launch(
     .await
     .c(h!())?;
     Ok(Json(report_history.id))
+}
+
+async fn ensure_report_launch_permissions_with_error_code_header(
+    dbx: &DatabaseConnection,
+    user_login: &str,
+    report_kind: &str,
+) -> Result<(), AppError> {
+    match ensure_report_launch_permissions(dbx, user_login, report_kind).await {
+        Ok(()) => Ok(()),
+        Err(AppError::Forbidden(msg)) => Err(AppError::ForbiddenWithHeader {
+            msg,
+            header_name: RER_REPORT_ERROR_CODE_HEADER_NAME,
+            header_value: RER_REPORT_PERMISSION_DENIED_ERROR_CODE,
+        }),
+        Err(err) => Err(err.c(h!())),
+    }
 }
 
 pub(crate) async fn save_report_log(
