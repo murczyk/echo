@@ -245,7 +245,7 @@ describe('NetworkFreqEditDrawer', () => {
     expect(view.container.textContent).toContain('Модуляція *');
     expect(view.container.textContent).toContain('Модуляція');
     expect(view.container.textContent).toContain('Ключі');
-    expect(view.container.textContent).not.toContain('Шифрування *');
+    expect(view.container.textContent).toContain('Шифрування *');
     expect(view.container.querySelector('[data-testid="summary-header"]')).toBeNull();
   });
 

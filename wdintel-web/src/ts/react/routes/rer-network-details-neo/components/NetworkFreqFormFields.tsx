@@ -296,6 +296,7 @@ export function NetworkFreqFormFields({
       {isDmrModulation ? (
         <ChipChoiceGroup
           label="Шифрування"
+          required
           value={encryptionId === null ? '' : String(encryptionId)}
           disabled={saving}
           options={encryptionItems}
