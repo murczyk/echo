@@ -26,7 +26,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, warn};
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseBackend,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, NotSet,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set,
     Statement, TransactionTrait,
@@ -50,10 +50,11 @@ pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
 
-const MAX_RETRY_COUNT: i32 = 0;
+const REPORT_HISTORY_MAX_ATTEMPTS: i32 = 2;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
 const REPORT_OBJECT_PREFIX: &str = "reports";
 const REPORT_TIMEOUT_LOGIN: &str = "system";
+const REPORT_CRASH_RECOVERY_LOGIN: &str = "system";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
@@ -1197,6 +1198,7 @@ pub async fn report_history_retry(
 
     let mut report_history = report_history.into_active_model();
     report_history.status = Set(STATUS_PLANNED.to_string());
+    report_history.retry_count = Set(0);
     report_history.planned_for_ts = Set(None);
     report_history.started_at = Set(None);
     report_history.completed_at = Set(None);
@@ -1318,18 +1320,75 @@ pub async fn reset_in_progress_nofail(env: &Env) {
     if let Err(err) = fail_timed_out_reports(env).await {
         error!("failed to fail timed-out report history rows: {err:?}");
     }
-    let res = ReportHistory::update_many()
-        .col_expr(
-            report_history::Column::Status,
-            Expr::value(STATUS_PLANNED.to_string()),
-        )
-        .col_expr(report_history::Column::BgtaskId, Expr::value(None::<i64>))
-        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
-        .exec(&env.dbx)
-        .await;
-    if let Err(err) = res {
-        error!("failed to reset in-progress report history rows: {err:?}");
+    if let Err(err) = recover_interrupted_reports(env).await {
+        error!("failed to recover interrupted report history rows: {err:?}");
     }
+}
+
+async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        with recovered_report as (
+            select
+                id,
+                least(retry_count + 1, $1) as attempt_count,
+                retry_count + 1 >= $1 as attempts_exhausted
+            from report_history
+            where status = $5
+        )
+        update report_history
+        set
+            status = case
+                when recovered_report.attempts_exhausted then $2
+                else $3
+            end,
+            retry_count = recovered_report.attempt_count,
+            planned_for_ts = case
+                when recovered_report.attempts_exhausted then null
+                else now() at time zone 'utc'
+                    + recovered_report.attempt_count * interval '5 minutes'
+            end,
+            started_at = case
+                when recovered_report.attempts_exhausted then report_history.started_at
+                else null
+            end,
+            completed_at = case
+                when recovered_report.attempts_exhausted then now() at time zone 'utc'
+                else null
+            end,
+            bgtask_id = null,
+            last_error = format(
+                'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                recovered_report.attempt_count,
+                $1
+            ),
+            log = coalesce(report_history.log, '[]'::jsonb)
+                || jsonb_build_array(jsonb_build_object(
+                    'login',
+                    $4,
+                    'timestamp',
+                    now() at time zone 'utc',
+                    'message',
+                    format(
+                        'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                        recovered_report.attempt_count,
+                        $1
+                    )
+                ))
+        from recovered_report
+        where report_history.id = recovered_report.id
+        "#,
+        [
+            REPORT_HISTORY_MAX_ATTEMPTS.into(),
+            STATUS_FAILED.into(),
+            STATUS_PLANNED.into(),
+            REPORT_CRASH_RECOVERY_LOGIN.into(),
+            STATUS_IN_PROGRESS.into(),
+        ],
+    );
+    env.dbx.execute(stmt).await.c(h!())?;
+    Ok(())
 }
 
 pub fn spawn_report_history_workers(
@@ -2077,26 +2136,29 @@ async fn handle_report_failure(
         return Ok(());
     };
     let err_msg = format!("{err:#?}");
-    let retry_count = report_history.retry_count;
+    let attempt_count =
+        (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
     let mut report_history = report_history.into_active_model();
     report_history.log = Set(append_log_entry(
         report_history.log.unwrap(),
         "system",
         &err_msg,
     ));
-    if retry_count < MAX_RETRY_COUNT {
-        let next_retry_count = retry_count + 1;
+    if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
         report_history.status = Set(STATUS_PLANNED.to_string());
-        report_history.retry_count = Set(next_retry_count);
+        report_history.retry_count = Set(attempt_count);
         report_history.planned_for_ts = Set(Some(
             Utc::now().naive_utc()
-                + Duration::minutes(5 * i64::from(next_retry_count)),
+                + Duration::minutes(5 * i64::from(attempt_count)),
         ));
         report_history.started_at = Set(None);
+        report_history.completed_at = Set(None);
         report_history.bgtask_id = Set(None);
         report_history.last_error = Set(Some(err_msg));
     } else {
         report_history.status = Set(STATUS_FAILED.to_string());
+        report_history.retry_count = Set(attempt_count);
+        report_history.planned_for_ts = Set(None);
         report_history.completed_at = Set(Some(Utc::now().naive_utc()));
         report_history.last_error = Set(Some(err_msg));
     }
