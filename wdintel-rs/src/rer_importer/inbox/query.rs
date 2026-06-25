@@ -53,13 +53,17 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
-async fn build_filtered_inbox_query(
+async fn build_filtered_inbox_query<'a, 'async_trait, C>(
+    dbx: &'a C,
     login: &str,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<Select<signal_message::Entity>, AppError> {
+) -> Result<Select<signal_message::Entity>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
 
@@ -171,7 +175,9 @@ async fn build_filtered_inbox_query(
             ));
     }
 
-    q = get_pagination_filters(env, req, q).await.c(h!())?;
+    q = get_pagination_filters_with_conn(dbx, env, req, q)
+        .await
+        .c(h!())?;
     Ok(q)
 }
 
@@ -180,7 +186,7 @@ pub(crate) async fn build_inbox_digest_query(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    let q = build_filtered_inbox_query(login, env, req)
+    let q = build_filtered_inbox_query(&env.dbx, login, env, req)
         .await
         .context(h!())?
         .select_only()
@@ -198,7 +204,19 @@ pub(crate) async fn build_inbox_query(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    let q = build_filtered_inbox_query(login, env, req)
+    build_inbox_query_with_conn(&env.dbx, login, env, req).await
+}
+
+pub(crate) async fn build_inbox_query_with_conn<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let q = build_filtered_inbox_query(dbx, login, env, req)
         .await
         .context(h!())?;
     let q = add_inbox_message_columns(q);
@@ -320,6 +338,19 @@ pub async fn get_pagination_filters<Q>(
 where
     Q: QueryFilter,
 {
+    get_pagination_filters_with_conn(&env.dbx, env, req, q).await
+}
+
+pub async fn get_pagination_filters_with_conn<'a, 'async_trait, C, Q>(
+    dbx: &'a C,
+    _env: &Env,
+    req: &InboxMessagesReq,
+    q: Q,
+) -> Result<Q, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+    Q: QueryFilter,
+{
     let mut q = q;
     let since_id_noninclusive: Option<i64> = req.since_id_noninclusive;
 
@@ -355,7 +386,7 @@ where
                 SignalMessage::find_by_id(since_id_noninclusive)
                     // we want to query even if it got deleted
                     // .filter(signal_message::Column::Deleted.eq(false))
-                    .one(&env.dbx)
+                    .one(dbx)
                     .await
                     .c(h!())?
             else {
@@ -365,7 +396,7 @@ where
                 InboxMessagesSortBy::IMSDatetime => {
                     let Some(inbox) =
                         SigintInboxItem::find_by_id(since_id_noninclusive)
-                            .one(&env.dbx)
+                            .one(dbx)
                             .await
                             .c(h!())?
                     else {
@@ -431,7 +462,7 @@ where
                 SignalMessage::find_by_id(before_id_noninclusive)
                     // we want to query even if it got deleted
                     // .filter(signal_message::Column::Deleted.eq(false))
-                    .one(&env.dbx)
+                    .one(dbx)
                     .await
                     .c(h!())?
             else {
@@ -441,7 +472,7 @@ where
                 InboxMessagesSortBy::IMSDatetime => {
                     let Some(inbox) =
                         SigintInboxItem::find_by_id(before_id_noninclusive)
-                            .one(&env.dbx)
+                            .one(dbx)
                             .await
                             .c(h!())?
                     else {
@@ -517,6 +548,23 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
     req: &InboxMessagesReq,
     q: SelectStatement,
 ) -> Result<SelectStatement, AppError> {
+    get_pagination_filter_real_lower_bound_stmt_with_conn(&env.dbx, env, req, q)
+        .await
+}
+
+pub async fn get_pagination_filter_real_lower_bound_stmt_with_conn<
+    'a,
+    'async_trait,
+    C,
+>(
+    dbx: &'a C,
+    _env: &Env,
+    req: &InboxMessagesReq,
+    q: SelectStatement,
+) -> Result<SelectStatement, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut q = q;
     if let Some(since_id_noninclusive) = req.since_id_noninclusive {
         let req_sort_by =
@@ -525,7 +573,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
             InboxMessagesSortBy::IMSDatetime => {
                 if let Some(inbox) =
                     SigintInboxItem::find_by_id(since_id_noninclusive)
-                        .one(&env.dbx)
+                        .one(dbx)
                         .await
                         .c(h!())?
                 {
@@ -559,7 +607,7 @@ pub async fn get_pagination_filter_real_lower_bound_stmt(
                 if let Some(message) =
                     SignalMessage::find_by_id(since_id_noninclusive)
                         .filter(signal_message::Column::Deleted.eq(false))
-                        .one(&env.dbx)
+                        .one(dbx)
                         .await
                         .c(h!())?
                 {
