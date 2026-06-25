@@ -873,6 +873,9 @@ deploy-from-local _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
 
+    echo "Building frontend assets..."
+    (cd "{{ justfile_directory() }}" && just build-front)
+
     echo "Building local wdintel-rs deb package..."
     (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs)
 
