@@ -219,6 +219,7 @@ pub async fn restore_network(
     refresh_network_last_seen_after_state_change(&env.dbx, [network_id])
         .await
         .c(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
     Ok(Json(res))
 }
 
@@ -414,6 +415,21 @@ pub async fn invalidate_find_live_networks_cache(
     Ok(())
 }
 
+pub async fn invalidate_find_live_networks_cache_for_env(
+    env: &actix_web::web::Data<Env>,
+) -> Result<(), AppError> {
+    invalidate_find_live_networks_cache(&mut env.redis.clone()).await
+}
+
+pub async fn fanout_network_changed_and_invalidate_find_live_cache(
+    env: &actix_web::web::Data<Env>,
+) -> Result<(), AppError> {
+    let mut redis = env.redis.clone();
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut redis, event).await.context(h!())?;
+    invalidate_find_live_networks_cache(&mut redis).await
+}
+
 async fn find_live_network_ids(
     dbx: &DatabaseConnection,
     groups: &[String],
@@ -454,9 +470,9 @@ fn build_find_live_network_ids_query(
             sigint_network::Relation::SigintNetworkFreq.def(),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(find_live_network_active_to_now(now))
+        .filter(find_live_network_active_now(now))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(find_live_network_freq_active_to_now(now))
+        .filter(find_live_network_freq_active_now(now))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
         .group_by(sigint_network::Column::Id)
         .order_by_desc(Expr::cust("MAX(sigint_network_freq.last_seen_dt)"))
@@ -487,16 +503,26 @@ fn build_find_live_network_ids_query(
     query
 }
 
-fn find_live_network_active_to_now(now: NaiveDateTime) -> SimpleExpr {
+fn find_live_network_active_now(now: NaiveDateTime) -> SimpleExpr {
     sigint_network::Column::ActiveTo
         .is_null()
         .or(sigint_network::Column::ActiveTo.gte(now))
+        .and(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
 }
 
-fn find_live_network_freq_active_to_now(now: NaiveDateTime) -> SimpleExpr {
+fn find_live_network_freq_active_now(now: NaiveDateTime) -> SimpleExpr {
     sigint_network_freq::Column::ActiveTo
         .is_null()
         .or(sigint_network_freq::Column::ActiveTo.gte(now))
+        .and(
+            sigint_network_freq::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network_freq::Column::ActiveFrom.lte(now)),
+        )
 }
 
 fn find_live_network_color_code_exists(
@@ -641,7 +667,7 @@ async fn load_find_live_network_freqs(
             sigint_network_freq::Column::NetworkId.eq_any(network_ids.to_vec()),
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(find_live_network_freq_active_to_now(Utc::now().naive_utc()))
+        .filter(find_live_network_freq_active_now(Utc::now().naive_utc()))
         .order_by_asc(sigint_network_freq::Column::Freq)
         .all(dbx)
         .await
@@ -1147,8 +1173,7 @@ pub async fn create_network(
 
     txn.commit().await.context(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed_and_invalidate_find_live_cache(&env).await?;
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
@@ -1298,6 +1323,7 @@ pub async fn update_network(
         .await
         .c(h!())?;
     }
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -1370,8 +1396,7 @@ pub async fn delete_network(
     .await
     .context(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed_and_invalidate_find_live_cache(&env).await?;
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
@@ -2130,8 +2155,7 @@ pub async fn update_freq_networks(
     .await
     .c(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed_and_invalidate_find_live_cache(&env).await?;
 
     Ok(result_json)
 }
@@ -2403,8 +2427,7 @@ pub async fn add_network_freq(
     .await
     .c(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed_and_invalidate_find_live_cache(&env).await?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2540,8 +2563,7 @@ pub async fn add_network_freq_v2(
     )
     .await
     .c(h!())?;
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed_and_invalidate_find_live_cache(&env).await?;
 
     let response = load_network_freq_mutation_response(
         &env,
@@ -2649,6 +2671,7 @@ pub async fn reactivate_network_freq(
     refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
         .await
         .c(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     Ok(Json(network_detail[0].clone()))
 }
@@ -2837,6 +2860,7 @@ pub async fn update_network_freq(
     )
     .await
     .c(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     Ok(Json(network_detail[0].clone()))
 }
@@ -2963,6 +2987,7 @@ pub async fn update_network_freq_v2(
     )
     .await
     .c(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     let response = load_network_freq_mutation_response(
         &env,
@@ -3165,6 +3190,7 @@ pub async fn delete_network_freq(
 
     let network_details = network_detail.clone().context(h!())?;
     let first_network_detail = network_details.first().context(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
     Ok(Json(first_network_detail.clone()))
 }
 
@@ -3566,6 +3592,7 @@ pub async fn merge_network(
     )
     .await
     .context(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     Ok(Json(res))
 }
@@ -4026,6 +4053,7 @@ pub async fn update_network_posts(
     )
     .await
     .context(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -4152,6 +4180,7 @@ pub async fn update_network_units(
     )
     .await
     .context(h!())?;
+    invalidate_find_live_networks_cache_for_env(&env).await?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -4653,8 +4682,12 @@ mod tests {
 
         assert!(sql.contains("\"sigint_network\".\"active_to\" IS NULL"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" >= "));
+        assert!(sql.contains("\"sigint_network\".\"active_from\" IS NULL"));
+        assert!(sql.contains("\"sigint_network\".\"active_from\" <= "));
         assert!(sql.contains("\"sigint_network_freq\".\"active_to\" IS NULL"));
         assert!(sql.contains("\"sigint_network_freq\".\"active_to\" >= "));
+        assert!(sql.contains("\"sigint_network_freq\".\"active_from\" IS NULL"));
+        assert!(sql.contains("\"sigint_network_freq\".\"active_from\" <= "));
     }
 
     #[test]
@@ -4669,13 +4702,14 @@ mod tests {
         let sql = build_find_live_network_ids_query(&req, &groups, dt(5))
             .build(DbBackend::Postgres)
             .to_string();
+        let sql_lowercase = sql.to_lowercase();
 
         assert!(sql.contains("JOIN \"signal_message\""));
-        assert!(sql.contains("\"signal_message\".\"deleted\" = false"));
-        assert!(sql.contains("FROM \"signal_message_group\""));
         assert!(
-            sql.contains("\"signal_message_group\".\"group_master_key\" IN")
+            sql_lowercase.contains("\"signal_message\".\"deleted\" = false")
         );
+        assert!(sql.contains("FROM \"signal_message_group\""));
+        assert!(sql.contains("\"signal_message_group\".\"group_master_key\""));
         assert!(sql.contains("'group-a'"));
     }
 
