@@ -93,6 +93,8 @@ export const MessageCardImagePreviewStage = forwardRef<
           <IconButton
             aria-label="Вийти з повноекранного режиму"
             onClick={onExitFullscreen}
+            onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
             size="small"
             sx={{
               position: 'absolute',

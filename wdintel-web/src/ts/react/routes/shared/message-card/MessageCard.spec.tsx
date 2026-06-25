@@ -2217,6 +2217,117 @@ describe('MessageCard', () => {
     expect(image.getAttribute('data-image-preview-pan-y')).toBe('0');
   });
 
+  it('does not start panning when pointerdown lands on the fullscreen exit icon', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        images: ['https://example.test/files/preview-1.png'],
+      },
+    });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    const image = dialog?.querySelector('img[data-image-preview-image]') as HTMLImageElement | null;
+    if (image == null) throw new Error('preview image not found');
+
+    Object.defineProperty(image, 'naturalWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(image, 'naturalHeight', { configurable: true, value: 800 });
+
+    await act(async () => {
+      image.dispatchEvent(new Event('load', { bubbles: true }));
+    });
+
+    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
+    if (zoomSlider == null) throw new Error('zoom slider not found');
+
+    await act(async () => {
+      zoomSlider.value = '200';
+      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const stage = dialog?.querySelector('[data-image-preview-stage]') as HTMLElement | null;
+    if (stage == null) throw new Error('preview stage not found');
+
+    Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 400 });
+    Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
+
+    await act(async () => {
+      stage.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 1,
+          clientX: 40,
+          clientY: 40,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          pointerId: 1,
+          clientX: 120,
+          clientY: 100,
+        }),
+      );
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 120, clientY: 100 }));
+    });
+
+    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
+    expect(Number(image.getAttribute('data-image-preview-pan-x') ?? '0')).not.toBe(0);
+    expect(Number(image.getAttribute('data-image-preview-pan-y') ?? '0')).not.toBe(0);
+    const panBeforeExitX = image.getAttribute('data-image-preview-pan-x');
+    const panBeforeExitY = image.getAttribute('data-image-preview-pan-y');
+
+    const fullscreenButton = dialog?.querySelector('button[aria-label="Повноекранний режим"]');
+    if (!(fullscreenButton instanceof HTMLButtonElement)) throw new Error('fullscreen button not found');
+    await click(fullscreenButton);
+
+    const exitButton = dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]');
+    if (!(exitButton instanceof HTMLButtonElement)) throw new Error('fullscreen exit button not found');
+
+    const exitIcon = exitButton.querySelector('svg');
+    if (!(exitIcon instanceof SVGElement)) throw new Error('fullscreen exit icon not found');
+
+    await act(async () => {
+      exitButton.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 2,
+          clientX: 16,
+          clientY: 16,
+        }),
+      );
+      exitIcon.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          pointerId: 2,
+          clientX: 16,
+          clientY: 16,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          pointerId: 2,
+          clientX: 56,
+          clientY: 40,
+        }),
+      );
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2, clientX: 56, clientY: 40 }));
+    });
+
+    expect(image.getAttribute('data-image-preview-pan-x')).toBe(panBeforeExitX);
+    expect(image.getAttribute('data-image-preview-pan-y')).toBe(panBeforeExitY);
+
+    await click(exitButton);
+
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).toBeNull();
+  });
+
   it('keeps legacy image order while merging media metadata by href', async () => {
     const imageA = 'https://example.test/files/image-a.png';
     const sharedHref = 'https://example.test/files/shared-image.png';
