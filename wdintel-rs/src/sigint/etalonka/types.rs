@@ -83,7 +83,7 @@ pub struct NetworkEtalonkaResult {
     pub active_to: Option<NaiveDateTime>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct NetworkFreqFilter {
     pub active_freqs_only: bool,
     pub since_date_inclusive_ms: Option<i64>,

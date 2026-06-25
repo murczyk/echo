@@ -12,13 +12,14 @@ use chrono::prelude::*;
 use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use crate::config::Config;
+use crate::config::{Config, ETALONKA_GEO_SCREENSHOT_CONCURRENCY};
 use crate::rer_importer::reports::{
     cleanup_old_reports_nofail, save_report_log,
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
+use futures_util::{StreamExt, TryStreamExt};
 use sea_orm::DatabaseConnection;
 use std::path::Path;
 use std::str::FromStr;
@@ -350,6 +351,37 @@ pub struct EtalonkaEntry {
     pelengs_map: Option<Vec<u8>>,
 }
 
+struct PelengsMapJob {
+    key: EtalonkaEntryKey,
+    network_id: i64,
+    filter: NetworkFreqFilter,
+}
+
+async fn load_pelengs_maps(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    jobs: Vec<PelengsMapJob>,
+) -> Result<Vec<(EtalonkaEntryKey, Option<Vec<u8>>)>, AppError> {
+    let dbx = dbx.clone();
+    let groups = groups.to_vec();
+
+    futures_util::stream::iter(jobs)
+        .map(move |job| {
+            let dbx = dbx.clone();
+            let groups = groups.clone();
+            async move {
+                let pelengs_map =
+                    load_pelengs_map(&dbx, &groups, job.network_id, job.filter)
+                        .await
+                        .context(h!())?;
+                Ok::<_, AppError>((job.key, pelengs_map))
+            }
+        })
+        .buffer_unordered(ETALONKA_GEO_SCREENSHOT_CONCURRENCY)
+        .try_collect()
+        .await
+}
+
 pub async fn collect_etalonka_data(
     dbx: &DatabaseConnection,
     user_id: &str,
@@ -457,6 +489,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             progress.start_unit(unit_name, unit_networks.len());
         }
         let mut network_remaining = unit_networks.len();
+        let mut pelengs_map_jobs = Vec::new();
         for network in unit_networks.iter() {
             let network_id = network.id;
             if show_logs {
@@ -553,17 +586,35 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     };
                 entry.network_unit_signals = network_unit_signals;
             }
-            let pelengs_map = if include_pelengs_map {
-                load_pelengs_map(dbx, &data.groups, network_id, filter)
-                    .await
-                    .context(h!())?
-            } else {
-                None
-            };
-            entry.pelengs_map = pelengs_map;
-            data.entries.insert(key, entry);
-            if let Some(progress) = progress {
+            if include_pelengs_map {
+                pelengs_map_jobs.push(PelengsMapJob {
+                    key: key.clone(),
+                    network_id,
+                    filter,
+                });
+            } else if let Some(progress) = progress {
                 progress.inc_network();
+            }
+            data.entries.insert(key, entry);
+        }
+        if include_pelengs_map {
+            if show_logs && !pelengs_map_jobs.is_empty() {
+                info!(
+                    "[trace_id={trace_id}] rendering {} pelengs maps for unit '{unit_name}' with concurrency {}",
+                    pelengs_map_jobs.len(),
+                    ETALONKA_GEO_SCREENSHOT_CONCURRENCY,
+                );
+            }
+            let pelengs_maps =
+                load_pelengs_maps(dbx, &data.groups, pelengs_map_jobs)
+                    .await
+                    .context(h!())?;
+            for (key, pelengs_map) in pelengs_maps {
+                data.entries.get_mut(&key).context(h!())?.pelengs_map =
+                    pelengs_map;
+                if let Some(progress) = progress {
+                    progress.inc_network();
+                }
             }
         }
         if let Some(progress) = progress {

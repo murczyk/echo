@@ -3154,6 +3154,20 @@ export type AccountsRsp = {
   accounts: Array<EchoAccountF1>;
 };
 
+export type AccountStatsTimelineReq = {
+  datasourceIds: Array<number>;
+  periodHours: number | null;
+};
+
+export type AccountStatsTimelineEntry = {
+  datasourceId: number;
+  points: Array<SignalGroupStatsTimelinePoint>;
+};
+
+export type AccountStatsTimelineRsp = {
+  data: Array<AccountStatsTimelineEntry>;
+};
+
 export type IsAccountLinkedReq = {
   accountId: number;
 };

@@ -20,6 +20,7 @@ import {
   LinkAccountReq,
   LinkEchoOperatorReq,
   Login,
+  SignalGroupStatsTimelinePoint,
 } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -50,6 +51,7 @@ import { restartDatasource } from '../../services/api/admin';
 import {
   editAccount,
   getQrCode,
+  fetchAccountStatsTimeline,
   isLinked,
   linkAccount,
   linkOperator,
@@ -57,6 +59,7 @@ import {
   unlinkAccount,
 } from '../../services/api/messenger';
 import { PowerAlert } from '../../components/PowerAlert';
+import { GroupStatsTimelineCell } from '../admin-directions-neo/GroupStatsTimelineCell';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -123,6 +126,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   description: true,
   aor: true,
   status: true,
+  activityTimeline: false,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -136,7 +140,12 @@ const DEFAULT_COLUMN_ORDER = [
   'description',
   'aor',
   'status',
+  'activityTimeline',
 ];
+
+const MESSENGER_ACTIVITY_TIMELINE_COLUMN_ID = 'activityTimeline';
+const MESSENGER_ACTIVITY_PERIOD_HOURS = 24 * 90;
+const MESSENGER_ACTIVITY_DEFAULT_WINDOW_HOURS = 24 * 7;
 
 const defaultPhoneForm: PhoneForm = {
   messengerType: 'signal',
@@ -348,6 +357,82 @@ function updateAccountInList(
   );
 }
 
+function sumTimelinePoints(
+  points: SignalGroupStatsTimelinePoint[] | undefined
+): number | null {
+  if (!points || points.length === 0) return null;
+  return points.reduce((sum, point) => sum + point.count, 0);
+}
+
+function useDatasourceActivityTimeline(
+  accounts: EchoAccountF1[],
+  enabled: boolean
+) {
+  const [status, setStatus] = useState<LoadingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<Map<number, SignalGroupStatsTimelinePoint[]>>(
+    new Map()
+  );
+  const datasourceIds = useMemo(
+    () =>
+      accounts
+        .map((account) => account.id)
+        .filter((id) => id > 0)
+        .sort((left, right) => left - right),
+    [accounts]
+  );
+  const requestKey = datasourceIds.join('|');
+
+  useEffect(() => {
+    if (!enabled) {
+      setStatus('idle');
+      setError(null);
+      return;
+    }
+
+    if (datasourceIds.length === 0) {
+      setStatus('success');
+      setError(null);
+      setData(new Map());
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setStatus('loading');
+    setError(null);
+
+    fetchAccountStatsTimeline(
+      {
+        datasourceIds,
+        periodHours: MESSENGER_ACTIVITY_PERIOD_HOURS,
+      },
+      controller.signal
+    )
+      .then((timelineRsp) => {
+        if (!active) return;
+        setData(
+          new Map(
+            timelineRsp.data.map((entry) => [entry.datasourceId, entry.points])
+          )
+        );
+        setStatus('success');
+      })
+      .catch((err) => {
+        if (!active || controller.signal.aborted) return;
+        setStatus('error');
+        setError(formatErrorMessage(err));
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [enabled, requestKey]);
+
+  return { status, error, data };
+}
+
 function getMessengerLabel(messenger: string) {
   if (messenger === 'signal') return 'Signal';
   if (messenger === 'whatsapp') return 'WhatsApp';
@@ -369,7 +454,10 @@ function MessengerIcon({ messenger }: { messenger: string }) {
   return <span title={label}>{label}</span>;
 }
 
-function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
+function useMessengerColumns(
+  timeline: ReturnType<typeof useDatasourceActivityTimeline>,
+  isLoading: boolean
+): MRT_ColumnDef<EchoAccountF1>[] {
   return useMemo(
     () => [
       {
@@ -489,8 +577,29 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         ),
         size: 140,
       },
+      {
+        header: 'Активність (час)',
+        id: MESSENGER_ACTIVITY_TIMELINE_COLUMN_ID,
+        accessorFn: (row) => sumTimelinePoints(timeline.data.get(row?.id ?? 0)),
+        Cell: ({ row }) => {
+          if (isLoading || !row.original?.id || row.original.id < 0) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          return (
+            <GroupStatsTimelineCell
+              points={timeline.data.get(row.original.id) ?? []}
+              status={timeline.status}
+              error={timeline.error}
+              periodHours={MESSENGER_ACTIVITY_PERIOD_HOURS}
+              defaultWindowHours={MESSENGER_ACTIVITY_DEFAULT_WINDOW_HOURS}
+            />
+          );
+        },
+        enableColumnFilter: false,
+        size: 260,
+      },
     ],
-    []
+    [isLoading, timeline.data, timeline.error, timeline.status]
   );
 }
 
@@ -563,8 +672,14 @@ type MessengerAccountsTableProps = {
 const defaultMRTOptions = getDefaultMRTOptions<EchoAccountF1>();
 
 function MessengerAccountsTable(props: MessengerAccountsTableProps) {
-  const columns = useMessengerColumns();
   const tableStateContext = useTableStateContext();
+  const isActivityTimelineVisible =
+    tableStateContext.columnVisibility[MESSENGER_ACTIVITY_TIMELINE_COLUMN_ID] === true;
+  const timeline = useDatasourceActivityTimeline(
+    props.data,
+    isActivityTimelineVisible && !props.loading
+  );
+  const columns = useMessengerColumns(timeline, props.loading);
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
