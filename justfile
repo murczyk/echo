@@ -103,6 +103,9 @@ ssh-skhid:
 ssh-zp2:
     bash deploy/ssh-zp2.sh
 
+ssh-staging:
+    bash deploy/ssh-staging.sh
+
 # mkdir -p ~/Downloads/storage
 
 # see wdintel-py/README.md
