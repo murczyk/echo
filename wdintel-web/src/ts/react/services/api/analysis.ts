@@ -47,7 +47,7 @@ import type {
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined } from '../../utils/misc';
-import { postBytes, postJson, postVoid } from './client';
+import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import type { BgtaskStatusAndLogsRsp } from './bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
@@ -295,8 +295,31 @@ export async function fetchAnalysisCallsignInfos(callsigns: string[], options?: 
   return transformSnakeToCamel<CallsignInfoBatchRaw>(raw) ?? [];
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitReportHistoryTask(taskId: number): Promise<void> {
+  let skip = 0;
+  for (;;) {
+    const rsp = await fetchReportHistoryTaskStatus(taskId, skip);
+    skip += rsp.loglines.length;
+    if (!rsp.running) {
+      if (rsp.finishedWithError !== null) throw new Error(rsp.finishedWithError);
+      return;
+    }
+    await sleep(2000);
+  }
+}
+
+async function launchAndDownloadReportTask(launchTask: () => Promise<number>): Promise<Blob> {
+  const taskId = await launchTask();
+  await waitReportHistoryTask(taskId);
+  return downloadReportHistory(taskId);
+}
+
 export async function downloadAnalysisReport(req: ReportPreviewReq): Promise<Blob> {
-  return postBytes('/api/rer/report-docx', reportPreviewReqBody(req));
+  return launchAndDownloadReportTask(() => launchAnalysisReportTask(req));
 }
 
 export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<number> {
@@ -321,7 +344,7 @@ export async function editAnalysisFreqUnitName(req: EditFreqUnitNameReq): Promis
 }
 
 export async function downloadAnalysisSummaryTableXlsx(req: AnalysisStatsReq): Promise<Blob> {
-  return postBytes('/api/rer/analysis/summary-table.xlsx', analysisStatsReqBody(req) as JsonValue);
+  return launchAndDownloadReportTask(() => launchAnalysisSummaryTableTask(req));
 }
 
 export async function launchAnalysisSummaryTableTask(req: AnalysisStatsReq): Promise<number> {
@@ -329,7 +352,7 @@ export async function launchAnalysisSummaryTableTask(req: AnalysisStatsReq): Pro
 }
 
 export async function downloadAnalysisKmz(req: AnalysisStatsReq): Promise<Blob> {
-  return postBytes('/api/rer/analysis/download-kmz', analysisStatsReqBody(req) as JsonValue);
+  return launchAndDownloadReportTask(() => launchAnalysisKmzTask(req));
 }
 
 export async function launchAnalysisKmzTask(req: AnalysisStatsReq): Promise<number> {
@@ -337,7 +360,7 @@ export async function launchAnalysisKmzTask(req: AnalysisStatsReq): Promise<numb
 }
 
 export async function downloadAnalysisGeojson(req: AnalysisStatsReq): Promise<Blob> {
-  return postBytes('/api/rer/analysis/download-geojson', analysisStatsReqBody(req) as JsonValue);
+  return launchAndDownloadReportTask(() => launchAnalysisGeojsonTask(req));
 }
 
 export async function launchAnalysisGeojsonTask(req: AnalysisStatsReq): Promise<number> {

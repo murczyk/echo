@@ -6,8 +6,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { postBytes, postJson } from './client';
 import {
   downloadNetworkEtalonkaReportTaskResult,
-  downloadNetworkEtalonkaReport,
-  downloadNetworksEtalonkaReport,
   addFreqToNetworkV2,
   getNetworksList,
   getNetworkCallsignRelationMessages,
@@ -32,129 +30,6 @@ describe('networks API etalonka report download', () => {
   beforeEach(() => {
     postJsonMock.mockReset();
     postBytesMock.mockReset();
-  });
-
-  it('preserves the standard enum tag when encoding the batch request', async () => {
-    postBytesMock.mockResolvedValueOnce(new Blob(['ok']));
-
-    await downloadNetworkEtalonkaReport({
-      networkIds: [5],
-      sortBy: null,
-      etalonkaType: {
-        AccordingToTheForm: {
-          activeFreqsOnly: true,
-          includeSigintSigns: true,
-          includeConfirmation: false,
-        },
-      },
-    });
-
-    expect(postBytesMock).toHaveBeenCalledWith(
-      '/api/sigint/etalonka/report-networks-batch-id',
-      expect.objectContaining({
-        network_ids: [5],
-        sort_by: null,
-        etalonka_type: {
-          AccordingToTheForm: {
-            active_freqs_only: true,
-            include_sigint_signs: true,
-            include_confirmation: false,
-          },
-        },
-      }),
-    );
-  });
-
-  it('preserves the enum tag when encoding the batch request', async () => {
-    postBytesMock.mockResolvedValueOnce(new Blob(['ok']));
-
-    await downloadNetworkEtalonkaReport({
-      networkIds: [9],
-      sortBy: null,
-      etalonkaType: {
-        ExtendedReport: {
-          sinceDateInclusiveMs: 1,
-          tillDateInclusiveMs: 2,
-          activeFreqsOnly: false,
-          includeUnitCallsigns: true,
-          includeSigintSigns: false,
-          includeConfirmation: true,
-          includePelengsMap: false,
-        },
-      },
-    });
-
-    expect(postBytesMock).toHaveBeenCalledWith(
-      '/api/sigint/etalonka/report-networks-batch-id',
-      expect.objectContaining({
-        network_ids: [9],
-        sort_by: null,
-        etalonka_type: {
-          ExtendedReport: {
-            since_date_inclusive_ms: 1,
-            till_date_inclusive_ms: 2,
-            active_freqs_only: false,
-            include_unit_callsigns: true,
-            include_sigint_signs: false,
-            include_confirmation: true,
-            include_pelengs_map: false,
-          },
-        },
-      }),
-    );
-  });
-
-  it('encodes the filtered report request with the classic report endpoint', async () => {
-    postBytesMock.mockResolvedValueOnce(new Blob(['ok']));
-
-    await downloadNetworksEtalonkaReport({
-      req: {
-        filterFreq: null,
-        filterUnit: '3 АК',
-        filterText: 'alpha',
-        filterName: 'Alpha',
-        filterLocation: 'Kyiv',
-        showOnlyFurtherInverstigation: true,
-        showInactive: null,
-        showOnlyDeleted: null,
-        statusFilter: 'ListNetworksActive',
-        aorIds: [1, -1],
-        ids: null,
-        limit: null,
-        offset: null,
-        sortBy: ['NameAsc'],
-      },
-      etalonkaType: {
-        AccordingToTheForm: {
-          activeFreqsOnly: true,
-          includeSigintSigns: true,
-          includeConfirmation: false,
-        },
-      },
-    });
-
-    expect(postBytesMock).toHaveBeenCalledWith(
-      '/api/sigint/etalonka/report-networks',
-      expect.objectContaining({
-        req: expect.objectContaining({
-          filter_text: 'alpha',
-          filter_unit: '3 АК',
-          filter_name: 'Alpha',
-          filter_location: 'Kyiv',
-          show_only_further_inverstigation: true,
-          status_filter: 'ListNetworksActive',
-          aor_ids: [1, -1],
-          sort_by: ['NameAsc'],
-        }),
-        etalonka_type: {
-          AccordingToTheForm: {
-            active_freqs_only: true,
-            include_sigint_signs: true,
-            include_confirmation: false,
-          },
-        },
-      }),
-    );
   });
 
   it('launches the filtered etalonka report task with the same payload as the classic endpoint', async () => {

@@ -6,16 +6,10 @@ use crate::sigint::network::types::{NetworkDescrType, NetworkDescription};
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
-use actix_web::web::Json;
-use actix_web::{post, HttpRequest, HttpResponse};
-use chrono::prelude::*;
 use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::config::{Config, ETALONKA_GEO_SCREENSHOT_CONCURRENCY};
-use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, save_report_log,
-};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
@@ -175,112 +169,6 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
     )
     .await
     .c(h!())?)
-}
-
-/// Generate etalonka report for filtered set of networks
-#[post("/api/sigint/etalonka/report-networks")]
-pub async fn report_networks(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
-    req: Json<EtalonkaJimForksReq>,
-) -> Result<HttpResponse, AppError> {
-    let trace_id = Uuid::new_v4();
-    info!("[trace_id={trace_id}] Etalon Networks report: Started report generation...");
-
-    let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let req = req.into_inner();
-    info!("[trace_id={trace_id}] Etalon Networks report collected network data, querying report data...");
-
-    let filename =
-        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
-
-    let etalonka_data =
-        bl_etalonka_report_networks_data(&env.dbx, &user_login, &req, trace_id)
-            .await
-            .context(h!())?;
-    info!("[trace_id={trace_id}] Etalon Networks report: collected report data, building a report...");
-
-    let outpath = generate_networks_docx_report(
-        &filename,
-        &req.etalonka_type,
-        etalonka_data,
-        &env.config,
-    )
-    .await
-    .context(h!())?;
-    info!("[trace_id={trace_id}] Etalon Networks report: saving report log...");
-
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks report: Done");
-    Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
-}
-
-/// Generate etalonka report for list of network by their ids
-#[post("/api/sigint/etalonka/report-networks-batch-id")]
-pub async fn report_networks_batch_id(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
-    req: Json<EtalonkaNetworkBatchReq>,
-) -> Result<HttpResponse, AppError> {
-    let trace_id = Uuid::new_v4();
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Started report generation...");
-
-    let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected network data, querying report data...");
-    let req = req.into_inner();
-
-    let filename =
-        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
-
-    let etalonka_data = bl_etalonka_report_networks_batch_id_data(
-        &env.dbx,
-        &user_login,
-        &req,
-        trace_id,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected report data, building a report...");
-    let outpath = generate_networks_docx_report(
-        &filename,
-        &req.etalonka_type,
-        etalonka_data,
-        &env.config,
-    )
-    .await
-    .context(h!())?;
-
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Done");
-
-    Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
 }
 
 //  All the docx generation logic for etalonka report
@@ -2003,7 +1891,7 @@ mod tests {
     use crate::entities::*;
     use crate::functest::tests::*;
     use crate::sigint::network::types::ListNetworksReq;
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
     use sea_orm::ActiveValue::Set;
     use sea_orm::*;
     use serde_json::json;
