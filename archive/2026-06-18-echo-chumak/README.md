@@ -145,6 +145,8 @@ python3 test_chumak.py submit-message
 
 `full_body` зберігається як повний текст/додатковий опис повідомлення. Поля `checked`, `extended_form`, `date`, `time` і batch-обгортка `messages` у v1.1 не використовуються.
 
+Також у v1.1 не передавайте `callsigns_alg2`, `images`, `image_recognized`, `media` і `post_id`: Chumak integration їх не мапить. Для поста передавайте текстове поле `post`, а внутрішній `post_id` Echo визначає самостійно.
+
 Echo синхронно створює `signal_message`, inbox item і повертає власний opaque string ID повідомлення. Не розбирайте його як число: значення може містити літери.
 
 Приклад response payload для успішного запиту:

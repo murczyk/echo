@@ -451,19 +451,11 @@ pub struct InboxSubmitItem {
     pub message_id: Option<String>,
     pub text: String,
     #[serde(default)]
-    pub media: Vec<MessageMediaInfo>,
-    #[serde(default)]
-    pub images: Vec<String>,
-    #[serde(default)]
-    pub image_recognized: Vec<String>,
-    #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
     pub coords: Option<SubmitCoordinates>,
     #[serde(default)]
     pub callsigns: Vec<String>,
-    #[serde(default)]
-    pub callsigns_alg2: Vec<String>,
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
     pub timestamp: String,
     #[serde(default)]
@@ -472,8 +464,6 @@ pub struct InboxSubmitItem {
     pub full_body: Option<String>,
     #[serde(default)]
     pub post: Option<String>,
-    #[serde(default)]
-    pub post_id: Option<i64>,
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
@@ -495,18 +485,13 @@ impl Default for InboxSubmitItem {
         Self {
             message_id: None,
             text: String::new(),
-            media: vec![],
-            images: vec![],
-            image_recognized: vec![],
             freq: None,
             coords: None,
             callsigns: vec![],
-            callsigns_alg2: vec![],
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
             full_body: None,
             post: None,
-            post_id: None,
             unit: None,
             location: None,
             group_names: None,
@@ -534,6 +519,11 @@ impl<'de> Deserialize<'de> for InboxSubmitItem {
                 "extended_form",
                 "date",
                 "time",
+                "media",
+                "images",
+                "image_recognized",
+                "callsigns_alg2",
+                "post_id",
             ] {
                 if object.contains_key(field) {
                     return Err(de::Error::custom(format!(
@@ -547,18 +537,13 @@ impl<'de> Deserialize<'de> for InboxSubmitItem {
         Ok(Self {
             message_id: item.message_id,
             text: item.text,
-            media: item.media,
-            images: item.images,
-            image_recognized: item.image_recognized,
             freq: item.freq,
             coords: item.coords,
             callsigns: item.callsigns,
-            callsigns_alg2: item.callsigns_alg2,
             timestamp: item.timestamp,
             sender: item.sender,
             full_body: item.full_body,
             post: item.post,
-            post_id: item.post_id,
             unit: item.unit,
             location: item.location,
             group_names: item.group_names,
@@ -576,19 +561,11 @@ struct InboxSubmitItemDeserialize {
     message_id: Option<String>,
     pub text: String,
     #[serde(default)]
-    media: Vec<MessageMediaInfo>,
-    #[serde(default)]
-    images: Vec<String>,
-    #[serde(default)]
-    image_recognized: Vec<String>,
-    #[serde(default)]
     freq: Option<String>,
     #[serde(default)]
     coords: Option<SubmitCoordinates>,
     #[serde(default)]
     callsigns: Vec<String>,
-    #[serde(default)]
-    callsigns_alg2: Vec<String>,
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
     timestamp: String,
     #[serde(default)]
@@ -597,8 +574,6 @@ struct InboxSubmitItemDeserialize {
     full_body: Option<String>,
     #[serde(default)]
     post: Option<String>,
-    #[serde(default)]
-    post_id: Option<i64>,
     #[serde(default)]
     unit: Option<String>,
     #[serde(default)]
@@ -1823,6 +1798,11 @@ mod tests {
             "extended_form",
             "date",
             "time",
+            "media",
+            "images",
+            "image_recognized",
+            "callsigns_alg2",
+            "post_id",
         ] {
             let mut item = serde_json::Map::new();
             item.insert("text".to_string(), json!("рос абонент ЯРУС"));

@@ -666,15 +666,15 @@ fn generic_submit_item_to_inbox_message(
     let message = InboxMessage {
         message_uid: None,
         text: item.text.clone(),
-        media: item.media.clone(),
-        images: item.images.clone(),
-        image_recognized: item.image_recognized.clone(),
+        media: vec![],
+        images: vec![],
+        image_recognized: vec![],
         date: Some(date),
         time: Some(time),
         freq: item.freq.clone(),
         coords: item.coords.clone().map(format_submit_coordinates),
         callsigns: item.callsigns.clone(),
-        callsigns_alg2: item.callsigns_alg2.clone(),
+        callsigns_alg2: vec![],
         checked: true,
         important: false,
         bookmarked: false,
@@ -683,7 +683,7 @@ fn generic_submit_item_to_inbox_message(
         sender: item.sender.clone(),
         extended_form: item.full_body.clone(),
         post: item.post.clone(),
-        post_id: item.post_id,
+        post_id: None,
         unit: item.unit.clone(),
         callsign_tokens: None,
         signal_tokens: None,
@@ -1925,6 +1925,7 @@ mod tests {
             integration: Some("generic".to_string()),
             network: None,
             dmr: vec![],
+            ..Default::default()
         }
     }
 
@@ -2216,6 +2217,7 @@ mod tests {
                 ),
             }),
             dmr: vec![primary, next],
+            ..Default::default()
         };
         let txn = env.dbx.begin().await.unwrap();
 
