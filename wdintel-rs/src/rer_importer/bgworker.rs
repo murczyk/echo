@@ -9,14 +9,15 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
-    redis: &mut redis::aio::ConnectionManager,
     message_id: i64,
     m_created_at: Option<(String, String)>,
-) where
+) -> Vec<i64>
+where
     C: ConnectionTrait + 'async_trait,
 {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
+    let mut changed_inbox_item_ids = vec![];
     while !recs.is_empty() {
         let Some(message_id) = recs.pop() else {
             break;
@@ -28,7 +29,6 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
             config,
             message_id,
             &mut cache,
-            redis,
             m_created_at.clone(),
         )
         .await
@@ -39,9 +39,18 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
                     e
                 );
             }
-            Ok(new_recs) => {
-                new_recs.iter().for_each(|rec| recs.push(*rec));
+            Ok(result) => {
+                result
+                    .spawned_message_ids
+                    .iter()
+                    .for_each(|rec| recs.push(*rec));
+                if let Some(changed_inbox_item_id) =
+                    result.changed_inbox_item_id
+                {
+                    changed_inbox_item_ids.push(changed_inbox_item_id);
+                }
             }
         }
     }
+    changed_inbox_item_ids
 }

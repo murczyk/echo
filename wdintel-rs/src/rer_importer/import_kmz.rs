@@ -250,16 +250,22 @@ pub async fn rer_delta_kmz_import_go(
             .await
             .c(h!())?;
 
-        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-            settlements.clone(),
-            dbx,
-            rq,
-            config,
+        let changed_inbox_item_ids =
+            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+                settlements.clone(),
+                dbx,
+                rq,
+                config,
+                db_message_id,
+                None,
+            )
+            .await;
+        crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
             redis,
-            db_message_id,
-            None,
+            changed_inbox_item_ids,
         )
-        .await;
+        .await
+        .c(h!())?;
         crate::sigint::worker::incoming_message_after_insert(
             dbx,
             db_message_id,

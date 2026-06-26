@@ -591,6 +591,7 @@ async fn submit_generic_inbox_item(
     let signal_message = upsert_submit_signal_message(
         txn,
         &env.config,
+        datasource.id,
         item.message_id.as_deref(),
         &message,
         timestamp,
@@ -780,6 +781,7 @@ async fn ensure_submit_group_aor(
 async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
+    datasource_id: i64,
     message_id: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -790,7 +792,14 @@ async fn upsert_submit_signal_message(
     let signal_message = match normalized_optional_string(message_id) {
         Some(message_id) => {
             let signal_message = SignalMessage::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .filter(signal_message::Column::MessageUid.eq(message_id))
+                .filter(
+                    datasource_group::Column::DatasourceId.eq(datasource_id),
+                )
                 .one(txn)
                 .await
                 .c(h!())?
@@ -1770,7 +1779,7 @@ async fn get_freq_pelengs_summary(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource_group, login, organism, sigint_inbox_item,
+        datasource, datasource_group, login, organism, sigint_inbox_item,
         sigint_inbox_item_metadata, sigint_inbox_item_point_token,
         sigint_inbox_item_tag, sigint_zone_datasource, signal_group,
         signal_message, signal_message_group, signal_message_media, tag,
@@ -2158,6 +2167,96 @@ mod tests {
             .collect::<Vec<_>>();
         sender_ids.sort();
         assert_eq!(sender_ids, vec!["110".to_string(), "111".to_string()]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_generic_submit_rejects_message_id_from_other_datasource() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let txn = env.dbx.begin().await.unwrap();
+        let other_datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                display_name: Set("Other API datasource".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(other_datasource.id)),
+                deleted: Set(false),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(other_group.master_key.clone()),
+                datasource_id: Set(other_datasource.id),
+                created_at: Set(now),
+                last_sync_at: Set(now),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let uid =
+            format!("foreign-submit-{}", now.and_utc().timestamp_millis());
+        let foreign_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                body: Set(Some("foreign body".to_string())),
+                message_uid: Set(Some(uid.clone())),
+                datasource_group_id: Set(Some(other_datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let groups = ensure_submit_groups(
+            &txn,
+            &datasource,
+            &login.login,
+            &["owned group".to_string()],
+        )
+        .await
+        .unwrap();
+        let message = InboxMessage::from(InboxInsertPayload {
+            text: "attempted overwrite".to_string(),
+            sender: Some("submitter".to_string()),
+            ..Default::default()
+        });
+
+        let err = upsert_submit_signal_message(
+            &txn,
+            &env.config,
+            datasource.id,
+            Some(&uid),
+            &message,
+            Some(now),
+            &groups,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound));
+        let foreign_message =
+            signal_message::Entity::find_by_id(foreign_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(foreign_message.body.as_deref(), Some("foreign body"));
     }
 
     async fn seed_message_with_tags(

@@ -31,6 +31,7 @@ async fn message_submit(
 
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = ensure_api_datasource(&login, &txn).await.c(h!())?;
+    let mut changed_inbox_item_ids = vec![];
     let message_uid = if datasource.enabled.unwrap_or(false) {
         let sender_id =
             ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
@@ -59,6 +60,7 @@ async fn message_submit(
                 &env.s3,
                 &txn,
                 true,
+                &mut changed_inbox_item_ids,
             )
             .await
             .c(h!())?;
@@ -84,6 +86,12 @@ async fn message_submit(
     };
 
     txn.commit().await.c(h!())?;
+    crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
+        &mut env.redis.clone(),
+        changed_inbox_item_ids,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(types::SubmitMessageRsp { message_uid }))
 }
 

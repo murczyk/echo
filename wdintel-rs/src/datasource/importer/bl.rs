@@ -486,20 +486,26 @@ pub async fn upsert_messages(
             )
             .await?;
 
-            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-                settlements.clone(),
-                &txn,
-                &rq,
-                &config,
-                &mut redis,
-                new_id,
-                m_created_at,
-            )
-            .await;
+            let changed_inbox_item_ids =
+                crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+                    settlements.clone(),
+                    &txn,
+                    &rq,
+                    &config,
+                    new_id,
+                    m_created_at,
+                )
+                .await;
             incoming_message_after_insert(&txn, new_id)
                 .await
                 .context(h!())?;
             txn.commit().await.context(h!())?;
+            crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
+                &mut redis,
+                changed_inbox_item_ids,
+            )
+            .await
+            .context(h!())?;
         }
     }
     info!("inserted {new_messages_counter} new messages");

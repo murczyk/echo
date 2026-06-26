@@ -1,6 +1,6 @@
 use crate::config::*;
 use crate::entities::*;
-use crate::event_stream::fanout;
+use crate::event_stream::fanout_mult;
 use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
@@ -8,9 +8,30 @@ use chrono::prelude::*;
 use chrono_tz::Tz;
 use sea_orm::*;
 
+pub struct ConstructInboxItemResult {
+    pub spawned_message_ids: Vec<i64>,
+    pub changed_inbox_item_id: Option<i64>,
+}
+
+impl ConstructInboxItemResult {
+    fn spawned(spawned_message_ids: Vec<i64>) -> Self {
+        Self {
+            spawned_message_ids,
+            changed_inbox_item_id: None,
+        }
+    }
+
+    fn changed(changed_inbox_item_id: i64) -> Self {
+        Self {
+            spawned_message_ids: vec![],
+            changed_inbox_item_id: Some(changed_inbox_item_id),
+        }
+    }
+}
+
 /// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
 ///
-/// It does not do any extremely-slow AI operations and such, those are done separately in TODO:link and an additional [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event is fired
+/// It does not do any extremely-slow AI operations and such, those are done separately in TODO:link.
 ///
 /// Some ofthe main tasks performed here:
 /// - extracting callsigns
@@ -21,7 +42,7 @@ use sea_orm::*;
 /// - marking important messages
 /// - setting proper signal_message.sender if possible
 /// - changing datasource_group_id if coordinates are present
-/// - firing [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event
+/// - returning changed inbox item ids for callers to fan out after commit
 pub async fn construct_inbox_item<'a, 'async_trait, C>(
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &'a C,
@@ -29,9 +50,8 @@ pub async fn construct_inbox_item<'a, 'async_trait, C>(
     config: &Config,
     message_id: i64,
     cache: &mut TopKCache<String, String>,
-    redis: &mut redis::aio::ConnectionManager,
     m_created_at: Option<(String, String)>,
-) -> Result<Vec<i64>, AppError>
+) -> Result<ConstructInboxItemResult, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -59,7 +79,7 @@ where
             .await
             .c(h!())?;
         if !spawned.is_empty() {
-            return Ok(spawned);
+            return Ok(ConstructInboxItemResult::spawned(spawned));
         }
     }
     let tz = crate::config::get_tz();
@@ -289,10 +309,6 @@ where
     .await
     .c(h!())?;
 
-    fanout_inbox_changed_and_invalidate_find_live_cache(redis, message.id)
-        .await
-        .c(h!())?;
-
     palitra_highlight_worker_job::Entity::insert(
         palitra_highlight_worker_job::ActiveModel {
             sigint_inbox_item_id: Set(message.id),
@@ -303,7 +319,7 @@ where
     .await
     .c(h!())?;
 
-    Ok(vec![])
+    Ok(ConstructInboxItemResult::changed(message.id))
 }
 
 fn extract_message_datetime(
@@ -345,17 +361,36 @@ fn extract_generic_body_datetime(
         }
     })
 }
-async fn fanout_inbox_changed_and_invalidate_find_live_cache(
+pub async fn fanout_inbox_changed_and_invalidate_find_live_cache(
     redis: &mut redis::aio::ConnectionManager,
     inbox_item_id: i64,
 ) -> Result<(), AppError> {
+    fanout_inbox_changes_and_invalidate_find_live_cache(
+        redis,
+        vec![inbox_item_id],
+    )
+    .await
+}
+
+pub async fn fanout_inbox_changes_and_invalidate_find_live_cache(
+    redis: &mut redis::aio::ConnectionManager,
+    inbox_item_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    if inbox_item_ids.is_empty() {
+        return Ok(());
+    }
     if let Err(e) =
         crate::sigint::network::invalidate_find_live_networks_cache(redis).await
     {
         warn!("failed to invalidate find-live networks cache: {:#?}", e);
     }
-    let event = EventMsg::new(EventType::ETInboxChanged(inbox_item_id));
-    fanout(redis, event).await.c(h!())?;
+    let events = inbox_item_ids
+        .into_iter()
+        .map(|inbox_item_id| {
+            EventMsg::new(EventType::ETInboxChanged(inbox_item_id))
+        })
+        .collect();
+    fanout_mult(redis, events).await.c(h!())?;
     Ok(())
 }
 
