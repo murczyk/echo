@@ -445,12 +445,39 @@ pub struct GenericInboxSubmitRsp {
     pub warnings: Vec<InboxSubmitWarning>,
 }
 
-#[derive(Debug, Default, Serialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, PartialEq, Clone)]
 pub struct InboxSubmitItem {
     #[serde(default)]
     pub message_id: Option<String>,
-    #[serde(flatten)]
-    pub payload: GenericInboxSubmitPayload,
+    pub text: String,
+    #[serde(default)]
+    pub media: Vec<MessageMediaInfo>,
+    #[serde(default)]
+    pub images: Vec<String>,
+    #[serde(default)]
+    pub image_recognized: Vec<String>,
+    #[serde(default)]
+    pub freq: Option<String>,
+    #[serde(default)]
+    pub coords: Option<SubmitCoordinates>,
+    #[serde(default)]
+    pub callsigns: Vec<String>,
+    #[serde(default)]
+    pub callsigns_alg2: Vec<String>,
+    #[serde(deserialize_with = "deserialize_rfc3339_string")]
+    pub timestamp: String,
+    #[serde(default)]
+    pub sender: Option<String>,
+    #[serde(default)]
+    pub full_body: Option<String>,
+    #[serde(default)]
+    pub post: Option<String>,
+    #[serde(default)]
+    pub post_id: Option<i64>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
     #[serde(default)]
     pub group_names: Option<Vec<String>>,
     #[serde(default)]
@@ -461,6 +488,34 @@ pub struct InboxSubmitItem {
     pub network: Option<SubmitNetwork>,
     #[serde(default)]
     pub dmr: Vec<SubmitDmrMetadata>,
+}
+
+impl Default for InboxSubmitItem {
+    fn default() -> Self {
+        Self {
+            message_id: None,
+            text: String::new(),
+            media: vec![],
+            images: vec![],
+            image_recognized: vec![],
+            freq: None,
+            coords: None,
+            callsigns: vec![],
+            callsigns_alg2: vec![],
+            timestamp: "1970-01-01T00:00:00Z".to_string(),
+            sender: None,
+            full_body: None,
+            post: None,
+            post_id: None,
+            unit: None,
+            location: None,
+            group_names: None,
+            source: None,
+            integration: None,
+            network: None,
+            dmr: vec![],
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for InboxSubmitItem {
@@ -491,7 +546,21 @@ impl<'de> Deserialize<'de> for InboxSubmitItem {
             .map_err(de::Error::custom)?;
         Ok(Self {
             message_id: item.message_id,
-            payload: item.payload,
+            text: item.text,
+            media: item.media,
+            images: item.images,
+            image_recognized: item.image_recognized,
+            freq: item.freq,
+            coords: item.coords,
+            callsigns: item.callsigns,
+            callsigns_alg2: item.callsigns_alg2,
+            timestamp: item.timestamp,
+            sender: item.sender,
+            full_body: item.full_body,
+            post: item.post,
+            post_id: item.post_id,
+            unit: item.unit,
+            location: item.location,
             group_names: item.group_names,
             source: item.source,
             integration: item.integration,
@@ -505,8 +574,35 @@ impl<'de> Deserialize<'de> for InboxSubmitItem {
 struct InboxSubmitItemDeserialize {
     #[serde(default)]
     message_id: Option<String>,
-    #[serde(flatten)]
-    payload: GenericInboxSubmitPayload,
+    pub text: String,
+    #[serde(default)]
+    media: Vec<MessageMediaInfo>,
+    #[serde(default)]
+    images: Vec<String>,
+    #[serde(default)]
+    image_recognized: Vec<String>,
+    #[serde(default)]
+    freq: Option<String>,
+    #[serde(default)]
+    coords: Option<SubmitCoordinates>,
+    #[serde(default)]
+    callsigns: Vec<String>,
+    #[serde(default)]
+    callsigns_alg2: Vec<String>,
+    #[serde(deserialize_with = "deserialize_rfc3339_string")]
+    timestamp: String,
+    #[serde(default)]
+    sender: Option<String>,
+    #[serde(default)]
+    full_body: Option<String>,
+    #[serde(default)]
+    post: Option<String>,
+    #[serde(default)]
+    post_id: Option<i64>,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    location: Option<String>,
     #[serde(default)]
     group_names: Option<Vec<String>>,
     #[serde(default)]
@@ -517,61 +613,6 @@ struct InboxSubmitItemDeserialize {
     network: Option<SubmitNetwork>,
     #[serde(default)]
     dmr: Vec<SubmitDmrMetadata>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct GenericInboxSubmitPayload {
-    pub text: String,
-    #[serde(default)]
-    pub media: Vec<MessageMediaInfo>,
-    #[serde(default)]
-    pub images: Vec<String>,
-    #[serde(default)]
-    pub image_recognized: Vec<String>,
-    #[serde(default)]
-    pub freq: Option<String>,
-    #[serde(default)]
-    pub coords: Option<SubmitCoordinates>,
-    #[serde(default)]
-    pub callsigns: Vec<String>,
-    #[serde(default)]
-    pub callsigns_alg2: Vec<String>,
-    #[serde(deserialize_with = "deserialize_rfc3339_string")]
-    pub timestamp: String,
-    #[serde(default)]
-    pub sender: Option<String>,
-    #[serde(default)]
-    pub full_body: Option<String>,
-    #[serde(default)]
-    pub post: Option<String>,
-    #[serde(default)]
-    pub post_id: Option<i64>,
-    #[serde(default)]
-    pub unit: Option<String>,
-    #[serde(default)]
-    pub location: Option<String>,
-}
-
-impl Default for GenericInboxSubmitPayload {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            media: vec![],
-            images: vec![],
-            image_recognized: vec![],
-            freq: None,
-            coords: None,
-            callsigns: vec![],
-            callsigns_alg2: vec![],
-            timestamp: "1970-01-01T00:00:00Z".to_string(),
-            sender: None,
-            full_body: None,
-            post: None,
-            post_id: None,
-            unit: None,
-            location: None,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1734,19 +1775,16 @@ mod tests {
         let item: InboxSubmitItem = serde_json::from_value(item_json).unwrap();
 
         assert_eq!(item.message_id.as_deref(), Some("msg-a1208-6734-2879"));
+        assert_eq!(item.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026");
+        assert_eq!(item.freq.as_deref(), Some("145.0260"));
         assert_eq!(
-            item.payload.text,
-            "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026"
-        );
-        assert_eq!(item.payload.freq.as_deref(), Some("145.0260"));
-        assert_eq!(
-            item.payload.coords,
+            item.coords,
             Some(SubmitCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
             })
         );
-        assert_eq!(item.payload.full_body.as_deref(), Some("Сигнали: dmr"));
+        assert_eq!(item.full_body.as_deref(), Some("Сигнали: dmr"));
         assert_eq!(item.group_names, Some(vec!["SC1".to_string()]));
         assert_eq!(item.source.as_deref(), Some("chumak"));
         assert_eq!(item.dmr[0].sender_id, Some(2_977_001));
@@ -1938,7 +1976,7 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(req.payload.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ");
+        assert_eq!(req.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ");
         assert_eq!(req.group_names, Some(vec!["SC1".into()]));
         assert_eq!(req.dmr[0].sender_id, Some(110));
         assert_eq!(req.dmr[0].call_group_id, Some(50));

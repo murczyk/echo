@@ -578,25 +578,15 @@ async fn submit_generic_inbox_item(
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
     validate_generic_submit_item(&item)?;
-    let InboxSubmitItem {
-        message_id,
-        payload,
-        group_names,
-        source: _,
-        integration: _,
-        network,
-        dmr,
-    } = item;
     let groups = ensure_submit_groups(
         txn,
         datasource,
         login,
-        group_names.as_deref().unwrap_or(&[]),
+        item.group_names.as_deref().unwrap_or(&[]),
     )
     .await
     .c(h!())?;
-    let (mut message, timestamp) =
-        generic_submit_payload_to_inbox_message(payload)?;
+    let (mut message, timestamp) = generic_submit_item_to_inbox_message(&item)?;
     let post = normalized_optional_string(message.post.as_deref());
     let post_id = match message.post_id {
         Some(post_id) => Some(post_id),
@@ -613,7 +603,7 @@ async fn submit_generic_inbox_item(
         txn,
         &env.config,
         datasource.id,
-        message_id.as_deref(),
+        item.message_id.as_deref(),
         &message,
         Some(timestamp),
         &groups,
@@ -631,6 +621,7 @@ async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    let InboxSubmitItem { network, dmr, .. } = item;
     let warnings =
         save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
             .await
@@ -646,7 +637,7 @@ async fn submit_generic_inbox_item(
 fn validate_generic_submit_item(
     item: &InboxSubmitItem,
 ) -> Result<(), AppError> {
-    if item.payload.text.trim().is_empty() {
+    if item.text.trim().is_empty() {
         return Err(AppError::BL {
             msg: "Inbox submit requires message text".to_string(),
         });
@@ -666,34 +657,34 @@ fn validate_generic_submit_item(
     Ok(())
 }
 
-fn generic_submit_payload_to_inbox_message(
-    payload: GenericInboxSubmitPayload,
+fn generic_submit_item_to_inbox_message(
+    item: &InboxSubmitItem,
 ) -> Result<(InboxMessage, NaiveDateTime), AppError> {
     let timestamp =
-        parse_submit_rfc3339_timestamp("timestamp", &payload.timestamp)?;
+        parse_submit_rfc3339_timestamp("timestamp", &item.timestamp)?;
     let (date, time) = format_submit_date_time_fields(timestamp);
     let message = InboxMessage {
         message_uid: None,
-        text: payload.text,
-        media: payload.media,
-        images: payload.images,
-        image_recognized: payload.image_recognized,
+        text: item.text.clone(),
+        media: item.media.clone(),
+        images: item.images.clone(),
+        image_recognized: item.image_recognized.clone(),
         date: Some(date),
         time: Some(time),
-        freq: payload.freq,
-        coords: payload.coords.map(format_submit_coordinates),
-        callsigns: payload.callsigns,
-        callsigns_alg2: payload.callsigns_alg2,
+        freq: item.freq.clone(),
+        coords: item.coords.clone().map(format_submit_coordinates),
+        callsigns: item.callsigns.clone(),
+        callsigns_alg2: item.callsigns_alg2.clone(),
         checked: true,
         important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         group_master_key: None,
-        sender: payload.sender,
-        extended_form: payload.full_body,
-        post: payload.post,
-        post_id: payload.post_id,
-        unit: payload.unit,
+        sender: item.sender.clone(),
+        extended_form: item.full_body.clone(),
+        post: item.post.clone(),
+        post_id: item.post_id,
+        unit: item.unit.clone(),
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,
@@ -701,7 +692,7 @@ fn generic_submit_payload_to_inbox_message(
         keyword_tokens: None,
         text_marked: None,
         datasource_id: None,
-        location: payload.location,
+        location: item.location.clone(),
         tags: None,
         network_ids: None,
         inbox_tags: None,
@@ -1925,13 +1916,10 @@ mod tests {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
             message_id: None,
-            payload: GenericInboxSubmitPayload {
-                text: "generic datasource gate".to_string(),
-                timestamp: submit_timestamp(now),
-                sender: Some("generic submit".to_string()),
-                post: Some("SC1".to_string()),
-                ..Default::default()
-            },
+            text: "generic datasource gate".to_string(),
+            timestamp: submit_timestamp(now),
+            sender: Some("generic submit".to_string()),
+            post: Some("SC1".to_string()),
             group_names: Some(vec!["SC1".to_string()]),
             source: Some("test".to_string()),
             integration: Some("generic".to_string()),
@@ -2056,10 +2044,7 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_requires_group_names() {
         let item = InboxSubmitItem {
-            payload: GenericInboxSubmitPayload {
-                text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
-                ..Default::default()
-            },
+            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
             group_names: Some(vec![" ".to_string()]),
             ..Default::default()
         };
@@ -2070,10 +2055,7 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_rejects_missing_message_text() {
         let item = InboxSubmitItem {
-            payload: GenericInboxSubmitPayload {
-                text: " ".to_string(),
-                ..Default::default()
-            },
+            text: " ".to_string(),
             group_names: Some(vec!["SC1".to_string()]),
             ..Default::default()
         };
@@ -2209,20 +2191,17 @@ mod tests {
         next.hash_id = Some("ABCDEF01".to_string());
         let item = InboxSubmitItem {
             message_id: None,
-            payload: GenericInboxSubmitPayload {
-                text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
-                freq: Some("145.02678".to_string()),
-                coords: Some(SubmitCoordinates {
-                    lat: 49.12345,
-                    lon: 37.12345,
-                }),
-                callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
-                timestamp: submit_timestamp(now),
-                sender: Some("generic submit".to_string()),
-                full_body: Some("Сигнали: dmr".to_string()),
-                post: Some("SC1".to_string()),
-                ..Default::default()
-            },
+            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            freq: Some("145.02678".to_string()),
+            coords: Some(SubmitCoordinates {
+                lat: 49.12345,
+                lon: 37.12345,
+            }),
+            callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
+            timestamp: submit_timestamp(now),
+            sender: Some("generic submit".to_string()),
+            full_body: Some("Сигнали: dmr".to_string()),
+            post: Some("SC1".to_string()),
             group_names: Some(vec![
                 "SC1".to_string(),
                 "Чумак DMR Резерв".to_string(),
