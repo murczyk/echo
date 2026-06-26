@@ -39,6 +39,7 @@ pub mod signal;
 pub mod source;
 pub mod types;
 pub mod unit;
+pub mod unit_machine;
 pub mod worker;
 pub mod zone;
 

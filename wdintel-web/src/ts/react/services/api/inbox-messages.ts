@@ -199,6 +199,7 @@ function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][numbe
     masterKey: (g.masterKey ?? g.master_key ?? '') as string,
     name: (g.name ?? '') as string,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
+    isRer: (raw.isRer ?? raw.is_rer ?? true) as boolean,
     groupStats: groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,
     areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null) as AreaOfResponsibility[] | null,

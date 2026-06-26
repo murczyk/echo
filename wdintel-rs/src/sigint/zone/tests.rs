@@ -184,6 +184,7 @@ async fn test_bl_szd_group_update_01() {
     let req = ZoneDatasourceGroupUpdateReq {
         id: szd.id,
         is_secret: false,
+        is_rer: None,
         user_logins: vec![],
         admin_logins: vec![],
         short_note: None,

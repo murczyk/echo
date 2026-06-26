@@ -25,6 +25,7 @@ type Msg
     | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
+    | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotChangelogIndex (Result ApiError (List ChangelogReleaseMeta))
     | GotChangelogLatest (Result ApiError ChangelogReleasePage)
     | SetThemeMode ThemeMode

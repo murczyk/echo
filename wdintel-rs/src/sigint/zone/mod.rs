@@ -129,6 +129,7 @@ pub async fn zones_datasources_group_update(
         sigint_zone_datasource_id: szd.id,
         group_master_key: szd.group_master_key,
         is_group_secret: rsp.is_secret,
+        is_rer: rsp.is_rer,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -201,6 +202,8 @@ pub async fn zones_datasources_group_add(
     .remove(&szd.group_master_key)
     .unwrap_or_default();
 
+    let group_master_key = szd.group_master_key.clone();
+
     // Fetch the group name and notes
     let group_name = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
@@ -213,6 +216,39 @@ pub async fn zones_datasources_group_add(
         .await
         .c(h!())?
         .flatten();
+    if crate::system_settings::support_non_rer_interceptions_enabled(&txn)
+        .await
+        .c(h!())?
+    {
+        if let Some(is_rer) = req.is_rer {
+            if let Some(group) =
+                signal_group::Entity::find_by_id(group_master_key.clone())
+                    .one(&txn)
+                    .await
+                    .c(h!())?
+            {
+                if group.is_rer != is_rer {
+                    let mut group = group.into_active_model();
+                    group.is_rer = Set(is_rer);
+                    group.update(&txn).await.c(h!())?;
+                    crate::sigint::unit_machine::enqueue_recent_unit_machine_recalculation_for_group(
+                        &txn,
+                        &group_master_key,
+                    )
+                    .await
+                    .c(h!())?;
+                }
+            }
+        }
+    }
+    let is_rer = signal_group::Entity::find_by_id(group_master_key.clone())
+        .select_only()
+        .column(signal_group::Column::IsRer)
+        .into_tuple::<bool>()
+        .one(&txn)
+        .await
+        .c(h!())?
+        .unwrap_or(true);
 
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
@@ -229,7 +265,6 @@ pub async fn zones_datasources_group_add(
         .c(h!())?
         .unwrap_or((None, None));
 
-    let group_master_key = szd.group_master_key.clone();
     let areas_of_responsibility =
         collect_group_aors(vec![group_master_key.clone()], &env.dbx)
             .await
@@ -247,6 +282,7 @@ pub async fn zones_datasources_group_add(
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
+            is_rer,
             areas_of_responsibility,
             group_master_key,
             allowed_users,

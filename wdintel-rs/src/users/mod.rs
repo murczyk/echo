@@ -89,6 +89,10 @@ pub async fn has_any_role(
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"UnitsEditor".to_string())
             }
+            "NetworkEditor" => {
+                roles.contains(&"Admin".to_string())
+                    || roles.contains(&"NetworkEditor".to_string())
+            }
             "CallsignsEditor" => {
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"CallsignsEditor".to_string())
