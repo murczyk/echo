@@ -128,14 +128,14 @@ export const converterSubs: Menu[] = [
   },
   {
     type: "item",
-    link: { type: "internal", path: "/csv2kmz" },
-    activeName: "csv2kmz",
+    link: { type: "internal", path: "/delta-csv2kmz" },
+    activeName: "delta-csv2kmz",
     label: "Delta CSV в KMZ",
   },
   {
     type: "item",
-    link: { type: "internal", path: "/kmz2geojson" },
-    activeName: "kmz2geojson",
+    link: { type: "internal", path: "/delta" },
+    activeName: "delta",
     label: "KMZ в GeoJSON",
   },
   {
@@ -185,14 +185,14 @@ export const adminSubs: Menu[] = [
   },
   {
     type: "item",
-    link: { type: "internal", path: "/admin/zones" },
-    activeName: "zones",
+    link: { type: "internal", path: "/admin/directions-neo" },
+    activeName: "directions-neo",
     label: "Напрямки",
   },
   {
     type: "item",
-    link: { type: "internal", path: "/admin/location-config-neo" },
-    activeName: "location-config-neo",
+    link: { type: "internal", path: "/admin/location-configs-neo" },
+    activeName: "location-configs-neo",
     label: "Населені пункти AOR",
   },
   {
