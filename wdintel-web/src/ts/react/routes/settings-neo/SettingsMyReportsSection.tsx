@@ -1,6 +1,5 @@
 import DownloadIcon from '@mui/icons-material/DownloadOutlined';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import {
@@ -12,28 +11,23 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  MenuItem,
   Stack,
   Typography,
-  DialogContentText,
   Tooltip,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { type MRT_ColumnDef, type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
 import { cancelReportHistory, downloadReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
-import { PowerIconButton } from '../../components/PowerIconButton';
-import { PowerMenu } from '../../components/PowerMenu';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
-import { parseUtcDateTime } from '../../services/api/report-history';
 import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
@@ -232,8 +226,12 @@ function formatReportProgress(progress: number): string {
   return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
 }
 
+export function isCancelledReport(row: Pick<ReportHistoryRow, 'status' | 'lastError'>): boolean {
+  return row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем');
+}
+
 function formatReportStatus(row: ReportHistoryRow): string {
-  if (row.status === 'failed' && row.lastError === 'Скасовано користувачем') {
+  if (isCancelledReport(row)) {
     return 'Скасовано';
   }
   if (row.status === 'planned' && row.blockedByReportId != null) {
@@ -271,18 +269,9 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
 
 export const REPORT_CANCEL_RUNNING_WARNING =
   'Звіт буде скасовано в черзі. Якщо зараз виконується довгий запит, він може завершитись перед повною зупинкою.';
-const REPORT_CANCEL_THRESHOLD_MS = 5 * 60 * 1000;
-
-function getReportElapsedMs(row: ReportHistoryRow): number | null {
-  const startedAt = parseUtcDateTime(row.startedAt ?? row.createdAt);
-  return startedAt === null ? null : Date.now() - startedAt.getTime();
-}
 
 function canCancelReport(row: ReportHistoryRow): boolean {
-  if (row.status === 'planned') return true;
-  if (row.status !== 'in_progress') return false;
-  const elapsedMs = getReportElapsedMs(row);
-  return elapsedMs !== null && elapsedMs >= REPORT_CANCEL_THRESHOLD_MS;
+  return row.status === 'planned' || row.status === 'in_progress';
 }
 
 function ReportHistoryRowActions({
@@ -296,80 +285,23 @@ function ReportHistoryRowActions({
   onRetry: (row: ReportHistoryRow) => void;
   onCancel: (row: ReportHistoryRow) => void;
 }) {
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const menuOpen = Boolean(anchorEl);
-  const actions: Array<{ label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; tone?: 'default' | 'warning' | 'danger' }> = [];
-
-  if (row.status === 'done' && row.hasFile) {
-    actions.push({
-      label: 'Завантажити',
-      icon: <DownloadIcon fontSize="small" />,
-      onClick: () => onDownload(row),
-    });
-  }
-
-  if (row.status === 'failed') {
-    actions.push({
-      label: 'Повторити',
-      icon: <ReplayIcon fontSize="small" />,
-      onClick: () => onRetry(row),
-      tone: 'warning',
-    });
-  }
-
-  if (canCancelReport(row)) {
-    actions.push({
-      label: 'Скасувати',
-      icon: <CancelOutlinedIcon fontSize="small" />,
-      onClick: () => onCancel(row),
-      tone: 'danger',
-    });
-  }
-
-  if (actions.length === 0) {
+  const hasActions = (row.status === 'done' && row.hasFile) || row.status === 'failed' || canCancelReport(row);
+  if (!hasActions) {
     return null;
   }
 
   return (
-    <>
-      <Tooltip title="Дії">
-        <span>
-          <PowerIconButton
-            size="small"
-            aria-label="Дії"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen ? 'true' : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              setAnchorEl(event.currentTarget);
-            }}
-          >
-            <MoreVertIcon fontSize="small" />
-          </PowerIconButton>
-        </span>
-      </Tooltip>
-      <PowerMenu open={menuOpen} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
-        {actions.map((action) => (
-          <MenuItem
-            key={action.label}
-            onClick={() => {
-              setAnchorEl(null);
-              action.onClick();
-            }}
-            sx={(theme) => ({
-              ...(action.tone === 'danger'
-                ? { color: theme.palette.error.main }
-                : action.tone === 'warning'
-                  ? { color: theme.palette.warning.main }
-                  : {}),
-            })}
-          >
-            <Box sx={{ minWidth: 34, display: 'inline-flex', justifyContent: 'center', mr: 1.25 }}>{action.icon}</Box>
-            {action.label}
-          </MenuItem>
-        ))}
-      </PowerMenu>
-    </>
+    <MrtRowActions forceMenu>
+      {row.status === 'done' && row.hasFile ? (
+        <MrtRowActionButton label="Завантажити" icon={<DownloadIcon fontSize="small" />} onClick={() => onDownload(row)} />
+      ) : null}
+      {row.status === 'failed' ? (
+        <MrtRowActionButton label="Повторити" icon={<ReplayIcon fontSize="small" />} tone="warning" onClick={() => onRetry(row)} />
+      ) : null}
+      {canCancelReport(row) ? (
+        <MrtRowActionButton label="Скасувати" icon={<CancelOutlinedIcon fontSize="small" />} tone="danger" opensModal onClick={() => onCancel(row)} />
+      ) : null}
+    </MrtRowActions>
   );
 }
 
@@ -800,22 +732,17 @@ export function ReportHistoryTableSection({
           </TableStateProvider>
         </Stack>
       </Box>
-      <Dialog open={cancelRow !== null} onClose={() => setCancelRow(null)} fullWidth maxWidth="xs">
-        <DialogTitle>Скасувати звіт?</DialogTitle>
-        <DialogContent dividers>
-          <DialogContentText>
-            {cancelRow?.status === 'in_progress'
-              ? REPORT_CANCEL_RUNNING_WARNING
-              : 'Звіт буде скасовано і прибрано з черги.'}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCancelRow(null)}>Відміна</Button>
-          <Button variant="contained" color="error" onClick={() => void confirmCancelInFlightRow()}>
-            Скасувати
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDangerDialog
+        open={cancelRow !== null}
+        onClose={() => setCancelRow(null)}
+        onConfirm={() => void confirmCancelInFlightRow()}
+        title="Скасування звіту"
+        description={cancelRow?.status === 'in_progress' ? REPORT_CANCEL_RUNNING_WARNING : 'Звіт буде скасовано і прибрано з черги.'}
+        cancelLabel="Скасувати"
+        confirmLabel="Підтвердити"
+        maxWidth="xs"
+        fullWidth
+      />
       <Dialog open={errorLogRow !== null} onClose={() => setErrorLogRow(null)} fullWidth maxWidth="md">
         <DialogTitle>Помилки</DialogTitle>
         <DialogContent dividers>
