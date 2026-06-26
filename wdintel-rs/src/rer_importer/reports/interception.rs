@@ -417,7 +417,7 @@ async fn build_inbox_messages_report_sql(
                     array_to_string(
                         NULLIF(
                             array_agg(DISTINCT
-                                sigint_network_freq.kind || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
+                                sigint_network_freq.modulation || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
                             )
                             FILTER
                             (WHERE sigint_unit.name IS NOT NULL),

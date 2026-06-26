@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { EncryptionKeyData, ModulationRec } from '../../../../../Bindings';
+import type { EncryptionKeyData, EncryptionRec } from '../../../../../Bindings';
 import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -25,7 +25,7 @@ type Props = {
   error: string | null;
   networkId: number | null;
   canManageKeys: boolean;
-  modulations: ModulationRec[];
+  encryptions: EncryptionRec[];
   onClose: () => void;
   onChange: (next: NetworkFreqCreateWizardForm) => void;
   onSave: () => void;
@@ -35,7 +35,7 @@ type Props = {
 type NewKeyForm = {
   key: string;
   description: string;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 function formatKeyLabel(key: EncryptionKeyData): string {
@@ -59,7 +59,7 @@ function NetworkFreqCreateDrawerComponent({
   error,
   networkId,
   canManageKeys,
-  modulations,
+  encryptions,
   onClose,
   onChange,
   onSave,
@@ -79,7 +79,7 @@ function NetworkFreqCreateDrawerComponent({
   const [newKeyForm, setNewKeyForm] = useState<NewKeyForm>({
     key: '',
     description: '',
-    modulationId: null,
+    encryptionId: null,
   });
 
   const selectedKeys = useMemo(() => buildSelectedKeys(keys, form.encryptionKeyIds), [form.encryptionKeyIds, keys]);
@@ -92,8 +92,9 @@ function NetworkFreqCreateDrawerComponent({
   const activeToValidationError = form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
   const activeFromError = activeFromTouched ? activeFromValidationError : null;
   const activeToError = activeToTouched ? activeToValidationError : null;
+  const isDmrModulation = form.modulation.toUpperCase().startsWith('DMR');
   const saveDisabled = saving
-    || form.modulationId === null
+    || (isDmrModulation && form.encryptionId === null)
     || freqValidationError !== null
     || activeFromValidationError !== null
     || activeToValidationError !== null;
@@ -131,6 +132,7 @@ function NetworkFreqCreateDrawerComponent({
     (document.activeElement as HTMLElement | null)?.blur();
     setNewKeyOpen(false);
     setNewKeyTouched(false);
+    setNewKeyForm({ key: '', description: '', encryptionId: null });
     restoreAddNewKeyFocus();
   };
 
@@ -186,7 +188,7 @@ function NetworkFreqCreateDrawerComponent({
         key: newKeyForm.key.trim() === '' ? null : newKeyForm.key.trim(),
         keyHash: null,
         description: newKeyForm.description.trim() === '' ? null : newKeyForm.description.trim(),
-        modulationId: newKeyForm.modulationId,
+        encryptionId: newKeyForm.encryptionId,
       });
 
       setKeys((current) => {
@@ -203,7 +205,7 @@ function NetworkFreqCreateDrawerComponent({
       }
 
       closeNewKeyDialog();
-      setNewKeyForm({ key: '', description: '', modulationId: null });
+      setNewKeyForm({ key: '', description: '', encryptionId: null });
     } catch (createError) {
       setKeysError(formatErrorMessage(createError));
     } finally {
@@ -248,23 +250,23 @@ function NetworkFreqCreateDrawerComponent({
           <NetworkFreqFormFields
             mode="create"
             saving={saving}
-            kind={form.kind}
-            modulationId={form.modulationId}
+            modulation={form.modulation}
+            encryptionId={form.encryptionId}
             activeFrom={form.activeFrom}
             activeTo={form.activeTo}
             freq={form.freq}
             freqError={freqError}
             activeFromError={activeFromError}
             activeToError={activeToError}
-            onKindChange={(nextKind) => onChange({ ...form, kind: nextKind })}
-            onModulationChange={(modulationId) => onChange({ ...form, modulationId })}
+            onModulationChange={(modulation) => onChange({ ...form, modulation: modulation as 'DMR' | 'NFM' | 'AM' | '' })}
+            onEncryptionChange={(encryptionId) => onChange({ ...form, encryptionId })}
             onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
             onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
             onActiveFromBlur={() => setActiveFromTouched(true)}
             onActiveToBlur={() => setActiveToTouched(true)}
             onFreqChange={(nextValue) => onChange({ ...form, freq: nextValue })}
             onFreqBlur={() => setFreqTouched(true)}
-            modulations={modulations}
+            encryptions={encryptions}
             keysSection={(
               <NetworkFreqKeysSection
                 canManageKeys={canManageKeys}
@@ -308,8 +310,8 @@ function NetworkFreqCreateDrawerComponent({
         saving={newKeySaving}
         keyValue={newKeyForm.key}
         descriptionValue={newKeyForm.description}
-        modulationId={newKeyForm.modulationId}
-        modulationOptions={modulations}
+        encryptionId={newKeyForm.encryptionId}
+        encryptionOptions={encryptions}
         keyError={newKeyError}
         onClose={() => {
           closeNewKeyDialog();
@@ -319,7 +321,7 @@ function NetworkFreqCreateDrawerComponent({
         }}
         onKeyBlur={() => setNewKeyTouched(true)}
         onDescriptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, description: nextValue }))}
-        onModulationChange={(nextValue) => setNewKeyForm((current) => ({ ...current, modulationId: nextValue }))}
+        onEncryptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, encryptionId: nextValue }))}
         onCreate={handleCreateKey}
         createDisabled={newKeyCreateDisabled}
         disableRestoreFocus

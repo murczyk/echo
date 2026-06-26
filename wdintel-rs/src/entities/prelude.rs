@@ -42,6 +42,7 @@ pub use super::echo_whatsapp_group::Entity as EchoWhatsappGroup;
 pub use super::echo_whatsapp_profile::Entity as EchoWhatsappProfile;
 pub use super::echo_whatsapp_queue::Entity as EchoWhatsappQueue;
 pub use super::echo_whatsapp_queue_attachment::Entity as EchoWhatsappQueueAttachment;
+pub use super::encryption::Entity as Encryption;
 pub use super::enemy_units_geojson::Entity as EnemyUnitsGeojson;
 pub use super::freq_location::Entity as FreqLocation;
 pub use super::goi_association::Entity as GoiAssociation;

@@ -2,31 +2,30 @@ import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import { Box, ButtonBase, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { ModulationRec } from '../../../../../Bindings';
+import type { EncryptionRec } from '../../../../../Bindings';
 import { NetworkFreqActivityPeriodControl } from './NetworkFreqActivityPeriodControl';
 import { PowerChip } from '../../../components/PowerChip';
-import type { NetworkFreqKind } from '../use-rer-network-details-neo-page.types';
 
 type Props = {
   mode: 'create' | 'edit';
   saving: boolean;
-  kind: NetworkFreqKind;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   freq: string;
   activeFrom: string;
   activeTo: string;
   freqError?: string | null;
   activeFromError?: string | null;
   activeToError?: string | null;
-  onKindChange: (kind: NetworkFreqKind) => void;
-  onModulationChange: (modulationId: number | null) => void;
+  onModulationChange: (modulation: String) => void;
+  onEncryptionChange: (encryptionId: number | null) => void;
   onActiveFromChange: (nextValue: string) => void;
   onActiveToChange: (nextValue: string) => void;
   onActiveFromBlur?: () => void;
   onActiveToBlur?: () => void;
   onFreqChange?: (nextValue: string) => void;
   onFreqBlur?: () => void;
-  modulations: ModulationRec[];
+  encryptions: EncryptionRec[];
   keysSection: ReactNode;
 };
 
@@ -174,9 +173,9 @@ function isDmrModulationName(name: string): boolean {
   return normalized.startsWith('DMR') || normalized.includes(' DMR ') || normalized.includes(' DMR') || normalized.includes('(DMR') || normalized.includes('/DMR');
 }
 
-export function isDmrModulationId(modulations: ModulationRec[], modulationId: number | null): boolean {
+export function isDmrModulationId(encryptions: EncryptionRec[], modulationId: number | null): boolean {
   if (modulationId === null) return false;
-  const selectedModulation = modulations.find((modulation) => modulation.id === modulationId);
+  const selectedModulation = encryptions.find((modulation) => modulation.id === modulationId);
   if (!selectedModulation) return false;
   return isDmrModulationName(selectedModulation.name);
 }
@@ -184,28 +183,28 @@ export function isDmrModulationId(modulations: ModulationRec[], modulationId: nu
 export function NetworkFreqFormFields({
   mode,
   saving,
-  kind,
-  modulationId,
+  modulation,
+  encryptionId,
   freq,
   activeFrom,
   activeTo,
   freqError,
   activeFromError,
   activeToError,
-  onKindChange,
   onModulationChange,
+  onEncryptionChange,
   onActiveFromChange,
   onActiveToChange,
   onActiveFromBlur,
   onActiveToBlur,
   onFreqChange,
   onFreqBlur,
-  modulations,
+  encryptions,
   keysSection,
 }: Props) {
   const [technicalExpanded, setTechnicalExpanded] = useState(false);
   const [deviationMode, setDeviationMode] = useState<'central' | 'offset'>('central');
-  const isDmrModulation = isDmrModulationId(modulations, modulationId);
+  const isDmrModulation = modulation.toUpperCase().startsWith('DMR');
   const freqLabel = 'Частота *';
   const freqDisabled = saving || mode === 'edit';
   const deviationSelectValue = freq.trim();
@@ -217,9 +216,31 @@ export function NetworkFreqFormFields({
     }
   }, [isDmrModulation]);
 
-  const modulationItems = useMemo<ChipOption[]>(
-    () => [{ value: '', label: 'Не визначено' }, ...modulations.map((modulation) => ({ value: String(modulation.id), label: modulation.name }))],
-    [modulations],
+  useEffect(() => {
+    if (isDmrModulation) return;
+    if (modulation === '') {
+      const nezvEnc = encryptions.find((e) => e.name === 'Не визначено');
+      if (nezvEnc && encryptionId !== nezvEnc.id) onEncryptionChange(nezvEnc.id);
+    } else {
+      const bezEnc = encryptions.find((e) => e.name === 'Без шифрування');
+      if (bezEnc && encryptionId !== bezEnc.id) onEncryptionChange(bezEnc.id);
+    }
+    // Run only when modulation type changes or encryptions list loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDmrModulation, encryptions, modulation]);
+
+  const encryptionItems = useMemo<ChipOption[]>(
+    () =>
+      encryptions
+        .map((enc) => ({ value: String(enc.id), label: enc.name }))
+        .sort((a, b) => {
+          if (a.label === 'Без шифрування') return -1;
+          if (b.label === 'Без шифрування') return 1;
+          if (a.label === 'Не визначено') return -1;
+          if (b.label === 'Не визначено') return 1;
+          return 0;
+        }),
+    [encryptions],
   );
 
   return (
@@ -259,25 +280,29 @@ export function NetworkFreqFormFields({
       />
 
       <ChipChoiceGroup
-        label="Тип"
+        label="Модуляція"
         required
-        value={kind}
+        value={modulation}
         disabled={saving}
         options={[
+          { value: '', label: 'Не визначено' },
           { value: 'DMR', label: 'DMR' },
-          { value: 'DMRe', label: 'DMRe' },
           { value: 'NFM', label: 'NFM' },
+          { value: 'AM', label: 'AM' },
         ]}
-        onChange={(nextValue) => onKindChange(nextValue as NetworkFreqKind)}
+        onChange={(nextValue) => onModulationChange(nextValue as string)}
       />
 
-      <ChipChoiceGroup
-        label="Модуляція"
-        value={modulationId === null ? '' : String(modulationId)}
-        disabled={saving}
-        options={modulationItems}
-        onChange={(nextValue) => onModulationChange(nextValue === '' ? null : Number(nextValue))}
-      />
+      {isDmrModulation ? (
+        <ChipChoiceGroup
+          label="Шифрування"
+          required
+          value={encryptionId === null ? '' : String(encryptionId)}
+          disabled={saving}
+          options={encryptionItems}
+          onChange={(nextValue) => onEncryptionChange(nextValue === '' ? null : Number(nextValue))}
+        />
+      ) : null}
 
       {keysSection}
 

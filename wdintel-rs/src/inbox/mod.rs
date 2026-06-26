@@ -125,7 +125,7 @@ where
     let all_callsigns = callsigns_alg1
         .clone()
         .into_iter()
-        .chain(callsigns_alg2.clone().into_iter())
+        .chain(callsigns_alg2.clone())
         .unique()
         .collect_vec();
     let unit_and_loc = crate::unit::parser::extract_unit_with_aor(

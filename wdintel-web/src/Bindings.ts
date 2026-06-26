@@ -1820,7 +1820,7 @@ export type EncryptionKeyData = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type ListKeysReq = {
@@ -1837,7 +1837,7 @@ export type CreateEncryptionKeyReq = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type UpdateEncryptionKeyReq = {
@@ -1846,7 +1846,7 @@ export type UpdateEncryptionKeyReq = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type DeleteEncryptionKeyReq = {
@@ -2379,8 +2379,8 @@ export type EtalonkaReportType =
 export type NetworkFreqsRes = {
   networkFreqId: number;
   freq: string;
-  modulationId: number | null;
-  modulation: string | null;
+  encryptionId: number | null;
+  encryption: string | null;
   encryptionKeyIds: Array<number>;
   encryptionKeys: Array<string>;
   messageCount: number;
@@ -2391,7 +2391,7 @@ export type NetworkFreqsRes = {
   isActive: boolean;
   activeFrom: number;
   activeTo: number | null;
-  kind: string | null;
+  modulation: string | null;
 };
 
 export type CallsignRes = {
@@ -2693,8 +2693,8 @@ export type UpdateNetworkFreqReq = {
   networkId: number;
   networkFreqId: number;
   freq: string;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeyIds: Array<number>;
   activeFrom: number;
   activeTo: number | null;
@@ -2849,11 +2849,9 @@ export type MergeNetworkReq = {
   networkIdTo: number;
 };
 
-export type ModulationRec = {
+export type EncryptionRec = {
   id: number;
   name: string;
-  left: number;
-  right: number;
   enabled: boolean;
 };
 
@@ -3004,15 +3002,15 @@ export type NetworkFreq = {
   activeFrom: number;
   activeTo: number | null;
   createdAt: number;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeys: Array<EncryptionKeyData>;
 };
 
 export type AddNetworkFreq = {
   freq: string;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeyIds: Array<number>;
   description: AddNetworkFrequencyDescription | null;
   activeFrom: number | null;

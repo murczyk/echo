@@ -205,7 +205,7 @@ pub async fn restore_network(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network,
         vec![],
         &env.dbx,
@@ -410,6 +410,13 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
+            let encryption_id = normalize_encryption_id_for_modulation(
+                &txn,
+                &frequency.modulation,
+                frequency.encryption_id,
+            )
+            .await
+            .context(h!())?;
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
                 network_id: Set(network.id),
@@ -418,8 +425,10 @@ pub async fn create_network(
                 last_seen_dt: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
-                kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
-                modulation_id: Set(frequency.modulation_id),
+                modulation: Set(frequency.modulation.clone()),
+                modulation_id: NotSet,
+                kind: Set(kind_from_modulation(&frequency.modulation)),
+                encryption_id: Set(encryption_id),
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
                 original_id: NotSet,
@@ -496,7 +505,7 @@ pub async fn create_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -606,7 +615,7 @@ pub async fn update_network(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -694,7 +703,7 @@ pub async fn delete_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -1435,7 +1444,7 @@ pub async fn update_freq_networks(
 
     for network in networks {
         let network_id = network.id;
-        sigint::network::etalon_calc::invalidate_network_inbox(
+        etalon_calc::invalidate_network_inbox(
             network,
             vec![req.freq.clone()],
             &env.dbx,
@@ -1547,7 +1556,7 @@ async fn load_network_freq_mutation_response(
     .context(h!())?;
 
     let user_id = user.id().c(h!())?.to_string();
-    let mut freq = crate::sigint::etalonka::query::load_network_freq_row(
+    let mut freq = load_network_freq_row(
         &env.dbx,
         &groups,
         network_id,
@@ -1631,14 +1640,23 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        let encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.freq_rec.modulation,
+            req.freq_rec.encryption_id,
+        )
+        .await
+        .context(h!())?;
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
-            modulation_id: Set(req.freq_rec.modulation_id),
+            modulation: Set(req.freq_rec.modulation.clone()),
+            modulation_id: NotSet,
+            kind: Set(kind_from_modulation(&req.freq_rec.modulation)),
+            encryption_id: Set(encryption_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
@@ -1669,7 +1687,7 @@ pub async fn add_network_freq(
 
     let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-    crate::sigint::key::replace_freq_key_links(
+    sigint::key::replace_freq_key_links(
         &txn,
         network_freq.network_id,
         network_freq.id,
@@ -1705,7 +1723,7 @@ pub async fn add_network_freq(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.network_active_from,
         result.network_active_to,
@@ -1753,7 +1771,11 @@ pub async fn add_network_freq_v2(
         .one(&txn)
         .await
         .context(h!())?;
-
+    let kind = if &req.freq_rec.modulation == "DMR" {
+        &req.freq_rec.modulation
+    } else {
+        &"VHF".to_string()
+    };
     let network_freq = if existing_freq.is_none() {
         let active_from = req
             .freq_rec
@@ -1763,19 +1785,28 @@ pub async fn add_network_freq_v2(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        let normalized_encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.freq_rec.modulation,
+            req.freq_rec.encryption_id,
+        )
+        .await
+        .context(h!())?;
         sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
-            modulation_id: Set(req.freq_rec.modulation_id),
+            kind: Set(SigintNetworkKind::try_from_value(kind)?),
+            modulation: Set(req.freq_rec.modulation.clone()),
+            modulation_id: Set(None),
             active_from: Set(active_from),
             active_to: Set(active_to),
             deleted: Set(false),
             sigint_origin_id: NotSet,
             original_id: NotSet,
+            encryption_id: Set(normalized_encryption_id),
         }
         .insert(&txn)
         .await
@@ -1796,7 +1827,7 @@ pub async fn add_network_freq_v2(
         .context(h!())?;
     }
 
-    crate::sigint::key::replace_freq_key_links(
+    sigint::key::replace_freq_key_links(
         &txn,
         network_freq.network_id,
         network_freq.id,
@@ -1830,7 +1861,7 @@ pub async fn add_network_freq_v2(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq_rec.freq,
         result.network_active_from,
         result.network_active_to,
@@ -1937,7 +1968,7 @@ pub async fn reactivate_network_freq(
         return Err(AppError::NotFound);
     }
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![freq.clone()],
         &env.dbx,
@@ -2068,16 +2099,24 @@ pub async fn update_network_freq(
         );
         invalidation_freq = freq;
 
+        let encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.modulation,
+            req.encryption_id,
+        )
+        .await
+        .context(h!())?;
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
-        model.modulation_id = Set(req.modulation_id);
+        model.modulation = Set(req.modulation.clone());
+        model.kind = Set(kind_from_modulation(&req.modulation));
+        model.encryption_id = Set(encryption_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
         model.update(&txn).await.context(h!())?;
 
         let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-        crate::sigint::key::replace_freq_key_links(
+        sigint::key::replace_freq_key_links(
             &txn,
             req.network_id,
             network_freq_id,
@@ -2116,7 +2155,7 @@ pub async fn update_network_freq(
         return Err(AppError::NotFound);
     }
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
@@ -2185,16 +2224,31 @@ pub async fn update_network_freq_v2(
         );
         invalidation_freq = freq;
 
+        let normalized_encryption_id = normalize_encryption_id_for_modulation(
+            &txn,
+            &req.modulation,
+            req.encryption_id,
+        )
+        .await
+        .context(h!())?;
+
+        let kind = if &req.modulation == "DMR" {
+            &req.modulation
+        } else {
+            &"VHF".to_string()
+        };
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
-        model.modulation_id = Set(req.modulation_id);
+        model.kind = Set(SigintNetworkKind::try_from_value(kind)?);
+        model.modulation_id = Set(None);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
+        model.encryption_id = Set(normalized_encryption_id);
+        model.modulation = Set(req.modulation.clone());
         model.update(&txn).await.context(h!())?;
 
         let organism_id = load_user_organism_id(&txn, &user_id).await?;
 
-        crate::sigint::key::replace_freq_key_links(
+        sigint::key::replace_freq_key_links(
             &txn,
             req.network_id,
             network_freq_id,
@@ -2227,7 +2281,7 @@ pub async fn update_network_freq_v2(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+    etalon_calc::invalidate_network_inbox_for_freq(
         &result.invalidation_freq,
         result.invalidation_range.0,
         result.invalidation_range.1,
@@ -2254,6 +2308,54 @@ pub async fn update_network_freq_v2(
 
 fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
     dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
+}
+
+/// Normalise encryption_id based on modulation type:
+///   DMR / DMRe → keep client-supplied id; if null, default to "Не визначено"
+///   "" (unknown) → always "Не визначено"
+///   NFM / AM / other → always "Без шифрування" (ignores what the client sent)
+async fn normalize_encryption_id_for_modulation(
+    db: &impl ConnectionTrait,
+    modulation: &str,
+    requested_id: Option<i32>,
+) -> Result<Option<i32>, AppError> {
+    let is_dmr = modulation.eq_ignore_ascii_case("DMR")
+        || modulation.eq_ignore_ascii_case("DMRe");
+    let is_unknown = modulation.trim().is_empty();
+    if is_dmr {
+        if requested_id.is_some() {
+            return Ok(requested_id);
+        }
+        let enc_id = encryption::Entity::find()
+            .filter(encryption::Column::Name.eq("Не визначено"))
+            .select_only()
+            .column(encryption::Column::Id)
+            .into_tuple::<i32>()
+            .one(db)
+            .await
+            .context(h!())?;
+        return Ok(enc_id);
+    }
+    if is_unknown {
+        let enc_id = encryption::Entity::find()
+            .filter(encryption::Column::Name.eq("Не визначено"))
+            .select_only()
+            .column(encryption::Column::Id)
+            .into_tuple::<i32>()
+            .one(db)
+            .await
+            .context(h!())?;
+        return Ok(enc_id);
+    }
+    let enc_id = encryption::Entity::find()
+        .filter(encryption::Column::Name.eq("Без шифрування"))
+        .select_only()
+        .column(encryption::Column::Id)
+        .into_tuple::<i32>()
+        .one(db)
+        .await
+        .context(h!())?;
+    Ok(enc_id)
 }
 
 #[post("/api/sigint/network/delete-freq")]
@@ -2376,14 +2478,13 @@ pub async fn delete_network_freq(
                     .context(h!())?,
             );
 
-            if let Err(e) =
-                sigint::network::etalon_calc::invalidate_network_inbox(
-                    network,
-                    vec![freq_records[0].freq.clone()],
-                    &env.dbx,
-                    format!("deleted network {}", network_id),
-                )
-                .await
+            if let Err(e) = etalon_calc::invalidate_network_inbox(
+                network,
+                vec![freq_records[0].freq.clone()],
+                &env.dbx,
+                format!("deleted network {}", network_id),
+            )
+            .await
             {
                 error!("invalidate_network_inbox failed: {:#?}", e);
             }
@@ -2539,7 +2640,7 @@ async fn cleanup_networks_worker_1(
                 model.active_to = Set(Some(Utc::now().naive_utc()));
                 let network_freq = model.update(dbx).await.context(h!())?;
                 if let Err(e) =
-                    sigint::network::etalon_calc::invalidate_network_inbox(
+                    etalon_calc::invalidate_network_inbox(
                         network.clone(),
                         vec![network_freq.freq],
                         dbx,
@@ -2576,7 +2677,7 @@ async fn cleanup_networks_worker_1(
             }
             let network = network.update(dbx).await.context(h!())?;
             if let Err(e) =
-                sigint::network::etalon_calc::invalidate_network_inbox(
+                etalon_calc::invalidate_network_inbox(
                     network.clone(),
                     vec![],
                     dbx,
@@ -2747,7 +2848,7 @@ pub async fn merge_network(
         .next()
         .context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_from)
             .one(&env.dbx)
             .await
@@ -2763,7 +2864,7 @@ pub async fn merge_network(
     .await
     .context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_to)
             .one(&env.dbx)
             .await
@@ -3086,29 +3187,28 @@ pub async fn network_freq_callsigns_batch(
     }))
 }
 
-#[post("/api/sigint/modulations-list")]
-pub async fn modulations_list(
+#[post("/api/sigint/encryptions-list")]
+pub async fn encryptions_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
-) -> Result<Json<Vec<ModulationRec>>, AppError> {
+) -> Result<Json<Vec<EncryptionRec>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let modulations = modulation::Entity::find()
+    let encryptions = encryption::Entity::find()
+        .filter(encryption::Column::Enabled.eq(true))
         .all(&env.dbx)
         .await
         .context(h!())?;
-    let mut res: Vec<ModulationRec> = vec![];
-    for modulation in modulations {
-        res.push(ModulationRec {
-            id: modulation.id,
-            name: modulation.name.clone(),
-            left: modulation.lft,
-            right: modulation.rgt,
-            enabled: modulation.enabled,
+    let mut res: Vec<EncryptionRec> = vec![];
+    for enc in encryptions {
+        res.push(EncryptionRec {
+            id: enc.id,
+            name: enc.name.clone(),
+            enabled: enc.enabled,
         });
     }
     Ok(Json(res))
@@ -3231,7 +3331,7 @@ pub async fn update_network_posts(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
         &env.dbx,
@@ -3357,7 +3457,7 @@ pub async fn update_network_units(
 
     txn.commit().await.context(h!())?;
 
-    sigint::network::etalon_calc::invalidate_network_inbox(
+    etalon_calc::invalidate_network_inbox(
         network,
         vec![],
         &env.dbx,
@@ -3786,12 +3886,20 @@ fn merge_invalidation_range(
 
 pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
     match input {
-        Some("VHF") => Ok("УКХ".to_string()),
+        Some("NFM") => Ok("УКХ".to_string()),
         Some("DMRe") => Ok("DMRe".to_string()),
         Some("DMR") => Ok("DMR".to_string()),
+        Some("AM") => Ok("AM".to_string()),
         _ => Err(AppError::BL {
             msg: "Unknown network type!".to_string(),
         }),
+    }
+}
+
+fn kind_from_modulation(modulation: &str) -> SigintNetworkKind {
+    match modulation {
+        "NFM" | "AM" | "" => SigintNetworkKind::Vhf,
+        _ => SigintNetworkKind::Dmr,
     }
 }
 

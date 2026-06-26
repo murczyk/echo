@@ -46,7 +46,7 @@ type Msg
     | NetworkAddToggleExistingId Int
     | FreqAddedToNetwork String (Result ApiError B.Network)
     | FreqRemovedFromNetwork String (Result ApiError B.Network)
-    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | EncryptionsReturnedByApi (Result ApiError (List B.EncryptionRec))
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
     | NetworkPostsUpdated String B.UpdateNetworkReq (Result ApiError B.Network)
     | NetworkFreqUpdated String B.UpdateNetworkReq (Result ApiError B.Network)

@@ -156,7 +156,7 @@ init _ _ () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , unitSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-unit-state")
@@ -183,8 +183,8 @@ init _ _ () =
       , freqCreateSidebar = False
       , freqCreateState =
             { freq = ""
-            , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
-            , modulationId = Nothing
+            , modulation = NetworksUtils.networkKindToString NetworksUtils.NFM
+            , encryptionId = Nothing
             , encryptionKeyIds = []
             , description = Nothing
             , activeFrom = Nothing
@@ -201,7 +201,7 @@ init _ _ () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , freqCreateModulationSelect =
             { state = Select.initState (Select.selectIdentifier "freq-create-modulation-select-state")
@@ -233,7 +233,7 @@ init _ _ () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , freqEditModulationSelect =
             { state = Select.initState (Select.selectIdentifier "freq-edit-modulation-select-state")
@@ -241,7 +241,7 @@ init _ _ () =
             , selected = Nothing
             }
       , freqEditShowActiveTo = False
-      , modulations = NotAsked
+      , encryptions = NotAsked
       , addConfirmationFreqSelect =
             { state = Select.initState (Select.selectIdentifier "add-confirmation-freq-select-state")
             , items = []
@@ -280,7 +280,7 @@ init _ _ () =
                                 , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = NetworksUtils.VHF
+            , selected = NetworksUtils.NFM
             }
       , editPostsSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
@@ -316,7 +316,7 @@ init _ _ () =
             }
         , E.loadPostsFromShared { sortBy = Nothing }
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
-        , E.getModulations ModulationsReturnedByApi
+        , E.getEncryptions EncryptionsReturnedByApi
         , E.map Callsigns CallsignsTables.initLoad
         ]
     )
@@ -670,12 +670,12 @@ update shared route msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення мережі" error
             )
 
-        ModulationsReturnedByApi (Err e) ->
-            ( { model | modulations = Failure e }
+        EncryptionsReturnedByApi (Err e) ->
+            ( { model | encryptions = Failure e }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
-        ModulationsReturnedByApi (Ok res) ->
+        EncryptionsReturnedByApi (Ok res) ->
             let
                 modulationSelect =
                     model.freqEditModulationSelect
@@ -687,7 +687,7 @@ update shared route msg model =
                                 (\mod ->
                                     Select.basicMenuItem
                                         { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
+                                        , label = mod.name
                                         }
                                 )
                                 res
@@ -703,14 +703,14 @@ update shared route msg model =
                                 (\mod ->
                                     Select.basicMenuItem
                                         { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
+                                        , label = mod.name
                                         }
                                 )
                                 res
                     }
             in
             ( { model
-                | modulations = Success res
+                | encryptions = Success res
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
               }

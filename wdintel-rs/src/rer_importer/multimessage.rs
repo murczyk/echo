@@ -74,10 +74,7 @@ fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
         .into_iter();
     let mut result = vec![];
     let mut container = vec![];
-    loop {
-        let Some(row) = rows.next() else {
-            break;
-        };
+    while let Some(row) = rows.next() {
         container.push(row);
         for _ in 1..4 {
             let Some(row) = rows.next() else {

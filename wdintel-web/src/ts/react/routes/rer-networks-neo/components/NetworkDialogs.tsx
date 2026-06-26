@@ -112,11 +112,11 @@ export function NetworkDialogs({ page }: Props) {
         form={page.createDialog}
         saving={page.createSubmitting}
         error={page.createError}
-        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.modulations.length === 0}
+        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.encryptions.length === 0}
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
-        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
+        encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeCreateDialog}
         onChange={page.setCreateDialog}
         onSave={() => void page.saveNetworkCreate()}
@@ -128,11 +128,11 @@ export function NetworkDialogs({ page }: Props) {
         form={page.editDialog}
         saving={page.editSubmitting}
         error={page.editError}
-        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.modulations.length === 0}
+        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.encryptions.length === 0}
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
-        modulationOptions={page.modulations.map((modulation) => ({ id: modulation.id, label: modulation.name }))}
+        encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDialog}
         onChange={page.setEditDialog}
         onSave={(form) => void page.saveNetworkEdit(form)}

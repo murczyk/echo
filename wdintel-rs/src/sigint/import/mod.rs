@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::entities::sea_orm_active_enums::SigintNetworkKind;
 use crate::entities::*;
 use crate::entities::{
     area_of_responsibility, sigint_network_aor, sigint_zone_aor,
@@ -172,8 +173,8 @@ fn describe_etalon(etalon: &EtalonImportResult) {
     );
     info!("- source records: {}", print_import_stats(&etalon.source));
     info!(
-        "- modulation records: {}",
-        print_import_stats(&etalon.modulation)
+        "- encryption records: {}",
+        print_import_stats(&etalon.encryption)
     );
 }
 
@@ -325,10 +326,9 @@ where
         None => source::Entity::find().all(txn).await.context(h!())?,
         Some(_) => vec![],
     };
-    let modulation = match &only_sigint_unit_id {
-        None => modulation::Entity::find().all(txn).await.context(h!())?,
-        Some(_) => vec![],
-    };
+    // Always include all encryption rows: the table has only 6 seeded entries and
+    // every migrated freq row references one of them, including unit-scoped exports.
+    let encryption = encryption::Entity::find().all(txn).await.context(h!())?;
     let sigint_post =
         sigint_post::Entity::find().all(txn).await.context(h!())?;
     let mut sigint_network_post = if sigint_network_ids.is_empty() {
@@ -414,7 +414,7 @@ where
         sigint_callsign,
         sigint_callsign_changelog,
         source,
-        modulation,
+        encryption,
         sigint_post,
         sigint_network_post,
         sigint_network_callsign,
@@ -490,7 +490,7 @@ async fn import_etalon_data(
     txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let modulation_import_result =
-        import_modulation_data(&txn, origin_id, data.modulation)
+        import_encryption_data(&txn, origin_id, data.encryption)
             .await
             .context(h!())?;
     txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
@@ -712,7 +712,7 @@ async fn import_etalon_data(
             sigint_network_unit_changelog_import_result,
         sigint_callsign: sigint_callsign_import_result,
         sigint_callsign_changelog: sigint_callsign_changelog_import_result,
-        modulation: modulation_import_result,
+        encryption: modulation_import_result,
         source: source_import_result,
         sigint_post: sigint_post_import_result,
         sigint_network_post: sigint_network_post_import_result,
@@ -839,18 +839,18 @@ where
     })
 }
 
-async fn import_modulation_data<'a, 'async_trait, C>(
+async fn import_encryption_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
-    recs: Vec<modulation::Model>,
+    recs: Vec<encryption::Model>,
 ) -> anyhow::Result<ImportResult<i32>>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let mut max_id = modulation::Entity::find()
+    let mut max_id = encryption::Entity::find()
         .select_only()
-        .column(modulation::Column::Id)
-        .order_by_desc(modulation::Column::Id)
+        .column(encryption::Column::Id)
+        .order_by_desc(encryption::Column::Id)
         .into_tuple()
         .one(txn)
         .await
@@ -858,7 +858,7 @@ where
         .unwrap_or(0);
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_modulations(txn, &recs)
+    let existing_record_ids = query::find_existing_encryptions(txn, &recs)
         .await
         .context(h!())?;
 
@@ -873,13 +873,10 @@ where
             Some(id) => (Set(*id), false),
         };
 
-        let model = modulation::ActiveModel {
-            original_id: Set(Some(rec.id)),
+        let model = encryption::ActiveModel {
             id,
             created_at: Set(rec.created_at),
             name: Set(rec.name),
-            lft: Set(rec.lft),
-            rgt: Set(rec.rgt),
             enabled: Set(rec.enabled),
             sigint_origin_id: Set(Some(origin_id)),
             mothership_id: NotSet,
@@ -1432,18 +1429,18 @@ where
             ));
             continue;
         };
-        let modulation_id = match rec.modulation_id {
+        let encryption_id = match rec.encryption_id {
             None => NotSet,
-            Some(modulation_id) => {
-                let Some(modulation_id) =
-                    modulation_ids_map.get(&modulation_id).cloned()
+            Some(encryption_id) => {
+                let Some(new_id) =
+                    modulation_ids_map.get(&encryption_id).cloned()
                 else {
                     import_warnings.push(format!(
-                        "modulation with id {modulation_id} not found"
+                        "encryption with id {encryption_id} not found"
                     ));
                     continue;
                 };
-                Set(Some(modulation_id))
+                Set(Some(new_id))
             }
         };
         let (id, new_record) = match existing_record_ids.get(&rec.id) {
@@ -1454,12 +1451,17 @@ where
         let model = sigint_network_freq::ActiveModel {
             original_id: Set(Some(rec.id)),
             id,
-            modulation_id,
+            encryption_id,
             network_id: Set(sigint_network_id),
             freq: Set(rec.freq),
             created_at: Set(rec.created_at),
             last_seen_dt: Set(rec.last_seen_dt),
-            kind: Set(rec.kind),
+            kind: Set(match rec.modulation.as_str() {
+                "NFM" | "AM" => SigintNetworkKind::Vhf,
+                _ => SigintNetworkKind::Dmr,
+            }),
+            modulation: Set(rec.modulation),
+            modulation_id: NotSet,
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
             deleted: Set(rec.deleted),

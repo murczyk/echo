@@ -1623,11 +1623,24 @@ pub mod tests {
         if out.created_at == NotSet {
             out.created_at = Set(chrono::Utc::now().naive_utc());
         }
+        if out.modulation == NotSet {
+            out.modulation = Set("NFM".to_string());
+        }
         if out.kind == NotSet {
-            out.kind = Set(SigintNetworkKind::Vhf);
+            let mod_str = match &out.modulation {
+                ActiveValue::Set(m) | ActiveValue::Unchanged(m) => m.as_str(),
+                _ => "NFM",
+            };
+            out.kind = Set(match mod_str {
+                "NFM" | "AM" => SigintNetworkKind::Vhf,
+                _ => SigintNetworkKind::Dmr,
+            });
         }
         if out.modulation_id == NotSet {
             out.modulation_id = Set(None);
+        }
+        if out.encryption_id == NotSet {
+            out.encryption_id = Set(None);
         }
         if out.active_from == NotSet {
             out.active_from = Set(chrono::Utc::now().naive_utc());

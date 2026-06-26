@@ -69,7 +69,7 @@ type alias Model =
     , editPostsSelect : Utils.Select.SelectType Int
     , editKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editModulationSelect : Utils.Select.SelectTypeSingle Int
-    , modulations : RemoteData ApiError (List B.ModulationRec)
+    , encryptions : RemoteData ApiError (List B.EncryptionRec)
     , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
     , addExistingActiveFrom : Maybe Int
     , addExistingActiveTo : Maybe Int

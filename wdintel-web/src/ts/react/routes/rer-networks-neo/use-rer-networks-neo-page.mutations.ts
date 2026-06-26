@@ -139,7 +139,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
 
     const validationError = getNetworkUpsertValidationError(args.createDialog);
     if (validationError !== null) {
-      args.setCreateError(validationError.name ?? validationError.location ?? validationError.aorIds ?? validationError.freq ?? validationError.modulationId ?? validationError.activeFrom ?? 'Перевірте форму');
+      args.setCreateError(validationError.name ?? validationError.location ?? validationError.aorIds ?? validationError.freq ?? validationError.activeFrom ?? 'Перевірте форму');
       return;
     }
 

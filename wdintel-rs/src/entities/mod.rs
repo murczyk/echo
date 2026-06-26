@@ -44,6 +44,7 @@ pub mod echo_whatsapp_group;
 pub mod echo_whatsapp_profile;
 pub mod echo_whatsapp_queue;
 pub mod echo_whatsapp_queue_attachment;
+pub mod encryption;
 pub mod enemy_units_geojson;
 pub mod freq_location;
 pub mod goi_association;

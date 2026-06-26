@@ -15,7 +15,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub freq: String,
     pub created_at: DateTime,
-    pub kind: SigintNetworkKind,
     pub modulation_id: Option<i32>,
     pub active_from: DateTime,
     pub active_to: Option<DateTime>,
@@ -23,10 +22,22 @@ pub struct Model {
     pub deleted: bool,
     pub original_id: Option<i64>,
     pub last_seen_dt: Option<DateTime>,
+    pub kind: SigintNetworkKind,
+    #[sea_orm(column_type = "Text")]
+    pub modulation: String,
+    pub encryption_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::encryption::Entity",
+        from = "Column::EncryptionId",
+        to = "super::encryption::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Encryption,
     #[sea_orm(
         belongs_to = "super::modulation::Entity",
         from = "Column::ModulationId",
@@ -59,6 +70,12 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     SigintOrigin,
+}
+
+impl Related<super::encryption::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Encryption.def()
+    }
 }
 
 impl Related<super::modulation::Entity> for Entity {

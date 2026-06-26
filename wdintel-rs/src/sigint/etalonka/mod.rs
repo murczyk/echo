@@ -1888,6 +1888,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
     use crate::entities::*;
     use crate::functest::tests::*;
     use crate::sigint::network::types::ListNetworksReq;
@@ -2006,8 +2007,10 @@ mod tests {
             network_id: Set(network.id),
             freq: Set(freq.clone()),
             created_at: Set(now),
-            kind: Set(sea_orm_active_enums::SigintNetworkKind::Vhf),
+            kind: Set(SigintNetworkKind::Vhf),
+            modulation: Set("NFM".to_string()),
             modulation_id: Set(None),
+            encryption_id: Set(None),
             active_from: Set(now - chrono::Duration::days(1)),
             active_to: Set(None),
             sigint_origin_id: Set(None),
