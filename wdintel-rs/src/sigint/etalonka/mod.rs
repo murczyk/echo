@@ -587,12 +587,19 @@ pub async fn etalonka_due_form(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
+                let freq_map: HashMap<i64, String> = etalonka_data_entry
+                    .freqs
+                    .iter()
+                    .map(|f| (f.network_freq_id, f.freq.clone()))
+                    .collect();
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
                         doc,
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
                         &etalonka_data_entry.network_unit_signals,
+                        settings.include_headings_and_freqs,
+                        &freq_map,
                     )
                     .await
                     .c(h!())?;
@@ -603,6 +610,8 @@ pub async fn etalonka_due_form(
                         doc,
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
+                        settings.include_headings_and_freqs,
+                        &freq_map,
                     );
                 }
             }
@@ -725,12 +734,18 @@ pub async fn etalonka_extended(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
+                let freq_map: HashMap<i64, String> = freqs
+                    .iter()
+                    .map(|f| (f.network_freq_id, f.freq.clone()))
+                    .collect();
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
                         doc,
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
                         &etalonka_data_entry.network_unit_signals,
+                        settings.include_headings_and_freqs,
+                        &freq_map,
                     )
                     .await
                     .c(h!())?;
@@ -741,6 +756,8 @@ pub async fn etalonka_extended(
                         doc,
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
+                        settings.include_headings_and_freqs,
+                        &freq_map,
                     );
                 }
             }
@@ -902,6 +919,8 @@ fn add_network_confirmation(
     mut doc: Docx,
     width_unit: usize,
     network_descriptions: &[NetworkDescription],
+    include_headings_and_freqs: bool,
+    freq_map: &HashMap<i64, String>,
 ) -> Docx {
     doc = add_field(doc, "12. Обгрунтування  прив'язки: ", &String::default());
 
@@ -910,6 +929,8 @@ fn add_network_confirmation(
         network_descriptions,
         NetworkDescrType::Confirmation,
         width_unit,
+        include_headings_and_freqs,
+        freq_map,
     ) {
         doc = doc.add_table(table);
     }
@@ -922,6 +943,8 @@ async fn add_network_sigint_signs(
     width_unit: usize,
     network_descriptions: &[NetworkDescription],
     network_unit_signals: &[NetworkSignalsRes],
+    include_headings_and_freqs: bool,
+    freq_map: &HashMap<i64, String>,
 ) -> Result<Docx, AppError> {
     let invisible_paragraph = Paragraph::new()
         .add_run(Run::new().size(1))
@@ -937,6 +960,8 @@ async fn add_network_sigint_signs(
         network_descriptions,
         NetworkDescrType::Sign,
         width_unit,
+        include_headings_and_freqs,
+        freq_map,
     ) {
         doc = doc.add_table(table);
     }
@@ -1806,6 +1831,8 @@ pub fn build_network_description_table(
     network_descriptions: &[NetworkDescription],
     filter_type: NetworkDescrType,
     width_unit: usize,
+    include_headings_and_freqs: bool,
+    freq_map: &HashMap<i64, String>,
 ) -> Option<Table> {
     let filtered_descriptions = network_descriptions
         .iter()
@@ -1817,22 +1844,77 @@ pub fn build_network_description_table(
         return None;
     }
 
-    let row_builder = |descr: &NetworkDescription| {
-        vec![create_table_data_cell(
-            width_unit * 48,
-            &descr.description,
+    if include_headings_and_freqs {
+        let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
+        let headers = vec![
+            create_table_header_cell(
+                width_unit * 10,
+                None,
+                &header_style_id,
+                "Частота",
+                false,
+                0,
+            ),
+            create_table_header_cell(
+                width_unit * 14,
+                None,
+                &header_style_id,
+                "Заголовок",
+                false,
+                0,
+            ),
+            create_table_header_cell(
+                width_unit * 24,
+                None,
+                &header_style_id,
+                "Опис",
+                false,
+                0,
+            ),
+        ];
+        let freq_map = freq_map.clone();
+        let row_builder = move |descr: &NetworkDescription| {
+            let freq = descr
+                .network_frequency_id
+                .and_then(|id| freq_map.get(&id))
+                .cloned()
+                .unwrap_or_default();
+            let topic = descr.topic.clone().unwrap_or_default();
+            vec![
+                create_table_data_cell(width_unit * 10, &freq, None, false),
+                create_table_data_cell(width_unit * 14, &topic, None, false),
+                create_table_data_cell(
+                    width_unit * 24,
+                    &descr.description,
+                    None,
+                    false,
+                ),
+            ]
+        };
+        build_table(
+            &filtered_descriptions,
+            headers,
+            row_builder,
+            width_unit,
             None,
-            false,
-        )]
-    };
-
-    build_table(
-        &filtered_descriptions,
-        vec![],
-        row_builder,
-        width_unit,
-        None,
-    )
+        )
+    } else {
+        let row_builder = |descr: &NetworkDescription| {
+            vec![create_table_data_cell(
+                width_unit * 48,
+                &descr.description,
+                None,
+                false,
+            )]
+        };
+        build_table(
+            &filtered_descriptions,
+            vec![],
+            row_builder,
+            width_unit,
+            None,
+        )
+    }
 }
 
 pub fn build_network_unit_signals_table(
@@ -2157,6 +2239,7 @@ mod tests {
                     include_sigint_signs: false,
                     include_confirmation: false,
                     include_pelengs_map: false,
+                    include_headings_and_freqs: false,
                 },
             ),
         };

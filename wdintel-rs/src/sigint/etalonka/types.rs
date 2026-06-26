@@ -38,6 +38,7 @@ pub struct EtalonkaSettings {
     pub active_freqs_only: bool,
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
+    pub include_headings_and_freqs: bool,
 }
 
 #[derive(
@@ -51,6 +52,7 @@ pub struct EtalonkaExtendedSettings {
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
     pub include_pelengs_map: bool,
+    pub include_headings_and_freqs: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

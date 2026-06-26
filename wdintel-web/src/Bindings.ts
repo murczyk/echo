@@ -2364,6 +2364,7 @@ export type EtalonkaExtendedSettings = {
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
   includePelengsMap: boolean;
+  includeHeadingsAndFreqs: boolean;
 };
 
 export type EtalonkaJimForksReq = {
@@ -2381,6 +2382,7 @@ export type EtalonkaSettings = {
   activeFreqsOnly: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
+  includeHeadingsAndFreqs: boolean;
 };
 
 export type EtalonkaReportType =

@@ -1,6 +1,7 @@
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
   Button,
@@ -16,6 +17,7 @@ import {
   Radio,
   RadioGroup,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import type { Dayjs } from 'dayjs';
@@ -42,6 +44,7 @@ type Props = {
   onActiveFreqsOnlyChange: (activeFreqsOnly: boolean) => void;
   onIncludeSigintSignsChange: (includeSigintSigns: boolean) => void;
   onIncludeConfirmationChange: (includeConfirmation: boolean) => void;
+  onIncludeHeadingsAndFreqsChange: (includeHeadingsAndFreqs: boolean) => void;
   onIncludeUnitCallsignsChange: (includeUnitCallsigns: boolean) => void;
   onIncludePelengsMapChange: (includePelengsMap: boolean) => void;
   onFromDateTimeStrChange: (fromDateTimeStr: string) => void;
@@ -131,6 +134,7 @@ export function NetworkEtalonkaReportDialog({
   onActiveFreqsOnlyChange,
   onIncludeSigintSignsChange,
   onIncludeConfirmationChange,
+  onIncludeHeadingsAndFreqsChange,
   onIncludeUnitCallsignsChange,
   onIncludePelengsMapChange,
   onFromDateTimeStrChange,
@@ -252,79 +256,101 @@ export function NetworkEtalonkaReportDialog({
 
             <ReportSectionCard
               title="Додаткові опції"
-              description={isExtended ? undefined : 'Доступні тільки в розширеному звіті'}
-              disabled={!isExtended}
               minHeight={190}
             >
-              {isExtended ? (
-                <Stack spacing={2}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-                    <PowerDateTimePicker
-                      label="Від"
-                      value={fromDateTimeDraft}
-                      allowEmpty={false}
-                      onChange={setFromDateTimeDraft}
-                      onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
-                      onClose={resetDrafts}
-                      disabled={dateTimeDisabled}
-                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                      format="DD.MM.YYYY HH:mm"
-                      slotProps={{
-                        textField: {
-                          size: 'small',
-                          fullWidth: true,
-                          InputLabelProps: { shrink: true },
-                        },
-                      }}
-                    />
-                    <PowerDateTimePicker
-                      label="До"
-                      value={toDateTimeDraft}
-                      allowEmpty={false}
-                      onChange={setToDateTimeDraft}
-                      onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
-                      onClose={resetDrafts}
-                      disabled={dateTimeDisabled}
-                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                      format="DD.MM.YYYY HH:mm"
-                      slotProps={{
-                        textField: {
-                          size: 'small',
-                          fullWidth: true,
-                          InputLabelProps: { shrink: true },
-                        },
-                      }}
-                    />
-                  </Box>
+              <Stack spacing={1.25}>
+                {isExtended ? (
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                      <PowerDateTimePicker
+                        label="Від"
+                        value={fromDateTimeDraft}
+                        allowEmpty={false}
+                        onChange={setFromDateTimeDraft}
+                        onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                        onClose={resetDrafts}
+                        disabled={dateTimeDisabled}
+                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                        format="DD.MM.YYYY HH:mm"
+                        slotProps={{
+                          textField: {
+                            size: 'small',
+                            fullWidth: true,
+                            InputLabelProps: { shrink: true },
+                          },
+                        }}
+                      />
+                      <PowerDateTimePicker
+                        label="До"
+                        value={toDateTimeDraft}
+                        allowEmpty={false}
+                        onChange={setToDateTimeDraft}
+                        onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                        onClose={resetDrafts}
+                        disabled={dateTimeDisabled}
+                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                        format="DD.MM.YYYY HH:mm"
+                        slotProps={{
+                          textField: {
+                            size: 'small',
+                            fullWidth: true,
+                            InputLabelProps: { shrink: true },
+                          },
+                        }}
+                      />
+                    </Box>
 
-                  <Stack spacing={0.75}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={report.includeUnitCallsigns}
-                          onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
-                          disabled={report.running}
-                          sx={{ p: 0.5 }}
-                        />
-                      }
-                      label="Включити позивні підрозділів"
-                    />
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={report.includePelengsMap}
-                          onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
-                          disabled={report.running}
-                          sx={{ p: 0.5 }}
-                        />
-                      }
-                      label="Включити карту пеленгів"
-                    />
+                    <Stack spacing={0.75}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={report.includeUnitCallsigns}
+                            onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
+                            disabled={report.running}
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="Включити позивні підрозділів"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={report.includePelengsMap}
+                            onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
+                            disabled={report.running}
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="Включити карту пеленгів"
+                      />
+                    </Stack>
                   </Stack>
-                </Stack>
-              ) : null}
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному звіті
+                  </Typography>
+                )}
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={report.includeHeadingsAndFreqs}
+                        onChange={(_event, checked) => onIncludeHeadingsAndFreqsChange(checked)}
+                        disabled={report.running}
+                        sx={{ p: 0.5 }}
+                      />
+                    }
+                    label="Включати заголовки та частоти"
+                  />
+                  <Tooltip arrow title="Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань">
+                    <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'default' }} />
+                  </Tooltip>
+                </Box>
+              </Stack>
             </ReportSectionCard>
           </Box>
 
