@@ -8,7 +8,10 @@ export interface ProfileDropdownProps {
   setOpenDropdown: (val: string | null) => void;
   onThemeChange: (theme: string) => void;
   onLogout: () => void;
-  handleInternalLinkClick: (e: React.MouseEvent<HTMLAnchorElement>, path: string) => void;
+  handleInternalLinkClick: (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    path: string,
+  ) => void;
   closeDropdowns: () => void;
 }
 
@@ -24,7 +27,7 @@ export function ProfileDropdown({
   closeDropdowns,
 }: ProfileDropdownProps) {
   const isOpen = openDropdown === "profile";
-  
+
   return (
     <div className="relative">
       <button
@@ -37,9 +40,7 @@ export function ProfileDropdown({
         aria-expanded={isOpen ? "true" : "false"}
         type="button"
       >
-        <span className="hidden sm:inline">
-          {user?.name ?? "Unknown"}
-        </span>
+        <span className="hidden sm:inline">{user?.name ?? "Unknown"}</span>
         <i
           className={`bi bi-chevron-down text-xs ml-1 transition-transform ${isOpen ? "rotate-180" : ""}`}
         />
@@ -55,18 +56,14 @@ export function ProfileDropdown({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onThemeChange(
-                  shared?.themeMode === "light" ? "dark" : "light",
-                );
+                onThemeChange(shared?.themeMode === "light" ? "dark" : "light");
                 closeDropdowns();
               }}
             >
               <i
                 className={`bi ${shared?.themeMode === "light" ? "bi-moon" : "bi-sun"} mr-2`}
               ></i>
-              {shared?.themeMode === "light"
-                ? "Темна тема"
-                : "Світла тема"}
+              {shared?.themeMode === "light" ? "Темна тема" : "Світла тема"}
             </a>
           </li>
           {isBasic && (

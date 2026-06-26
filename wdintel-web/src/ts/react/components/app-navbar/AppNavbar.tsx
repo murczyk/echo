@@ -173,11 +173,6 @@ export function AppNavbar({
     return (
       <span className="inline-flex items-center gap-2">
         {item.label}
-        {["rer-duty-neo", "rer-analysis-neo"].includes(item.activeName) && (
-          <span className="rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700">
-            Alpha
-          </span>
-        )}
       </span>
     );
   };
@@ -289,13 +284,13 @@ export function AppNavbar({
             <a
               href={mainLink}
               onClick={(e) => handleInternalLinkClick(e, mainLink)}
-              className="flex items-center px-3 py-1.5 cursor-pointer focus:outline-none text-white hover:bg-black/10 transition-all duration-200"
+              className="flex items-center px-3 py-2 cursor-pointer focus:outline-none text-white hover:bg-black/10 transition-all duration-200"
             >
               <span>{nameText}</span>
             </a>
-            <div className="w-[1px] bg-white/20 my-[6px]"></div>
+            <div className="w-[1px] bg-white/20 my-2"></div>
             <button
-              className="flex items-center px-2 py-1.5 cursor-pointer focus:outline-none text-white hover:bg-black/10 transition-all duration-200"
+              className="flex items-center px-2 py-2 cursor-pointer focus:outline-none text-white hover:bg-black/10 transition-all duration-200"
               onClick={(e) => handleDropdownToggle(e, activeNameExp)}
               aria-haspopup="true"
               aria-controls={dropdownMenuId}
@@ -344,8 +339,8 @@ export function AppNavbar({
           "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))",
       }}
     >
-      <nav className="container mx-auto px-4">
-        <div className="app-navbar-row flex w-full flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap lg:justify-between">
+      <nav className="w-full px-6">
+        <div className="app-navbar-row flex w-full flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap lg:gap-x-[80px]">
           <div className="app-navbar-brand flex shrink-0 flex-row flex-nowrap items-center gap-2">
             <a
               className="app-navbar-logo flex shrink-0 items-center space-x-2"
@@ -399,7 +394,7 @@ export function AppNavbar({
 
           <div
             id="app-navbar-links-panel"
-            className={`app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)] lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-t-0 lg:pt-0 ${mobileNavOpen ? "flex" : "hidden lg:flex"}`}
+            className={`app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)] lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-none lg:border-t-0 lg:pt-0 ${mobileNavOpen ? "flex" : "hidden lg:flex"}`}
           >
             <ul className="app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1">
               {serverModeIsLive &&

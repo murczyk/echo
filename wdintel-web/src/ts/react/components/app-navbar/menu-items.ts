@@ -26,8 +26,7 @@ export function menuIsActive(activeName: string, menu: Menu): boolean {
 export function goiExternalUrl(rawHost: string): string | null {
   const host = rawHost.trim();
   if (!host) return null;
-  if (host.startsWith("http://") || host.startsWith("https://")) return host;
-  return "https://" + host;
+  return /^https?:\/\//i.test(host) ? host : `https://${host}`;
 }
 
 export const operationalSubs: Menu[] = [
