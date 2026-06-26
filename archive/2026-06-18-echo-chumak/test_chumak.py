@@ -7,7 +7,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from http.cookiejar import CookieJar
 from pathlib import Path
 
@@ -58,6 +58,16 @@ def optional_int(name: str):
         return int(value)
     except ValueError as error:
         raise TestError(f"{name} must be an integer, got: {value}") from error
+
+
+def optional_float(name: str):
+    value = optional_env(name)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError as error:
+        raise TestError(f"{name} must be a number, got: {value}") from error
 
 
 class EchoClient:
@@ -128,11 +138,12 @@ def network_payload() -> dict:
 
 
 def submit_payload() -> dict:
-    timestamp = datetime.now().replace(microsecond=0)
-    timestamp_text = timestamp.isoformat()
-    timestamp_ms = int(timestamp.timestamp() * 1000)
+    timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+    timestamp_text = timestamp.isoformat().replace("+00:00", "Z")
     freq = required_env("CHUMAK_FREQ")
     color_code = int(optional_env("CHUMAK_COLOR_CODE", "1"))
+    lat = optional_float("CHUMAK_LAT")
+    lon = optional_float("CHUMAK_LON")
     sender_id = 110
     call_group_id = 50
     sender_callsign = optional_env("CHUMAK_CALLSIGN_FROM", "ЯРУС")
@@ -159,40 +170,35 @@ def submit_payload() -> dict:
         f"{receiver_callsign}\n"
         f"{no_headers_body}"
     )
-    return {
-        "messages": [
+    payload = {
+        "text": message,
+        "freq": freq,
+        "callsigns": [sender_callsign, receiver_callsign],
+        "timestamp": timestamp_text,
+        "sender": optional_env("CHUMAK_SENDER", "chumak"),
+        "full_body": f"Сигнали: dmr\nМережа: {network_name}",
+        "post": post or None,
+        "unit": unit or None,
+        "location": location or None,
+        "group_names": [required_env("CHUMAK_GROUP")],
+        "source": "chumak",
+        "network": {"signal_name": "dmr", "cc": color_code, "name": network_name},
+        "dmr": [
             {
-                "text": message,
-                "date": timestamp.strftime("%d.%m.%Y"),
-                "time": timestamp.strftime("%H:%M:%S"),
+                "timestamp": timestamp_text,
+                "cc": color_code,
                 "freq": freq,
-                "coords": "",
-                "callsigns": [sender_callsign, receiver_callsign],
-                "checked": True,
-                "timestamp": timestamp_ms,
-                "sender": optional_env("CHUMAK_SENDER", "chumak"),
-                "extended_form": f"Сигнали: dmr\nМережа: {network_name}",
-                "post": post or None,
-                "unit": unit or None,
-                "location": location or None,
-                "group_names": [required_env("CHUMAK_GROUP")],
-                "source": "chumak",
-                "network": {"signal_name": "dmr", "cc": color_code, "name": network_name},
-                "dmr": [
-                    {
-                        "timestamp": timestamp_text,
-                        "cc": color_code,
-                        "freq": freq,
-                        "signal_name": "dmr",
-                        "sender_id": sender_id,
-                        "sender_name": sender_callsign,
-                        "call_group_id": call_group_id,
-                        "call_group_name": receiver_callsign,
-                    }
-                ],
+                "signal_name": "dmr",
+                "sender_id": sender_id,
+                "sender_name": sender_callsign,
+                "call_group_id": call_group_id,
+                "call_group_name": receiver_callsign,
             }
-        ]
+        ],
     }
+    if lat is not None and lon is not None:
+        payload["coords"] = {"lat": lat, "lon": lon}
+    return payload
 
 
 def login() -> None:
@@ -213,7 +219,7 @@ def submit_message() -> None:
     client = connected_client()
     payload = submit_payload()
     print(f"Request payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-    response = client.request("POST", "/api/rer-importer/inbox/submit", payload)
+    response = client.request("POST", "/api/1.1/rer-importer/inbox/submit", payload)
     print(json.dumps(response, ensure_ascii=False, indent=2))
     print("PASS: submitted inbox message")
 

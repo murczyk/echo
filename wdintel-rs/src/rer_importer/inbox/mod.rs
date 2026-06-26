@@ -536,17 +536,33 @@ async fn delete_message(
 async fn inbox_submit(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<InboxSubmitEndpointReq>,
+    req: Json<InboxSubmitReq>,
 ) -> Result<Json<InboxSubmitRsp>, AppError> {
-    match do_submit_inbox(user, &env, req).await {
+    match submit_legacy_inbox(user, &env, req.into_inner()).await {
         Ok(rsp) => Ok(Json(rsp)),
         Err(e) => {
-            error!("failed to submit inbox: {:?}", e);
+            error!("failed to submit legacy inbox: {:?}", e);
             Err(e)
         }
     }
 }
 
+#[post("/api/1.1/rer-importer/inbox/submit")]
+async fn inbox_submit_v11(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxSubmitItem>,
+) -> Result<Json<GenericInboxSubmitRsp>, AppError> {
+    match submit_generic_inbox(user, &env, req.into_inner()).await {
+        Ok(rsp) => Ok(Json(rsp)),
+        Err(e) => {
+            error!("failed to submit generic inbox: {:?}", e);
+            Err(e)
+        }
+    }
+}
+
+#[derive(Debug)]
 struct SubmittedInboxItem {
     message_id: String,
     inbox_id: i64,
@@ -562,15 +578,25 @@ async fn submit_generic_inbox_item(
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
     validate_generic_submit_item(&item)?;
+    let InboxSubmitItem {
+        message_id,
+        payload,
+        group_names,
+        source: _,
+        integration: _,
+        network,
+        dmr,
+    } = item;
     let groups = ensure_submit_groups(
         txn,
         datasource,
         login,
-        item.group_names.as_deref().unwrap_or(&[]),
+        group_names.as_deref().unwrap_or(&[]),
     )
     .await
     .c(h!())?;
-    let mut message = InboxMessage::from(item.payload);
+    let (mut message, timestamp) =
+        generic_submit_payload_to_inbox_message(payload)?;
     let post = normalized_optional_string(message.post.as_deref());
     let post_id = match message.post_id {
         Some(post_id) => Some(post_id),
@@ -582,19 +608,14 @@ async fn submit_generic_inbox_item(
     message.post = post;
     message.post_id = post_id;
     prepare_submit_body_for_coordinate_extraction(&mut message)?;
-    let timestamp = message
-        .timestamp
-        .map(crate::utils::dt_from_millis)
-        .transpose()
-        .c(h!())?;
 
     let signal_message = upsert_submit_signal_message(
         txn,
         &env.config,
         datasource.id,
-        item.message_id.as_deref(),
+        message_id.as_deref(),
         &message,
-        timestamp,
+        Some(timestamp),
         &groups,
     )
     .await
@@ -610,14 +631,10 @@ async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
-    let warnings = save_submit_dmr_metadata(
-        inbox_id,
-        item.network.as_ref(),
-        item.dmr,
-        txn,
-    )
-    .await
-    .c(h!())?;
+    let warnings =
+        save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
+            .await
+            .c(h!())?;
 
     Ok(SubmittedInboxItem {
         message_id,
@@ -645,6 +662,86 @@ fn validate_generic_submit_item(
     }
     validate_submit_network(item.network.as_ref())?;
     validate_submit_dmr_signal_names(&item.dmr)?;
+    validate_submit_dmr_timestamps(&item.dmr)?;
+    Ok(())
+}
+
+fn generic_submit_payload_to_inbox_message(
+    payload: GenericInboxSubmitPayload,
+) -> Result<(InboxMessage, NaiveDateTime), AppError> {
+    let timestamp =
+        parse_submit_rfc3339_timestamp("timestamp", &payload.timestamp)?;
+    let (date, time) = format_submit_date_time_fields(timestamp);
+    let message = InboxMessage {
+        message_uid: None,
+        text: payload.text,
+        media: payload.media,
+        images: payload.images,
+        image_recognized: payload.image_recognized,
+        date: Some(date),
+        time: Some(time),
+        freq: payload.freq,
+        coords: payload.coords.map(format_submit_coordinates),
+        callsigns: payload.callsigns,
+        callsigns_alg2: payload.callsigns_alg2,
+        checked: true,
+        important: false,
+        bookmarked: false,
+        timestamp: Some(timestamp.and_utc().timestamp_millis()),
+        group_master_key: None,
+        sender: payload.sender,
+        extended_form: payload.full_body,
+        post: payload.post,
+        post_id: payload.post_id,
+        unit: payload.unit,
+        callsign_tokens: None,
+        signal_tokens: None,
+        point_tokens: None,
+        no_headers_body: None,
+        keyword_tokens: None,
+        text_marked: None,
+        datasource_id: None,
+        location: payload.location,
+        tags: None,
+        network_ids: None,
+        inbox_tags: None,
+        metadata: vec![],
+    };
+    Ok((message, timestamp))
+}
+
+fn format_submit_coordinates(coords: SubmitCoordinates) -> String {
+    format!("{}, {}", coords.lat, coords.lon)
+}
+
+fn format_submit_date_time_fields(dt_utc: NaiveDateTime) -> (String, String) {
+    let dt_kyiv = DateTime::<Utc>::from_naive_utc_and_offset(dt_utc, Utc)
+        .with_timezone(&chrono_tz::Europe::Kyiv);
+    let date = dt_kyiv.format("%Y-%m-%d").to_string();
+    let time = dt_kyiv.format("%H:%M:%S").to_string();
+    (date, time)
+}
+
+fn parse_submit_rfc3339_timestamp(
+    field: &str,
+    value: &str,
+) -> Result<NaiveDateTime, AppError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc).naive_utc())
+        .map_err(|_| AppError::BL {
+            msg: format!("{field} must be an RFC 3339 timestamp"),
+        })
+}
+
+fn validate_submit_dmr_timestamps(
+    dmr: &[SubmitDmrMetadata],
+) -> Result<(), AppError> {
+    for (index, metadata) in dmr.iter().enumerate() {
+        parse_submit_rfc3339_timestamp(
+            &format!("dmr[{index}].timestamp"),
+            &metadata.timestamp,
+        )?;
+    }
     Ok(())
 }
 
@@ -1393,21 +1490,6 @@ async fn comment_save(
     Ok(Json(()))
 }
 
-async fn do_submit_inbox(
-    user: Identity,
-    env: &Data<Env>,
-    req: Json<InboxSubmitEndpointReq>,
-) -> Result<InboxSubmitRsp, AppError> {
-    match req.into_inner() {
-        InboxSubmitEndpointReq::Legacy(req) => {
-            submit_legacy_inbox(user, env, req).await
-        }
-        InboxSubmitEndpointReq::Generic(req) => {
-            submit_generic_inbox(user, env, req).await
-        }
-    }
-}
-
 async fn submit_legacy_inbox(
     user: Identity,
     env: &Data<Env>,
@@ -1426,8 +1508,8 @@ async fn submit_legacy_inbox(
 async fn submit_generic_inbox(
     user: Identity,
     env: &Data<Env>,
-    req: GenericInboxSubmitReq,
-) -> Result<InboxSubmitRsp, AppError> {
+    item: InboxSubmitItem,
+) -> Result<GenericInboxSubmitRsp, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_any_role(
         &env.dbx,
@@ -1439,15 +1521,20 @@ async fn submit_generic_inbox(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    submit_generic_inbox_messages(env, &login, &logins, req).await
+    let submitted =
+        submit_generic_inbox_message(env, &login, &logins, item).await?;
+    Ok(GenericInboxSubmitRsp {
+        message_id: submitted.message_id,
+        warnings: submitted.warnings,
+    })
 }
 
-async fn submit_generic_inbox_messages(
+async fn submit_generic_inbox_message(
     env: &Data<Env>,
     login: &str,
     logins: &Vec<String>,
-    req: GenericInboxSubmitReq,
-) -> Result<InboxSubmitRsp, AppError> {
+    item: InboxSubmitItem,
+) -> Result<SubmittedInboxItem, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = datasource::Entity::find()
         .filter(datasource::Column::ApiLogin.eq(login))
@@ -1457,31 +1544,15 @@ async fn submit_generic_inbox_messages(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let mut changed_inbox_ids = vec![];
-    let mut messages = vec![];
-    let mut warnings = vec![];
-
-    for item in req.messages {
-        let submitted = submit_generic_inbox_item(
-            env,
-            &txn,
-            &datasource,
-            login,
-            logins,
-            item,
-        )
-        .await
-        .c(h!())?;
-        changed_inbox_ids.push(submitted.inbox_id);
-        messages.push(InboxSubmitMessageRsp {
-            message_id: submitted.message_id,
-        });
-        warnings.extend(submitted.warnings);
-    }
+    let submitted =
+        submit_generic_inbox_item(env, &txn, &datasource, login, logins, item)
+            .await
+            .c(h!())?;
+    let inbox_id = submitted.inbox_id;
 
     txn.commit().await.c(h!())?;
-    fanout_inbox_changed(env, changed_inbox_ids).await;
-    Ok(InboxSubmitRsp { messages, warnings })
+    fanout_inbox_changed(env, vec![inbox_id]).await;
+    Ok(submitted)
 }
 
 async fn submit_legacy_inbox_messages(
@@ -1810,13 +1881,14 @@ async fn get_freq_pelengs_summary(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource, datasource_group, login, organism, sigint_inbox_item,
-        sigint_inbox_item_metadata, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, sigint_zone_datasource, signal_group,
-        signal_message, signal_message_group, signal_message_media, tag,
+        datasource, datasource_group, login, organism, sigint_comment,
+        sigint_inbox_item, sigint_inbox_item_metadata,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag,
+        sigint_zone_datasource, signal_group, signal_message,
+        signal_message_group, signal_message_media, tag,
     };
     use crate::functest::tests::*;
-    use chrono::Utc;
+    use chrono::{DateTime, SecondsFormat, Utc};
     use sea_orm::ActiveValue::Set;
     use serde_json::json;
     use serial_test::serial;
@@ -1825,7 +1897,7 @@ mod tests {
 
     fn submit_dmr_metadata(cc: Option<i32>) -> SubmitDmrMetadata {
         SubmitDmrMetadata {
-            timestamp: "2026-06-25T12:34:56".to_string(),
+            timestamp: "2026-06-25T12:34:56Z".to_string(),
             cc,
             freq: "145.0260".to_string(),
             signal_name: "dmr".to_string(),
@@ -1837,6 +1909,11 @@ mod tests {
         }
     }
 
+    fn submit_timestamp(dt: NaiveDateTime) -> String {
+        DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
+            .to_rfc3339_opts(SecondsFormat::Secs, true)
+    }
+
     fn warning_codes(warnings: &[InboxSubmitWarning]) -> Vec<&str> {
         warnings
             .iter()
@@ -1844,25 +1921,22 @@ mod tests {
             .collect()
     }
 
-    fn generic_submit_req() -> GenericInboxSubmitReq {
+    fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
-        GenericInboxSubmitReq {
-            messages: vec![InboxSubmitItem {
-                message_id: None,
-                payload: InboxInsertPayload {
-                    text: "generic datasource gate".to_string(),
-                    checked: true,
-                    timestamp: Some(now.and_utc().timestamp_millis()),
-                    sender: Some("generic submit".to_string()),
-                    post: Some("SC1".to_string()),
-                    ..Default::default()
-                },
-                group_names: Some(vec!["SC1".to_string()]),
-                source: Some("test".to_string()),
-                integration: Some("generic".to_string()),
-                network: None,
-                dmr: vec![],
-            }],
+        InboxSubmitItem {
+            message_id: None,
+            payload: GenericInboxSubmitPayload {
+                text: "generic datasource gate".to_string(),
+                timestamp: submit_timestamp(now),
+                sender: Some("generic submit".to_string()),
+                post: Some("SC1".to_string()),
+                ..Default::default()
+            },
+            group_names: Some(vec!["SC1".to_string()]),
+            source: Some("test".to_string()),
+            integration: Some("generic".to_string()),
+            network: None,
+            dmr: vec![],
         }
     }
 
@@ -1982,7 +2056,7 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_requires_group_names() {
         let item = InboxSubmitItem {
-            payload: InboxInsertPayload {
+            payload: GenericInboxSubmitPayload {
                 text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
                 ..Default::default()
             },
@@ -1996,7 +2070,7 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_rejects_missing_message_text() {
         let item = InboxSubmitItem {
-            payload: InboxInsertPayload {
+            payload: GenericInboxSubmitPayload {
                 text: " ".to_string(),
                 ..Default::default()
             },
@@ -2135,13 +2209,17 @@ mod tests {
         next.hash_id = Some("ABCDEF01".to_string());
         let item = InboxSubmitItem {
             message_id: None,
-            payload: InboxInsertPayload {
+            payload: GenericInboxSubmitPayload {
                 text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
                 freq: Some("145.02678".to_string()),
+                coords: Some(SubmitCoordinates {
+                    lat: 49.12345,
+                    lon: 37.12345,
+                }),
                 callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
-                checked: true,
-                timestamp: Some(now.and_utc().timestamp_millis()),
+                timestamp: submit_timestamp(now),
                 sender: Some("generic submit".to_string()),
+                full_body: Some("Сигнали: dmr".to_string()),
                 post: Some("SC1".to_string()),
                 ..Default::default()
             },
@@ -2209,6 +2287,17 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(inbox_item.freq.as_deref(), Some("145.0267"));
+        assert_eq!(inbox_item.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(inbox_item.lat, Some(49.12345));
+        assert_eq!(inbox_item.lng, Some(37.12345));
+        assert_eq!(inbox_item.checked, Some(true));
+        let comment = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(comment.comment, "Сигнали: dmr");
         let metadata = sigint_inbox_item_metadata::Entity::find()
             .filter(
                 sigint_inbox_item_metadata::Column::SigintInboxItemId
@@ -2309,7 +2398,7 @@ mod tests {
         let datasource = datasource.update(&env.dbx).await.unwrap();
         let logins = vec![login.login.clone()];
 
-        let err = submit_generic_inbox_messages(
+        let err = submit_generic_inbox_message(
             &env_data,
             &login.login,
             &logins,
@@ -2325,7 +2414,7 @@ mod tests {
         datasource.deleted = Set(true);
         datasource.update(&env.dbx).await.unwrap();
 
-        let err = submit_generic_inbox_messages(
+        let err = submit_generic_inbox_message(
             &env_data,
             &login.login,
             &logins,

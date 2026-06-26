@@ -4476,7 +4476,8 @@ mod tests {
         assert!(sql.contains("FROM organism_aor"));
         assert!(sql.contains("organism_aor.organism_id = 42"));
         assert!(sql.contains("FROM sigint_network_aor"));
-        assert!(sql.contains("linked_aor.left_bound BETWEEN selected_aor.left_bound"));
+        assert!(sql
+            .contains("linked_aor.left_bound BETWEEN selected_aor.left_bound"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" IS NULL"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" >= "));
         assert!(sql.contains("\"sigint_network\".\"active_from\" IS NULL"));
