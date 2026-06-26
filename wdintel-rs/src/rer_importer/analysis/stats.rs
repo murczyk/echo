@@ -263,6 +263,11 @@ fn build_groups_query(
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res =
         filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
+    let groups_res =
+        match selected_aor_group_facet_condition(&req.selected_aors) {
+            Some(condition) => groups_res.filter(condition),
+            None => groups_res,
+        };
     let groups_res = filter_selected_tags(
         groups_res,
         &req.selected_tags,
