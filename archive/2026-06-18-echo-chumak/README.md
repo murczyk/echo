@@ -12,10 +12,18 @@ cp .env.example .env
 
 ## Команди
 
-Увійти в Echo і вивести отримані session cookies:
-
+1)
 ```sh
 python3 test_chumak.py login
+```
+
+Виконує POST запит `/api/user/login` на Echo і виводить отримані session cookies.
+Приклад request payload:
+```json
+{
+  "login": "chumak-api",
+  "password": "1234"
+}
 ```
 
 Очікуваний output:
@@ -25,18 +33,13 @@ PASS: logged in as <ECHO_LOGIN>
 Cookie: <cookie-name>=<session-cookie>; ...
 ```
 
-Знайти активні мережі за обов'язковою частотою та необов'язковими AOR/color code:
-
+2) 
 ```sh
 python3 test_chumak.py find-networks
 ```
 
-Endpoint:
-
-```text
-POST /api/sigint/network/find-live
-```
-
+Пошук активних мереж за частотою та (опційно) color code.
+Виконує POST запит на `/api/sigint/network/find-live`.
 Приклад request payload:
 
 ```json
@@ -83,20 +86,13 @@ POST /api/sigint/network/find-live
 }
 ```
 
-## Надсилання нового повідомлення
-
-Створити нове повідомлення:
-
+3)
 ```sh
 python3 test_chumak.py submit-message
 ```
 
-Endpoint:
-
-```text
-POST /api/rer-importer/inbox/submit
-```
-
+Створення нового повідомлення.
+Виконує POST запит на `/api/rer-importer/inbox/submit`.
 Приклад request payload:
 
 ```json
