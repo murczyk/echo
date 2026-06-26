@@ -350,6 +350,7 @@ export function AppNavbar({
             <a
               className="app-navbar-logo flex shrink-0 items-center space-x-2"
               href="/"
+              onClick={(e) => handleInternalLinkClick(e, "/")}
             >
               <div className="relative h-7 w-8">
                 <div
