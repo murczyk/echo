@@ -58,6 +58,15 @@ function formatApiError(error: unknown): string {
   return 'Помилка запиту';
 }
 
+function normalizeMachineTags(machineTags: string[]): string[] {
+  return machineTags.map((tag) => tag.trim()).filter(Boolean);
+}
+
+function machineIdentityValidationMessage(machineId: string, machineTags: string[]): string | null {
+  if (machineId.trim() || normalizeMachineTags(machineTags).length > 0) return null;
+  return 'Вкажіть ID машини або хоча б один тег машини.';
+}
+
 function canEdit(authUserRoles: string[]): boolean {
   return authUserRoles.includes('Admin') || authUserRoles.includes('NetworkEditor');
 }
@@ -73,6 +82,7 @@ export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] 
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const editable = canEdit(authUserRoles);
+  const identityValidationMessage = dialogOpen ? machineIdentityValidationMessage(form.machineId, form.machineTags) : null;
 
   const load = useCallback(async () => {
     if (!editable) return;
@@ -125,10 +135,16 @@ export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] 
       return;
     }
     try {
+      const machineId = form.machineId.trim() || null;
+      const machineTags = normalizeMachineTags(form.machineTags);
+      if (!machineId && machineTags.length === 0) {
+        setError('Вкажіть ID машини або хоча б один тег машини.');
+        return;
+      }
       const payload = {
         sigintNetworkId: form.sigintNetworkId,
-        machineId: form.machineId.trim() || null,
-        machineTags: form.machineTags.map((tag) => tag.trim()).filter(Boolean),
+        machineId,
+        machineTags,
       };
       const rsp =
         form.id === null
@@ -243,20 +259,33 @@ export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] 
                 </MenuItem>
               ))}
             </TextField>
-            <TextField label="ID машини" value={form.machineId} onChange={(event) => setForm((prev) => ({ ...prev, machineId: event.target.value }))} fullWidth />
+            <TextField
+              label="ID машини"
+              value={form.machineId}
+              onChange={(event) => setForm((prev) => ({ ...prev, machineId: event.target.value }))}
+              error={Boolean(identityValidationMessage)}
+              fullWidth
+            />
             <Autocomplete
               multiple
               freeSolo
               options={[]}
               value={form.machineTags}
               onChange={(_, value) => setForm((prev) => ({ ...prev, machineTags: value }))}
-              renderInput={(params) => <TextField {...params} label="Теги машини" />}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Теги машини"
+                  error={Boolean(identityValidationMessage)}
+                  helperText={identityValidationMessage ?? undefined}
+                />
+              )}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Скасувати</Button>
-          <Button variant="contained" onClick={() => void save()}>
+          <Button variant="contained" onClick={() => void save()} disabled={Boolean(identityValidationMessage)}>
             Зберегти
           </Button>
         </DialogActions>

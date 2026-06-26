@@ -161,4 +161,20 @@ describe('MachinesPage', () => {
     expect(apiMock.updateUnitMachine).toHaveBeenCalled();
     expect(document.body.textContent).toContain('Машина з таким ID вже активна.');
   });
+
+  it('requires a machine id or at least one machine tag before save', async () => {
+    apiMock.listUnitMachines.mockResolvedValueOnce([
+      buildMachine({ machineId: null, machineTags: [] }),
+    ]);
+    await renderPage();
+
+    await act(async () => {
+      iconButton('EditIcon').click();
+    });
+    await flush();
+
+    expect(document.body.textContent).toContain('Вкажіть ID машини або хоча б один тег машини.');
+    expect(buttonByText('Зберегти').disabled).toBe(true);
+    expect(apiMock.updateUnitMachine).not.toHaveBeenCalled();
+  });
 });
