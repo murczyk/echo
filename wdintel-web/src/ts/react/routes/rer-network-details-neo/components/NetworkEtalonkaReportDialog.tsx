@@ -181,6 +181,9 @@ export function NetworkEtalonkaReportDialog({
         ? 'Формування'
         : 'Готово';
   const progressStageLabel = isQueued || !hasBgtask ? 'Очікує запуску' : latestProgressStage?.text ?? 'Підготовка';
+  const progressSummaryLabel = isQueued
+    ? `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${queuedForTime ?? '—'}`
+    : `${report.curr} / ${report.overall}`;
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -388,139 +391,143 @@ export function NetworkEtalonkaReportDialog({
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="body2" color="text.secondary">
-                    {isQueued ? 'Позиція в черзі оновлюється автоматично.' : `${report.curr} / ${report.overall}`}
+                    {progressSummaryLabel}
                   </Typography>
                   <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
                   </Button>
                 </Stack>
 
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
-                    gap: 1,
-                    p: 1.5,
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'background.default',
-                  }}
-                >
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      ID звіту
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {report.taskId !== null ? `#${report.taskId}` : '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Черга
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Очікує
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {queuedForTime ?? '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Початок
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {startedAtLabel ?? '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      ID задачі
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Заплановано
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {plannedForLabel ?? '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Триває
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {elapsedTime ?? '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Етап
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {progressStageLabel}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Логи
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {report.logs.length}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Файл
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
-                      {report.downloadFileName ?? '—'}
-                    </Typography>
-                  </Stack>
-                </Box>
-
-                {report.progressExpanded && hasProgressDetails ? (
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
-                    <Stack spacing={0.75}>
-                      {progressStages.map((stage) => {
-                        const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
-                        const stageCurrent = report.running && report.curr === stage.index;
-                        return (
-                          <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
-                            {stageDone ? (
-                              <CheckCircleIcon color="success" fontSize="small" />
-                            ) : stageCurrent ? (
-                              <CircularProgress size={14} />
-                            ) : report.error ? (
-                              <HighlightOffIcon color="error" fontSize="small" />
-                            ) : (
-                              <Typography variant="caption" color="text.disabled">
-                                ○
-                              </Typography>
-                            )}
-                            <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
-                              [{stage.index}/{stage.overall}] {stage.text}
-                            </Typography>
-                          </Stack>
-                        );
-                      })}
-                      {visibleLogLines.map((line) => (
-                        <Typography key={line} variant="caption" color="text.secondary">
-                          {line}
+                {report.progressExpanded ? (
+                  <Stack spacing={1}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 1,
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        bgcolor: 'background.default',
+                      }}
+                    >
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          ID звіту
                         </Typography>
-                      ))}
-                    </Stack>
-                  </Paper>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {report.taskId !== null ? `#${report.taskId}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Черга
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Очікує
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {queuedForTime ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Початок
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {startedAtLabel ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          ID задачі
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Заплановано
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {plannedForLabel ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Триває
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {elapsedTime ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Етап
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {progressStageLabel}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Логи
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {report.logs.length}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Файл
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                          {report.downloadFileName ?? '—'}
+                        </Typography>
+                      </Stack>
+                    </Box>
+
+                    {hasProgressDetails ? (
+                      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
+                        <Stack spacing={0.75}>
+                          {progressStages.map((stage) => {
+                            const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
+                            const stageCurrent = report.running && report.curr === stage.index;
+                            return (
+                              <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
+                                {stageDone ? (
+                                  <CheckCircleIcon color="success" fontSize="small" />
+                                ) : stageCurrent ? (
+                                  <CircularProgress size={14} />
+                                ) : report.error ? (
+                                  <HighlightOffIcon color="error" fontSize="small" />
+                                ) : (
+                                  <Typography variant="caption" color="text.disabled">
+                                    ○
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
+                                  [{stage.index}/{stage.overall}] {stage.text}
+                                </Typography>
+                              </Stack>
+                            );
+                          })}
+                          {visibleLogLines.map((line) => (
+                            <Typography key={line} variant="caption" color="text.secondary">
+                              {line}
+                            </Typography>
+                          ))}
+                        </Stack>
+                      </Paper>
+                    ) : null}
+                  </Stack>
                 ) : null}
 
                 {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}

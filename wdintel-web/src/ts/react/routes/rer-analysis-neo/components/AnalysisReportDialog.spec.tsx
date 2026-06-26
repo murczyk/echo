@@ -154,7 +154,114 @@ describe('AnalysisReportDialog', () => {
     });
   });
 
-  it('shows queued diagnostics instead of progress stages before backend pickup', () => {
+  it('shows queued warnings while keeping diagnostics collapsed', () => {
+    const originalNow = Date.now;
+    Date.now = () => new Date('2026-05-01T10:06:00Z').getTime();
+
+    try {
+      const view = renderDialog({
+        taskRuns: [
+          {
+            id: 1,
+            reportTitle: 'Донесення',
+            reportName: 'report.docx',
+            headerTitle: 'Звіт Донесення: report.docx',
+            running: true,
+            cancelled: false,
+            curr: 0,
+            overall: 100,
+            logs: [],
+            error: null,
+            startedAt: null,
+            finishedAt: null,
+            expanded: true,
+            historyRow: {
+              id: 41,
+              reportKind: 'tags',
+              requestedBy: 'tester',
+              createdAt: '2026-05-01T10:00:00',
+              startedAt: null,
+              plannedForTs: null,
+              queuePosition: 2,
+              status: 'planned',
+              completedAt: null,
+              hasFile: false,
+              fileName: null,
+              contentType: null,
+              bgtaskId: null,
+              lastError: null,
+              details: '',
+              progress: 0,
+              errorLog: null,
+            },
+          },
+        ],
+      });
+
+      expect(document.body.textContent).toContain('Очікує запуску');
+      expect(document.body.textContent).not.toContain('Формується');
+      expect(document.body.textContent).toContain('Показати деталі');
+      expect(document.body.textContent).not.toContain('ID звіту');
+      expect(document.body.textContent).toContain('Звіт ще не стартував. Перевірте його стан у Налаштування > Мої звіти.');
+
+      act(() => {
+        view.root.unmount();
+      });
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('shows errors while keeping diagnostics collapsed', () => {
+    const view = renderDialog({
+      taskRuns: [
+        {
+          id: 1,
+          reportTitle: 'Донесення',
+          reportName: 'report.docx',
+          headerTitle: 'Звіт Донесення: report.docx',
+          running: false,
+          cancelled: false,
+          curr: 0,
+          overall: 100,
+          logs: [],
+          error: 'Boom',
+          startedAt: null,
+          finishedAt: null,
+          expanded: true,
+          historyRow: {
+            id: 41,
+            reportKind: 'tags',
+            requestedBy: 'tester',
+            createdAt: '2026-05-01T10:00:00',
+            startedAt: null,
+            plannedForTs: null,
+            queuePosition: 2,
+            status: 'failed',
+            completedAt: null,
+            hasFile: false,
+            fileName: null,
+            contentType: null,
+            bgtaskId: 77,
+            lastError: 'Boom',
+            details: '',
+            progress: 0,
+            errorLog: null,
+          },
+        },
+      ],
+    });
+
+    expect(document.body.textContent).toContain('Boom');
+    expect(document.body.textContent).not.toContain('ID звіту');
+    expect(document.body.textContent).toContain('Показати деталі');
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
+
+  it('shows queued diagnostics when expanded and hides them again when collapsed', () => {
     const view = renderDialog({
       taskRuns: [
         {
@@ -194,10 +301,36 @@ describe('AnalysisReportDialog', () => {
       ],
     });
 
-    expect(document.body.textContent).toContain('Очікує запуску');
-    expect(document.body.textContent).not.toContain('Формується');
+    expect(document.body.textContent).toContain('Показати деталі');
+    expect(document.body.textContent).not.toContain('ID звіту');
+
+    view.onSetProgressExpanded(true);
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          progressExpanded: true,
+        }),
+      );
+    });
+
+    expect(document.body.textContent).toContain('ID звіту');
     expect(document.body.textContent).toContain('#41');
     expect(document.body.textContent).toContain('#2');
+
+    view.onSetProgressExpanded(false);
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          progressExpanded: false,
+        }),
+      );
+    });
+
+    expect(document.body.textContent).not.toContain('ID звіту');
 
     act(() => {
       view.root.unmount();

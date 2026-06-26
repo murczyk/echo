@@ -73,6 +73,19 @@ done
 stop_existing_server() {
     local pids
 
+    pids="$(
+        ps -eo pid=,command= |
+            awk '
+                /cargo watch -- cargo run -- --mode=debug server/ ||
+                /wdintel-rs --mode=debug server/ {
+                    print $1
+                }
+            '
+    )"
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+    fi
+
     pids="$(lsof -tiTCP:8081 -sTCP:LISTEN 2>/dev/null || true)"
     if [ -n "$pids" ]; then
         kill $pids 2>/dev/null || true
@@ -153,6 +166,7 @@ if [ "$quiet" = "true" ]; then
 
     server_port="${ECHO_SERVER_PORT:-8081}"
     echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
+    echo "report workers run separately: just dev-bgworker" >&2
 
     run_server "$@" 2>&1 | filter_quiet_output
 else
@@ -160,5 +174,6 @@ else
         export RUST_LOG=sqlx=trace,seaorm=trace
     fi
 
+    echo "report workers run separately: just dev-bgworker" >&2
     run_server "$@"
 fi

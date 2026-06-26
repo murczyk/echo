@@ -242,6 +242,9 @@ export function AnalysisReportDialog({
   const latestProgressStage = extractStages(latestTaskRun?.logs ?? []).at(-1) ?? null;
   const progressStageLabel = isQueued || !hasBgtask ? QUEUED_TEXT : latestProgressStage?.text ?? PREPARING_TEXT;
   const progressPercent = Math.max(1, Math.min(100, Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100)));
+  const progressSummaryLabel = isQueued
+    ? `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${formatDurationSinceIso(historyRow?.createdAt ?? null) ?? '—'}`
+    : `${latestTaskRun?.curr ?? 0} / ${latestTaskRun?.overall ?? 100}`;
   const downloadButtonLabel =
     builderMode === 'exports'
       ? 'Завантажити'
@@ -515,7 +518,7 @@ export function AnalysisReportDialog({
 
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                 <Typography variant="body2" color="text.secondary">
-                  {isQueued ? 'Позиція в черзі оновлюється автоматично.' : `${latestTaskRun.curr} / ${latestTaskRun.overall}`}
+                  {progressSummaryLabel}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
@@ -527,100 +530,6 @@ export function AnalysisReportDialog({
                 </Stack>
               </Stack>
 
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
-                  gap: 1,
-                  p: 1.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  bgcolor: 'background.default',
-                }}
-              >
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    ID звіту
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {historyRow?.id != null ? `#${historyRow.id}` : '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Черга
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Створено
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {reportCreatedAtLabel ?? '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Очікує
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {reportQueuedForLabel ?? '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Початок
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {reportStartedAtLabel ?? '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Заплановано
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {reportPlannedForLabel ?? '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    ID задачі
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Триває
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {formatElapsedTime(isQueued ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null : latestTaskRun.startedAt ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null : null) ?? '—'}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Логи
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {latestTaskRun.logs.length}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    Етап
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {progressStageLabel}
-                  </Typography>
-                </Stack>
-              </Box>
-
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
               {isQueued && historyRow?.createdAt != null && Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
                 <Alert severity="warning">Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.</Alert>
@@ -628,6 +537,100 @@ export function AnalysisReportDialog({
 
               {progressExpanded ? (
                 <Stack spacing={1}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                      gap: 1,
+                      p: 1.5,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: 'background.default',
+                    }}
+                  >
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        ID звіту
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {historyRow?.id != null ? `#${historyRow.id}` : '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Черга
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Створено
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {reportCreatedAtLabel ?? '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Очікує
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {reportQueuedForLabel ?? '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Початок
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {reportStartedAtLabel ?? '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Заплановано
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {reportPlannedForLabel ?? '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        ID задачі
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Триває
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {formatElapsedTime(isQueued ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null : latestTaskRun.startedAt ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null : null) ?? '—'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Логи
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {latestTaskRun.logs.length}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        Етап
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {progressStageLabel}
+                      </Typography>
+                    </Stack>
+                  </Box>
+
                   {[latestTaskRun, ...historyTaskRuns.slice().reverse()].map((run) => {
                     const runQueued =
                       run.running &&

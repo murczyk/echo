@@ -308,6 +308,43 @@ describe('NetworkEtalonkaReportDialog', () => {
     expect(queuedText).not.toContain('[1/4]');
     expect(queuedText).not.toContain('Підготовка даних');
     expect(queuedText).toContain('Показати деталі');
+    expect(queuedText).not.toContain('ID звіту');
+
+    queuedView.props.onSetProgressExpanded(true);
+
+    act(() => {
+      queuedView.root.render(
+        <NetworkEtalonkaReportDialog
+          {...queuedView.props}
+          report={{
+            ...queuedView.props.report,
+            progressExpanded: true,
+          }}
+        />,
+      );
+    });
+
+    const expandedQueuedText = document.body.textContent ?? '';
+    expect(expandedQueuedText).toContain('ID звіту');
+    expect(expandedQueuedText).toContain('Черга');
+    expect(expandedQueuedText).toContain('ID задачі');
+
+    queuedView.props.onSetProgressExpanded(false);
+
+    act(() => {
+      queuedView.root.render(
+        <NetworkEtalonkaReportDialog
+          {...queuedView.props}
+          report={{
+            ...queuedView.props.report,
+            progressExpanded: false,
+          }}
+        />,
+      );
+    });
+
+    const collapsedQueuedText = document.body.textContent ?? '';
+    expect(collapsedQueuedText).not.toContain('ID звіту');
 
     act(() => {
       queuedView.root.unmount();
