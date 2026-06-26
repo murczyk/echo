@@ -11,7 +11,7 @@ import {
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus } from '../../services/api/report-history';
+import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus, parseUtcDateTime } from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
 import {
@@ -86,7 +86,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
             error: row.lastError ?? 'Сталася помилка під час формування звіту.',
             finishedAt: row.completedAt ?? new Date().toISOString(),
             downloadFileName: fileName,
-            startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
           throw new Error(row.lastError ?? 'Сталася помилка під час формування звіту.');
         }
@@ -104,7 +104,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
             finishedAt: null,
             progressExpanded: true,
             downloadFileName: fileName,
-            startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
           await new Promise((resolve) => window.setTimeout(resolve, 1000));
           continue;
@@ -128,7 +128,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           finishedAt: rsp.running ? null : new Date().toISOString(),
           progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
           downloadFileName: fileName,
-          startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+          startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
         }));
 
         if (!rsp.running) {
@@ -152,7 +152,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         finishedAt: new Date().toISOString(),
         progressExpanded: current.progressExpanded,
         downloadFileName: fileName,
-        startedAtMs: current.historyRow?.startedAt ? new Date(current.historyRow.startedAt).getTime() : current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
       }));
     } catch (error) {
       args.setEtalonkaReport((current) => ({
@@ -160,7 +160,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         running: false,
         error: formatErrorMessage(error),
         progressExpanded: true,
-        startedAtMs: current.historyRow?.startedAt ? new Date(current.historyRow.startedAt).getTime() : current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
       }));
       throw error;
     }

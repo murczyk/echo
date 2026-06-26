@@ -22,6 +22,12 @@ const bgtaskMock = vi.hoisted(() => ({
 
 const reportHistoryMock = vi.hoisted(() => ({
   fetchReportHistoryStatus: vi.fn(),
+  parseUtcDateTime: (value: string | null | undefined) => {
+    if (value == null || value.trim() === '') return null;
+    const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  },
 }));
 
 const downloadBlobMock = vi.hoisted(() => vi.fn());
@@ -62,6 +68,7 @@ vi.mock('../../services/api/bgtask', () => ({
 
 vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
+  parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
 vi.mock('../../utils/download-blob', () => ({

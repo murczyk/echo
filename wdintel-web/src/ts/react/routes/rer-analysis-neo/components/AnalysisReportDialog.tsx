@@ -31,6 +31,7 @@ import { useId } from 'react';
 import type { User } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
+import { parseUtcDateTime } from '../../../services/api/report-history';
 import {
   describeAppliedReportFilters,
   REPORT_ADJACENT_FREQS_OPTIONS,
@@ -97,13 +98,6 @@ function getStageStatus(run: AnalysisReportTaskRun, stageIndex: number): StageSt
   return 'success';
 }
 
-function parseReportDateTime(value: string | null | undefined): Date | null {
-  if (value == null || value.trim() === '') return null;
-  const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function formatElapsedTime(startedAtMs: number | null): string | null {
   if (startedAtMs === null) return null;
 
@@ -118,13 +112,13 @@ function formatElapsedTime(startedAtMs: number | null): string | null {
 }
 
 function formatDurationSinceIso(value: string | null | undefined): string | null {
-  const startedAt = parseReportDateTime(value);
+  const startedAt = parseUtcDateTime(value);
   if (startedAt === null) return null;
   return formatElapsedTime(startedAt.getTime());
 }
 
 function formatDateTimeLabel(value: string | null | undefined): string | null {
-  const date = parseReportDateTime(value);
+  const date = parseUtcDateTime(value);
   if (date === null) return null;
   return new Intl.DateTimeFormat('uk-UA', {
     dateStyle: 'short',
@@ -606,9 +600,9 @@ export function AnalysisReportDialog({
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {formatElapsedTime(
                       isQueued
-                        ? parseReportDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null
+                        ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null
                         : latestTaskRun.startedAt
-                          ? parseReportDateTime(latestTaskRun.startedAt)?.getTime() ?? null
+                          ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null
                           : null,
                     ) ?? '—'}
                   </Typography>
@@ -625,7 +619,7 @@ export function AnalysisReportDialog({
 
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
               {isQueued ? <Alert severity="info">Звіт додано в чергу. Переглянути його можна в Налаштування &gt; Мої звіти.</Alert> : null}
-              {isQueued && historyRow?.createdAt != null && Date.now() - parseReportDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
+              {isQueued && historyRow?.createdAt != null && Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
                 <Alert severity="warning">Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.</Alert>
               ) : null}
 

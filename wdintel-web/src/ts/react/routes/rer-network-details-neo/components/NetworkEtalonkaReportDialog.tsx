@@ -27,6 +27,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import type { BgtaskProgressStage } from '../../../services/api/bgtask';
 import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
+import { parseUtcDateTime } from '../../../services/api/report-history';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
 
@@ -73,22 +74,15 @@ function formatElapsedTime(startedAtMs: number | null): string | null {
   return `${minutes} хв ${seconds} с`;
 }
 
-function parseReportDateTime(value: string | null | undefined): Date | null {
-  if (value == null || value.trim() === '') return null;
-  const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function formatDurationSinceIso(value: string | null | undefined): string | null {
-  const startedAt = parseReportDateTime(value);
+  const startedAt = parseUtcDateTime(value);
   if (startedAt === null) return null;
   const startedAtMs = startedAt.getTime();
   return formatElapsedTime(startedAtMs);
 }
 
 function formatDateTimeLabel(value: string | null | undefined): string | null {
-  const date = parseReportDateTime(value);
+  const date = parseUtcDateTime(value);
   if (date === null) return null;
   return date.toLocaleString('uk-UA', {
     dateStyle: 'short',
@@ -170,7 +164,7 @@ export function NetworkEtalonkaReportDialog({
   const progressStages = parseBgtaskProgressStages(report.logs);
   const latestProgressStage = getLatestProgressStage(progressStages);
   const elapsedTime = formatElapsedTime(report.startedAtMs);
-  const createdAtMs = parseReportDateTime(historyRow?.createdAt)?.getTime() ?? null;
+  const createdAtMs = parseUtcDateTime(historyRow?.createdAt)?.getTime() ?? null;
   const queuedForTime = formatDurationSinceIso(historyRow?.createdAt);
   const startedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
   const plannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);

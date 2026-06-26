@@ -6,7 +6,7 @@ import {
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { fetchReportHistoryStatus } from '../../services/api/report-history';
+import { fetchReportHistoryStatus, parseUtcDateTime } from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
@@ -59,7 +59,7 @@ function applyReportHistoryRow(
     finishedAt: row.status === 'done' ? new Date().toISOString() : null,
     progressExpanded: current.progressExpanded || row.status !== 'planned',
     downloadFileName: fileName,
-    startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+    startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
   }));
 }
 
@@ -105,7 +105,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
               error: row.lastError ?? 'Сталася помилка під час формування звіту.',
               finishedAt: row.completedAt ?? new Date().toISOString(),
               downloadFileName: fileName,
-              startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+              startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
             }));
             throw new Error(row.lastError ?? 'Сталася помилка під час формування звіту.');
           }
@@ -134,7 +134,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
             finishedAt: rsp.running ? null : new Date().toISOString(),
             progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
             downloadFileName: fileName,
-            startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
 
           if (!rsp.running) {
@@ -158,7 +158,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           finishedAt: new Date().toISOString(),
           progressExpanded: current.progressExpanded,
           downloadFileName: fileName,
-          startedAtMs: current.historyRow?.startedAt ? new Date(current.historyRow.startedAt).getTime() : current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
         }));
       } catch (error) {
         updateReportState(setState, (current) => ({
@@ -166,7 +166,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           running: false,
           progressExpanded: true,
           error: formatErrorMessage(error),
-          startedAtMs: current.historyRow?.startedAt ? new Date(current.historyRow.startedAt).getTime() : current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
         }));
         if (isUnauthorizedError(error)) {
           redirectToLogin();

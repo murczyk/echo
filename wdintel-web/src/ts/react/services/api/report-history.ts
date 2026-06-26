@@ -3,6 +3,13 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-
 import { postBytes, postJson } from './client';
 import { fetchBgtaskStatusAndLogs, type BgtaskStatusAndLogsRsp } from './bgtask';
 
+export function parseUtcDateTime(value: string | null | undefined): Date | null {
+  if (value == null || value.trim() === '') return null;
+  const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export async function listReportHistory(options?: { signal?: AbortSignal }): Promise<ReportHistoryRow[]> {
   const raw = await postJson<unknown>('/api/report-history/list', undefined, options);
   return transformSnakeToCamel<ReportHistoryRow[]>(raw) ?? [];
