@@ -720,6 +720,5 @@ pub struct FindLiveNetworkDetails {
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
     pub units: Vec<String>,
-    pub aor_ids: Vec<i64>,
     pub post_ids: Vec<i64>,
 }

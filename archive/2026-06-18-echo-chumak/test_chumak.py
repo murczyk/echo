@@ -123,7 +123,6 @@ def connected_client() -> EchoClient:
 def network_payload() -> dict:
     return {
         "freq": required_env("CHUMAK_FREQ"),
-        "aor_id": optional_int("CHUMAK_AOR_ID"),
         "color_code": optional_env("CHUMAK_COLOR_CODE") or None,
     }
 

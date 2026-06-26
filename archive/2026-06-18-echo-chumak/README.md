@@ -31,14 +31,6 @@ Cookie: <cookie-name>=<session-cookie>; ...
 python3 test_chumak.py find-networks
 ```
 
-Створити нове повідомлення Chumak в inbox:
-
-```sh
-python3 test_chumak.py submit-message
-```
-
-## Пошук активних мереж
-
 Endpoint:
 
 ```text
@@ -73,7 +65,6 @@ POST /api/sigint/network/find-live
         "active_from": 1781851200000,
         "active_to": 1781937600000,
         "units": ["3 мсб 291 мсп 42 мсд 58 А"],
-        "aor_ids": [1],
         "post_ids": [5]
       },
       "live_freqs": ["404.1350"],
@@ -94,16 +85,16 @@ POST /api/sigint/network/find-live
 
 ## Надсилання нового повідомлення
 
+Створити нове повідомлення:
+
+```sh
+python3 test_chumak.py submit-message
+```
+
 Endpoint:
 
 ```text
 POST /api/rer-importer/inbox/submit
-```
-
-Можна надіслати generic submit payload напряму або використати команду:
-
-```sh
-python3 test_chumak.py submit-message
 ```
 
 Приклад request payload:

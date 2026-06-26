@@ -310,7 +310,9 @@ pub async fn find_live_networks(
     )
     .await
     .context(h!())?;
-    let network_ids = find_live_network_ids(&env.dbx, &groups, &req).await?;
+    let organism_id = load_user_organism_id(&env.dbx, &user_id).await?;
+    let network_ids =
+        find_live_network_ids(&env.dbx, &groups, &req, organism_id).await?;
     let networks =
         build_find_live_networks(&env.dbx, &groups, &req.freq, network_ids)
             .await?;
@@ -347,6 +349,7 @@ async fn find_live_network_ids(
     dbx: &DatabaseConnection,
     groups: &[String],
     req: &FindLiveNetworksReq,
+    organism_id: i64,
 ) -> Result<Vec<i64>, AppError> {
     #[derive(FromQueryResult)]
     struct NetworkIdRow {
@@ -357,8 +360,12 @@ async fn find_live_network_ids(
         return Ok(vec![]);
     }
 
-    let query =
-        build_find_live_network_ids_query(req, groups, Utc::now().naive_utc());
+    let query = build_find_live_network_ids_query(
+        req,
+        groups,
+        organism_id,
+        Utc::now().naive_utc(),
+    );
 
     Ok(query
         .into_model::<NetworkIdRow>()
@@ -373,6 +380,7 @@ async fn find_live_network_ids(
 fn build_find_live_network_ids_query(
     req: &FindLiveNetworksReq,
     groups: &[String],
+    organism_id: i64,
     now: NaiveDateTime,
 ) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find()
@@ -383,6 +391,7 @@ fn build_find_live_network_ids_query(
             sigint_network::Relation::SigintNetworkFreq.def(),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(find_live_network_visible_for_organism(organism_id))
         .filter(find_live_network_active_now(now))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(find_live_network_freq_active_now(now))
@@ -414,6 +423,38 @@ fn build_find_live_network_ids_query(
     }
 
     query
+}
+
+fn find_live_network_visible_for_organism(organism_id: i64) -> SimpleExpr {
+    Expr::cust_with_values(
+        r#"
+        EXISTS (
+            SELECT 1
+            FROM organism_aor
+            JOIN area_of_responsibility selected_aor
+                ON selected_aor.id = organism_aor.aor_id
+            WHERE organism_aor.organism_id = $1
+              AND selected_aor.deleted = false
+              AND EXISTS (
+                  SELECT 1
+                  FROM sigint_network_aor
+                  JOIN area_of_responsibility linked_aor
+                      ON linked_aor.id = sigint_network_aor.aor_id
+                  WHERE sigint_network_aor.network_id = sigint_network.id
+                    AND linked_aor.deleted = false
+                    AND (
+                        linked_aor.left_bound BETWEEN selected_aor.left_bound
+                            AND selected_aor.right_bound
+                        OR (
+                            linked_aor.left_bound <= selected_aor.left_bound
+                            AND linked_aor.right_bound >= selected_aor.right_bound
+                        )
+                    )
+              )
+        )
+        "#,
+        vec![organism_id],
+    )
 }
 
 fn find_live_network_active_now(now: NaiveDateTime) -> SimpleExpr {
@@ -506,7 +547,6 @@ async fn build_find_live_networks(
         .context(h!())?;
     let live_freqs = load_find_live_network_freqs(dbx, &network_ids).await?;
     let unit_names = load_find_live_network_units(dbx, &network_ids).await?;
-    let aor_ids = load_find_live_network_aors(dbx, &network_ids).await?;
     let post_ids = load_find_live_network_posts(dbx, &network_ids).await?;
     let callsigns = load_find_live_network_callsigns(dbx, &network_ids).await?;
     let locations =
@@ -540,7 +580,6 @@ async fn build_find_live_networks(
                     .active_to
                     .map(|dt| dt.and_utc().timestamp_millis()),
                 units: unit_names.get(&network_id).cloned().unwrap_or_default(),
-                aor_ids: aor_ids.get(&network_id).cloned().unwrap_or_default(),
                 post_ids: post_ids
                     .get(&network_id)
                     .cloned()
@@ -606,27 +645,6 @@ async fn load_find_live_network_units(
         names.entry(network_id).or_insert_with(Vec::new).push(name);
     }
     Ok(names)
-}
-
-async fn load_find_live_network_aors(
-    dbx: &DatabaseConnection,
-    network_ids: &[i64],
-) -> Result<HashMap<i64, Vec<i64>>, AppError> {
-    let rows = sigint_network_aor::Entity::find()
-        .filter(
-            sigint_network_aor::Column::NetworkId.eq_any(network_ids.to_vec()),
-        )
-        .all(dbx)
-        .await
-        .context(h!())?;
-    let mut result = HashMap::new();
-    for row in rows {
-        result
-            .entry(row.network_id)
-            .or_insert_with(Vec::new)
-            .push(row.aor_id);
-    }
-    Ok(result)
 }
 
 async fn load_find_live_network_posts(
@@ -1996,17 +2014,21 @@ async fn finish_network_freq_mutation(
     })
 }
 
-async fn load_user_organism_id(
-    txn: &DatabaseTransaction,
+async fn load_user_organism_id<'a, 'async_trait, C>(
+    dbx: &'a C,
     user_id: &str,
-) -> Result<i64, AppError> {
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     login::Entity::find_by_id(user_id.to_string())
         .select_only()
         .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(txn)
+        .into_tuple::<Option<i64>>()
+        .one(dbx)
         .await
         .c(h!())?
+        .flatten()
         .ok_or_else(|| AppError::BL {
             msg: "User has no organism assigned".to_string(),
         })
@@ -4447,10 +4469,14 @@ mod tests {
             color_code: None,
         };
 
-        let sql = build_find_live_network_ids_query(&req, &[], dt(5))
+        let sql = build_find_live_network_ids_query(&req, &[], 42, dt(5))
             .build(DbBackend::Postgres)
             .to_string();
 
+        assert!(sql.contains("FROM organism_aor"));
+        assert!(sql.contains("organism_aor.organism_id = 42"));
+        assert!(sql.contains("FROM sigint_network_aor"));
+        assert!(sql.contains("linked_aor.left_bound BETWEEN selected_aor.left_bound"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" IS NULL"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" >= "));
         assert!(sql.contains("\"sigint_network\".\"active_from\" IS NULL"));
@@ -4470,7 +4496,7 @@ mod tests {
         };
         let groups = vec!["group-a".to_string()];
 
-        let sql = build_find_live_network_ids_query(&req, &groups, dt(5))
+        let sql = build_find_live_network_ids_query(&req, &groups, 42, dt(5))
             .build(DbBackend::Postgres)
             .to_string();
         let sql_lowercase = sql.to_lowercase();
