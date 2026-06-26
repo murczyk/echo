@@ -222,6 +222,9 @@ function formatReportProgress(progress: number): string {
 }
 
 function formatReportStatus(row: ReportHistoryRow): string {
+  if (row.status === 'planned' && row.blockedByReportId != null) {
+    return `Очікує завершення звіту #${row.blockedByReportId}`;
+  }
   const label = REPORT_STATUS_LABELS[row.status] ?? row.status;
   if (row.status !== 'in_progress') return label;
   return `${label} ${formatReportProgress(row.progress)}`;
@@ -246,6 +249,9 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
     startedAt: null,
     plannedForTs: null,
     queuePosition: null,
+    blockedByReportId: null,
+    blockedByStartedAt: null,
+    blockedByBgtaskId: null,
   }));
 }
 
@@ -500,7 +506,7 @@ export function ReportHistoryTableSection({
         },
         {
           accessorKey: 'bgtaskId',
-          header: 'Bgtask',
+          header: 'ID задачі',
           Cell: ({ row }) => formatReportId(row.original.bgtaskId),
         },
         {

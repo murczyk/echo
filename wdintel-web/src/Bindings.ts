@@ -322,6 +322,9 @@ export type ReportHistoryRow = {
   startedAt: string | null;
   plannedForTs: string | null;
   queuePosition: number | null;
+  blockedByReportId: number | null;
+  blockedByStartedAt: string | null;
+  blockedByBgtaskId: number | null;
   status: string;
   completedAt: string | null;
   hasFile: boolean;

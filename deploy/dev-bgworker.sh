@@ -5,6 +5,7 @@ quiet="false"
 log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pidfile="${repo_root}/.dev-pids/dev-bgworker.pid"
 
 usage() {
     cat >&2 <<'EOF'
@@ -62,88 +63,76 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-stop_existing_bgworker() {
-    local pids
-
-    pids="$(
-        ps -eo pid=,command= |
-            awk '
-                /cargo watch -- cargo run -- --mode=debug bgworker/ ||
-                /wdintel-rs --mode=debug bgworker/ {
-                    print $1
-                }
-            '
-    )"
-    if [ -n "$pids" ]; then
-        kill $pids 2>/dev/null || true
-    fi
+ensure_pid_dir() {
+    mkdir -p "$(dirname "$pidfile")"
 }
 
-filter_quiet_output() {
-    awk '
-        function is_build_error(line, lower) {
-            lower = tolower(line)
-            return lower ~ /^error(\[[^]]+\])?:/ ||
-                lower ~ /^error: /
-        }
+is_expected_process() {
+    local pid="$1"
+    local cwd cmdline
 
-        function is_build_continuation(line) {
-            return line ~ /^[[:space:]]/ ||
-                line ~ /^= note:/ ||
-                line ~ /^= help:/ ||
-                line ~ /^note:/ ||
-                line ~ /^help:/
-        }
+    [ -d "/proc/$pid" ] || return 1
+    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    [ "$cwd" = "${repo_root}/wdintel-rs" ] || return 1
 
-        function is_panic(line) {
-            return line ~ /^thread .* panicked at / ||
-                line ~ /^panic:/
-        }
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    case "$cmdline" in
+        *" --mode=debug bgworker "*|*" --mode=debug bgworker"|*" --mode=debug bgworker;"*)
+            return 0
+            ;;
+    esac
+    return 1
+}
 
-        function emit(line) {
-            print line
-            fflush()
-        }
+stop_existing_bgworker() {
+    local pid
 
-        {
-            if (is_build_error($0)) {
-                emit($0)
-                keep_continuation = 1
-                next
-            }
+    if [ ! -f "$pidfile" ]; then
+        return 0
+    fi
 
-            if (is_panic($0)) {
-                emit($0)
-                keep_continuation = 1
-                next
-            }
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -z "$pid" ]; then
+        rm -f "$pidfile"
+        return 0
+    fi
 
-            if (keep_continuation && is_build_continuation($0)) {
-                emit($0)
-                next
-            }
+    if is_expected_process "$pid"; then
+        kill -TERM -- "-$pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL -- "-$pid" 2>/dev/null || true
+    fi
 
-            keep_continuation = 0
-        }
-    '
+    rm -f "$pidfile"
 }
 
 run_bgworker() {
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug bgworker "$@"
+    local worker_args=("$@")
+    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug bgworker "$@"'
+
+    ensure_pid_dir
+    stop_existing_bgworker
+
+    if [ "$log_sql" = "true" ]; then
+        export RUST_LOG=sqlx=trace,seaorm=trace
+    fi
+
+    if [ "$quiet" = "true" ]; then
+        export RUST_LOG=${RUST_LOG:-error}
+        echo "backend bgworker is running in quiet mode; only build errors and panics will be shown" >&2
+    fi
+
+    setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${worker_args[@]}" &
+    local pid=$!
+    echo "$pid" > "$pidfile"
+
+    cleanup() {
+        rm -f "$pidfile"
+    }
+    trap cleanup EXIT INT TERM
+
+    wait "$pid"
 }
 
-stop_existing_bgworker
-
-cd "$repo_root/wdintel-rs"
-
-if [ "$log_sql" = "true" ]; then
-    export RUST_LOG=sqlx=trace,seaorm=trace
-fi
-
-if [ "$quiet" = "true" ]; then
-    export RUST_LOG=${RUST_LOG:-error}
-    echo "backend bgworker is running in quiet mode; only build errors and panics will be shown" >&2
-    run_bgworker "$@" 2>&1 | filter_quiet_output
-else
-    run_bgworker "$@"
-fi
+cd "$repo_root"
+run_bgworker "$@"

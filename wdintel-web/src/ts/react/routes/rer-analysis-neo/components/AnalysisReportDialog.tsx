@@ -243,7 +243,9 @@ export function AnalysisReportDialog({
   const progressStageLabel = isQueued || !hasBgtask ? QUEUED_TEXT : latestProgressStage?.text ?? PREPARING_TEXT;
   const progressPercent = Math.max(1, Math.min(100, Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100)));
   const progressSummaryLabel = isQueued
-    ? `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${formatDurationSinceIso(historyRow?.createdAt ?? null) ?? '—'}`
+    ? historyRow?.blockedByReportId != null
+      ? `Очікує завершення звіту #${historyRow.blockedByReportId} · ${formatDurationSinceIso(historyRow?.createdAt ?? null) ?? '—'}`
+      : `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${formatDurationSinceIso(historyRow?.createdAt ?? null) ?? '—'}`
     : `${latestTaskRun?.curr ?? 0} / ${latestTaskRun?.overall ?? 100}`;
   const downloadButtonLabel =
     builderMode === 'exports'

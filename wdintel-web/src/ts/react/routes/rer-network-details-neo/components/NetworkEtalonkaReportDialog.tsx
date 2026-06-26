@@ -182,7 +182,9 @@ export function NetworkEtalonkaReportDialog({
         : 'Готово';
   const progressStageLabel = isQueued || !hasBgtask ? 'Очікує запуску' : latestProgressStage?.text ?? 'Підготовка';
   const progressSummaryLabel = isQueued
-    ? `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${queuedForTime ?? '—'}`
+    ? historyRow?.blockedByReportId != null
+      ? `Очікує завершення звіту #${historyRow.blockedByReportId} · ${queuedForTime ?? '—'}`
+      : `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${queuedForTime ?? '—'}`
     : `${report.curr} / ${report.overall}`;
 
   useEffect(() => {

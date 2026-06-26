@@ -85,6 +85,9 @@ pub struct ReportHistoryRow {
     pub started_at: Option<String>,
     pub planned_for_ts: Option<String>,
     pub queue_position: Option<i64>,
+    pub blocked_by_report_id: Option<i64>,
+    pub blocked_by_started_at: Option<String>,
+    pub blocked_by_bgtask_id: Option<i64>,
     pub status: String,
     pub completed_at: Option<String>,
     pub has_file: bool,
@@ -167,10 +170,13 @@ struct ReportHistoryNetworkDetailRow {
     unit_name: Option<String>,
 }
 
-#[derive(Debug, FromQueryResult)]
-struct ReportHistoryQueuePositionRow {
+#[derive(Debug, Clone, FromQueryResult)]
+struct ReportHistoryQueueMetaRow {
     id: i64,
     queue_position: i64,
+    blocked_by_report_id: Option<i64>,
+    blocked_by_started_at: Option<chrono::NaiveDateTime>,
+    blocked_by_bgtask_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,8 +282,8 @@ async fn build_report_history_rows(
     let lookup =
         load_report_history_detail_lookup(dbx, &report_histories, &detail_refs)
             .await?;
-    let queue_position_by_id =
-        report_history_queue_positions(dbx, &report_histories).await?;
+    let queue_meta_by_id =
+        report_history_queue_meta(dbx, &report_histories).await?;
 
     Ok(report_histories
         .into_iter()
@@ -289,7 +295,7 @@ async fn build_report_history_rows(
                 report_history,
                 lookup.format_details(refs),
                 progress,
-                queue_position_by_id.get(&report_history_id).copied(),
+                queue_meta_by_id.get(&report_history_id).cloned(),
                 expose_last_error,
             )
         })
@@ -311,11 +317,27 @@ fn to_report_history_row(
     report_history: report_history::Model,
     details: String,
     progress: i64,
-    queue_position: Option<i64>,
+    queue_meta: Option<ReportHistoryQueueMetaRow>,
     expose_last_error: bool,
 ) -> ReportHistoryRow {
     let error_log =
         report_history_error_log(&report_history, expose_last_error);
+    let (
+        queue_position,
+        blocked_by_report_id,
+        blocked_by_started_at,
+        blocked_by_bgtask_id,
+    ) = match queue_meta {
+        Some(queue_meta) => (
+            Some(queue_meta.queue_position),
+            queue_meta.blocked_by_report_id,
+            queue_meta
+                .blocked_by_started_at
+                .map(|value| value.to_string()),
+            queue_meta.blocked_by_bgtask_id,
+        ),
+        None => (None, None, None, None),
+    };
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
@@ -328,6 +350,9 @@ fn to_report_history_row(
             .planned_for_ts
             .map(|planned_for_ts| planned_for_ts.to_string()),
         queue_position,
+        blocked_by_report_id,
+        blocked_by_started_at,
+        blocked_by_bgtask_id,
         status: report_history.status,
         completed_at: report_history
             .completed_at
@@ -347,10 +372,10 @@ fn to_report_history_row(
     }
 }
 
-async fn report_history_queue_positions(
+async fn report_history_queue_meta(
     dbx: &DatabaseConnection,
     report_histories: &[report_history::Model],
-) -> Result<HashMap<i64, i64>, AppError> {
+) -> Result<HashMap<i64, ReportHistoryQueueMetaRow>, AppError> {
     let queued_histories = report_histories
         .iter()
         .filter_map(|report_history| {
@@ -437,21 +462,153 @@ async fn report_history_queue_positions(
                       i.created_at,
                       i.id
                   )
-            ) as queue_position
+            ) as queue_position,
+            (
+                select other.id
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_report_id,
+            (
+                select other.started_at
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_started_at,
+            (
+                select other.bgtask_id
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_bgtask_id
         from input_rows i
         "#,
     );
 
     let stmt =
         Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values);
-    let rows = ReportHistoryQueuePositionRow::find_by_statement(stmt)
+    let rows = ReportHistoryQueueMetaRow::find_by_statement(stmt)
         .all(dbx)
         .await
         .c(h!())?;
-    Ok(rows
-        .into_iter()
-        .map(|row| (row.id, row.queue_position))
-        .collect())
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
 }
 
 fn report_history_error_log(
@@ -2422,6 +2579,7 @@ mod tests {
             None,
         )
         .await?;
+        let blocker_id = blocker.id;
         let planned = insert_report_history(
             &env.dbx,
             "report-history-alice",
@@ -2440,6 +2598,11 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].queue_position, Some(1));
         assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
+        assert_eq!(
+            rows[1].blocked_by_started_at,
+            Some((created_at + Duration::minutes(1)).to_string())
+        );
         Ok(())
     }
 
@@ -2567,6 +2730,7 @@ mod tests {
             None,
         )
         .await?;
+        let blocker_id = blocker.id;
         let planned = insert_report_history(
             &env.dbx,
             "report-history-alice",
@@ -2585,6 +2749,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].queue_position, Some(1));
         assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
         Ok(())
     }
 
@@ -2627,6 +2792,7 @@ mod tests {
             Some(created_at),
         )
         .await?;
+        let blocker_id = blocker.id;
         let planned = insert_report_history(
             &env.dbx,
             "report-history-alice",
@@ -2645,6 +2811,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].queue_position, Some(1));
         assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
         Ok(())
     }
 
@@ -2694,6 +2861,7 @@ mod tests {
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].queue_position, Some(2));
+        assert_eq!(rows[0].blocked_by_report_id, Some(_blocker.id));
         Ok(())
     }
 }

@@ -5,6 +5,7 @@ quiet="false"
 log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pidfile="${repo_root}/.dev-pids/dev-back.pid"
 
 usage() {
     cat >&2 <<'EOF'
@@ -70,26 +71,47 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+ensure_pid_dir() {
+    mkdir -p "$(dirname "$pidfile")"
+}
+
+is_expected_process() {
+    local pid="$1"
+    local cwd cmdline
+
+    [ -d "/proc/$pid" ] || return 1
+    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+    [ "$cwd" = "${repo_root}/wdintel-rs" ] || return 1
+
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    case "$cmdline" in
+        *" --mode=debug server "*|*" --mode=debug server"|*" --mode=debug server;"*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 stop_existing_server() {
-    local pids
+    local pid
 
-    pids="$(
-        ps -eo pid=,command= |
-            awk '
-                /cargo watch -- cargo run -- --mode=debug server/ ||
-                /wdintel-rs --mode=debug server/ {
-                    print $1
-                }
-            '
-    )"
-    if [ -n "$pids" ]; then
-        kill $pids 2>/dev/null || true
+    if [ ! -f "$pidfile" ]; then
+        return 0
     fi
 
-    pids="$(lsof -tiTCP:8081 -sTCP:LISTEN 2>/dev/null || true)"
-    if [ -n "$pids" ]; then
-        kill $pids 2>/dev/null || true
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -z "$pid" ]; then
+        rm -f "$pidfile"
+        return 0
     fi
+
+    if is_expected_process "$pid"; then
+        kill -TERM -- "-$pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL -- "-$pid" 2>/dev/null || true
+    fi
+
+    rm -f "$pidfile"
 }
 
 filter_quiet_output() {
@@ -153,27 +175,39 @@ filter_quiet_output() {
 }
 
 run_server() {
-    RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@"
-}
+    local server_args=("$@")
+    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@"'
 
-stop_existing_server
+    ensure_pid_dir
+    stop_existing_server
 
-cd "$repo_root/wdintel-rs"
+    if [ "$quiet" = "true" ]; then
+        export ECHO_DEV_BACK_REST_ONLY=true
+        export RUST_LOG=error,access_log=info
+        server_port="${ECHO_SERVER_PORT:-8081}"
+        echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
+        echo "report workers run separately: just dev-bgworker" >&2
 
-if [ "$quiet" = "true" ]; then
-    export ECHO_DEV_BACK_REST_ONLY=true
-    export RUST_LOG=error,access_log=info
+        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > >(filter_quiet_output) 2>&1 &
+    else
+        if [ "$log_sql" = "true" ]; then
+            export RUST_LOG=sqlx=trace,seaorm=trace
+        fi
+        echo "report workers run separately: just dev-bgworker" >&2
 
-    server_port="${ECHO_SERVER_PORT:-8081}"
-    echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
-    echo "report workers run separately: just dev-bgworker" >&2
-
-    run_server "$@" 2>&1 | filter_quiet_output
-else
-    if [ "$log_sql" = "true" ]; then
-        export RUST_LOG=sqlx=trace,seaorm=trace
+        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
     fi
 
-    echo "report workers run separately: just dev-bgworker" >&2
-    run_server "$@"
-fi
+    local pid=$!
+    echo "$pid" > "$pidfile"
+
+    cleanup() {
+        rm -f "$pidfile"
+    }
+    trap cleanup EXIT INT TERM
+
+    wait "$pid"
+}
+
+cd "$repo_root"
+run_server "$@"

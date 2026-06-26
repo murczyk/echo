@@ -885,6 +885,9 @@ type alias ReportHistoryRow =
     , startedAt : Maybe (String)
     , plannedForTs : Maybe (String)
     , queuePosition : Maybe (Int)
+    , blockedByReportId : Maybe (Int)
+    , blockedByStartedAt : Maybe (String)
+    , blockedByBgtaskId : Maybe (Int)
     , status : String
     , completedAt : Maybe (String)
     , hasFile : Bool
@@ -908,6 +911,9 @@ reportHistoryRowEncoder struct =
         , ( "started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.startedAt )
         , ( "planned_for_ts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.plannedForTs )
         , ( "queue_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queuePosition )
+        , ( "blocked_by_report_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.blockedByReportId )
+        , ( "blocked_by_started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedByStartedAt )
+        , ( "blocked_by_bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.blockedByBgtaskId )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
         , ( "has_file", (Json.Encode.bool) struct.hasFile )
