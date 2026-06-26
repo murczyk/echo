@@ -1,4 +1,6 @@
-use crate::config::ENCRYPTION_KEY_PLACEHOLDER;
+use crate::config::{
+    ENCRYPTION_KEY_PLACEHOLDER, ETALONKA_GEO_SCREENSHOT_CONCURRENCY,
+};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::{
@@ -15,6 +17,7 @@ use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::prelude::*;
 use futures::stream::TryStreamExt;
+use once_cell::sync::Lazy;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::*;
 use serde::Serialize;
@@ -23,10 +26,13 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
+use tokio::sync::Semaphore;
 use tokio_util::io::ReaderStream;
 
 const SCREENSHOT_DELAY_MILLIS: u64 = 2500;
 const DEFAULT_EMPTY_UNIT_NAME: &str = "в дорозвідці";
+static GEO_SCREENSHOT_SEMAPHORE: Lazy<Semaphore> =
+    Lazy::new(|| Semaphore::new(ETALONKA_GEO_SCREENSHOT_CONCURRENCY));
 
 #[derive(Iden)]
 pub enum SignalMessage {
@@ -1950,6 +1956,7 @@ async fn get_map_image(
     let temp_file_name = temp_file.path().to_str().context(h!())?;
     let mut buffer = Vec::new();
 
+    let _permit = GEO_SCREENSHOT_SEMAPHORE.acquire().await.context(h!())?;
     debug!("> running geo-screenshot...");
     let output = Command::new("xvfb-run")
         .arg("--auto-servernum") // Automatically assign a unique display

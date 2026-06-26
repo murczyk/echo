@@ -541,12 +541,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::sender_stats_count)
             .service(crate::rer_importer::analysis::group_stats_count)
             .service(crate::rer_importer::analysis::summary_table_freq)
-            .service(crate::rer_importer::analysis::summary_table_xlsx)
             .service(crate::rer_importer::analysis::summary_table_task_launch)
             .service(crate::rer_importer::analysis::correlated_freqs)
-            .service(crate::rer_importer::analysis::kmz::rer_analysis_download_kmz)
             .service(crate::rer_importer::analysis::kmz_task_launch)
-            .service(crate::rer_importer::analysis::geojson::rer_analysis_download_geojson)
             .service(crate::rer_importer::analysis::geojson_task_launch)
             .service(crate::rer_importer::analysis::edit_freq_unit_name)
             .service(crate::rer_importer::analysis::saved_filters_list)
@@ -570,9 +567,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
-            .service(crate::rer_importer::reports::report_docx)
             .service(crate::rer_importer::reports::report_docx_task_launch)
-            .service(crate::rer_importer::reports::report_docx_task_download)
             .service(crate::report_history::report_history_list)
             .service(crate::report_history::report_history_admin_list)
             .service(crate::report_history::report_history_status)
@@ -703,7 +698,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::reactivate_network_freq)
             .service(crate::sigint::network::network_unit_stats)
             .service(crate::sigint::network::update_network)
-            .service(crate::sigint::network::report_networks_goi)
             .service(crate::sigint::network::report_networks_goi_task_launch)
             .service(crate::sigint::network::restore_network)
             .service(crate::sigint::network::network_callsigns)
@@ -738,11 +732,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::aor::update_aor)
             .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
-            .service(crate::sigint::etalonka::report_networks)
-            .service(crate::sigint::etalonka::report_networks_batch_id)
             .service(crate::sigint::etalonka::task::report_networks_task_launch)
             .service(crate::sigint::etalonka::task::report_networks_batch_id_task_launch)
-            .service(crate::sigint::etalonka::task::report_networks_task_download)
             .service(crate::sigint::source::list_sources)
             .service(crate::sigint::signal::create_signal)
             .service(crate::sigint::signal::list_signals)
@@ -764,6 +755,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
             .service(crate::messenger::list_messengers)
+            .service(crate::messenger::accounts_stats_timeline)
             .service(crate::messenger::get_qr)
             .service(crate::messenger::is_linked)
             .service(crate::messenger::edit)
@@ -959,6 +951,7 @@ pub async fn main_bgworker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
+    crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();

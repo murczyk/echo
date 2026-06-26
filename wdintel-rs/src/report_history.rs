@@ -1,5 +1,6 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
     REPORT_HISTORY_ETALONKA_WORKER_COUNT,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
@@ -23,11 +24,12 @@ use actix_web::{post, HttpResponse};
 use chrono::{Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, warn};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, FromQueryResult, IntoActiveModel, NotSet, QueryFilter,
-    QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, NotSet,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set,
+    Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -48,10 +50,11 @@ pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
 
-const MAX_RETRY_COUNT: i32 = 0;
+const REPORT_HISTORY_MAX_ATTEMPTS: i32 = 2;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
 const REPORT_OBJECT_PREFIX: &str = "reports";
 const REPORT_TIMEOUT_LOGIN: &str = "system";
+const REPORT_CRASH_RECOVERY_LOGIN: &str = "system";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
@@ -88,11 +91,50 @@ pub struct ReportHistoryRow {
     pub last_error: Option<String>,
     pub details: String,
     pub progress: i64,
+    pub error_log: Option<Vec<ReportHistoryLogEntry>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct ReportHistoryLogEntry {
+    pub login: String,
+    pub timestamp: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct ReportHistoryIdReq {
     pub id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistoryAdminListReq {
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+    pub global_filter: Option<String>,
+    #[serde(default)]
+    pub column_filters: Vec<ReportHistoryColumnFilter>,
+    #[serde(default)]
+    pub sorting: Vec<ReportHistorySorting>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistoryColumnFilter {
+    pub id: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportHistorySorting {
+    pub id: String,
+    pub desc: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReportHistoryAdminListRsp {
+    pub rows: Vec<ReportHistoryRow>,
+    pub total: u64,
+    pub has_more: bool,
+    pub next_offset: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -137,10 +179,7 @@ impl ReportHistoryDetailLookup {
             })
             .collect::<Vec<_>>();
         if !aor_names.is_empty() {
-            lines.push(format!(
-                "смуги відповідальності: {}",
-                aor_names.join(", ")
-            ));
+            lines.push(format!("смуги: {}", aor_names.join(", ")));
         }
 
         let network_labels = refs
@@ -224,6 +263,8 @@ fn to_report_history_row(
     progress: i64,
     expose_last_error: bool,
 ) -> ReportHistoryRow {
+    let error_log =
+        report_history_error_log(&report_history, expose_last_error);
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
@@ -244,7 +285,49 @@ fn to_report_history_row(
         },
         details,
         progress,
+        error_log,
     }
+}
+
+fn report_history_error_log(
+    report_history: &report_history::Model,
+    expose_last_error: bool,
+) -> Option<Vec<ReportHistoryLogEntry>> {
+    if !expose_last_error || report_history.last_error.is_none() {
+        return None;
+    }
+    let mut entries = report_history
+        .log
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(report_history_log_entry)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if entries.is_empty() {
+        entries.push(ReportHistoryLogEntry {
+            login: "system".to_string(),
+            timestamp: report_history
+                .completed_at
+                .or(report_history.started_at)
+                .unwrap_or(report_history.created_at)
+                .to_string(),
+            message: report_history.last_error.clone().unwrap_or_default(),
+        });
+    }
+    Some(entries)
+}
+
+fn report_history_log_entry(
+    value: &serde_json::Value,
+) -> Option<ReportHistoryLogEntry> {
+    Some(ReportHistoryLogEntry {
+        login: value.get("login")?.as_str()?.to_string(),
+        timestamp: value.get("timestamp")?.as_str()?.to_string(),
+        message: value.get("message")?.as_str()?.to_string(),
+    })
 }
 
 fn report_history_detail_refs(
@@ -435,6 +518,236 @@ async fn load_report_history_bgtask_progress(
         .into_iter()
         .map(|bgtask| (bgtask.id, bgtask.progress.clamp(0, 100)))
         .collect())
+}
+
+fn report_history_list_offset(req: &ReportHistoryAdminListReq) -> u64 {
+    req.offset.unwrap_or(0)
+}
+
+fn report_history_list_batch_size(req: &ReportHistoryAdminListReq) -> u64 {
+    req.limit
+        .unwrap_or(REPORT_HISTORY_LIST_LIMIT)
+        .clamp(1, REPORT_HISTORY_LIST_LIMIT)
+}
+
+fn report_history_escape_like(value: &str) -> String {
+    value
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+}
+
+fn report_history_like_value(value: &str) -> String {
+    format!(
+        "%{}%",
+        report_history_escape_like(&value.trim().to_lowercase())
+    )
+}
+
+fn report_history_like_expr(sql: &str, value: &str) -> SimpleExpr {
+    Expr::cust_with_values(
+        format!("lower({sql}) like $1"),
+        vec![report_history_like_value(value)],
+    )
+}
+
+fn report_history_filter_strings(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(value) => vec![value.clone()],
+        serde_json::Value::Number(value) => vec![value.to_string()],
+        serde_json::Value::Bool(value) => vec![value.to_string()],
+        serde_json::Value::Array(values) => values
+            .iter()
+            .flat_map(report_history_filter_strings)
+            .collect(),
+        _ => vec![],
+    }
+    .into_iter()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+    .collect()
+}
+
+fn report_history_text_condition(
+    sql: &str,
+    values: Vec<String>,
+) -> Option<Condition> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut condition = Condition::any();
+    for value in values {
+        condition = condition.add(report_history_like_expr(sql, &value));
+    }
+    Some(condition)
+}
+
+fn report_history_column_filter_condition(
+    filter: &ReportHistoryColumnFilter,
+) -> Option<Condition> {
+    let values = report_history_filter_strings(&filter.value);
+    match filter.id.as_str() {
+        "id" => {
+            report_history_text_condition("report_history.id::text", values)
+        }
+        "reportKind" => {
+            report_history_text_condition("report_history.report_kind", values)
+        }
+        "requestedBy" => {
+            report_history_text_condition("report_history.requested_by", values)
+        }
+        "createdAt" => report_history_text_condition(
+            "report_history.created_at::text",
+            values,
+        ),
+        "status" => {
+            report_history_text_condition("report_history.status", values)
+        }
+        "completedAt" => report_history_text_condition(
+            "report_history.completed_at::text",
+            values,
+        ),
+        "fileName" => {
+            report_history_text_condition("report_history.file_name", values)
+        }
+        "contentType" => {
+            report_history_text_condition("report_history.content_type", values)
+        }
+        "bgtaskId" => report_history_text_condition(
+            "report_history.bgtask_id::text",
+            values,
+        ),
+        "lastError" => {
+            report_history_text_condition("report_history.last_error", values)
+        }
+        _ => None,
+    }
+}
+
+fn report_history_global_filter_condition(value: &str) -> Option<Condition> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(
+        Condition::any()
+            .add(report_history_like_expr("report_history.id::text", value))
+            .add(report_history_like_expr(
+                "report_history.report_kind",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.requested_by",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.created_at::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.status", value))
+            .add(report_history_like_expr(
+                "report_history.completed_at::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.file_name", value))
+            .add(report_history_like_expr(
+                "report_history.content_type",
+                value,
+            ))
+            .add(report_history_like_expr(
+                "report_history.bgtask_id::text",
+                value,
+            ))
+            .add(report_history_like_expr("report_history.last_error", value)),
+    )
+}
+
+fn apply_report_history_admin_filters(
+    mut query: Select<report_history::Entity>,
+    req: &ReportHistoryAdminListReq,
+) -> Select<report_history::Entity> {
+    if let Some(global_filter) = req.global_filter.as_deref() {
+        if let Some(condition) =
+            report_history_global_filter_condition(global_filter)
+        {
+            query = query.filter(condition);
+        }
+    }
+
+    for filter in &req.column_filters {
+        if let Some(condition) = report_history_column_filter_condition(filter)
+        {
+            query = query.filter(condition);
+        }
+    }
+
+    query
+}
+
+fn report_history_sort_column(id: &str) -> Option<report_history::Column> {
+    match id {
+        "id" => Some(report_history::Column::Id),
+        "reportKind" => Some(report_history::Column::ReportKind),
+        "requestedBy" => Some(report_history::Column::RequestedBy),
+        "createdAt" => Some(report_history::Column::CreatedAt),
+        "status" => Some(report_history::Column::Status),
+        "completedAt" => Some(report_history::Column::CompletedAt),
+        "fileName" => Some(report_history::Column::FileName),
+        "contentType" => Some(report_history::Column::ContentType),
+        "bgtaskId" => Some(report_history::Column::BgtaskId),
+        "lastError" => Some(report_history::Column::LastError),
+        _ => None,
+    }
+}
+
+fn apply_report_history_admin_sorting(
+    mut query: Select<report_history::Entity>,
+    sorting: &[ReportHistorySorting],
+) -> Select<report_history::Entity> {
+    let mut applied_sorting = false;
+    for sorting in sorting {
+        let Some(column) = report_history_sort_column(&sorting.id) else {
+            continue;
+        };
+        query = if sorting.desc {
+            query.order_by_desc(column)
+        } else {
+            query.order_by_asc(column)
+        };
+        applied_sorting = true;
+    }
+
+    if !applied_sorting {
+        query = query.order_by_desc(report_history::Column::CreatedAt);
+    }
+    query.order_by_desc(report_history::Column::Id)
+}
+
+async fn list_admin_report_histories(
+    dbx: &DatabaseConnection,
+    req: &ReportHistoryAdminListReq,
+) -> Result<ReportHistoryAdminListRsp, AppError> {
+    let offset = report_history_list_offset(req);
+    let limit = report_history_list_batch_size(req);
+    let filtered_query =
+        apply_report_history_admin_filters(ReportHistory::find(), req);
+    let total = filtered_query.clone().count(dbx).await.c(h!())?;
+
+    let report_histories =
+        apply_report_history_admin_sorting(filtered_query, &req.sorting)
+            .offset(offset)
+            .limit(limit)
+            .all(dbx)
+            .await
+            .c(h!())?;
+    let next_offset = offset + report_histories.len() as u64;
+    let rows = build_report_history_rows(dbx, report_histories, true).await?;
+
+    Ok(ReportHistoryAdminListRsp {
+        rows,
+        total,
+        has_more: next_offset < total,
+        next_offset,
+    })
 }
 
 async fn read_and_remove_generated_report_file(
@@ -843,21 +1156,13 @@ pub async fn report_history_list(
 pub async fn report_history_admin_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
-) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
+    req: Json<ReportHistoryAdminListReq>,
+) -> Result<Json<ReportHistoryAdminListRsp>, AppError> {
     let user_login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Admin")
         .await
         .c(h!())?;
-    let report_histories = ReportHistory::find()
-        .order_by_desc(report_history::Column::CreatedAt)
-        .order_by_desc(report_history::Column::Id)
-        .limit(REPORT_HISTORY_LIST_LIMIT)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let rows =
-        build_report_history_rows(&env.dbx, report_histories, true).await?;
-    Ok(Json(rows))
+    Ok(Json(list_admin_report_histories(&env.dbx, &req).await?))
 }
 
 #[post("/api/report-history/status")]
@@ -893,6 +1198,7 @@ pub async fn report_history_retry(
 
     let mut report_history = report_history.into_active_model();
     report_history.status = Set(STATUS_PLANNED.to_string());
+    report_history.retry_count = Set(0);
     report_history.planned_for_ts = Set(None);
     report_history.started_at = Set(None);
     report_history.completed_at = Set(None);
@@ -1014,18 +1320,75 @@ pub async fn reset_in_progress_nofail(env: &Env) {
     if let Err(err) = fail_timed_out_reports(env).await {
         error!("failed to fail timed-out report history rows: {err:?}");
     }
-    let res = ReportHistory::update_many()
-        .col_expr(
-            report_history::Column::Status,
-            Expr::value(STATUS_PLANNED.to_string()),
-        )
-        .col_expr(report_history::Column::BgtaskId, Expr::value(None::<i64>))
-        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
-        .exec(&env.dbx)
-        .await;
-    if let Err(err) = res {
-        error!("failed to reset in-progress report history rows: {err:?}");
+    if let Err(err) = recover_interrupted_reports(env).await {
+        error!("failed to recover interrupted report history rows: {err:?}");
     }
+}
+
+async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        with recovered_report as (
+            select
+                id,
+                least(retry_count + 1, $1) as attempt_count,
+                retry_count + 1 >= $1 as attempts_exhausted
+            from report_history
+            where status = $5
+        )
+        update report_history
+        set
+            status = case
+                when recovered_report.attempts_exhausted then $2
+                else $3
+            end,
+            retry_count = recovered_report.attempt_count,
+            planned_for_ts = case
+                when recovered_report.attempts_exhausted then null
+                else now() at time zone 'utc'
+                    + recovered_report.attempt_count * interval '5 minutes'
+            end,
+            started_at = case
+                when recovered_report.attempts_exhausted then report_history.started_at
+                else null
+            end,
+            completed_at = case
+                when recovered_report.attempts_exhausted then now() at time zone 'utc'
+                else null
+            end,
+            bgtask_id = null,
+            last_error = format(
+                'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                recovered_report.attempt_count,
+                $1
+            ),
+            log = coalesce(report_history.log, '[]'::jsonb)
+                || jsonb_build_array(jsonb_build_object(
+                    'login',
+                    $4,
+                    'timestamp',
+                    now() at time zone 'utc',
+                    'message',
+                    format(
+                        'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                        recovered_report.attempt_count,
+                        $1
+                    )
+                ))
+        from recovered_report
+        where report_history.id = recovered_report.id
+        "#,
+        [
+            REPORT_HISTORY_MAX_ATTEMPTS.into(),
+            STATUS_FAILED.into(),
+            STATUS_PLANNED.into(),
+            REPORT_CRASH_RECOVERY_LOGIN.into(),
+            STATUS_IN_PROGRESS.into(),
+        ],
+    );
+    env.dbx.execute(stmt).await.c(h!())?;
+    Ok(())
 }
 
 pub fn spawn_report_history_workers(
@@ -1242,7 +1605,9 @@ async fn run_report_with_timeout(
     bgtask_id: i64,
 ) -> (Result<(), AppError>, bool) {
     match tokio::time::timeout(
-        StdDuration::from_secs(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS),
+        StdDuration::from_secs(report_timeout_secs(
+            &report_history.report_kind,
+        )),
         generate_and_store_report(env, report_history, bgtask_id),
     )
     .await
@@ -1611,9 +1976,10 @@ async fn download_report_bytes(
 }
 
 fn report_timeout_message(report_history: &report_history::Model) -> String {
+    let timeout_secs = report_timeout_secs(&report_history.report_kind);
     format!(
         "Report generation timed out after {} seconds: id={}, kind={}, requested_by={}",
-        REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS,
+        timeout_secs,
         report_history.id,
         report_history.report_kind,
         report_history.requested_by,
@@ -1626,15 +1992,32 @@ fn report_timeout_error(report_history: &report_history::Model) -> AppError {
     }
 }
 
+fn report_timeout_secs(report_kind: &str) -> u64 {
+    if report_kind == KIND_ETALONKA {
+        REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS
+    } else {
+        REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS
+    }
+}
+
 async fn fail_timed_out_reports(env: &Env) -> Result<(), AppError> {
-    let cutoff = Utc::now().naive_utc()
-        - Duration::seconds(REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS as i64);
+    let now = Utc::now().naive_utc();
     let timed_out_reports = ReportHistory::find()
         .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
-        .filter(report_history::Column::StartedAt.lte(cutoff))
         .all(&env.dbx)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .filter(|report_history| {
+            let Some(started_at) = report_history.started_at else {
+                return false;
+            };
+            let timeout = Duration::seconds(report_timeout_secs(
+                &report_history.report_kind,
+            ) as i64);
+            started_at <= now - timeout
+        })
+        .collect::<Vec<_>>();
 
     for report_history in timed_out_reports {
         let err_msg = report_timeout_message(&report_history);
@@ -1753,26 +2136,29 @@ async fn handle_report_failure(
         return Ok(());
     };
     let err_msg = format!("{err:#?}");
-    let retry_count = report_history.retry_count;
+    let attempt_count =
+        (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
     let mut report_history = report_history.into_active_model();
     report_history.log = Set(append_log_entry(
         report_history.log.unwrap(),
         "system",
         &err_msg,
     ));
-    if retry_count < MAX_RETRY_COUNT {
-        let next_retry_count = retry_count + 1;
+    if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
         report_history.status = Set(STATUS_PLANNED.to_string());
-        report_history.retry_count = Set(next_retry_count);
+        report_history.retry_count = Set(attempt_count);
         report_history.planned_for_ts = Set(Some(
             Utc::now().naive_utc()
-                + Duration::minutes(5 * i64::from(next_retry_count)),
+                + Duration::minutes(5 * i64::from(attempt_count)),
         ));
         report_history.started_at = Set(None);
+        report_history.completed_at = Set(None);
         report_history.bgtask_id = Set(None);
         report_history.last_error = Set(Some(err_msg));
     } else {
         report_history.status = Set(STATUS_FAILED.to_string());
+        report_history.retry_count = Set(attempt_count);
+        report_history.planned_for_ts = Set(None);
         report_history.completed_at = Set(Some(Utc::now().naive_utc()));
         report_history.last_error = Set(Some(err_msg));
     }

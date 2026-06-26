@@ -1332,14 +1332,23 @@ fn rewrite_sheet_xml(
         .copied()
         .filter(|row_num| !worker_row_nums.contains(row_num))
         .collect::<Vec<_>>();
+    let worker_row_num_min = worker_row_nums.first().copied();
+    let worker_row_num_max = worker_row_nums.last().copied();
+    let target_worker_row_num_min = target_worker_row_nums.first().copied();
+    let target_worker_row_num_max = target_worker_row_nums.last().copied();
+    let appended_worker_row_num_min = appended_worker_row_nums.first().copied();
+    let appended_worker_row_num_max = appended_worker_row_nums.last().copied();
     info!(
-        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_nums={:?}, target_worker_row_nums={:?}, appended_worker_row_nums={:?}",
+        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_num_min={:?}, worker_row_num_max={:?}, target_worker_row_num_min={:?}, target_worker_row_num_max={:?}, appended_worker_row_num_min={:?}, appended_worker_row_num_max={:?}",
         rows.len(),
         previous_callsigns.len(),
         current_callsigns.len(),
-        worker_row_nums,
-        target_worker_row_nums,
-        appended_worker_row_nums
+        worker_row_num_min,
+        worker_row_num_max,
+        target_worker_row_num_min,
+        target_worker_row_num_max,
+        appended_worker_row_num_min,
+        appended_worker_row_num_max
     );
 
     let mut out_rows = Vec::new();

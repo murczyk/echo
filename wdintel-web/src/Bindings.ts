@@ -328,6 +328,13 @@ export type ReportHistoryRow = {
   lastError: string | null;
   details: string;
   progress: number;
+  errorLog: Array<ReportHistoryLogEntry> | null;
+};
+
+export type ReportHistoryLogEntry = {
+  login: string;
+  timestamp: string;
+  message: string;
 };
 
 export type ReportHistoryIdReq = {
@@ -3145,6 +3152,20 @@ export type QrCodeRsp = {
 
 export type AccountsRsp = {
   accounts: Array<EchoAccountF1>;
+};
+
+export type AccountStatsTimelineReq = {
+  datasourceIds: Array<number>;
+  periodHours: number | null;
+};
+
+export type AccountStatsTimelineEntry = {
+  datasourceId: number;
+  points: Array<SignalGroupStatsTimelinePoint>;
+};
+
+export type AccountStatsTimelineRsp = {
+  data: Array<AccountStatsTimelineEntry>;
 };
 
 export type IsAccountLinkedReq = {

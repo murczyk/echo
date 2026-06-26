@@ -14,6 +14,8 @@
 
 `$ just ssh-zp2`
 
+`$ just ssh-staging`
+
 Крок 3: Створення користувача
 
 `$ cargo run --bin wdintel-rs -- --mode=debug oneoff-register-user --login="<login>" --password="<password>" --role="Admin" --sigint-zone=1 --organism-id=6`

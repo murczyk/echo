@@ -1,5 +1,7 @@
 import {
   AccountStatusReq,
+  AccountStatsTimelineReq,
+  AccountStatsTimelineRsp,
   AccountsRsp,
   DeleteAccountReq,
   IsAccountLinkedReq,
@@ -21,6 +23,11 @@ type QrCodeReqBody = {
 
 type IsAccountLinkedReqBody = {
   account_id: number;
+};
+
+type AccountStatsTimelineReqBody = {
+  datasource_ids: number[];
+  period_hours: number | null;
 };
 
 type AccountStatusReqBody = {
@@ -61,6 +68,21 @@ type GroupUpdateReqBody = {
   long_note: string | null;
   area_of_responsibility_id: number | null;
   area_of_responsibility_ids: number[] | null;
+};
+
+type AccountStatsTimelinePointLike = {
+  timestamp?: number;
+  count?: number;
+};
+
+type AccountStatsTimelineEntryLike = {
+  datasourceId?: number;
+  datasource_id?: number;
+  points?: AccountStatsTimelinePointLike[] | null;
+};
+
+type AccountStatsTimelineRspLike = {
+  data?: AccountStatsTimelineEntryLike[] | null;
 };
 
 type GroupEntryF1Like = {
@@ -132,6 +154,13 @@ function toIsAccountLinkedReqBody(req: IsAccountLinkedReq): IsAccountLinkedReqBo
   return { account_id: req.accountId };
 }
 
+function toAccountStatsTimelineReqBody(req: AccountStatsTimelineReq): AccountStatsTimelineReqBody {
+  return {
+    datasource_ids: req.datasourceIds,
+    period_hours: req.periodHours ?? null,
+  };
+}
+
 function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
   return {
     account_id: req.accountId,
@@ -141,6 +170,18 @@ function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
     description: req.description,
     api_login: req.apiLogin,
     api_endpoint: req.apiEndpoint,
+  };
+}
+
+function normalizeAccountStatsTimelineRsp(raw: AccountStatsTimelineRspLike): AccountStatsTimelineRsp {
+  return {
+    data: (raw.data ?? []).map((entry) => ({
+      datasourceId: entry.datasourceId ?? entry.datasource_id ?? 0,
+      points: (entry.points ?? []).map((point) => ({
+        timestamp: point.timestamp ?? 0,
+        count: point.count ?? 0,
+      })),
+    })),
   };
 }
 
@@ -233,6 +274,18 @@ export async function getQrCode(req: QrCodeReq): Promise<QrCodeRsp> {
 
 export async function isLinked(req: IsAccountLinkedReq): Promise<IsAccountLinkedRsp> {
   return postJson<IsAccountLinkedRsp>('/api/messenger/is-linked', toIsAccountLinkedReqBody(req));
+}
+
+export async function fetchAccountStatsTimeline(
+  req: AccountStatsTimelineReq,
+  signal?: AbortSignal,
+): Promise<AccountStatsTimelineRsp> {
+  const data = await postJson<AccountStatsTimelineRspLike>(
+    '/api/messenger/accounts-stats-timeline',
+    toAccountStatsTimelineReqBody(req),
+    { signal },
+  );
+  return normalizeAccountStatsTimelineRsp(data ?? {});
 }
 
 export async function editAccount(req: AccountStatusReq): Promise<void> {

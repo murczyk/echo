@@ -103,6 +103,9 @@ ssh-skhid:
 ssh-zp2:
     bash deploy/ssh-zp2.sh
 
+ssh-staging:
+    bash deploy/ssh-staging.sh
+
 # mkdir -p ~/Downloads/storage
 
 # see wdintel-py/README.md
@@ -873,6 +876,9 @@ deploy-from-local _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
 
+    echo "Building frontend assets..."
+    (cd "{{ justfile_directory() }}" && just build-front)
+
     echo "Building local wdintel-rs deb package..."
     (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs)
 
@@ -1311,7 +1317,8 @@ backup-legacy server:
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore'
 
 [arg('server', long='server')]
-backup server:
+[arg('backup_type', long='type')]
+backup server backup_type="":
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
@@ -1375,7 +1382,12 @@ backup server:
         fi
         echo "stanza=${STANZA}"
 
-        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info backup
+        type_args=()
+        if [[ "{{ backup_type }}" != "" ]]; then
+          type_args+=(--type "{{ backup_type }}")
+        fi
+
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info "${type_args[@]}" backup
     REMOTE
 
 [arg('servers', long='servers')]
@@ -1603,7 +1615,7 @@ deploy-geo-screenshot server="" builder="" branch="main":
 
     # TODO: determine version from Cargo.toml
     rsync --progress ~/Downloads/geo-screenshot_0.1.0-1_amd64.deb "${SERVER}":Downloads/
-    ssh "${SERVER}" 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
+    ssh "${SERVER}" 'sudo apt-get install -y xvfb libxcursor1 libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
     ssh "${SERVER}" 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
     echo "geo-screenshot deploy completed succesfully"
 

@@ -6,19 +6,14 @@ use crate::sigint::network::types::{NetworkDescrType, NetworkDescription};
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
-use actix_web::web::Json;
-use actix_web::{post, HttpRequest, HttpResponse};
-use chrono::prelude::*;
 use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use crate::config::Config;
-use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, save_report_log,
-};
+use crate::config::{Config, ETALONKA_GEO_SCREENSHOT_CONCURRENCY};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
+use futures_util::{StreamExt, TryStreamExt};
 use sea_orm::DatabaseConnection;
 use std::path::Path;
 use std::str::FromStr;
@@ -176,112 +171,6 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
     .c(h!())?)
 }
 
-/// Generate etalonka report for filtered set of networks
-#[post("/api/sigint/etalonka/report-networks")]
-pub async fn report_networks(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
-    req: Json<EtalonkaJimForksReq>,
-) -> Result<HttpResponse, AppError> {
-    let trace_id = Uuid::new_v4();
-    info!("[trace_id={trace_id}] Etalon Networks report: Started report generation...");
-
-    let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let req = req.into_inner();
-    info!("[trace_id={trace_id}] Etalon Networks report collected network data, querying report data...");
-
-    let filename =
-        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
-
-    let etalonka_data =
-        bl_etalonka_report_networks_data(&env.dbx, &user_login, &req, trace_id)
-            .await
-            .context(h!())?;
-    info!("[trace_id={trace_id}] Etalon Networks report: collected report data, building a report...");
-
-    let outpath = generate_networks_docx_report(
-        &filename,
-        &req.etalonka_type,
-        etalonka_data,
-        &env.config,
-    )
-    .await
-    .context(h!())?;
-    info!("[trace_id={trace_id}] Etalon Networks report: saving report log...");
-
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks report: Done");
-    Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
-}
-
-/// Generate etalonka report for list of network by their ids
-#[post("/api/sigint/etalonka/report-networks-batch-id")]
-pub async fn report_networks_batch_id(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
-    req: Json<EtalonkaNetworkBatchReq>,
-) -> Result<HttpResponse, AppError> {
-    let trace_id = Uuid::new_v4();
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Started report generation...");
-
-    let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
-    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected network data, querying report data...");
-    let req = req.into_inner();
-
-    let filename =
-        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
-
-    let etalonka_data = bl_etalonka_report_networks_batch_id_data(
-        &env.dbx,
-        &user_login,
-        &req,
-        trace_id,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected report data, building a report...");
-    let outpath = generate_networks_docx_report(
-        &filename,
-        &req.etalonka_type,
-        etalonka_data,
-        &env.config,
-    )
-    .await
-    .context(h!())?;
-
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{filename}"),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
-    )
-    .await
-    .context(h!())?;
-
-    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Done");
-
-    Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
-}
-
 //  All the docx generation logic for etalonka report
 pub async fn generate_networks_docx_report(
     filename: &str,
@@ -348,6 +237,37 @@ pub struct EtalonkaEntry {
     freqs: Vec<NetworkFreqsRes>,
     callsigns_detailed: Vec<CallsignRes>,
     pelengs_map: Option<Vec<u8>>,
+}
+
+struct PelengsMapJob {
+    key: EtalonkaEntryKey,
+    network_id: i64,
+    filter: NetworkFreqFilter,
+}
+
+async fn load_pelengs_maps(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    jobs: Vec<PelengsMapJob>,
+) -> Result<Vec<(EtalonkaEntryKey, Option<Vec<u8>>)>, AppError> {
+    let dbx = dbx.clone();
+    let groups = groups.to_vec();
+
+    futures_util::stream::iter(jobs)
+        .map(move |job| {
+            let dbx = dbx.clone();
+            let groups = groups.clone();
+            async move {
+                let pelengs_map =
+                    load_pelengs_map(&dbx, &groups, job.network_id, job.filter)
+                        .await
+                        .context(h!())?;
+                Ok::<_, AppError>((job.key, pelengs_map))
+            }
+        })
+        .buffer_unordered(ETALONKA_GEO_SCREENSHOT_CONCURRENCY)
+        .try_collect()
+        .await
 }
 
 pub async fn collect_etalonka_data(
@@ -457,6 +377,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             progress.start_unit(unit_name, unit_networks.len());
         }
         let mut network_remaining = unit_networks.len();
+        let mut pelengs_map_jobs = Vec::new();
         for network in unit_networks.iter() {
             let network_id = network.id;
             if show_logs {
@@ -553,17 +474,35 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     };
                 entry.network_unit_signals = network_unit_signals;
             }
-            let pelengs_map = if include_pelengs_map {
-                load_pelengs_map(dbx, &data.groups, network_id, filter)
-                    .await
-                    .context(h!())?
-            } else {
-                None
-            };
-            entry.pelengs_map = pelengs_map;
-            data.entries.insert(key, entry);
-            if let Some(progress) = progress {
+            if include_pelengs_map {
+                pelengs_map_jobs.push(PelengsMapJob {
+                    key: key.clone(),
+                    network_id,
+                    filter,
+                });
+            } else if let Some(progress) = progress {
                 progress.inc_network();
+            }
+            data.entries.insert(key, entry);
+        }
+        if include_pelengs_map {
+            if show_logs && !pelengs_map_jobs.is_empty() {
+                info!(
+                    "[trace_id={trace_id}] rendering {} pelengs maps for unit '{unit_name}' with concurrency {}",
+                    pelengs_map_jobs.len(),
+                    ETALONKA_GEO_SCREENSHOT_CONCURRENCY,
+                );
+            }
+            let pelengs_maps =
+                load_pelengs_maps(dbx, &data.groups, pelengs_map_jobs)
+                    .await
+                    .context(h!())?;
+            for (key, pelengs_map) in pelengs_maps {
+                data.entries.get_mut(&key).context(h!())?.pelengs_map =
+                    pelengs_map;
+                if let Some(progress) = progress {
+                    progress.inc_network();
+                }
             }
         }
         if let Some(progress) = progress {
@@ -1952,7 +1891,7 @@ mod tests {
     use crate::entities::*;
     use crate::functest::tests::*;
     use crate::sigint::network::types::ListNetworksReq;
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
     use sea_orm::ActiveValue::Set;
     use sea_orm::*;
     use serde_json::json;

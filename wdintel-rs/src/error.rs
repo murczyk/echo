@@ -16,6 +16,12 @@ pub enum AppError {
     Unauthenticated,
     #[error("Forbidden")]
     Forbidden(String),
+    #[error("Forbidden")]
+    ForbiddenWithHeader {
+        msg: String,
+        header_name: &'static str,
+        header_value: &'static str,
+    },
     #[error("Form errors")]
     Form(BTreeMap<String, String>),
     #[error("IO Error")]
@@ -71,6 +77,18 @@ impl From<anyhow::Error> for AppError {
             {
                 return AppError::Forbidden(msg.clone());
             }
+            if let Some(AppError::ForbiddenWithHeader {
+                msg,
+                header_name,
+                header_value,
+            }) = err.downcast_ref::<AppError>()
+            {
+                return AppError::ForbiddenWithHeader {
+                    msg: msg.clone(),
+                    header_name,
+                    header_value,
+                };
+            }
         }
         AppError::AnyhowError { source: value }
     }
@@ -113,6 +131,18 @@ impl actix_web::error::ResponseError for AppError {
                 )
                 .body("Forbidden")
             }
+            AppError::ForbiddenWithHeader {
+                msg,
+                header_name,
+                header_value,
+            } => {
+                error!(target: "forbidden_details", "Forbidden access: {msg}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::FORBIDDEN,
+                )
+                .insert_header((*header_name, *header_value))
+                .body("Forbidden")
+            }
             AppError::Form(es) => {
                 error!(target: "form_error_details", "Form errors: {:?}", es);
                 actix_web::HttpResponseBuilder::new(
@@ -146,7 +176,8 @@ impl actix_web::error::ResponseError for AppError {
                     | AppError::Form(_)
                     | AppError::NotFound
                     | AppError::Unauthenticated
-                    | AppError::Forbidden(_) => {}
+                    | AppError::Forbidden(_)
+                    | AppError::ForbiddenWithHeader { .. } => {}
                 }
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,

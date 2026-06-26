@@ -13,6 +13,9 @@ test-inbox: ensure-dotenv
 test-analytics: ensure-dotenv
     python3 test_iggy.py test-analytics
 
+test-native: ensure-dotenv
+    python3 test_iggy.py test-native
+
 test-all: ensure-dotenv
     just check
     just test-inbox

@@ -1,7 +1,8 @@
 # Iggy test CLI
 
 This directory contains a dependency-free Python CLI for testing an Apache
-Iggy server through its HTTP API.
+Iggy server through its HTTP API. It also has an optional native
+`apache-iggy` client check for TCP connection testing.
 
 The checks verify that:
 
@@ -19,14 +20,16 @@ cp .env.example .env
 
 Fill in `.env` with the target server's HTTP URL, credentials, stream, and
 topic names. `IGGY_HTTP_URL` must point to Iggy's HTTP listener, usually port
-`3000`, rather than its TCP listener.
+`3000`, rather than its TCP listener. `IGGY_TCP_URL` is used by the native
+client check, usually port `8090`. Set `IGGY_CONNECTION_STRING` to test an
+exact native client connection string instead.
 
 The `.env` file is ignored by Git. `.env.example` documents every supported
 setting.
 
 ## Usage
 
-Run all checks:
+Run all HTTP checks:
 
 ```sh
 just test-all
@@ -38,7 +41,12 @@ Run individual checks:
 just check
 just test-inbox
 just test-analytics
+just test-native
 ```
+
+`just test-native` requires `apache-iggy` to be installed in the active
+Python environment. It connects with the native client and checks stream/topic
+read access without publishing data.
 
 The publish checks add one small JSON test event to their target topic and
 print both the sent and received payloads.
