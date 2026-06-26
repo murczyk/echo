@@ -176,7 +176,7 @@ filter_quiet_output() {
 
 run_server() {
     local server_args=("$@")
-    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server "$@"'
+    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server --no-bgworker "$@"'
 
     ensure_pid_dir
     stop_existing_server
