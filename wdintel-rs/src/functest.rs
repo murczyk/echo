@@ -250,6 +250,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         login::Entity::delete_many()
             .exec(&env.dbx)
             .await
