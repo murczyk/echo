@@ -235,6 +235,7 @@ pub struct EtalonkaEntry {
     network_descriptions: Vec<NetworkDescription>,
     net_callsigns: Vec<NetworkCallsign>,
     freqs: Vec<NetworkFreqsRes>,
+    freq_id_to_str: HashMap<i64, String>,
     callsigns_detailed: Vec<CallsignRes>,
     pelengs_map: Option<Vec<u8>>,
 }
@@ -313,6 +314,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         till_date_inclusive_ms,
         include_sigint_signs,
         include_confirmation,
+        include_headings_and_freqs,
     ) = match report_type {
         EtalonkaReportType::AccordingToTheForm(s) => (
             false,
@@ -322,6 +324,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             None,
             s.include_sigint_signs,
             s.include_confirmation,
+            s.include_headings_and_freqs,
         ),
         EtalonkaReportType::ExtendedReport(s) => (
             true,
@@ -331,6 +334,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             s.till_date_inclusive_ms,
             s.include_sigint_signs,
             s.include_confirmation,
+            s.include_headings_and_freqs,
         ),
     };
 
@@ -456,6 +460,27 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
             entry.unique_modulation = unique_modulation;
             entry.freqs = freqs;
+            if (include_sigint_signs || include_confirmation)
+                && include_headings_and_freqs
+            {
+                // Load all freqs without activity/date filters to resolve
+                // frequency strings for descriptions that may reference
+                // inactive frequencies.
+                let all_freqs = load_freqs(
+                    dbx,
+                    &data.groups,
+                    network_id,
+                    None,
+                    user_id,
+                    false,
+                )
+                .await
+                .context(h!())?;
+                entry.freq_id_to_str = all_freqs
+                    .into_iter()
+                    .map(|f| (f.network_freq_id, f.freq))
+                    .collect();
+            }
             if include_sigint_signs || include_confirmation {
                 let network_descriptions = network_descriptions_by_id
                     .get(&network_id)
@@ -587,11 +612,7 @@ pub async fn etalonka_due_form(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
-                let freq_map: HashMap<i64, String> = etalonka_data_entry
-                    .freqs
-                    .iter()
-                    .map(|f| (f.network_freq_id, f.freq.clone()))
-                    .collect();
+                let freq_map = &etalonka_data_entry.freq_id_to_str;
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
                         doc,
@@ -599,7 +620,7 @@ pub async fn etalonka_due_form(
                         &etalonka_data_entry.network_descriptions,
                         &etalonka_data_entry.network_unit_signals,
                         settings.include_headings_and_freqs,
-                        &freq_map,
+                        freq_map,
                     )
                     .await
                     .c(h!())?;
@@ -611,7 +632,7 @@ pub async fn etalonka_due_form(
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
                         settings.include_headings_and_freqs,
-                        &freq_map,
+                        freq_map,
                     );
                 }
             }
@@ -734,10 +755,7 @@ pub async fn etalonka_extended(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
-                let freq_map: HashMap<i64, String> = freqs
-                    .iter()
-                    .map(|f| (f.network_freq_id, f.freq.clone()))
-                    .collect();
+                let freq_map = &etalonka_data_entry.freq_id_to_str;
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
                         doc,
@@ -745,7 +763,7 @@ pub async fn etalonka_extended(
                         &etalonka_data_entry.network_descriptions,
                         &etalonka_data_entry.network_unit_signals,
                         settings.include_headings_and_freqs,
-                        &freq_map,
+                        freq_map,
                     )
                     .await
                     .c(h!())?;
@@ -757,7 +775,7 @@ pub async fn etalonka_extended(
                         width_unit,
                         &etalonka_data_entry.network_descriptions,
                         settings.include_headings_and_freqs,
-                        &freq_map,
+                        freq_map,
                     );
                 }
             }
