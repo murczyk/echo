@@ -1317,7 +1317,8 @@ backup-legacy server:
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore'
 
 [arg('server', long='server')]
-backup server:
+[arg('backup_type', long='type')]
+backup server backup_type="":
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
@@ -1381,7 +1382,12 @@ backup server:
         fi
         echo "stanza=${STANZA}"
 
-        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info backup
+        type_args=()
+        if [[ "{{ backup_type }}" != "" ]]; then
+          type_args+=(--type "{{ backup_type }}")
+        fi
+
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info "${type_args[@]}" backup
     REMOTE
 
 [arg('servers', long='servers')]

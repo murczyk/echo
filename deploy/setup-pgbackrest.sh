@@ -70,6 +70,16 @@ need_cmd sed
 need_cmd awk
 
 ECHO_INSTALL_UTILS_BIN="${ECHO_INSTALL_UTILS_BIN:-echo-install-utils}"
+PGBACKREST_ARCHIVE_TIMEOUT="${PGBACKREST_ARCHIVE_TIMEOUT:-1800}"
+
+derive_stanza() {
+  local backup_name="$1"
+  if [[ "${backup_name}" == wd-* ]]; then
+    printf '%s' "${backup_name}"
+  else
+    printf 'wd-%s' "${backup_name}"
+  fi
+}
 
 echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure pgdg apt repo + pgbackrest package"
 ssh "${SERVER}" "sudo echo-install-utils install-pgbackrest"
@@ -101,10 +111,11 @@ else
 fi
 REMOTE
 
-STANZA=""
+STANZA="$(derive_stanza "${BACKUP_NAME}")"
+EXISTING_STANZA=""
 if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
   echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] detect pgBackRest stanza (existing config)"
-  STANZA="$(
+  EXISTING_STANZA="$(
     ssh "${SERVER}" "sudo bash -s" <<'REMOTE'
 set -euo pipefail
 
@@ -143,13 +154,8 @@ fi
 	fi
 REMOTE
   )"
-fi
-
-if [[ -z "${STANZA}" ]]; then
-  if [[ "${BACKUP_NAME}" == wd-* ]]; then
-    STANZA="${BACKUP_NAME}"
-  else
-    STANZA="wd-${BACKUP_NAME}"
+  if [[ -n "${EXISTING_STANZA}" && "${EXISTING_STANZA}" != "${STANZA}" ]]; then
+    echo "existing stanza=${EXISTING_STANZA}, expected stanza=${STANZA}"
   fi
 fi
 
@@ -171,6 +177,14 @@ if [[ "${BW_EXIT_CODE}" -ne 0 && "${BW_EXIT_CODE}" -ne 2 ]]; then
   exit "${BW_EXIT_CODE}"
 fi
 ssh "${SERVER}" "sudo chown root:root '${SERVER_PGBR_CONF}' && sudo chmod 0644 '${SERVER_PGBR_CONF}'"
+
+if [[ -n "${EXISTING_STANZA}" && "${EXISTING_STANZA}" != "${STANZA}" && "${EXISTING_STANZA}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  STALE_PGBR_CONF="/etc/pgbackrest/conf.d/pgbackrest-${EXISTING_STANZA}.conf"
+  if [[ "${STALE_PGBR_CONF}" != "${SERVER_PGBR_CONF}" ]]; then
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] remove stale ${STALE_PGBR_CONF}"
+    ssh "${SERVER}" "sudo rm -f '${STALE_PGBR_CONF}'"
+  fi
+fi
 
 if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
   TMP_90="/tmp/90-pgbackrest.${BACKUP_NAME}.conf"
@@ -237,6 +251,12 @@ repo_system_id="\$(
     | head -n 1 || true
 )"
 
+if [[ -n "\${local_system_id}" && -z "\${repo_system_id}" ]]; then
+  echo "action=create"
+  echo "local_system_id=\${local_system_id}"
+  exit 0
+fi
+
 if [[ -n "\${local_system_id}" && -n "\${repo_system_id}" && "\${local_system_id}" != "\${repo_system_id}" ]]; then
   echo "action=restore-needed"
   echo "local_system_id=\${local_system_id}"
@@ -262,12 +282,12 @@ REMOTE
       echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] repo is empty, creating stanza and running check"
       ssh "${SERVER}" "set -euo pipefail; \
         sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info stanza-create; \
-        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
+        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --archive-timeout='${PGBACKREST_ARCHIVE_TIMEOUT}' --log-level-console=info check"
       ;;
     check)
       echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] repo matches local cluster, running pgbackrest check"
       ssh "${SERVER}" "set -euo pipefail; \
-        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
+        sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --archive-timeout='${PGBACKREST_ARCHIVE_TIMEOUT}' --log-level-console=info check"
       ;;
     restore-needed)
       echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] existing repo belongs to another cluster"

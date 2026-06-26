@@ -35,6 +35,7 @@ import File.Download
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Process
 import Route
 import Route.Path
 import Shared.Model
@@ -737,6 +738,128 @@ getNetworkGoiReport toMsg =
 
 
 
+reportPollDelayMillis : Float
+reportPollDelayMillis =
+    2000
+
+
+decodeJsonBody : Decode.Decoder a -> String -> Result String a
+decodeJsonBody decoder body =
+    Decode.decodeString decoder body
+        |> Result.mapError Decode.errorToString
+
+
+postJsonTask : String -> Encode.Value -> Decode.Decoder a -> Task.Task ApiError a
+postJsonTask url body decoder =
+    Http.task
+        { method = "POST"
+        , headers = []
+        , url = url
+        , body = Http.jsonBody body
+        , resolver = Http.stringResolver (resolve (decodeJsonBody decoder))
+        , timeout = Nothing
+        }
+
+
+postJsonTaskWithReportPermissionHeader : String -> Encode.Value -> Decode.Decoder a -> Task.Task ApiError a
+postJsonTaskWithReportPermissionHeader url body decoder =
+    Http.task
+        { method = "POST"
+        , headers = []
+        , url = url
+        , body = Http.jsonBody body
+        , resolver = Http.stringResolver (resolveWithErrorCodeHeader "x-echo-error-code" (decodeJsonBody decoder))
+        , timeout = Nothing
+        }
+
+
+postBytesTask : String -> Encode.Value -> Task.Task ApiError Bytes
+postBytesTask url body =
+    Http.task
+        { method = "POST"
+        , headers = []
+        , url = url
+        , body = Http.jsonBody body
+        , resolver = Http.bytesResolver (resolve Ok)
+        , timeout = Nothing
+        }
+
+
+reportHistoryStatusDecoder : Decode.Decoder ReportHistoryStatus
+reportHistoryStatusDecoder =
+    Decode.map2 ReportHistoryStatus
+        (Decode.field "status" Decode.string)
+        (Decode.field "last_error" (Decode.nullable Decode.string))
+
+
+type alias ReportHistoryStatus =
+    { status : String
+    , lastError : Maybe String
+    }
+
+
+reportHistoryError : ReportHistoryStatus -> ApiError
+reportHistoryError row =
+    { httpError = Http.BadBody (Maybe.withDefault "Report generation failed" row.lastError)
+    , formErrors = Dict.empty
+    , errors = Maybe.withDefault [] (Maybe.map List.singleton row.lastError)
+    }
+
+
+waitReportHistoryDone : Int -> Task.Task ApiError Int
+waitReportHistoryDone reportHistoryId =
+    postJsonTask
+        "/api/report-history/status"
+        (B.reportHistoryIdReqEncoder { id = reportHistoryId })
+        reportHistoryStatusDecoder
+        |> Task.andThen
+            (\row ->
+                case row.status of
+                    "done" ->
+                        Task.succeed reportHistoryId
+
+                    "failed" ->
+                        Task.fail (reportHistoryError row)
+
+                    "planned" ->
+                        Process.sleep reportPollDelayMillis
+                            |> Task.andThen (\_ -> waitReportHistoryDone reportHistoryId)
+
+                    "in_progress" ->
+                        Process.sleep reportPollDelayMillis
+                            |> Task.andThen (\_ -> waitReportHistoryDone reportHistoryId)
+
+                    _ ->
+                        Task.fail (reportHistoryError row)
+            )
+
+
+downloadReportHistoryTask : Int -> Task.Task ApiError Bytes
+downloadReportHistoryTask reportHistoryId =
+    postBytesTask
+        "/api/report-history/download"
+        (B.reportHistoryIdReqEncoder { id = reportHistoryId })
+
+
+launchReportTaskAndDownload : String -> Encode.Value -> (Result ApiError Bytes -> msg) -> Cmd msg
+launchReportTaskAndDownload url body toMsg =
+    postJsonTask url body Decode.int
+        |> Task.andThen waitReportHistoryDone
+        |> Task.andThen downloadReportHistoryTask
+        |> Task.attempt toMsg
+
+
+launchAnalysisReportTaskAndDownload : B.ReportPreviewReq -> (Result ApiError Bytes -> msg) -> Cmd msg
+launchAnalysisReportTaskAndDownload payload toMsg =
+    postJsonTaskWithReportPermissionHeader
+        "/api/rer/report-docx-task-launch"
+        (B.reportPreviewReqEncoder payload)
+        Decode.int
+        |> Task.andThen waitReportHistoryDone
+        |> Task.andThen downloadReportHistoryTask
+        |> Task.attempt toMsg
+
+
 -- INTERNALS
 
 
@@ -1238,11 +1361,10 @@ toCmd options effect =
                 }
 
         GetFreqsSummaryTableXlsx toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/summary-table.xlsx"
-                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/rer/analysis/summary-table-task-launch"
+                (B.analysisStatsReqEncoder payload)
+                toMsg
 
         GetCallsignsGraph toMsg payload ->
             Http.post
@@ -1287,13 +1409,7 @@ toCmd options effect =
                 }
 
         GetDocxReportForDownload toMsg payload ->
-            Http.post
-                { url = "/api/rer/report-docx"
-                , body = Http.jsonBody (B.reportPreviewReqEncoder payload)
-                , expect =
-                    Http.expectBytesResponse toMsg
-                        (resolveWithErrorCodeHeader "x-echo-error-code" Ok)
-                }
+            launchAnalysisReportTaskAndDownload payload toMsg
 
         DownloadFile name mime content ->
             File.Download.bytes name mime content
@@ -1362,18 +1478,16 @@ toCmd options effect =
                 }
 
         DownloadKmz toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/download-kmz"
-                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/rer/analysis/kmz-task-launch"
+                (B.analysisStatsReqEncoder payload)
+                toMsg
 
         DownloadGeojson toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/download-geojson"
-                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/rer/analysis/geojson-task-launch"
+                (B.analysisStatsReqEncoder payload)
+                toMsg
 
         GetCorrelatedFreqs toMsg payload ->
             Http.post
@@ -1513,11 +1627,10 @@ toCmd options effect =
                 }
 
         GetNetworksReport toMsg payload ->
-            Http.post
-                { url = "/api/sigint/etalonka/report-networks"
-                , body = Http.jsonBody (B.etalonkaJimForksReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/sigint/etalonka/report-networks-task-launch"
+                (B.etalonkaJimForksReqEncoder payload)
+                toMsg
 
         GetNetworkCallsigns toMsg payload ->
             Http.post
@@ -1653,18 +1766,16 @@ toCmd options effect =
                 }
 
         GetNetworkReportBatch toMsg payload ->
-            Http.post
-                { url = "/api/sigint/etalonka/report-networks-batch-id"
-                , body = Http.jsonBody (B.etalonkaNetworkBatchReqEncoder payload)
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/sigint/etalonka/report-networks-batch-id-task-launch"
+                (B.etalonkaNetworkBatchReqEncoder payload)
+                toMsg
 
         GetNetworkGoiReport toMsg ->
-            Http.post
-                { url = "/api/sigint/network/report-networks-goi"
-                , body = Http.jsonBody (Encode.object [])
-                , expect = Http.expectBytesResponse toMsg (resolve Ok)
-                }
+            launchReportTaskAndDownload
+                "/api/sigint/network/report-networks-goi-task-launch"
+                (Encode.object [])
+                toMsg
 
         UpdateNetworkUnits toMsg payload ->
             Http.post
