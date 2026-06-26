@@ -2321,9 +2321,10 @@ fn append_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::cleanup;
+    use crate::entities::login;
+    use crate::functest::tests::{cleanup, mk_login};
     use sea_orm::ActiveValue::{NotSet, Set};
-    use sea_orm::{ActiveModelTrait, EntityTrait};
+    use sea_orm::EntityTrait;
     use serde_json::json;
     use serial_test::serial;
 
@@ -2375,9 +2376,18 @@ mod tests {
             .c(h!())?;
 
         let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
         let blocker = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_IN_PROGRESS,
             created_at,
@@ -2387,7 +2397,7 @@ mod tests {
         .await?;
         let planned = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_PLANNED,
             created_at + Duration::minutes(2),
@@ -2417,9 +2427,27 @@ mod tests {
             .c(h!())?;
 
         let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
         let blocker = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_IN_PROGRESS,
             created_at,
@@ -2429,7 +2457,7 @@ mod tests {
         .await?;
         let alice_planned = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_PLANNED,
             created_at + Duration::minutes(2),
@@ -2439,7 +2467,7 @@ mod tests {
         .await?;
         let bob_planned = insert_report_history(
             &env.dbx,
-            "bob",
+            "report-history-bob",
             KIND_ETALONKA,
             STATUS_PLANNED,
             created_at + Duration::minutes(3),
@@ -2449,7 +2477,7 @@ mod tests {
         .await?;
         let alice_other_kind = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_GOI,
             STATUS_PLANNED,
             created_at + Duration::minutes(4),
@@ -2484,9 +2512,18 @@ mod tests {
             .c(h!())?;
 
         let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
         let _blocker = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_IN_PROGRESS,
             created_at,
@@ -2496,7 +2533,7 @@ mod tests {
         .await?;
         let planned = insert_report_history(
             &env.dbx,
-            "alice",
+            "report-history-alice",
             KIND_ETALONKA,
             STATUS_PLANNED,
             created_at + Duration::minutes(2),
