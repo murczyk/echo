@@ -151,7 +151,7 @@ async fn update_group_fills_etalonka_if_present(
         .await
         .c(h!())?;
     if changed {
-        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history(
             txn,
             &group,
             format!(

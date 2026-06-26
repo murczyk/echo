@@ -37,11 +37,49 @@ pub async fn invalidate_network_inbox_for_group<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    invalidate_network_inbox_for_group_since(
+        db,
+        group,
+        group.created_at,
+        context_msg,
+    )
+    .await
+}
+
+pub async fn invalidate_network_inbox_for_group_all_history<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
+    group: &signal_group::Model,
+    context_msg: String,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let since_ts = load_group_first_inbox_item_datetime(db, &group.master_key)
+        .await
+        .c(h!())?
+        .unwrap_or(group.created_at);
+    invalidate_network_inbox_for_group_since(db, group, since_ts, context_msg)
+        .await
+}
+
+async fn invalidate_network_inbox_for_group_since<'a, 'async_trait, C>(
+    db: &'a C,
+    group: &signal_group::Model,
+    since_ts: NaiveDateTime,
+    context_msg: String,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     info!("network invalidation task created, reason: {}", context_msg);
     network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,
-        since_ts: Set(group.created_at),
+        since_ts: Set(since_ts),
         till_ts: Set(Utc::now().naive_utc()),
         group_master_key: Set(Some(group.master_key.clone())),
         started_at: NotSet,
@@ -55,6 +93,34 @@ where
     .await
     .c(h!())?;
     Ok(())
+}
+
+async fn load_group_first_inbox_item_datetime<'a, 'async_trait, C>(
+    db: &'a C,
+    master_key: &str,
+) -> anyhow::Result<Option<NaiveDateTime>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
+        .select_only()
+        .column(sigint_inbox_item::Column::Datetime)
+        .order_by_asc(sigint_inbox_item::Column::Datetime)
+        .into_tuple::<Option<NaiveDateTime>>()
+        .one(db)
+        .await
+        .c(h!())?
+        .flatten())
 }
 
 pub async fn set_group_fills_etalonka<'a, 'async_trait, C>(

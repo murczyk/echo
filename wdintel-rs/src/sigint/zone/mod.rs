@@ -559,7 +559,7 @@ pub async fn my_admin_group_update(
         .await
         .c(h!())?;
     if changed {
-        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history(
             &txn,
             &group,
             format!(
