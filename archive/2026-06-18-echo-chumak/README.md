@@ -31,15 +31,6 @@ Cookie: <cookie-name>=<session-cookie>; ...
 python3 test_chumak.py find-networks
 ```
 
-Очікуваний output без збігів:
-
-```text
-Request payload: {"freq": "404.1350", "aor_id": 1, "color_code": "1"}
-{
-  "networks": []
-}
-```
-
 Створити нове повідомлення Chumak в inbox:
 
 ```sh
@@ -59,7 +50,6 @@ POST /api/sigint/network/find-live
 ```json
 {
   "freq": "404.1350",
-  "aor_id": 1,
   "color_code": "1"
 }
 ```
