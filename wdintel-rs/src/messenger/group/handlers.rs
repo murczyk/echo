@@ -120,6 +120,7 @@ where
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
                 is_rer: g.is_rer,
+                fills_etalonka: g.fills_etalonka,
                 is_archived: g.is_archived,
                 datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),

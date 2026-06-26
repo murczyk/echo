@@ -65,6 +65,7 @@ pub async fn collect_groups(
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
                 is_rer: g.is_rer,
+                fills_etalonka: g.fills_etalonka,
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -383,6 +384,7 @@ where
             deleted: NotSet,
             is_archived: NotSet,
             is_rer: NotSet,
+            fills_etalonka: NotSet,
         }
         .insert(db)
         .await

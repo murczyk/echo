@@ -738,6 +738,18 @@ pub async fn bl_group_update(
         } else {
             group
         };
+    let group = if let Some(fills_etalonka) = req.fills_etalonka {
+        crate::sigint::network::etalon_calc::set_group_fills_etalonka(
+            txn,
+            &req.master_key,
+            fills_etalonka,
+        )
+        .await
+        .c(h!())?
+        .0
+    } else {
+        group
+    };
 
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await

@@ -91,6 +91,7 @@ type OrphanAssignState = {
   selectedZones: ZoneEntry[];
   isSecret: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   isSaving: boolean;
@@ -104,6 +105,7 @@ type GroupEditState = {
   groupName: string;
   isSecret: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   shortNote: string;
@@ -117,6 +119,7 @@ type OrphanEditState = {
   group: OrphanSignalGroupEntry;
   groupName: string;
   isRer: boolean;
+  fillsEtalonka: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -419,6 +422,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     datasourceId: null,
     ignoreOperativny: false,
     isRer: true,
+    fillsEtalonka: true,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -442,6 +446,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       groupMasterKey: '',
       isGroupSecret: false,
       isRer: true,
+      fillsEtalonka: true,
       allowedUsers: [],
       adminLogins: [],
       areaOfResponsibilityId: null,
@@ -1645,6 +1650,7 @@ function AdminDirectionsNeoPageBody() {
             name: group.name,
             ignoreOperativny: group.ignoreOperativny,
             isRer: group.isRer,
+            fillsEtalonka: group.fillsEtalonka,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -1679,6 +1685,7 @@ function AdminDirectionsNeoPageBody() {
       groupName,
       isSecret: group.isGroupSecret,
       isRer: group.isRer,
+      fillsEtalonka: group.fillsEtalonka,
       selectedUsers: group.allowedUsers,
       selectedAdmins: group.adminLogins,
       shortNote: group.shortNote ?? '',
@@ -1696,6 +1703,7 @@ function AdminDirectionsNeoPageBody() {
       group,
       groupName,
       isRer: group.isRer,
+      fillsEtalonka: group.fillsEtalonka,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -1713,6 +1721,7 @@ function AdminDirectionsNeoPageBody() {
       selectedZones: preselectedZones,
       isSecret: false,
       isRer: group.isRer,
+      fillsEtalonka: group.fillsEtalonka,
       selectedUsers: [],
       selectedAdmins: [],
       isSaving: false,
@@ -1796,6 +1805,7 @@ function AdminDirectionsNeoPageBody() {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
       isRer: supportNonRerInterceptions ? editDialog.isRer : null,
+      fillsEtalonka: editDialog.fillsEtalonka,
       userLogins: selectedUsers,
       adminLogins: editDialog.selectedAdmins,
       shortNote: editDialog.shortNote.trim()
@@ -1852,6 +1862,7 @@ function AdminDirectionsNeoPageBody() {
             ? orphanEditDialog.selectedAorIds
             : null,
         isRer: supportNonRerInterceptions ? orphanEditDialog.isRer : null,
+        fillsEtalonka: orphanEditDialog.fillsEtalonka,
       });
 
       setOrphanGroups((prev) =>
@@ -1868,6 +1879,7 @@ function AdminDirectionsNeoPageBody() {
                 : null,
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
             isRer: orphanEditDialog.isRer,
+            fillsEtalonka: orphanEditDialog.fillsEtalonka,
           };
         })
       );
@@ -1957,6 +1969,7 @@ function AdminDirectionsNeoPageBody() {
               name: response.groupName,
               ignoreOperativny: false,
               isRer: assignDialog.isRer,
+              fillsEtalonka: assignDialog.fillsEtalonka,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2161,6 +2174,21 @@ function AdminDirectionsNeoPageBody() {
               label="РЕР група"
             />
           ) : null}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={editDialog?.fillsEtalonka ?? true}
+                onChange={(event) =>
+                  editDialog &&
+                  setEditDialog({
+                    ...editDialog,
+                    fillsEtalonka: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Наповнює еталонку"
+          />
           {editDialog?.isSecret ? (
             <Autocomplete
               multiple
@@ -2287,6 +2315,21 @@ function AdminDirectionsNeoPageBody() {
               label="РЕР група"
             />
           ) : null}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={orphanEditDialog?.fillsEtalonka ?? true}
+                onChange={(event) =>
+                  orphanEditDialog &&
+                  setOrphanEditDialog({
+                    ...orphanEditDialog,
+                    fillsEtalonka: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Наповнює еталонку"
+          />
           <Autocomplete
             multiple
             options={aorOptions}
