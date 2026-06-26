@@ -10,8 +10,8 @@ import { NetworkEditDrawer } from '../../rer-network-details-neo/components/Netw
 import { NetworkEtalonkaReportDialog } from '../../rer-network-details-neo/components/NetworkEtalonkaReportDialog';
 import type { ListNetworksReq } from '../../../../../Bindings';
 
-function getEtalonkaLaunchWarning(request: ListNetworksReq | null): string | null {
-  if (request === null) return null;
+function getEtalonkaLaunchWarning(request: ListNetworksReq | null | undefined): string | null {
+  if (request === null || request === undefined) return null;
 
   const isBroadRequest =
     request.ids === null &&
