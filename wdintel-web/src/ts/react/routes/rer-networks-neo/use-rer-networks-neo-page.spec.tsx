@@ -926,6 +926,7 @@ describe('useRerNetworksNeoPage', () => {
           includeSigintSigns: false,
           includeConfirmation: false,
           includePelengsMap: false,
+          includeHeadingsAndFreqs: false,
         },
       },
     });
