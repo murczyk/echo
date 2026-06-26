@@ -186,13 +186,13 @@ export const adminSubs: Menu[] = [
   {
     type: "item",
     link: { type: "internal", path: "/admin/directions-neo" },
-    activeName: "directions-neo",
+    activeName: "zones",
     label: "Напрямки",
   },
   {
     type: "item",
     link: { type: "internal", path: "/admin/location-configs-neo" },
-    activeName: "location-configs-neo",
+    activeName: "location-config-neo",
     label: "Населені пункти AOR",
   },
   {
@@ -222,13 +222,13 @@ export const adminSubs: Menu[] = [
   { type: "separator" },
   {
     type: "item",
-    link: { type: "internal", path: "/rer-csv-import" },
+    link: { type: "internal", path: "/admin/rer-csv-import" },
     activeName: "rer-csv-import",
     label: "Імпорт CSV",
   },
   {
     type: "item",
-    link: { type: "internal", path: "/rer-delta-import" },
+    link: { type: "internal", path: "/admin/rer-delta-import" },
     activeName: "rer-delta-import",
     label: "Імпорт Delta",
   },

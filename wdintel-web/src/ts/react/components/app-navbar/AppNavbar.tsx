@@ -197,6 +197,7 @@ export function AppNavbar({
       window.history.pushState({}, "", path);
       window.dispatchEvent(new Event("popstate"));
       closeDropdowns();
+      setMobileNavOpen(false);
     }
   };
 
@@ -227,7 +228,10 @@ export function AppNavbar({
           href={item.link.link}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={closeDropdowns}
+          onClick={() => {
+            closeDropdowns();
+            setMobileNavOpen(false);
+          }}
         >
           {renderLabel(item)}
           <i className="bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" />
