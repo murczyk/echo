@@ -182,13 +182,23 @@ navBar user shared activeName props =
             ]
 
         databaseSubs =
-            [ internalMenu Route.Path.RerNetworksNeo "networks-neo" "Мережі"
-            , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
-            , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
-            , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
-            , internalMenu Route.Path.RerSignals "signals" "Сигнали"
-            , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
-            ]
+            List.concat
+                [ [ internalMenu Route.Path.RerNetworksNeo "networks-neo" "Мережі"
+                  , internalMenu Route.Path.RerPalitraNeo "palitra-neo" "Палітри"
+                  , internalMenu Route.Path.RerUnits "rer-units" "Підрозділи"
+                  , internalMenu Route.Path.RerCallsignsNeo "callsigns-neo" "Позивні"
+                  , internalMenu Route.Path.RerSignals "signals" "Сигнали"
+                  , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
+                  ]
+                , ifOrEmpty
+                    ((shared.systemSettings
+                        |> Maybe.map .supportNonRerInterceptions
+                        |> Maybe.withDefault False
+                     )
+                        && hasRole "NetworkEditor" user
+                    )
+                    [ internalMenu Route.Path.Machines "machines" "Машини" ]
+                ]
 
         goiSubs =
             let

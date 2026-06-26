@@ -228,6 +228,7 @@ type ReportTemplate
     | RTSenders SendersType
     | RTReo
     | RTDigest
+    | RTRerReport
     | ActiveNetworks
     | RTNetworkFrequencies
     | RTSummaryTable

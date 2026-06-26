@@ -169,8 +169,14 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
+    let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
+        .await
+        .c(h!())?;
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
+    if sigint_inbox_item_ids.is_empty() {
+        return Ok(result);
+    }
     for sigint_inbox_item_ids in
         sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
     {
@@ -222,4 +228,39 @@ where
         .c(h!())?;
     }
     Ok(result)
+}
+
+async fn filter_network_calc_items<'a, 'async_trait, C>(
+    sigint_inbox_items: Vec<sigint_inbox_item::Model>,
+    dbx: &'a C,
+) -> anyhow::Result<Vec<sigint_inbox_item::Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(sigint_inbox_items);
+    }
+    let sigint_inbox_item_ids =
+        sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
+    let non_rer_item_ids =
+        crate::sigint::unit_machine::non_rer_item_ids_from_items(
+            dbx,
+            sigint_inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
+    for item_id in &non_rer_item_ids {
+        crate::sigint::unit_machine::enqueue_unit_machine_recalculation_for_inbox_item(
+            dbx, *item_id,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(sigint_inbox_items
+        .into_iter()
+        .filter(|item| !non_rer_item_ids.contains(&item.id))
+        .collect())
 }

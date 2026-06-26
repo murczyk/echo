@@ -42,6 +42,16 @@ pub fn extract_datetime(
                 Regex::new(r"(?P<year>\d{4})_(?P<mon>\d{2})_(?P<day>\d{2}) (?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
+            // Work with formats like YYYY-MM-DD_HH-MI-SS
+            (
+                Regex::new(r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
+            ),
+            // Work with non-RER header lines like "50 обрБпС | YYYY-MM-DD\nHH-MI"
+            (
+                Regex::new(r"\|\s*(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})\s*\n\s*(?P<hour>\d{2})-(?P<minute>\d{2})").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
+            ),
             // Work with formats like 17.11, 00:01:49
             (
                 Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2}),? (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
@@ -784,6 +794,36 @@ mod tests {
             NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
                 .unwrap()
                 .and_hms_opt(23, 52, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_non_rer_header_without_machine_id() {
+        let input = "50 обрБпС | 2026-06-26\n11-34\nbody";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 26, 12, 0, 0).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 26)
+                .unwrap()
+                .and_hms_opt(11, 34, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_non_rer_header_with_machine_id() {
+        let input = "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 26, 12, 0, 0).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 26)
+                .unwrap()
+                .and_hms_opt(8, 13, 12)
                 .unwrap(),
         );
         assert_eq!(res, expected);

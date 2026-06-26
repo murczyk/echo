@@ -26,6 +26,7 @@ pub struct ZoneDatasourceGroup {
     pub sigint_zone_datasource_id: i64,
     pub group_master_key: String,
     pub is_group_secret: bool,
+    pub is_rer: bool,
     pub allowed_users: Vec<String>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
@@ -46,6 +47,7 @@ pub struct ZoneDatasourceGroupListRsp {
 pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
     pub is_secret: bool,
+    pub is_rer: Option<bool>,
     pub user_logins: Vec<String>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
@@ -62,6 +64,7 @@ pub struct ZoneDatasourceGroupAddReq {
     pub zone_id: i64,
     pub datasource_id: i64,
     pub is_secret: bool,
+    pub is_rer: Option<bool>,
     pub master_key: String,
     pub user_logins: Vec<String>,
     pub admin_logins: Vec<String>,

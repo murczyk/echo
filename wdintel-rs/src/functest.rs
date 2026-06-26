@@ -678,6 +678,9 @@ pub mod tests {
         if out.is_archived == NotSet {
             out.is_archived = Set(false);
         }
+        if out.is_rer == NotSet {
+            out.is_rer = Set(true);
+        }
         out
     }
 
