@@ -13,6 +13,7 @@ pub struct OrphanSignalGroupEntry {
     pub name: String,
     /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
     pub ignore_operativny: bool,
+    pub is_rer: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
@@ -30,6 +31,7 @@ pub struct SignalGroupEntry {
     pub master_key: String,
     pub name: String,
     pub ignore_operativny: bool,
+    pub is_rer: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,

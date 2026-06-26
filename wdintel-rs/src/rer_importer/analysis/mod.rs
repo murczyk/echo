@@ -1254,6 +1254,45 @@ fn build_network_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
         .to_owned()
 }
 
+pub fn selected_aor_group_facet_condition(
+    selected_aors: &Option<Vec<i64>>,
+) -> Option<Condition> {
+    let selected_aors =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())?;
+
+    let group_aor_alias = Alias::new("facet_group_aor_filter");
+    let linked_aor_alias = Alias::new("facet_group_linked_aor_filter");
+    let overlap_exists = build_selected_aor_overlap_exists(
+        linked_aor_alias.clone(),
+        selected_aors,
+    );
+
+    let joined_group_matches = Query::select()
+        .expr(Expr::val(1))
+        .from_as(signal_group_aor::Entity, group_aor_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            linked_aor_alias.clone(),
+            Expr::col((
+                group_aor_alias.clone(),
+                signal_group_aor::Column::AorId,
+            ))
+            .equals((linked_aor_alias, area_of_responsibility::Column::Id)),
+        )
+        .and_where(
+            Expr::col((group_aor_alias, signal_group_aor::Column::MasterKey))
+                .equals((
+                    signal_message_group::Entity,
+                    signal_message_group::Column::GroupMasterKey,
+                )),
+        )
+        .and_where(Expr::exists(overlap_exists))
+        .to_owned();
+
+    Some(Expr::exists(joined_group_matches).into_condition())
+}
+
 pub fn selected_aors_filter_condition(
     selected_aors: &Option<Vec<i64>>,
 ) -> Option<Condition> {
@@ -4466,16 +4505,17 @@ async fn collect_group_names(
             signal_group::Column::MasterKey,
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
+            signal_group::Column::IsRer,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool)>()
+        .into_tuple::<(String, Option<String>, bool, bool)>()
         .all(txn)
         .await
         .context(h!())?;
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _)| key.clone())
+        .map(|(key, _, _, _)| key.clone())
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
@@ -4492,7 +4532,7 @@ async fn collect_group_names(
         BTreeMap::new()
     };
 
-    for (master_key, name, ignore_operativny) in signal_groups {
+    for (master_key, name, ignore_operativny, is_rer) in signal_groups {
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
@@ -4503,6 +4543,7 @@ async fn collect_group_names(
                 master_key,
                 name,
                 ignore_operativny,
+                is_rer,
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -4529,6 +4570,7 @@ async fn collect_group_names(
             master_key,
             name,
             ignore_operativny,
+            is_rer: true,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

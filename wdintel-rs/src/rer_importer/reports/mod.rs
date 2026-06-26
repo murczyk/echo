@@ -26,6 +26,7 @@ mod network_frequencies;
 mod posts;
 mod report_1213;
 mod report_xlsx_kind_pelengs;
+mod rer;
 mod revo;
 mod senders;
 pub mod tag;
@@ -43,6 +44,7 @@ mod kinds {
     pub const NAUSHNOM: &str = "naushnom";
     pub const REO: &str = "reo";
     pub const DIGEST: &str = "digest";
+    pub const RER_REPORT: &str = "rer_report";
     pub const POSTS_DOCX: &str = "posts_docx";
     pub const ACTIVE_NETWORKS: &str = "active_networks";
     pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
@@ -170,6 +172,13 @@ pub(crate) async fn report_docx_generate_file(
     ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
         .await
         .c(h!())?;
+    if req.kind == kinds::RER_REPORT {
+        crate::system_settings::ensure_support_non_rer_interceptions_enabled(
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
+    }
 
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
@@ -252,6 +261,10 @@ pub(crate) async fn report_docx_generate_file(
             .c(h!())?;
     } else if req.kind == kinds::DIGEST {
         self::digest::report_docx_kind_digest(&user_login, env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == kinds::RER_REPORT {
+        self::rer::report_docx_kind_rer(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::POSTS_DOCX {

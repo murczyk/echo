@@ -3717,6 +3717,9 @@ update user shared route msg model =
                         RTDigest ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
+                        RTRerReport ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
                         ActiveNetworks ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
@@ -4239,6 +4242,9 @@ reportTemplateToApiType model template =
 
         RTDigest ->
             Just B.Digest
+
+        RTRerReport ->
+            Just B.Rer
 
         ActiveNetworks ->
             Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })

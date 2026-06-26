@@ -164,6 +164,7 @@ pub struct GroupUpdateReq {
     /// Deprecated - use area_of_responsibility_ids instead
     pub area_of_responsibility_id: Option<i64>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
+    pub is_rer: Option<bool>,
 }
 
 pub struct UnstageResult {

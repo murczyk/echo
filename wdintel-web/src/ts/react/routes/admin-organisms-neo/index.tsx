@@ -60,6 +60,7 @@ const ROLE_OPTIONS = [
   'Full',
   'Basic',
   'UnitsEditor',
+  'NetworkEditor',
   'CallsignsEditor',
   'AdvancedReports',
 ];

@@ -68,6 +68,7 @@ type GroupUpdateReqBody = {
   long_note: string | null;
   area_of_responsibility_id: number | null;
   area_of_responsibility_ids: number[] | null;
+  is_rer: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -218,6 +219,7 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     long_note: req.longNote ?? null,
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
     area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
+    is_rer: req.isRer ?? null,
   };
 }
 

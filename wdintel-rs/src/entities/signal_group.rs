@@ -18,6 +18,7 @@ pub struct Model {
     pub is_secret: bool,
     pub deleted: bool,
     pub is_archived: bool,
+    pub is_rer: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

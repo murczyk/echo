@@ -74,6 +74,8 @@ type SignalGroupEntryLike = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  isRer?: boolean;
+  is_rer?: boolean;
   groupStats?: SignalGroupStatsLike | null;
   group_stats?: SignalGroupStatsLike | null;
   adminData?: GroupAdminDataLike | null;
@@ -88,6 +90,8 @@ type OrphanSignalGroupEntryLike = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  isRer?: boolean;
+  is_rer?: boolean;
   isArchived?: boolean;
   is_archived?: boolean;
   datasourceId?: number | null;
@@ -135,6 +139,8 @@ type ZoneDatasourceGroupLike = {
   group_master_key?: string;
   isGroupSecret?: boolean;
   is_group_secret?: boolean;
+  isRer?: boolean;
+  is_rer?: boolean;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
   adminLogins?: string[] | null;
@@ -212,6 +218,7 @@ type ZoneDatasourceGroupAddReqBody = {
   zone_id: number;
   datasource_id: number;
   is_secret: boolean;
+  is_rer: boolean | null;
   master_key: string;
   user_logins: string[];
   admin_logins: string[];
@@ -222,6 +229,7 @@ type ZoneDatasourceGroupAddReqBody = {
 type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
   is_secret: boolean;
+  is_rer: boolean | null;
   user_logins: string[];
   admin_logins: string[];
   short_note: string | null;
@@ -323,6 +331,7 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
+    isRer: raw.isRer ?? raw.is_rer ?? true,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
     areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
@@ -334,6 +343,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
+    isRer: raw.isRer ?? raw.is_rer ?? true,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
@@ -348,6 +358,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     sigintZoneDatasourceId: raw.sigintZoneDatasourceId ?? raw.sigint_zone_datasource_id ?? 0,
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
+    isRer: raw.isRer ?? raw.is_rer ?? true,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
     adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
     shortNote: raw.shortNote ?? raw.short_note ?? null,
@@ -419,6 +430,7 @@ function toZoneDatasourceGroupAddReqBody(req: ZoneDatasourceGroupAddReq): ZoneDa
     zone_id: req.zoneId,
     datasource_id: req.datasourceId,
     is_secret: req.isSecret,
+    is_rer: req.isRer ?? null,
     master_key: req.masterKey,
     user_logins: req.userLogins,
     admin_logins: req.adminLogins,
@@ -431,6 +443,7 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
   return {
     id: req.id,
     is_secret: req.isSecret,
+    is_rer: req.isRer ?? null,
     user_logins: req.userLogins,
     admin_logins: req.adminLogins,
     short_note: req.shortNote ?? null,

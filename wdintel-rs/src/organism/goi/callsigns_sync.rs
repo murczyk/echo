@@ -169,9 +169,9 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     info!(
         "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}",
         remote_paths.knowledge_xlsx,
-        format_goi_callsign_ids(&diff.new_ids),
-        format_goi_callsign_ids(&diff.edited_ids),
-        format_goi_callsign_ids(&diff.deleted_ids),
+        format_goi_callsign_id_summary(&diff.new_ids),
+        format_goi_callsign_id_summary(&diff.edited_ids),
+        format_goi_callsign_id_summary(&diff.deleted_ids),
     );
 
     info!(
@@ -623,15 +623,12 @@ fn goi_callsign_changed(
         || previous.comment != current.comment
 }
 
-fn format_goi_callsign_ids(ids: &[i64]) -> String {
-    if ids.is_empty() {
-        "-".to_string()
-    } else {
-        ids.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
+fn format_goi_callsign_id_summary(ids: &[i64]) -> String {
+    let Some(min_id) = ids.iter().min() else {
+        return "len=0, min=-, max=-".to_string();
+    };
+    let max_id = ids.iter().max().expect("min id exists");
+    format!("len={}, min={min_id}, max={max_id}", ids.len())
 }
 
 fn goi_integration_log_label(integration: &goi_integration::Model) -> String {
@@ -1332,14 +1329,23 @@ fn rewrite_sheet_xml(
         .copied()
         .filter(|row_num| !worker_row_nums.contains(row_num))
         .collect::<Vec<_>>();
+    let worker_row_num_min = worker_row_nums.first().copied();
+    let worker_row_num_max = worker_row_nums.last().copied();
+    let target_worker_row_num_min = target_worker_row_nums.first().copied();
+    let target_worker_row_num_max = target_worker_row_nums.last().copied();
+    let appended_worker_row_num_min = appended_worker_row_nums.first().copied();
+    let appended_worker_row_num_max = appended_worker_row_nums.last().copied();
     info!(
-        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_nums={:?}, target_worker_row_nums={:?}, appended_worker_row_nums={:?}",
+        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_num_min={:?}, worker_row_num_max={:?}, target_worker_row_num_min={:?}, target_worker_row_num_max={:?}, appended_worker_row_num_min={:?}, appended_worker_row_num_max={:?}",
         rows.len(),
         previous_callsigns.len(),
         current_callsigns.len(),
-        worker_row_nums,
-        target_worker_row_nums,
-        appended_worker_row_nums
+        worker_row_num_min,
+        worker_row_num_max,
+        target_worker_row_num_min,
+        target_worker_row_num_max,
+        appended_worker_row_num_min,
+        appended_worker_row_num_max
     );
 
     let mut out_rows = Vec::new();
@@ -1664,6 +1670,15 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+    }
+
+    #[test]
+    fn format_goi_callsign_id_summary_reports_len_min_max() {
+        assert_eq!(format_goi_callsign_id_summary(&[]), "len=0, min=-, max=-");
+        assert_eq!(
+            format_goi_callsign_id_summary(&[30, 10, 20]),
+            "len=3, min=10, max=30"
+        );
     }
 
     #[test]

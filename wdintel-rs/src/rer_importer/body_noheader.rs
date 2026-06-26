@@ -89,6 +89,14 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
         static ref RE29: Regex = Regex::new(
             r#"^[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
         ).unwrap();
+        // Remove non-RER machine header line
+        static ref RE30: Regex = Regex::new(
+            r#"^.+\|\s*[0-9]{4}\-[0-9]{2}\-[0-9]{2}(_[0-9]{2}-[0-9]{2}-[0-9]{2})?\s*$"#
+        ).unwrap();
+        // Remove non-RER machine time line
+        static ref RE31: Regex = Regex::new(
+            r#"^[0-9]{2}-[0-9]{2}(-[0-9]{2})?$"#
+        ).unwrap();
         // Remove unit line from Mouse
         static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
         // Remove freq line from Mouse
@@ -117,6 +125,8 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
         .filter(|l| !RE27.is_match(l))
         .filter(|l| !RE28.is_match(l))
         .filter(|l| !RE29.is_match(l))
+        .filter(|l| !RE30.is_match(l))
+        .filter(|l| !RE31.is_match(l))
         .filter(|l| !RE3.is_match(l))
         .filter(|l| !RE4.is_match(l))
         .filter(|l| !RE5.is_match(l))
@@ -530,5 +540,21 @@ mod tests {
         );
         assert_eq!(res.start, 93);
         assert_eq!(res.end, 221);
+    }
+
+    #[test]
+    fn extract_text_non_rer_header_without_machine_id() {
+        let body = "50 обрБпС | 2026-06-26\n11-34\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_non_rer_header_with_machine_id() {
+        let body = "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+
+        assert_eq!(res, "Перехоплення");
     }
 }

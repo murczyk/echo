@@ -13,6 +13,7 @@ pub struct SystemSettingsCurrentRsp {
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
     pub short_url_enabled: bool,
+    pub support_non_rer_interceptions: bool,
 }
 
 #[derive(

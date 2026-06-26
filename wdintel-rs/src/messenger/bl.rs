@@ -711,6 +711,33 @@ pub async fn bl_group_update(
         .await
         .c(h!())?
         .c(h!())?;
+    let group =
+        if crate::system_settings::support_non_rer_interceptions_enabled(txn)
+            .await
+            .c(h!())?
+        {
+            if let Some(is_rer) = req.is_rer {
+                if group.is_rer == is_rer {
+                    group
+                } else {
+                    let master_key = group.master_key.clone();
+                    let mut group = group.into_active_model();
+                    group.is_rer = Set(is_rer);
+                    let group = group.update(txn).await.c(h!())?;
+                    crate::sigint::unit_machine::enqueue_recent_unit_machine_recalculation_for_group(
+                        txn,
+                        &master_key,
+                    )
+                    .await
+                    .c(h!())?;
+                    group
+                }
+            } else {
+                group
+            }
+        } else {
+            group
+        };
 
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
