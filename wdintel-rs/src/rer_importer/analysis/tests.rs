@@ -1087,8 +1087,8 @@ async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
         .unwrap(),
     );
 
-    assert_eq!(counts.len(), 2);
-    assert_eq!(counts.get(&fixture.alpha.signal_group.master_key), Some(&2));
+    assert_eq!(counts.len(), 1);
+    assert!(!counts.contains_key(&fixture.alpha.signal_group.master_key));
     assert_eq!(counts.get(&fixture.beta.signal_group.master_key), Some(&4));
     assert!(!counts.contains_key(&fixture.secret_empty.signal_group.master_key));
 }
@@ -1201,7 +1201,7 @@ async fn rer_analysis_aor_filter_keeps_groups_with_overlapping_group_aors() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_group_dropdown_keeps_network_matched_groups() {
+async fn rer_analysis_group_dropdown_hides_network_matched_groups() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -1280,10 +1280,7 @@ async fn rer_analysis_group_dropdown_keeps_network_matched_groups() {
         .unwrap();
     assert_eq!(
         counts,
-        BTreeMap::from([
-            (fixture.group_x.signal_group.master_key.clone(), 3),
-            (fixture.group_y.signal_group.master_key.clone(), 1),
-        ])
+        BTreeMap::from([(fixture.group_x.signal_group.master_key.clone(), 3)])
     );
 
     req.selected_groups =
@@ -1355,10 +1352,7 @@ async fn rer_analysis_network_dropdown_hides_unrelated_networks() {
         .unwrap();
     assert_eq!(
         group_counts,
-        BTreeMap::from([
-            (fixture.group_x.signal_group.master_key.clone(), 3),
-            (fixture.group_y.signal_group.master_key.clone(), 1),
-        ])
+        BTreeMap::from([(fixture.group_x.signal_group.master_key.clone(), 3)])
     );
 
     let network_counts = fetch_network_counts_for_req(&fixture.env, &req)
@@ -1370,7 +1364,7 @@ async fn rer_analysis_network_dropdown_hides_unrelated_networks() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_shared_messages_keep_related_groups_visible() {
+async fn rer_analysis_shared_messages_hide_groups_outside_selected_aor() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -1393,10 +1387,7 @@ async fn rer_analysis_shared_messages_keep_related_groups_visible() {
         fetch_group_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([
-            (fixture.group_x.signal_group.master_key.clone(), 1),
-            (fixture.group_y.signal_group.master_key.clone(), 1),
-        ])
+        BTreeMap::from([(fixture.group_x.signal_group.master_key.clone(), 1)])
     );
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -1411,10 +1402,7 @@ async fn rer_analysis_shared_messages_keep_related_groups_visible() {
         fetch_group_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([
-            (fixture.group_x.signal_group.master_key.clone(), 1),
-            (fixture.group_y.signal_group.master_key.clone(), 1),
-        ])
+        BTreeMap::from([(fixture.group_x.signal_group.master_key.clone(), 1)])
     );
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -1426,7 +1414,7 @@ async fn rer_analysis_shared_messages_keep_related_groups_visible() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_network_aor_overlap_keeps_messages_groups_and_networks() {
+async fn rer_analysis_network_aor_overlap_keeps_messages_and_networks() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
@@ -1443,7 +1431,7 @@ async fn rer_analysis_network_aor_overlap_keeps_messages_groups_and_networks() {
         fetch_group_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([(fixture.alpha.signal_group.master_key.clone(), 1,)])
+        BTreeMap::new()
     );
     assert_eq!(
         fetch_network_counts_for_req(&fixture.env, &req)
@@ -1455,7 +1443,7 @@ async fn rer_analysis_network_aor_overlap_keeps_messages_groups_and_networks() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_network_aor_match_can_show_group_without_network() {
+async fn rer_analysis_network_aor_match_does_not_show_group_option() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -1484,7 +1472,7 @@ async fn rer_analysis_network_aor_match_can_show_group_without_network() {
         fetch_group_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([(fixture.group_y.signal_group.master_key.clone(), 1,)])
+        BTreeMap::new()
     );
     assert!(fetch_network_counts_for_req(&fixture.env, &req)
         .await

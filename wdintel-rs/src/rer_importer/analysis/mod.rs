@@ -1254,6 +1254,45 @@ fn build_network_selected_aor_exists(selected_aors: &[i64]) -> SelectStatement {
         .to_owned()
 }
 
+pub fn selected_aor_group_facet_condition(
+    selected_aors: &Option<Vec<i64>>,
+) -> Option<Condition> {
+    let selected_aors =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())?;
+
+    let group_aor_alias = Alias::new("facet_group_aor_filter");
+    let linked_aor_alias = Alias::new("facet_group_linked_aor_filter");
+    let overlap_exists = build_selected_aor_overlap_exists(
+        linked_aor_alias.clone(),
+        selected_aors,
+    );
+
+    let joined_group_matches = Query::select()
+        .expr(Expr::val(1))
+        .from_as(signal_group_aor::Entity, group_aor_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            linked_aor_alias.clone(),
+            Expr::col((
+                group_aor_alias.clone(),
+                signal_group_aor::Column::AorId,
+            ))
+            .equals((linked_aor_alias, area_of_responsibility::Column::Id)),
+        )
+        .and_where(
+            Expr::col((group_aor_alias, signal_group_aor::Column::MasterKey))
+                .equals((
+                    signal_message_group::Entity,
+                    signal_message_group::Column::GroupMasterKey,
+                )),
+        )
+        .and_where(Expr::exists(overlap_exists))
+        .to_owned();
+
+    Some(Expr::exists(joined_group_matches).into_condition())
+}
+
 pub fn selected_aors_filter_condition(
     selected_aors: &Option<Vec<i64>>,
 ) -> Option<Condition> {
