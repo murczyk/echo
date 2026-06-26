@@ -2641,8 +2641,6 @@ export type FindLiveNetwork = {
   details: FindLiveNetworkDetails;
   liveFreqs: Array<string>;
   callsigns: Array<string>;
-  signals: Array<string>;
-  pelengs: Array<FindLiveNetworkPeleng>;
   locations: Array<string>;
 };
 
@@ -2661,18 +2659,6 @@ export type FindLiveNetworkDetails = {
   units: Array<string>;
   aorIds: Array<number>;
   postIds: Array<number>;
-};
-
-export type FindLiveNetworkPeleng = {
-  id: number;
-  inboxItemId: number;
-  lat: number;
-  lng: number;
-  settlement: string | null;
-  localityDirection: string | null;
-  distanceM: number | null;
-  countryCode: string | null;
-  timestamp: number | null;
 };
 
 export type NetworkGroupsActivityOneReq = {

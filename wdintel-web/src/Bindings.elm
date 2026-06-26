@@ -6850,8 +6850,6 @@ type alias FindLiveNetwork =
     { details : FindLiveNetworkDetails
     , liveFreqs : List (String)
     , callsigns : List (String)
-    , signals : List (String)
-    , pelengs : List (FindLiveNetworkPeleng)
     , locations : List (String)
     }
 
@@ -6862,8 +6860,6 @@ findLiveNetworkEncoder struct =
         [ ( "details", (findLiveNetworkDetailsEncoder) struct.details )
         , ( "live_freqs", (Json.Encode.list (Json.Encode.string)) struct.liveFreqs )
         , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
-        , ( "signals", (Json.Encode.list (Json.Encode.string)) struct.signals )
-        , ( "pelengs", (Json.Encode.list (findLiveNetworkPelengEncoder)) struct.pelengs )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
         ]
 
@@ -6903,34 +6899,6 @@ findLiveNetworkDetailsEncoder struct =
         , ( "units", (Json.Encode.list (Json.Encode.string)) struct.units )
         , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
         , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
-        ]
-
-
-type alias FindLiveNetworkPeleng =
-    { id : Int
-    , inboxItemId : Int
-    , lat : Float
-    , lng : Float
-    , settlement : Maybe (String)
-    , localityDirection : Maybe (String)
-    , distanceM : Maybe (Float)
-    , countryCode : Maybe (String)
-    , timestamp : Maybe (Int)
-    }
-
-
-findLiveNetworkPelengEncoder : FindLiveNetworkPeleng -> Json.Encode.Value
-findLiveNetworkPelengEncoder struct =
-    Json.Encode.object
-        [ ( "id", (Json.Encode.int) struct.id )
-        , ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
-        , ( "lat", (Json.Encode.float) struct.lat )
-        , ( "lng", (Json.Encode.float) struct.lng )
-        , ( "settlement", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.settlement )
-        , ( "locality_direction", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.localityDirection )
-        , ( "distance_m", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.distanceM )
-        , ( "country_code", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.countryCode )
-        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         ]
 
 
@@ -13039,8 +13007,6 @@ findLiveNetworkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "details" (findLiveNetworkDetailsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "live_freqs" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signals" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pelengs" (Json.Decode.list (findLiveNetworkPelengDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
@@ -13061,20 +13027,6 @@ findLiveNetworkDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
-
-
-findLiveNetworkPelengDecoder : Json.Decode.Decoder FindLiveNetworkPeleng
-findLiveNetworkPelengDecoder =
-    Json.Decode.succeed FindLiveNetworkPeleng
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locality_direction" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "distance_m" (Json.Decode.nullable (Json.Decode.float))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "country_code" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
 
 
 networkGroupsActivityOneReqDecoder : Json.Decode.Decoder NetworkGroupsActivityOneReq

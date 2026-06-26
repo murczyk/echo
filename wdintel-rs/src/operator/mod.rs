@@ -86,7 +86,7 @@ async fn message_submit(
     };
 
     txn.commit().await.c(h!())?;
-    crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
+    crate::inbox::fanout_inbox_changes(
         &mut env.redis.clone(),
         changed_inbox_item_ids,
     )

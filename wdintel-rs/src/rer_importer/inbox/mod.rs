@@ -1415,10 +1415,12 @@ async fn submit_generic_inbox_messages(
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = datasource::Entity::find()
         .filter(datasource::Column::ApiLogin.eq(login))
+        .filter(datasource::Column::Enabled.eq(true))
+        .filter(datasource::Column::Deleted.eq(false))
         .one(&txn)
         .await
         .c(h!())?
-        .c(h!())?;
+        .ok_or(AppError::NotFound)?;
     let mut changed_inbox_ids = vec![];
     let mut messages = vec![];
     let mut warnings = vec![];
@@ -1560,13 +1562,6 @@ async fn fanout_inbox_changed(env: &Data<Env>, inbox_ids: Vec<i64>) {
         .collect();
     if events.is_empty() {
         return;
-    }
-    if let Err(e) = crate::sigint::network::invalidate_find_live_networks_cache(
-        &mut env.redis.clone(),
-    )
-    .await
-    {
-        warn!("failed to invalidate find-live networks cache: {:#?}", e);
     }
     if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
         warn!("failed to send to redis: {:#?}", e);
@@ -1813,6 +1808,28 @@ mod tests {
             .collect()
     }
 
+    fn generic_submit_req() -> GenericInboxSubmitReq {
+        let now = Utc::now().naive_utc();
+        GenericInboxSubmitReq {
+            messages: vec![InboxSubmitItem {
+                message_id: None,
+                payload: InboxInsertPayload {
+                    text: "generic datasource gate".to_string(),
+                    checked: true,
+                    timestamp: Some(now.and_utc().timestamp_millis()),
+                    sender: Some("generic submit".to_string()),
+                    post: Some("SC1".to_string()),
+                    ..Default::default()
+                },
+                group_names: Some(vec!["SC1".to_string()]),
+                source: Some("test".to_string()),
+                integration: Some("generic".to_string()),
+                network: None,
+                dmr: vec![],
+            }],
+        }
+    }
+
     #[test]
     fn submit_dmr_metadata_model_stringifies_numeric_ids_for_storage() {
         let metadata = submit_dmr_metadata(Some(5));
@@ -1865,7 +1882,9 @@ mod tests {
         let network = SubmitNetwork {
             signal_name: "dmr".to_string(),
             cc: Some(7),
-            name: Some("DMR SC1".to_string()),
+            name: Some(
+                "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
+            ),
         };
 
         let (dmr, warnings) = normalize_submit_dmr_metadata(
@@ -2090,13 +2109,18 @@ mod tests {
                 post: Some("SC1".to_string()),
                 ..Default::default()
             },
-            group_names: Some(vec!["SC1".to_string(), "SC2".to_string()]),
+            group_names: Some(vec![
+                "SC1".to_string(),
+                "Чумак DMR Резерв".to_string(),
+            ]),
             source: Some("test".to_string()),
             integration: Some("generic".to_string()),
             network: Some(SubmitNetwork {
                 signal_name: "dmr".to_string(),
                 cc: Some(9),
-                name: Some("DMR SC1".to_string()),
+                name: Some(
+                    "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
+                ),
             }),
             dmr: vec![primary, next],
         };
@@ -2167,6 +2191,48 @@ mod tests {
             .collect::<Vec<_>>();
         sender_ids.sort();
         assert_eq!(sender_ids, vec!["110".to_string(), "111".to_string()]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_generic_submit_rejects_disabled_or_deleted_datasource() {
+        let env = cleanup().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let mut datasource = datasource.into_active_model();
+        datasource.api_login = Set(Some(login.login.clone()));
+        datasource.enabled = Set(Some(false));
+        datasource.deleted = Set(false);
+        let datasource = datasource.update(&env.dbx).await.unwrap();
+        let logins = vec![login.login.clone()];
+
+        let err = submit_generic_inbox_messages(
+            &env_data,
+            &login.login,
+            &logins,
+            generic_submit_req(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound));
+
+        let mut datasource = datasource.into_active_model();
+        datasource.enabled = Set(Some(true));
+        datasource.deleted = Set(true);
+        datasource.update(&env.dbx).await.unwrap();
+
+        let err = submit_generic_inbox_messages(
+            &env_data,
+            &login.login,
+            &logins,
+            generic_submit_req(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound));
     }
 
     #[serial]

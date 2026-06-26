@@ -186,12 +186,9 @@ pub async fn oneoff_rer_csv_import_1(
                 None,
             )
             .await;
-        crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
-            redis,
-            changed_inbox_item_ids,
-        )
-        .await
-        .c(h!())?;
+        crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
+            .await
+            .c(h!())?;
         crate::sigint::worker::incoming_message_after_insert(
             &dbx,
             db_message_id,
@@ -489,12 +486,9 @@ pub async fn rer_delta_csv_import_go(
                 None,
             )
             .await;
-        crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
-            redis,
-            changed_inbox_item_ids,
-        )
-        .await
-        .c(h!())?;
+        crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
+            .await
+            .c(h!())?;
         crate::sigint::worker::incoming_message_after_insert(
             dbx,
             db_message_id,

@@ -500,7 +500,7 @@ pub async fn upsert_messages(
                 .await
                 .context(h!())?;
             txn.commit().await.context(h!())?;
-            crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
+            crate::inbox::fanout_inbox_changes(
                 &mut redis,
                 changed_inbox_item_ids,
             )

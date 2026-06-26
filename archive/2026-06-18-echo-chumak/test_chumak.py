@@ -138,9 +138,13 @@ def submit_payload() -> dict:
     call_group_id = 50
     sender_callsign = optional_env("CHUMAK_CALLSIGN_FROM", "ЯРУС")
     receiver_callsign = optional_env("CHUMAK_CALLSIGN_TO", "СВЕТЛЫЙ")
-    location = optional_env("CHUMAK_LOCATION", "ЛИМАН ПЕРШИЙ")
-    unit = optional_env("CHUMAK_UNIT", "УКХ р/м вБпЛА 121 мсп 68 мсд 6 А")
+    location = optional_env("CHUMAK_LOCATION", "КОПАНІ")
+    unit = optional_env(
+        "CHUMAK_UNIT",
+        "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А",
+    )
     network_name = optional_env("CHUMAK_NETWORK_NAME", unit)
+    post = optional_env("CHUMAK_POST", "Пост Копані")
     no_headers_body = (
         f"1.{sender_callsign} {receiver_callsign} на приеме.\n"
         "2.ТУМАН в гараже. Оттуда вернулся, нормально вроде.\n"
@@ -148,7 +152,7 @@ def submit_payload() -> dict:
     )
     message = (
         f"{timestamp_text} F={freq} (МГц)\n"
-        'Отримано з поста "SC1"\n'
+        f'Отримано з поста "{post}"\n'
         f"{unit} 🆓 ({location}) СС:{color_code} CG:{call_group_id}\n"
         f"ID➡️:{sender_id}({sender_callsign})\n"
         f"ID(CG)⬅️:{call_group_id}({receiver_callsign})\n"
@@ -169,7 +173,7 @@ def submit_payload() -> dict:
                 "timestamp": timestamp_ms,
                 "sender": optional_env("CHUMAK_SENDER", "chumak"),
                 "extended_form": f"Сигнали: dmr\nМережа: {network_name}",
-                "post": optional_env("CHUMAK_POST") or None,
+                "post": post or None,
                 "unit": unit or None,
                 "location": location or None,
                 "group_names": [required_env("CHUMAK_GROUP")],

@@ -1635,7 +1635,7 @@ mod tests {
             "network": {
                 "signal_name": "dmr",
                 "cc": 5,
-                "name": "DMR SC1"
+                "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А"
             },
             "dmr": [{
                 "timestamp": "2026-06-25T12:34:56",
@@ -1807,7 +1807,7 @@ mod tests {
                 "network": {
                     "signal_name": "dmr",
                     "cc": 5,
-                    "name": "DMR SC1"
+                    "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А"
                 },
                 "dmr": [{
                     "timestamp": "2026-06-25T12:34:56",

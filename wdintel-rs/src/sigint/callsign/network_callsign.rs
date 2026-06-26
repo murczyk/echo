@@ -101,10 +101,7 @@ pub async fn create_network_callsign(
     .next()
     .ok_or(AppError::NotFound)?;
 
-    crate::sigint::network::fanout_network_changed_and_invalidate_find_live_cache(
-        &env,
-    )
-    .await?;
+    crate::sigint::network::fanout_network_changed(&env).await?;
 
     Ok(Json(res))
 }
@@ -166,10 +163,7 @@ pub async fn add_as_known_network_callsigns(
     .await
     .context(h!())?;
 
-    crate::sigint::network::fanout_network_changed_and_invalidate_find_live_cache(
-        &env,
-    )
-    .await?;
+    crate::sigint::network::fanout_network_changed(&env).await?;
 
     Ok(Json(res))
 }
@@ -228,10 +222,7 @@ pub async fn update_network_callsign(
     .next()
     .ok_or(AppError::NotFound)?;
 
-    crate::sigint::network::fanout_network_changed_and_invalidate_find_live_cache(
-        &env,
-    )
-    .await?;
+    crate::sigint::network::fanout_network_changed(&env).await?;
 
     Ok(Json(res))
 }
@@ -286,9 +277,6 @@ pub async fn delete_network_callsign(
     .into_iter()
     .next()
     .ok_or(AppError::NotFound)?;
-
-    crate::sigint::network::invalidate_find_live_networks_cache_for_env(&env)
-        .await?;
 
     Ok(Json(res))
 }

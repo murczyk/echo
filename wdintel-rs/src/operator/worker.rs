@@ -110,12 +110,9 @@ async fn receive_once(
             .await
             .c(h!())?;
         txn.commit().await.c(h!())?;
-        crate::inbox::fanout_inbox_changes_and_invalidate_find_live_cache(
-            redis,
-            changed_inbox_item_ids,
-        )
-        .await
-        .c(h!())?;
+        crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }

@@ -361,28 +361,19 @@ fn extract_generic_body_datetime(
         }
     })
 }
-pub async fn fanout_inbox_changed_and_invalidate_find_live_cache(
+pub async fn fanout_inbox_changed(
     redis: &mut redis::aio::ConnectionManager,
     inbox_item_id: i64,
 ) -> Result<(), AppError> {
-    fanout_inbox_changes_and_invalidate_find_live_cache(
-        redis,
-        vec![inbox_item_id],
-    )
-    .await
+    fanout_inbox_changes(redis, vec![inbox_item_id]).await
 }
 
-pub async fn fanout_inbox_changes_and_invalidate_find_live_cache(
+pub async fn fanout_inbox_changes(
     redis: &mut redis::aio::ConnectionManager,
     inbox_item_ids: Vec<i64>,
 ) -> Result<(), AppError> {
     if inbox_item_ids.is_empty() {
         return Ok(());
-    }
-    if let Err(e) =
-        crate::sigint::network::invalidate_find_live_networks_cache(redis).await
-    {
-        warn!("failed to invalidate find-live networks cache: {:#?}", e);
     }
     let events = inbox_item_ids
         .into_iter()
