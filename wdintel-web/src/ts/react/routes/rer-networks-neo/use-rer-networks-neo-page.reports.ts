@@ -11,7 +11,7 @@ import {
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus, parseUtcDateTime } from '../../services/api/report-history';
+import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus, isCancelledReportHistory, parseUtcDateTime } from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
 import {
@@ -75,6 +75,22 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
       while (true) {
         const row = await fetchReportHistoryStatus(taskId);
         if (row.status === 'failed') {
+          if (isCancelledReportHistory(row)) {
+            args.setEtalonkaReport((current) => ({
+              ...current,
+              taskId,
+              historyRow: row,
+              running: false,
+              curr: current.curr,
+              overall: current.overall,
+              logs,
+              error: 'Звіт скасовано в Моїх звітах.',
+              finishedAt: row.completedAt ?? new Date().toISOString(),
+              downloadFileName: fileName,
+              startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+            }));
+            return;
+          }
           args.setEtalonkaReport((current) => ({
             ...current,
             taskId,
@@ -133,6 +149,22 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
 
         if (!rsp.running) {
           if (rsp.finishedWithError) {
+            if (rsp.finishedWithError === 'Скасовано користувачем') {
+              args.setEtalonkaReport((current) => ({
+                ...current,
+                taskId,
+                historyRow: row,
+                running: false,
+                curr: current.curr,
+                overall: current.overall,
+                logs,
+                error: 'Звіт скасовано в Моїх звітах.',
+                finishedAt: row.completedAt ?? new Date().toISOString(),
+                downloadFileName: fileName,
+                startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+              }));
+              return;
+            }
             throw new Error(rsp.finishedWithError);
           }
           break;

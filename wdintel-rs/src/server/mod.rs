@@ -573,6 +573,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::report_history::report_history_status)
             .service(crate::report_history::report_history_download)
             .service(crate::report_history::report_history_retry)
+            .service(crate::report_history::report_history_cancel)
             .service(crate::location::find_locations)
             .service(crate::location::fetch_regions)
             .service(crate::location::aor_config::list_aor_location_configs)
@@ -1073,6 +1074,43 @@ mod tests {
                 after_unit_id: None,
                 before_unit_id: None,
             })
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn test_report_history_cancel_route_is_registered() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let redis_session_store =
+            RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+                .await
+                .unwrap();
+        let app = test::init_service(
+            App::new()
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .app_data(
+                    web::JsonConfig::default()
+                        .limit(SERVER_JSON_PAYLOAD_MAX_BYTES),
+                )
+                .configure(configure_routes),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/report-history/cancel")
+            .set_json(crate::report_history::ReportHistoryIdReq { id: 1 })
             .to_request();
         let res = test::call_service(&app, req).await;
 

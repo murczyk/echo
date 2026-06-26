@@ -6,7 +6,7 @@ import {
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { fetchReportHistoryStatus, parseUtcDateTime } from '../../services/api/report-history';
+import { fetchReportHistoryStatus, isCancelledReportHistory, parseUtcDateTime } from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
@@ -38,6 +38,28 @@ function updateReportState(
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function applyCancelledReport(
+  setState: SetState,
+  row: ReportHistoryRow,
+  logs: string[],
+  fileName: string,
+) {
+  updateReportState(setState, (current) => ({
+    ...current,
+    taskId: row.id,
+    historyRow: row,
+    running: false,
+    curr: current.curr,
+    overall: current.overall,
+    logs,
+    error: 'Звіт скасовано в Моїх звітах.',
+    finishedAt: row.completedAt ?? new Date().toISOString(),
+    progressExpanded: current.progressExpanded,
+    downloadFileName: fileName,
+    startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+  }));
 }
 
 function applyReportHistoryRow(
@@ -94,6 +116,10 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
         while (true) {
           const row = await fetchReportHistoryStatus(taskId);
           if (row.status === 'failed') {
+            if (isCancelledReportHistory(row)) {
+              applyCancelledReport(setState, row, logs, fileName);
+              return;
+            }
             updateReportState(setState, (current) => ({
               ...current,
               taskId,
@@ -139,6 +165,10 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
 
           if (!rsp.running) {
             if (rsp.finishedWithError) {
+              if (rsp.finishedWithError === 'Скасовано користувачем') {
+                applyCancelledReport(setState, row, logs, fileName);
+                return;
+              }
               throw new Error(rsp.finishedWithError);
             }
             break;

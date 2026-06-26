@@ -47,6 +47,7 @@ type Props = {
   onIncludePelengsMapChange: (includePelengsMap: boolean) => void;
   onFromDateTimeStrChange: (fromDateTimeStr: string) => void;
   onToDateTimeStrChange: (toDateTimeStr: string) => void;
+  launchWarningText?: string | null;
   disableRestoreFocus?: boolean;
 };
 
@@ -152,6 +153,7 @@ export function NetworkEtalonkaReportDialog({
   onIncludePelengsMapChange,
   onFromDateTimeStrChange,
   onToDateTimeStrChange,
+  launchWarningText = null,
   disableRestoreFocus = false,
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
@@ -234,13 +236,14 @@ export function NetworkEtalonkaReportDialog({
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {description}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
           Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування &gt; Мої звіти</Box>
         </Typography>
       </DialogTitle>
 
       <DialogContent dividers sx={{ px: 3, pt: 1.75, pb: 2.5 }}>
         <Stack spacing={2}>
+          {launchWarningText ? <PowerAlert severity="warning">{launchWarningText}</PowerAlert> : null}
           {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
 
           <RadioGroup row value={report.reportType} onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)} sx={{ gap: 2 }}>

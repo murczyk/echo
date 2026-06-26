@@ -1,4 +1,6 @@
 import DownloadIcon from '@mui/icons-material/DownloadOutlined';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import {
@@ -10,20 +12,29 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Stack,
-  Tooltip,
   Typography,
+  DialogContentText,
+  Tooltip,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { type MRT_ColumnDef, type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
-import { downloadReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
+import { cancelReportHistory, downloadReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
+import { PowerMenu } from '../../components/PowerMenu';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
+import { parseUtcDateTime } from '../../services/api/report-history';
+import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
+import { mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -58,20 +69,21 @@ export type ReportHistoryTableSectionProps = {
 };
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
+  actions: true,
   reportKind: true,
   details: true,
   createdAt: true,
   status: true,
-  plannedForTs: true,
-  startedAt: true,
+  plannedForTs: false,
+  startedAt: false,
   queuePosition: true,
-  bgtaskId: true,
-  completedAt: true,
-  actions: true,
+  bgtaskId: false,
+  completedAt: false,
 };
 
 const DEFAULT_REPORTS_COLUMN_ORDER = [
   'mrt-row-numbers',
+  'actions',
   'reportKind',
   'details',
   'createdAt',
@@ -81,7 +93,6 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
   'queuePosition',
   'bgtaskId',
   'completedAt',
-  'actions',
 ];
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
@@ -92,6 +103,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'mrt-row-numbers',
+  'actions',
   'reportKind',
   'requestedBy',
   'details',
@@ -103,7 +115,6 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'bgtaskId',
   'completedAt',
   'errorLog',
-  'actions',
 ];
 
 const DEFAULT_REPORTS_SORTING: MRT_SortingState = [{ id: 'createdAt', desc: true }];
@@ -222,6 +233,9 @@ function formatReportProgress(progress: number): string {
 }
 
 function formatReportStatus(row: ReportHistoryRow): string {
+  if (row.status === 'failed' && row.lastError === 'Скасовано користувачем') {
+    return 'Скасовано';
+  }
   if (row.status === 'planned' && row.blockedByReportId != null) {
     return `Очікує завершення звіту #${row.blockedByReportId}`;
   }
@@ -255,12 +269,116 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
   }));
 }
 
+export const REPORT_CANCEL_RUNNING_WARNING =
+  'Звіт буде скасовано в черзі. Якщо зараз виконується довгий запит, він може завершитись перед повною зупинкою.';
+const REPORT_CANCEL_THRESHOLD_MS = 5 * 60 * 1000;
+
+function getReportElapsedMs(row: ReportHistoryRow): number | null {
+  const startedAt = parseUtcDateTime(row.startedAt ?? row.createdAt);
+  return startedAt === null ? null : Date.now() - startedAt.getTime();
+}
+
+function canCancelReport(row: ReportHistoryRow): boolean {
+  if (row.status === 'planned') return true;
+  if (row.status !== 'in_progress') return false;
+  const elapsedMs = getReportElapsedMs(row);
+  return elapsedMs !== null && elapsedMs >= REPORT_CANCEL_THRESHOLD_MS;
+}
+
+function ReportHistoryRowActions({
+  row,
+  onDownload,
+  onRetry,
+  onCancel,
+}: {
+  row: ReportHistoryRow;
+  onDownload: (row: ReportHistoryRow) => void;
+  onRetry: (row: ReportHistoryRow) => void;
+  onCancel: (row: ReportHistoryRow) => void;
+}) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const menuOpen = Boolean(anchorEl);
+  const actions: Array<{ label: string; icon: ReactNode; onClick: () => void; disabled?: boolean; tone?: 'default' | 'warning' | 'danger' }> = [];
+
+  if (row.status === 'done' && row.hasFile) {
+    actions.push({
+      label: 'Завантажити',
+      icon: <DownloadIcon fontSize="small" />,
+      onClick: () => onDownload(row),
+    });
+  }
+
+  if (row.status === 'failed') {
+    actions.push({
+      label: 'Повторити',
+      icon: <ReplayIcon fontSize="small" />,
+      onClick: () => onRetry(row),
+      tone: 'warning',
+    });
+  }
+
+  if (canCancelReport(row)) {
+    actions.push({
+      label: 'Скасувати',
+      icon: <CancelOutlinedIcon fontSize="small" />,
+      onClick: () => onCancel(row),
+      tone: 'danger',
+    });
+  }
+
+  if (actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <Tooltip title="Дії">
+        <span>
+          <PowerIconButton
+            size="small"
+            aria-label="Дії"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen ? 'true' : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              setAnchorEl(event.currentTarget);
+            }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </PowerIconButton>
+        </span>
+      </Tooltip>
+      <PowerMenu open={menuOpen} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
+        {actions.map((action) => (
+          <MenuItem
+            key={action.label}
+            onClick={() => {
+              setAnchorEl(null);
+              action.onClick();
+            }}
+            sx={(theme) => ({
+              ...(action.tone === 'danger'
+                ? { color: theme.palette.error.main }
+                : action.tone === 'warning'
+                  ? { color: theme.palette.warning.main }
+                  : {}),
+            })}
+          >
+            <Box sx={{ minWidth: 34, display: 'inline-flex', justifyContent: 'center', mr: 1.25 }}>{action.icon}</Box>
+            {action.label}
+          </MenuItem>
+        ))}
+      </PowerMenu>
+    </>
+  );
+}
+
 export function SettingsMyReportsSection({ active }: Props) {
   return (
     <ReportHistoryTableSection
       active={active}
       title="Мої звіти"
-      tableId="settings-neo-my-reports-v1"
+      tableId="settings-neo-my-reports-v3"
       panelId="settings-neo-panel-my-reports"
       labelledBy="settings-neo-tab-my-reports"
     />
@@ -282,8 +400,8 @@ export function ReportHistoryTableSection({
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [actionInFlight, setActionInFlight] = useState<number | null>(null);
   const [errorLogRow, setErrorLogRow] = useState<ReportHistoryRow | null>(null);
+  const [cancelRow, setCancelRow] = useState<ReportHistoryRow | null>(null);
   const [queryState, setQueryState] = useState<ReportHistoryQueryState>({
     globalFilter: '',
     columnFilters: [],
@@ -370,8 +488,8 @@ export function ReportHistoryTableSection({
       setRows([]);
       setLoadState('idle');
       setError(null);
-      setActionInFlight(null);
       setErrorLogRow(null);
+      setCancelRow(null);
       setTotalRows(null);
       setHasMoreRows(false);
       setNextOffset(0);
@@ -390,33 +508,110 @@ export function ReportHistoryTableSection({
 
   async function handleDownload(row: ReportHistoryRow) {
     if (!row.hasFile || row.status !== 'done') return;
-    setActionInFlight(row.id);
     try {
       const blob = await downloadReportHistory(row.id);
       downloadBlob(blob, row.fileName ?? `report-${row.id}`);
     } catch (downloadError) {
       setError(formatErrorMessage(downloadError));
-    } finally {
-      setActionInFlight(null);
     }
   }
 
   async function handleRetry(row: ReportHistoryRow) {
     if (row.status !== 'failed') return;
-    setActionInFlight(row.id);
     try {
       const updated = await retryReportHistory(row.id);
       setRows((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (retryError) {
       setError(formatErrorMessage(retryError));
-    } finally {
-      setActionInFlight(null);
+    }
+  }
+
+  async function handleCancel(row: ReportHistoryRow) {
+    if (!canCancelReport(row)) return;
+    if (row.status === 'in_progress') {
+      setCancelRow(row);
+      return;
+    }
+
+    try {
+      const updated = await cancelReportHistory(row.id);
+      setRows((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (cancelError) {
+      setError(formatErrorMessage(cancelError));
+    }
+  }
+
+  async function confirmCancelInFlightRow() {
+    if (cancelRow === null) return;
+    const row = cancelRow;
+    setCancelRow(null);
+    try {
+      const updated = await cancelReportHistory(row.id);
+      setRows((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (cancelError) {
+      setError(formatErrorMessage(cancelError));
     }
   }
 
   const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(
     () => {
       const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
+        {
+          id: 'actions',
+          header: 'Дії',
+          size: mrtRowActionsColumnSize(1),
+          minSize: mrtRowActionsColumnSize(1),
+          maxSize: mrtRowActionsColumnSize(1),
+          enableSorting: false,
+          enableColumnActions: false,
+          enableColumnFilter: false,
+          enableColumnOrdering: false,
+          enableResizing: false,
+          enableHiding: false,
+          muiTableHeadCellProps: {
+            sx: {
+              ...CUSTOM_CELL_STYLES,
+              justifyContent: 'center',
+              display: 'flex',
+              flexDirection: 'row',
+              padding: '10px!important',
+              minHeight: '56px',
+              backgroundColor: 'var(--bs-body-bg)',
+              '& .Mui-TableHeadCell-Content': {
+                width: '100%',
+                minHeight: '28px',
+                justifyContent: 'center',
+              },
+              '& .Mui-TableHeadCell-Content-Labels': {
+                flex: 1,
+                justifyContent: 'center',
+              },
+              '& .Mui-TableHeadCell-Content-Wrapper': {
+                width: '100%',
+                textAlign: 'center',
+              },
+              '& .Mui-TableHeadCell-ResizeHandle-Wrapper': {
+                display: 'none',
+              },
+            },
+          },
+          muiTableBodyCellProps: {
+            sx: {
+              ...CUSTOM_CELL_STYLES,
+              justifyContent: 'center',
+              display: 'flex',
+              padding: '10px!important',
+            },
+          },
+          Cell: ({ row }) => (
+            <ReportHistoryRowActions
+              row={row.original}
+              onDownload={(report) => void handleDownload(report)}
+              onRetry={(report) => void handleRetry(report)}
+              onCancel={(report) => void handleCancel(report)}
+            />
+          ),
+        },
         {
           id: 'reportKind',
           accessorFn: (row) => formatReportKind(row.reportKind),
@@ -514,47 +709,11 @@ export function ReportHistoryTableSection({
           header: 'Завершено',
           Cell: ({ row }) => formatReportDate(row.original.completedAt),
         },
-        {
-          id: 'actions',
-          header: 'Завантажити',
-          enableSorting: false,
-          enableColumnActions: false,
-          enableColumnFilter: false,
-          size: 120,
-          Cell: ({ row }) => {
-            const report = row.original;
-            const disabled = actionInFlight === report.id;
-            if (report.status === 'failed') {
-              return (
-                <Tooltip title="Повторити">
-                  <span>
-                    <IconButton size="small" disabled={disabled} onClick={() => void handleRetry(report)}>
-                      <ReplayIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              );
-            }
-            return (
-              <Tooltip title={report.hasFile ? 'Завантажити' : ''}>
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={disabled || report.status !== 'done' || !report.hasFile}
-                    onClick={() => void handleDownload(report)}
-                  >
-                    <DownloadIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            );
-          },
-        },
       );
 
       return nextColumns;
     },
-    [actionInFlight, includeAuthor],
+    [handleCancel, handleDownload, handleRetry, includeAuthor],
   );
 
   return (
@@ -586,13 +745,6 @@ export function ReportHistoryTableSection({
                 </Typography>
               ) : null}
             </Stack>
-            <Tooltip title="Оновити">
-              <span>
-                <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
           </Stack>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
@@ -605,6 +757,17 @@ export function ReportHistoryTableSection({
             defaultEnableColumnOrdering={false}
             defaultSorting={DEFAULT_REPORTS_SORTING}
           >
+            <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1}>
+              <InternalTableActions filtersHidden fullScreenEnabled>
+                <Tooltip title="Оновити">
+                  <span>
+                    <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
+                      <RefreshIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </InternalTableActions>
+            </Stack>
             <Box
               sx={{
                 ...REPORTS_TABLE_WRAPPER_SX,
@@ -617,7 +780,11 @@ export function ReportHistoryTableSection({
                 data={rows}
                 loading={loadState === 'loading'}
                 loadingRows={buildReportLoadingRows()}
-                layoutMode={fullHeight ? 'grid' : undefined}
+                layoutMode="grid"
+                showToolbarInternalActions
+                enableTopToolbar
+                toolbarFiltersHidden
+                toolbarFullScreenEnabled
                 manualFiltering={loadReportHistoryBatch !== undefined}
                 manualSorting={loadReportHistoryBatch !== undefined}
                 onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
@@ -633,6 +800,22 @@ export function ReportHistoryTableSection({
           </TableStateProvider>
         </Stack>
       </Box>
+      <Dialog open={cancelRow !== null} onClose={() => setCancelRow(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Скасувати звіт?</DialogTitle>
+        <DialogContent dividers>
+          <DialogContentText>
+            {cancelRow?.status === 'in_progress'
+              ? REPORT_CANCEL_RUNNING_WARNING
+              : 'Звіт буде скасовано і прибрано з черги.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCancelRow(null)}>Відміна</Button>
+          <Button variant="contained" color="error" onClick={() => void confirmCancelInFlightRow()}>
+            Скасувати
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={errorLogRow !== null} onClose={() => setErrorLogRow(null)} fullWidth maxWidth="md">
         <DialogTitle>Помилки</DialogTitle>
         <DialogContent dividers>

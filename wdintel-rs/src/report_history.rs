@@ -1406,7 +1406,7 @@ async fn archive_completed_report_file(
         bytes,
     };
     let s3_id = upload_report_bytes(env, &generated).await?;
-    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+    let Some(_report_history) = ReportHistory::find_by_id(report_history_id)
         .one(&env.dbx)
         .await
         .c(h!())?
@@ -1416,12 +1416,31 @@ async fn archive_completed_report_file(
         );
         return Ok(());
     };
-    let mut report_history = report_history.into_active_model();
-    report_history.status = Set(STATUS_DONE.to_string());
-    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-    report_history.s3_id = Set(Some(s3_id));
-    report_history.last_error = Set(None);
-    report_history.update(&env.dbx).await.c(h!())?;
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_DONE.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(report_history::Column::S3Id, Expr::value(Some(s3_id)))
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(None::<String>),
+        )
+        .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        warn!(
+            "completed report history row {} was already finished, cancelled, or timed out",
+            report_history_id
+        );
+    }
     Ok(())
 }
 
@@ -1430,7 +1449,7 @@ async fn set_completed_report_archive_error(
     report_history_id: i64,
     err_msg: String,
 ) -> Result<(), AppError> {
-    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+    let Some(_report_history) = ReportHistory::find_by_id(report_history_id)
         .one(&env.dbx)
         .await
         .c(h!())?
@@ -1440,16 +1459,30 @@ async fn set_completed_report_archive_error(
         );
         return Ok(());
     };
-    let mut report_history = report_history.into_active_model();
-    report_history.status = Set(STATUS_FAILED.to_string());
-    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-    report_history.last_error = Set(Some(err_msg.clone()));
-    report_history.log = Set(append_log_entry(
-        report_history.log.unwrap(),
-        "system",
-        &err_msg,
-    ));
-    report_history.update(&env.dbx).await.c(h!())?;
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_FAILED.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(Some(err_msg.clone())),
+        )
+        .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        warn!(
+            "failed report history row {} was already finished, cancelled, or timed out",
+            report_history_id
+        );
+    }
     Ok(())
 }
 
@@ -1534,6 +1567,75 @@ pub async fn report_history_retry(
     let report_history = report_history.update(&env.dbx).await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
+    ))
+}
+
+#[post("/api/report-history/cancel")]
+pub async fn report_history_cancel(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ReportHistoryIdReq>,
+) -> Result<Json<ReportHistoryRow>, AppError> {
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
+    let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_PLANNED
+        && report_history.status != STATUS_IN_PROGRESS
+    {
+        return Err(AppError::BL {
+            msg: "Only queued or running reports can be cancelled".to_string(),
+        });
+    }
+
+    let reason = "Скасовано користувачем".to_string();
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_FAILED.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(
+            report_history::Column::PlannedForTs,
+            Expr::value(None::<chrono::NaiveDateTime>),
+        )
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(Some(reason.clone())),
+        )
+        .filter(report_history::Column::Id.eq(report_history.id))
+        .filter(
+            report_history::Column::Status
+                .is_in([STATUS_PLANNED, STATUS_IN_PROGRESS]),
+        )
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        return Err(AppError::BL {
+            msg: "Report could not be cancelled because it already finished"
+                .to_string(),
+        });
+    }
+
+    if let Some(bgtask_id) = report_history.bgtask_id {
+        let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
+        finish_bgtask(Some(bgtask_id), &env.dbx, &res).await?;
+    }
+
+    let updated = ReportHistory::find_by_id(report_history.id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(
+        build_report_history_row(&env.dbx, updated, true).await?,
     ))
 }
 
@@ -1968,7 +2070,7 @@ async fn set_report_bgtask(
     Ok(())
 }
 
-async fn set_bgtask_progress(
+pub(crate) async fn set_bgtask_progress(
     dbx: &DatabaseConnection,
     bgtask_id: i64,
     progress: i64,
@@ -1979,6 +2081,7 @@ async fn set_bgtask_progress(
             Expr::value(progress.clamp(0, 100)),
         )
         .filter(bgtask::Column::Id.eq(bgtask_id))
+        .filter(bgtask::Column::Running.eq(true))
         .exec(dbx)
         .await
         .c(h!())?;
@@ -1996,6 +2099,27 @@ async fn bgtask_log_progress(
     Ok(())
 }
 
+pub(crate) async fn ensure_report_history_in_progress(
+    dbx: &DatabaseConnection,
+    report_history_id: i64,
+) -> Result<(), AppError> {
+    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+    else {
+        return Err(AppError::NotFound);
+    };
+    if report_history.status == STATUS_IN_PROGRESS {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: report_history
+            .last_error
+            .unwrap_or_else(|| "Скасовано користувачем".to_string()),
+    })
+}
+
 async fn generate_and_store_report(
     env: &Env,
     report_history: &report_history::Model,
@@ -2004,8 +2128,10 @@ async fn generate_and_store_report(
     bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
         .await?;
     let generated = generate_report(env, report_history, bgtask_id).await?;
+    ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
     bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
         .await?;
+    ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
     let s3_id = upload_report_bytes(env, &generated).await?;
     let res = ReportHistory::update_many()
         .col_expr(
@@ -2061,6 +2187,8 @@ async fn generate_report(
         serde_json::from_value(report_history.request.clone()).c(h!())?;
     match request {
         ReportHistoryRequest::AnalysisReport { payload } => {
+            ensure_report_history_in_progress(&env.dbx, report_history.id)
+                .await?;
             let generated =
                 crate::rer_importer::reports::report_docx_generate_file(
                     report_history.requested_by.clone(),
@@ -2079,6 +2207,8 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::AnalysisExport { payload } => {
+            ensure_report_history_in_progress(&env.dbx, report_history.id)
+                .await?;
             let (file_name, content_type, bytes) = match report_history.report_kind.as_str() {
                 KIND_SUMMARY_TABLE => (
                     report_history
@@ -2138,7 +2268,7 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaFilter { payload } => {
-            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
+            ensure_report_history_in_progress(&env.dbx, report_history.id)
                 .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
@@ -2147,13 +2277,15 @@ async fn generate_report(
                     &report_history.requested_by,
                     &payload,
                     trace_id,
+                    Some(report_history.id),
+                    Some(bgtask_id),
                 )
                 .await
                 .c(h!())?;
             bgtask_log_progress(
                 bgtask_id,
-                60,
-                "[2/5] Формування еталонного опису",
+                70,
+                "[3/4] Формування еталонного опису",
                 &env.dbx,
             )
             .await?;
@@ -2164,6 +2296,13 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
+            bgtask_log_progress(
+                bgtask_id,
+                90,
+                "[4/4] Збереження файлу",
+                &env.dbx,
+            )
+            .await?;
             Ok(GeneratedReport {
                 file_name: report_history.file_name.clone().unwrap_or_else(
                     || format!("etalonka_networks_{}.docx", report_history.id),
@@ -2174,7 +2313,7 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaBatch { payload } => {
-            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
+            ensure_report_history_in_progress(&env.dbx, report_history.id)
                 .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
@@ -2183,13 +2322,15 @@ async fn generate_report(
                     &report_history.requested_by,
                     &payload,
                     trace_id,
+                    Some(report_history.id),
+                    Some(bgtask_id),
                 )
                 .await
                 .c(h!())?;
             bgtask_log_progress(
                 bgtask_id,
-                60,
-                "[2/5] Формування еталонного опису",
+                70,
+                "[3/4] Формування еталонного опису",
                 &env.dbx,
             )
             .await?;
@@ -2200,6 +2341,13 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
+            bgtask_log_progress(
+                bgtask_id,
+                90,
+                "[4/4] Збереження файлу",
+                &env.dbx,
+            )
+            .await?;
             Ok(GeneratedReport {
                 file_name: report_history.file_name.clone().unwrap_or_else(
                     || format!("etalonka_networks_{}.docx", report_history.id),
@@ -2210,6 +2358,8 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::GoiReport { .. } => {
+            ensure_report_history_in_progress(&env.dbx, report_history.id)
+                .await?;
             let organism_id = crate::sigint::network::goi::login_organism_id(
                 &env.dbx,
                 &report_history.requested_by,
@@ -2457,6 +2607,13 @@ async fn handle_report_failure(
     else {
         return Ok(());
     };
+    if report_history.status != STATUS_IN_PROGRESS {
+        warn!(
+            "skipping retry planning for report {} because status is {}",
+            report_history_id, report_history.status
+        );
+        return Ok(());
+    }
     let err_msg = format!("{err:#?}");
     let attempt_count =
         (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
@@ -2507,6 +2664,7 @@ mod tests {
     use super::*;
     use crate::entities::login;
     use crate::functest::tests::{cleanup, mk_login};
+    use chrono::Timelike;
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::EntityTrait;
     use serde_json::json;
@@ -2547,6 +2705,14 @@ mod tests {
         .insert(dbx)
         .await
         .c(h!())?)
+    }
+
+    fn timestamp_to_db_precision(
+        timestamp: chrono::NaiveDateTime,
+    ) -> chrono::NaiveDateTime {
+        timestamp
+            .with_nanosecond((timestamp.nanosecond() / 1_000) * 1_000)
+            .unwrap_or(timestamp)
     }
 
     #[tokio::test]
@@ -2601,7 +2767,10 @@ mod tests {
         assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
         assert_eq!(
             rows[1].blocked_by_started_at,
-            Some((created_at + Duration::minutes(1)).to_string())
+            Some(
+                timestamp_to_db_precision(created_at + Duration::minutes(1))
+                    .to_string()
+            )
         );
         Ok(())
     }
@@ -2862,6 +3031,76 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].queue_position, Some(2));
         assert_eq!(rows[0].blocked_by_report_id, Some(_blocker.id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cancelled_failed_row_is_not_replanned_on_failure_handler(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-cancel".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-cancel",
+            KIND_ETALONKA,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        report.update(&env.dbx).await.c(h!())?;
+
+        handle_report_failure(
+            &env,
+            report_history::Entity::find()
+                .filter(
+                    report_history::Column::RequestedBy
+                        .eq("report-history-cancel"),
+                )
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?
+                .id,
+            AppError::BL {
+                msg: "should not requeue".to_string(),
+            },
+        )
+        .await?;
+
+        let refreshed = ReportHistory::find()
+            .filter(
+                report_history::Column::RequestedBy.eq("report-history-cancel"),
+            )
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(refreshed.status, STATUS_FAILED);
+        assert_eq!(
+            refreshed.last_error.as_deref(),
+            Some("Скасовано користувачем")
+        );
+        assert_eq!(refreshed.planned_for_ts, None);
+        assert_eq!(refreshed.retry_count, 0);
         Ok(())
     }
 }

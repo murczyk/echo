@@ -119,6 +119,8 @@ vi.mock('../../services/api/bgtask', () => ({
 vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
   fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
+  isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined }) =>
+    row.status === 'failed' && row.lastError === 'Скасовано користувачем',
   parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
@@ -905,6 +907,80 @@ describe('useRerNetworksNeoPage', () => {
     expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 77, 0);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
+  });
+
+  it('shows the cancelled message when the top etalonka report is cancelled', async () => {
+    await renderHook();
+    await flushEffects();
+
+    vi.useFakeTimers();
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: null,
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'planned',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: null,
+        lastError: null,
+        details: '',
+        progress: 0,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'failed',
+        completedAt: '2026-05-01T10:00:10',
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: 'Скасовано користувачем',
+        details: '',
+        progress: 0,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
+
+    await act(async () => {
+      latest?.setEtalonkaReport((current) => ({
+        ...current,
+        reportType: 'AccordingToTheForm',
+        activeFreqsOnly: true,
+        includeSigintSigns: true,
+        includeConfirmation: true,
+        includeUnitCallsigns: false,
+        includePelengsMap: false,
+      }));
+      latest?.openTopReportDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      const downloadPromise = latest?.downloadEtalonkaReport();
+      await vi.advanceTimersByTimeAsync(1000);
+      await downloadPromise;
+    });
+    vi.useRealTimers();
+
+    expect(latest?.etalonkaReport.running).toBe(false);
+    expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
   });
 
   it('uses the backend status counts', async () => {

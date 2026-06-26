@@ -50,6 +50,16 @@ export async function retryReportHistory(id: number): Promise<ReportHistoryRow> 
   return transformSnakeToCamel<ReportHistoryRow>(raw);
 }
 
+export function isCancelledReportHistory(row: Pick<ReportHistoryRow, 'status' | 'lastError'>): boolean {
+  return row.status === 'failed' && row.lastError === 'Скасовано користувачем';
+}
+
+export async function cancelReportHistory(id: number): Promise<ReportHistoryRow> {
+  const req: ReportHistoryIdReq = { id };
+  const raw = await postJson<unknown>('/api/report-history/cancel', transformCamelToSnake(req));
+  return transformSnakeToCamel<ReportHistoryRow>(raw);
+}
+
 export async function downloadReportHistory(id: number): Promise<Blob> {
   const req: ReportHistoryIdReq = { id };
   return postBytes('/api/report-history/download', transformCamelToSnake(req));

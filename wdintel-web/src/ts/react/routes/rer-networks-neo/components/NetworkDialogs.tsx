@@ -8,6 +8,32 @@ import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButt
 import type { useRerNetworksNeoPage } from '../use-rer-networks-neo-page';
 import { NetworkEditDrawer } from '../../rer-network-details-neo/components/NetworkEditDrawer';
 import { NetworkEtalonkaReportDialog } from '../../rer-network-details-neo/components/NetworkEtalonkaReportDialog';
+import type { ListNetworksReq } from '../../../../../Bindings';
+
+function getEtalonkaLaunchWarning(request: ListNetworksReq | null): string | null {
+  if (request === null) return null;
+
+  const isBroadRequest =
+    request.ids === null &&
+    (request.aorIds === null || request.aorIds.length === 0) &&
+    request.filterFreq === null &&
+    request.filterUnit === null &&
+    request.filterUnitArmy === null &&
+    request.filterUnitDivision === null &&
+    request.filterUnitRegiment === null &&
+    request.filterUnitBattalion === null &&
+    request.filterText === null &&
+    request.filterName === null &&
+    request.filterLocation === null &&
+    request.showOnlyFurtherInverstigation === null &&
+    request.showInactive === true &&
+    request.showOnlyDeleted === false &&
+    request.statusFilter === null;
+
+  if (!isBroadRequest) return null;
+
+  return 'Цей звіт охоплює всі мережі. Сигнали й підтвердження збільшують час формування.';
+}
 
 type Props = {
   page: ReturnType<typeof useRerNetworksNeoPage>;
@@ -92,6 +118,7 @@ export function NetworkDialogs({ page }: Props) {
               ? 'Для вибраних мереж'
               : 'Для поточної радіомережі'
         }
+        launchWarningText={getEtalonkaLaunchWarning(page.reportTargetRequest)}
         onClose={page.closeReportDialog}
         onDownload={() => void page.downloadEtalonkaReport()}
         onSetProgressExpanded={(expanded) => page.setEtalonkaReport((current) => ({ ...current, progressExpanded: expanded }))}

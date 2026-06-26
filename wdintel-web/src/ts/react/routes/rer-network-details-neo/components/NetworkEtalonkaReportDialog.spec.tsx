@@ -374,4 +374,58 @@ describe('NetworkEtalonkaReportDialog', () => {
       detailedView.root.unmount();
     });
   });
+
+  it('shows the cancelled message when polling ends with a user cancel', () => {
+    const view = renderDialog({
+      report: {
+        dialogOpen: true,
+        taskRunId: 14,
+        taskId: 101,
+        historyRow: {
+          id: 101,
+          reportKind: 'etalonka',
+          requestedBy: 'user',
+          createdAt: '2026-05-01T09:57:00',
+          startedAt: '2026-05-01T09:57:30',
+          plannedForTs: null,
+          queuePosition: 2,
+          status: 'failed',
+          completedAt: '2026-05-01T10:05:00',
+          hasFile: false,
+          fileName: null,
+          contentType: null,
+          bgtaskId: 77,
+          lastError: 'Скасовано користувачем',
+          details: '',
+          progress: 0,
+          errorLog: null,
+        },
+        startedAtMs: null,
+        running: false,
+        curr: 0,
+        overall: 4,
+        logs: ['backend note'],
+        reportType: 'ExtendedReport',
+        activeFreqsOnly: true,
+        includeSigintSigns: true,
+        includeConfirmation: true,
+        includeUnitCallsigns: false,
+        includePelengsMap: true,
+        fromDateTimeStr: '2026-05-01T10:00',
+        toDateTimeStr: '2026-05-02T11:00',
+        downloadFileName: null,
+        error: 'Звіт скасовано в Моїх звітах.',
+        finishedAt: '2026-05-01T10:05:00',
+        progressExpanded: false,
+      },
+    });
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Звіт скасовано в Моїх звітах.');
+    expect(text).not.toContain('Формування може тривати кілька хвилин');
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
 });

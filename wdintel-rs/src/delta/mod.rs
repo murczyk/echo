@@ -718,6 +718,12 @@ pub async fn bgtask_log(
             println!("> couldn't find bgtask {bgtask_id}. skipping");
         }
         Some(bgtask) => {
+            if !bgtask.running {
+                println!(
+                    "> bgtask {bgtask_id} is not running anymore. skipping log"
+                );
+                return Ok(());
+            }
             let mut bgtask_a: bgtask::ActiveModel = bgtask.clone().into();
             let mut loglines2: Vec<String> =
                 serde_json::from_value(bgtask.loglines.clone()).c(h!())?;

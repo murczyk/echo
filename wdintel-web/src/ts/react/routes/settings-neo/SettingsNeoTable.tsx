@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Box } from '@mui/material';
 import {
   MaterialReactTable,
   type MRT_ColumnDef,
@@ -6,6 +7,7 @@ import {
   type MRT_TableOptions,
   useMaterialReactTable,
 } from 'material-react-table';
+import type { ReactNode } from 'react';
 
 import {
   CUSTOM_CELL_STYLES,
@@ -14,6 +16,8 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../components/mui-customized/table/get-default-table-options';
+import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
+import { mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
 type SettingsNeoTableProps<TData extends MRT_RowData> = {
@@ -24,6 +28,15 @@ type SettingsNeoTableProps<TData extends MRT_RowData> = {
   layoutMode?: MRT_TableOptions<TData>['layoutMode'];
   manualFiltering?: boolean;
   manualSorting?: boolean;
+  enableRowActions?: boolean;
+  renderRowActions?: MRT_TableOptions<TData>['renderRowActions'];
+  showToolbarInternalActions?: boolean;
+  enableTopToolbar?: boolean;
+  toolbarFiltersHidden?: boolean;
+  toolbarColumnsVisibilityDisabled?: boolean;
+  toolbarFullScreenEnabled?: boolean;
+  toolbarRowNumberAppearanceControl?: boolean;
+  toolbarAdditionalActions?: ReactNode;
   onQueryStateChange?: (state: {
     globalFilter: string;
     columnFilters: Array<{ id: string; value: unknown }>;
@@ -39,6 +52,15 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   layoutMode = 'grid-no-grow',
   manualFiltering = false,
   manualSorting = false,
+  enableRowActions = false,
+  renderRowActions,
+  showToolbarInternalActions = false,
+  enableTopToolbar = false,
+  toolbarFiltersHidden = false,
+  toolbarColumnsVisibilityDisabled = false,
+  toolbarFullScreenEnabled = false,
+  toolbarRowNumberAppearanceControl = false,
+  toolbarAdditionalActions,
   onQueryStateChange,
 }: SettingsNeoTableProps<TData>) {
   const tableStateContext = useTableStateContext();
@@ -57,6 +79,8 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
     enableColumnFilterModes: true,
     enableFacetedValues: true,
     enableRowVirtualization: false,
+    enableTopToolbar,
+    enableRowActions,
     manualFiltering,
     manualSorting,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
@@ -74,8 +98,32 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
       size: 200,
       renderColumnActionsMenuItems,
     },
+    renderTopToolbar: showToolbarInternalActions
+      ? ({ table }) =>
+          table.getState().isFullScreen ? (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1 }}>
+              <InternalTableActions
+                table={table}
+                filtersHidden={toolbarFiltersHidden}
+                columnsVisibilityDisabled={toolbarColumnsVisibilityDisabled}
+                fullScreenEnabled={toolbarFullScreenEnabled}
+                rowNumberAppearanceControl={toolbarRowNumberAppearanceControl}
+              >
+                {toolbarAdditionalActions}
+              </InternalTableActions>
+            </Box>
+          ) : (
+            <></>
+          )
+      : undefined,
+    renderRowActions,
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(1),
+        enableResizing: false,
+      },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
         muiTableBodyCellProps: () => ({
@@ -93,6 +141,8 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
         sx: {
           ...(baseProps as any)?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
+          backgroundColor: 'transparent',
+          boxShadow: 'none',
         },
       };
     },

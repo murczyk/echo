@@ -68,6 +68,8 @@ vi.mock('../../services/api/bgtask', () => ({
 
 vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
+  isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined }) =>
+    row.status === 'failed' && row.lastError === 'Скасовано користувачем',
   parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
@@ -276,5 +278,64 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(555);
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_network_77.docx');
     expect(latestState?.etalonkaReport.progressExpanded).toBe(false);
+  });
+
+  it('stops polling with a cancelled message when the report is cancelled', async () => {
+    if (!latestActions) throw new Error('actions not ready');
+
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 555,
+        reportKind: 'etalonka',
+        requestedBy: 'user',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: null,
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'planned',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: null,
+        lastError: null,
+        details: '',
+        progress: 0,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 555,
+        reportKind: 'etalonka',
+        requestedBy: 'user',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:02',
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'failed',
+        completedAt: '2026-05-01T10:00:10',
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 91,
+        lastError: 'Скасовано користувачем',
+        details: '',
+        progress: 0,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
+
+    const promise = latestActions.downloadEtalonkaReport();
+    await flush();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+    });
+
+    expect(latestState?.etalonkaReport.running).toBe(false);
+    expect(latestState?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
   });
 });
