@@ -928,6 +928,9 @@ async fn save_submit_dmr_metadata(
         }
     }
 
+    delete_previous_submit_dmr_metadata(inbox_id, txn)
+        .await
+        .c(h!())?;
     let mut existing_metadata_keys =
         load_submit_metadata_keys(inbox_id, txn).await.c(h!())?;
     entries.retain(|entry| {
@@ -941,6 +944,39 @@ async fn save_submit_dmr_metadata(
         .await
         .c(h!())?;
     Ok(warnings)
+}
+
+async fn delete_previous_submit_dmr_metadata(
+    inbox_id: i64,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    sigint_inbox_item_metadata::Entity::delete_many()
+        .filter(
+            sigint_inbox_item_metadata::Column::SigintInboxItemId.eq(inbox_id),
+        )
+        .filter(submit_dmr_metadata_without_source_spans())
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+fn submit_dmr_metadata_without_source_spans() -> Condition {
+    use sigint_inbox_item_metadata::Column;
+
+    Condition::all()
+        .add(Column::ColorCodeStartIndex.is_null())
+        .add(Column::ColorCodeEndIndex.is_null())
+        .add(Column::CallGroupIdStartIndex.is_null())
+        .add(Column::CallGroupIdEndIndex.is_null())
+        .add(Column::CallGroupNameStartIndex.is_null())
+        .add(Column::CallGroupNameEndIndex.is_null())
+        .add(Column::SenderIdStartIndex.is_null())
+        .add(Column::SenderIdEndIndex.is_null())
+        .add(Column::SenderNameStartIndex.is_null())
+        .add(Column::SenderNameEndIndex.is_null())
+        .add(Column::HashIdStartIndex.is_null())
+        .add(Column::HashIdEndIndex.is_null())
 }
 
 type SubmitMetadataKey = (
@@ -2191,6 +2227,72 @@ mod tests {
             .collect::<Vec<_>>();
         sender_ids.sort();
         assert_eq!(sender_ids, vec!["110".to_string(), "111".to_string()]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_save_submit_dmr_metadata_replaces_previous_submit_rows() {
+        let env = cleanup().await.unwrap();
+        let inbox_item = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_inbox_item_metadata(
+            &env.dbx,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                color_code: Set(Some("7".to_string())),
+                sender_id: Set(Some("99".to_string())),
+                hash_id: Set(Some("oldhash".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_metadata(
+            &env.dbx,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                color_code: Set(Some("5".to_string())),
+                color_code_start_index: Set(Some(10)),
+                color_code_end_index: Set(Some(10)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut metadata = submit_dmr_metadata(Some(9));
+        metadata.sender_id = Some(111);
+        metadata.hash_id = Some("ABCDEF01".to_string());
+        let txn = env.dbx.begin().await.unwrap();
+
+        save_submit_dmr_metadata(inbox_item.id, None, vec![metadata], &txn)
+            .await
+            .unwrap();
+
+        txn.commit().await.unwrap();
+        let metadata = sigint_inbox_item_metadata::Entity::find()
+            .filter(
+                sigint_inbox_item_metadata::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(metadata.len(), 2);
+        assert!(metadata.iter().any(|metadata| {
+            metadata.color_code.as_deref() == Some("5")
+                && metadata.color_code_start_index == Some(10)
+        }));
+        assert!(metadata.iter().any(|metadata| {
+            metadata.color_code.as_deref() == Some("9")
+                && metadata.sender_id.as_deref() == Some("111")
+                && metadata.hash_id.as_deref() == Some("abcdef01")
+        }));
+        assert!(!metadata.iter().any(|metadata| {
+            metadata.color_code.as_deref() == Some("7")
+                || metadata.sender_id.as_deref() == Some("99")
+                || metadata.hash_id.as_deref() == Some("oldhash")
+        }));
     }
 
     #[serial]
