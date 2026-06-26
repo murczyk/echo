@@ -257,4 +257,84 @@ describe('NetworkEtalonkaReportDialog', () => {
       Date.now = originalNow;
     }
   });
+
+  it('hides empty progress details for a queued report and shows them when logs exist', () => {
+    const queuedView = renderDialog({
+      report: {
+        dialogOpen: true,
+        taskRunId: 11,
+        taskId: 99,
+        historyRow: {
+          id: 99,
+          reportKind: 'etalonka',
+          requestedBy: 'user',
+          createdAt: '2026-05-01T09:57:00',
+          startedAt: null,
+          plannedForTs: null,
+          queuePosition: 2,
+          status: 'planned',
+          completedAt: null,
+          hasFile: false,
+          fileName: null,
+          contentType: null,
+          bgtaskId: null,
+          lastError: null,
+          details: '',
+          progress: 0,
+          errorLog: null,
+        },
+        startedAtMs: null,
+        running: true,
+        curr: 0,
+        overall: 4,
+        logs: [],
+        reportType: 'ExtendedReport',
+        activeFreqsOnly: true,
+        includeSigintSigns: true,
+        includeConfirmation: true,
+        includeUnitCallsigns: false,
+        includePelengsMap: true,
+        fromDateTimeStr: '2026-05-01T10:00',
+        toDateTimeStr: '2026-05-02T11:00',
+        downloadFileName: null,
+        error: null,
+        finishedAt: null,
+        progressExpanded: false,
+      },
+    });
+
+    const queuedText = document.body.textContent ?? '';
+    expect(queuedText).toContain('Очікує запуску');
+    expect(queuedText).not.toContain('[1/4]');
+    expect(queuedText).not.toContain('Підготовка даних');
+    expect(queuedText).toContain('Показати деталі');
+
+    act(() => {
+      queuedView.root.unmount();
+    });
+
+    const detailedView = renderDialog({
+      report: {
+        ...queuedView.props.report,
+        historyRow: {
+          ...queuedView.props.report.historyRow!,
+          status: 'in_progress',
+          bgtaskId: 77,
+        },
+        logs: ['backend note', '[1/4] Підготовка даних'],
+        running: true,
+        curr: 1,
+        overall: 4,
+        progressExpanded: true,
+      },
+    });
+
+    const detailedText = document.body.textContent ?? '';
+    expect(detailedText).toContain('backend note');
+    expect(detailedText).toContain('[1/4] Підготовка даних');
+
+    act(() => {
+      detailedView.root.unmount();
+    });
+  });
 });

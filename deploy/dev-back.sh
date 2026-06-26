@@ -154,7 +154,7 @@ if [ "$quiet" = "true" ]; then
     server_port="${ECHO_SERVER_PORT:-8081}"
     echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
 
-    run_server --no-bgworker "$@" 2>&1 | filter_quiet_output
+    run_server "$@" 2>&1 | filter_quiet_output
 else
     if [ "$log_sql" = "true" ]; then
         export RUST_LOG=sqlx=trace,seaorm=trace

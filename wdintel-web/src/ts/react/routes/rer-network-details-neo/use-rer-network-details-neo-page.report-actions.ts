@@ -57,7 +57,7 @@ function applyReportHistoryRow(
     logs: row.bgtaskId === null ? [] : logs,
     error: null,
     finishedAt: row.status === 'done' ? new Date().toISOString() : null,
-    progressExpanded: current.progressExpanded || row.status !== 'planned',
+    progressExpanded: current.progressExpanded,
     downloadFileName: fileName,
     startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
   }));
@@ -80,7 +80,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
         logs: [],
         historyRow: null,
         finishedAt: null,
-        progressExpanded: true,
+        progressExpanded: false,
         downloadFileName: fileName,
         startedAtMs: null,
         taskRunId: current.taskRunId + 1,

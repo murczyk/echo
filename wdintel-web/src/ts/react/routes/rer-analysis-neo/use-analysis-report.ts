@@ -90,7 +90,7 @@ export function useAnalysisReport({
 }: Props): Result {
   const [report, setReport] = useState(createDefaultReportState);
   const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
-  const [reportProgressExpanded, setReportProgressExpandedState] = useState(true);
+  const [reportProgressExpanded, setReportProgressExpandedState] = useState(false);
   const [reportTaskRuns, setReportTaskRunsState] = useState<AnalysisReportTaskRun[]>([]);
   const isMountedRef = useRef(true);
   const runSessionRef = useRef(0);
@@ -231,7 +231,7 @@ export function useAnalysisReport({
 
       setReportDownloadInFlight(true);
       onError('');
-      setReportProgressExpanded(true);
+      setReportProgressExpanded(false);
       let runId: number | null = null;
       try {
         const reportName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
@@ -259,7 +259,7 @@ export function useAnalysisReport({
             error: null,
             startedAt: null,
             finishedAt: null,
-            expanded: true,
+            expanded: false,
             historyRow: null,
           },
         ]);
@@ -346,7 +346,7 @@ export function useAnalysisReport({
                       error: null,
                       startedAt: historyRow.startedAt ?? null,
                       finishedAt: null,
-                      expanded: true,
+                      expanded: run.expanded,
                       historyRow,
                     },
               ),
@@ -381,7 +381,7 @@ export function useAnalysisReport({
                         )
                       : null,
                     finishedAt: rsp.running ? null : new Date().toISOString(),
-                    expanded: rsp.running ? true : rsp.finishedWithError != null,
+                    expanded: run.expanded || rsp.finishedWithError != null,
                     historyRow,
                     startedAt: historyRow.startedAt ?? run.startedAt,
                   },

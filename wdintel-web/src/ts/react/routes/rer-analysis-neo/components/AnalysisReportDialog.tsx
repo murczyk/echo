@@ -239,6 +239,8 @@ export function AnalysisReportDialog({
   const reportStartedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
   const reportPlannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
   const progressVariant = isQueued || !hasBgtask ? 'indeterminate' : 'determinate';
+  const latestProgressStage = extractStages(latestTaskRun?.logs ?? []).at(-1) ?? null;
+  const progressStageLabel = isQueued || !hasBgtask ? QUEUED_TEXT : latestProgressStage?.text ?? PREPARING_TEXT;
   const progressPercent = Math.max(1, Math.min(100, Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100)));
   const downloadButtonLabel =
     builderMode === 'exports'
@@ -513,7 +515,7 @@ export function AnalysisReportDialog({
 
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                 <Typography variant="body2" color="text.secondary">
-                  {isQueued ? 'Звіт додано в чергу' : `${latestTaskRun.curr} / ${latestTaskRun.overall}`}
+                  {isQueued ? 'Позиція в черзі оновлюється автоматично.' : `${latestTaskRun.curr} / ${latestTaskRun.overall}`}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
@@ -587,7 +589,7 @@ export function AnalysisReportDialog({
                 </Stack>
                 <Stack spacing={0.25}>
                   <Typography variant="caption" color="text.secondary">
-                    Bgtask
+                    ID задачі
                   </Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
@@ -598,13 +600,7 @@ export function AnalysisReportDialog({
                     Триває
                   </Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {formatElapsedTime(
-                      isQueued
-                        ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null
-                        : latestTaskRun.startedAt
-                          ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null
-                          : null,
-                    ) ?? '—'}
+                    {formatElapsedTime(isQueued ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null : latestTaskRun.startedAt ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null : null) ?? '—'}
                   </Typography>
                 </Stack>
                 <Stack spacing={0.25}>
@@ -615,10 +611,17 @@ export function AnalysisReportDialog({
                     {latestTaskRun.logs.length}
                   </Typography>
                 </Stack>
+                <Stack spacing={0.25}>
+                  <Typography variant="caption" color="text.secondary">
+                    Етап
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {progressStageLabel}
+                  </Typography>
+                </Stack>
               </Box>
 
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
-              {isQueued ? <Alert severity="info">Звіт додано в чергу. Переглянути його можна в Налаштування &gt; Мої звіти.</Alert> : null}
               {isQueued && historyRow?.createdAt != null && Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
                 <Alert severity="warning">Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.</Alert>
               ) : null}

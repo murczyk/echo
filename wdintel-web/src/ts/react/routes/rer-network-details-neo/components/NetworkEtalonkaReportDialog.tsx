@@ -163,6 +163,8 @@ export function NetworkEtalonkaReportDialog({
   const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
   const progressStages = parseBgtaskProgressStages(report.logs);
   const latestProgressStage = getLatestProgressStage(progressStages);
+  const visibleLogLines = report.logs.filter((line) => !/^\[\d+\/\d+\]/.test(line));
+  const hasProgressDetails = progressStages.length > 0 || visibleLogLines.length > 0;
   const elapsedTime = formatElapsedTime(report.startedAtMs);
   const createdAtMs = parseUtcDateTime(historyRow?.createdAt)?.getTime() ?? null;
   const queuedForTime = formatDurationSinceIso(historyRow?.createdAt);
@@ -178,6 +180,7 @@ export function NetworkEtalonkaReportDialog({
       : report.running
         ? 'Формування'
         : 'Готово';
+  const progressStageLabel = isQueued || !hasBgtask ? 'Очікує запуску' : latestProgressStage?.text ?? 'Підготовка';
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -385,7 +388,7 @@ export function NetworkEtalonkaReportDialog({
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="body2" color="text.secondary">
-                    {isQueued ? 'Звіт додано в чергу' : `${report.curr} / ${report.overall}`}
+                    {isQueued ? 'Позиція в черзі оновлюється автоматично.' : `${report.curr} / ${report.overall}`}
                   </Typography>
                   <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
@@ -438,7 +441,7 @@ export function NetworkEtalonkaReportDialog({
                   </Stack>
                   <Stack spacing={0.25}>
                     <Typography variant="caption" color="text.secondary">
-                      Bgtask
+                      ID задачі
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
@@ -465,7 +468,7 @@ export function NetworkEtalonkaReportDialog({
                       Етап
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {latestProgressStage?.text ?? 'Підготовка'}
+                      {progressStageLabel}
                     </Typography>
                   </Stack>
                   <Stack spacing={0.25}>
@@ -486,7 +489,7 @@ export function NetworkEtalonkaReportDialog({
                   </Stack>
                 </Box>
 
-                {report.progressExpanded ? (
+                {report.progressExpanded && hasProgressDetails ? (
                   <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
                     <Stack spacing={0.75}>
                       {progressStages.map((stage) => {
@@ -511,21 +514,16 @@ export function NetworkEtalonkaReportDialog({
                           </Stack>
                         );
                       })}
-                      {report.logs.length > 0
-                        ? report.logs
-                            .filter((line) => !/^\[\d+\/\d+\]/.test(line))
-                            .map((line) => (
-                              <Typography key={line} variant="caption" color="text.secondary">
-                                {line}
-                              </Typography>
-                            ))
-                        : null}
+                      {visibleLogLines.map((line) => (
+                        <Typography key={line} variant="caption" color="text.secondary">
+                          {line}
+                        </Typography>
+                      ))}
                     </Stack>
                   </Paper>
                 ) : null}
 
                 {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
-                {isQueued ? <PowerAlert severity="info">Звіт додано в чергу.</PowerAlert> : null}
                 {showQueueWarning ? (
                   <PowerAlert severity="warning">
                     Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.

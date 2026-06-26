@@ -47,7 +47,7 @@ function renderDialog(
   const props: Parameters<typeof AnalysisReportDialog>[0] = {
     aors: [],
     downloadInFlight: false,
-    progressExpanded: true,
+    progressExpanded: false,
     taskRuns: [],
     open: true,
     currentUser: null,
@@ -195,7 +195,6 @@ describe('AnalysisReportDialog', () => {
     });
 
     expect(document.body.textContent).toContain('Очікує запуску');
-    expect(document.body.textContent).toContain('Звіт додано в чергу');
     expect(document.body.textContent).not.toContain('Формується');
     expect(document.body.textContent).toContain('#41');
     expect(document.body.textContent).toContain('#2');

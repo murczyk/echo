@@ -61,7 +61,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
       logs: [],
       historyRow: null,
       finishedAt: null,
-      progressExpanded: true,
+      progressExpanded: false,
       downloadFileName: fileName,
       startedAtMs: null,
       taskRunId: current.taskRunId + 1,
@@ -102,7 +102,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
             logs: [],
             error: null,
             finishedAt: null,
-            progressExpanded: true,
+            progressExpanded: current.progressExpanded,
             downloadFileName: fileName,
             startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
