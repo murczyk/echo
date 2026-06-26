@@ -1598,6 +1598,7 @@ type alias SignalGroupEntry =
     , name : String
     , ignoreOperativny : Bool
     , isRer : Bool
+    , fillsEtalonka : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -1611,6 +1612,7 @@ signalGroupEntryEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
         , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -1622,6 +1624,7 @@ type alias OrphanSignalGroupEntry =
     , name : String
     , ignoreOperativny : Bool
     , isRer : Bool
+    , fillsEtalonka : Bool
     , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
@@ -1638,6 +1641,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
         , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -4532,6 +4536,7 @@ type alias ZoneDatasourceGroup =
     , groupMasterKey : String
     , isGroupSecret : Bool
     , isRer : Bool
+    , fillsEtalonka : Bool
     , allowedUsers : List (String)
     , adminLogins : List (String)
     , shortNote : Maybe (String)
@@ -4547,6 +4552,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
         , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
@@ -4613,6 +4619,7 @@ type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
     , isSecret : Bool
     , isRer : Maybe (Bool)
+    , fillsEtalonka : Maybe (Bool)
     , userLogins : List (String)
     , adminLogins : List (String)
     , shortNote : Maybe (String)
@@ -4628,6 +4635,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
+        , ( "fills_etalonka", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fillsEtalonka )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
@@ -4657,6 +4665,7 @@ type alias MyAdminSignalGroup =
     , datasourceName : Maybe (String)
     , datasourceKind : Maybe (String)
     , isGroupSecret : Bool
+    , fillsEtalonka : Bool
     , allowedUsers : List (SignalGroupLogin)
     , adminLogins : List (SignalGroupLogin)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -4671,6 +4680,7 @@ myAdminSignalGroupEncoder struct =
         , ( "datasource_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.datasourceName )
         , ( "datasource_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.datasourceKind )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "allowed_users", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUsers )
         , ( "admin_logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.adminLogins )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -4680,6 +4690,7 @@ myAdminSignalGroupEncoder struct =
 type alias MyAdminSignalGroupUpdateReq =
     { masterKey : String
     , isSecret : Bool
+    , fillsEtalonka : Bool
     , userLogins : List (String)
     , adminLogins : List (String)
     , areaOfResponsibilityIds : Maybe (List (Int))
@@ -4691,6 +4702,7 @@ myAdminSignalGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
@@ -8517,6 +8529,7 @@ type alias GroupUpdateReq =
     , areaOfResponsibilityId : Maybe (Int)
     , areaOfResponsibilityIds : Maybe (List (Int))
     , isRer : Maybe (Bool)
+    , fillsEtalonka : Maybe (Bool)
     }
 
 
@@ -8529,6 +8542,7 @@ groupUpdateReqEncoder struct =
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
         , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
+        , ( "fills_etalonka", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fillsEtalonka )
         ]
 
 
@@ -8536,6 +8550,7 @@ type alias GroupEntryF1 =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , fillsEtalonka : Bool
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , groupStats : SignalGroupStats
@@ -8549,6 +8564,7 @@ groupEntryF1Encoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
@@ -9845,6 +9861,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -9923,6 +9940,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -11248,6 +11266,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
@@ -11288,6 +11307,7 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
@@ -11311,6 +11331,7 @@ myAdminSignalGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_kind" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -11321,6 +11342,7 @@ myAdminSignalGroupUpdateReqDecoder =
     Json.Decode.succeed MyAdminSignalGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
@@ -13867,6 +13889,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1
@@ -13875,6 +13898,7 @@ groupEntryF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
@@ -13932,4 +13956,3 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
