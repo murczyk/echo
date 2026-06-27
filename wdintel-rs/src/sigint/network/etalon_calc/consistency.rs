@@ -139,10 +139,15 @@ where
         HashMap::new();
     for message_ids in message_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
         let group_rows = signal_message_group::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message_group::Relation::SignalGroup.def(),
+            )
             .filter(
                 signal_message_group::Column::SignalMessageId
                     .is_in(message_ids.to_vec()),
             )
+            .filter(signal_group::Column::FillsEtalonka.eq(true))
             .all(db)
             .await
             .c(h!())?;
@@ -706,6 +711,71 @@ fn log_network_mismatches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn load_message_group_entries_ignores_disabled_group_links() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(msg.id),
+                group_master_key: Set(Some(disabled_group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(msg.id),
+                group_master_key: Set(Some(enabled_group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let groups_map =
+            load_message_group_entries(&[msg.id], &txn).await.unwrap();
+        let entries = groups_map.get(&msg.id).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].group_master_key, Some(enabled_group.master_key));
+
+        txn.rollback().await.unwrap();
+    }
 
     fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
         sigint_unit::Model {
