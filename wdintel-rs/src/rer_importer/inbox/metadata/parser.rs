@@ -91,6 +91,10 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
         static ref RE_CG: Regex = Regex::new(r#"➡️\s*:\s*(\d+)"#).unwrap();
     }
     lazy_static! {
+        static ref RE_CG_LIST: Regex =
+            Regex::new(r#"➡️\s*:\s*([\d,\s]+)"#).unwrap();
+    }
+    lazy_static! {
         static ref RE_ID: Regex =
             Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)"#).unwrap();
     }
@@ -108,7 +112,10 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
         &[&RE_SENDER_ID_UA, &RE_ID],
     )
     .or_else(|| {
-        parse_numeric_value_from_regexes(line, &[&RE_CG, &RE_SOURCE_ID])
+        parse_numeric_value_from_regexes(
+            line,
+            &[&RE_CG_LIST, &RE_CG, &RE_SOURCE_ID],
+        )
     })
 }
 

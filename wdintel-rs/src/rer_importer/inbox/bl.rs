@@ -1,9 +1,7 @@
 use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
-use milgeo_rs::coordinates::{
-    parse_latlng_f64, rer_extract_coords, Coords, Wgs84,
-};
+use milgeo_rs::coordinates::{parse_latlng_f64, Coords, Wgs84};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::error::AppError;
@@ -813,7 +811,9 @@ pub async fn submit_upsert_inbox_item(
 
     let mut coords_vec = match &message.no_headers_body.clone().map(|n| n.body)
     {
-        Some(body) => rer_extract_coords(body).await,
+        Some(body) => {
+            crate::rer_importer::coordinates::extract_coords(body).await
+        }
         None => vec![],
     };
     if let Some(c1) = &coords_s {

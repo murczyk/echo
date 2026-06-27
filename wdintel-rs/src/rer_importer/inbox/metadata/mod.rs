@@ -248,6 +248,50 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_sc_transcript_header() {
+        let metadata = parse_metadata_asserting_spans(
+            r#"27.06.2026 20:37:23
+Отримано з поста "SC2"
+*138.375*
+СС: 5
+ID➡️: 261, 12106, 1454, 2539
+ID(CG)⬅️: 8584772
+(УКХ р/м вБпЛа 121 мсп 68 мсд 6 А 🔑 (ЛИМАН ПЕРШИЙ) СС:5️⃣📟📣 138.375)
+Позивні: `12106=СТОЛИЦА, 1454=ШУСТРЫЙ`"#,
+        );
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("261".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("12106".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("1454".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("2539".to_string()),
+                    ..Default::default()
+                }
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_line_handles_source_id_variant() {
         let metadata = parse_metadata_line_asserting_spans("SOURCE ID: 0");
         assert_eq!(
