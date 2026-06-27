@@ -176,7 +176,7 @@ def submit_payload() -> dict:
         "callsigns": [sender_callsign, receiver_callsign],
         "timestamp": timestamp_text,
         "sender": optional_env("CHUMAK_SENDER", "chumak"),
-        "full_body": f"Сигнали: dmr\nМережа: {network_name}",
+        "full_body": f"{timestamp_text}\n{network_name}\n{sender_callsign}\n{receiver_callsign}\n\n{message}",
         "post": post or None,
         "unit": unit or None,
         "locations": [location] if location else [],
