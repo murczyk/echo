@@ -120,6 +120,7 @@ export function NetworkDialogs({ page }: Props) {
         onClose={page.closeCreateDialog}
         onChange={page.setCreateDialog}
         onSave={() => void page.saveNetworkCreate()}
+        frequencyOptional={page.supportNonRerInterceptions}
       />
 
       <NetworkEditDrawer

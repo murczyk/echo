@@ -168,6 +168,7 @@ beforeEach(() => {
     setRowMenuAnchorEl: vi.fn(),
     setRowMenuNetworkId: vi.fn(),
     downloadInFlight: null,
+    supportNonRerInterceptions: false,
     runDownload: vi.fn(),
     loadMoreNetworks: vi.fn(),
     createDialog: null,

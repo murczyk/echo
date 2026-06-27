@@ -1745,6 +1745,7 @@ async fn generate_report(
                     env,
                     *payload,
                     false,
+                    Some(bgtask_id),
                 )
                 .await
                 .c(h!())?;

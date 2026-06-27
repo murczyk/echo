@@ -2596,6 +2596,7 @@ export type Network = {
   postIds: Array<number>;
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
+  doNotArchive: boolean;
   status: NetworkStatus;
 };
 
@@ -2639,6 +2640,7 @@ export type CreateNetworkReq = {
   operationPeriod: string | null;
   postIds: Array<number>;
   descriptions: Array<AddNetworkDescription>;
+  doNotArchive: boolean;
 };
 
 export type DeleteNetworkReq = {
@@ -2657,6 +2659,7 @@ export type UpdateNetworkReq = {
   operationType: string | null;
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
+  doNotArchive: boolean;
   status: NetworkStatus;
 };
 

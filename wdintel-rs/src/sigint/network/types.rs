@@ -80,6 +80,7 @@ pub struct Network {
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<NetworkDescription>,
     pub deleted: bool,
+    pub do_not_archive: bool,
     pub status: NetworkStatus,
 }
 
@@ -107,6 +108,7 @@ pub struct CreateNetworkReq {
     pub operation_period: Option<String>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<AddNetworkDescription>,
+    pub do_not_archive: bool,
 }
 
 #[derive(
@@ -143,6 +145,7 @@ pub struct UpdateNetworkReq {
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
     pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
+    pub do_not_archive: bool,
     pub status: NetworkStatus,
 }
 

@@ -142,6 +142,7 @@ init _ _ () =
             , operationMode = Just "дуплекс"
             , operationType = Just "ведення службового радіообміну"
             , operationPeriod = Just "цілодобово"
+            , doNotArchive = False
             , postIds = []
             , descriptions = []
             }

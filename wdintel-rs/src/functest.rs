@@ -1527,6 +1527,9 @@ pub mod tests {
         if out.original_id == NotSet {
             out.original_id = Set(None);
         }
+        if out.do_not_archive == NotSet {
+            out.do_not_archive = Set(false);
+        }
         out
     }
 

@@ -4,8 +4,10 @@ import {
   Box,
   Button,
   ButtonBase,
+  Checkbox,
   CircularProgress,
   Drawer,
+  FormControlLabel,
   FormControl,
   InputLabel,
   MenuItem,
@@ -28,6 +30,7 @@ import type { NetworkEditLookupOption as LookupOption } from './network-edit-aut
 import { networkEditLookupFilterOptions } from './network-edit-autocomplete';
 import {
   getNetworkUpsertValidationError,
+  shouldIncludeNetworkCreateFrequency,
   type NetworkUpsertForm,
   type NetworkUpsertValidationError,
 } from '../use-rer-network-details-neo-page.shared';
@@ -50,6 +53,7 @@ type Props = {
   onChange: (next: NetworkUpsertForm | null) => void;
   onSave: (form?: NetworkUpsertForm | null) => void;
   disableRestoreFocus?: boolean;
+  frequencyOptional?: boolean;
 };
 
 type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'>;
@@ -116,9 +120,13 @@ function NetworkEditDrawerComponent({
   onChange,
   onSave,
   disableRestoreFocus = false,
+  frequencyOptional = false,
 }: Props) {
   const titleId = 'network-edit-drawer-title';
-  const validation = getNetworkUpsertValidationError(form, { includeFrequency: mode === 'create' });
+  const includeFrequency = form !== null && mode === 'create'
+    ? shouldIncludeNetworkCreateFrequency(form, frequencyOptional)
+    : false;
+  const validation = getNetworkUpsertValidationError(form, { includeFrequency });
   const formBlocked = saving || referenceLoading;
   const canSave = form !== null && !formBlocked && validation === null;
   const saveLabel = mode === 'create' ? 'Створити' : 'Зберегти';
@@ -347,6 +355,17 @@ function NetworkEditDrawerComponent({
                     size="small"
                   />
 
+                  <FormControlLabel
+                    control={(
+                      <Checkbox
+                        checked={form.doNotArchive}
+                        onChange={(event) => onChange({ ...form, doNotArchive: event.target.checked })}
+                        disabled={formBlocked}
+                      />
+                    )}
+                    label="Не архівувати автоматично"
+                  />
+
                   <Autocomplete<LookupOption, true, false, false>
                     multiple
                     disableCloseOnSelect
@@ -399,7 +418,7 @@ function NetworkEditDrawerComponent({
                   <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.75 }}>
                     <Stack spacing={2}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        Перша частота *
+                        {frequencyOptional ? 'Перша частота' : 'Перша частота *'}
                       </Typography>
 
                       <TextField
@@ -410,7 +429,7 @@ function NetworkEditDrawerComponent({
                         disabled={formBlocked}
                         fullWidth
                         size="small"
-                        required
+                        required={!frequencyOptional}
                         error={fieldError('freq') !== undefined}
                         helperText={fieldError('freq')}
                       />
@@ -461,7 +480,7 @@ function NetworkEditDrawerComponent({
                         onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
                         onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
                         disabled={formBlocked}
-                        required
+                        required={!frequencyOptional}
                         activeFromError={fieldError('activeFrom') !== undefined}
                         activeFromHelperText={fieldError('activeFrom')}
                       />
