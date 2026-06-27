@@ -2141,8 +2141,18 @@ async fn generate_and_store_report(
         .await?;
     let generated = generate_report(env, report_history, bgtask_id).await?;
     ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
-    bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
-        .await?;
+    let save_progress = if report_history.report_kind == KIND_ETALONKA {
+        95
+    } else {
+        85
+    };
+    bgtask_log_progress(
+        bgtask_id,
+        save_progress,
+        "[2/3] Збереження звіту",
+        &env.dbx,
+    )
+    .await?;
     ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
     let s3_id = upload_report_bytes(env, &generated).await?;
     let res = ReportHistory::update_many()
@@ -2294,13 +2304,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                70,
-                "[3/4] Формування еталонного опису",
-                &env.dbx,
-            )
-            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,
@@ -2339,13 +2342,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                70,
-                "[3/4] Формування еталонного опису",
-                &env.dbx,
-            )
-            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,
@@ -2629,31 +2625,89 @@ async fn handle_report_failure(
     let err_msg = format!("{err:#?}");
     let attempt_count =
         (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
-    let mut report_history = report_history.into_active_model();
-    report_history.log = Set(append_log_entry(
-        report_history.log.unwrap(),
-        "system",
-        &err_msg,
-    ));
+    let report_log = append_log_entry(report_history.log, "system", &err_msg);
+    let now = Utc::now().naive_utc();
     if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
-        report_history.status = Set(STATUS_PLANNED.to_string());
-        report_history.retry_count = Set(attempt_count);
-        report_history.planned_for_ts = Set(Some(
-            Utc::now().naive_utc()
-                + Duration::minutes(5 * i64::from(attempt_count)),
-        ));
-        report_history.started_at = Set(None);
-        report_history.completed_at = Set(None);
-        report_history.bgtask_id = Set(None);
-        report_history.last_error = Set(Some(err_msg));
+        let res = ReportHistory::update_many()
+            .col_expr(
+                report_history::Column::Status,
+                Expr::value(STATUS_PLANNED.to_string()),
+            )
+            .col_expr(
+                report_history::Column::RetryCount,
+                Expr::value(attempt_count),
+            )
+            .col_expr(
+                report_history::Column::PlannedForTs,
+                Expr::value(Some(
+                    now + Duration::minutes(5 * i64::from(attempt_count)),
+                )),
+            )
+            .col_expr(
+                report_history::Column::StartedAt,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::CompletedAt,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::BgtaskId,
+                Expr::value(None::<i64>),
+            )
+            .col_expr(
+                report_history::Column::LastError,
+                Expr::value(Some(err_msg)),
+            )
+            .col_expr(report_history::Column::Log, Expr::value(report_log))
+            .filter(report_history::Column::Id.eq(report_history_id))
+            .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        if res.rows_affected == 0 {
+            warn!(
+                "skipping retry planning for report {} because it finished while preparing retry",
+                report_history_id
+            );
+            return Ok(());
+        }
     } else {
-        report_history.status = Set(STATUS_FAILED.to_string());
-        report_history.retry_count = Set(attempt_count);
-        report_history.planned_for_ts = Set(None);
-        report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-        report_history.last_error = Set(Some(err_msg));
+        let res = ReportHistory::update_many()
+            .col_expr(
+                report_history::Column::Status,
+                Expr::value(STATUS_FAILED.to_string()),
+            )
+            .col_expr(
+                report_history::Column::RetryCount,
+                Expr::value(attempt_count),
+            )
+            .col_expr(
+                report_history::Column::PlannedForTs,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::CompletedAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(
+                report_history::Column::LastError,
+                Expr::value(Some(err_msg)),
+            )
+            .col_expr(report_history::Column::Log, Expr::value(report_log))
+            .filter(report_history::Column::Id.eq(report_history_id))
+            .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        if res.rows_affected == 0 {
+            warn!(
+                "skipping failure finalization for report {} because it finished while preparing failure",
+                report_history_id
+            );
+            return Ok(());
+        }
     }
-    report_history.update(&env.dbx).await.c(h!())?;
     Ok(())
 }
 

@@ -12,7 +12,7 @@ import {
 } from '../../services/api/analysis';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadBlob } from '../../utils/download-blob';
-import { fetchReportHistoryStatus } from '../../services/api/report-history';
+import { fetchReportHistoryStatus, isCancelledReportHistory } from '../../services/api/report-history';
 import {
   buildReportFilename,
   buildReportRequest,
@@ -283,6 +283,27 @@ export function useAnalysisReport({
             return;
           }
           if (historyRow.status === 'failed') {
+            if (isCancelledReportHistory(historyRow)) {
+              updateReportTaskRuns((current) =>
+                current.map((run) =>
+                  run.id !== runId
+                    ? run
+                    : {
+                        ...run,
+                        running: false,
+                        cancelled: true,
+                        curr: 0,
+                        overall: 100,
+                        logs,
+                        error: null,
+                        finishedAt: new Date().toISOString(),
+                        expanded: false,
+                        historyRow,
+                      },
+                ),
+              );
+              return;
+            }
             const message = toErrorMessage(
               new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null),
             );
