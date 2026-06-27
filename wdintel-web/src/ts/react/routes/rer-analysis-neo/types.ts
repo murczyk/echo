@@ -176,6 +176,7 @@ export type AnalysisPageState = {
   nolimitShown: boolean;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
+  supportNonRerInterceptions: boolean;
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;

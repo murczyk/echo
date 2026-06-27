@@ -79,7 +79,7 @@ pub enum NetworkMessages {
     Table,
     Freq,
     CreatedAt,
-    ModulationName,
+    EncryptionName,
     NetworkFreqId,
     ActiveFrom,
     ActiveTo,
@@ -102,8 +102,8 @@ pub enum SigintNetworkFreq {
     LastSeenDt,
     ActiveFrom,
     ActiveTo,
-    ModulationId,
-    Kind,
+    EncryptionId,
+    Modulation,
     Deleted,
 }
 
@@ -128,7 +128,7 @@ pub enum SigintUnit {
 }
 
 #[derive(Iden)]
-pub enum Modulation {
+pub enum Encryption {
     Table,
     Id,
     Name,
@@ -394,13 +394,13 @@ fn build_network_freqs_query(
         .expr_as(
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::ModulationId,
+                SigintNetworkFreq::EncryptionId,
             )),
-            Alias::new("modulation_id"),
+            Alias::new("encryption_id"),
         )
         .expr_as(
-            Expr::col((Modulation::Table, Modulation::Name)),
-            Alias::new("modulation_name"),
+            Expr::col((Encryption::Table, Encryption::Name)),
+            Alias::new("encryption_name"),
         )
         .expr_as(
             Expr::col((
@@ -410,9 +410,11 @@ fn build_network_freqs_query(
             Alias::new("last_datetime"),
         )
         .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Kind))
-                .cast_as(Alias::new("text")),
-            Alias::new("kind"),
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::Modulation,
+            )),
+            Alias::new("modulation"),
         )
         .expr_as(
             Expr::col((Alias::new("agg"), Alias::new("message_count"))),
@@ -431,12 +433,12 @@ fn build_network_freqs_query(
         )
         .join(
             JoinType::LeftJoin,
-            Modulation::Table,
+            Encryption::Table,
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::ModulationId,
+                SigintNetworkFreq::EncryptionId,
             ))
-            .equals((Modulation::Table, Modulation::Id)),
+            .equals((Encryption::Table, Encryption::Id)),
         )
         .join(
             JoinType::LeftJoin,
@@ -535,13 +537,13 @@ fn build_network_freqs_base_query(
         .expr_as(
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::ModulationId,
+                SigintNetworkFreq::EncryptionId,
             )),
-            Alias::new("modulation_id"),
+            Alias::new("encryption_id"),
         )
         .expr_as(
-            Expr::col((Modulation::Table, Modulation::Name)),
-            Alias::new("modulation_name"),
+            Expr::col((Encryption::Table, Encryption::Name)),
+            Alias::new("encryption_name"),
         )
         .expr_as(
             Expr::col((
@@ -551,9 +553,11 @@ fn build_network_freqs_base_query(
             Alias::new("last_datetime"),
         )
         .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Kind))
-                .cast_as(Alias::new("text")),
-            Alias::new("kind"),
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::Modulation,
+            )),
+            Alias::new("modulation"),
         )
         .expr_as(Expr::cust("0"), Alias::new("message_count"))
         .from(SigintNetwork::Table)
@@ -565,12 +569,12 @@ fn build_network_freqs_base_query(
         )
         .join(
             JoinType::LeftJoin,
-            Modulation::Table,
+            Encryption::Table,
             Expr::col((
                 SigintNetworkFreq::Table,
-                SigintNetworkFreq::ModulationId,
+                SigintNetworkFreq::EncryptionId,
             ))
-            .equals((Modulation::Table, Modulation::Id)),
+            .equals((Encryption::Table, Encryption::Id)),
         )
         .and_where(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
@@ -638,8 +642,8 @@ async fn load_network_freq_rows(
             Ok(NetworkFreqsRes {
                 network_freq_id,
                 freq,
-                modulation_id: row.try_get("", "modulation_id").ok(),
-                modulation: row.try_get("", "modulation_name").ok(),
+                encryption_id: row.try_get("", "encryption_id").ok(),
+                encryption: row.try_get("", "encryption_name").ok(),
                 encryption_key_ids: vec![],
                 encryption_keys: vec![],
                 message_count,
@@ -654,7 +658,7 @@ async fn load_network_freq_rows(
                 is_active: active_to.is_none(),
                 active_from,
                 active_to,
-                kind: row.try_get("", "kind").ok(),
+                modulation: row.try_get("", "modulation").ok(),
             })
         })
         .collect();

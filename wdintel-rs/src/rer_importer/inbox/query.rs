@@ -53,7 +53,7 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
-async fn build_filtered_inbox_query<'a, 'async_trait, C>(
+pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &str,
     env: &Env,

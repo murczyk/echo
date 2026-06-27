@@ -13,6 +13,7 @@ type SystemSettingsItemRaw = {
   updated_by?: string | null;
   deleted: boolean;
   short_url_enabled: boolean;
+  support_non_rer_interceptions?: boolean;
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -24,6 +25,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
   short_url_enabled: boolean;
+  support_non_rer_interceptions?: boolean;
 };
 
 type SystemSettingsListRspRaw = {
@@ -57,6 +59,7 @@ export type SystemSettingsItem = {
   updatedBy: string | null;
   deleted: boolean;
   rerShortUrlEnabled: boolean;
+  supportNonRerInterceptions: boolean;
 };
 
 export type SystemSettingsCurrent = {
@@ -68,6 +71,7 @@ export type SystemSettingsCurrent = {
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
   rerShortUrlEnabled: boolean;
+  supportNonRerInterceptions: boolean;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -86,6 +90,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     updatedBy: raw.updated_by ?? null,
     deleted: raw.deleted,
     rerShortUrlEnabled: raw.short_url_enabled,
+    supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
   };
 }
 
@@ -101,6 +106,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
     rerShortUrlEnabled: raw.short_url_enabled,
+    supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
   };
 }
 

@@ -1,7 +1,7 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import type { ComponentProps } from 'react';
-import type { ModulationRec, Network, NetworkDescrType, NetworkFreqsRes, NetworkPoint } from '../../../../../Bindings';
+import type { EncryptionRec, Network, NetworkDescrType, NetworkFreqsRes, NetworkPoint } from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
 import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
 import { NetworkDetailsActivityPanel } from './NetworkDetailsActivityPanel';
@@ -79,7 +79,7 @@ type Props = {
   pelengPointsError: string | null;
   onReloadNetworkActivity: () => void;
   onReloadPelengPoints: () => void;
-  modulations: ModulationRec[];
+  encryptions: EncryptionRec[];
   expandedFrequencyGroupIds: string[];
   toggleFrequencyGroupExpanded: (groupId: string) => void;
   onOpenFreqCreateWizard: () => void;
@@ -160,7 +160,7 @@ export function NetworkDetailsTabPanel({
   pelengPointsError,
   onReloadNetworkActivity,
   onReloadPelengPoints,
-  modulations,
+  encryptions,
   expandedFrequencyGroupIds,
   toggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
@@ -230,7 +230,7 @@ export function NetworkDetailsTabPanel({
               freqsError={freqsError}
               freqCallsignsById={freqCallsignsById}
               freqCallsignsStatus={freqCallsignsStatus}
-              modulations={modulations}
+              encryptions={encryptions}
               expandedFrequencyGroupIds={expandedFrequencyGroupIds}
               onToggleFrequencyGroupExpanded={toggleFrequencyGroupExpanded}
               onOpenFreqCreateWizard={onOpenFreqCreateWizard}

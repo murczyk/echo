@@ -18,7 +18,7 @@ const apiMock = vi.hoisted(() => ({
   downloadNetworkEtalonkaReportTaskResult: vi.fn(),
   getNetworksGroupsActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
-  getModulations: vi.fn(),
+  getEncryptions: vi.fn(),
   listAors: vi.fn(),
   listNetworks: vi.fn(),
   listPosts: vi.fn(),
@@ -124,8 +124,8 @@ vi.mock('../../services/api/report-history', () => ({
   parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
-vi.mock('../../services/api/modulations', () => ({
-  getModulations: apiMock.getModulations,
+vi.mock('../../services/api/encryptions', () => ({
+  getEncryptions: apiMock.getEncryptions,
 }));
 
 vi.mock('../../utils/download-blob', () => ({
@@ -223,7 +223,7 @@ describe('useRerNetworksNeoPage', () => {
     reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
-    apiMock.getModulations.mockReset();
+    apiMock.getEncryptions.mockReset();
     apiMock.listAors.mockReset();
     apiMock.listNetworks.mockReset();
     apiMock.listPosts.mockReset();
@@ -237,7 +237,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
-    apiMock.getModulations.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
+    apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
     apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(123);
     apiMock.launchNetworksEtalonkaReportTask.mockResolvedValue(456);
@@ -317,8 +317,8 @@ describe('useRerNetworksNeoPage', () => {
       unitIds: [],
       postIds: [],
       freq: '',
-      kind: 'DMR',
-      modulationId: null,
+      modulation: 'DMR',
+      encryptionId: null,
       activeFrom: '',
       activeTo: '',
       encryptionKeyIds: [],
@@ -361,8 +361,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [1],
         postIds: [1],
         freq: '123.4500',
-        kind: 'DMR',
-        modulationId: 11,
+        modulation: 'DMR',
+        encryptionId: 11,
         activeFrom: '2026-06-01',
         activeTo: '2026-06-30',
         encryptionKeyIds: [],
@@ -381,8 +381,8 @@ describe('useRerNetworksNeoPage', () => {
       freqs: [
         {
           freq: '123.4500',
-          kind: 'DMR',
-          modulationId: 11,
+          modulation: 'DMR',
+          encryptionId: 11,
           encryptionKeyIds: [],
           description: null,
           activeFrom: expect.any(Number),
@@ -438,8 +438,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [1],
         postIds: [2],
         freq: '',
-        kind: 'DMR',
-        modulationId: null,
+        modulation: 'DMR',
+        encryptionId: null,
         activeFrom: '',
         activeTo: '',
         encryptionKeyIds: [],
@@ -507,8 +507,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [],
         postIds: [],
         freq: '',
-        kind: 'DMR',
-        modulationId: null,
+        modulation: 'DMR',
+        encryptionId: null,
         activeFrom: '',
         activeTo: '',
         encryptionKeyIds: [],
@@ -558,8 +558,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [],
         postIds: [],
         freq: '',
-        kind: 'DMR',
-        modulationId: null,
+        modulation: 'DMR',
+        encryptionId: null,
         activeFrom: '',
         activeTo: '',
         encryptionKeyIds: [],
@@ -609,8 +609,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [],
         postIds: [],
         freq: '',
-        kind: 'DMR',
-        modulationId: null,
+        modulation: 'DMR',
+        encryptionId: null,
         activeFrom: '',
         activeTo: '',
         encryptionKeyIds: [],
@@ -655,8 +655,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [],
         postIds: [],
         freq: '',
-        kind: 'DMR',
-        modulationId: null,
+        modulation: 'DMR',
+        encryptionId: null,
         activeFrom: '',
         activeTo: '',
         encryptionKeyIds: [],
@@ -706,8 +706,8 @@ describe('useRerNetworksNeoPage', () => {
         unitIds: [],
         postIds: [],
         freq: '123.45',
-        kind: 'DMR',
-        modulationId: 11,
+        modulation: 'DMR',
+        encryptionId: 11,
         activeFrom: '2026-06-01',
         activeTo: '',
         encryptionKeyIds: [],

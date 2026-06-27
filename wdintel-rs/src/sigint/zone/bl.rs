@@ -9,6 +9,7 @@ use sea_orm::*;
 #[derive(Debug)]
 pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
+    pub is_rer: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub admin_logins: Vec<String>,
@@ -56,6 +57,20 @@ pub async fn bl_szd_group_update(
         .await
         .c(h!())?
         .unwrap_or(false);
+    update_group_is_rer_if_enabled(req.is_rer, &szd.group_master_key, txn)
+        .await
+        .c(h!())?;
+    let is_rer = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
+        .select_only()
+        .column(signal_group::Column::IsRer)
+        .into_tuple::<bool>()
+        .one(txn)
+        .await
+        .c(h!())?
+        .unwrap_or(true);
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -85,6 +100,7 @@ pub async fn bl_szd_group_update(
 
     let res = BlSzdGroupUpdateRes {
         is_secret,
+        is_rer,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
         admin_logins: collect_signal_group_admins(
@@ -99,6 +115,41 @@ pub async fn bl_szd_group_update(
         long_note,
     };
     Ok(res)
+}
+
+async fn update_group_is_rer_if_enabled(
+    is_rer: Option<bool>,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if !crate::system_settings::support_non_rer_interceptions_enabled(txn)
+        .await
+        .c(h!())?
+    {
+        return Ok(());
+    }
+    let Some(is_rer) = is_rer else {
+        return Ok(());
+    };
+    if let Some(group) =
+        signal_group::Entity::find_by_id(master_key.to_string())
+            .one(txn)
+            .await
+            .c(h!())?
+    {
+        if group.is_rer == is_rer {
+            return Ok(());
+        }
+        let mut group = group.into_active_model();
+        group.is_rer = Set(is_rer);
+        group.update(txn).await.c(h!())?;
+        crate::sigint::unit_machine::enqueue_recent_unit_machine_recalculation_for_group(
+            txn, master_key,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 pub async fn bl_zones_datasources_group_update_or_add(
@@ -345,6 +396,7 @@ pub async fn bl_szd_groups_list(
         id: i64,
         group_master_key: String,
         is_secret: bool,
+        is_rer: bool,
         short_note: Option<String>,
         long_note: Option<String>,
     }
@@ -372,6 +424,7 @@ pub async fn bl_szd_groups_list(
         )
         .column_as(sigint_zone_datasource::Column::Id, "id")
         .column_as(signal_group::Column::IsSecret, "is_secret")
+        .column_as(signal_group::Column::IsRer, "is_rer")
         .column_as(secret_group_user::Column::Login, "login")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
@@ -387,10 +440,10 @@ pub async fn bl_szd_groups_list(
 
     let mut res = HashMap::<
         String,
-        (bool, i64, Vec<String>, Option<String>, Option<String>),
+        (bool, bool, i64, Vec<String>, Option<String>, Option<String>),
     >::new();
     for row in rows {
-        if let Some((_, _, login_vec, _, _)) =
+        if let Some((_, _, _, login_vec, _, _)) =
             res.get_mut(&row.group_master_key)
         {
             if let Some(user_login) = row.login {
@@ -404,7 +457,14 @@ pub async fn bl_szd_groups_list(
             };
             res.insert(
                 row.group_master_key,
-                (row.is_secret, row.id, logins, row.short_note, row.long_note),
+                (
+                    row.is_secret,
+                    row.is_rer,
+                    row.id,
+                    logins,
+                    row.short_note,
+                    row.long_note,
+                ),
             );
         }
     }
@@ -421,13 +481,21 @@ pub async fn bl_szd_groups_list(
         .map(
             |(
                 master_key,
-                (is_secret, szd_id, allowed_users, short_note, long_note),
+                (
+                    is_secret,
+                    is_rer,
+                    szd_id,
+                    allowed_users,
+                    short_note,
+                    long_note,
+                ),
             )| {
                 let aors = group_aors.get(&master_key).cloned();
                 ZoneDatasourceGroup {
                     areas_of_responsibility: aors,
                     sigint_zone_datasource_id: szd_id,
                     is_group_secret: is_secret,
+                    is_rer,
                     allowed_users,
                     admin_logins: group_admins
                         .get(&master_key)

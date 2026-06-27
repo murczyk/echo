@@ -213,7 +213,7 @@ unitNames shared maybeUnitIds =
 
 freqKinds : List B.NetworkFreq -> String
 freqKinds freqs =
-    List.map .kind freqs
+    List.map .modulation freqs
         |> List.map NetworksUtils.networkStringToLabel
         |> Set.fromList
         |> Set.toList
@@ -357,7 +357,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ List.map (\freqObj -> freqObj.kind) networkFreqs
+                [ List.map (\freqObj -> freqObj.modulation) networkFreqs
                     |> List.map NetworksUtils.networkStringToLabel
                     |> Set.fromList
                     |> Set.toList

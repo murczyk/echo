@@ -1611,6 +1611,7 @@ type alias SignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , isRer : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -1623,6 +1624,7 @@ signalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "is_rer", (Json.Encode.bool) struct.isRer )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -1633,6 +1635,7 @@ type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , isRer : Bool
     , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
@@ -1648,6 +1651,7 @@ orphanSignalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "is_rer", (Json.Encode.bool) struct.isRer )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -4541,6 +4545,7 @@ type alias ZoneDatasourceGroup =
     { sigintZoneDatasourceId : Int
     , groupMasterKey : String
     , isGroupSecret : Bool
+    , isRer : Bool
     , allowedUsers : List (String)
     , adminLogins : List (String)
     , shortNote : Maybe (String)
@@ -4555,6 +4560,7 @@ zoneDatasourceGroupEncoder struct =
         [ ( "sigint_zone_datasource_id", (Json.Encode.int) struct.sigintZoneDatasourceId )
         , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
+        , ( "is_rer", (Json.Encode.bool) struct.isRer )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
@@ -4593,6 +4599,7 @@ type alias ZoneDatasourceGroupAddReq =
     { zoneId : Int
     , datasourceId : Int
     , isSecret : Bool
+    , isRer : Maybe (Bool)
     , masterKey : String
     , userLogins : List (String)
     , adminLogins : List (String)
@@ -4607,6 +4614,7 @@ zoneDatasourceGroupAddReqEncoder struct =
         [ ( "zone_id", (Json.Encode.int) struct.zoneId )
         , ( "datasource_id", (Json.Encode.int) struct.datasourceId )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
+        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
         , ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -4618,6 +4626,7 @@ zoneDatasourceGroupAddReqEncoder struct =
 type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
     , isSecret : Bool
+    , isRer : Maybe (Bool)
     , userLogins : List (String)
     , adminLogins : List (String)
     , shortNote : Maybe (String)
@@ -4632,6 +4641,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
+        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
@@ -4746,7 +4756,7 @@ type alias EncryptionKeyData =
     , key : Maybe (String)
     , keyHash : Maybe (String)
     , description : Maybe (String)
-    , modulationId : Maybe (Int)
+    , encryptionId : Maybe (Int)
     }
 
 
@@ -4759,7 +4769,7 @@ encryptionKeyDataEncoder struct =
         , ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
         , ( "key_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.keyHash )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         ]
 
 
@@ -4793,7 +4803,7 @@ type alias CreateEncryptionKeyReq =
     , key : Maybe (String)
     , keyHash : Maybe (String)
     , description : Maybe (String)
-    , modulationId : Maybe (Int)
+    , encryptionId : Maybe (Int)
     }
 
 
@@ -4805,7 +4815,7 @@ createEncryptionKeyReqEncoder struct =
         , ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
         , ( "key_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.keyHash )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         ]
 
 
@@ -4815,7 +4825,7 @@ type alias UpdateEncryptionKeyReq =
     , key : Maybe (String)
     , keyHash : Maybe (String)
     , description : Maybe (String)
-    , modulationId : Maybe (Int)
+    , encryptionId : Maybe (Int)
     }
 
 
@@ -4827,7 +4837,7 @@ updateEncryptionKeyReqEncoder struct =
         , ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
         , ( "key_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.keyHash )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         ]
 
 
@@ -5131,6 +5141,7 @@ type ReportType
     | Naushnom
     | Reo (ReoReportSettings) (ReoReportFileType)
     | Digest
+    | Rer
     | ActiveNetworks (ActiveNetworksReportSettings)
     | NetworkFrequencies (NetworkFrequenciesReportSettings)
 
@@ -5156,6 +5167,8 @@ reportTypeEncoder enum =
             Json.Encode.object [ ( "Reo", Json.Encode.list identity [ reoReportSettingsEncoder t0, reoReportFileTypeEncoder t1 ] ) ]
         Digest ->
             Json.Encode.string "Digest"
+        Rer ->
+            Json.Encode.string "Rer"
         ActiveNetworks inner ->
             Json.Encode.object [ ( "ActiveNetworks", activeNetworksReportSettingsEncoder inner ) ]
         NetworkFrequencies inner ->
@@ -5324,6 +5337,146 @@ unitSearchReqEncoder : UnitSearchReq -> Json.Encode.Value
 unitSearchReqEncoder struct =
     Json.Encode.object
         [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias UnitMachineItem =
+    { id : Int
+    , sigintNetworkId : Int
+    , networkDisplayName : String
+    , machineId : Maybe (String)
+    , machineTags : List (String)
+    , deleted : Bool
+    , createdAt : Int
+    , updatedAt : Int
+    , updatedBy : Maybe (String)
+    }
+
+
+unitMachineItemEncoder : UnitMachineItem -> Json.Encode.Value
+unitMachineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_network_id", (Json.Encode.int) struct.sigintNetworkId )
+        , ( "network_display_name", (Json.Encode.string) struct.networkDisplayName )
+        , ( "machine_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.machineId )
+        , ( "machine_tags", (Json.Encode.list (Json.Encode.string)) struct.machineTags )
+        , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedBy )
+        ]
+
+
+type alias UnitMachineListReq =
+    { includeArchived : Maybe (Bool)
+    , sigintNetworkId : Maybe (Int)
+    , query : Maybe (String)
+    }
+
+
+unitMachineListReqEncoder : UnitMachineListReq -> Json.Encode.Value
+unitMachineListReqEncoder struct =
+    Json.Encode.object
+        [ ( "include_archived", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeArchived )
+        , ( "sigint_network_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintNetworkId )
+        , ( "query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.query )
+        ]
+
+
+type alias UnitMachineListRsp =
+    { items : List (UnitMachineItem)
+    }
+
+
+unitMachineListRspEncoder : UnitMachineListRsp -> Json.Encode.Value
+unitMachineListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (unitMachineItemEncoder)) struct.items )
+        ]
+
+
+type alias UnitMachineCreateReq =
+    { sigintNetworkId : Int
+    , machineId : Maybe (String)
+    , machineTags : List (String)
+    }
+
+
+unitMachineCreateReqEncoder : UnitMachineCreateReq -> Json.Encode.Value
+unitMachineCreateReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_network_id", (Json.Encode.int) struct.sigintNetworkId )
+        , ( "machine_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.machineId )
+        , ( "machine_tags", (Json.Encode.list (Json.Encode.string)) struct.machineTags )
+        ]
+
+
+type alias UnitMachineUpdateReq =
+    { id : Int
+    , sigintNetworkId : Int
+    , machineId : Maybe (String)
+    , machineTags : List (String)
+    }
+
+
+unitMachineUpdateReqEncoder : UnitMachineUpdateReq -> Json.Encode.Value
+unitMachineUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_network_id", (Json.Encode.int) struct.sigintNetworkId )
+        , ( "machine_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.machineId )
+        , ( "machine_tags", (Json.Encode.list (Json.Encode.string)) struct.machineTags )
+        ]
+
+
+type alias UnitMachineArchiveReq =
+    { id : Int
+    }
+
+
+unitMachineArchiveReqEncoder : UnitMachineArchiveReq -> Json.Encode.Value
+unitMachineArchiveReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
+type UnitMachineWarningCode
+    = ArchivedDuplicateMachineId
+
+
+unitMachineWarningCodeEncoder : UnitMachineWarningCode -> Json.Encode.Value
+unitMachineWarningCodeEncoder enum =
+    case enum of
+        ArchivedDuplicateMachineId ->
+            Json.Encode.string "ArchivedDuplicateMachineId"
+
+type alias UnitMachineWarning =
+    { code : UnitMachineWarningCode
+    , message : String
+    }
+
+
+unitMachineWarningEncoder : UnitMachineWarning -> Json.Encode.Value
+unitMachineWarningEncoder struct =
+    Json.Encode.object
+        [ ( "code", (unitMachineWarningCodeEncoder) struct.code )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias UnitMachineMutationRsp =
+    { item : UnitMachineItem
+    , warning : Maybe (UnitMachineWarning)
+    }
+
+
+unitMachineMutationRspEncoder : UnitMachineMutationRsp -> Json.Encode.Value
+unitMachineMutationRspEncoder struct =
+    Json.Encode.object
+        [ ( "item", (unitMachineItemEncoder) struct.item )
+        , ( "warning", (Maybe.withDefault Json.Encode.null << Maybe.map (unitMachineWarningEncoder)) struct.warning )
         ]
 
 
@@ -6054,8 +6207,8 @@ etalonkaReportTypeEncoder enum =
 type alias NetworkFreqsRes =
     { networkFreqId : Int
     , freq : String
-    , modulationId : Maybe (Int)
-    , modulation : Maybe (String)
+    , encryptionId : Maybe (Int)
+    , encryption : Maybe (String)
     , encryptionKeyIds : List (Int)
     , encryptionKeys : List (String)
     , messageCount : Int
@@ -6066,7 +6219,7 @@ type alias NetworkFreqsRes =
     , isActive : Bool
     , activeFrom : Int
     , activeTo : Maybe (Int)
-    , kind : Maybe (String)
+    , modulation : Maybe (String)
     }
 
 
@@ -6075,8 +6228,8 @@ networkFreqsResEncoder struct =
     Json.Encode.object
         [ ( "network_freq_id", (Json.Encode.int) struct.networkFreqId )
         , ( "freq", (Json.Encode.string) struct.freq )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
-        , ( "modulation", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modulation )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
+        , ( "encryption", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.encryption )
         , ( "encryption_key_ids", (Json.Encode.list (Json.Encode.int)) struct.encryptionKeyIds )
         , ( "encryption_keys", (Json.Encode.list (Json.Encode.string)) struct.encryptionKeys )
         , ( "message_count", (Json.Encode.int) struct.messageCount )
@@ -6087,7 +6240,7 @@ networkFreqsResEncoder struct =
         , ( "is_active", (Json.Encode.bool) struct.isActive )
         , ( "active_from", (Json.Encode.int) struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeTo )
-        , ( "kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kind )
+        , ( "modulation", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modulation )
         ]
 
 
@@ -6861,8 +7014,8 @@ type alias UpdateNetworkFreqReq =
     { networkId : Int
     , networkFreqId : Int
     , freq : String
-    , kind : String
-    , modulationId : Maybe (Int)
+    , modulation : String
+    , encryptionId : Maybe (Int)
     , encryptionKeyIds : List (Int)
     , activeFrom : Int
     , activeTo : Maybe (Int)
@@ -6875,8 +7028,8 @@ updateNetworkFreqReqEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "network_freq_id", (Json.Encode.int) struct.networkFreqId )
         , ( "freq", (Json.Encode.string) struct.freq )
-        , ( "kind", (Json.Encode.string) struct.kind )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "modulation", (Json.Encode.string) struct.modulation )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         , ( "encryption_key_ids", (Json.Encode.list (Json.Encode.int)) struct.encryptionKeyIds )
         , ( "active_from", (Json.Encode.int) struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeTo )
@@ -7264,22 +7417,18 @@ mergeNetworkReqEncoder struct =
         ]
 
 
-type alias ModulationRec =
+type alias EncryptionRec =
     { id : Int
     , name : String
-    , left : Int
-    , right : Int
     , enabled : Bool
     }
 
 
-modulationRecEncoder : ModulationRec -> Json.Encode.Value
-modulationRecEncoder struct =
+encryptionRecEncoder : EncryptionRec -> Json.Encode.Value
+encryptionRecEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
-        , ( "left", (Json.Encode.int) struct.left )
-        , ( "right", (Json.Encode.int) struct.right )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         ]
 
@@ -7664,8 +7813,8 @@ type alias NetworkFreq =
     , activeFrom : Int
     , activeTo : Maybe (Int)
     , createdAt : Int
-    , kind : String
-    , modulationId : Maybe (Int)
+    , modulation : String
+    , encryptionId : Maybe (Int)
     , encryptionKeys : List (EncryptionKeyData)
     }
 
@@ -7680,16 +7829,16 @@ networkFreqEncoder struct =
         , ( "active_from", (Json.Encode.int) struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeTo )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
-        , ( "kind", (Json.Encode.string) struct.kind )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "modulation", (Json.Encode.string) struct.modulation )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         , ( "encryption_keys", (Json.Encode.list (encryptionKeyDataEncoder)) struct.encryptionKeys )
         ]
 
 
 type alias AddNetworkFreq =
     { freq : String
-    , kind : String
-    , modulationId : Maybe (Int)
+    , modulation : String
+    , encryptionId : Maybe (Int)
     , encryptionKeyIds : List (Int)
     , description : Maybe (AddNetworkFrequencyDescription)
     , activeFrom : Maybe (Int)
@@ -7701,8 +7850,8 @@ addNetworkFreqEncoder : AddNetworkFreq -> Json.Encode.Value
 addNetworkFreqEncoder struct =
     Json.Encode.object
         [ ( "freq", (Json.Encode.string) struct.freq )
-        , ( "kind", (Json.Encode.string) struct.kind )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.modulationId )
+        , ( "modulation", (Json.Encode.string) struct.modulation )
+        , ( "encryption_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.encryptionId )
         , ( "encryption_key_ids", (Json.Encode.list (Json.Encode.int)) struct.encryptionKeyIds )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (addNetworkFrequencyDescriptionEncoder)) struct.description )
         , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeFrom )
@@ -7931,6 +8080,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
+    , supportNonRerInterceptions : Bool
     }
 
 
@@ -7945,6 +8095,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         ]
 
 
@@ -8379,6 +8530,7 @@ type alias GroupUpdateReq =
     , longNote : Maybe (String)
     , areaOfResponsibilityId : Maybe (Int)
     , areaOfResponsibilityIds : Maybe (List (Int))
+    , isRer : Maybe (Bool)
     }
 
 
@@ -8390,6 +8542,7 @@ groupUpdateReqEncoder struct =
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
+        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
         ]
 
 
@@ -9705,6 +9858,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -9782,6 +9936,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -11106,6 +11261,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_datasource_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
@@ -11132,6 +11288,7 @@ zoneDatasourceGroupAddReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -11144,6 +11301,7 @@ zoneDatasourceGroupUpdateReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
@@ -11210,7 +11368,7 @@ encryptionKeyDataDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key_hash" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 listKeysReqDecoder : Json.Decode.Decoder ListKeysReq
@@ -11233,7 +11391,7 @@ createEncryptionKeyReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key_hash" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 updateEncryptionKeyReqDecoder : Json.Decode.Decoder UpdateEncryptionKeyReq
@@ -11244,7 +11402,7 @@ updateEncryptionKeyReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key_hash" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 deleteEncryptionKeyReqDecoder : Json.Decode.Decoder DeleteEncryptionKeyReq
@@ -11443,6 +11601,15 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Rer" ->
+                            Json.Decode.succeed Rer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
         , Json.Decode.map ActiveNetworks (Json.Decode.field "ActiveNetworks" (activeNetworksReportSettingsDecoder))
         , Json.Decode.map NetworkFrequencies (Json.Decode.field "NetworkFrequencies" (networkFrequenciesReportSettingsDecoder))
         ]
@@ -11545,6 +11712,85 @@ unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+unitMachineItemDecoder : Json.Decode.Decoder UnitMachineItem
+unitMachineItemDecoder =
+    Json.Decode.succeed UnitMachineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_tags" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable (Json.Decode.string))))
+
+
+unitMachineListReqDecoder : Json.Decode.Decoder UnitMachineListReq
+unitMachineListReqDecoder =
+    Json.Decode.succeed UnitMachineListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_archived" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.nullable (Json.Decode.string))))
+
+
+unitMachineListRspDecoder : Json.Decode.Decoder UnitMachineListRsp
+unitMachineListRspDecoder =
+    Json.Decode.succeed UnitMachineListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (unitMachineItemDecoder))))
+
+
+unitMachineCreateReqDecoder : Json.Decode.Decoder UnitMachineCreateReq
+unitMachineCreateReqDecoder =
+    Json.Decode.succeed UnitMachineCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_tags" (Json.Decode.list (Json.Decode.string))))
+
+
+unitMachineUpdateReqDecoder : Json.Decode.Decoder UnitMachineUpdateReq
+unitMachineUpdateReqDecoder =
+    Json.Decode.succeed UnitMachineUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "machine_tags" (Json.Decode.list (Json.Decode.string))))
+
+
+unitMachineArchiveReqDecoder : Json.Decode.Decoder UnitMachineArchiveReq
+unitMachineArchiveReqDecoder =
+    Json.Decode.succeed UnitMachineArchiveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+unitMachineWarningCodeDecoder : Json.Decode.Decoder UnitMachineWarningCode
+unitMachineWarningCodeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ArchivedDuplicateMachineId" ->
+                            Json.Decode.succeed ArchivedDuplicateMachineId
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+unitMachineWarningDecoder : Json.Decode.Decoder UnitMachineWarning
+unitMachineWarningDecoder =
+    Json.Decode.succeed UnitMachineWarning
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (unitMachineWarningCodeDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+unitMachineMutationRspDecoder : Json.Decode.Decoder UnitMachineMutationRsp
+unitMachineMutationRspDecoder =
+    Json.Decode.succeed UnitMachineMutationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "item" (unitMachineItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "warning" (Json.Decode.nullable (unitMachineWarningDecoder))))
 
 
 listSignalsSortByDecoder : Json.Decode.Decoder ListSignalsSortBy
@@ -12091,8 +12337,8 @@ networkFreqsResDecoder =
     Json.Decode.succeed NetworkFreqsRes
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_key_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_keys" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" (Json.Decode.int)))
@@ -12103,7 +12349,7 @@ networkFreqsResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.nullable (Json.Decode.string))))
 
 
 callsignResDecoder : Json.Decode.Decoder CallsignRes
@@ -12538,8 +12784,8 @@ updateNetworkFreqReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_key_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable (Json.Decode.int))))
@@ -12832,13 +13078,11 @@ mergeNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id_to" (Json.Decode.int)))
 
 
-modulationRecDecoder : Json.Decode.Decoder ModulationRec
-modulationRecDecoder =
-    Json.Decode.succeed ModulationRec
+encryptionRecDecoder : Json.Decode.Decoder EncryptionRec
+encryptionRecDecoder =
+    Json.Decode.succeed EncryptionRec
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
 
 
@@ -12958,8 +13202,8 @@ networkFreqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_keys" (Json.Decode.list (encryptionKeyDataDecoder))))
 
 
@@ -12967,8 +13211,8 @@ addNetworkFreqDecoder : Json.Decode.Decoder AddNetworkFreq
 addNetworkFreqDecoder =
     Json.Decode.succeed AddNetworkFreq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_key_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (addNetworkFrequencyDescriptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable (Json.Decode.int))))
@@ -13238,6 +13482,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -13635,6 +13880,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1
@@ -13700,5 +13946,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

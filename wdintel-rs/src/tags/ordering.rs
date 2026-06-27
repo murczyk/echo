@@ -36,7 +36,7 @@ pub async fn collect_tags_list(
         .c(h!())?;
 
     let tags_and_keywords: Vec<_> =
-        regular_tags.into_iter().zip(keywords.into_iter()).collect();
+        regular_tags.into_iter().zip(keywords).collect();
 
     Ok(tags_and_keywords)
 }

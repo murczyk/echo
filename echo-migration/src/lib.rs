@@ -251,9 +251,11 @@ mod m20260605_162305_echo_swapp_sync_state;
 mod m20260609_115925_add_api_integration;
 mod m20260610_123823_add_api_integration_sync;
 mod m20260616_153800_create_report_history;
+mod m20260618_120000_rename_modulation_to_encryption_ddl;
 mod m20260619_101731_report_history_created_at_idx;
 mod m20260622_090245_aor_report_order_scope;
 mod m20260622_101608_add_signal_group_archive;
+mod m20260626_101738_non_rer_interceptions;
 
 pub struct Migrator;
 
@@ -514,9 +516,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260609_115925_add_api_integration::Migration),
             Box::new(m20260610_123823_add_api_integration_sync::Migration),
             Box::new(m20260616_153800_create_report_history::Migration),
+            Box::new(m20260618_120000_rename_modulation_to_encryption_ddl::Migration),
             Box::new(m20260619_101731_report_history_created_at_idx::Migration),
             Box::new(m20260622_090245_aor_report_order_scope::Migration),
             Box::new(m20260622_101608_add_signal_group_archive::Migration),
+            Box::new(m20260626_101738_non_rer_interceptions::Migration),
         ]
     }
 }

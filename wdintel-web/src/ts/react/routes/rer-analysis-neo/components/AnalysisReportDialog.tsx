@@ -54,6 +54,7 @@ type Props = {
   taskRuns: AnalysisReportTaskRun[];
   open: boolean;
   currentUser: User | null;
+  supportNonRerInterceptions: boolean;
   report: AnalysisReportState;
   queryState: AnalysisQueryState;
   onClose: () => void;
@@ -206,6 +207,7 @@ export function AnalysisReportDialog({
   taskRuns,
   open,
   currentUser,
+  supportNonRerInterceptions,
   report,
   queryState,
   onClose,
@@ -219,6 +221,9 @@ export function AnalysisReportDialog({
   const appliedFilters = describeAppliedReportFilters(queryState, report);
   const builderMode = reportTemplateToMode(report.template);
   const hasAdvancedReportAccess = canUseAdvancedReports(currentUser);
+  const visibleReportTemplateOptions = supportNonRerInterceptions
+    ? [...reportTemplateOptions, { id: 'rer_report' as const, title: 'РЕР Звіт', description: 'Документ по non-RER перехопленнях з привʼязаними машинами' }]
+    : reportTemplateOptions;
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
   const showReportTagsOnlyThisUnit = ['tags', 'pelengs', 'babak', 'interception', 'posts_docx', 'mouse', 'reo'].includes(report.template);
@@ -292,7 +297,7 @@ export function AnalysisReportDialog({
             {builderMode === 'reports' ? (
               <Stack spacing={1}>
                 <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
-                  {reportTemplateOptions.map((option) => (
+                  {visibleReportTemplateOptions.map((option) => (
                     <Button
                       key={option.id}
                       variant={report.template === option.id ? 'contained' : 'outlined'}

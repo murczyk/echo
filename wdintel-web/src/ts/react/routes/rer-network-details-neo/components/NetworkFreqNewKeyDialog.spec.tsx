@@ -53,13 +53,13 @@ function renderDialog(): Rendered {
         saving={false}
         keyValue=""
         descriptionValue=""
-        modulationId={null}
-        modulationOptions={[]}
+        encryptionId={null}
+        encryptionOptions={[]}
         onClose={() => {}}
         onKeyChange={() => {}}
         onKeyBlur={() => {}}
         onDescriptionChange={() => {}}
-        onModulationChange={() => {}}
+        onEncryptionChange={() => {}}
         onCreate={() => {}}
       />,
     );

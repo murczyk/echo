@@ -54,6 +54,7 @@ import {
 import { listAors } from '../../services/api/aor';
 import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
+import { currentSystemSettings } from '../../services/api/system-settings';
 import {
   addZoneDatasourceGroup,
   archiveSignalGroup,
@@ -89,6 +90,7 @@ type OrphanAssignState = {
   group: OrphanSignalGroupEntry;
   selectedZones: ZoneEntry[];
   isSecret: boolean;
+  isRer: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   isSaving: boolean;
@@ -101,6 +103,7 @@ type GroupEditState = {
   group: ZoneDatasourceGroup;
   groupName: string;
   isSecret: boolean;
+  isRer: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   shortNote: string;
@@ -113,6 +116,7 @@ type GroupEditState = {
 type OrphanEditState = {
   group: OrphanSignalGroupEntry;
   groupName: string;
+  isRer: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -414,6 +418,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     name: '',
     datasourceId: null,
     ignoreOperativny: false,
+    isRer: true,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -436,6 +441,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       datasourceId: 0,
       groupMasterKey: '',
       isGroupSecret: false,
+      isRer: true,
       allowedUsers: [],
       adminLogins: [],
       areaOfResponsibilityId: null,
@@ -1415,6 +1421,8 @@ function AdminDirectionsNeoPageBody() {
 
   const [logins, setLogins] = useState<string[]>([]);
   const [loginsStatus, setLoginsStatus] = useState<LoadingStatus>('idle');
+  const [supportNonRerInterceptions, setSupportNonRerInterceptions] =
+    useState(false);
 
   const datasourceById = useMemo(
     () => new Map(datasources),
@@ -1579,13 +1587,14 @@ function AdminDirectionsNeoPageBody() {
     setStatus('loading');
     setError(null);
     try {
-      const [datasourceList, zoneList, orphanList, archivedList, aorList] = await Promise.all(
+      const [datasourceList, zoneList, orphanList, archivedList, aorList, settings] = await Promise.all(
         [
           listDatasources(),
           listSigintZones(),
           listOrphanSignalGroups(),
           listArchivedSignalGroups(),
           listAors({ sortBy: null }),
+          currentSystemSettings(),
         ]
       );
 
@@ -1594,6 +1603,7 @@ function AdminDirectionsNeoPageBody() {
       setOrphanGroups(orphanList);
       setArchivedGroups(archivedList);
       setAors(aorList);
+      setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
 
       const zoneDatasourceEntries = await Promise.all(
         zoneList.map(
@@ -1634,6 +1644,7 @@ function AdminDirectionsNeoPageBody() {
             masterKey: group.masterKey,
             name: group.name,
             ignoreOperativny: group.ignoreOperativny,
+            isRer: group.isRer,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -1667,6 +1678,7 @@ function AdminDirectionsNeoPageBody() {
       group,
       groupName,
       isSecret: group.isGroupSecret,
+      isRer: group.isRer,
       selectedUsers: group.allowedUsers,
       selectedAdmins: group.adminLogins,
       shortNote: group.shortNote ?? '',
@@ -1683,6 +1695,7 @@ function AdminDirectionsNeoPageBody() {
     setOrphanEditDialog({
       group,
       groupName,
+      isRer: group.isRer,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -1699,6 +1712,7 @@ function AdminDirectionsNeoPageBody() {
       group,
       selectedZones: preselectedZones,
       isSecret: false,
+      isRer: group.isRer,
       selectedUsers: [],
       selectedAdmins: [],
       isSaving: false,
@@ -1781,6 +1795,7 @@ function AdminDirectionsNeoPageBody() {
     const req: ZoneDatasourceGroupUpdateReq = {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
+      isRer: supportNonRerInterceptions ? editDialog.isRer : null,
       userLogins: selectedUsers,
       adminLogins: editDialog.selectedAdmins,
       shortNote: editDialog.shortNote.trim()
@@ -1836,6 +1851,7 @@ function AdminDirectionsNeoPageBody() {
           orphanEditDialog.selectedAorIds.length > 0
             ? orphanEditDialog.selectedAorIds
             : null,
+        isRer: supportNonRerInterceptions ? orphanEditDialog.isRer : null,
       });
 
       setOrphanGroups((prev) =>
@@ -1851,6 +1867,7 @@ function AdminDirectionsNeoPageBody() {
                   }
                 : null,
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
+            isRer: orphanEditDialog.isRer,
           };
         })
       );
@@ -1897,6 +1914,7 @@ function AdminDirectionsNeoPageBody() {
         datasourceId,
         masterKey: assignDialog.group.masterKey,
         isSecret: assignDialog.isSecret,
+        isRer: supportNonRerInterceptions ? assignDialog.isRer : null,
         userLogins: selectedUsers,
         adminLogins: assignDialog.selectedAdmins,
         shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
@@ -1938,6 +1956,7 @@ function AdminDirectionsNeoPageBody() {
               masterKey: response.groupMasterKey,
               name: response.groupName,
               ignoreOperativny: false,
+              isRer: assignDialog.isRer,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2125,6 +2144,23 @@ function AdminDirectionsNeoPageBody() {
             }
             label="Прихована група"
           />
+          {supportNonRerInterceptions ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={editDialog?.isRer ?? true}
+                  onChange={(event) =>
+                    editDialog &&
+                    setEditDialog({
+                      ...editDialog,
+                      isRer: event.target.checked,
+                    })
+                  }
+                />
+              }
+              label="РЕР група"
+            />
+          ) : null}
           {editDialog?.isSecret ? (
             <Autocomplete
               multiple
@@ -2234,6 +2270,23 @@ function AdminDirectionsNeoPageBody() {
           <div className="text-sm text-muted-foreground">
             Група: {orphanEditDialog?.groupName}
           </div>
+          {supportNonRerInterceptions ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={orphanEditDialog?.isRer ?? true}
+                  onChange={(event) =>
+                    orphanEditDialog &&
+                    setOrphanEditDialog({
+                      ...orphanEditDialog,
+                      isRer: event.target.checked,
+                    })
+                  }
+                />
+              }
+              label="РЕР група"
+            />
+          ) : null}
           <Autocomplete
             multiple
             options={aorOptions}
@@ -2360,6 +2413,23 @@ function AdminDirectionsNeoPageBody() {
             }
             label="Прихована група"
           />
+          {supportNonRerInterceptions ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={assignDialog?.isRer ?? true}
+                  onChange={(event) =>
+                    assignDialog &&
+                    setAssignDialog({
+                      ...assignDialog,
+                      isRer: event.target.checked,
+                    })
+                  }
+                />
+              }
+              label="РЕР група"
+            />
+          ) : null}
           {assignDialog?.isSecret ? (
             <Autocomplete
               multiple

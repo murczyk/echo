@@ -152,7 +152,7 @@ function renderTable(freqCallsignsById: Map<number, string[]>, freqCallsignsStat
         freqsError: null,
         freqCallsignsById,
         freqCallsignsStatus,
-        modulations: [],
+        encryptions: [],
         expandedFrequencyGroupIds: [],
         onToggleFrequencyGroupExpanded: vi.fn(),
         onOpenFreqCreateWizard: vi.fn(),

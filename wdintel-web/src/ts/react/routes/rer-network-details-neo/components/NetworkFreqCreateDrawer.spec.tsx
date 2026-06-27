@@ -112,8 +112,8 @@ const rendered: Rendered[] = [];
 function buildForm(overrides: Partial<NetworkFreqCreateWizardForm> = {}): NetworkFreqCreateWizardForm {
   return {
     freq: '146.5000',
-    kind: 'DMR',
-    modulationId: 11,
+    modulation: 'DMR',
+    encryptionId: 11,
     activeFrom: '2026-06-13',
     activeTo: '',
     encryptionKeyIds: [],
@@ -136,7 +136,7 @@ function renderDrawer(form: NetworkFreqCreateWizardForm): Rendered {
         error={null}
         networkId={null}
         canManageKeys={false}
-        modulations={[{ id: 11, name: 'DMR' }]}
+        encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
         onChange={setCurrentForm}
         onSave={() => {}}
@@ -151,9 +151,9 @@ function renderDrawer(form: NetworkFreqCreateWizardForm): Rendered {
   return { container, root };
 }
 
-function renderDrawerWithModulations(
+function renderDrawerWithEncryptions(
   form: NetworkFreqCreateWizardForm,
-  modulations: { id: number; name: string }[],
+  encryptions: { id: number; name: string }[],
 ): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -169,7 +169,7 @@ function renderDrawerWithModulations(
         error={null}
         networkId={null}
         canManageKeys={false}
-        modulations={modulations}
+        encryptions={encryptions}
         onClose={() => {}}
         onChange={setCurrentForm}
         onSave={() => {}}
@@ -200,7 +200,7 @@ function renderManagedDrawer(form: NetworkFreqCreateWizardForm): Rendered {
         error={null}
         networkId={1}
         canManageKeys
-        modulations={[{ id: 11, name: 'DMR' }]}
+        encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
         onChange={setCurrentForm}
         onSave={() => {}}
@@ -314,26 +314,23 @@ describe('NetworkFreqCreateDrawer', () => {
   });
 
   it('shows the tech section as unavailable for non-DMR modes', () => {
-    const view = renderDrawerWithModulations(buildForm({ kind: 'DMR' }), [{ id: 11, name: 'FM' }]);
+    const view = renderDrawer(buildForm({ modulation: 'NFM' }));
     rendered.push(view);
 
     expect(view.container.textContent).toContain('доступно лише для DMR');
     expect(view.container.querySelector('[data-testid="keys-section"]')).not.toBeNull();
   });
 
-  it('enables the tech section when the selected modulation is DMR even if kind is non-DMR', () => {
-    const view = renderDrawerWithModulations(buildForm({ kind: 'NFM' }), [
-      { id: 11, name: 'DMR' },
-      { id: 12, name: 'FM' },
-    ]);
+  it('enables the tech section when modulation is DMR', () => {
+    const view = renderDrawer(buildForm({ modulation: 'DMR' }));
     rendered.push(view);
 
     const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
     expect(techToggle?.disabled).toBe(false);
   });
 
-  it('disables the tech section when no modulation is selected', () => {
-    const view = renderDrawer(buildForm({ modulationId: null }));
+  it('disables the tech section when modulation is AM', () => {
+    const view = renderDrawer(buildForm({ modulation: 'AM' }));
     rendered.push(view);
 
     const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;

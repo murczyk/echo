@@ -11,7 +11,6 @@ import type {
   NetworkEditForm,
   NetworkFreqCreateWizardForm,
   NetworkFreqEditForm,
-  NetworkFreqKind,
   NetworkUpsertForm,
   NetworkPelengDateRange,
   NetworkRelationsDateRange,
@@ -49,8 +48,8 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     unitIds: [],
     postIds: [],
     freq: '',
-    kind: 'DMR',
-    modulationId: null,
+    modulation: 'DMR',
+    encryptionId: null,
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
@@ -60,19 +59,20 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
 export function toNetworkFreqCreateWizardForm(): NetworkFreqCreateWizardForm {
   return {
     freq: '',
-    kind: 'DMR',
-    modulationId: null,
+    modulation: 'DMR',
+    encryptionId: null,
     activeFrom: '',
     activeTo: '',
     encryptionKeyIds: [],
   };
 }
 
-export function typeLabelFromKind(kind: string | null | undefined): NetworkFreqKind {
+export function typeLabelFromKind(kind: string | null | undefined): 'DMR' | 'NFM' | 'AM' | '' {
   const normalized = kind?.trim().toUpperCase() ?? '';
-  if (normalized === 'DMR') return 'DMR';
-  if (normalized === 'DMRE') return 'DMRe';
-  return 'NFM';
+  if (normalized === 'DMR' || normalized === 'DMRE') return 'DMR';
+  if (normalized === 'NFM') return 'NFM';
+  if (normalized === 'AM') return 'AM';
+  return '';
 }
 
 export function formatDateInputValue(value: number | null | undefined): string {
@@ -86,8 +86,8 @@ export function toNetworkFreqEditForm(freq: NetworkFreqsRes): NetworkFreqEditFor
   return {
     networkFreqId: freq.networkFreqId,
     freq: freq.freq,
-    kind: typeLabelFromKind(freq.kind),
-    modulationId: freq.modulationId,
+    modulation: typeLabelFromKind(freq.modulation),
+    encryptionId: freq.encryptionId,
     activeFrom: formatDateInputValue(freq.activeFrom),
     activeTo: formatDateInputValue(freq.activeTo),
     encryptionKeyIds: [...freq.encryptionKeyIds],
@@ -117,8 +117,8 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     freqs: [
       {
         freq: form.freq.trim(),
-        kind: toBackendNetworkFreqKind(form.kind),
-        modulationId: form.modulationId,
+        modulation: form.modulation,
+        encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         description: null,
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
@@ -139,16 +139,11 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
   };
 }
 
-function toBackendNetworkFreqKind(kind: NetworkFreqKind): 'DMR' | 'DMRe' | 'VHF' {
-  return kind === 'NFM' ? 'VHF' : kind;
-}
-
 export type NetworkUpsertValidationError = {
   name: string | null;
   location: string | null;
   aorIds: string | null;
   freq: string | null;
-  modulationId: string | null;
   activeFrom: string | null;
 };
 
@@ -162,7 +157,6 @@ export function getNetworkUpsertValidationError(
   const location = form.location.trim() === '' ? 'Район функціонування/розгортання є обовʼязковим' : null;
   const aorIds = form.aorIds.length === 0 ? 'Потрібно вибрати принаймні одну смугу' : null;
   const freq = options.includeFrequency ? getFrequencyFormatError(form.freq) : null;
-  const modulationId = options.includeFrequency && form.modulationId === null ? 'Потрібно вибрати модуляцію' : null;
   const activeFrom = options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
 
   const error = {
@@ -170,7 +164,6 @@ export function getNetworkUpsertValidationError(
     location,
     aorIds,
     freq,
-    modulationId,
     activeFrom,
   };
 

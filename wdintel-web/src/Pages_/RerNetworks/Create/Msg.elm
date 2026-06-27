@@ -26,7 +26,7 @@ type Msg
     | ValidateField String
     | NetworkCreated (Result ApiError B.Network)
     | Frequencies FrequenciesMsg
-    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | EncryptionsReturnedByApi (Result ApiError (List B.EncryptionRec))
     | Callsigns CallsignsMsg
     | NavigateToIdPage
     | NetworkDeleted (Result ApiError B.Network)

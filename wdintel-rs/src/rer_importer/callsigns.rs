@@ -1004,11 +1004,7 @@ fn extract_sender_receiver_pair(
     }
 
     let mut has_callsign = false;
-    let mut iter = lines.iter();
-    loop {
-        let Some(line) = iter.next() else {
-            break;
-        };
+    for line in lines.iter() {
         let callsign_1 = try_get_callsign(line, &RE_CALLSIGN, msg_pos);
         let callsign_2 = try_get_callsign(line, &RE_CALLSIGN_2, msg_pos);
         let callsign_3 = if has_callsign {

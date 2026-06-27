@@ -35,9 +35,9 @@ where
     Ok(ids_map)
 }
 
-pub async fn find_existing_modulations<'a, 'async_trait, C>(
+pub async fn find_existing_encryptions<'a, 'async_trait, C>(
     txn: &C,
-    recs: &Vec<modulation::Model>,
+    recs: &Vec<encryption::Model>,
 ) -> anyhow::Result<BTreeMap<String, i32>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -47,7 +47,7 @@ where
         return Ok(BTreeMap::new());
     };
 
-    let ids_map = modulation::Entity::find()
+    let ids_map = encryption::Entity::find()
         .all(txn)
         .await
         .context(h!())?

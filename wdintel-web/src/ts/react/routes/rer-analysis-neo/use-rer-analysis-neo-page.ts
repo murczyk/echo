@@ -43,6 +43,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false);
   const [unitsExactMatchOnlyDefault, setUnitsExactMatchOnlyDefault] = useState<boolean | null>(null);
+  const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState) ? createResetQueryState() : initialQueryState,
   );
@@ -140,6 +141,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .then((settings) => {
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
+        setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -462,6 +464,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setReportProgressExpanded: report.setReportProgressExpanded,
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
+    supportNonRerInterceptions,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

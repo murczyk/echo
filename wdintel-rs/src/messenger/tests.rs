@@ -45,6 +45,7 @@ async fn test_bl_group_update_add_second_aor() {
         long_note: None,
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id]),
+        is_rer: None,
     };
 
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
@@ -68,6 +69,7 @@ async fn test_bl_group_update_add_second_aor() {
         long_note: Some("Added second AOR".to_string()),
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id, aor2.id]),
+        is_rer: None,
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();

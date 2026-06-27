@@ -22,10 +22,19 @@ pub struct Model {
     pub modulation_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub key_hash: Option<String>,
+    pub encryption_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::encryption::Entity",
+        from = "Column::EncryptionId",
+        to = "super::encryption::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Encryption,
     #[sea_orm(
         belongs_to = "super::modulation::Entity",
         from = "Column::ModulationId",
@@ -60,6 +69,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetworkFreq,
+}
+
+impl Related<super::encryption::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Encryption.def()
+    }
 }
 
 impl Related<super::modulation::Entity> for Entity {
