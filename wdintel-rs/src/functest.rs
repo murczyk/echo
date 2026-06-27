@@ -684,6 +684,9 @@ pub mod tests {
         if out.fills_etalonka == NotSet {
             out.fills_etalonka = Set(true);
         }
+        if out.disable_network_assignment == NotSet {
+            out.disable_network_assignment = Set(false);
+        }
         out
     }
 

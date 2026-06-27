@@ -4507,16 +4507,17 @@ async fn collect_group_names(
             signal_group::Column::IgnoreOperativny,
             signal_group::Column::IsRer,
             signal_group::Column::FillsEtalonka,
+            signal_group::Column::DisableNetworkAssignment,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool, bool, bool)>()
+        .into_tuple::<(String, Option<String>, bool, bool, bool, bool)>()
         .all(txn)
         .await
         .context(h!())?;
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _)| key.clone())
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
@@ -4533,8 +4534,14 @@ async fn collect_group_names(
         BTreeMap::new()
     };
 
-    for (master_key, name, ignore_operativny, is_rer, fills_etalonka) in
-        signal_groups
+    for (
+        master_key,
+        name,
+        ignore_operativny,
+        is_rer,
+        fills_etalonka,
+        disable_network_assignment,
+    ) in signal_groups
     {
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
@@ -4548,6 +4555,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 is_rer,
                 fills_etalonka,
+                disable_network_assignment,
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -4576,6 +4584,7 @@ async fn collect_group_names(
             ignore_operativny,
             is_rer: true,
             fills_etalonka: true,
+            disable_network_assignment: false,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

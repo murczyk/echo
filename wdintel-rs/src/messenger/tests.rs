@@ -47,6 +47,7 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_ids: Some(vec![aor1.id]),
         is_rer: None,
         fills_etalonka: None,
+        disable_network_assignment: None,
     };
 
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
@@ -72,6 +73,7 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_ids: Some(vec![aor1.id, aor2.id]),
         is_rer: None,
         fills_etalonka: None,
+        disable_network_assignment: None,
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
@@ -175,6 +177,7 @@ async fn test_bl_group_update_fills_etalonka_invalidates_all_history() {
         area_of_responsibility_ids: Some(vec![]),
         is_rer: None,
         fills_etalonka: Some(false),
+        disable_network_assignment: None,
     };
     let res = bl_group_update(&req, &txn).await.unwrap();
 

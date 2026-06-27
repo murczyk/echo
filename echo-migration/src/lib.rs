@@ -258,6 +258,7 @@ mod m20260622_101608_add_signal_group_archive;
 mod m20260626_101738_non_rer_interceptions;
 mod m20260626_220129_signal_group_fills_etalonka;
 mod m20260627_101500_add_sigint_network_do_not_archive;
+mod m20260627_180543_signal_group_disable_network_assignment;
 
 pub struct Migrator;
 
@@ -525,6 +526,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260626_101738_non_rer_interceptions::Migration),
             Box::new(m20260626_220129_signal_group_fills_etalonka::Migration),
             Box::new(m20260627_101500_add_sigint_network_do_not_archive::Migration),
+            Box::new(m20260627_180543_signal_group_disable_network_assignment::Migration),
         ]
     }
 }

@@ -607,6 +607,7 @@ export type SignalGroupEntry = {
   ignoreOperativny: boolean;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -618,6 +619,7 @@ export type OrphanSignalGroupEntry = {
   ignoreOperativny: boolean;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -1739,6 +1741,7 @@ export type ZoneDatasourceGroup = {
   isGroupSecret: boolean;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1772,6 +1775,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   isSecret: boolean;
   isRer: boolean | null;
   fillsEtalonka: boolean | null;
+  disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1792,6 +1796,7 @@ export type MyAdminSignalGroup = {
   datasourceKind: string | null;
   isGroupSecret: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   allowedUsers: Array<SignalGroupLogin>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -1801,6 +1806,7 @@ export type MyAdminSignalGroupUpdateReq = {
   masterKey: string;
   isSecret: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   areaOfResponsibilityIds: Array<number> | null;
@@ -3287,6 +3293,7 @@ export type GroupUpdateReq = {
   areaOfResponsibilityIds: Array<number> | null;
   isRer: boolean | null;
   fillsEtalonka: boolean | null;
+  disableNetworkAssignment: boolean | null;
 };
 
 export type GroupEntryF1 = {
@@ -3294,6 +3301,7 @@ export type GroupEntryF1 = {
   name: string;
   ignoreOperativny: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   shortNote: string | null;
   longNote: string | null;
   groupStats: SignalGroupStats;

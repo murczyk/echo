@@ -66,6 +66,29 @@ where
         .await
 }
 
+pub async fn invalidate_network_inbox_for_group_all_history_once<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
+    group: &signal_group::Model,
+    context_msg: String,
+    invalidation_enqueued: &mut bool,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if *invalidation_enqueued {
+        return Ok(());
+    }
+    invalidate_network_inbox_for_group_all_history(db, group, context_msg)
+        .await
+        .c(h!())?;
+    *invalidation_enqueued = true;
+    Ok(())
+}
+
 async fn invalidate_network_inbox_for_group_since<'a, 'async_trait, C>(
     db: &'a C,
     group: &signal_group::Model,
@@ -142,6 +165,29 @@ where
 
     let mut group = group.into_active_model();
     group.fills_etalonka = Set(fills_etalonka);
+    let group = group.update(db).await.c(h!())?;
+    Ok((group, true))
+}
+
+pub async fn set_group_disable_network_assignment<'a, 'async_trait, C>(
+    db: &'a C,
+    master_key: &str,
+    disable_network_assignment: bool,
+) -> anyhow::Result<(signal_group::Model, bool)>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    if group.disable_network_assignment == disable_network_assignment {
+        return Ok((group, false));
+    }
+
+    let mut group = group.into_active_model();
+    group.disable_network_assignment = Set(disable_network_assignment);
     let group = group.update(db).await.c(h!())?;
     Ok((group, true))
 }
@@ -374,6 +420,14 @@ where
     .await
     .c(h!())?;
     let mut excluded_item_ids = disabled_item_ids;
+    excluded_item_ids.extend(
+        network_assignment_disabled_item_ids_from_items(
+            dbx,
+            &sigint_inbox_item_ids,
+        )
+        .await
+        .c(h!())?,
+    );
 
     if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
         .await
@@ -427,6 +481,74 @@ where
         .difference(&enabled_item_ids)
         .copied()
         .collect())
+}
+
+async fn network_assignment_disabled_item_ids_from_items<'a, 'async_trait, C>(
+    db: &'a C,
+    sigint_inbox_item_ids: &[i64],
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if sigint_inbox_item_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let disabled_item_ids = group_item_ids_with_network_assignment_disabled(
+        db,
+        sigint_inbox_item_ids,
+        true,
+    )
+    .await
+    .c(h!())?;
+    let enabled_item_ids = group_item_ids_with_network_assignment_disabled(
+        db,
+        sigint_inbox_item_ids,
+        false,
+    )
+    .await
+    .c(h!())?;
+    Ok(disabled_item_ids
+        .difference(&enabled_item_ids)
+        .copied()
+        .collect())
+}
+
+async fn group_item_ids_with_network_assignment_disabled<'a, 'async_trait, C>(
+    db: &'a C,
+    sigint_inbox_item_ids: &[i64],
+    disable_network_assignment: bool,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut ids = HashSet::new();
+    for sigint_inbox_item_ids in
+        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+    {
+        ids.extend(
+            signal_message_group::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::SignalGroup.def(),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(sigint_inbox_item_ids.to_vec()),
+                )
+                .filter(
+                    signal_group::Column::DisableNetworkAssignment
+                        .eq(disable_network_assignment),
+                )
+                .select_only()
+                .column(signal_message_group::Column::SignalMessageId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(ids)
 }
 
 async fn group_item_ids_with_fills_etalonka<'a, 'async_trait, C>(
@@ -553,6 +675,94 @@ mod tests {
         let ids = fills_etalonka_disabled_item_ids_from_items(&txn, &item_ids)
             .await
             .unwrap();
+
+        assert!(!ids.contains(&mixed_msg.id));
+        assert!(ids.contains(&disabled_msg.id));
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_network_assignment_disabled_item_ids_keeps_item_with_enabled_group_link(
+    ) {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_only_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mixed_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&enabled_group, &disabled_group] {
+            mk_signal_message_group(
+                &txn,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(mixed_msg.id),
+                    group_master_key: Set(Some(group.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(disabled_msg.id),
+                group_master_key: Set(Some(
+                    disabled_only_group.master_key.clone(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let ids = network_assignment_disabled_item_ids_from_items(
+            &txn,
+            &[mixed_msg.id, disabled_msg.id],
+        )
+        .await
+        .unwrap();
 
         assert!(!ids.contains(&mixed_msg.id));
         assert!(ids.contains(&disabled_msg.id));
