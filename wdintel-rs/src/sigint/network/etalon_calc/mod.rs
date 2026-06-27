@@ -437,25 +437,30 @@ async fn group_item_ids_with_fills_etalonka<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = signal_message_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(sigint_inbox_item_ids.to_vec()),
-        )
-        .filter(signal_group::Column::FillsEtalonka.eq(fills_etalonka))
-        .select_only()
-        .column(signal_message_group::Column::SignalMessageId)
-        .distinct()
-        .into_tuple::<i64>()
-        .all(db)
-        .await
-        .c(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
+    let mut ids = HashSet::new();
+    for sigint_inbox_item_ids in
+        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+    {
+        ids.extend(
+            signal_message_group::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::SignalGroup.def(),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(sigint_inbox_item_ids.to_vec()),
+                )
+                .filter(signal_group::Column::FillsEtalonka.eq(fills_etalonka))
+                .select_only()
+                .column(signal_message_group::Column::SignalMessageId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
+    }
     Ok(ids)
 }
 
@@ -540,12 +545,14 @@ mod tests {
         .await
         .unwrap();
 
-        let ids = fills_etalonka_disabled_item_ids_from_items(
-            &txn,
-            &[mixed_msg.id, disabled_msg.id],
-        )
-        .await
-        .unwrap();
+        let mut item_ids = (1..=ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+            .map(|id| -(id as i64))
+            .collect::<Vec<_>>();
+        item_ids[0] = mixed_msg.id;
+        item_ids.push(disabled_msg.id);
+        let ids = fills_etalonka_disabled_item_ids_from_items(&txn, &item_ids)
+            .await
+            .unwrap();
 
         assert!(!ids.contains(&mixed_msg.id));
         assert!(ids.contains(&disabled_msg.id));
