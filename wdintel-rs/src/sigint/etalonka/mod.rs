@@ -14,7 +14,9 @@ use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
 use futures_util::{StreamExt, TryStreamExt};
-use sea_orm::DatabaseConnection;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
+};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -463,23 +465,26 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             if (include_sigint_signs || include_confirmation)
                 && include_headings_and_freqs
             {
-                // Load all freqs without activity/date filters to resolve
-                // frequency strings for descriptions that may reference
-                // inactive frequencies.
-                let all_freqs = load_freqs(
-                    dbx,
-                    &data.groups,
-                    network_id,
-                    None,
-                    user_id,
-                    false,
-                )
-                .await
-                .context(h!())?;
-                entry.freq_id_to_str = all_freqs
-                    .into_iter()
-                    .map(|f| (f.network_freq_id, f.freq))
-                    .collect();
+                // Lightweight id→freq lookup for the "Частота" column.
+                // Uses a direct table scan instead of load_freqs to avoid
+                // re-aggregating all inbox messages just to get freq strings.
+                let rows = crate::entities::sigint_network_freq::Entity::find()
+                    .filter(
+                        crate::entities::sigint_network_freq::Column::NetworkId
+                            .eq(network_id),
+                    )
+                    .filter(
+                        crate::entities::sigint_network_freq::Column::Deleted
+                            .eq(false),
+                    )
+                    .select_only()
+                    .column(crate::entities::sigint_network_freq::Column::Id)
+                    .column(crate::entities::sigint_network_freq::Column::Freq)
+                    .into_tuple::<(i64, String)>()
+                    .all(dbx)
+                    .await
+                    .context(h!())?;
+                entry.freq_id_to_str = rows.into_iter().collect();
             }
             if include_sigint_signs || include_confirmation {
                 let network_descriptions = network_descriptions_by_id
