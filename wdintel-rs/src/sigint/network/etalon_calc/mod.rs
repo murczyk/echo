@@ -415,6 +415,28 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(HashSet::new());
     }
+    let disabled_item_ids =
+        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, false)
+            .await
+            .c(h!())?;
+    let enabled_item_ids =
+        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, true)
+            .await
+            .c(h!())?;
+    Ok(disabled_item_ids
+        .difference(&enabled_item_ids)
+        .copied()
+        .collect())
+}
+
+async fn group_item_ids_with_fills_etalonka<'a, 'async_trait, C>(
+    db: &'a C,
+    sigint_inbox_item_ids: &[i64],
+    fills_etalonka: bool,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let ids = signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -424,7 +446,7 @@ where
             signal_message_group::Column::SignalMessageId
                 .is_in(sigint_inbox_item_ids.to_vec()),
         )
-        .filter(signal_group::Column::FillsEtalonka.eq(false))
+        .filter(signal_group::Column::FillsEtalonka.eq(fills_etalonka))
         .select_only()
         .column(signal_message_group::Column::SignalMessageId)
         .distinct()
@@ -435,4 +457,99 @@ where
         .into_iter()
         .collect::<HashSet<_>>();
     Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_fills_etalonka_disabled_item_ids_keeps_item_with_enabled_group_link(
+    ) {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_only_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mixed_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&enabled_group, &disabled_group] {
+            mk_signal_message_group(
+                &txn,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(mixed_msg.id),
+                    group_master_key: Set(Some(group.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(disabled_msg.id),
+                group_master_key: Set(Some(
+                    disabled_only_group.master_key.clone(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let ids = fills_etalonka_disabled_item_ids_from_items(
+            &txn,
+            &[mixed_msg.id, disabled_msg.id],
+        )
+        .await
+        .unwrap();
+
+        assert!(!ids.contains(&mixed_msg.id));
+        assert!(ids.contains(&disabled_msg.id));
+
+        txn.rollback().await.unwrap();
+    }
 }
