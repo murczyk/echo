@@ -2998,6 +2998,127 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn non_etalonka_future_planned_retry_does_not_block_following_row(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _future_retry = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at - Duration::minutes(10),
+            None,
+            Some(created_at + Duration::minutes(5)),
+        )
+        .await?;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![planned], false).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[0].blocked_by_report_id, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_etalonka_due_retry_blocks_following_row(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let retry = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at - Duration::minutes(10),
+            None,
+            Some(created_at - Duration::minutes(1)),
+        )
+        .await?;
+        let retry_id = retry.id;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![retry, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(retry_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn page_slice_still_sees_earlier_blocker_from_database(
     ) -> Result<(), AppError> {
         let env = cleanup().await?;
