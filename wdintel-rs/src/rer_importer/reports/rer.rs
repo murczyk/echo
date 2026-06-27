@@ -609,19 +609,28 @@ async fn log_unrelated_unit_conflict(
 }
 
 fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
-    let segments = [
+    let hierarchy_segments = [
         unit.army.as_str(),
         unit.division.as_str(),
         unit.regiment.as_str(),
         unit.battalion.as_str(),
         unit.company.as_str(),
-        unit.name.as_str(),
     ]
     .into_iter()
     .map(str::trim)
     .filter(|segment| !segment.is_empty())
     .map(ToString::to_string)
     .collect::<Vec<_>>();
+    let segments = if hierarchy_segments.is_empty() {
+        [unit.name.as_str()]
+            .into_iter()
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    } else {
+        hierarchy_segments
+    };
     if segments.is_empty() {
         return None;
     }
@@ -920,6 +929,30 @@ mod tests {
                 "1 мсб".to_string(),
             ])
         );
+    }
+
+    #[test]
+    fn unit_identity_uses_hierarchy_instead_of_generated_name() {
+        let identity = unit_identity(&unit(
+            "6 А",
+            "68 мсд",
+            "423 мсп",
+            "1 мсб",
+            "",
+            "1 мсб 423 мсп 68 мсд 6 А",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            identity.path,
+            UnitPath(vec![
+                "6 А".to_string(),
+                "68 мсд".to_string(),
+                "423 мсп".to_string(),
+                "1 мсб".to_string(),
+            ])
+        );
+        assert_eq!(identity.unit_name, "68 мсд 423 мсп 1 мсб");
     }
 
     #[test]
