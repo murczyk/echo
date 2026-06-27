@@ -6,7 +6,7 @@ use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
-use crate::utils::dt_from_millis;
+use crate::utils::dt_zoned_from_millis;
 use chrono::NaiveDateTime;
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
@@ -675,8 +675,10 @@ fn parse_points(item: &sigint_inbox_item::Model) -> Vec<String> {
 
 fn format_report_till(req: &ReportPreviewReq) -> Result<String, AppError> {
     let till_dt = match req.req.till_date_inclusive_ms {
-        Some(ms) => dt_from_millis(ms).c(h!())?,
-        None => chrono::Utc::now().naive_utc(),
+        Some(ms) => dt_zoned_from_millis(ms).c(h!())?.naive_local(),
+        None => chrono::Utc::now()
+            .with_timezone(&chrono_tz::Europe::Kyiv)
+            .naive_local(),
     };
     Ok(format!(
         "{} {}",
@@ -866,7 +868,7 @@ fn default_run(text: &str, bold: bool, italic: bool) -> Run {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, TimeZone};
     use serde_json::json;
     use std::io::Read;
     use tempfile::NamedTempFile;
@@ -909,6 +911,26 @@ mod tests {
         ItemUnitCandidate {
             identity,
             network_location: location.to_string(),
+        }
+    }
+
+    fn report_preview_req_with_till(
+        till_date_inclusive_ms: i64,
+    ) -> ReportPreviewReq {
+        ReportPreviewReq {
+            kind: "rer".to_string(),
+            req: crate::rer_importer::InboxMessagesReq {
+                till_date_inclusive_ms: Some(till_date_inclusive_ms),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: None,
+            report_1213_linked_networks_only: None,
+            without_comments: None,
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
         }
     }
 
@@ -1108,6 +1130,18 @@ mod tests {
         ]);
 
         assert_eq!(join_set_comma(&values), "ГРАД, ҐРУНТ, ДАР");
+    }
+
+    #[test]
+    fn format_report_till_uses_kyiv_time() {
+        let cutoff = chrono_tz::Europe::Kyiv
+            .with_ymd_and_hms(2026, 6, 27, 0, 30, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        let req = report_preview_req_with_till(cutoff);
+
+        assert_eq!(format_report_till(&req).unwrap(), "00.30 27.06.2026");
     }
 
     #[test]
