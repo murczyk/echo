@@ -2641,9 +2641,10 @@ async fn cleanup_networks_worker_1(
         for network_freq in network_freqs {
             let is_deleted = ids.contains(&network_freq.id);
             if is_deleted && !is_recent_network && !do_not_archive {
-                let mut model = network_freq.into_active_model();
-                model.active_to = Set(Some(Utc::now().naive_utc()));
-                let network_freq = model.update(dbx).await.context(h!())?;
+                let mut network_freq = network_freq.into_active_model();
+                network_freq.active_to = Set(Some(Utc::now().naive_utc()));
+                let network_freq =
+                    network_freq.update(dbx).await.context(h!())?;
                 if let Err(e) =
                     etalon_calc::invalidate_network_inbox(
                         network.clone(),
@@ -2664,22 +2665,28 @@ async fn cleanup_networks_worker_1(
                 .await
                 .context(h!())?;
 
-        let synthetic_active_to =
-            calc_network_synthetic_active_to(dbx, network_id, delta)
-                .await
-                .context(h!())?;
+        let update_active_to = !is_recent_network && !do_not_archive;
         let existing_active_to = network.active_to;
-        let network_active_to = match existing_active_to {
-            Some(_) => existing_active_to,
-            None => synthetic_active_to.or(network_active_to),
+        let network_active_to = if update_active_to {
+            let synthetic_active_to =
+                calc_network_synthetic_active_to(dbx, network_id, delta)
+                    .await
+                    .context(h!())?;
+            match existing_active_to {
+                Some(_) => existing_active_to,
+                None => synthetic_active_to.or(network_active_to),
+            }
+        } else {
+            existing_active_to
         };
 
-        if !network.deleted {
+        if !network.deleted
+            && (network.active_from != network_active_from
+                || network.active_to != network_active_to)
+        {
             let mut network = network.into_active_model();
             network.active_from = Set(network_active_from);
-            if !is_recent_network && !do_not_archive {
-                network.active_to = Set(network_active_to);
-            }
+            network.active_to = Set(network_active_to);
             let network = network.update(dbx).await.context(h!())?;
             if let Err(e) =
                 etalon_calc::invalidate_network_inbox(
@@ -4304,6 +4311,7 @@ mod tests {
         .unwrap();
 
         cleanup_networks_worker_1(&env.dbx).await.unwrap();
+        cleanup_networks_worker_1(&env.dbx).await.unwrap();
 
         let network = sigint_network::Entity::find_by_id(network.id)
             .one(&env.dbx)
@@ -4319,6 +4327,16 @@ mod tests {
         assert!(!network.deleted);
         assert_eq!(network.active_to, None);
         assert_eq!(network_freq.active_to, None);
+
+        let invalidation_task_count = network_invalidation_task::Entity::find()
+            .filter(
+                network_invalidation_task::Column::SigintNetworkId
+                    .eq(network.id),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(invalidation_task_count, 0);
     }
 
     #[tokio::test]
