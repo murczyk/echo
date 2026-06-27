@@ -665,6 +665,7 @@ pub struct BlGroupUpdateRes {
     pub group_data: group_admin_data::Model,
     pub stats: SignalGroupStats,
     pub aors: Vec<Model>,
+    pub network_invalidation_enqueued: bool,
 }
 
 pub async fn bl_group_update(
@@ -738,6 +739,33 @@ pub async fn bl_group_update(
         } else {
             group
         };
+    let mut network_invalidation_enqueued = false;
+    let group = if let Some(fills_etalonka) = req.fills_etalonka {
+        let (group, changed) =
+            crate::sigint::network::etalon_calc::set_group_fills_etalonka(
+                txn,
+                &req.master_key,
+                fills_etalonka,
+            )
+            .await
+            .c(h!())?;
+        if changed {
+            crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history(
+                txn,
+                &group,
+                format!(
+                    "updated group fills_etalonka from messenger group edit: {}",
+                    group.master_key
+                ),
+            )
+            .await
+            .c(h!())?;
+            network_invalidation_enqueued = true;
+        }
+        group
+    } else {
+        group
+    };
 
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
@@ -751,6 +779,7 @@ pub async fn bl_group_update(
         group_data,
         stats,
         aors,
+        network_invalidation_enqueued,
     })
 }
 

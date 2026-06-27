@@ -69,6 +69,7 @@ type GroupUpdateReqBody = {
   area_of_responsibility_id: number | null;
   area_of_responsibility_ids: number[] | null;
   is_rer: boolean | null;
+  fills_etalonka: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -92,6 +93,8 @@ type GroupEntryF1Like = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  fillsEtalonka?: boolean;
+  fills_etalonka?: boolean;
   shortNote?: string | null;
   short_note?: string | null;
   longNote?: string | null;
@@ -220,6 +223,7 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
     area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
     is_rer: req.isRer ?? null,
+    fills_etalonka: req.fillsEtalonka ?? null,
   };
 }
 
@@ -244,6 +248,7 @@ function normalizeGroupEntry(raw: GroupEntryF1Like): GroupEntryF1 {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
+    fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
     groupStats: {

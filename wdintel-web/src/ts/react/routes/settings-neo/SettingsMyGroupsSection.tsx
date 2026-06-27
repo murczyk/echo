@@ -73,6 +73,7 @@ type ReferenceDataStatus = 'idle' | 'loading' | 'success' | 'error';
 type MyGroupEditState = {
   group: MyAdminSignalGroup;
   isSecret: boolean;
+  fillsEtalonka: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   selectedAorIds: number[];
@@ -306,6 +307,21 @@ function MyGroupEditDialog(props: {
           }
           label="Прихована група"
         />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={editDialog?.fillsEtalonka ?? true}
+              onChange={(event) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  fillsEtalonka: event.target.checked,
+                })
+              }
+            />
+          }
+          label="Наповнює еталонку"
+        />
         {editDialog?.isSecret ? (
           <Autocomplete
             multiple
@@ -405,6 +421,7 @@ export function SettingsMyGroupsSection({
     setEditDialog({
       group,
       isSecret: group.isGroupSecret,
+      fillsEtalonka: group.fillsEtalonka,
       selectedUsers: groupLoginValues(group.allowedUsers),
       selectedAdmins: groupLoginValues(group.adminLogins),
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -431,6 +448,7 @@ export function SettingsMyGroupsSection({
       await updateMyAdminGroup({
         masterKey: editDialog.group.masterKey,
         isSecret: editDialog.isSecret,
+        fillsEtalonka: editDialog.fillsEtalonka,
         userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
         adminLogins: selectedAdmins,
         areaOfResponsibilityIds: editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,

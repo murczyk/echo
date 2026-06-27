@@ -681,6 +681,9 @@ pub mod tests {
         if out.is_rer == NotSet {
             out.is_rer = Set(true);
         }
+        if out.fills_etalonka == NotSet {
+            out.fills_etalonka = Set(true);
+        }
         out
     }
 

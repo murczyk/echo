@@ -37,11 +37,49 @@ pub async fn invalidate_network_inbox_for_group<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    invalidate_network_inbox_for_group_since(
+        db,
+        group,
+        group.created_at,
+        context_msg,
+    )
+    .await
+}
+
+pub async fn invalidate_network_inbox_for_group_all_history<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
+    group: &signal_group::Model,
+    context_msg: String,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let since_ts = load_group_first_inbox_item_datetime(db, &group.master_key)
+        .await
+        .c(h!())?
+        .unwrap_or(group.created_at);
+    invalidate_network_inbox_for_group_since(db, group, since_ts, context_msg)
+        .await
+}
+
+async fn invalidate_network_inbox_for_group_since<'a, 'async_trait, C>(
+    db: &'a C,
+    group: &signal_group::Model,
+    since_ts: NaiveDateTime,
+    context_msg: String,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     info!("network invalidation task created, reason: {}", context_msg);
     network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,
-        since_ts: Set(group.created_at),
+        since_ts: Set(since_ts),
         till_ts: Set(Utc::now().naive_utc()),
         group_master_key: Set(Some(group.master_key.clone())),
         started_at: NotSet,
@@ -55,6 +93,57 @@ where
     .await
     .c(h!())?;
     Ok(())
+}
+
+async fn load_group_first_inbox_item_datetime<'a, 'async_trait, C>(
+    db: &'a C,
+    master_key: &str,
+) -> anyhow::Result<Option<NaiveDateTime>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
+        .select_only()
+        .column(sigint_inbox_item::Column::Datetime)
+        .order_by_asc(sigint_inbox_item::Column::Datetime)
+        .into_tuple::<Option<NaiveDateTime>>()
+        .one(db)
+        .await
+        .c(h!())?
+        .flatten())
+}
+
+pub async fn set_group_fills_etalonka<'a, 'async_trait, C>(
+    db: &'a C,
+    master_key: &str,
+    fills_etalonka: bool,
+) -> anyhow::Result<(signal_group::Model, bool)>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    if group.fills_etalonka == fills_etalonka {
+        return Ok((group, false));
+    }
+
+    let mut group = group.into_active_model();
+    group.fills_etalonka = Set(fills_etalonka);
+    let group = group.update(db).await.c(h!())?;
+    Ok((group, true))
 }
 
 pub async fn invalidate_network_inbox_for_aor(
@@ -169,14 +258,42 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
-    let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
-        .await
-        .c(h!())?;
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
     if sigint_inbox_item_ids.is_empty() {
         return Ok(result);
     }
+    delete_sigint_inbox_item_networks(&sigint_inbox_item_ids, dbx)
+        .await
+        .c(h!())?;
+    let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
+        .await
+        .c(h!())?;
+    if sigint_inbox_items.is_empty() {
+        return Ok(result);
+    }
+    let sigint_inbox_item_ids =
+        sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
+    if sigint_inbox_item_ids.is_empty() {
+        return Ok(result);
+    }
+    insert_calculated_sigint_inbox_item_networks(
+        sigint_inbox_items,
+        dbx,
+        &mut result,
+    )
+    .await
+    .c(h!())?;
+    Ok(result)
+}
+
+async fn delete_sigint_inbox_item_networks<'a, 'async_trait, C>(
+    sigint_inbox_item_ids: &[i64],
+    dbx: &'a C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     for sigint_inbox_item_ids in
         sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
     {
@@ -189,6 +306,17 @@ where
             .await
             .c(h!())?;
     }
+    Ok(())
+}
+
+async fn insert_calculated_sigint_inbox_item_networks<'a, 'async_trait, C>(
+    sigint_inbox_items: Vec<sigint_inbox_item::Model>,
+    dbx: &'a C,
+    result: &mut HashMap<i64, Vec<i64>>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let items_to_process = sigint_inbox_items
         .into_iter()
         .map(|i| InboxItem {
@@ -227,7 +355,7 @@ where
         .await
         .c(h!())?;
     }
-    Ok(result)
+    Ok(())
 }
 
 async fn filter_network_calc_items<'a, 'async_trait, C>(
@@ -237,18 +365,29 @@ async fn filter_network_calc_items<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let sigint_inbox_item_ids =
+        sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
+    let disabled_item_ids = fills_etalonka_disabled_item_ids_from_items(
+        dbx,
+        &sigint_inbox_item_ids,
+    )
+    .await
+    .c(h!())?;
+    let mut excluded_item_ids = disabled_item_ids;
+
     if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
         .await
         .c(h!())?
     {
-        return Ok(sigint_inbox_items);
+        return Ok(sigint_inbox_items
+            .into_iter()
+            .filter(|item| !excluded_item_ids.contains(&item.id))
+            .collect());
     }
-    let sigint_inbox_item_ids =
-        sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
     let non_rer_item_ids =
         crate::sigint::unit_machine::non_rer_item_ids_from_items(
             dbx,
-            sigint_inbox_item_ids,
+            sigint_inbox_item_ids.clone(),
         )
         .await
         .c(h!())?;
@@ -259,8 +398,165 @@ where
         .await
         .c(h!())?;
     }
+    excluded_item_ids.extend(non_rer_item_ids);
     Ok(sigint_inbox_items
         .into_iter()
-        .filter(|item| !non_rer_item_ids.contains(&item.id))
+        .filter(|item| !excluded_item_ids.contains(&item.id))
         .collect())
+}
+
+async fn fills_etalonka_disabled_item_ids_from_items<'a, 'async_trait, C>(
+    db: &'a C,
+    sigint_inbox_item_ids: &[i64],
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if sigint_inbox_item_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let disabled_item_ids =
+        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, false)
+            .await
+            .c(h!())?;
+    let enabled_item_ids =
+        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, true)
+            .await
+            .c(h!())?;
+    Ok(disabled_item_ids
+        .difference(&enabled_item_ids)
+        .copied()
+        .collect())
+}
+
+async fn group_item_ids_with_fills_etalonka<'a, 'async_trait, C>(
+    db: &'a C,
+    sigint_inbox_item_ids: &[i64],
+    fills_etalonka: bool,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut ids = HashSet::new();
+    for sigint_inbox_item_ids in
+        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+    {
+        ids.extend(
+            signal_message_group::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::SignalGroup.def(),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(sigint_inbox_item_ids.to_vec()),
+                )
+                .filter(signal_group::Column::FillsEtalonka.eq(fills_etalonka))
+                .select_only()
+                .column(signal_message_group::Column::SignalMessageId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_fills_etalonka_disabled_item_ids_keeps_item_with_enabled_group_link(
+    ) {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_only_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mixed_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&enabled_group, &disabled_group] {
+            mk_signal_message_group(
+                &txn,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(mixed_msg.id),
+                    group_master_key: Set(Some(group.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(disabled_msg.id),
+                group_master_key: Set(Some(
+                    disabled_only_group.master_key.clone(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut item_ids = (1..=ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+            .map(|id| -(id as i64))
+            .collect::<Vec<_>>();
+        item_ids[0] = mixed_msg.id;
+        item_ids.push(disabled_msg.id);
+        let ids = fills_etalonka_disabled_item_ids_from_items(&txn, &item_ids)
+            .await
+            .unwrap();
+
+        assert!(!ids.contains(&mixed_msg.id));
+        assert!(ids.contains(&disabled_msg.id));
+
+        txn.rollback().await.unwrap();
+    }
 }

@@ -606,6 +606,7 @@ export type SignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -616,6 +617,7 @@ export type OrphanSignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -1736,6 +1738,7 @@ export type ZoneDatasourceGroup = {
   groupMasterKey: string;
   isGroupSecret: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
   allowedUsers: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1768,6 +1771,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
   isRer: boolean | null;
+  fillsEtalonka: boolean | null;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1787,6 +1791,7 @@ export type MyAdminSignalGroup = {
   datasourceName: string | null;
   datasourceKind: string | null;
   isGroupSecret: boolean;
+  fillsEtalonka: boolean;
   allowedUsers: Array<SignalGroupLogin>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -1795,6 +1800,7 @@ export type MyAdminSignalGroup = {
 export type MyAdminSignalGroupUpdateReq = {
   masterKey: string;
   isSecret: boolean;
+  fillsEtalonka: boolean;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   areaOfResponsibilityIds: Array<number> | null;
@@ -3277,12 +3283,14 @@ export type GroupUpdateReq = {
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
   isRer: boolean | null;
+  fillsEtalonka: boolean | null;
 };
 
 export type GroupEntryF1 = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  fillsEtalonka: boolean;
   shortNote: string | null;
   longNote: string | null;
   groupStats: SignalGroupStats;
