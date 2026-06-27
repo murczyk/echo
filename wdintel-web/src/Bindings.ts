@@ -605,6 +605,7 @@ export type SignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  isRer: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -614,6 +615,7 @@ export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  isRer: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -1733,6 +1735,7 @@ export type ZoneDatasourceGroup = {
   sigintZoneDatasourceId: number;
   groupMasterKey: string;
   isGroupSecret: boolean;
+  isRer: boolean;
   allowedUsers: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1753,6 +1756,7 @@ export type ZoneDatasourceGroupAddReq = {
   zoneId: number;
   datasourceId: number;
   isSecret: boolean;
+  isRer: boolean | null;
   masterKey: string;
   userLogins: Array<string>;
   adminLogins: Array<string>;
@@ -1763,6 +1767,7 @@ export type ZoneDatasourceGroupAddReq = {
 export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
+  isRer: boolean | null;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1815,7 +1820,7 @@ export type EncryptionKeyData = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type ListKeysReq = {
@@ -1832,7 +1837,7 @@ export type CreateEncryptionKeyReq = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type UpdateEncryptionKeyReq = {
@@ -1841,7 +1846,7 @@ export type UpdateEncryptionKeyReq = {
   key: string | null;
   keyHash: string | null;
   description: string | null;
-  modulationId: number | null;
+  encryptionId: number | null;
 };
 
 export type DeleteEncryptionKeyReq = {
@@ -1964,6 +1969,7 @@ export type ReportType =
   | 'Naushnom'
   | { Reo: [ReoReportSettings, ReoReportFileType] }
   | 'Digest'
+  | 'Rer'
   | { ActiveNetworks: ActiveNetworksReportSettings }
   | { NetworkFrequencies: NetworkFrequenciesReportSettings }
 ;
@@ -2029,6 +2035,59 @@ export type DeleteUnitDuplicateReq = {
 
 export type UnitSearchReq = {
   search: string;
+};
+
+export type UnitMachineItem = {
+  id: number;
+  sigintNetworkId: number;
+  networkDisplayName: string;
+  machineId: string | null;
+  machineTags: Array<string>;
+  deleted: boolean;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy: string | null;
+};
+
+export type UnitMachineListReq = {
+  includeArchived: boolean | null;
+  sigintNetworkId: number | null;
+  query: string | null;
+};
+
+export type UnitMachineListRsp = {
+  items: Array<UnitMachineItem>;
+};
+
+export type UnitMachineCreateReq = {
+  sigintNetworkId: number;
+  machineId: string | null;
+  machineTags: Array<string>;
+};
+
+export type UnitMachineUpdateReq = {
+  id: number;
+  sigintNetworkId: number;
+  machineId: string | null;
+  machineTags: Array<string>;
+};
+
+export type UnitMachineArchiveReq = {
+  id: number;
+};
+
+export type UnitMachineWarningCode =
+  | 'ArchivedDuplicateMachineId'
+;
+
+export type UnitMachineWarning = {
+  code: UnitMachineWarningCode;
+  message: string;
+};
+
+export type UnitMachineMutationRsp = {
+  item: UnitMachineItem;
+  warning: UnitMachineWarning | null;
 };
 
 export type ListSignalsSortBy =
@@ -2320,8 +2379,8 @@ export type EtalonkaReportType =
 export type NetworkFreqsRes = {
   networkFreqId: number;
   freq: string;
-  modulationId: number | null;
-  modulation: string | null;
+  encryptionId: number | null;
+  encryption: string | null;
   encryptionKeyIds: Array<number>;
   encryptionKeys: Array<string>;
   messageCount: number;
@@ -2332,7 +2391,7 @@ export type NetworkFreqsRes = {
   isActive: boolean;
   activeFrom: number;
   activeTo: number | null;
-  kind: string | null;
+  modulation: string | null;
 };
 
 export type CallsignRes = {
@@ -2634,8 +2693,8 @@ export type UpdateNetworkFreqReq = {
   networkId: number;
   networkFreqId: number;
   freq: string;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeyIds: Array<number>;
   activeFrom: number;
   activeTo: number | null;
@@ -2790,11 +2849,9 @@ export type MergeNetworkReq = {
   networkIdTo: number;
 };
 
-export type ModulationRec = {
+export type EncryptionRec = {
   id: number;
   name: string;
-  left: number;
-  right: number;
   enabled: boolean;
 };
 
@@ -2945,15 +3002,15 @@ export type NetworkFreq = {
   activeFrom: number;
   activeTo: number | null;
   createdAt: number;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeys: Array<EncryptionKeyData>;
 };
 
 export type AddNetworkFreq = {
   freq: string;
-  kind: string;
-  modulationId: number | null;
+  modulation: string;
+  encryptionId: number | null;
   encryptionKeyIds: Array<number>;
   description: AddNetworkFrequencyDescription | null;
   activeFrom: number | null;
@@ -3047,6 +3104,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  supportNonRerInterceptions: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3218,6 +3276,7 @@ export type GroupUpdateReq = {
   longNote: string | null;
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
+  isRer: boolean | null;
 };
 
 export type GroupEntryF1 = {

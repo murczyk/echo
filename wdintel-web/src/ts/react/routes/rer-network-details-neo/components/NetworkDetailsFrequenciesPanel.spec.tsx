@@ -108,7 +108,7 @@ describe('NetworkDetailsFrequenciesPanel', () => {
           freqsError: null,
           freqCallsignsById: new Map(),
           freqCallsignsStatus: 'idle',
-          modulations: [],
+          encryptions: [],
           expandedFrequencyGroupIds: [],
           onToggleFrequencyGroupExpanded: vi.fn(),
           onOpenFreqCreateWizard: vi.fn(),

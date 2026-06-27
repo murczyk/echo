@@ -248,7 +248,7 @@ pub async fn get_inbox_messages_report_network(
         .column_as(sigint_network_freq::Column::Freq, "freq")
         .column_as(sigint_comment::Column::Comment, "comment")
         .column_as(sigint_network::Column::Id, "network_id")
-        .column(sigint_network_freq::Column::Kind)
+        .column(sigint_network_freq::Column::Modulation)
         .column(sigint_network::Column::Location)
         .join(
             JoinType::InnerJoin,
@@ -384,7 +384,7 @@ pub async fn get_inbox_messages_report_network(
         freq: String,
         unit_name: String,
         network_id: i64,
-        kind: Option<String>,
+        modulation: Option<String>,
         location: Option<String>,
     }
     let rows = q.into_model::<Row>().all(&read_db).await.context(h!())?;
@@ -394,7 +394,7 @@ pub async fn get_inbox_messages_report_network(
         let network_id = row.network_id;
         let unit_name = row.unit_name;
         let kind =
-            display_network_type(row.kind.as_deref()).unwrap_or_default();
+            display_network_type(row.modulation.as_deref()).unwrap_or_default();
         let location = row.location;
         let message_report = NetworkMessagesReport {
             comment: row.comment.clone(),

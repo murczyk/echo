@@ -124,6 +124,7 @@ init flagsResult route =
       , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
+      , systemSettings = Nothing
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
@@ -192,7 +193,16 @@ update req msg model =
                   else
                     E.none
                 , loadSharedLookupData req.path
+                , E.getSystemSettings GotSystemSettings
                 ]
+            )
+
+        GotSystemSettings (Ok settings) ->
+            ( { model | systemSettings = Just settings }, E.none )
+
+        GotSystemSettings (Err err) ->
+            ( { model | systemSettings = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження системних налаштувань" err
             )
 
         ToggleDarkMode ->

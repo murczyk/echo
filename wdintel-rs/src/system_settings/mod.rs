@@ -14,7 +14,7 @@ use actix_identity::Identity;
 use actix_web::{post, web::Json};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
     EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
@@ -39,9 +39,12 @@ fn map_system_settings_item(
     })
 }
 
-pub async fn get_active_system_settings(
-    dbx: &DatabaseConnection,
-) -> Result<Option<system_settings::Model>, AppError> {
+pub async fn get_active_system_settings<C>(
+    dbx: &C,
+) -> Result<Option<system_settings::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(system_settings::Entity::find()
         .filter(system_settings::Column::Deleted.eq(false))
         .order_by_desc(system_settings::Column::UpdatedAt)
@@ -50,13 +53,43 @@ pub async fn get_active_system_settings(
         .c(h!())?)
 }
 
-pub async fn get_rer_analysis_units_exact_match_only_default(
-    dbx: &DatabaseConnection,
-) -> Result<bool, AppError> {
+pub async fn get_rer_analysis_units_exact_match_only_default<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
     let settings = get_active_system_settings(dbx).await.c(h!())?;
     Ok(settings
         .map(|settings| settings.rer_analysis_units_exact_match_only_default)
         .unwrap_or(true))
+}
+
+pub async fn support_non_rer_interceptions_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.support_non_rer_interceptions)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_support_non_rer_interceptions_enabled<C>(
+    dbx: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if support_non_rer_interceptions_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "support_non_rer_interceptions is disabled".to_string(),
+        ))
+    }
 }
 
 fn now_utc() -> chrono::NaiveDateTime {
@@ -106,6 +139,8 @@ pub async fn current_system_settings(
             rer_duty_test_limit: settings.rer_duty_test_limit,
             rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
             short_url_enabled: settings.short_url_enabled,
+            support_non_rer_interceptions: settings
+                .support_non_rer_interceptions,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -116,6 +151,7 @@ pub async fn current_system_settings(
             rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
             short_url_enabled: false,
+            support_non_rer_interceptions: false,
         },
     }))
 }
@@ -154,6 +190,10 @@ pub async fn create_system_settings(
         .await
         .c(h!())?;
 
+    let support_non_rer_interceptions =
+        support_non_rer_interceptions_enabled(&env.dbx)
+            .await
+            .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     deactivate_active_settings(&txn, &login).await.c(h!())?;
     let created = system_settings::ActiveModel {
@@ -173,6 +213,7 @@ pub async fn create_system_settings(
         updated_by: Set(Some(login)),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
+        support_non_rer_interceptions: Set(support_non_rer_interceptions),
     }
     .insert(&txn)
     .await

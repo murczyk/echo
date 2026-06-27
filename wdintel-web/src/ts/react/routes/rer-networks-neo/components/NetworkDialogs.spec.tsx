@@ -82,7 +82,7 @@ function buildPage(): ReturnType<typeof useRerNetworksNeoPage> {
     loading: false,
     unitOptions: [],
     postOptions: [],
-    modulations: [],
+    encryptions: [],
     createDialog: {},
     createSubmitting: false,
     createError: null,

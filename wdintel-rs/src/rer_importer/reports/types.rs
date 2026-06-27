@@ -26,6 +26,7 @@ pub enum ReportType {
     Naushnom,
     Reo(ReoReportSettings, ReoReportFileType),
     Digest,
+    Rer,
     ActiveNetworks(ActiveNetworksReportSettings),
     NetworkFrequencies(NetworkFrequenciesReportSettings),
 }

@@ -664,7 +664,7 @@ pub async fn report_docx_kind_mouse(
             continue;
         };
         let mut freq_msgs = freq_msgs.clone();
-        freq_msgs.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+        freq_msgs.sort_by_key(|a| a.1.timestamp);
         let unit_with_max_count = match per_freq_units_counted.get(freq) {
             None => "УКХ НВ".to_string(),
             Some(units_with_count) => units_with_count
@@ -1008,7 +1008,7 @@ pub async fn report_docx_kind_mouse(
             continue;
         };
         let mut freq_msgs = freq_msgs.clone();
-        freq_msgs.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+        freq_msgs.sort_by_key(|a| a.1.timestamp);
         for (message_id, message) in freq_msgs {
             let Some(freq) = message.freq.as_ref() else {
                 continue;

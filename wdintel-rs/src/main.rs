@@ -565,6 +565,13 @@ pub struct OneoffRestartEchoPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffMigrateModulationToEncryptionPs {
+    /// Print what would be done without committing changes.
+    #[arg(long, default_value = "false")]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
     #[arg(long, action)]
@@ -679,6 +686,7 @@ enum Cmd {
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffRefreshAiModels,
+    OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffEnsureApiIntegrationIggyTopics,
 }
@@ -1175,6 +1183,12 @@ async fn async_main(
             palitra::oneoff::oneoff_backup_palitras(mode).await
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
+        Cmd::OneoffMigrateModulationToEncryption(ps) => {
+            sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(
+                mode, ps.dry_run,
+            )
+            .await
+        },
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await
         }

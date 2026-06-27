@@ -22,6 +22,7 @@ pub struct Model {
     pub rer_duty_poll_interval_sec: i64,
     pub rer_duty_insert_historical_interceptions: bool,
     pub short_url_enabled: bool,
+    pub support_non_rer_interceptions: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

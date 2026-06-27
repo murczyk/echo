@@ -1,4 +1,5 @@
 use super::*;
+use crate::rer_importer::inbox::bl::find_sigint_comment_by_signal_message_id_and_logins;
 use crate::types::ShortContext;
 use tempfile::TempDir;
 
@@ -108,12 +109,11 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         let Some(ref freq) = item.freq else { continue };
         let Some(ref lat) = item.lat else { continue };
         let Some(ref lng) = item.lng else { continue };
-        let m_comment = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq(item.id))
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
+        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
+            env, item.id, &logins,
+        )
+        .await?;
+
         let icon_href = format!(
             "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{sidc}.png",
         );

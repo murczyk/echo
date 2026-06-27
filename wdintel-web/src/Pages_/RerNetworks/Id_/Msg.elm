@@ -46,7 +46,7 @@ type
       -- FREQUENCIES
       -- =============================================================================
     | Frequencies FrequenciesMsg
-    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | EncryptionsReturnedByApi (Result ApiError (List B.EncryptionRec))
       -- =============================================================================
       -- KEYS
       -- =============================================================================

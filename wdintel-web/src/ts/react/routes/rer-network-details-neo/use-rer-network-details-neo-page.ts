@@ -65,7 +65,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
   const aorsById = useMemo(() => buildLookupMap(state.aors), [state.aors]);
-  const modulationsById = useMemo(() => buildLookupMap(state.modulations), [state.modulations]);
+  const encryptionsById = useMemo(() => buildLookupMap(state.encryptions), [state.encryptions]);
 
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
@@ -332,8 +332,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   }, [postsById, state.network?.postIds]);
 
   const transferTypeLabel = useMemo(() => {
-    return formatTransferTypeLabel(state.network?.freqs ?? [], modulationsById);
-  }, [modulationsById, state.network?.freqs]);
+    return formatTransferTypeLabel(state.network?.freqs ?? [], encryptionsById);
+  }, [encryptionsById, state.network?.freqs]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

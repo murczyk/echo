@@ -569,6 +569,17 @@ view user model shared route =
                     (ReportTemplateSelect RTDigest)
                     "Дайджест"
                     "Для генерування потрібні права редактора чи адміна"
+                , HtmlX.viewIf
+                    (shared.systemSettings
+                        |> Maybe.map .supportNonRerInterceptions
+                        |> Maybe.withDefault False
+                    )
+                  <|
+                    templateCard
+                        (model.reportTemplate == RTRerReport)
+                        (ReportTemplateSelect RTRerReport)
+                        "РЕР Звіт"
+                        "Звіт по non-RER перехопленнях з привʼязаними машинами"
                 , templateCard
                     (model.reportTemplate == ActiveNetworks)
                     (ReportTemplateSelect ActiveNetworks)

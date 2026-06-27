@@ -66,13 +66,14 @@ renderNetwork network masterUnits =
 
 networkKinds : List NetworkKind
 networkKinds =
-    [ VHF, DMR, DMRe ]
+    [ Unknown, DMR, NFM, AM ]
 
 
 type NetworkKind
-    = VHF
+    = Unknown
+    | NFM
+    | AM
     | DMR
-    | DMRe
 
 
 networkKindFromString : String -> NetworkKind
@@ -82,49 +83,53 @@ networkKindFromString str =
             DMR
 
         "DMRe" ->
-            DMRe
+            DMR
 
-        "VHF" ->
-            VHF
+        "AM" ->
+            AM
+
+        "NFM" ->
+            NFM
 
         _ ->
-            VHF
+            Unknown
 
 
 networkKindToString : NetworkKind -> String
 networkKindToString networkKind =
     case networkKind of
+        Unknown ->
+            ""
+
         DMR ->
             "DMR"
 
-        DMRe ->
-            "DMRe"
+        AM ->
+            "AM"
 
-        VHF ->
-            "VHF"
+        NFM ->
+            "NFM"
 
 
 networkKindToLabel : NetworkKind -> String
 networkKindToLabel networkKind =
     case networkKind of
+        Unknown ->
+            "Не визначено"
+
         DMR ->
             "DMR"
 
-        DMRe ->
-            "DMRe"
+        AM ->
+            "AM"
 
-        VHF ->
-            "УКХ"
+        NFM ->
+            "NFM"
 
 
 networkStringToLabel : String -> String
 networkStringToLabel networkString =
-    case networkString of
-        "VHF" ->
-            "УКХ"
-
-        a ->
-            a
+    networkKindToLabel (networkKindFromString networkString)
 
 
 
