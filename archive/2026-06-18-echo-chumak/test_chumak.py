@@ -179,9 +179,8 @@ def submit_payload() -> dict:
         "full_body": f"Сигнали: dmr\nМережа: {network_name}",
         "post": post or None,
         "unit": unit or None,
-        "location": location or None,
+        "locations": [location] if location else [],
         "group_names": [required_env("CHUMAK_GROUP")],
-        "source": "chumak",
         "network": {"signal_name": "dmr", "cc": color_code, "name": network_name},
         "dmr": [
             {
@@ -197,7 +196,7 @@ def submit_payload() -> dict:
         ],
     }
     if lat is not None and lon is not None:
-        payload["coords"] = {"lat": lat, "lon": lon}
+        payload["coords"] = [{"lat": lat, "lon": lon}]
     return payload
 
 

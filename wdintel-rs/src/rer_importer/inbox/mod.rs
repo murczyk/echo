@@ -564,7 +564,7 @@ async fn inbox_submit_v11(
 
 #[derive(Debug)]
 struct SubmittedInboxItem {
-    message_id: String,
+    message_uid: String,
     inbox_id: i64,
     warnings: Vec<InboxSubmitWarning>,
 }
@@ -603,14 +603,14 @@ async fn submit_generic_inbox_item(
         txn,
         &env.config,
         datasource.id,
-        item.message_id.as_deref(),
+        item.message_uid.as_deref(),
         &message,
         Some(timestamp),
         &groups,
     )
     .await
     .c(h!())?;
-    let message_id = signal_message.message_uid.clone().c(h!())?;
+    let message_uid = signal_message.message_uid.clone().c(h!())?;
     let inbox_id = submit_upsert_inbox_item(
         env.settlements.clone(),
         txn,
@@ -628,7 +628,7 @@ async fn submit_generic_inbox_item(
             .c(h!())?;
 
     Ok(SubmittedInboxItem {
-        message_id,
+        message_uid,
         inbox_id,
         warnings,
     })
@@ -672,7 +672,7 @@ fn generic_submit_item_to_inbox_message(
         date: Some(date),
         time: Some(time),
         freq: item.freq.clone(),
-        coords: item.coords.clone().map(format_submit_coordinates),
+        coords: format_submit_coordinates(&item.coords),
         callsigns: item.callsigns.clone(),
         callsigns_alg2: vec![],
         checked: true,
@@ -692,7 +692,7 @@ fn generic_submit_item_to_inbox_message(
         keyword_tokens: None,
         text_marked: None,
         datasource_id: None,
-        location: item.location.clone(),
+        location: format_submit_locations(&item.locations),
         tags: None,
         network_ids: None,
         inbox_tags: None,
@@ -701,8 +701,23 @@ fn generic_submit_item_to_inbox_message(
     Ok((message, timestamp))
 }
 
-fn format_submit_coordinates(coords: SubmitCoordinates) -> String {
-    format!("{}, {}", coords.lat, coords.lon)
+fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
+    coords
+        .first()
+        .map(|coords| format!("{}, {}", coords.lat, coords.lon))
+}
+
+fn format_submit_locations(locations: &[String]) -> Option<String> {
+    let locations = locations
+        .iter()
+        .map(|location| location.trim())
+        .filter(|location| !location.is_empty())
+        .collect_vec();
+    if locations.is_empty() {
+        None
+    } else {
+        Some(locations.join(", "))
+    }
 }
 
 fn format_submit_date_time_fields(dt_utc: NaiveDateTime) -> (String, String) {
@@ -870,21 +885,21 @@ async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
     datasource_id: i64,
-    message_id: Option<&str>,
+    message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
         groups.first().cloned().c(h!())?;
-    let signal_message = match normalized_optional_string(message_id) {
-        Some(message_id) => {
+    let signal_message = match normalized_optional_string(message_uid) {
+        Some(message_uid) => {
             let signal_message = SignalMessage::find()
                 .join(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
                 )
-                .filter(signal_message::Column::MessageUid.eq(message_id))
+                .filter(signal_message::Column::MessageUid.eq(message_uid))
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource_id),
                 )
@@ -1515,7 +1530,7 @@ async fn submit_generic_inbox(
     let submitted =
         submit_generic_inbox_message(env, &login, &logins, item).await?;
     Ok(GenericInboxSubmitRsp {
-        message_id: submitted.message_id,
+        message_uid: submitted.message_uid,
         warnings: submitted.warnings,
     })
 }
@@ -1915,14 +1930,12 @@ mod tests {
     fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
-            message_id: None,
+            message_uid: None,
             text: "generic datasource gate".to_string(),
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
             post: Some("SC1".to_string()),
             group_names: Some(vec!["SC1".to_string()]),
-            source: Some("test".to_string()),
-            integration: Some("generic".to_string()),
             network: None,
             dmr: vec![],
             ..Default::default()
@@ -2065,6 +2078,43 @@ mod tests {
     }
 
     #[test]
+    fn generic_submit_item_to_inbox_message_uses_array_fields() {
+        let item = InboxSubmitItem {
+            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            timestamp: "2026-06-25T12:34:56Z".to_string(),
+            coords: vec![
+                SubmitCoordinates {
+                    lat: 49.12345,
+                    lon: 37.12345,
+                },
+                SubmitCoordinates {
+                    lat: 50.0,
+                    lon: 38.0,
+                },
+            ],
+            locations: vec![
+                "ЛИМАН ПЕРШИЙ".to_string(),
+                " ".to_string(),
+                "КОПАНІ".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let (message, timestamp) =
+            generic_submit_item_to_inbox_message(&item).unwrap();
+
+        assert_eq!(
+            timestamp,
+            NaiveDate::from_ymd_opt(2026, 6, 25)
+                .unwrap()
+                .and_hms_opt(12, 34, 56)
+                .unwrap()
+        );
+        assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(message.location.as_deref(), Some("ЛИМАН ПЕРШИЙ, КОПАНІ"));
+    }
+
+    #[test]
     fn prepare_submit_body_for_coordinate_extraction_skips_body_when_coords_present(
     ) {
         let mut message = InboxMessage::from(InboxInsertPayload {
@@ -2191,24 +2241,23 @@ mod tests {
         next.call_group_name = Some("ВОСТОК".to_string());
         next.hash_id = Some("ABCDEF01".to_string());
         let item = InboxSubmitItem {
-            message_id: None,
+            message_uid: None,
             text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
             freq: Some("145.02678".to_string()),
-            coords: Some(SubmitCoordinates {
+            coords: vec![SubmitCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
-            }),
+            }],
             callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
             full_body: Some("Сигнали: dmr".to_string()),
             post: Some("SC1".to_string()),
+            locations: vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()],
             group_names: Some(vec![
                 "SC1".to_string(),
                 "Чумак DMR Резерв".to_string(),
             ]),
-            source: Some("test".to_string()),
-            integration: Some("generic".to_string()),
             network: Some(SubmitNetwork {
                 signal_name: "dmr".to_string(),
                 cc: Some(9),
@@ -2240,7 +2289,7 @@ mod tests {
         let message = signal_message::Entity::find()
             .filter(
                 signal_message::Column::MessageUid
-                    .eq(submitted.message_id.clone()),
+                    .eq(submitted.message_uid.clone()),
             )
             .one(&env.dbx)
             .await
@@ -2259,7 +2308,7 @@ mod tests {
             .unwrap();
         assert_eq!(groups.len(), 2);
         assert!(groups.iter().all(|group| {
-            group.message_uid.as_deref() == Some(submitted.message_id.as_str())
+            group.message_uid.as_deref() == Some(submitted.message_uid.as_str())
         }));
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
@@ -2409,7 +2458,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_generic_submit_rejects_message_id_from_other_datasource() {
+    async fn test_generic_submit_rejects_message_uid_from_other_datasource() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource = find_test_datasource(&env.dbx).await.unwrap();

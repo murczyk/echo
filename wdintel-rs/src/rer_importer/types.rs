@@ -441,19 +441,20 @@ pub struct InboxSubmitMessageRsp {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct GenericInboxSubmitRsp {
-    pub message_id: String,
+    pub message_uid: String,
     pub warnings: Vec<InboxSubmitWarning>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct InboxSubmitItem {
     #[serde(default)]
-    pub message_id: Option<String>,
+    pub message_uid: Option<String>,
     pub text: String,
     #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
-    pub coords: Option<SubmitCoordinates>,
+    pub coords: Vec<SubmitCoordinates>,
     #[serde(default)]
     pub callsigns: Vec<String>,
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
@@ -467,13 +468,9 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
-    pub location: Option<String>,
+    pub locations: Vec<String>,
     #[serde(default)]
     pub group_names: Option<Vec<String>>,
-    #[serde(default)]
-    pub source: Option<String>,
-    #[serde(default)]
-    pub integration: Option<String>,
     #[serde(default)]
     pub network: Option<SubmitNetwork>,
     #[serde(default)]
@@ -483,145 +480,55 @@ pub struct InboxSubmitItem {
 impl Default for InboxSubmitItem {
     fn default() -> Self {
         Self {
-            message_id: None,
+            message_uid: None,
             text: String::new(),
             freq: None,
-            coords: None,
+            coords: vec![],
             callsigns: vec![],
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
             full_body: None,
             post: None,
             unit: None,
-            location: None,
+            locations: vec![],
             group_names: None,
-            source: None,
-            integration: None,
             network: None,
             dmr: vec![],
         }
     }
 }
 
-impl<'de> Deserialize<'de> for InboxSubmitItem {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        if let Some(object) = value.as_object() {
-            for field in [
-                "message",
-                "payload",
-                "existing_message_db_id",
-                "messages",
-                "checked",
-                "extended_form",
-                "date",
-                "time",
-                "media",
-                "images",
-                "image_recognized",
-                "callsigns_alg2",
-                "post_id",
-            ] {
-                if object.contains_key(field) {
-                    return Err(de::Error::custom(format!(
-                        "unsupported submit field: {field}"
-                    )));
-                }
-            }
-        }
-        let item = InboxSubmitItemDeserialize::deserialize(value)
-            .map_err(de::Error::custom)?;
-        Ok(Self {
-            message_id: item.message_id,
-            text: item.text,
-            freq: item.freq,
-            coords: item.coords,
-            callsigns: item.callsigns,
-            timestamp: item.timestamp,
-            sender: item.sender,
-            full_body: item.full_body,
-            post: item.post,
-            unit: item.unit,
-            location: item.location,
-            group_names: item.group_names,
-            source: item.source,
-            integration: item.integration,
-            network: item.network,
-            dmr: item.dmr,
-        })
-    }
-}
-
-#[derive(Deserialize)]
-struct InboxSubmitItemDeserialize {
-    #[serde(default)]
-    message_id: Option<String>,
-    pub text: String,
-    #[serde(default)]
-    freq: Option<String>,
-    #[serde(default)]
-    coords: Option<SubmitCoordinates>,
-    #[serde(default)]
-    callsigns: Vec<String>,
-    #[serde(deserialize_with = "deserialize_rfc3339_string")]
-    timestamp: String,
-    #[serde(default)]
-    sender: Option<String>,
-    #[serde(default)]
-    full_body: Option<String>,
-    #[serde(default)]
-    post: Option<String>,
-    #[serde(default)]
-    unit: Option<String>,
-    #[serde(default)]
-    location: Option<String>,
-    #[serde(default)]
-    group_names: Option<Vec<String>>,
-    #[serde(default)]
-    source: Option<String>,
-    #[serde(default)]
-    integration: Option<String>,
-    #[serde(default)]
-    network: Option<SubmitNetwork>,
-    #[serde(default)]
-    dmr: Vec<SubmitDmrMetadata>,
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitCoordinates {
     pub lat: f64,
     pub lon: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitNetwork {
     pub signal_name: String,
-    #[serde(default, deserialize_with = "deserialize_optional_i32")]
+    #[serde(default)]
     pub cc: Option<i32>,
     #[serde(default)]
     pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitDmrMetadata {
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
     pub timestamp: String,
-    #[serde(default, deserialize_with = "deserialize_optional_i32")]
+    #[serde(default)]
     pub cc: Option<i32>,
     pub freq: String,
     pub signal_name: String,
-    #[serde(default, deserialize_with = "deserialize_optional_i64")]
+    #[serde(default)]
     pub sender_id: Option<i64>,
     #[serde(default)]
     pub sender_name: Option<String>,
-    #[serde(
-        default,
-        alias = "abonent_id",
-        deserialize_with = "deserialize_optional_i64"
-    )]
+    #[serde(default)]
     pub call_group_id: Option<i64>,
     #[serde(default)]
     pub call_group_name: Option<String>,
@@ -640,53 +547,6 @@ where
         de::Error::custom(format!("timestamp must be RFC 3339: {value}"))
     })?;
     Ok(value)
-}
-
-fn deserialize_optional_i32<'de, D>(
-    deserializer: D,
-) -> Result<Option<i32>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    deserialize_optional_i64(deserializer)?
-        .map(|value| {
-            i32::try_from(value)
-                .map_err(|_| de::Error::custom("integer is out of i32 range"))
-        })
-        .transpose()
-}
-
-fn deserialize_optional_i64<'de, D>(
-    deserializer: D,
-) -> Result<Option<i64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
-    match value {
-        None | Some(serde_json::Value::Null) => Ok(None),
-        Some(serde_json::Value::Number(number)) => number
-            .as_i64()
-            .map(Some)
-            .ok_or_else(|| de::Error::custom("expected signed integer value")),
-        Some(serde_json::Value::String(value)) => {
-            if is_blank_metadata_marker(&value) {
-                Ok(None)
-            } else {
-                Err(de::Error::custom("expected integer or blank marker"))
-            }
-        }
-        Some(_) => Err(de::Error::custom("expected integer or blank marker")),
-    }
-}
-
-fn is_blank_metadata_marker(value: &str) -> bool {
-    let value = value.trim();
-    let value_lower = value.to_lowercase();
-    value.is_empty()
-        || value == "-"
-        || value_lower == "нв"
-        || value_lower == "hb"
 }
 
 #[derive(
@@ -1720,15 +1580,15 @@ mod tests {
     #[test]
     fn inbox_submit_item_flattens_v11_payload_fields() {
         let item_json = json!({
-            "message_id": "msg-a1208-6734-2879",
+            "message_uid": "msg-a1208-6734-2879",
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026",
             "freq": "145.0260",
-            "coords": { "lat": 49.12345, "lon": 37.12345 },
+            "coords": [{ "lat": 49.12345, "lon": 37.12345 }],
             "callsigns": ["ярус", "светлый"],
             "timestamp": "2026-06-25T12:34:56Z",
             "full_body": "Сигнали: dmr",
+            "locations": ["ЛИМАН ПЕРШИЙ", "КОПАНІ"],
             "group_names": ["SC1"],
-            "source": "chumak",
             "network": {
                 "signal_name": "dmr",
                 "cc": 5,
@@ -1749,19 +1609,22 @@ mod tests {
 
         let item: InboxSubmitItem = serde_json::from_value(item_json).unwrap();
 
-        assert_eq!(item.message_id.as_deref(), Some("msg-a1208-6734-2879"));
+        assert_eq!(item.message_uid.as_deref(), Some("msg-a1208-6734-2879"));
         assert_eq!(item.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026");
         assert_eq!(item.freq.as_deref(), Some("145.0260"));
         assert_eq!(
             item.coords,
-            Some(SubmitCoordinates {
+            vec![SubmitCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
-            })
+            }]
         );
         assert_eq!(item.full_body.as_deref(), Some("Сигнали: dmr"));
+        assert_eq!(
+            item.locations,
+            vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()]
+        );
         assert_eq!(item.group_names, Some(vec!["SC1".to_string()]));
-        assert_eq!(item.source.as_deref(), Some("chumak"));
         assert_eq!(item.dmr[0].sender_id, Some(2_977_001));
         assert_eq!(item.dmr[0].call_group_id, Some(2_977_002));
         assert_eq!(item.dmr[0].sender_name.as_deref(), Some("ЯРУС"));
@@ -1774,14 +1637,13 @@ mod tests {
             Some(&json!("рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026"))
         );
         assert_eq!(
-            encoded.get("message_id"),
+            encoded.get("message_uid"),
             Some(&json!("msg-a1208-6734-2879"))
         );
-        assert!(!encoded.contains_key("message"));
-        assert!(!encoded.contains_key("payload"));
-        assert!(!encoded.contains_key("existing_message_db_id"));
-        assert!(!encoded.contains_key("checked"));
-        assert!(!encoded.contains_key("extended_form"));
+        assert!(encoded.get("message_id").is_none());
+        assert!(encoded.get("source").is_none());
+        assert!(encoded.get("integration").is_none());
+        assert!(encoded.get("location").is_none());
         let dmr = encoded["dmr"].as_array().unwrap()[0].as_object().unwrap();
         assert_eq!(dmr.get("sender_id"), Some(&json!(2_977_001)));
         assert_eq!(dmr.get("call_group_id"), Some(&json!(2_977_002)));
@@ -1790,6 +1652,7 @@ mod tests {
     #[test]
     fn inbox_submit_item_rejects_nested_batch_and_legacy_fields() {
         for field in [
+            "message_id",
             "message",
             "payload",
             "existing_message_db_id",
@@ -1803,6 +1666,9 @@ mod tests {
             "image_recognized",
             "callsigns_alg2",
             "post_id",
+            "source",
+            "integration",
+            "location",
         ] {
             let mut item = serde_json::Map::new();
             item.insert("text".to_string(), json!("рос абонент ЯРУС"));
@@ -1820,8 +1686,8 @@ mod tests {
     }
 
     #[test]
-    fn inbox_submit_item_accepts_legacy_abonent_id_alias() {
-        let item: InboxSubmitItem = serde_json::from_value(json!({
+    fn inbox_submit_item_rejects_unknown_dmr_fields() {
+        let result = serde_json::from_value::<InboxSubmitItem>(json!({
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
             "timestamp": "2026-06-25T12:34:56Z",
             "dmr": [{
@@ -1832,37 +1698,23 @@ mod tests {
                 "sender_id": 110,
                 "abonent_id": 50
             }]
-        }))
-        .unwrap();
+        }));
 
-        assert_eq!(item.dmr[0].sender_id, Some(110));
-        assert_eq!(item.dmr[0].call_group_id, Some(50));
+        assert!(result.is_err());
     }
 
     #[test]
-    fn inbox_submit_item_accepts_blank_dmr_numeric_markers() {
-        let item: InboxSubmitItem = serde_json::from_value(json!({
+    fn inbox_submit_item_rejects_non_numeric_dmr_numbers() {
+        let result = serde_json::from_value::<InboxSubmitItem>(json!({
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
             "timestamp": "2026-06-25T12:34:56Z",
             "network": {
                 "signal_name": "dmr",
                 "cc": "НВ"
-            },
-            "dmr": [{
-                "timestamp": "2026-06-25T12:34:56Z",
-                "cc": "-",
-                "freq": "145.0260",
-                "signal_name": "dmr",
-                "sender_id": "hb",
-                "call_group_id": "НВ"
-            }]
-        }))
-        .unwrap();
+            }
+        }));
 
-        assert_eq!(item.network.unwrap().cc, None);
-        assert_eq!(item.dmr[0].cc, None);
-        assert_eq!(item.dmr[0].sender_id, None);
-        assert_eq!(item.dmr[0].call_group_id, None);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1891,9 +1743,9 @@ mod tests {
     }
 
     #[test]
-    fn generic_inbox_submit_rsp_uses_single_message_id_and_warnings() {
+    fn generic_inbox_submit_rsp_uses_single_message_uid_and_warnings() {
         let rsp = GenericInboxSubmitRsp {
-            message_id: "msg-a1208-6734-2879".to_string(),
+            message_uid: "msg-a1208-6734-2879".to_string(),
             warnings: vec![InboxSubmitWarning {
                 code: "dmr_network_cc_conflict".to_string(),
                 message: "using primary color code".to_string(),
@@ -1902,11 +1754,12 @@ mod tests {
 
         let rsp = serde_json::to_value(rsp).unwrap();
 
-        assert_eq!(rsp["message_id"], json!("msg-a1208-6734-2879"));
+        assert_eq!(rsp["message_uid"], json!("msg-a1208-6734-2879"));
         assert_eq!(
             rsp["warnings"][0]["code"],
             json!("dmr_network_cc_conflict")
         );
+        assert!(rsp.get("message_id").is_none());
         assert!(rsp.get("messages").is_none());
     }
 
