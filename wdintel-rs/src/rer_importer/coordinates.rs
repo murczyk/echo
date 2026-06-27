@@ -40,14 +40,14 @@ fn line_mentions_coordinates(line: &str) -> bool {
 fn is_dmr_metadata_line(line: &str) -> bool {
     lazy_static! {
         static ref RE_CC: Regex =
-            Regex::new(r#"(?i)^\s*(?:[cс]{2}|код\s+кольору)\s*:"#)
+            Regex::new(r#"(?i)^\s*(?:[cс]{2}\s*:?\s*|код\s+кольору\s*:?\s*)"#)
                 .unwrap();
         static ref RE_ID: Regex = Regex::new(
-            r#"(?i)^\s*(?:[iі]d\s*➡️?|source\s+id|[iі]d\s+відправника|[iі]d)\s*:"#
+            r#"(?i)^\s*(?:[iі]d\s*➡️?|source\s+id|[iі]d\s+відправника|[iі]d)\s*:?\s+"#
         )
         .unwrap();
         static ref RE_CG: Regex = Regex::new(
-            r#"(?i)^\s*(?:[iі]d\s*\(\s*[cс]g\s*\)\s*⬅️?|[iі]d\s+отримувача|group\s+id|код\s+групи|[cс]g)\s*:"#
+            r#"(?i)^\s*(?:[iі]d\s*\(\s*[cс]g\s*\)\s*⬅️?|[iі]d\s*⬅️?(?:\s*\(\s*[cс]g\s*\))?|[iі]d\s+отримувача|group\s+id|код\s+групи|[cс]g)\s*:?\s+"#
         )
         .unwrap();
     }
@@ -81,9 +81,9 @@ mod tests {
         let body = r#"27.06.2026 19:15:21
 Отримано з поста "SC1"
 *152.365*
-СС: 13
-ID➡️: 1098326, 5366440, 6350404, 287992, 3481020, 5291195, 7275810, 7121109, 3707804, 5267267, 775024
-ID(CG)⬅️: 1871040, 3106946, 2122380, 1139383, 443796, 3102387, 2626603, 4704746, 5243519, 1095394, 7494299
+СС 13
+ID➡️ 1098326, 5366440, 6350404, 287992, 3481020, 5291195, 7275810, 7121109, 3707804, 5267267, 775024
+ID⬅️(CG) 1871040, 3106946, 2122380, 1139383, 443796, 3102387, 2626603, 4704746, 5243519, 1095394, 7494299
 (УКХ р/м 352 мсп 47 тд 1 ТА (ПЕТРОПАВЛІВКА)🔑СС:13)
 
 `152.365 | 1098326`
@@ -111,6 +111,22 @@ ID(CG)⬅️: НВ
         let coords = extract_coords(body).await;
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].mgrs, "37UDR0599722279");
+    }
+
+    #[tokio::test]
+    async fn extract_coords_keeps_standalone_mgrs_after_dmr_headers() {
+        let body = r#"27.06.2026 21:28:40 F=139.5660(МГц)
+УКХ р/м 122 мсп 68 мсд 6 А 🔑 (ГОЛУБІВКА-КАЛИНОВЕ) СС: 1️⃣5️⃣ 📟📣 139.566
+СС:15
+ID➡️: 66044
+ID(CG)⬅️: 34655
+
+37U DR 01354 12034
+"#;
+
+        let coords = extract_coords(body).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UDR0135412034");
     }
 
     #[tokio::test]
