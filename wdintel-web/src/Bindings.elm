@@ -6727,6 +6727,7 @@ type alias Network =
     , postIds : List (Int)
     , descriptions : List (NetworkDescription)
     , deleted : Bool
+    , doNotArchive : Bool
     , status : NetworkStatus
     }
 
@@ -6753,6 +6754,7 @@ networkEncoder struct =
         , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
         , ( "descriptions", (Json.Encode.list (networkDescriptionEncoder)) struct.descriptions )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         , ( "status", (networkStatusEncoder) struct.status )
         ]
 
@@ -6843,6 +6845,7 @@ type alias CreateNetworkReq =
     , operationPeriod : Maybe (String)
     , postIds : List (Int)
     , descriptions : List (AddNetworkDescription)
+    , doNotArchive : Bool
     }
 
 
@@ -6861,6 +6864,7 @@ createNetworkReqEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
         , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
         , ( "descriptions", (Json.Encode.list (addNetworkDescriptionEncoder)) struct.descriptions )
+        , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         ]
 
 
@@ -6888,6 +6892,7 @@ type alias UpdateNetworkReq =
     , operationType : Maybe (String)
     , operationPeriod : Maybe (String)
     , descriptions : Maybe (List (UpdateNetworkDescriptionReq))
+    , doNotArchive : Bool
     , status : NetworkStatus
     }
 
@@ -6906,6 +6911,7 @@ updateNetworkReqEncoder struct =
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
         , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (updateNetworkDescriptionReqEncoder))) struct.descriptions )
+        , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         , ( "status", (networkStatusEncoder) struct.status )
         ]
 
@@ -12646,6 +12652,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (networkDescriptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
 
 
@@ -12741,6 +12748,7 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (addNetworkDescriptionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
 
 
 deleteNetworkReqDecoder : Json.Decode.Decoder DeleteNetworkReq
@@ -12763,6 +12771,7 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list (updateNetworkDescriptionReqDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
 
 
