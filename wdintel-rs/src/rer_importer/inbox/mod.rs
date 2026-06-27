@@ -18,7 +18,7 @@ use chrono::*;
 use echo_migration::{Expr, PostgresQueryBuilder};
 use itertools::Itertools;
 use sea_orm::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod bl;
 pub mod metadata;
@@ -586,6 +586,7 @@ async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    let tag_ids = resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
     let (mut message, timestamp) = generic_submit_item_to_inbox_message(&item)?;
     let post = normalized_optional_string(message.post.as_deref());
     let post_id = match message.post_id {
@@ -621,6 +622,9 @@ async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    add_submit_tags(txn, inbox_id, login, tag_ids)
+        .await
+        .c(h!())?;
     let InboxSubmitItem { network, dmr, .. } = item;
     let warnings =
         save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
@@ -699,6 +703,92 @@ fn generic_submit_item_to_inbox_message(
         metadata: vec![],
     };
     Ok((message, timestamp))
+}
+
+async fn resolve_submit_tag_ids(
+    txn: &DatabaseTransaction,
+    tag_labels: Option<&[String]>,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let Some(tag_labels) = tag_labels else {
+        return Ok(None);
+    };
+
+    let tag_labels = tag_labels
+        .iter()
+        .map(|tag_label| tag_label.trim())
+        .filter(|tag_label| !tag_label.is_empty())
+        .unique()
+        .map(ToOwned::to_owned)
+        .collect_vec();
+    if tag_labels.is_empty() {
+        return Ok(Some(vec![]));
+    }
+
+    let tags = tag::Entity::find()
+        .filter(tag::Column::Enabled.eq(true))
+        .filter(tag::Column::Label.eq_any(tag_labels.clone()))
+        .order_by_asc(tag::Column::Id)
+        .all(txn)
+        .await
+        .c(h!())?;
+    let mut tag_ids_by_label = BTreeMap::new();
+    for tag in tags {
+        tag_ids_by_label.entry(tag.label).or_insert(tag.id);
+    }
+
+    let mut tag_ids = vec![];
+    for tag_label in tag_labels {
+        match tag_ids_by_label.get(&tag_label) {
+            Some(tag_id) => tag_ids.push(*tag_id),
+            None => error!(
+                "failed to resolve inbox submit tag '{tag_label}': active tag does not exist in Echo; skipping"
+            ),
+        }
+    }
+    Ok(Some(tag_ids))
+}
+
+async fn add_submit_tags(
+    txn: &DatabaseTransaction,
+    inbox_id: i64,
+    login: &str,
+    tag_ids: Option<Vec<i64>>,
+) -> Result<(), AppError> {
+    let Some(tag_ids) = tag_ids else {
+        return Ok(());
+    };
+
+    for tag_id in tag_ids.into_iter().collect::<BTreeSet<_>>() {
+        let existing = sigint_inbox_item_tag::Entity::find()
+            .filter(
+                sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id),
+            )
+            .filter(sigint_inbox_item_tag::Column::TagId.eq(tag_id))
+            .filter(
+                sigint_inbox_item_tag::Column::Login
+                    .eq(Some(login.to_string())),
+            )
+            .filter(sigint_inbox_item_tag::Column::Model.is_null())
+            .one(txn)
+            .await
+            .c(h!())?;
+        if existing.is_some() {
+            continue;
+        }
+
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+            tag_id: Set(tag_id),
+            confidence: Set(1.0),
+            login: Set(Some(login.to_string())),
+            model: Set(None),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
@@ -2232,6 +2322,16 @@ mod tests {
         let datasource = find_test_datasource(&env.dbx).await.unwrap();
         let logins = vec![login.login.clone()];
         let now = Utc::now().naive_utc();
+        let tag_label = format!("submit-tag-{}", Uuid::new_v4());
+        let tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set(tag_label.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let mut primary = submit_dmr_metadata(Some(5));
         primary.freq = "145.02678".to_string();
         let mut next = submit_dmr_metadata(Some(7));
@@ -2253,6 +2353,7 @@ mod tests {
             sender: Some("generic submit".to_string()),
             full_body: Some("Сигнали: dmr".to_string()),
             post: Some("SC1".to_string()),
+            tags: Some(vec![tag_label, "missing-submit-tag".to_string()]),
             locations: vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()],
             group_names: Some(vec![
                 "SC1".to_string(),
@@ -2346,6 +2447,17 @@ mod tests {
             .collect::<Vec<_>>();
         sender_ids.sort();
         assert_eq!(sender_ids, vec!["110".to_string(), "111".to_string()]);
+        let inbox_tags = sigint_inbox_item_tag::Entity::find()
+            .filter(
+                sigint_inbox_item_tag::Column::SigintInboxItemId
+                    .eq(submitted.inbox_id),
+            )
+            .filter(sigint_inbox_item_tag::Column::Login.eq(Some(login.login)))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(inbox_tags.len(), 1);
+        assert_eq!(inbox_tags[0].tag_id, tag.id);
     }
 
     #[serial]

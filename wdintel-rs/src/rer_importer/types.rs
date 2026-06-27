@@ -457,6 +457,8 @@ pub struct InboxSubmitItem {
     pub coords: Vec<SubmitCoordinates>,
     #[serde(default)]
     pub callsigns: Vec<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
     pub timestamp: String,
     #[serde(default)]
@@ -485,6 +487,7 @@ impl Default for InboxSubmitItem {
             freq: None,
             coords: vec![],
             callsigns: vec![],
+            tags: None,
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
             full_body: None,
@@ -1585,6 +1588,7 @@ mod tests {
             "freq": "145.0260",
             "coords": [{ "lat": 49.12345, "lon": 37.12345 }],
             "callsigns": ["ярус", "светлый"],
+            "tags": ["БпЛА", "Втрати"],
             "timestamp": "2026-06-25T12:34:56Z",
             "full_body": "Сигнали: dmr",
             "locations": ["ЛИМАН ПЕРШИЙ", "КОПАНІ"],
@@ -1612,6 +1616,10 @@ mod tests {
         assert_eq!(item.message_uid.as_deref(), Some("msg-a1208-6734-2879"));
         assert_eq!(item.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026");
         assert_eq!(item.freq.as_deref(), Some("145.0260"));
+        assert_eq!(
+            item.tags,
+            Some(vec!["БпЛА".to_string(), "Втрати".to_string()])
+        );
         assert_eq!(
             item.coords,
             vec![SubmitCoordinates {
