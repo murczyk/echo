@@ -186,6 +186,7 @@ async fn test_bl_szd_group_update_01() {
         is_secret: false,
         is_rer: None,
         fills_etalonka: None,
+        disable_network_assignment: None,
         user_logins: vec![],
         admin_logins: vec![],
         short_note: None,

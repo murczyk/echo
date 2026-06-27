@@ -15,6 +15,7 @@ pub struct OrphanSignalGroupEntry {
     pub ignore_operativny: bool,
     pub is_rer: bool,
     pub fills_etalonka: bool,
+    pub disable_network_assignment: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
@@ -34,6 +35,7 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub is_rer: bool,
     pub fills_etalonka: bool,
+    pub disable_network_assignment: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,

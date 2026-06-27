@@ -2,6 +2,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Tab, Switch, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import {
@@ -92,6 +93,7 @@ type OrphanAssignState = {
   isSecret: boolean;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   isSaving: boolean;
@@ -106,6 +108,7 @@ type GroupEditState = {
   isSecret: boolean;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   shortNote: string;
@@ -120,6 +123,7 @@ type OrphanEditState = {
   groupName: string;
   isRer: boolean;
   fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -178,6 +182,22 @@ const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
   aors: true,
   notes: true,
 };
+
+const DISABLE_NETWORK_ASSIGNMENT_TOOLTIP =
+  'Корисно для глобальних груп що діють на дуже широкій смузі';
+
+function DisableNetworkAssignmentLabel() {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+      <Box component="span">Вимкнути привʼязку мереж</Box>
+      <Tooltip title={DISABLE_NETWORK_ASSIGNMENT_TOOLTIP} placement="top">
+        <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }} aria-label="Підказка">
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  );
+}
 
 const DEFAULT_ZONE_COLUMN_ORDER = [
   'mrt-row-numbers',
@@ -423,6 +443,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     ignoreOperativny: false,
     isRer: true,
     fillsEtalonka: true,
+    disableNetworkAssignment: false,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -447,6 +468,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       isGroupSecret: false,
       isRer: true,
       fillsEtalonka: true,
+      disableNetworkAssignment: false,
       allowedUsers: [],
       adminLogins: [],
       areaOfResponsibilityId: null,
@@ -1651,6 +1673,7 @@ function AdminDirectionsNeoPageBody() {
             ignoreOperativny: group.ignoreOperativny,
             isRer: group.isRer,
             fillsEtalonka: group.fillsEtalonka,
+            disableNetworkAssignment: group.disableNetworkAssignment,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -1686,6 +1709,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: group.isGroupSecret,
       isRer: group.isRer,
       fillsEtalonka: group.fillsEtalonka,
+      disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: group.allowedUsers,
       selectedAdmins: group.adminLogins,
       shortNote: group.shortNote ?? '',
@@ -1704,6 +1728,7 @@ function AdminDirectionsNeoPageBody() {
       groupName,
       isRer: group.isRer,
       fillsEtalonka: group.fillsEtalonka,
+      disableNetworkAssignment: group.disableNetworkAssignment,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -1722,6 +1747,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: false,
       isRer: group.isRer,
       fillsEtalonka: group.fillsEtalonka,
+      disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: [],
       selectedAdmins: [],
       isSaving: false,
@@ -1806,6 +1832,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: editDialog.isSecret,
       isRer: supportNonRerInterceptions ? editDialog.isRer : null,
       fillsEtalonka: editDialog.fillsEtalonka,
+      disableNetworkAssignment: editDialog.disableNetworkAssignment,
       userLogins: selectedUsers,
       adminLogins: editDialog.selectedAdmins,
       shortNote: editDialog.shortNote.trim()
@@ -1863,6 +1890,7 @@ function AdminDirectionsNeoPageBody() {
             : null,
         isRer: supportNonRerInterceptions ? orphanEditDialog.isRer : null,
         fillsEtalonka: orphanEditDialog.fillsEtalonka,
+        disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
       });
 
       setOrphanGroups((prev) =>
@@ -1880,6 +1908,7 @@ function AdminDirectionsNeoPageBody() {
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
             isRer: orphanEditDialog.isRer,
             fillsEtalonka: orphanEditDialog.fillsEtalonka,
+            disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
           };
         })
       );
@@ -1970,6 +1999,7 @@ function AdminDirectionsNeoPageBody() {
               ignoreOperativny: false,
               isRer: assignDialog.isRer,
               fillsEtalonka: assignDialog.fillsEtalonka,
+              disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2189,6 +2219,21 @@ function AdminDirectionsNeoPageBody() {
             }
             label="Наповнює еталонку"
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={editDialog?.disableNetworkAssignment ?? false}
+                onChange={(event) =>
+                  editDialog &&
+                  setEditDialog({
+                    ...editDialog,
+                    disableNetworkAssignment: event.target.checked,
+                  })
+                }
+              />
+            }
+            label={<DisableNetworkAssignmentLabel />}
+          />
           {editDialog?.isSecret ? (
             <Autocomplete
               multiple
@@ -2329,6 +2374,21 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label="Наповнює еталонку"
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={orphanEditDialog?.disableNetworkAssignment ?? false}
+                onChange={(event) =>
+                  orphanEditDialog &&
+                  setOrphanEditDialog({
+                    ...orphanEditDialog,
+                    disableNetworkAssignment: event.target.checked,
+                  })
+                }
+              />
+            }
+            label={<DisableNetworkAssignmentLabel />}
           />
           <Autocomplete
             multiple
