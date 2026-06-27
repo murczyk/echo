@@ -445,18 +445,12 @@ fn match_network_ids_for_messages(
         let Some(entries) = groups_map.get(&msg.id) else {
             continue;
         };
-        let Some(group_master_key) = entries
-            .iter()
-            .min_by_key(|entry| entry.id)
-            .and_then(|entry| entry.group_master_key.clone())
-        else {
-            continue;
-        };
         let Some(freq) = &msg.freq else { continue };
 
-        let Some(group_bounds) = group_bounds_map.get(&group_master_key) else {
+        let group_bounds = group_bounds_for_entries(entries, group_bounds_map);
+        if group_bounds.is_empty() {
             continue;
-        };
+        }
 
         let Some(candidate_networks) = freq_networks_map.get(freq) else {
             continue;
@@ -482,7 +476,7 @@ fn match_network_ids_for_messages(
                 continue;
             }
             if let Some(net_bounds) = network_bounds_map.get(&network_id) {
-                for (gl, gr) in group_bounds {
+                for (gl, gr) in &group_bounds {
                     for (nl, nr) in net_bounds {
                         // 1. Group starts inside network
                         // Network: |----[nl=======nr]-------|
@@ -520,6 +514,18 @@ fn match_network_ids_for_messages(
     }
 
     Ok(result)
+}
+
+fn group_bounds_for_entries(
+    entries: &[signal_message_group::Model],
+    group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
+) -> Vec<(f64, f64)> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.group_master_key.as_ref())
+        .filter_map(|group_master_key| group_bounds_map.get(group_master_key))
+        .flat_map(|bounds| bounds.iter().copied())
+        .collect()
 }
 
 fn filter_networks_by_post(
@@ -775,6 +781,84 @@ mod tests {
         assert_eq!(entries[0].group_master_key, Some(enabled_group.master_key));
 
         txn.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn match_networks_uses_later_group_aor() {
+        let item_id = 1;
+        let messages = vec![InboxItem {
+            id: item_id,
+            timestamp: Some(test_dt()),
+            freq: Some("158.2510".to_string()),
+            unit: None,
+            parsed_unit_v2: false,
+            post_id: None,
+        }];
+        let groups_map = HashMap::from([(
+            item_id,
+            vec![
+                mk_group_entry(1, item_id, "without-aor"),
+                mk_group_entry(2, item_id, "with-aor"),
+            ],
+        )]);
+        let group_bounds_map =
+            HashMap::from([("with-aor".to_string(), vec![(8300.0, 8999.0)])]);
+        let network_bounds_map = HashMap::from([(983, vec![(8300.0, 8999.0)])]);
+        let networks_freqs = vec![NetworkFreqResult {
+            network_id: 983,
+            unit_id: None,
+            unit: None,
+            freq: "158.2510".to_string(),
+            freq_active_from: Some(test_dt()),
+            freq_active_to: None,
+            network_active_from: Some(test_dt()),
+            network_active_to: None,
+        }];
+
+        let matched = match_network_ids_for_messages(
+            &messages,
+            &groups_map,
+            &group_bounds_map,
+            &network_bounds_map,
+            networks_freqs,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            matched
+                .get(&item_id)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from([983])
+        );
+    }
+
+    fn mk_group_entry(
+        id: i64,
+        signal_message_id: i64,
+        group_master_key: &str,
+    ) -> signal_message_group::Model {
+        signal_message_group::Model {
+            id,
+            signal_message_id,
+            group_master_key: Some(group_master_key.to_string()),
+            sender: None,
+            message_uid: None,
+            datasource_group_id: None,
+            created_at: test_dt(),
+        }
+    }
+
+    fn test_dt() -> NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
     }
 
     fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
