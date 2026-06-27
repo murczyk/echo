@@ -48,6 +48,13 @@ export const dutyTopScrollButtonSx: SxProps<Theme> = {
     color: 'primary.main',
     boxShadow: 'none',
   },
+  '&.Mui-disabled': {
+    opacity: 1,
+    backgroundColor: 'background.paper',
+    borderColor: 'grey.400',
+    color: 'grey.400',
+    boxShadow: 'none',
+  },
   '& .MuiSvgIcon-root': { fontSize: 20 },
 };
 
