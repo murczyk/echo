@@ -47,7 +47,7 @@ sudo -u postgres psql -Atqc "select count(*) from pg_stat_activity where datname
 sudo cp -a /etc/postgresql/18/main/postgresql.conf /etc/postgresql/18/main/postgresql.conf.pre-pg18-migration.$(date +%Y%m%d%H%M%S)
 sudo sed -i -E "s/^#?port = .*/port = 5432/" /etc/postgresql/18/main/postgresql.conf
 sudo mkdir -p /etc/postgresql/18/main/conf.d
-sudo cp -a /etc/postgresql/14/main/conf.d/90-pgbackrest.conf /etc/postgresql/18/main/conf.d/90-pgbackrest.conf
+sudo cp -a /etc/postgresql/14/main/conf.d/*.conf /etc/postgresql/18/main/conf.d/
 '
 
 ssh $SERVER "sudo echo-install-utils pg18-migration --phase upgrade --stanza $STANZA --backup-mode skip"
@@ -62,7 +62,8 @@ ssh $SERVER "sudo -u postgres pgbackrest --config=/etc/pgbackrest/pgbackrest.con
 ssh $SERVER "sudo -u postgres pgbackrest --config=/etc/pgbackrest/pgbackrest.conf --config-include-path=/etc/pgbackrest/conf.d --stanza=$STANZA check"
 ssh $SERVER "sudo echo-install-utils pg18-migration --phase verify --stanza $STANZA"
 
-ssh $SERVER 'cd /var/lib/postgresql && sudo -u postgres /usr/lib/postgresql/18/bin/psql -f update_extensions.sql'
+ssh $SERVER 'cd /var/lib/postgresql && sudo -u postgres /usr/lib/postgresql/18/bin/psql -f update_extensions.sql || true'
+ssh $SERVER "sudo -u postgres psql -Atqc \"select current_setting('max_connections'), current_setting('shared_buffers'), current_setting('shared_preload_libraries')\""
 ssh $SERVER 'sudo -u postgres /usr/lib/postgresql/18/bin/vacuumdb --all --analyze-in-stages --missing-stats-only'
 ```
 
@@ -92,5 +93,7 @@ Update Bitwarden/source config: `pg1-path=/var/lib/postgresql/18/main`.
 ## Notes
 
 - Do not start PG14 after successful `--link` upgrade and PG18 start.
+- Copy every host-specific file from `/etc/postgresql/14/main/conf.d/` to PG18. Missing tuning can drop PG18 to defaults, e.g. `max_connections=100`.
+- `pg_uuidv7` may report no update path from 1.6 to 1.7. Do not block service recovery on that; verify `uuid_generate_v7()` works and leave extversion 1.6 until the package ships an update script.
 - Keep SSH DB tunnels closed before migration; they can exhaust `max_connections`.
 - WhatsApp/signal bot failures caused by missing env files are unrelated to PG upgrade; do not block core app recovery on them.
