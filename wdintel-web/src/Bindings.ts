@@ -332,6 +332,7 @@ export type ReportHistoryRow = {
   contentType: string | null;
   bgtaskId: number | null;
   lastError: string | null;
+  isCancelled: boolean;
   details: string;
   progress: number;
   errorLog: Array<ReportHistoryLogEntry> | null;

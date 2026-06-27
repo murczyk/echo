@@ -895,6 +895,7 @@ type alias ReportHistoryRow =
     , contentType : Maybe (String)
     , bgtaskId : Maybe (Int)
     , lastError : Maybe (String)
+    , isCancelled : Bool
     , details : String
     , progress : Int
     , errorLog : Maybe (List (ReportHistoryLogEntry))
@@ -921,6 +922,7 @@ reportHistoryRowEncoder struct =
         , ( "content_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentType )
         , ( "bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.bgtaskId )
         , ( "last_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "is_cancelled", (Json.Encode.bool) struct.isCancelled )
         , ( "details", (Json.Encode.string) struct.details )
         , ( "progress", (Json.Encode.int) struct.progress )
         , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )

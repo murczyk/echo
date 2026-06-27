@@ -50,8 +50,13 @@ export async function retryReportHistory(id: number): Promise<ReportHistoryRow> 
   return transformSnakeToCamel<ReportHistoryRow>(raw);
 }
 
-export function isCancelledReportHistory(row: Pick<ReportHistoryRow, 'status' | 'lastError'>): boolean {
-  return row.status === 'failed' && row.lastError === 'Скасовано користувачем';
+export function isCancelledReportHistory(
+  row: Pick<ReportHistoryRow, 'status' | 'lastError' | 'isCancelled'>,
+): boolean {
+  if (row.isCancelled === true) {
+    return true;
+  }
+  return row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем');
 }
 
 export async function cancelReportHistory(id: number): Promise<ReportHistoryRow> {

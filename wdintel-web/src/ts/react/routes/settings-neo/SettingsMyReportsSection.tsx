@@ -21,7 +21,7 @@ import { type MRT_ColumnDef, type MRT_ColumnFiltersState, type MRT_SortingState 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
-import { cancelReportHistory, downloadReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
+import { cancelReportHistory, downloadReportHistory, isCancelledReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
@@ -226,12 +226,8 @@ function formatReportProgress(progress: number): string {
   return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
 }
 
-export function isCancelledReport(row: Pick<ReportHistoryRow, 'status' | 'lastError'>): boolean {
-  return row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем');
-}
-
 function formatReportStatus(row: ReportHistoryRow): string {
-  if (isCancelledReport(row)) {
+  if (isCancelledReportHistory(row)) {
     return 'Скасовано';
   }
   if (row.status === 'planned' && row.blockedByReportId != null) {
@@ -255,6 +251,7 @@ function buildReportLoadingRows(): ReportHistoryRow[] {
     contentType: null,
     bgtaskId: null,
     lastError: null,
+    isCancelled: false,
     details: '',
     progress: 0,
     errorLog: null,
@@ -285,7 +282,8 @@ function ReportHistoryRowActions({
   onRetry: (row: ReportHistoryRow) => void;
   onCancel: (row: ReportHistoryRow) => void;
 }) {
-  const hasActions = (row.status === 'done' && row.hasFile) || row.status === 'failed' || canCancelReport(row);
+  const isCancelled = isCancelledReportHistory(row);
+  const hasActions = (row.status === 'done' && row.hasFile) || (row.status === 'failed' && !isCancelled) || canCancelReport(row);
   if (!hasActions) {
     return null;
   }
@@ -295,7 +293,7 @@ function ReportHistoryRowActions({
       {row.status === 'done' && row.hasFile ? (
         <MrtRowActionButton label="Завантажити" icon={<DownloadIcon fontSize="small" />} onClick={() => onDownload(row)} />
       ) : null}
-      {row.status === 'failed' ? (
+      {row.status === 'failed' && !isCancelled ? (
         <MrtRowActionButton label="Повторити" icon={<ReplayIcon fontSize="small" />} tone="warning" onClick={() => onRetry(row)} />
       ) : null}
       {canCancelReport(row) ? (
@@ -610,7 +608,7 @@ export function ReportHistoryTableSection({
                 variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
               />
             );
-            if (!includeAuthor || row.original.status !== 'failed' || !row.original.lastError) {
+            if (!includeAuthor || row.original.status !== 'failed' || isCancelledReportHistory(row.original) || !row.original.lastError) {
               return chip;
             }
             return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
@@ -738,8 +736,8 @@ export function ReportHistoryTableSection({
         onConfirm={() => void confirmCancelInFlightRow()}
         title="Скасування звіту"
         description={cancelRow?.status === 'in_progress' ? REPORT_CANCEL_RUNNING_WARNING : 'Звіт буде скасовано і прибрано з черги.'}
-        cancelLabel="Скасувати"
-        confirmLabel="Підтвердити"
+        cancelLabel="СКАСУВАТИ"
+        confirmLabel="СКАСУВАТИ ЗВІТ"
         maxWidth="xs"
         fullWidth
       />

@@ -95,6 +95,7 @@ pub struct ReportHistoryRow {
     pub content_type: Option<String>,
     pub bgtask_id: Option<i64>,
     pub last_error: Option<String>,
+    pub is_cancelled: bool,
     pub details: String,
     pub progress: i64,
     pub error_log: Option<Vec<ReportHistoryLogEntry>>,
@@ -338,6 +339,7 @@ fn to_report_history_row(
         ),
         None => (None, None, None, None),
     };
+    let is_cancelled = report_history_is_cancelled(&report_history);
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
@@ -366,10 +368,20 @@ fn to_report_history_row(
         } else {
             None
         },
+        is_cancelled,
         details,
         progress,
         error_log,
     }
+}
+
+fn report_history_is_cancelled(report_history: &report_history::Model) -> bool {
+    report_history.status == STATUS_FAILED
+        && report_history
+            .last_error
+            .as_deref()
+            .map(|last_error| last_error.contains("Скасовано користувачем"))
+            .unwrap_or(false)
 }
 
 async fn report_history_queue_meta(
@@ -3099,8 +3111,61 @@ mod tests {
             refreshed.last_error.as_deref(),
             Some("Скасовано користувачем")
         );
+        assert!(report_history_is_cancelled(&refreshed));
         assert_eq!(refreshed.planned_for_ts, None);
         assert_eq!(refreshed.retry_count, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn list_rows_mark_cancelled_without_exposing_last_error(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-cancel-list".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-cancel-list",
+            KIND_GOI,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        let report_id = report.id.clone().unwrap();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        report.update(&env.dbx).await.c(h!())?;
+
+        let rows = build_report_history_rows(
+            &env.dbx,
+            vec![report_history::Entity::find_by_id(report_id)
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?],
+            false,
+        )
+        .await?;
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_cancelled);
+        assert_eq!(rows[0].last_error, None);
         Ok(())
     }
 }

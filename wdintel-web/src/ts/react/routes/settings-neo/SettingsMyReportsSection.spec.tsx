@@ -6,7 +6,8 @@ import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { isCancelledReport, SettingsMyReportsSection } from './SettingsMyReportsSection';
+import { SettingsMyReportsSection } from './SettingsMyReportsSection';
+import { isCancelledReportHistory } from '../../services/api/report-history';
 
 const sampleRunningRow = {
   id: 1501,
@@ -20,6 +21,7 @@ const sampleRunningRow = {
   contentType: null,
   bgtaskId: 1347,
   lastError: null,
+  isCancelled: false,
   details: 'desc',
   progress: 20,
   errorLog: null,
@@ -40,6 +42,8 @@ vi.mock('../../services/api/report-history', () => ({
   downloadReportHistory: vi.fn(),
   retryReportHistory: vi.fn(),
   cancelReportHistory: vi.fn(),
+  isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined; isCancelled: boolean }) =>
+    row.isCancelled === true || (row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем')),
   parseUtcDateTime: vi.fn((value: string | null) => {
     if (value === null || value.trim() === '') return null;
     const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
@@ -152,8 +156,8 @@ describe('SettingsMyReportsSection', () => {
 
     expect(capturedTableStateProviderProps?.tableId).toBe('settings-neo-my-reports-v3');
     expect(capturedDangerDialogProps?.title).toBe('Скасування звіту');
-    expect(capturedDangerDialogProps?.cancelLabel).toBe('Скасувати');
-    expect(capturedDangerDialogProps?.confirmLabel).toBe('Підтвердити');
+    expect(capturedDangerDialogProps?.cancelLabel).toBe('СКАСУВАТИ');
+    expect(capturedDangerDialogProps?.confirmLabel).toBe('СКАСУВАТИ ЗВІТ');
     expect(capturedDangerDialogProps?.description).toBe('Звіт буде скасовано і прибрано з черги.');
 
     act(() => {
@@ -164,24 +168,35 @@ describe('SettingsMyReportsSection', () => {
 
   it('treats cancel-like reload rows as cancelled', () => {
     expect(
-      isCancelledReport({
+      isCancelledReportHistory({
         status: 'failed',
         lastError: 'Скасовано користувачем',
+        isCancelled: false,
       }),
     ).toBe(true);
 
     expect(
-      isCancelledReport({
+      isCancelledReportHistory({
         status: 'failed',
         lastError: 'Скасовано користувачем: worker cleanup already ran',
+        isCancelled: false,
       }),
     ).toBe(true);
 
     expect(
-      isCancelledReport({
+      isCancelledReportHistory({
         status: 'failed',
         lastError: 'Some other failure',
+        isCancelled: false,
       }),
     ).toBe(false);
+
+    expect(
+      isCancelledReportHistory({
+        status: 'failed',
+        lastError: null,
+        isCancelled: true,
+      }),
+    ).toBe(true);
   });
 });
