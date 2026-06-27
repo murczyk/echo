@@ -89,9 +89,11 @@ where
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
-    let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
+    let coords_vec =
+        crate::rer_importer::coordinates::extract_coords(&body).await;
     let mut other_coords = coords_vec.clone();
     let coords = crate::utils::pop_vector(&mut other_coords);
+    let has_coords = coords.is_some();
     let callsign_tokens =
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
@@ -245,34 +247,36 @@ where
     // to MPORT_DIRECTION_FINDING
     let group_name = config.signal_import_group_name.clone();
 
-    if let Some((signal_message, group)) =
-        signal_message::Entity::find_by_id(message_id)
-            .find_with_related(datasource_group::Entity)
-            .join(
-                JoinType::InnerJoin,
-                datasource_group::Relation::SignalGroup.def(),
-            )
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_group::Column::Deleted.eq(false))
-            .filter(signal_group::Column::Name.eq(group_name))
-            .all(txn)
-            .await
-            .c(h!())?
-            .into_iter()
-            .next()
-            .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
-    {
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                txn,
-                IMPORT_DIRECTION_FINDING_UUID.to_string(),
-                group.datasource_id,
-            )
-            .await
-            .c(h!())?;
-        let mut signal_message = signal_message.into_active_model();
-        signal_message.datasource_group_id = Set(Some(datasource_group_id));
-        signal_message.update(txn).await.c(h!())?;
+    if has_coords {
+        if let Some((signal_message, group)) =
+            signal_message::Entity::find_by_id(message_id)
+                .find_with_related(datasource_group::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    datasource_group::Relation::SignalGroup.def(),
+                )
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_group::Column::Deleted.eq(false))
+                .filter(signal_group::Column::Name.eq(group_name))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .next()
+                .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
+        {
+            let datasource_group_id =
+                crate::messenger::group::ensure_datasource_group_id(
+                    txn,
+                    IMPORT_DIRECTION_FINDING_UUID.to_string(),
+                    group.datasource_id,
+                )
+                .await
+                .c(h!())?;
+            let mut signal_message = signal_message.into_active_model();
+            signal_message.datasource_group_id = Set(Some(datasource_group_id));
+            signal_message.update(txn).await.c(h!())?;
+        }
     }
 
     let event = EventMsg::new(EventType::ETInboxChanged(message.id));

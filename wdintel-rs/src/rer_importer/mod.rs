@@ -28,6 +28,7 @@ pub mod bgworker;
 pub mod body_noheader;
 pub mod bookmark;
 pub mod callsigns;
+pub mod coordinates;
 pub mod datetime;
 pub mod frequency;
 pub mod gdoc;
