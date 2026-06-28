@@ -5,6 +5,7 @@ use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
 use chrono::prelude::*;
+use chrono_tz::Tz;
 use sea_orm::*;
 
 /// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
@@ -63,28 +64,7 @@ where
     }
     let tz = crate::config::get_tz();
     let lnow = Local::now().with_timezone(&tz);
-    let mut m_dt: Option<chrono::DateTime<chrono_tz::Tz>> =
-        match crate::rer_importer::datetime::extract_datetime(lnow, &body)? {
-            None => None,
-            Some(dt) => match Kyiv.from_local_datetime(&dt) {
-                chrono::offset::LocalResult::None => {
-                    println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
-                    None
-                }
-                chrono::offset::LocalResult::Single(v) => Some(v),
-                chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-                    println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
-                    None
-                }
-            },
-        };
-    let mut meow_format = None;
-    if m_dt.is_none() {
-        meow_format = crate::rer_importer::meow_format::parse(lnow, &body);
-        if let Some(meow_format) = &meow_format {
-            m_dt = Some(meow_format.datetime);
-        }
-    }
+    let (mut m_dt, meow_format) = extract_message_datetime(lnow, &body)?;
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
@@ -321,6 +301,46 @@ where
     Ok(vec![])
 }
 
+fn extract_message_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<
+    (
+        Option<DateTime<Tz>>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
+    let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
+    if let Some(meow_format) = &meow_format {
+        return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
+    }
+
+    Ok((extract_generic_body_datetime(lnow, body)?, None))
+}
+
+fn extract_generic_body_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<Option<DateTime<Tz>>, AppError> {
+    let Some(dt) = crate::rer_importer::datetime::extract_datetime(lnow, body)?
+    else {
+        return Ok(None);
+    };
+
+    Ok(match Kyiv.from_local_datetime(&dt) {
+        chrono::offset::LocalResult::None => {
+            println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
+            None
+        }
+        chrono::offset::LocalResult::Single(v) => Some(v),
+        chrono::offset::LocalResult::Ambiguous(v1, v2) => {
+            println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
+            None
+        }
+    })
+}
+
 async fn find_unit_v2<'a, 'async_trait, C>(
     txn: &'a C,
     cache: &mut TopKCache<String, String>,
@@ -470,5 +490,23 @@ mod tests {
         let (date, time) = format_date_time_fields(dt_utc);
         assert_eq!(date, "2025-11-20");
         assert_eq!(time, "12:29:18");
+    }
+
+    #[test]
+    fn extract_message_datetime_prefers_meow_header_over_body_time() {
+        let now = Kyiv.with_ymd_and_hms(2026, 6, 28, 12, 0, 0).unwrap();
+        let body =
+            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
+
+        let (m_dt, meow_format) = extract_message_datetime(now, body).unwrap();
+
+        assert_eq!(
+            m_dt,
+            Some(Kyiv.with_ymd_and_hms(2026, 6, 28, 5, 58, 0).unwrap())
+        );
+        assert_eq!(
+            meow_format.unwrap().body_noheader.body,
+            "Перехоплення о 08:30\nрядок 2"
+        );
     }
 }

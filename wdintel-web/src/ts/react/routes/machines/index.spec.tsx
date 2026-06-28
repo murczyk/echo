@@ -80,6 +80,12 @@ function buttonByText(text: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+function networkCombobox(): HTMLElement {
+  const combobox = document.body.querySelector('[role="combobox"]');
+  expect(combobox).not.toBeNull();
+  return combobox as HTMLElement;
+}
+
 beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -139,6 +145,13 @@ describe('MachinesPage', () => {
 
     await act(async () => {
       buttonByText('Створити').click();
+    });
+    await flush();
+
+    await act(async () => {
+      networkCombobox().dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+      );
     });
     await flush();
 
