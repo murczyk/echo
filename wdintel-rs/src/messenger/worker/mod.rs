@@ -951,32 +951,81 @@ async fn sync_senders(
         senders.insert(clear_messenger_login_string(&uuid), sender);
     }
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
-    let existing_senders = signal_profile::Entity::find()
+    if sender_ids.is_empty() {
+        return Ok(());
+    }
+    let mut existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
         .select_only()
         .column(signal_profile::Column::Uuid)
-        .into_tuple::<String>()
+        .column(signal_profile::Column::GivenName)
+        .into_tuple::<(String, Option<String>)>()
         .all(db)
         .await
         .c(h!())?
         .into_iter()
-        .map(|id| clear_messenger_login_string(&id))
-        .collect::<Vec<_>>();
-    for s in existing_senders {
-        senders.remove(&s);
-    }
-    for (uuid, s) in senders {
-        signal_profile::ActiveModel {
-            uuid: Set(uuid),
-            given_name: Set(s.name.clone()),
-            family_name: NotSet,
-            created_at: NotSet,
+        .map(|(uuid, given_name)| {
+            (clear_messenger_login_string(&uuid), (uuid, given_name))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (uuid, sender) in senders {
+        let name = normalize_sender_profile_name(sender.name);
+        match existing_senders.remove(&uuid) {
+            Some((existing_uuid, old_name)) => {
+                update_sender_profile_name(db, existing_uuid, old_name, name)
+                    .await
+                    .c(h!())?;
+            }
+            None => {
+                signal_profile::ActiveModel {
+                    uuid: Set(uuid),
+                    given_name: Set(name),
+                    family_name: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(db)
+                .await
+                .c(h!())?;
+            }
         }
-        .insert(db)
-        .await
-        .c(h!())?;
     }
     Ok(())
+}
+
+async fn update_sender_profile_name(
+    db: &DatabaseConnection,
+    uuid: String,
+    old_name: Option<String>,
+    name: Option<String>,
+) -> anyhow::Result<()> {
+    if name.is_none() || old_name == name {
+        return Ok(());
+    }
+    signal_profile::ActiveModel {
+        uuid: Set(uuid.clone()),
+        given_name: Set(name.clone()),
+        family_name: NotSet,
+        created_at: NotSet,
+    }
+    .update(db)
+    .await
+    .c(h!())?;
+    info!(
+        "SENDER_RENAME source=messenger_sync profile_uuid={} old_name={:?} new_name={:?}",
+        uuid, old_name, name
+    );
+    Ok(())
+}
+
+fn normalize_sender_profile_name(name: Option<String>) -> Option<String> {
+    name.and_then(|name| {
+        let name = name.trim();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        }
+    })
 }
 
 pub fn clear_messenger_login_string(input: &str) -> String {
@@ -1098,5 +1147,27 @@ mod tests {
             now_ts,
         ));
         assert!(should_send_unlinked_datasource_notification(None, now_ts));
+    }
+
+    #[test]
+    fn normalize_sender_profile_name_trims_blank_names() {
+        assert_eq!(
+            normalize_sender_profile_name(Some(" Григорий ".to_string())),
+            Some("Григорий".to_string())
+        );
+        assert_eq!(normalize_sender_profile_name(Some(" ".to_string())), None);
+        assert_eq!(normalize_sender_profile_name(None), None);
+    }
+
+    #[test]
+    fn clear_messenger_login_string_normalizes_whatsapp_device_suffix() {
+        assert_eq!(
+            clear_messenger_login_string("276343128371348:5@lid"),
+            "276343128371348@lid"
+        );
+        assert_eq!(
+            clear_messenger_login_string("276343128371348:5@s.whatsapp.net"),
+            "276343128371348@s.whatsapp.net"
+        );
     }
 }
