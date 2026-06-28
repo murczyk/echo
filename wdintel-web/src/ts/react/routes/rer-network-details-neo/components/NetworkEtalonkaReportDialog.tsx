@@ -333,24 +333,32 @@ export function NetworkEtalonkaReportDialog({
                   </Typography>
                 )}
 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: '-11px' }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={report.includeHeadingsAndFreqs}
-                        onChange={(_event, checked) => onIncludeHeadingsAndFreqsChange(checked)}
-                        disabled={report.running}
-                        sx={{ p: 0.5 }}
+                {(() => {
+                  const noDescriptions = !report.includeSigintSigns && !report.includeConfirmation;
+                  const tooltipTitle = noDescriptions
+                    ? 'Увімкніть «Включити сигнали» або «Включити підтвердження» — заголовки та частоти додаються лише до цих секцій'
+                    : 'Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань';
+                  return (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: '-11px' }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={report.includeHeadingsAndFreqs}
+                            onChange={(_event, checked) => onIncludeHeadingsAndFreqsChange(checked)}
+                            disabled={report.running || noDescriptions}
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="Включати заголовки та частоти"
+                        sx={{ ml: 0 }}
                       />
-                    }
-                    label="Включати заголовки та частоти"
-                    sx={{ ml: 0 }}
-                  />
-                  <Tooltip arrow title="Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань">
-                    <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'default' }} />
-                  </Tooltip>
-                </Box>
+                      <Tooltip arrow title={tooltipTitle}>
+                        <InfoOutlinedIcon sx={{ fontSize: 16, color: noDescriptions ? 'text.disabled' : 'text.secondary', cursor: 'default' }} />
+                      </Tooltip>
+                    </Box>
+                  );
+                })()}
               </Stack>
             </ReportSectionCard>
           </Box>
