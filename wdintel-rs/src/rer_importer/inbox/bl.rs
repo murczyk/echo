@@ -821,6 +821,23 @@ pub async fn submit_upsert_inbox_item(
             coords_vec.push(c1.clone())
         }
     }
+    let peleng_bounds = crate::system_settings::get_active_peleng_bounds(txn)
+        .await
+        .c(h!())?;
+    let coords_s = coords_s.filter(|coord| {
+        crate::location::peleng::coord_matches_peleng_bounds(
+            coord,
+            peleng_bounds.as_ref(),
+        )
+    });
+    let (lat, lng) = match coords_s.as_ref() {
+        Some(coord) => (Some(coord.lat), Some(coord.lng)),
+        None => (None, None),
+    };
+    let coords_vec = crate::location::peleng::filter_coords_by_peleng_bounds(
+        coords_vec,
+        peleng_bounds.as_ref(),
+    );
 
     let freq = message
         .freq

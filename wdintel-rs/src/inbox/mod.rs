@@ -78,6 +78,10 @@ where
         .map(|v| crate::rer_importer::frequency::etalon(&v));
     let coords_vec =
         crate::rer_importer::coordinates::extract_coords(&body).await;
+    let coords_vec =
+        crate::location::peleng::filter_allowed_peleng_coords(coords_vec, txn)
+            .await
+            .c(h!())?;
     let mut other_coords = coords_vec.clone();
     let coords = crate::utils::pop_vector(&mut other_coords);
     let has_coords = coords.is_some();
