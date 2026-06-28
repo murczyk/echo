@@ -333,7 +333,7 @@ export function NetworkEtalonkaReportDialog({
                   </Typography>
                 )}
 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: '-11px' }}>
                   <FormControlLabel
                     control={
                       <Checkbox
@@ -345,6 +345,7 @@ export function NetworkEtalonkaReportDialog({
                       />
                     }
                     label="Включати заголовки та частоти"
+                    sx={{ ml: 0 }}
                   />
                   <Tooltip arrow title="Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань">
                     <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'default' }} />
