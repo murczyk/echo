@@ -160,6 +160,7 @@ const REPORT_KIND_LABELS: Record<string, string> = {
   mouse: 'Мишка',
   reo: 'РЕО',
   digest: 'Дайджест',
+  rer_report: 'РЕР Звіт',
   active_networks: 'Активні радіомережі',
   network_frequencies: 'Частоти Радіомереж',
   report_1213: 'Звіт 1.2.13',
@@ -194,7 +195,7 @@ function statusColor(status: string): 'default' | 'primary' | 'success' | 'error
 }
 
 function formatReportKind(reportKind: string): string {
-  return REPORT_KIND_LABELS[reportKind] ?? reportKind;
+  return REPORT_KIND_LABELS[reportKind] ?? '???';
 }
 
 function formatReportProgress(progress: number): string {

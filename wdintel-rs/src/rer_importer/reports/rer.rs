@@ -6,14 +6,14 @@ use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
-use crate::utils::dt_zoned_from_millis;
+use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use chrono::NaiveDateTime;
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
     RunFonts,
 };
 use log::error;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Expr, ExprTrait, SimpleExpr};
 use sea_orm::*;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -233,14 +233,14 @@ async fn load_report(
         else {
             continue;
         };
-        let Some(timestamp) = item.datetime else {
-            continue;
-        };
         let Some(message) = signal_message::Entity::find_by_id(item_id)
             .one(dbx)
             .await
             .c(h!())?
         else {
+            continue;
+        };
+        let Some(timestamp) = report_message_timestamp(&item, &message) else {
             continue;
         };
         let comments = load_non_empty_comments(dbx, item_id).await.c(h!())?;
@@ -327,9 +327,22 @@ async fn load_candidate_item_ids(
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<Vec<i64>, AppError> {
-    Ok(build_filtered_inbox_query(dbx, user_login, env, &req.req)
-        .await
-        .c(h!())?
+    let (candidate_req, since_ms, till_ms) =
+        candidate_query_req_without_date_bounds(req);
+    let candidate_timestamp = candidate_report_timestamp_expr();
+    let mut query =
+        build_filtered_inbox_query(dbx, user_login, env, &candidate_req)
+            .await
+            .c(h!())?;
+    if let Some(since_ms) = since_ms {
+        query = query
+            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+    }
+    if let Some(till_ms) = till_ms {
+        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
+    }
+
+    Ok(query
         .filter(unit_machine_link_exists())
         .filter(item_network_link_exists())
         .filter(non_empty_comment_exists())
@@ -340,6 +353,28 @@ async fn load_candidate_item_ids(
         .all(dbx)
         .await
         .c(h!())?)
+}
+
+fn candidate_query_req_without_date_bounds(
+    req: &ReportPreviewReq,
+) -> (
+    crate::rer_importer::InboxMessagesReq,
+    Option<i64>,
+    Option<i64>,
+) {
+    let mut candidate_req = req.req.clone();
+    let since_ms = candidate_req.since_date_inclusive_ms.take();
+    let till_ms = candidate_req.till_date_inclusive_ms.take();
+    if since_ms.is_some() && candidate_req.since_id_noninclusive.is_none() {
+        candidate_req.since_id_noninclusive = Some(0);
+    }
+    (candidate_req, since_ms, till_ms)
+}
+
+fn candidate_report_timestamp_expr() -> SimpleExpr {
+    Expr::cust(
+        r#"COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#,
+    )
 }
 
 fn unit_machine_link_exists() -> SimpleExpr {
@@ -406,10 +441,30 @@ async fn load_non_empty_comments(
         .collect())
 }
 
+fn report_message_timestamp(
+    item: &sigint_inbox_item::Model,
+    message: &signal_message::Model,
+) -> Option<NaiveDateTime> {
+    item.datetime.or_else(|| {
+        message.timestamp.map(|timestamp| {
+            timestamp
+                .and_utc()
+                .with_timezone(&crate::types::Kyiv)
+                .naive_local()
+        })
+    })
+}
+
 fn message_body_without_headers(
     message: &signal_message::Model,
 ) -> Result<String, AppError> {
     let body = message.body.clone().unwrap_or_default();
+    if let Some(meow_format) = crate::rer_importer::meow_format::parse(
+        chrono::Utc::now().with_timezone(&crate::config::get_tz()),
+        &body,
+    ) {
+        return Ok(meow_format.body_noheader.body);
+    }
     Ok(crate::rer_importer::body_noheader::extract_text(&body)
         .c(h!())?
         .body)
@@ -935,6 +990,48 @@ mod tests {
     }
 
     #[test]
+    fn candidate_query_req_removes_date_bounds_without_reenabling_default_window(
+    ) {
+        let req = ReportPreviewReq {
+            kind: "rer".to_string(),
+            req: crate::rer_importer::InboxMessagesReq {
+                since_date_inclusive_ms: Some(1000),
+                till_date_inclusive_ms: Some(2000),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: None,
+            report_1213_linked_networks_only: None,
+            without_comments: None,
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+        };
+
+        let (candidate_req, since_ms, till_ms) =
+            candidate_query_req_without_date_bounds(&req);
+
+        assert_eq!(since_ms, Some(1000));
+        assert_eq!(till_ms, Some(2000));
+        assert_eq!(candidate_req.since_date_inclusive_ms, None);
+        assert_eq!(candidate_req.till_date_inclusive_ms, None);
+        assert_eq!(candidate_req.since_id_noninclusive, Some(0));
+    }
+
+    #[test]
+    fn candidate_report_timestamp_uses_datetime_then_signal_timestamp() {
+        let sql = sea_orm::sea_query::Query::select()
+            .expr(candidate_report_timestamp_expr())
+            .to_string(sea_orm::sea_query::PostgresQueryBuilder);
+
+        assert_eq!(
+            sql,
+            r#"SELECT COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#
+        );
+    }
+
+    #[test]
     fn unit_identity_uses_highest_level_as_parent_and_lower_levels_as_unit() {
         let identity =
             unit_identity(&unit("6 А", "68 мсд", "423 мсп", "1 мсб", "", ""))
@@ -1214,6 +1311,75 @@ mod tests {
             message_body_without_headers(&message).unwrap(),
             "Перехоплення"
         );
+    }
+
+    #[test]
+    fn message_body_without_headers_strips_meow_header() {
+        let message = signal_message::Model {
+            id: 1,
+            body: Some(
+                "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення"
+                    .to_string(),
+            ),
+            created_at: chrono::Utc::now().naive_utc(),
+            timestamp: None,
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+        };
+
+        assert_eq!(
+            message_body_without_headers(&message).unwrap(),
+            "Перехоплення"
+        );
+    }
+
+    #[test]
+    fn report_message_timestamp_falls_back_to_signal_timestamp() {
+        let item = sigint_inbox_item::Model {
+            id: 1,
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: None,
+            checked: None,
+            reviewed: None,
+            unit: None,
+            callsign_tokens: None,
+            keyword_tokens: None,
+            unit_v2: None,
+            lat: None,
+            lng: None,
+            nominatimres_id: None,
+            location: None,
+            tags: None,
+            callsigns_alg2: None,
+            callsigns_alg1: None,
+            datetime: None,
+            signal_tokens: None,
+            body_noheader: None,
+            parsed_unit_v2: false,
+            location_v2: None,
+            post_id: None,
+        };
+        let message = signal_message::Model {
+            id: 1,
+            body: Some("Перехоплення".to_string()),
+            created_at: dt(1, 0),
+            timestamp: Some(dt(5, 58)),
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+        };
+
+        assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));
     }
 
     fn document_xml(path: &Path) -> String {

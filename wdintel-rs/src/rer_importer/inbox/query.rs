@@ -53,6 +53,34 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
+fn inbox_date_gte_expr(
+    req_sort_by: InboxMessagesSortBy,
+    rhs: SimpleExpr,
+) -> SimpleExpr {
+    match req_sort_by {
+        InboxMessagesSortBy::IMSDatetime => {
+            Expr::col(sigint_inbox_item::Column::Datetime).gte(rhs)
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            Expr::col(signal_message::Column::Timestamp).gte(rhs)
+        }
+    }
+}
+
+fn inbox_date_lte_expr(
+    req_sort_by: InboxMessagesSortBy,
+    rhs: SimpleExpr,
+) -> SimpleExpr {
+    match req_sort_by {
+        InboxMessagesSortBy::IMSDatetime => {
+            Expr::col(sigint_inbox_item::Column::Datetime).lte(rhs)
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            Expr::col(signal_message::Column::Timestamp).lte(rhs)
+        }
+    }
+}
+
 pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &str,
@@ -356,28 +384,14 @@ where
 
     // these are simple filters that double-check we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
-    match req_sort_by {
-        InboxMessagesSortBy::IMSDatetime => {
-            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
-                let datetime = dt_from_millis(since_date_inclusive_ms)?;
-                q = q.filter(sigint_inbox_item::Column::Datetime.gte(datetime));
-            }
-            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-                let datetime = dt_from_millis(till_date_inclusive_ms)?;
-                q = q.filter(sigint_inbox_item::Column::Datetime.lte(datetime));
-            }
-        }
-        InboxMessagesSortBy::IMSTimestamp => {
-            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
-                let datetime = dt_from_millis(since_date_inclusive_ms)?;
-                q = q.filter(signal_message::Column::Timestamp.gte(datetime));
-            }
-            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-                let datetime = dt_from_millis(till_date_inclusive_ms)?;
-                q = q.filter(signal_message::Column::Timestamp.lte(datetime));
-            }
-        }
-    };
+    if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+        let datetime = dt_from_millis(since_date_inclusive_ms)?;
+        q = q.filter(inbox_date_gte_expr(req_sort_by, datetime.into()));
+    }
+    if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
+        let datetime = dt_from_millis(till_date_inclusive_ms)?;
+        q = q.filter(inbox_date_lte_expr(req_sort_by, datetime.into()));
+    }
 
     // here are more complex and nuanced filters
     '_if: {
@@ -521,21 +535,18 @@ where
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         if req.since_id_noninclusive.is_none() {
             let ts = to_ts_expr(dt_from_millis(since_date_inclusive_ms)?);
-            let exp = match req.sort_by {
-                Some(InboxMessagesSortBy::IMSTimestamp) => {
-                    Expr::col(signal_message::Column::Timestamp).gte(ts)
-                }
-                _ => Expr::col(sigint_inbox_item::Column::Datetime).gte(ts),
-            };
+            let req_sort_by =
+                req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+            let exp = inbox_date_gte_expr(req_sort_by, ts);
             q = q.filter(exp);
         }
     }
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
         if req.before_id_noninclusive.is_none() {
-            q = q.filter(
-                sigint_inbox_item::Column::Datetime
-                    .lte(dt_from_millis(till_date_inclusive_ms)?),
-            );
+            let ts = to_ts_expr(dt_from_millis(till_date_inclusive_ms)?);
+            let req_sort_by =
+                req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+            q = q.filter(inbox_date_lte_expr(req_sort_by, ts));
         }
     }
 
@@ -953,5 +964,22 @@ mod tests {
         );
 
         assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn timestamp_sort_upper_date_bound_uses_signal_timestamp() {
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 6, 27)
+            .unwrap()
+            .and_hms_opt(9, 30, 0)
+            .unwrap();
+        let expr = inbox_date_lte_expr(
+            InboxMessagesSortBy::IMSTimestamp,
+            to_ts_expr(dt),
+        );
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains(r#"SELECT "timestamp" <= "#), "{sql}");
+        assert!(!sql.contains(r#""datetime" <= "#), "{sql}");
     }
 }

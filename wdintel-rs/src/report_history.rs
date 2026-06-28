@@ -49,6 +49,7 @@ pub const KIND_KMZ: &str = "kmz";
 pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
+pub const KIND_RER_REPORT: &str = "rer_report";
 
 const REPORT_HISTORY_MAX_ATTEMPTS: i32 = 2;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
@@ -1409,6 +1410,14 @@ pub fn spawn_report_history_workers(
             );
         }
     }
+    let unknown_env = env.clone();
+    crate::utils::worker_watch::spawn_named_worker(
+        "report_history_worker_unknown",
+        bg_set,
+        async move {
+            run_unknown_report_history_worker_nofail(unknown_env).await;
+        },
+    );
     let timeout_env = env.clone();
     crate::utils::worker_watch::spawn_named_worker(
         "report_history_timeout_worker",
@@ -1465,6 +1474,34 @@ async fn run_report_history_worker_nofail(
     }
 }
 
+async fn run_unknown_report_history_worker_nofail(env: std::sync::Arc<Env>) {
+    loop {
+        match fail_next_unknown_report(env.as_ref()).await {
+            Ok(Some(report_history)) => {
+                error!(
+                    "unsupported report kind requested: id={}, kind={}, requested_by={}",
+                    report_history.id,
+                    report_history.report_kind,
+                    report_history.requested_by
+                );
+            }
+            Ok(None) => {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    WORKER_IDLE_SLEEP_SECS,
+                ))
+                .await;
+            }
+            Err(err) => {
+                error!("failed to handle unknown report history row: {err:?}");
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    WORKER_IDLE_SLEEP_SECS,
+                ))
+                .await;
+            }
+        }
+    }
+}
+
 async fn run_report_history_timeout_worker_nofail(env: std::sync::Arc<Env>) {
     loop {
         if let Err(err) = fail_timed_out_reports(env.as_ref()).await {
@@ -1489,6 +1526,7 @@ fn worker_report_kinds() -> Vec<(&'static str, &'static str)> {
         ("report_history_worker_naushnom", "naushnom"),
         ("report_history_worker_reo", "reo"),
         ("report_history_worker_digest", "digest"),
+        ("report_history_worker_rer_report", KIND_RER_REPORT),
         ("report_history_worker_posts_docx", "posts_docx"),
         ("report_history_worker_active_networks", "active_networks"),
         (
@@ -1504,6 +1542,13 @@ fn worker_report_kinds() -> Vec<(&'static str, &'static str)> {
     ]
     .into_iter()
     .collect()
+}
+
+fn known_report_kinds() -> Vec<String> {
+    worker_report_kinds()
+        .into_iter()
+        .map(|(_, report_kind)| report_kind.to_string())
+        .collect()
 }
 
 async fn take_next_report(
@@ -1575,6 +1620,52 @@ async fn take_next_report(
         .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
+}
+
+async fn fail_next_unknown_report(
+    env: &Env,
+) -> Result<Option<report_history::Model>, AppError> {
+    let known_report_kinds = known_report_kinds();
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        with next_report as (
+            select id
+            from report_history
+            where status = 'planned'
+              and not (report_kind = any($1))
+              and (planned_for_ts is null or planned_for_ts <= now() at time zone 'utc')
+            order by coalesce(planned_for_ts, created_at), created_at, id
+            for update skip locked
+            limit 1
+        )
+        update report_history
+        set
+            status = $2,
+            started_at = now() at time zone 'utc',
+            completed_at = now() at time zone 'utc',
+            bgtask_id = null,
+            last_error = format('Unsupported report kind: %s', report_kind),
+            log = coalesce(log, '[]'::jsonb) || jsonb_build_array(
+                jsonb_build_object(
+                    'login', $3,
+                    'timestamp', now() at time zone 'utc',
+                    'message', format('Unsupported report kind: %s', report_kind)
+                )
+            )
+        where id in (select id from next_report)
+        returning *
+        "#,
+        [
+            known_report_kinds.into(),
+            STATUS_FAILED.into(),
+            REPORT_TIMEOUT_LOGIN.into(),
+        ],
+    );
+    Ok(report_history::Model::find_by_statement(stmt)
+        .one(&env.dbx)
+        .await
+        .c(h!())?)
 }
 
 async fn process_report(

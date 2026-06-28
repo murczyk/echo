@@ -38,6 +38,7 @@ pub mod import_kmz;
 pub mod important;
 pub mod inbox;
 pub mod location;
+pub mod meow_format;
 pub mod multimessage;
 pub mod points;
 pub mod post;
