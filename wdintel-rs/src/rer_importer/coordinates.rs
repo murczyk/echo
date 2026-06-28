@@ -130,11 +130,56 @@ ID(CG)⬅️: 34655
     }
 
     #[tokio::test]
+    async fn extract_coords_keeps_antenna_mgrs_coordinates() {
+        let body = r#"Тип: Антена
+Назва: 141.715 МГц
+24.06.2026 17:32
+Ворожий
+Координати: 36U XB 66512 50880
+Пост: 4431
+"#;
+
+        let coords = extract_coords(body).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
     async fn extract_coords_keeps_plain_decimal_coordinates() {
         let body = "145.5524\n47.392477\n36.056984\n10-11";
 
         let coords = extract_coords(body).await;
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_coords_keeps_echo_zp2_xy_footer_after_header_stripping() {
+        let body = r#"27.06.2026, 07:25:53
+403.4250
+УКХ р/м НВ підрозділу, р-н н.п. Пшеничне, 403.425 (МГц) ЦФП62
+1-НВ
+2-ГРАЧ
+
+1— Грач притормози, на западе стреляют
+2— Да, принял.
+1— Грач, давай.
+2— Грач да.
+
+
+x:52-49185
+y:67-14255"#;
+
+        let body_noheader =
+            crate::rer_importer::body_noheader::extract_text(body)
+                .unwrap()
+                .body;
+        assert!(body_noheader.contains("x:52-49185"));
+        assert!(body_noheader.contains("y:67-14255"));
+
+        let coords = extract_coords(&body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert!(coords[0].capture.contains("x:52-49185"));
+        assert!(coords[0].capture.contains("y:67-14255"));
     }
 }
