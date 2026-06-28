@@ -78,6 +78,13 @@ where
                 }
             },
         };
+    let mut meow_format = None;
+    if m_dt.is_none() {
+        meow_format = crate::rer_importer::meow_format::parse(lnow, &body);
+        if let Some(meow_format) = &meow_format {
+            m_dt = Some(meow_format.datetime);
+        }
+    }
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
@@ -106,8 +113,10 @@ where
     );
     let checked = freq.is_some();
     let reviewed = false;
-    let body_noheader =
-        crate::rer_importer::body_noheader::extract_text(&body)?;
+    let body_noheader = match &meow_format {
+        Some(meow_format) => meow_format.body_noheader.clone(),
+        None => crate::rer_importer::body_noheader::extract_text(&body)?,
+    };
 
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;

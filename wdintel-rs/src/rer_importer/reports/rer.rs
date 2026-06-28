@@ -5,6 +5,7 @@ use crate::h;
 use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
+use crate::rer_importer::types::InboxMessagesSortBy;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
 use chrono::NaiveDateTime;
@@ -233,14 +234,14 @@ async fn load_report(
         else {
             continue;
         };
-        let Some(timestamp) = item.datetime else {
-            continue;
-        };
         let Some(message) = signal_message::Entity::find_by_id(item_id)
             .one(dbx)
             .await
             .c(h!())?
         else {
+            continue;
+        };
+        let Some(timestamp) = report_message_timestamp(&item, &message) else {
             continue;
         };
         let comments = load_non_empty_comments(dbx, item_id).await.c(h!())?;
@@ -327,6 +328,8 @@ async fn load_candidate_item_ids(
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<Vec<i64>, AppError> {
+    let mut req = req.clone();
+    req.req.sort_by = Some(InboxMessagesSortBy::IMSTimestamp);
     Ok(build_filtered_inbox_query(dbx, user_login, env, &req.req)
         .await
         .c(h!())?
@@ -406,10 +409,30 @@ async fn load_non_empty_comments(
         .collect())
 }
 
+fn report_message_timestamp(
+    item: &sigint_inbox_item::Model,
+    message: &signal_message::Model,
+) -> Option<NaiveDateTime> {
+    item.datetime.or_else(|| {
+        message.timestamp.map(|timestamp| {
+            timestamp
+                .and_utc()
+                .with_timezone(&crate::types::Kyiv)
+                .naive_local()
+        })
+    })
+}
+
 fn message_body_without_headers(
     message: &signal_message::Model,
 ) -> Result<String, AppError> {
     let body = message.body.clone().unwrap_or_default();
+    if let Some(meow_format) = crate::rer_importer::meow_format::parse(
+        chrono::Utc::now().with_timezone(&crate::config::get_tz()),
+        &body,
+    ) {
+        return Ok(meow_format.body_noheader.body);
+    }
     Ok(crate::rer_importer::body_noheader::extract_text(&body)
         .c(h!())?
         .body)
@@ -1214,6 +1237,75 @@ mod tests {
             message_body_without_headers(&message).unwrap(),
             "Перехоплення"
         );
+    }
+
+    #[test]
+    fn message_body_without_headers_strips_meow_header() {
+        let message = signal_message::Model {
+            id: 1,
+            body: Some(
+                "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення"
+                    .to_string(),
+            ),
+            created_at: chrono::Utc::now().naive_utc(),
+            timestamp: None,
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+        };
+
+        assert_eq!(
+            message_body_without_headers(&message).unwrap(),
+            "Перехоплення"
+        );
+    }
+
+    #[test]
+    fn report_message_timestamp_falls_back_to_signal_timestamp() {
+        let item = sigint_inbox_item::Model {
+            id: 1,
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: None,
+            checked: None,
+            reviewed: None,
+            unit: None,
+            callsign_tokens: None,
+            keyword_tokens: None,
+            unit_v2: None,
+            lat: None,
+            lng: None,
+            nominatimres_id: None,
+            location: None,
+            tags: None,
+            callsigns_alg2: None,
+            callsigns_alg1: None,
+            datetime: None,
+            signal_tokens: None,
+            body_noheader: None,
+            parsed_unit_v2: false,
+            location_v2: None,
+            post_id: None,
+        };
+        let message = signal_message::Model {
+            id: 1,
+            body: Some("Перехоплення".to_string()),
+            created_at: dt(1, 0),
+            timestamp: Some(dt(5, 58)),
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+        };
+
+        assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));
     }
 
     fn document_xml(path: &Path) -> String {

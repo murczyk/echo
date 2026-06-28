@@ -15,6 +15,7 @@ const apiMock = vi.hoisted(() => ({
   archiveUnitMachine: vi.fn(),
   restoreUnitMachine: vi.fn(),
   getNetworksList: vi.fn(),
+  getUnitsList: vi.fn(),
 }));
 
 vi.mock('../../services/api/unit-machines', () => ({
@@ -27,6 +28,10 @@ vi.mock('../../services/api/unit-machines', () => ({
 
 vi.mock('../../services/api/networks', () => ({
   getNetworksList: apiMock.getNetworksList,
+}));
+
+vi.mock('../../services/api/units', () => ({
+  getUnitsList: apiMock.getUnitsList,
 }));
 
 let container: HTMLDivElement;
@@ -83,7 +88,11 @@ beforeEach(() => {
     buildMachine(),
     buildMachine({ id: 12, machineId: 'M-12', deleted: true }),
   ]);
-  apiMock.getNetworksList.mockResolvedValue([{ id: 7, name: 'Network 7' }]);
+  apiMock.getNetworksList.mockResolvedValue([{ id: 7, name: 'Network 7', unitIds: [1, 2] }]);
+  apiMock.getUnitsList.mockResolvedValue([
+    { id: 1, name: 'Unit Alpha' },
+    { id: 2, name: 'Unit Bravo' },
+  ]);
   apiMock.createUnitMachine.mockResolvedValue({
     item: buildMachine(),
     warning: null,
@@ -116,12 +125,24 @@ describe('MachinesPage', () => {
     expect(apiMock.listUnitMachines).not.toHaveBeenCalled();
   });
 
-  it('renders null machine ids and archived rows', async () => {
+  it('renders null machine ids, network display names, and archived rows', async () => {
     await renderPage();
 
     expect(document.body.textContent).toContain('НВ');
     expect(document.body.textContent).toContain('50 обрБпС');
+    expect(document.body.textContent).toContain('Network 7 - Unit');
     expect(document.body.textContent).toContain('Архів');
+  });
+
+  it('shows network unit names in the machine form selector', async () => {
+    await renderPage();
+
+    await act(async () => {
+      buttonByText('Створити').click();
+    });
+    await flush();
+
+    expect(document.body.textContent).toContain('Network 7 - Unit Alpha, Unit Bravo');
   });
 
   it('archives and restores machines', async () => {
