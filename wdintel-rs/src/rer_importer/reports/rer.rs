@@ -1,3 +1,4 @@
+use crate::config::RER_REPORT_OTHER_TAG_LABEL;
 use crate::delta::bgtask_log;
 use crate::entities::*;
 use crate::error::AppError;
@@ -13,7 +14,9 @@ use docx_rs::{
     RunFonts,
 };
 use log::error;
-use sea_orm::sea_query::{Expr, ExprTrait, SimpleExpr};
+use sea_orm::sea_query::{
+    extension::postgres::PgExpr, Expr, ExprTrait, SimpleExpr,
+};
 use sea_orm::*;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -223,7 +226,7 @@ async fn load_report(
         .c(h!())?;
     let mut report = RerReport::default();
     for item_id in item_ids {
-        if item_has_human_other_tag(dbx, item_id).await.c(h!())? {
+        if item_has_other_tag(dbx, item_id).await.c(h!())? {
             continue;
         }
         let Some(item) = sigint_inbox_item::Entity::find_by_id(item_id)
@@ -564,7 +567,7 @@ async fn load_network_units(
         .c(h!())?)
 }
 
-async fn item_has_human_other_tag(
+async fn item_has_other_tag(
     dbx: &DatabaseConnection,
     item_id: i64,
 ) -> Result<bool, AppError> {
@@ -574,8 +577,10 @@ async fn item_has_human_other_tag(
             sigint_inbox_item_tag::Relation::Tag.def(),
         )
         .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(item_id))
-        .filter(sigint_inbox_item_tag::Column::Model.is_null())
-        .filter(tag::Column::Label.eq("Інше"))
+        .filter(
+            Expr::col((tag::Entity, tag::Column::Label))
+                .ilike(RER_REPORT_OTHER_TAG_LABEL),
+        )
         .count(dbx)
         .await
         .c(h!())?;
