@@ -5,7 +5,6 @@ use crate::h;
 use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
-use crate::rer_importer::types::InboxMessagesSortBy;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
 use chrono::NaiveDateTime;
@@ -328,8 +327,6 @@ async fn load_candidate_item_ids(
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<Vec<i64>, AppError> {
-    let mut req = req.clone();
-    req.req.sort_by = Some(InboxMessagesSortBy::IMSTimestamp);
     Ok(build_filtered_inbox_query(dbx, user_login, env, &req.req)
         .await
         .c(h!())?
