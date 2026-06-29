@@ -43,6 +43,8 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     operationMode: 'дуплекс',
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
+    doNotArchive: false,
+    unitTags: [],
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -105,6 +107,8 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
     operationMode: network.operationMode ?? '',
     operationType: network.operationType ?? '',
     operationPeriod: network.operationPeriod ?? '',
+    doNotArchive: network.doNotArchive,
+    unitTags: [...network.unitTags],
     status: network.status,
     aorIds: [...network.aorIds],
     unitIds: [...(network.unitIds ?? [])],
@@ -112,19 +116,25 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
   };
 }
 
-export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
+export function toCreateNetworkReq(
+  form: NetworkUpsertForm,
+  options: { includeFrequency?: boolean } = {},
+): CreateNetworkReq {
+  const includeFrequency = options.includeFrequency ?? true;
   return {
-    freqs: [
-      {
-        freq: form.freq.trim(),
-        modulation: form.modulation,
-        encryptionId: form.encryptionId,
-        encryptionKeyIds: [...form.encryptionKeyIds],
-        description: null,
-        activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
-        activeTo: parseNetworkDetailsDateInputExclusiveEnd(form.activeTo),
-      },
-    ],
+    freqs: includeFrequency
+      ? [
+          {
+            freq: form.freq.trim(),
+            modulation: form.modulation,
+            encryptionId: form.encryptionId,
+            encryptionKeyIds: [...form.encryptionKeyIds],
+            description: null,
+            activeFrom: parseNetworkDetailsDateInput(form.activeFrom),
+            activeTo: parseNetworkDetailsDateInputExclusiveEnd(form.activeTo),
+          },
+        ]
+      : null,
     unitIds: form.unitIds.length === 0 ? null : [...form.unitIds],
     areaOfResponsibilityIds: form.aorIds.length === 0 ? null : [...form.aorIds],
     name: form.name.trim(),
@@ -134,9 +144,25 @@ export function toCreateNetworkReq(form: NetworkUpsertForm): CreateNetworkReq {
     operationMode: form.operationMode.trim() === '' ? null : form.operationMode.trim(),
     operationType: form.operationType.trim() === '' ? null : form.operationType.trim(),
     operationPeriod: form.operationPeriod.trim() === '' ? null : form.operationPeriod.trim(),
+    doNotArchive: form.doNotArchive,
+    unitTags: normalizeNetworkUnitTags(form.unitTags),
     postIds: [...form.postIds],
     descriptions: [],
   };
+}
+
+export function normalizeNetworkUnitTags(unitTags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  unitTags.forEach((unitTag) => {
+    const trimmed = unitTag.trim();
+    if (trimmed === '') return;
+    const key = trimmed.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  });
+  return out;
 }
 
 export type NetworkUpsertValidationError = {
@@ -146,6 +172,13 @@ export type NetworkUpsertValidationError = {
   freq: string | null;
   activeFrom: string | null;
 };
+
+export function shouldIncludeNetworkCreateFrequency(
+  form: NetworkUpsertForm,
+  supportNonRerInterceptions: boolean,
+): boolean {
+  return !supportNonRerInterceptions || form.freq.trim() !== '';
+}
 
 export function getNetworkUpsertValidationError(
   form: NetworkUpsertForm | null,

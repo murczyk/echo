@@ -212,20 +212,24 @@ pub async fn group_update(
     let res = bl::bl_group_update(&req, &txn).await.c(h!())?;
 
     txn.commit().await.c(h!())?;
-    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
-        &env.dbx,
-        &res.group,
-        format!(
-            "updated group from web UI: {}",
-            res.group.master_key.clone()
-        ),
-    )
-    .await
-    .c(h!())?;
+    if !res.network_invalidation_enqueued {
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
+            &env.dbx,
+            &res.group,
+            format!(
+                "updated group from web UI: {}",
+                res.group.master_key.clone()
+            ),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(Json(GroupEntryF1 {
         master_key: res.group.master_key.clone(),
         name: res.group.name.clone().unwrap_or("".to_string()),
         ignore_operativny: res.group.ignore_operativny,
+        fills_etalonka: res.group.fills_etalonka,
+        disable_network_assignment: res.group.disable_network_assignment,
         short_note: res.group_data.short_note.clone(),
         long_note: res.group_data.long_note.clone(),
         group_stats: res.stats.clone(),

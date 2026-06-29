@@ -176,6 +176,38 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_dmr_arrow_ids_without_colons() {
+        let metadata = parse_metadata_asserting_spans(
+            "СС:10\nID➡️ 11112222\nID(CG)⬅️ 890840",
+        );
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("10".to_string()),
+                cg: Some("890840".to_string()),
+                id: Some("11112222".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_compact_receiver_id_after_arrow() {
+        let metadata = parse_metadata_asserting_spans(
+            "СС:10\nID➡️: 3097968\nID(CG)⬅️3187767",
+        );
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("10".to_string()),
+                cg: Some("3187767".to_string()),
+                id: Some("3097968".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_textual_id_after_colon_before_semicolon() {
         let metadata = parse_metadata_asserting_spans(" Id:96МГ1_1; ");
         assert_eq!(
@@ -241,6 +273,50 @@ ID(CG)⬅️:50📣",
                     cc: Some("23".to_string()),
                     cg: Some("6".to_string()),
                     id: Some("33".to_string()),
+                    ..Default::default()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_sc_transcript_header() {
+        let metadata = parse_metadata_asserting_spans(
+            r#"27.06.2026 20:37:23
+Отримано з поста "SC2"
+*138.375*
+СС: 5
+ID➡️: 261, 12106, 1454, 2539
+ID(CG)⬅️: 8584772
+(УКХ р/м вБпЛа 121 мсп 68 мсд 6 А 🔑 (ЛИМАН ПЕРШИЙ) СС:5️⃣📟📣 138.375)
+Позивні: `12106=СТОЛИЦА, 1454=ШУСТРЫЙ`"#,
+        );
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("261".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("12106".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("1454".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("8584772".to_string()),
+                    id: Some("2539".to_string()),
                     ..Default::default()
                 }
             ]
@@ -409,6 +485,15 @@ ID отримувача: 3359939
                 ..Default::default()
             }]
         );
+    }
+
+    #[test]
+    fn parse_metadata_ignores_mgrs_coordinates_with_cg_square() {
+        assert!(parse_metadata_asserting_spans(
+            "Координати: 37U CG 12345 67890"
+        )
+        .is_empty());
+        assert!(parse_metadata_asserting_spans("37UCG1234567890").is_empty());
     }
 
     #[test]

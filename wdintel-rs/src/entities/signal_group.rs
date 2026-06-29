@@ -19,6 +19,8 @@ pub struct Model {
     pub deleted: bool,
     pub is_archived: bool,
     pub is_rer: bool,
+    pub fills_etalonka: bool,
+    pub disable_network_assignment: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -34,6 +34,9 @@ pub struct Model {
     pub active_to: Option<DateTime>,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    pub do_not_archive: bool,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub unit_tags: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -80,8 +83,6 @@ pub enum Relation {
     StatsGroupNetworkDay,
     #[sea_orm(has_many = "super::stats_group_network_freq_day::Entity")]
     StatsGroupNetworkFreqDay,
-    #[sea_orm(has_many = "super::unit_machine::Entity")]
-    UnitMachine,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -171,12 +172,6 @@ impl Related<super::stats_group_network_day::Entity> for Entity {
 impl Related<super::stats_group_network_freq_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupNetworkFreqDay.def()
-    }
-}
-
-impl Related<super::unit_machine::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::UnitMachine.def()
     }
 }
 

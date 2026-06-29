@@ -142,8 +142,10 @@ init _ _ () =
             , operationMode = Just "дуплекс"
             , operationType = Just "ведення службового радіообміну"
             , operationPeriod = Just "цілодобово"
+            , doNotArchive = False
             , postIds = []
             , descriptions = []
+            , unitTags = []
             }
       , kindSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-kind-state")

@@ -72,10 +72,8 @@ pub enum Relation {
     SigintInboxItemPointToken,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
-    #[sea_orm(has_many = "super::sigint_inbox_item_unit_machine::Entity")]
-    SigintInboxItemUnitMachine,
-    #[sea_orm(has_one = "super::sigint_inbox_item_unit_machine_queue::Entity")]
-    SigintInboxItemUnitMachineQueue,
+    #[sea_orm(has_one = "super::sigint_inbox_item_unit_tag_queue::Entity")]
+    SigintInboxItemUnitTagQueue,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
     SigintInboxTagModelError,
     #[sea_orm(has_many = "super::sigint_peleng::Entity")]
@@ -139,15 +137,9 @@ impl Related<super::sigint_inbox_item_tag::Entity> for Entity {
     }
 }
 
-impl Related<super::sigint_inbox_item_unit_machine::Entity> for Entity {
+impl Related<super::sigint_inbox_item_unit_tag_queue::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SigintInboxItemUnitMachine.def()
-    }
-}
-
-impl Related<super::sigint_inbox_item_unit_machine_queue::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintInboxItemUnitMachineQueue.def()
+        Relation::SigintInboxItemUnitTagQueue.def()
     }
 }
 

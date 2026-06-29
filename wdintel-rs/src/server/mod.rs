@@ -362,9 +362,8 @@ fn spawn_background_workers(
     spawn_named_worker("old_inbox_network_worker", bg_set, async move {
         crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(mode).await;
     });
-    spawn_named_worker("unit_machine_queue_worker", bg_set, async move {
-        crate::sigint::unit_machine::run_unit_machine_queue_worker_nofail(mode)
-            .await;
+    spawn_named_worker("unit_tag_queue_worker", bg_set, async move {
+        crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(mode).await;
     });
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
@@ -659,11 +658,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit)
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
-            .service(crate::sigint::unit_machine::unit_machines_list)
-            .service(crate::sigint::unit_machine::unit_machine_create)
-            .service(crate::sigint::unit_machine::unit_machine_update)
-            .service(crate::sigint::unit_machine::unit_machine_archive)
-            .service(crate::sigint::unit_machine::unit_machine_restore)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::list_callsigns_csv)
             .service(crate::sigint::callsign::list_callsigns_xlsx)

@@ -9,6 +9,7 @@ import { listNetworkCallsigns, getNetworkCallsigns, getNetworkCallsignsActivity,
 import { getUnitsList } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
+import { currentSystemSettings } from '../../services/api/system-settings';
 import {
   parseDateInputExclusiveEndInTimeZone,
   parseDateInputInTimeZone,
@@ -786,11 +787,12 @@ export function useRerNetworkDetailsNeoPageLoad(
 
     const loadReferences = async () => {
       try {
-        const [units, posts, aors, encryptions] = await Promise.all([
+        const [units, posts, aors, encryptions, systemSettings] = await Promise.all([
           getUnitsList(),
           listPosts(),
           listAors({ sortBy: null }),
           getEncryptions(),
+          currentSystemSettings(),
         ]);
         if (!isCurrent()) return;
         setState((current) => ({
@@ -799,6 +801,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           posts,
           aors,
           encryptions,
+          supportNonRerInterceptions: systemSettings.supportNonRerInterceptions,
           referenceLoading: false,
           referenceWarning: null,
         }));

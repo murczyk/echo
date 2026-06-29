@@ -15,7 +15,7 @@ import type { NetworksQuerySnapshot, UiMessage, ActivityByNetworkId } from './us
 import { createRerNetworksNeoLoadActions } from './use-rer-networks-neo-page.load';
 import { createRerNetworksNeoReportActions } from './use-rer-networks-neo-page.reports';
 import { createRerNetworksNeoMutationActions } from './use-rer-networks-neo-page.mutations';
-import { getNetworkPermissionsFromRoles, isSameSidebarUnitFilter } from './use-rer-networks-neo-page.shared';
+import { formatErrorMessage, getNetworkPermissionsFromRoles, isSameSidebarUnitFilter } from './use-rer-networks-neo-page.shared';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
@@ -23,6 +23,9 @@ import {
   createDefaultNetworkEtalonkaReportState,
   type NetworkEtalonkaReportState,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
+import { currentSystemSettings } from '../../services/api/system-settings';
+import { isUnauthorizedError } from '../../services/api/client';
+import { redirectToLogin } from '../../auth-redirect';
 
 export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
   const tableStateContext = useTableStateContext();
@@ -64,6 +67,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [deleteDialogNetwork, setDeleteDialogNetwork] = useState<Network | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
+  const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
 
   const requestSeqRef = useRef(0);
   const bootstrapLoadedRef = useRef(false);
@@ -255,6 +259,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         lastExecutedFullQueryKeyRef,
         editDialog,
         createDialog,
+        supportNonRerInterceptions,
         deleteDialogNetwork,
         editSubmitting,
         createSubmitting,
@@ -286,12 +291,38 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
       loadActions.refreshStatusCounts,
       networks,
       querySnapshot,
+      supportNonRerInterceptions,
     ],
   );
 
   useEffect(() => {
     void loadActions.loadNetworks(querySnapshot, { includeLookups: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void currentSystemSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (isUnauthorizedError(error)) {
+          redirectToLogin();
+          return;
+        }
+        setStatus({
+          kind: 'error',
+          text: `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -404,6 +435,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     setRowMenuAnchorEl,
     setRowMenuNetworkId,
     downloadInFlight,
+    supportNonRerInterceptions,
     runDownload: reportActions.runDownload,
     loadMoreNetworks,
     encryptions,

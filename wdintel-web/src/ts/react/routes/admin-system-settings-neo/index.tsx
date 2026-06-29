@@ -1,4 +1,4 @@
-import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material';
+import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -11,6 +11,8 @@ import {
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
 
+type SystemSettingsTab = 'main' | 'pelengs';
+
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
   dutyTestEnabled: boolean;
@@ -19,6 +21,28 @@ type SystemSettingsForm = {
   dutyTestLimit: number;
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: string;
+  pelengBoundsTopLeftLng: string;
+  pelengBoundsBottomRightLat: string;
+  pelengBoundsBottomRightLng: string;
+};
+
+type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
+
+type SystemSettingsPayload = {
+  exactMatchOnlyDefault: boolean;
+  dutyTestEnabled: boolean;
+  dutyInsertHistoricalInterceptions: boolean;
+  dutyTestSinceMs: number;
+  dutyTestLimit: number;
+  dutyPollIntervalSec: number;
+  shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 const EMPTY_FORM: SystemSettingsForm = {
@@ -29,6 +53,11 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyTestLimit: 1,
   dutyPollIntervalSec: 1,
   shortUrlEnabled: false,
+  pelengBoundsEnabled: false,
+  pelengBoundsTopLeftLat: '',
+  pelengBoundsTopLeftLng: '',
+  pelengBoundsBottomRightLat: '',
+  pelengBoundsBottomRightLng: '',
 };
 
 function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsForm {
@@ -40,6 +69,11 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
+    pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
+    pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
+    pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
+    pelengBoundsBottomRightLat: coordinateToInput(item?.pelengBoundsBottomRightLat ?? null),
+    pelengBoundsBottomRightLng: coordinateToInput(item?.pelengBoundsBottomRightLng ?? null),
   };
 }
 
@@ -51,7 +85,12 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
-    a.shortUrlEnabled === b.shortUrlEnabled
+    a.shortUrlEnabled === b.shortUrlEnabled &&
+    a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
+    a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
+    a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
+    a.pelengBoundsBottomRightLat === b.pelengBoundsBottomRightLat &&
+    a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng
   );
 }
 
@@ -65,7 +104,298 @@ function formatErrorMessage(error: unknown): string {
   return 'Невідома помилка. Спробуйте ще раз.';
 }
 
+function coordinateToInput(value: number | null): string {
+  return value === null ? '' : String(value);
+}
+
+function parseCoordinateInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+
+  const next = Number(trimmed);
+  return Number.isFinite(next) ? next : null;
+}
+
+function normalizeCoordinateInput(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return '';
+
+  const next = parseCoordinateInput(trimmed);
+  return next === null ? trimmed : String(next);
+}
+
+function coordinateToPayload(value: string): number | null {
+  return parseCoordinateInput(value);
+}
+
+function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
+  return {
+    ...form,
+    dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
+    dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
+    dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
+    pelengBoundsTopLeftLat: normalizeCoordinateInput(form.pelengBoundsTopLeftLat),
+    pelengBoundsTopLeftLng: normalizeCoordinateInput(form.pelengBoundsTopLeftLng),
+    pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
+    pelengBoundsBottomRightLng: normalizeCoordinateInput(form.pelengBoundsBottomRightLng),
+  };
+}
+
+function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
+  return {
+    exactMatchOnlyDefault: form.exactMatchOnlyDefault,
+    dutyTestEnabled: form.dutyTestEnabled,
+    dutyInsertHistoricalInterceptions: form.dutyInsertHistoricalInterceptions,
+    dutyTestSinceMs: form.dutyTestSinceMs,
+    dutyTestLimit: form.dutyTestLimit,
+    dutyPollIntervalSec: form.dutyPollIntervalSec,
+    shortUrlEnabled: form.shortUrlEnabled,
+    pelengBoundsEnabled: form.pelengBoundsEnabled,
+    pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
+    pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
+    pelengBoundsBottomRightLat: coordinateToPayload(form.pelengBoundsBottomRightLat),
+    pelengBoundsBottomRightLng: coordinateToPayload(form.pelengBoundsBottomRightLng),
+  };
+}
+
+function validateCoordinate(label: string, rawValue: string, min: number, max: number): string | null {
+  const trimmed = rawValue.trim();
+  if (trimmed.length === 0) return `${label} не задана.`;
+
+  const value = parseCoordinateInput(trimmed);
+  if (value === null) return `${label} має бути числом.`;
+  if (value < min || value > max) return `${label} має бути в межах від ${min} до ${max}.`;
+  return null;
+}
+
+function validatePelengBounds(form: SystemSettingsForm): string | null {
+  if (!form.pelengBoundsEnabled) return null;
+
+  return (
+    validateCoordinate('Широта верхнього лівого кута', form.pelengBoundsTopLeftLat, -90, 90) ??
+    validateCoordinate('Довгота верхнього лівого кута', form.pelengBoundsTopLeftLng, -180, 180) ??
+    validateCoordinate('Широта нижнього правого кута', form.pelengBoundsBottomRightLat, -90, 90) ??
+    validateCoordinate('Довгота нижнього правого кута', form.pelengBoundsBottomRightLng, -180, 180)
+  );
+}
+
+type CoordinateFieldProps = {
+  disabled: boolean;
+  label: string;
+  onBlur: (value: string) => void;
+  onChange: (value: string) => void;
+  value: string;
+};
+
+function CoordinateField({ disabled, label, onBlur, onChange, value }: CoordinateFieldProps) {
+  return (
+    <TextField
+      disabled={disabled}
+      fullWidth
+      label={label}
+      type="text"
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value);
+      }}
+      onBlur={(event) => {
+        onBlur(event.target.value);
+      }}
+      inputProps={{ inputMode: 'decimal' }}
+    />
+  );
+}
+
+function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; patchForm: PatchSystemSettingsForm }) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Активні значення за замовчуванням
+      </Typography>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        <Switch
+          sx={{ m: 0 }}
+          checked={form.exactMatchOnlyDefault}
+          onChange={(_, checked) => {
+            patchForm({ exactMatchOnlyDefault: checked });
+          }}
+        />
+        <ButtonBase
+          component="button"
+          type="button"
+          onClick={() => {
+            patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
+          }}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            textAlign: 'left',
+            borderRadius: 0.5,
+            typography: 'body1',
+            fontWeight: 400,
+            color: 'text.primary',
+          }}
+        >
+          Прапорець «точний збіг за еталонкою» на аналізі увімкнений
+        </ButtonBase>
+      </Box>
+
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Оперативний: тестові повідомлення
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.dutyTestEnabled}
+            onChange={(_, checked) => {
+              patchForm({ dutyTestEnabled: checked });
+            }}
+          />
+        }
+        label="Увімкнути тестову вибірку повідомлень"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.dutyInsertHistoricalInterceptions}
+            onChange={(_, checked) => {
+              patchForm({ dutyInsertHistoricalInterceptions: checked });
+            }}
+          />
+        }
+        label="Вставляти історичні перехоплення"
+      />
+      <TextField
+        label="Дата старту (timestamp ms)"
+        type="number"
+        value={form.dutyTestSinceMs}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ dutyTestSinceMs: Number.isFinite(next) ? next : 0 });
+        }}
+        inputProps={{ min: 0, step: 1000 }}
+        helperText="Використовується як sinceDateInclusiveMs"
+      />
+      <TextField
+        label="Ліміт повідомлень"
+        type="number"
+        value={form.dutyTestLimit}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ dutyTestLimit: Number.isFinite(next) ? next : 1 });
+        }}
+        inputProps={{ min: 1, step: 1 }}
+        helperText="Мінімум 1"
+      />
+      <TextField
+        label="Інтервал запиту нових повідомлень (сек)"
+        type="number"
+        value={form.dutyPollIntervalSec}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ dutyPollIntervalSec: Number.isFinite(next) ? next : 1 });
+        }}
+        inputProps={{ min: 1, step: 1 }}
+        helperText="Як часто перевіряти нові повідомлення"
+      />
+
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Оперативний: Короткий URL
+      </Typography>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.shortUrlEnabled}
+            onChange={(_, checked) => {
+              patchForm({ shortUrlEnabled: checked });
+            }}
+          />
+        }
+        label="Увімкнути которкий URL для оперативного"
+      />
+    </>
+  );
+}
+
+function PelengSettingsSection({ form, patchForm }: { form: SystemSettingsForm; patchForm: PatchSystemSettingsForm }) {
+  const coordinateFieldsDisabled = !form.pelengBoundsEnabled;
+
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Пеленги
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.pelengBoundsEnabled}
+            onChange={(_, checked) => {
+              patchForm({ pelengBoundsEnabled: checked });
+            }}
+          />
+        }
+        label="Обмежити пеленги квадратом"
+      />
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+        }}
+      >
+        <CoordinateField
+          disabled={coordinateFieldsDisabled}
+          label="Широта верхнього лівого кута"
+          value={form.pelengBoundsTopLeftLat}
+          onChange={(value) => {
+            patchForm({ pelengBoundsTopLeftLat: value });
+          }}
+          onBlur={(value) => {
+            patchForm({ pelengBoundsTopLeftLat: normalizeCoordinateInput(value) });
+          }}
+        />
+        <CoordinateField
+          disabled={coordinateFieldsDisabled}
+          label="Довгота верхнього лівого кута"
+          value={form.pelengBoundsTopLeftLng}
+          onChange={(value) => {
+            patchForm({ pelengBoundsTopLeftLng: value });
+          }}
+          onBlur={(value) => {
+            patchForm({ pelengBoundsTopLeftLng: normalizeCoordinateInput(value) });
+          }}
+        />
+        <CoordinateField
+          disabled={coordinateFieldsDisabled}
+          label="Широта нижнього правого кута"
+          value={form.pelengBoundsBottomRightLat}
+          onChange={(value) => {
+            patchForm({ pelengBoundsBottomRightLat: value });
+          }}
+          onBlur={(value) => {
+            patchForm({ pelengBoundsBottomRightLat: normalizeCoordinateInput(value) });
+          }}
+        />
+        <CoordinateField
+          disabled={coordinateFieldsDisabled}
+          label="Довгота нижнього правого кута"
+          value={form.pelengBoundsBottomRightLng}
+          onChange={(value) => {
+            patchForm({ pelengBoundsBottomRightLng: value });
+          }}
+          onBlur={(value) => {
+            patchForm({ pelengBoundsBottomRightLng: normalizeCoordinateInput(value) });
+          }}
+        />
+      </Box>
+    </>
+  );
+}
+
 export function AdminSystemSettingsNeoPage() {
+  const [activeTab, setActiveTab] = useState<SystemSettingsTab>('main');
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [loadInProgress, setLoadInProgress] = useState(true);
@@ -109,26 +439,35 @@ export function AdminSystemSettingsNeoPage() {
     if (saveInProgress) return;
     if (!isDirty) return;
 
+    const nextForm = normalizeForm(form);
+    const validationError = validatePelengBounds(nextForm);
+    if (validationError) {
+      setForm(nextForm);
+      setSaveSuccess(null);
+      setSaveError(validationError);
+      return;
+    }
+
     setSaveInProgress(true);
     setSaveError(null);
     setSaveSuccess(null);
 
     try {
-      const nextForm: SystemSettingsForm = {
-        ...form,
-        dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
-        dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
-        dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
-      };
-      await createSystemSettings(
-        nextForm.exactMatchOnlyDefault,
-        nextForm.dutyTestEnabled,
-        nextForm.dutyInsertHistoricalInterceptions,
-        nextForm.dutyTestSinceMs,
-        nextForm.dutyTestLimit,
-        nextForm.dutyPollIntervalSec,
-        nextForm.shortUrlEnabled,
-      );
+      const payload = formToPayload(nextForm);
+      await createSystemSettings({
+        rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
+        rerDutyTestEnabled: payload.dutyTestEnabled,
+        rerDutyInsertHistoricalInterceptions: payload.dutyInsertHistoricalInterceptions,
+        rerDutyTestSinceMs: payload.dutyTestSinceMs,
+        rerDutyTestLimit: payload.dutyTestLimit,
+        rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
+        rerDutyShortUrl: payload.shortUrlEnabled,
+        pelengBoundsEnabled: payload.pelengBoundsEnabled,
+        pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
+        pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
+        pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
+        pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
+      });
       setForm(nextForm);
       setSaved(nextForm);
       setSaveSuccess('Нове системне налаштування збережено.');
@@ -140,18 +479,36 @@ export function AdminSystemSettingsNeoPage() {
   }
 
   return (
-    <Box className="w-full" sx={{ maxWidth: 980, mx: "auto" }}>
+    <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
         <PageHeader title="Налаштування системи" />
 
-        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: 'none' }}>
-          <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-            <Box component="form" onSubmit={handleSaveSystemSettings} noValidate>
-              <Stack spacing={3} sx={{ width: '100%' }}>
-                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-                  Активні значення за замовчуванням
-                </Typography>
+        <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden' }}>
+          <Box component="form" onSubmit={handleSaveSystemSettings} noValidate>
+            <Tabs
+              value={activeTab}
+              onChange={(_, value: SystemSettingsTab) => {
+                setActiveTab(value);
+              }}
+              variant="scrollable"
+              allowScrollButtonsMobile
+              sx={{
+                minHeight: 48,
+                borderBottom: 1,
+                borderColor: 'divider',
+                '& .MuiTab-root': {
+                  minHeight: 48,
+                  alignItems: 'center',
+                  textAlign: 'center',
+                },
+              }}
+            >
+              <Tab value="main" label="Основні" id="system-settings-neo-tab-main" aria-controls="system-settings-neo-panel-main" />
+              <Tab value="pelengs" label="Пеленги" id="system-settings-neo-tab-pelengs" aria-controls="system-settings-neo-panel-pelengs" />
+            </Tabs>
 
+            <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+              <Stack spacing={3} sx={{ width: '100%' }}>
                 {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
                 {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
                 {saveSuccess ? (
@@ -160,108 +517,31 @@ export function AdminSystemSettingsNeoPage() {
                   </PowerAlert>
                 ) : null}
 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Switch
-                    sx={{ m: 0 }}
-                    checked={form.exactMatchOnlyDefault}
-                    onChange={(_, checked) => {
-                      patchForm({ exactMatchOnlyDefault: checked });
-                    }}
-                  />
-                  <ButtonBase
-                    component="button"
-                    type="button"
-                    onClick={() => {
-                      patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
-                    }}
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      textAlign: 'left',
-                      borderRadius: 0.5,
-                      typography: 'body1',
-                      fontWeight: 400,
-                      color: 'text.primary',
-                    }}
-                  >
-                    Прапорець «точний збіг за еталонкою» на аналізі увімкнений
-                  </ButtonBase>
+                <Box
+                  id="system-settings-neo-panel-main"
+                  role="tabpanel"
+                  hidden={activeTab !== 'main'}
+                  aria-labelledby="system-settings-neo-tab-main"
+                >
+                  {activeTab === 'main' ? (
+                    <Stack spacing={3}>
+                      <MainSettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
                 </Box>
 
-                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-                  Оперативний: тестові повідомлення
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.dutyTestEnabled}
-                      onChange={(_, checked) => {
-                        patchForm({ dutyTestEnabled: checked });
-                      }}
-                    />
-                  }
-                  label="Увімкнути тестову вибірку повідомлень"
-                />
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.dutyInsertHistoricalInterceptions}
-                      onChange={(_, checked) => {
-                        patchForm({ dutyInsertHistoricalInterceptions: checked });
-                      }}
-                    />
-                  }
-                  label="Вставляти історичні перехоплення"
-                />
-                <TextField
-                  label="Дата старту (timestamp ms)"
-                  type="number"
-                  value={form.dutyTestSinceMs}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    patchForm({ dutyTestSinceMs: Number.isFinite(next) ? next : 0 });
-                  }}
-                  inputProps={{ min: 0, step: 1000 }}
-                  helperText="Використовується як sinceDateInclusiveMs"
-                />
-                <TextField
-                  label="Ліміт повідомлень"
-                  type="number"
-                  value={form.dutyTestLimit}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    patchForm({ dutyTestLimit: Number.isFinite(next) ? next : 1 });
-                  }}
-                  inputProps={{ min: 1, step: 1 }}
-                  helperText="Мінімум 1"
-                />
-                <TextField
-                  label="Інтервал запиту нових повідомлень (сек)"
-                  type="number"
-                  value={form.dutyPollIntervalSec}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    patchForm({ dutyPollIntervalSec: Number.isFinite(next) ? next : 1 });
-                  }}
-                  inputProps={{ min: 1, step: 1 }}
-                  helperText="Як часто перевіряти нові повідомлення"
-                />
-
-                <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-                  Оперативний: Короткий URL
-                </Typography>
-
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.shortUrlEnabled}
-                      onChange={(_, checked) => {
-                        patchForm({ shortUrlEnabled: checked });
-                      }}
-                    />
-                  }
-                  label="Увімкнути которкий URL для оперативного"
-                />
+                <Box
+                  id="system-settings-neo-panel-pelengs"
+                  role="tabpanel"
+                  hidden={activeTab !== 'pelengs'}
+                  aria-labelledby="system-settings-neo-tab-pelengs"
+                >
+                  {activeTab === 'pelengs' ? (
+                    <Stack spacing={3}>
+                      <PelengSettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
+                </Box>
 
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
                   <PowerButton
@@ -274,8 +554,8 @@ export function AdminSystemSettingsNeoPage() {
                   </PowerButton>
                 </Box>
               </Stack>
-            </Box>
-          </CardContent>
+            </CardContent>
+          </Box>
         </Card>
       </Stack>
     </Box>

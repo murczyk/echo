@@ -19,6 +19,7 @@ const apiMock = vi.hoisted(() => ({
   getNetworksGroupsActivity: vi.fn(),
   getNetworkUnitStats: vi.fn(),
   getEncryptions: vi.fn(),
+  currentSystemSettings: vi.fn(),
   listAors: vi.fn(),
   listNetworks: vi.fn(),
   listPosts: vi.fn(),
@@ -128,6 +129,10 @@ vi.mock('../../services/api/encryptions', () => ({
   getEncryptions: apiMock.getEncryptions,
 }));
 
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: apiMock.currentSystemSettings,
+}));
+
 vi.mock('../../utils/download-blob', () => ({
   downloadBlob: downloadBlobMock,
 }));
@@ -156,6 +161,7 @@ function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
     operationMode: null,
     operationType: null,
     operationPeriod: null,
+    doNotArchive: false,
     lastUpdatedAt: now,
     lastUpdatedBy: 'tester',
     activeFrom: null,
@@ -224,6 +230,7 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.getNetworksGroupsActivity.mockReset();
     apiMock.getNetworkUnitStats.mockReset();
     apiMock.getEncryptions.mockReset();
+    apiMock.currentSystemSettings.mockReset();
     apiMock.listAors.mockReset();
     apiMock.listNetworks.mockReset();
     apiMock.listPosts.mockReset();
@@ -238,6 +245,17 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
     apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
+    apiMock.currentSystemSettings.mockResolvedValue({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 0,
+      rerDutyPollIntervalSec: 0,
+      rerShortUrlEnabled: false,
+      supportNonRerInterceptions: false,
+    });
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
     apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(123);
     apiMock.launchNetworksEtalonkaReportTask.mockResolvedValue(456);
@@ -312,6 +330,8 @@ describe('useRerNetworksNeoPage', () => {
       operationMode: 'дуплекс',
       operationType: 'ведення службового радіообміну',
       operationPeriod: 'цілодобово',
+      doNotArchive: false,
+      unitTags: [],
       status: NETWORK_STATUS_ACTIVE,
       aorIds: [],
       unitIds: [],
@@ -356,6 +376,8 @@ describe('useRerNetworksNeoPage', () => {
         operationMode: 'дуплекс',
         operationType: 'ведення службового радіообміну',
         operationPeriod: 'цілодобово',
+        doNotArchive: false,
+        unitTags: [],
         status: NETWORK_STATUS_ACTIVE,
         aorIds: [1],
         unitIds: [1],
@@ -398,6 +420,8 @@ describe('useRerNetworksNeoPage', () => {
       operationMode: 'дуплекс',
       operationType: 'ведення службового радіообміну',
       operationPeriod: 'цілодобово',
+      doNotArchive: false,
+      unitTags: [],
       postIds: [1],
       descriptions: [],
     });
@@ -405,6 +429,62 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.status).toEqual({ kind: 'success', text: 'Мережу створено.' });
     expect(locationAssignSpy).toHaveBeenCalledWith('/rer-networks-neo/3');
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a network without frequency when non-RER interceptions are enabled', async () => {
+    apiMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 0,
+      rerDutyPollIntervalSec: 0,
+      rerShortUrlEnabled: false,
+      supportNonRerInterceptions: true,
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа без частоти',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        doNotArchive: false,
+        unitTags: [],
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(apiMock.createNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        freqs: null,
+        name: 'Радіомережа без частоти',
+      }),
+    );
+    expect(locationAssignSpy).toHaveBeenCalledWith('/rer-networks-neo/3');
   });
 
   it('keeps backend row order when the server returns a custom sort', async () => {

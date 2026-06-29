@@ -8,6 +8,8 @@ import { getRestoreNetworkOnEditValue } from '../rer-network-details-neo/network
 import {
   createDefaultNetworkUpsertForm,
   getNetworkUpsertValidationError,
+  normalizeNetworkUnitTags,
+  shouldIncludeNetworkCreateFrequency,
   toCreateNetworkReq,
   toNetworkEditForm,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.forms';
@@ -25,6 +27,7 @@ type MutationArgs = {
   lastExecutedFullQueryKeyRef: MutableRefObject<string | null>;
   editDialog: NetworkUpsertForm | null;
   createDialog: NetworkUpsertForm | null;
+  supportNonRerInterceptions: boolean;
   deleteDialogNetwork: Network | null;
   editSubmitting: boolean;
   createSubmitting: boolean;
@@ -110,6 +113,8 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
         operationMode: editDialog.operationMode.trim() === '' ? null : editDialog.operationMode.trim(),
         operationType: editDialog.operationType.trim() === '' ? null : editDialog.operationType.trim(),
         operationPeriod: editDialog.operationPeriod.trim() === '' ? null : editDialog.operationPeriod.trim(),
+        doNotArchive: editDialog.doNotArchive,
+        unitTags: args.supportNonRerInterceptions ? normalizeNetworkUnitTags(editDialog.unitTags) : null,
         descriptions: null,
         status: editDialog.status,
       });
@@ -137,7 +142,11 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
   async function saveNetworkCreate() {
     if (!args.createDialog) return;
 
-    const validationError = getNetworkUpsertValidationError(args.createDialog);
+    const includeFrequency = shouldIncludeNetworkCreateFrequency(
+      args.createDialog,
+      args.supportNonRerInterceptions,
+    );
+    const validationError = getNetworkUpsertValidationError(args.createDialog, { includeFrequency });
     if (validationError !== null) {
       args.setCreateError(validationError.name ?? validationError.location ?? validationError.aorIds ?? validationError.freq ?? validationError.activeFrom ?? 'Перевірте форму');
       return;
@@ -147,7 +156,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     args.setCreateError(null);
 
     try {
-      const network = await createNetwork(toCreateNetworkReq(args.createDialog));
+      const network = await createNetwork(toCreateNetworkReq(args.createDialog, { includeFrequency }));
       args.setCreateDialog(null);
       args.setStatus({ kind: 'success', text: 'Мережу створено.' });
       window.location.assign(`/rer-networks-neo/${network.id}`);

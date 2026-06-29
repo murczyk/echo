@@ -665,6 +665,7 @@ pub struct BlGroupUpdateRes {
     pub group_data: group_admin_data::Model,
     pub stats: SignalGroupStats,
     pub aors: Vec<Model>,
+    pub network_invalidation_enqueued: bool,
 }
 
 pub async fn bl_group_update(
@@ -724,7 +725,7 @@ pub async fn bl_group_update(
                     let mut group = group.into_active_model();
                     group.is_rer = Set(is_rer);
                     let group = group.update(txn).await.c(h!())?;
-                    crate::sigint::unit_machine::enqueue_recent_unit_machine_recalculation_for_group(
+                    crate::sigint::unit_tag::enqueue_recent_unit_tag_recalculation_for_group(
                         txn,
                         &master_key,
                     )
@@ -738,6 +739,60 @@ pub async fn bl_group_update(
         } else {
             group
         };
+    let mut network_invalidation_enqueued = false;
+    let group = if let Some(fills_etalonka) = req.fills_etalonka {
+        let (group, changed) =
+            crate::sigint::network::etalon_calc::set_group_fills_etalonka(
+                txn,
+                &req.master_key,
+                fills_etalonka,
+            )
+            .await
+            .c(h!())?;
+        if changed {
+            crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
+                txn,
+                &group,
+                format!(
+                    "updated group fills_etalonka from messenger group edit: {}",
+                    group.master_key
+                ),
+                &mut network_invalidation_enqueued,
+            )
+            .await
+            .c(h!())?;
+        }
+        group
+    } else {
+        group
+    };
+    let group = if let Some(disable_network_assignment) =
+        req.disable_network_assignment
+    {
+        let (group, changed) = crate::sigint::network::etalon_calc::set_group_disable_network_assignment(
+                txn,
+                &req.master_key,
+                disable_network_assignment,
+            )
+            .await
+            .c(h!())?;
+        if changed {
+            crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
+                    txn,
+                    &group,
+                    format!(
+                        "updated group disable_network_assignment from messenger group edit: {}",
+                        group.master_key
+                    ),
+                    &mut network_invalidation_enqueued,
+                )
+                .await
+                .c(h!())?;
+        }
+        group
+    } else {
+        group
+    };
 
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
@@ -751,6 +806,7 @@ pub async fn bl_group_update(
         group_data,
         stats,
         aors,
+        network_invalidation_enqueued,
     })
 }
 
