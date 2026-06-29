@@ -144,6 +144,9 @@ fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
     for callsign in extract_buran_callsigns(body)? {
         push_if_unique_callsign(&callsign, &mut res);
     }
+    for callsign in extract_dmr_alias_callsigns(body)? {
+        push_if_unique_callsign(&callsign, &mut res);
+    }
     for callsign in extract_kharkiv_callsigns(body)? {
         push_if_unique_callsign(&callsign, &mut res);
     }
@@ -679,6 +682,17 @@ fn first_line_comintify_operator(
     Ok(true)
 }
 
+fn is_dmr_alias_callsigns_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_ALIAS_LINE: Regex = Regex::new(
+            r"(?iu)^\s*(позивн(і|ий)|позывн(ые|ой))\s*:\s*`?\s*\d+\s*="
+        )
+        .unwrap();
+    }
+
+    RE_ALIAS_LINE.is_match(line)
+}
+
 /// Extracts callsigns if the text is in "buran"'s format
 fn extract_buran_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     let lines: Vec<String> = input.lines().map(|x| x.to_string()).collect();
@@ -696,6 +710,10 @@ fn extract_buran_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     // println!("> msg_pos: {msg_pos}");
 
     for line in lines.iter() {
+        if is_dmr_alias_callsigns_line(line) {
+            msg_pos += cline_len(line) + 1;
+            continue;
+        }
         '_if: {
             let Some(capts) = RE_CALLSIGN.captures(line) else {
                 break '_if;
@@ -825,6 +843,66 @@ fn extract_buran_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
                     ),
                 etalon: callsign.clone(),
                 text: callsign_match.as_str().to_string(),
+            });
+        }
+        msg_pos += cline_len(line) + 1;
+    }
+
+    Ok(res)
+}
+
+fn extract_dmr_alias_callsigns(
+    input: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
+    lazy_static! {
+        static ref RE_ALIAS_LINE: Regex = Regex::new(
+            r"(?iu)^\s*(позивн(і|ий)|позывн(ые|ой))\s*:\s*(?P<aliases>.*)$"
+        )
+        .unwrap();
+        static ref RE_ALIAS: Regex =
+            Regex::new(r"(?P<id>\d+)\s*=\s*(?P<callsign>[^,`]+)").unwrap();
+    }
+
+    let mut res = vec![];
+    let mut msg_pos = 0;
+    for line in input.lines() {
+        let Some(line_capts) = RE_ALIAS_LINE.captures(line) else {
+            msg_pos += cline_len(line) + 1;
+            continue;
+        };
+        let Some(aliases) = line_capts.name("aliases") else {
+            msg_pos += cline_len(line) + 1;
+            continue;
+        };
+        for capts in RE_ALIAS.captures_iter(aliases.as_str()) {
+            let Some(callsign_match) = capts.name("callsign") else {
+                continue;
+            };
+            let callsign_raw = callsign_match.as_str();
+            let callsign = callsign_raw.trim().trim_matches('`').trim();
+            if callsign.is_empty() || callsign == "-" {
+                continue;
+            }
+            let normalized = callsign.to_lowercase();
+            if normalized == "нв"
+                || cline_len(callsign) > crate::config::CALLSIGNS_MAX_LEN
+                || !callsign.chars().any(|c| c.is_alphabetic())
+            {
+                continue;
+            }
+            let trim_offset = callsign_raw.find(callsign).unwrap_or(0);
+            let start_byte =
+                aliases.start() + callsign_match.start() + trim_offset;
+            let end_byte = start_byte + callsign.len();
+            res.push(CNCallsign {
+                begin: msg_pos
+                    + crate::utils::string::byte_to_char_index(
+                        line, start_byte,
+                    ),
+                end: msg_pos
+                    + crate::utils::string::byte_to_char_index(line, end_byte),
+                etalon: normalized,
+                text: callsign.to_string(),
             });
         }
         msg_pos += cline_len(line) + 1;
@@ -2491,6 +2569,49 @@ mod tests {
             vec!["АМИГА".to_string(), "ТИХИЙ".to_string()];
         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
+    }
+
+    #[test]
+    fn extract_callsigns_dmr_alias_header() {
+        let body = r#"27.06.2026 20:37:23
+Отримано з поста "SC2"
+*138.375*
+Позивні: `12106=СТОЛИЦА, 1454=ШУСТРЫЙ`
+
+`138.375 | 12106 | СТОЛИЦА`
+`20:37:28` — Курс к тебе поднимай дикого."#;
+        let res = extract_dmr_alias_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec!["СТОЛИЦА".to_string(), "ШУСТРЫЙ".to_string()];
+        let ress: Vec<String> = res.iter().map(|x| x.text.clone()).collect();
+        let etalons: Vec<String> = res.into_iter().map(|x| x.etalon).collect();
+        assert_eq!(ress, expected);
+        assert_eq!(etalons, vec!["столица".to_string(), "шустрый".to_string()]);
+    }
+
+    #[test]
+    fn extract_callsigns_dmr_alias_header_handles_slash_and_extra_comma() {
+        let body =
+            "Позивні: `90589=МАЛЫШ, 90734=ШТОРМ, 90588=ВОЛГА,, 1=Гранит, 122024=СЕВЕР/СЕРП`";
+        let res = extract_dmr_alias_callsigns(body).unwrap();
+        let expected: Vec<String> = vec![
+            "МАЛЫШ".to_string(),
+            "ШТОРМ".to_string(),
+            "ВОЛГА".to_string(),
+            "Гранит".to_string(),
+            "СЕВЕР/СЕРП".to_string(),
+        ];
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+        assert_eq!(ress, expected)
+    }
+
+    #[test]
+    fn extract_callsigns_dmr_alias_header_skips_raw_alias_map() {
+        let body = "Позивні: `12106=СТОЛИЦА, 1454=ШУСТРЫЙ`";
+        let res = extract_callsigns(body).unwrap();
+        let texts: Vec<String> = res.into_iter().map(|x| x.text).collect();
+
+        assert_eq!(texts, vec!["СТОЛИЦА", "ШУСТРЫЙ"]);
     }
 
     #[test]

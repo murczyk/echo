@@ -1,4 +1,4 @@
-import type { Network, UnitMachineItem } from '../../../../Bindings';
+import type { Network, Unit, UnitMachineItem } from '../../../../Bindings';
 import { Add, Archive, Edit, Refresh, Restore } from '@mui/icons-material';
 import {
   Alert,
@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { HttpRequestError } from '../../services/api/client';
 import { getNetworksList } from '../../services/api/networks';
+import { getUnitsList } from '../../services/api/units';
 import {
   archiveUnitMachine,
   createUnitMachine,
@@ -71,9 +72,18 @@ function canEdit(authUserRoles: string[]): boolean {
   return authUserRoles.includes('Admin') || authUserRoles.includes('NetworkEditor');
 }
 
+function networkOptionLabel(network: Network, unitsById: Map<number, Unit>): string {
+  const unitNames = (network.unitIds ?? [])
+    .map((unitId) => unitsById.get(unitId)?.name?.trim() || `#${unitId}`)
+    .filter(Boolean);
+  if (unitNames.length === 0) return network.name;
+  return `${network.name} - ${unitNames.join(', ')}`;
+}
+
 export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const [items, setItems] = useState<UnitMachineItem[]>([]);
   const [networks, setNetworks] = useState<Network[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,12 +98,14 @@ export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] 
     if (!editable) return;
     setLoading(true);
     try {
-      const [nextItems, nextNetworks] = await Promise.all([
+      const [nextItems, nextNetworks, nextUnits] = await Promise.all([
         listUnitMachines({ includeArchived, sigintNetworkId: null, query: query.trim() || null }),
         getNetworksList(),
+        getUnitsList(),
       ]);
       setItems(nextItems);
       setNetworks(nextNetworks);
+      setUnits(nextUnits);
     } catch (err) {
       setError(formatApiError(err));
     } finally {
@@ -105,14 +117,13 @@ export function MachinesPage({ authUserRoles = [] }: { authUserRoles?: string[] 
     void load();
   }, [load]);
 
-  const networkOptions = useMemo(
-    () =>
-      networks.map((network) => ({
-        id: network.id,
-        label: network.name,
-      })),
-    [networks],
-  );
+  const networkOptions = useMemo(() => {
+    const unitsById = new Map(units.map((unit) => [unit.id, unit]));
+    return networks.map((network) => ({
+      id: network.id,
+      label: networkOptionLabel(network, unitsById),
+    }));
+  }, [networks, units]);
 
   const openCreate = () => {
     setForm(emptyForm());

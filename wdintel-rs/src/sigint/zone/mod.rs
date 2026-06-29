@@ -130,6 +130,8 @@ pub async fn zones_datasources_group_update(
         group_master_key: szd.group_master_key,
         is_group_secret: rsp.is_secret,
         is_rer: rsp.is_rer,
+        fills_etalonka: rsp.fills_etalonka,
+        disable_network_assignment: rsp.disable_network_assignment,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -249,6 +251,24 @@ pub async fn zones_datasources_group_add(
         .await
         .c(h!())?
         .unwrap_or(true);
+    let fills_etalonka =
+        signal_group::Entity::find_by_id(group_master_key.clone())
+            .select_only()
+            .column(signal_group::Column::FillsEtalonka)
+            .into_tuple::<bool>()
+            .one(&txn)
+            .await
+            .c(h!())?
+            .unwrap_or(true);
+    let disable_network_assignment =
+        signal_group::Entity::find_by_id(group_master_key.clone())
+            .select_only()
+            .column(signal_group::Column::DisableNetworkAssignment)
+            .into_tuple::<bool>()
+            .one(&txn)
+            .await
+            .c(h!())?
+            .unwrap_or(false);
 
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
@@ -283,6 +303,8 @@ pub async fn zones_datasources_group_add(
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
             is_rer,
+            fills_etalonka,
+            disable_network_assignment,
             areas_of_responsibility,
             group_master_key,
             allowed_users,
@@ -346,19 +368,24 @@ pub async fn my_admin_groups(
         .column_as(signal_group::Column::Name, "name")
         .column_as(signal_group::Column::DatasourceId, "datasource_id")
         .column_as(signal_group::Column::IsSecret, "is_group_secret")
+        .column_as(signal_group::Column::FillsEtalonka, "fills_etalonka")
+        .column_as(
+            signal_group::Column::DisableNetworkAssignment,
+            "disable_network_assignment",
+        )
         .order_by_asc(signal_group::Column::Name)
-        .into_tuple::<(String, Option<String>, Option<i64>, bool)>()
+        .into_tuple::<(String, Option<String>, Option<i64>, bool, bool, bool)>()
         .all(&env.dbx)
         .await
         .c(h!())?;
 
     let master_keys = groups
         .iter()
-        .map(|(master_key, _, _, _)| master_key.clone())
+        .map(|(master_key, _, _, _, _, _)| master_key.clone())
         .collect::<Vec<_>>();
     let datasource_ids = groups
         .iter()
-        .filter_map(|(_, _, datasource_id, _)| *datasource_id)
+        .filter_map(|(_, _, datasource_id, _, _, _)| *datasource_id)
         .collect::<Vec<_>>();
 
     let group_aors = collect_group_aors(master_keys.clone(), &env.dbx)
@@ -387,36 +414,55 @@ pub async fn my_admin_groups(
 
     let groups = groups
         .into_iter()
-        .map(|(master_key, name, datasource_id, is_group_secret)| {
-            let datasource =
-                datasource_id.and_then(|id| datasource_map.get(&id));
-            let fallback_name = master_key
-                .chars()
-                .rev()
-                .take(5)
-                .collect::<String>()
-                .chars()
-                .rev()
-                .collect();
-            MyAdminSignalGroup {
-                name: name.unwrap_or(fallback_name),
-                datasource_name: datasource
-                    .map(|datasource| datasource.display_name.clone()),
-                datasource_kind: datasource
-                    .map(|datasource| datasource.kind.clone()),
-                areas_of_responsibility: group_aors.get(&master_key).cloned(),
-                allowed_users: render_group_logins(
-                    allowed_users.get(&master_key).cloned().unwrap_or_default(),
-                    &login_delta_map,
-                ),
-                admin_logins: render_group_logins(
-                    group_admins.get(&master_key).cloned().unwrap_or_default(),
-                    &login_delta_map,
-                ),
+        .map(
+            |(
                 master_key,
+                name,
+                datasource_id,
                 is_group_secret,
-            }
-        })
+                fills_etalonka,
+                disable_network_assignment,
+            )| {
+                let datasource =
+                    datasource_id.and_then(|id| datasource_map.get(&id));
+                let fallback_name = master_key
+                    .chars()
+                    .rev()
+                    .take(5)
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                MyAdminSignalGroup {
+                    name: name.unwrap_or(fallback_name),
+                    datasource_name: datasource
+                        .map(|datasource| datasource.display_name.clone()),
+                    datasource_kind: datasource
+                        .map(|datasource| datasource.kind.clone()),
+                    areas_of_responsibility: group_aors
+                        .get(&master_key)
+                        .cloned(),
+                    allowed_users: render_group_logins(
+                        allowed_users
+                            .get(&master_key)
+                            .cloned()
+                            .unwrap_or_default(),
+                        &login_delta_map,
+                    ),
+                    admin_logins: render_group_logins(
+                        group_admins
+                            .get(&master_key)
+                            .cloned()
+                            .unwrap_or_default(),
+                        &login_delta_map,
+                    ),
+                    master_key,
+                    is_group_secret,
+                    fills_etalonka,
+                    disable_network_assignment,
+                }
+            },
+        )
         .collect();
 
     Ok(Json(MyAdminSignalGroupsRsp { groups }))
@@ -520,6 +566,50 @@ pub async fn my_admin_group_update(
     )
     .await
     .c(h!())?;
+
+    let mut network_invalidation_enqueued = false;
+    let (group, changed) =
+        crate::sigint::network::etalon_calc::set_group_fills_etalonka(
+            &txn,
+            &req.master_key,
+            req.fills_etalonka,
+        )
+        .await
+        .c(h!())?;
+    if changed {
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
+            &txn,
+            &group,
+            format!(
+                "updated group fills_etalonka from my admin group edit: {}",
+                group.master_key
+            ),
+            &mut network_invalidation_enqueued,
+        )
+        .await
+        .c(h!())?;
+    }
+    let (group, changed) =
+        crate::sigint::network::etalon_calc::set_group_disable_network_assignment(
+            &txn,
+            &req.master_key,
+            req.disable_network_assignment,
+        )
+        .await
+        .c(h!())?;
+    if changed {
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
+            &txn,
+            &group,
+            format!(
+                "updated group disable_network_assignment from my admin group edit: {}",
+                group.master_key
+            ),
+            &mut network_invalidation_enqueued,
+        )
+        .await
+        .c(h!())?;
+    }
 
     crate::messenger::bl::upsert_group_area_of_responsibility(
         &txn,

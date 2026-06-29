@@ -256,6 +256,10 @@ mod m20260619_101731_report_history_created_at_idx;
 mod m20260622_090245_aor_report_order_scope;
 mod m20260622_101608_add_signal_group_archive;
 mod m20260626_101738_non_rer_interceptions;
+mod m20260626_220129_signal_group_fills_etalonka;
+mod m20260627_101500_add_sigint_network_do_not_archive;
+mod m20260627_180543_signal_group_disable_network_assignment;
+mod m20260628_114539_add_peleng_bounds_to_system_settings;
 
 pub struct Migrator;
 
@@ -521,6 +525,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260622_090245_aor_report_order_scope::Migration),
             Box::new(m20260622_101608_add_signal_group_archive::Migration),
             Box::new(m20260626_101738_non_rer_interceptions::Migration),
+            Box::new(m20260626_220129_signal_group_fills_etalonka::Migration),
+            Box::new(m20260627_101500_add_sigint_network_do_not_archive::Migration),
+            Box::new(m20260627_180543_signal_group_disable_network_assignment::Migration),
+            Box::new(m20260628_114539_add_peleng_bounds_to_system_settings::Migration),
         ]
     }
 }

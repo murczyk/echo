@@ -88,38 +88,45 @@ pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
 
 pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
-        static ref RE_CG: Regex = Regex::new(r#"➡️\s*:\s*(\d+)"#).unwrap();
+        static ref RE_CG: Regex = Regex::new(r#"➡️?\s*:?\s*(\d+)"#).unwrap();
+    }
+    lazy_static! {
+        static ref RE_CG_LIST: Regex =
+            Regex::new(r#"➡️?\s*:?\s*([\d,\s]+)"#).unwrap();
     }
     lazy_static! {
         static ref RE_ID: Regex =
-            Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)"#).unwrap();
+            Regex::new(r#"[іІiI][dD]\s*:?\s*(\d+)"#).unwrap();
     }
     lazy_static! {
         static ref RE_SENDER_ID_UA: Regex =
-            Regex::new(r#"(?i)[іІiI][dD]\s+відправника\s*:\s*(\d+|нв|-)"#)
+            Regex::new(r#"(?i)[іІiI][dD]\s+відправника\s*:?\s*(\d+|нв|-)"#)
                 .unwrap();
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex =
-            Regex::new(r#"(?i)SOURCE\s+ID\s*:\s*([\d,\s]+)"#).unwrap();
+            Regex::new(r#"(?i)SOURCE\s+ID\s*:?\s*([\d,\s]+)"#).unwrap();
     }
     parse_numeric_value_from_standalone_regexes(
         line,
         &[&RE_SENDER_ID_UA, &RE_ID],
     )
     .or_else(|| {
-        parse_numeric_value_from_regexes(line, &[&RE_CG, &RE_SOURCE_ID])
+        parse_numeric_value_from_regexes(
+            line,
+            &[&RE_CG_LIST, &RE_CG, &RE_SOURCE_ID],
+        )
     })
 }
 
 pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CG: Regex =
-            Regex::new(r#"➡️\s*:\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
+            Regex::new(r#"➡️?\s*:?\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
     }
     lazy_static! {
         static ref RE_ID: Regex =
-            Regex::new(r#"[іІiI][dD]\s*:\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
+            Regex::new(r#"[іІiI][dD]\s*:?\s*(\d+)\s*\(([^)]+)\)"#).unwrap();
     }
     lazy_static! {
         static ref RE_ID_TEXT: Regex =
@@ -297,16 +304,17 @@ pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
 pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     lazy_static! {
         static ref RE_RECEIVER_ARROW: Regex =
-            Regex::new(r#"⬅️\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
+            Regex::new(r#"⬅️?\s*:?\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
     }
     lazy_static! {
-        static ref RE_RECEIVER_ID: Regex =
-            Regex::new(r#"(?i:[iі]d\([cс]g\))\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
-                .unwrap();
+        static ref RE_RECEIVER_ID: Regex = Regex::new(
+            r#"(?i:[iі]d\([cс]g\))\s*(?:⬅️?)?\s*:?\s*(\d+)(?:\s*\(([^)]+)\))?"#
+        )
+        .unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_ID_UA: Regex = Regex::new(
-            r#"(?i:[iі]d)\s+отримувача\s*:\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
+            r#"(?i:[iі]d)\s+отримувача\s*:?\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
         )
         .unwrap();
     }
@@ -315,13 +323,17 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
             Regex::new(r#"(?i:[cс]g)\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
     }
     lazy_static! {
+        static ref RE_RECEIVER_GROUP_BARE: Regex =
+            Regex::new(r#"(?i:[cс]g)\s+(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
+    }
+    lazy_static! {
         static ref RE_RECEIVER_GROUP_EN: Regex =
-            Regex::new(r#"(?i)GROUP\s+ID\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
+            Regex::new(r#"(?i)GROUP\s+ID\s*:?\s*(\d+)(?:\s*\(([^)]+)\))?"#)
                 .unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_UA: Regex = Regex::new(
-            r#"(?i)код\s+групи\s*:\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
+            r#"(?i)код\s+групи\s*:?\s*(\d+|нв|-)(?:\s*\(([^)]+)\))?"#
         )
         .unwrap();
     }
@@ -362,12 +374,21 @@ pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
         }
     }
 
-    for regex in [
-        &*RE_RECEIVER_GROUP as &Regex,
-        &*RE_RECEIVER_GROUP_EN as &Regex,
-        &*RE_RECEIVER_GROUP_UA as &Regex,
+    for (regex, require_standalone_prefix) in [
+        (&*RE_RECEIVER_GROUP as &Regex, false),
+        (&*RE_RECEIVER_GROUP_BARE as &Regex, true),
+        (&*RE_RECEIVER_GROUP_EN as &Regex, false),
+        (&*RE_RECEIVER_GROUP_UA as &Regex, false),
     ] {
         for caps in regex.captures_iter(&line.text) {
+            if require_standalone_prefix {
+                let Some(full_match) = caps.get(0) else {
+                    continue;
+                };
+                if !line.standalone_prefix(full_match.start()) {
+                    continue;
+                }
+            }
             let Some(value) = caps.get(1) else {
                 continue;
             };

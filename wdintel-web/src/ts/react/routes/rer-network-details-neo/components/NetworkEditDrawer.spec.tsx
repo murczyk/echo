@@ -31,8 +31,37 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  Checkbox: ({
+    checked,
+    disabled,
+    onChange,
+  }: {
+    checked?: boolean;
+    disabled?: boolean;
+    onChange?: (event: { target: { checked: boolean } }) => void;
+  }) => (
+    <input
+      aria-label="Не архівувати автоматично"
+      checked={checked ?? false}
+      disabled={disabled}
+      type="checkbox"
+      onChange={(event) => onChange?.(event as never)}
+    />
+  ),
   CircularProgress: () => <span data-testid="spinner" />,
   Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  FormControlLabel: ({
+    control,
+    label,
+  }: {
+    control?: ReactNode;
+    label?: ReactNode;
+  }) => (
+    <label>
+      {control}
+      <span>{label}</span>
+    </label>
+  ),
   FormControl: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   InputLabel: ({ children }: { children?: ReactNode }) => <label>{children}</label>,
   MenuItem: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -107,6 +136,7 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
     operationMode: 'дуплекс',
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
+    doNotArchive: false,
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -121,7 +151,11 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
   };
 }
 
-function renderDrawer(form: NetworkUpsertForm | null, mode: 'create' | 'edit' = 'create'): Rendered {
+function renderDrawer(
+  form: NetworkUpsertForm | null,
+  mode: 'create' | 'edit' = 'create',
+  options: { frequencyOptional?: boolean } = {},
+): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -155,6 +189,7 @@ function renderDrawer(form: NetworkUpsertForm | null, mode: 'create' | 'edit' = 
         onClose={() => {}}
         onChange={nextSetForm}
         onSave={saveSpy}
+        frequencyOptional={options.frequencyOptional}
       />
     );
   }
@@ -213,6 +248,46 @@ describe('NetworkEditDrawer', () => {
     const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Створити') as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
     expect(view.container.querySelector('[data-testid="freq-activity-period-control"]')).not.toBeNull();
+  });
+
+  it('allows create save with blank optional frequency', () => {
+    const view = renderDrawer(
+      buildForm({
+        name: 'управління',
+        location: 'район',
+        aorIds: [1],
+      }),
+      'create',
+      { frequencyOptional: true },
+    );
+    rendered.push(view);
+
+    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Створити') as HTMLButtonElement | undefined;
+    expect(saveButton?.disabled).toBe(false);
+    expect(view.container.textContent).toContain('Перша частота');
+    expect(view.container.textContent).not.toContain('Перша частота *');
+  });
+
+  it('toggles auto-archive protection', () => {
+    const view = renderDrawer(buildForm());
+    rendered.push(view);
+
+    const operationalButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Оперативні параметри'));
+    expect(operationalButton).toBeDefined();
+
+    act(() => {
+      operationalButton?.click();
+    });
+
+    const checkbox = view.container.querySelector('input[aria-label="Не архівувати автоматично"]') as HTMLInputElement | null;
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.checked).toBe(false);
+
+    act(() => {
+      checkbox?.click();
+    });
+
+    expect(checkbox?.checked).toBe(true);
   });
 
   it('disables edit save while required metadata is invalid', () => {

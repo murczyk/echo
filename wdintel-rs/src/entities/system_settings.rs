@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize,
+    Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize,
 )]
 #[sea_orm(table_name = "system_settings")]
 pub struct Model {
@@ -23,6 +23,15 @@ pub struct Model {
     pub rer_duty_insert_historical_interceptions: bool,
     pub short_url_enabled: bool,
     pub support_non_rer_interceptions: bool,
+    pub peleng_bounds_enabled: bool,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub peleng_bounds_top_left_lat: Option<f64>,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub peleng_bounds_top_left_lng: Option<f64>,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub peleng_bounds_bottom_right_lat: Option<f64>,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub peleng_bounds_bottom_right_lng: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

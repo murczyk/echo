@@ -40,6 +40,7 @@ export type NetworkUpsertForm = {
   operationMode: string;
   operationType: string;
   operationPeriod: string;
+  doNotArchive: boolean;
   status: NetworkStatus;
   aorIds: number[];
   unitIds: number[];

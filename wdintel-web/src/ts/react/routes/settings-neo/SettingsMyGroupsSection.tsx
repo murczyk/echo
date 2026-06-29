@@ -1,4 +1,5 @@
 import EditIcon from '@mui/icons-material/Edit';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import {
   Autocomplete,
@@ -68,11 +69,16 @@ const DEFAULT_MY_GROUPS_EDIT_COLUMN_ORDER = [
 const MY_GROUPS_SETUP_FLOW_IMAGE_ALT =
   'Схема додавання групи: 1. Додайте номер бота до групи Signal або WhatsApp. 2. Напишіть в підтримку "Додано групу ...". 3. Вкажіть тип групи: приватна група — користувачі Delta1, Delta2; смугова група — смуга АК33, АК34.';
 
+const DISABLE_NETWORK_ASSIGNMENT_TOOLTIP =
+  'Корисно для глобальних груп що діють на дуже широкій смузі';
+
 type ReferenceDataStatus = 'idle' | 'loading' | 'success' | 'error';
 
 type MyGroupEditState = {
   group: MyAdminSignalGroup;
   isSecret: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
   selectedAorIds: number[];
@@ -105,6 +111,19 @@ function formatAllowedUsers(group: MyAdminSignalGroup): string {
 
 function groupLoginValues(logins: SignalGroupLogin[]): string[] {
   return logins.map((login) => login.login);
+}
+
+function DisableNetworkAssignmentLabel() {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+      <Box component="span">Вимкнути привʼязку мереж</Box>
+      <Tooltip title={DISABLE_NETWORK_ASSIGNMENT_TOOLTIP} placement="top">
+        <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }} aria-label="Підказка">
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  );
 }
 
 function MyGroupActions(props: { group: MyAdminSignalGroup; onEdit: (group: MyAdminSignalGroup) => void }) {
@@ -306,6 +325,36 @@ function MyGroupEditDialog(props: {
           }
           label="Прихована група"
         />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={editDialog?.fillsEtalonka ?? true}
+              onChange={(event) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  fillsEtalonka: event.target.checked,
+                })
+              }
+            />
+          }
+          label="Наповнює еталонку"
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={editDialog?.disableNetworkAssignment ?? false}
+              onChange={(event) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  disableNetworkAssignment: event.target.checked,
+                })
+              }
+            />
+          }
+          label={<DisableNetworkAssignmentLabel />}
+        />
         {editDialog?.isSecret ? (
           <Autocomplete
             multiple
@@ -405,6 +454,8 @@ export function SettingsMyGroupsSection({
     setEditDialog({
       group,
       isSecret: group.isGroupSecret,
+      fillsEtalonka: group.fillsEtalonka,
+      disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: groupLoginValues(group.allowedUsers),
       selectedAdmins: groupLoginValues(group.adminLogins),
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -431,6 +482,8 @@ export function SettingsMyGroupsSection({
       await updateMyAdminGroup({
         masterKey: editDialog.group.masterKey,
         isSecret: editDialog.isSecret,
+        fillsEtalonka: editDialog.fillsEtalonka,
+        disableNetworkAssignment: editDialog.disableNetworkAssignment,
         userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
         adminLogins: selectedAdmins,
         areaOfResponsibilityIds: editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,

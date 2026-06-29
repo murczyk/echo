@@ -5,6 +5,7 @@ use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
 use chrono::prelude::*;
+use chrono_tz::Tz;
 use sea_orm::*;
 
 /// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
@@ -63,21 +64,7 @@ where
     }
     let tz = crate::config::get_tz();
     let lnow = Local::now().with_timezone(&tz);
-    let mut m_dt: Option<chrono::DateTime<chrono_tz::Tz>> =
-        match crate::rer_importer::datetime::extract_datetime(lnow, &body)? {
-            None => None,
-            Some(dt) => match Kyiv.from_local_datetime(&dt) {
-                chrono::offset::LocalResult::None => {
-                    println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
-                    None
-                }
-                chrono::offset::LocalResult::Single(v) => Some(v),
-                chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-                    println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
-                    None
-                }
-            },
-        };
+    let (mut m_dt, meow_format) = extract_message_datetime(lnow, &body)?;
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
@@ -89,9 +76,15 @@ where
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
-    let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
+    let coords_vec =
+        crate::rer_importer::coordinates::extract_coords(&body).await;
+    let coords_vec =
+        crate::location::peleng::filter_allowed_peleng_coords(coords_vec, txn)
+            .await
+            .c(h!())?;
     let mut other_coords = coords_vec.clone();
     let coords = crate::utils::pop_vector(&mut other_coords);
+    let has_coords = coords.is_some();
     let callsign_tokens =
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
@@ -104,8 +97,10 @@ where
     );
     let checked = freq.is_some();
     let reviewed = false;
-    let body_noheader =
-        crate::rer_importer::body_noheader::extract_text(&body)?;
+    let body_noheader = match &meow_format {
+        Some(meow_format) => meow_format.body_noheader.clone(),
+        None => crate::rer_importer::body_noheader::extract_text(&body)?,
+    };
 
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
@@ -245,34 +240,36 @@ where
     // to MPORT_DIRECTION_FINDING
     let group_name = config.signal_import_group_name.clone();
 
-    if let Some((signal_message, group)) =
-        signal_message::Entity::find_by_id(message_id)
-            .find_with_related(datasource_group::Entity)
-            .join(
-                JoinType::InnerJoin,
-                datasource_group::Relation::SignalGroup.def(),
-            )
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_group::Column::Deleted.eq(false))
-            .filter(signal_group::Column::Name.eq(group_name))
-            .all(txn)
-            .await
-            .c(h!())?
-            .into_iter()
-            .next()
-            .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
-    {
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                txn,
-                IMPORT_DIRECTION_FINDING_UUID.to_string(),
-                group.datasource_id,
-            )
-            .await
-            .c(h!())?;
-        let mut signal_message = signal_message.into_active_model();
-        signal_message.datasource_group_id = Set(Some(datasource_group_id));
-        signal_message.update(txn).await.c(h!())?;
+    if has_coords {
+        if let Some((signal_message, group)) =
+            signal_message::Entity::find_by_id(message_id)
+                .find_with_related(datasource_group::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    datasource_group::Relation::SignalGroup.def(),
+                )
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_group::Column::Deleted.eq(false))
+                .filter(signal_group::Column::Name.eq(group_name))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .next()
+                .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
+        {
+            let datasource_group_id =
+                crate::messenger::group::ensure_datasource_group_id(
+                    txn,
+                    IMPORT_DIRECTION_FINDING_UUID.to_string(),
+                    group.datasource_id,
+                )
+                .await
+                .c(h!())?;
+            let mut signal_message = signal_message.into_active_model();
+            signal_message.datasource_group_id = Set(Some(datasource_group_id));
+            signal_message.update(txn).await.c(h!())?;
+        }
     }
 
     let event = EventMsg::new(EventType::ETInboxChanged(message.id));
@@ -306,6 +303,46 @@ where
     .c(h!())?;
 
     Ok(vec![])
+}
+
+fn extract_message_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<
+    (
+        Option<DateTime<Tz>>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
+    let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
+    if let Some(meow_format) = &meow_format {
+        return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
+    }
+
+    Ok((extract_generic_body_datetime(lnow, body)?, None))
+}
+
+fn extract_generic_body_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<Option<DateTime<Tz>>, AppError> {
+    let Some(dt) = crate::rer_importer::datetime::extract_datetime(lnow, body)?
+    else {
+        return Ok(None);
+    };
+
+    Ok(match Kyiv.from_local_datetime(&dt) {
+        chrono::offset::LocalResult::None => {
+            println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
+            None
+        }
+        chrono::offset::LocalResult::Single(v) => Some(v),
+        chrono::offset::LocalResult::Ambiguous(v1, v2) => {
+            println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
+            None
+        }
+    })
 }
 
 async fn find_unit_v2<'a, 'async_trait, C>(
@@ -457,5 +494,23 @@ mod tests {
         let (date, time) = format_date_time_fields(dt_utc);
         assert_eq!(date, "2025-11-20");
         assert_eq!(time, "12:29:18");
+    }
+
+    #[test]
+    fn extract_message_datetime_prefers_meow_header_over_body_time() {
+        let now = Kyiv.with_ymd_and_hms(2026, 6, 28, 12, 0, 0).unwrap();
+        let body =
+            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
+
+        let (m_dt, meow_format) = extract_message_datetime(now, body).unwrap();
+
+        assert_eq!(
+            m_dt,
+            Some(Kyiv.with_ymd_and_hms(2026, 6, 28, 5, 58, 0).unwrap())
+        );
+        assert_eq!(
+            meow_format.unwrap().body_noheader.body,
+            "Перехоплення о 08:30\nрядок 2"
+        );
     }
 }

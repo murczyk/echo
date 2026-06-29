@@ -18,6 +18,37 @@ use sea_orm::{
     EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PelengBounds {
+    min_lat: f64,
+    max_lat: f64,
+    min_lng: f64,
+    max_lng: f64,
+}
+
+impl PelengBounds {
+    fn from_corners(
+        top_left_lat: f64,
+        top_left_lng: f64,
+        bottom_right_lat: f64,
+        bottom_right_lng: f64,
+    ) -> Self {
+        Self {
+            min_lat: top_left_lat.min(bottom_right_lat),
+            max_lat: top_left_lat.max(bottom_right_lat),
+            min_lng: top_left_lng.min(bottom_right_lng),
+            max_lng: top_left_lng.max(bottom_right_lng),
+        }
+    }
+
+    pub fn contains(&self, lat: f64, lng: f64) -> bool {
+        lat >= self.min_lat
+            && lat <= self.max_lat
+            && lng >= self.min_lng
+            && lng <= self.max_lng
+    }
+}
+
 fn map_system_settings_item(
     settings: system_settings::Model,
 ) -> Result<SystemSettingsItem, AppError> {
@@ -36,6 +67,11 @@ fn map_system_settings_item(
         updated_by: settings.updated_by,
         deleted: settings.deleted,
         short_url_enabled: settings.short_url_enabled,
+        peleng_bounds_enabled: settings.peleng_bounds_enabled,
+        peleng_bounds_top_left_lat: settings.peleng_bounds_top_left_lat,
+        peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
+        peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
+        peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
     })
 }
 
@@ -92,6 +128,102 @@ where
     }
 }
 
+fn peleng_bounds_from_settings(
+    settings: &system_settings::Model,
+) -> Option<PelengBounds> {
+    if !settings.peleng_bounds_enabled {
+        return None;
+    }
+
+    let top_left_lat = settings.peleng_bounds_top_left_lat?;
+    let top_left_lng = settings.peleng_bounds_top_left_lng?;
+    let bottom_right_lat = settings.peleng_bounds_bottom_right_lat?;
+    let bottom_right_lng = settings.peleng_bounds_bottom_right_lng?;
+
+    if ![
+        top_left_lat,
+        top_left_lng,
+        bottom_right_lat,
+        bottom_right_lng,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
+    {
+        return None;
+    }
+
+    Some(PelengBounds::from_corners(
+        top_left_lat,
+        top_left_lng,
+        bottom_right_lat,
+        bottom_right_lng,
+    ))
+}
+
+pub async fn get_active_peleng_bounds<C>(
+    dbx: &C,
+) -> Result<Option<PelengBounds>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings.as_ref().and_then(peleng_bounds_from_settings))
+}
+
+fn validate_coordinate(
+    label: &str,
+    value: Option<f64>,
+    min: f64,
+    max: f64,
+) -> Result<f64, AppError> {
+    let value = value.ok_or_else(|| AppError::BL {
+        msg: format!("{label} не задана"),
+    })?;
+
+    if value.is_finite() && value >= min && value <= max {
+        Ok(value)
+    } else {
+        Err(AppError::BL {
+            msg: format!("{label} має бути в межах від {min} до {max}"),
+        })
+    }
+}
+
+fn validate_peleng_bounds(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if !req.peleng_bounds_enabled {
+        return Ok(());
+    }
+
+    validate_coordinate(
+        "Широта верхнього лівого кута",
+        req.peleng_bounds_top_left_lat,
+        -90.0,
+        90.0,
+    )?;
+    validate_coordinate(
+        "Довгота верхнього лівого кута",
+        req.peleng_bounds_top_left_lng,
+        -180.0,
+        180.0,
+    )?;
+    validate_coordinate(
+        "Широта нижнього правого кута",
+        req.peleng_bounds_bottom_right_lat,
+        -90.0,
+        90.0,
+    )?;
+    validate_coordinate(
+        "Довгота нижнього правого кута",
+        req.peleng_bounds_bottom_right_lng,
+        -180.0,
+        180.0,
+    )?;
+
+    Ok(())
+}
+
 fn now_utc() -> chrono::NaiveDateTime {
     Utc::now().naive_utc()
 }
@@ -141,6 +273,13 @@ pub async fn current_system_settings(
             short_url_enabled: settings.short_url_enabled,
             support_non_rer_interceptions: settings
                 .support_non_rer_interceptions,
+            peleng_bounds_enabled: settings.peleng_bounds_enabled,
+            peleng_bounds_top_left_lat: settings.peleng_bounds_top_left_lat,
+            peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
+            peleng_bounds_bottom_right_lat: settings
+                .peleng_bounds_bottom_right_lat,
+            peleng_bounds_bottom_right_lng: settings
+                .peleng_bounds_bottom_right_lng,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -152,6 +291,11 @@ pub async fn current_system_settings(
             rer_duty_poll_interval_sec: 1,
             short_url_enabled: false,
             support_non_rer_interceptions: false,
+            peleng_bounds_enabled: false,
+            peleng_bounds_top_left_lat: None,
+            peleng_bounds_top_left_lng: None,
+            peleng_bounds_bottom_right_lat: None,
+            peleng_bounds_bottom_right_lng: None,
         },
     }))
 }
@@ -190,6 +334,7 @@ pub async fn create_system_settings(
         .await
         .c(h!())?;
 
+    validate_peleng_bounds(&req)?;
     let support_non_rer_interceptions =
         support_non_rer_interceptions_enabled(&env.dbx)
             .await
@@ -214,6 +359,11 @@ pub async fn create_system_settings(
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
         support_non_rer_interceptions: Set(support_non_rer_interceptions),
+        peleng_bounds_enabled: Set(req.peleng_bounds_enabled),
+        peleng_bounds_top_left_lat: Set(req.peleng_bounds_top_left_lat),
+        peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
+        peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
+        peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
     }
     .insert(&txn)
     .await

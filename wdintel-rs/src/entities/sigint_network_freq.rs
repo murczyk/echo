@@ -15,6 +15,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub freq: String,
     pub created_at: DateTime,
+    pub kind: SigintNetworkKind,
     pub modulation_id: Option<i32>,
     pub active_from: DateTime,
     pub active_to: Option<DateTime>,
@@ -22,7 +23,6 @@ pub struct Model {
     pub deleted: bool,
     pub original_id: Option<i64>,
     pub last_seen_dt: Option<DateTime>,
-    pub kind: SigintNetworkKind,
     #[sea_orm(column_type = "Text")]
     pub modulation: String,
     pub encryption_id: Option<i32>,

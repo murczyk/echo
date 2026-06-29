@@ -1176,6 +1176,8 @@ restore-pgbackrest server backup_name="":
       BACKUP_NAME="${TARGET}"
     fi
     ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
+    ssh "$TARGET" 'sudo install -d -m 0755 /usr/local/sbin'
+    ssh "$TARGET" 'sudo tee /usr/local/sbin/pgbackrest-safe-restore >/dev/null && sudo chown root:root /usr/local/sbin/pgbackrest-safe-restore && sudo chmod 0755 /usr/local/sbin/pgbackrest-safe-restore' < deploy/postgresql/pgbackrest-safe-restore.sh
     ssh "$TARGET" "sudo SERVER_KEY='${BACKUP_NAME}' bash -s" <<'REMOTE'
         set -euo pipefail
 
@@ -1228,52 +1230,7 @@ restore-pgbackrest server backup_name="":
           exit 1
         fi
 
-        set +e
-        sudo pg_ctlcluster 14 main stop
-        RC="$?"
-        set -e
-        # `pg_ctlcluster stop` exits with code 2 when the cluster is already stopped.
-        if [[ "${RC}" -ne 0 && "${RC}" -ne 2 ]]; then
-          exit "${RC}"
-        fi
-        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --delta --log-level-console=info restore
-
-        # Ensure Postgres settings are >= the values stored in the restored pg_control.
-        # Otherwise startup may fail with "recovery aborted because of insufficient parameter settings".
-        if [[ -x /usr/lib/postgresql/14/bin/pg_controldata ]]; then
-          ctl="$(
-            cd / >/dev/null 2>&1 || true
-            sudo -u postgres -H /usr/lib/postgresql/14/bin/pg_controldata /var/lib/postgresql/14/main 2>/dev/null || true
-          )"
-          if [[ -n "${ctl}" ]]; then
-            req_max_connections="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_connections setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
-            req_max_worker_processes="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_worker_processes setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
-            req_max_wal_senders="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_wal_senders setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
-            req_max_prepared_xacts="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_prepared_xacts setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
-            req_max_locks_per_xact="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_locks_per_xact setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
-
-            sudo install -d -m 0755 /etc/postgresql/14/main/conf.d
-            tmp="$(mktemp)"
-            cat > "${tmp}" <<EOF
-                # Managed by just restore-pgbackrest. Derived from pg_control of the restored cluster.
-                max_connections = ${req_max_connections:-100}
-                max_worker_processes = ${req_max_worker_processes:-8}
-                max_wal_senders = ${req_max_wal_senders:-10}
-                max_prepared_transactions = ${req_max_prepared_xacts:-0}
-                max_locks_per_transaction = ${req_max_locks_per_xact:-64}
-    EOF
-            sudo install -m 0644 -o root -g root "${tmp}" /etc/postgresql/14/main/conf.d/99-echo-restore-required.conf
-            rm -f "${tmp}"
-          fi
-        fi
-        set +e
-        sudo pg_ctlcluster 14 main start
-        RC="$?"
-        set -e
-        # `pg_ctlcluster start` exits with code 2 when the cluster is already running.
-        if [[ "${RC}" -ne 0 && "${RC}" -ne 2 ]]; then
-          exit "${RC}"
-        fi
+        sudo /usr/local/sbin/pgbackrest-safe-restore "${STANZA}"
     REMOTE
 
 copy-db-local:

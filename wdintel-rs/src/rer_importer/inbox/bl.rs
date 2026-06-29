@@ -1,9 +1,7 @@
 use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
-use milgeo_rs::coordinates::{
-    parse_latlng_f64, rer_extract_coords, Coords, Wgs84,
-};
+use milgeo_rs::coordinates::{parse_latlng_f64, Coords, Wgs84};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::error::AppError;
@@ -813,7 +811,9 @@ pub async fn submit_upsert_inbox_item(
 
     let mut coords_vec = match &message.no_headers_body.clone().map(|n| n.body)
     {
-        Some(body) => rer_extract_coords(body).await,
+        Some(body) => {
+            crate::rer_importer::coordinates::extract_coords(body).await
+        }
         None => vec![],
     };
     if let Some(c1) = &coords_s {
@@ -821,6 +821,23 @@ pub async fn submit_upsert_inbox_item(
             coords_vec.push(c1.clone())
         }
     }
+    let peleng_bounds = crate::system_settings::get_active_peleng_bounds(txn)
+        .await
+        .c(h!())?;
+    let coords_s = coords_s.filter(|coord| {
+        crate::location::peleng::coord_matches_peleng_bounds(
+            coord,
+            peleng_bounds.as_ref(),
+        )
+    });
+    let (lat, lng) = match coords_s.as_ref() {
+        Some(coord) => (Some(coord.lat), Some(coord.lng)),
+        None => (None, None),
+    };
+    let coords_vec = crate::location::peleng::filter_coords_by_peleng_bounds(
+        coords_vec,
+        peleng_bounds.as_ref(),
+    );
 
     let freq = message
         .freq

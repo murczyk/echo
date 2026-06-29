@@ -578,6 +578,7 @@ update shared msg model =
                                 , operationMode = network.operationMode
                                 , operationType = network.operationType
                                 , operationPeriod = network.operationPeriod
+                                , doNotArchive = network.doNotArchive
                                 , descriptions = Nothing --TODO
                                 , restoreNetwork = Nothing
                                 , areaOfResponsibilityIds = Nothing

@@ -159,6 +159,7 @@ export function buildOperationalFields({
     { key: 'mode', label: 'Режим', value: <Typography variant="body2">{normalizeLookupName(network?.operationMode)}</Typography> },
     { key: 'type', label: 'Характер', value: <Typography variant="body2">{normalizeLookupName(network?.operationType)}</Typography> },
     { key: 'period', label: 'Період функціонування', value: <Typography variant="body2">{normalizeLookupName(network?.operationPeriod)}</Typography> },
+    { key: 'autoArchive', label: 'Автоархівування', value: <Typography variant="body2">{network?.doNotArchive ? 'Вимкнено' : 'Дозволено'}</Typography> },
     {
       key: 'posts',
       label: 'Пости',
@@ -216,6 +217,7 @@ function buildOperationalSummaryValues(network: Network | null, rangeLabel: stri
     normalizeLookupName(network?.operationMode),
     normalizeLookupName(network?.operationType),
     normalizeLookupName(network?.operationPeriod),
+    network?.doNotArchive ? 'Автоархівування вимкнено' : 'Автоархівування дозволено',
     postItems.length > 0 ? postItems.map((item) => item.label).join(', ') : NO_DATA_LABEL,
     normalizeLookupName(network?.radioStation),
   ].filter(isVisibleCopyValue);
