@@ -1,5 +1,5 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import DownloadIcon from '@mui/icons-material/Download';
 import { Box, Button, IconButton, Tooltip } from '@mui/material';
 
 import type { MessageCardDocument } from './document-preview.types';
@@ -81,7 +81,7 @@ export function MessageMediaDocumentLink({
           size="small"
           sx={{ color: 'text.secondary' }}
         >
-          <DownloadOutlinedIcon fontSize="inherit" />
+          <DownloadIcon fontSize="inherit" />
         </IconButton>
       </Tooltip>
     </Box>

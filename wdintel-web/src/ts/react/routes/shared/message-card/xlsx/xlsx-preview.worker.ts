@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx';
 
-const MAX_ROWS = 5000;
-const MAX_COLUMNS = 100;
+import { previewXlsxRows } from './xlsx-preview-utils';
 
 type XlsxPreviewRequest = {
   requestId: string;
@@ -25,14 +24,6 @@ type XlsxPreviewResponse = {
   error?: string;
 };
 
-function normalizeCellValue(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value instanceof Date) return value.toISOString();
-  return String(value);
-}
-
 self.addEventListener('message', async (event: MessageEvent<XlsxPreviewRequest>) => {
   const { requestId, request } = event.data;
 
@@ -47,16 +38,14 @@ self.addEventListener('message', async (event: MessageEvent<XlsxPreviewRequest>)
     const sheets = workbook.SheetNames.map((name) => {
       const sheet = workbook.Sheets[name];
       const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: true });
-      const rowCount = rawRows.length;
-      const slicedRows = rawRows.slice(0, MAX_ROWS).map((row) => row.slice(0, MAX_COLUMNS).map(normalizeCellValue));
-      const columnCount = slicedRows.reduce((max, row) => Math.max(max, row.length), 0);
+      const { rows, rowCount, columnCount, truncated } = previewXlsxRows(rawRows);
 
       return {
         name,
-        rows: slicedRows,
+        rows,
         rowCount,
         columnCount,
-        truncated: rowCount > MAX_ROWS || columnCount > MAX_COLUMNS,
+        truncated,
       };
     });
 
@@ -71,4 +60,3 @@ self.addEventListener('message', async (event: MessageEvent<XlsxPreviewRequest>)
     self.postMessage(response);
   }
 });
-
