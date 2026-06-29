@@ -201,14 +201,13 @@ where
     let body = message.body.unwrap_or_default();
     let header = parse_unit_tag_header(&body);
     let match_text = unit_tag_match_text(&body, &header);
-    let matched_networks = sigint_network::Entity::find()
+    let active_networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Deleted.eq(false))
         .all(db)
         .await
-        .c(h!())?
-        .into_iter()
-        .filter(|network| network_has_matching_unit_tag(network, &match_text))
-        .collect::<Vec<_>>();
+        .c(h!())?;
+    let matched_networks =
+        match_networks_by_unit_tag_precedence(active_networks, &match_text);
     sync_network_links(db, sigint_inbox_item_id, matched_networks)
         .await
         .c(h!())?;
@@ -377,32 +376,106 @@ fn unit_tag_match_text(body: &str, header: &ParsedUnitTagHeader) -> String {
     parts.join(" ")
 }
 
-fn network_has_matching_unit_tag(
-    network: &sigint_network::Model,
+fn match_networks_by_unit_tag_precedence(
+    networks: Vec<sigint_network::Model>,
     match_text: &str,
-) -> bool {
-    sigint_network_unit_tags(network)
+) -> Vec<sigint_network::Model> {
+    let matches = networks
         .into_iter()
-        .any(|tag| contains_word_case_insensitive(match_text, &tag))
+        .flat_map(|network| network_unit_tag_matches(network, match_text))
+        .collect::<Vec<_>>();
+    let mut network_ids = HashSet::new();
+    let mut matched_networks = Vec::new();
+    for (idx, tag_match) in matches.iter().enumerate() {
+        if unit_tag_match_is_shadowed(idx, &matches) {
+            continue;
+        }
+        if network_ids.insert(tag_match.network.id) {
+            matched_networks.push(tag_match.network.clone());
+        }
+    }
+    matched_networks
 }
 
+fn network_unit_tag_matches(
+    network: sigint_network::Model,
+    match_text: &str,
+) -> Vec<UnitTagMatch> {
+    sigint_network_unit_tags(&network)
+        .into_iter()
+        .flat_map(|tag| {
+            let tag_key = tag.trim().to_lowercase();
+            let tag_len = tag_key.chars().count();
+            find_word_matches_case_insensitive(match_text, &tag)
+                .into_iter()
+                .map({
+                    let network = network.clone();
+                    move |span| UnitTagMatch {
+                        network: network.clone(),
+                        tag_key: tag_key.clone(),
+                        tag_len,
+                        span,
+                    }
+                })
+        })
+        .collect()
+}
+
+fn unit_tag_match_is_shadowed(idx: usize, matches: &[UnitTagMatch]) -> bool {
+    let tag_match = &matches[idx];
+    matches.iter().enumerate().any(|(other_idx, other)| {
+        other_idx != idx
+            && other.tag_len > tag_match.tag_len
+            && other.tag_key.contains(&tag_match.tag_key)
+            && other.span.contains(&tag_match.span)
+    })
+}
+
+struct UnitTagMatch {
+    network: sigint_network::Model,
+    tag_key: String,
+    tag_len: usize,
+    span: MatchSpan,
+}
+
+#[derive(Clone, Copy)]
+struct MatchSpan {
+    start: usize,
+    end: usize,
+}
+
+impl MatchSpan {
+    fn contains(&self, other: &Self) -> bool {
+        self.start <= other.start && self.end >= other.end
+    }
+}
+
+#[cfg(test)]
 fn contains_word_case_insensitive(text: &str, needle: &str) -> bool {
+    !find_word_matches_case_insensitive(text, needle).is_empty()
+}
+
+fn find_word_matches_case_insensitive(
+    text: &str,
+    needle: &str,
+) -> Vec<MatchSpan> {
     let needle = needle.trim();
     if needle.is_empty() {
-        return false;
+        return Vec::new();
     }
     let text = text.to_lowercase();
     let needle = needle.to_lowercase();
+    let mut matches = Vec::new();
     let mut cursor = 0;
     while let Some(offset) = text[cursor..].find(&needle) {
         let start = cursor + offset;
         let end = start + needle.len();
         if is_boundary(&text, start, true) && is_boundary(&text, end, false) {
-            return true;
+            matches.push(MatchSpan { start, end });
         }
         cursor = end;
     }
-    false
+    matches
 }
 
 fn is_boundary(text: &str, byte_idx: usize, before: bool) -> bool {
@@ -512,6 +585,39 @@ mod tests {
     }
 
     #[test]
+    fn unit_tag_match_prefers_longer_containing_tag() {
+        let matched_network_ids = match_networks_by_unit_tag_precedence(
+            vec![
+                test_network(1, vec!["alpha/bravo"]),
+                test_network(2, vec!["alpha"]),
+                test_network(3, vec!["bravo"]),
+            ],
+            "hello alpha/bravo goodbye",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![1]);
+    }
+
+    #[test]
+    fn unit_tag_match_keeps_shorter_tag_when_matched_independently() {
+        let matched_network_ids = match_networks_by_unit_tag_precedence(
+            vec![
+                test_network(1, vec!["alpha/bravo"]),
+                test_network(2, vec!["alpha"]),
+            ],
+            "hello alpha and alpha/bravo goodbye",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![1, 2]);
+    }
+
+    #[test]
     fn stale_network_links_include_non_unit_tag_networks() {
         let existing_network_links =
             vec![test_network_link(10, 1), test_network_link(11, 2)];
@@ -524,6 +630,34 @@ mod tests {
             ),
             vec![10]
         );
+    }
+
+    fn test_network(id: i64, unit_tags: Vec<&str>) -> sigint_network::Model {
+        let dt = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        sigint_network::Model {
+            id,
+            name: format!("network {id}"),
+            location: String::new(),
+            deleted: false,
+            created_at: dt,
+            updated_by: None,
+            updated_at: dt,
+            radio_station: None,
+            purpose: None,
+            operation_mode: None,
+            operation_type: None,
+            operation_period: None,
+            merged_to: None,
+            active_from: None,
+            active_to: None,
+            sigint_origin_id: None,
+            original_id: None,
+            do_not_archive: false,
+            unit_tags: serde_json::json!(unit_tags),
+        }
     }
 
     fn test_network_link(
