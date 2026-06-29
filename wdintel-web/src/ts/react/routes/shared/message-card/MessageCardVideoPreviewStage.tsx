@@ -5,7 +5,7 @@ import {
   useEffect,
   type SyntheticEvent,
 } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, Tooltip, IconButton } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import type { VideoPreviewError } from "./message-card-video-utils";
@@ -25,6 +25,9 @@ export const MessageCardVideoPreviewStage = forwardRef<
     onRateChange?: (event: SyntheticEvent<HTMLVideoElement>) => void;
     onError?: (event: SyntheticEvent<HTMLVideoElement>) => void;
     videoRef: React.RefObject<HTMLVideoElement>;
+    hasCarousel?: boolean;
+    onGoToPrevious?: () => void;
+    onGoToNext?: () => void;
   }
 >(function MessageCardVideoPreviewStage(
   {
@@ -40,6 +43,9 @@ export const MessageCardVideoPreviewStage = forwardRef<
     onRateChange,
     onError,
     videoRef,
+    hasCarousel,
+    onGoToPrevious,
+    onGoToNext,
   },
   ref,
 ) {
@@ -60,15 +66,13 @@ export const MessageCardVideoPreviewStage = forwardRef<
       sx={{
         flex: 1,
         minHeight: 0,
-        bgcolor: "#111821",
+        bgcolor: "#000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         position: "relative",
         borderRadius: 1.5,
         overflow: "hidden",
-        px: 1.5,
-        py: 1.5,
         boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.04)",
       }}
     >
@@ -176,6 +180,8 @@ export const MessageCardVideoPreviewStage = forwardRef<
           </Typography>
         </Box>
       ) : null}
+
+
     </Box>
   );
 });

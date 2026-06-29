@@ -1,24 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Dialog, DialogContent } from "@mui/material";
+import { Box, Dialog, DialogContent, Typography } from "@mui/material";
 import type {
   VideoPreviewSource,
   VideoPlayerState,
 } from "./message-card-video-utils";
 import { MessageCardVideoPreviewStage } from "./MessageCardVideoPreviewStage";
-import { MessageCardVideoPreviewActions } from "./MessageCardVideoPreviewActions";
+import {
+  MessageCardVideoPreviewActions,
+  MessageCardVideoPreviewControls,
+} from "./MessageCardVideoPreviewActions";
+import { MessageCardVideoPreviewInfoPopover } from "./MessageCardVideoPreviewInfoPopover";
 
 export function MessageCardVideoPreviewDialog({
   open,
   onClose,
-  video,
+  videos,
+  initialIndex = 0,
+  currentIndex,
+  onIndexChange,
 }: {
   open: boolean;
   onClose: () => void;
-  video: VideoPreviewSource;
+  videos: VideoPreviewSource[];
+  initialIndex?: number;
+  currentIndex?: number;
+  onIndexChange?: (index: number) => void;
 }) {
+  const videoCount = videos?.length ?? 0;
+  const hasCarousel = videoCount > 1;
+  const resolvedIndex =
+    videoCount > 0
+      ? (((currentIndex ?? initialIndex) % videoCount) + videoCount) %
+        videoCount
+      : 0;
+  const video = videoCount > 0 ? videos[resolvedIndex] : null;
+
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
+
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const infoOpen = infoAnchorEl !== null;
 
   const [playerState, setPlayerState] = useState<VideoPlayerState>({
     isPlaying: false,
@@ -31,7 +53,7 @@ export function MessageCardVideoPreviewDialog({
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !video) return;
 
     if (typeof video.source === "string") {
       if (
@@ -85,20 +107,25 @@ export function MessageCardVideoPreviewDialog({
 
     return () => {
       isMounted = false;
-      if (blobUrl && typeof video.source !== "string") {
+      if (blobUrl && typeof video?.source !== "string") {
         URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [open, video.source]);
+  }, [open, video?.source]);
 
   useEffect(() => {
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.currentTime = 0;
+    }
     setPlayerState((s) => ({
       ...s,
       isPlaying: false,
       currentTime: 0,
       error: undefined,
     }));
-  }, [video.source]);
+  }, [resolvedIndex, open]);
 
   useEffect(() => {
     if (!playerState.isFullscreen) return;
@@ -122,10 +149,26 @@ export function MessageCardVideoPreviewDialog({
         setPlayerState((s) => ({ ...s, isFullscreen: false }));
         return;
       }
+      if (!hasCarousel) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        event.stopPropagation();
+        onIndexChange?.(resolvedIndex - 1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        event.stopPropagation();
+        onIndexChange?.(resolvedIndex + 1);
+      }
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [playerState.isFullscreen, open]);
+  }, [
+    hasCarousel,
+    playerState.isFullscreen,
+    open,
+    resolvedIndex,
+    onIndexChange,
+  ]);
 
   const handlePlayPause = useCallback(() => {
     const v = videoRef.current;
@@ -190,9 +233,6 @@ export function MessageCardVideoPreviewDialog({
       disableEscapeKeyDown={playerState.isFullscreen}
       PaperProps={{
         sx: {
-          backgroundColor: "#0b0f14",
-          backgroundImage: "none",
-          color: "#f4f7fb",
           display: "flex",
           flexDirection: "column",
           width: playerState.isFullscreen
@@ -215,7 +255,8 @@ export function MessageCardVideoPreviewDialog({
       <DialogContent
         sx={{
           px: 2,
-          py: 2,
+          pt: 2,
+          pb: 0,
           display: "flex",
           flexDirection: "column",
           alignItems: "stretch",
@@ -225,60 +266,102 @@ export function MessageCardVideoPreviewDialog({
           gap: 1.25,
         }}
       >
-        <MessageCardVideoPreviewStage
-          videoRef={videoRef}
-          src={src}
-          error={playerState.error}
-          isPlaying={playerState.isPlaying}
-          onPlay={() => setPlayerState((s) => ({ ...s, isPlaying: true }))}
-          onPause={() => setPlayerState((s) => ({ ...s, isPlaying: false }))}
-          onEnded={() => setPlayerState((s) => ({ ...s, isPlaying: false }))}
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            setPlayerState((s) => ({
-              ...s,
-              duration: Number.isFinite(v.duration) ? v.duration : 0,
-            }));
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: "#000",
+            borderRadius: 1.5,
+            overflow: "hidden",
+            boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.04)",
           }}
-          onTimeUpdate={(e) => {
-            const v = e.currentTarget;
-            setPlayerState((s) => ({ ...s, currentTime: v.currentTime }));
-          }}
-          onVolumeChange={(e) => {
-            const v = e.currentTarget;
-            setPlayerState((s) => ({ ...s, volume: v.volume, muted: v.muted }));
-          }}
-          onRateChange={(e) => {
-            const v = e.currentTarget;
-            setPlayerState((s) => ({
-              ...s,
-              playbackRate: v.playbackRate as any,
-            }));
-          }}
-          onError={(e) => {
-            setPlayerState((s) => ({
-              ...s,
-              error: {
-                code: "VIDEO_LOAD_ERROR",
-                message: "Не вдалося завантажити або відтворити це відео.",
-                cause: e,
-              },
-            }));
-          }}
+        >
+          <MessageCardVideoPreviewStage
+            videoRef={videoRef}
+            src={src}
+            error={playerState.error}
+            isPlaying={playerState.isPlaying}
+            hasCarousel={hasCarousel}
+            onGoToPrevious={() => onIndexChange?.(resolvedIndex - 1)}
+            onGoToNext={() => onIndexChange?.(resolvedIndex + 1)}
+            onPlay={() => setPlayerState((s) => ({ ...s, isPlaying: true }))}
+            onPause={() => setPlayerState((s) => ({ ...s, isPlaying: false }))}
+            onEnded={() => setPlayerState((s) => ({ ...s, isPlaying: false }))}
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              setPlayerState((s) => ({
+                ...s,
+                duration: Number.isFinite(v.duration) ? v.duration : 0,
+              }));
+            }}
+            onTimeUpdate={(e) => {
+              const v = e.currentTarget;
+              setPlayerState((s) => ({ ...s, currentTime: v.currentTime }));
+            }}
+            onVolumeChange={(e) => {
+              const v = e.currentTarget;
+              setPlayerState((s) => ({ ...s, volume: v.volume, muted: v.muted }));
+            }}
+            onRateChange={(e) => {
+              const v = e.currentTarget;
+              setPlayerState((s) => ({
+                ...s,
+                playbackRate: v.playbackRate as any,
+              }));
+            }}
+            onError={(e) => {
+              setPlayerState((s) => ({
+                ...s,
+                error: {
+                  code: "VIDEO_LOAD_ERROR",
+                  message: "Не вдалося завантажити або відтворити це відео.",
+                  cause: e,
+                },
+              }));
+            }}
+          />
+          
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              width: "100%",
+            }}
+          >
+            <Box sx={{ width: "100%", maxWidth: 800 }}>
+              <MessageCardVideoPreviewControls
+                playerState={playerState}
+                videoRef={videoRef}
+                onPlayPause={handlePlayPause}
+                onStop={handleStop}
+                onVolumeChange={handleVolumeChange}
+                onMuteToggle={handleMuteToggle}
+                onRateChange={handleRateChange}
+                onSeek={handleSeek}
+                onToggleFullscreen={handleToggleFullscreen}
+              />
+            </Box>
+          </Box>
+        </Box>
+        <MessageCardVideoPreviewInfoPopover
+          open={infoOpen}
+          anchorEl={infoAnchorEl}
+          onClose={() => setInfoAnchorEl(null)}
+          video={video}
+          duration={playerState.duration}
         />
       </DialogContent>
       <MessageCardVideoPreviewActions
         video={video}
-        playerState={playerState}
-        videoRef={videoRef}
-        onPlayPause={handlePlayPause}
-        onStop={handleStop}
-        onVolumeChange={handleVolumeChange}
-        onMuteToggle={handleMuteToggle}
-        onRateChange={handleRateChange}
-        onSeek={handleSeek}
-        onToggleFullscreen={handleToggleFullscreen}
         onClose={handleClose}
+        hasCarousel={hasCarousel}
+        resolvedIndex={resolvedIndex}
+        videoCount={videoCount}
+        onGoToPrevious={() => onIndexChange?.(resolvedIndex - 1)}
+        onGoToNext={() => onIndexChange?.(resolvedIndex + 1)}
+        onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
       />
     </Dialog>
   );

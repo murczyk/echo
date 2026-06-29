@@ -26,9 +26,10 @@ import {
   mediaAttachmentDisplayName,
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
-  MessageMediaVideoPreviewButton,
 } from "./MessageCardMedia";
+import { MessageCardVideoThumb } from "./MessageCardVideoThumb";
 import { MessageImagePreviewDialog } from "./MessageCardImagePreviewDialog";
+import { MessageCardVideoPreviewDialog } from "./MessageCardVideoPreviewDialog";
 import { collectMessageImages } from "./message-card-image-utils";
 import { MessageCardImageList } from "./MessageCardImageList";
 import { MessageCardTags } from "./MessageCardTags";
@@ -79,9 +80,9 @@ export function MessageCardMessageBody({
   searchText?: string | null;
 }) {
   const images = collectMessageImages(msg);
-  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(
-    null,
-  );
+  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
+  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+
   const imageHrefSet = useMemo(
     () => new Set(images.map((image) => image.href)),
     [images],
@@ -95,12 +96,27 @@ export function MessageCardMessageBody({
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
+  
   const videoAttachments = attachmentMedia.filter(isVideoMediaAttachment);
+
   const downloadAttachments = attachmentMedia.filter(
     (attachment) =>
       !isAudioMediaAttachment(attachment) &&
       !isVideoMediaAttachment(attachment),
   );
+
+  const videoPreviewSources = useMemo(() => {
+    return videoAttachments.map((a) => {
+      const raw = a as any;
+      return {
+        id: a.id ?? "",
+        name: mediaAttachmentDisplayName(a),
+        source: String(a.href ?? ""),
+        mimeType: raw.content_type ?? undefined,
+        sizeBytes: raw.size_bytes ?? undefined,
+      };
+    });
+  }, [videoAttachments]);
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasTags = tagsLayout !== "hidden" && Object.keys(tagsMap).length > 0;
@@ -151,12 +167,26 @@ export function MessageCardMessageBody({
               attachment={attachment}
             />
           ))}
-          {videoAttachments.map((attachment) => (
-            <MessageMediaVideoPreviewButton
-              key={attachment.id}
-              attachment={attachment}
-            />
-          ))}
+          {videoAttachments.length > 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 1,
+                mt: 1,
+                mb: 0.5,
+              }}
+            >
+              {videoAttachments.map((attachment, idx) => (
+                <MessageCardVideoThumb
+                  key={attachment.id}
+                  attachment={attachment}
+                  index={idx}
+                  onOpen={(idx) => setVideoPreviewIndex(idx)}
+                />
+              ))}
+            </Box>
+          )}
           {downloadAttachments.map((attachment) => (
             <MessageMediaDownloadLink
               key={attachment.id}
@@ -165,6 +195,13 @@ export function MessageCardMessageBody({
           ))}
         </Box>
       ) : null}
+      <MessageCardVideoPreviewDialog
+        open={videoPreviewIndex !== null}
+        onClose={() => setVideoPreviewIndex(null)}
+        videos={videoPreviewSources}
+        currentIndex={videoPreviewIndex ?? 0}
+        onIndexChange={(idx) => setVideoPreviewIndex(idx)}
+      />
       {hasTextPrimary ? (
         <Box
           component="div"

@@ -260,73 +260,57 @@ export function MessageMediaDownloadLink({
 
 export function MessageMediaVideoPreviewButton({
   attachment,
+  onClick,
 }: {
   attachment: MessageMediaInfo;
+  onClick: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const displayName = mediaAttachmentDisplayName(attachment);
-  const href = String(attachment.href ?? "");
-  const rawAttachment = attachment as any;
 
   return (
-    <>
-      <Tooltip title={displayName} enterDelay={400}>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => setOpen(true)}
+    <Tooltip title={displayName} enterDelay={400}>
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={onClick}
+        sx={{
+          mb: 0.5,
+          width: "fit-content",
+          minWidth: 0,
+          maxWidth: "100%",
+          minHeight: 26,
+          py: 0.25,
+          px: 0.75,
+          fontSize: 11,
+          lineHeight: 1.25,
+          textTransform: "none",
+          fontWeight: 500,
+          alignSelf: "flex-start",
+          overflow: "hidden",
+          justifyContent: "flex-start",
+          "& .MuiButton-startIcon": {
+            mr: 0.35,
+            ml: -0.25,
+            "& svg": { fontSize: 14 },
+          },
+        }}
+        startIcon={<PlayCircleOutlineIcon aria-hidden />}
+      >
+        <Box
+          component="span"
           sx={{
-            mb: 0.5,
-            width: "fit-content",
+            display: "block",
             minWidth: 0,
-            maxWidth: "100%",
-            minHeight: 26,
-            py: 0.25,
-            px: 0.75,
-            fontSize: 11,
-            lineHeight: 1.25,
-            textTransform: "none",
-            fontWeight: 500,
-            alignSelf: "flex-start",
+            width: "100%",
             overflow: "hidden",
-            justifyContent: "flex-start",
-            "& .MuiButton-startIcon": {
-              mr: 0.35,
-              ml: -0.25,
-              "& svg": { fontSize: 14 },
-            },
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            verticalAlign: "bottom",
           }}
-          startIcon={<PlayCircleOutlineIcon aria-hidden />}
         >
-          <Box
-            component="span"
-            sx={{
-              display: "block",
-              minWidth: 0,
-              width: "100%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              verticalAlign: "bottom",
-            }}
-          >
-            {displayName}
-          </Box>
-        </Button>
-      </Tooltip>
-      {open && (
-        <MessageCardVideoPreviewDialog
-          open={open}
-          onClose={() => setOpen(false)}
-          video={{
-            id: attachment.id ?? "",
-            name: displayName,
-            source: href,
-            mimeType: rawAttachment.content_type ?? undefined,
-            sizeBytes: rawAttachment.size_bytes ?? undefined,
-          }}
-        />
-      )}
-    </>
+          {displayName}
+        </Box>
+      </Button>
+    </Tooltip>
   );
 }
