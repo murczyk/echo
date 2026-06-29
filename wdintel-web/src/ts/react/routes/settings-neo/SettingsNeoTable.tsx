@@ -81,7 +81,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
-  const baseHeadCellProps = CUSTOM_STYLES.muiTableHeadCellProps as { sx?: object };
+  const baseHeadCellProps = (CUSTOM_STYLES.muiTableHeadCellProps ?? {}) as { sx?: object };
 
   const table = useMaterialReactTable({
     columns,
