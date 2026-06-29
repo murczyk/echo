@@ -455,8 +455,10 @@ pub struct InboxSubmitItem {
     pub freq: Option<String>,
     #[serde(default)]
     pub coords: Vec<SubmitCoordinates>,
+    #[serde(default, rename = "from")]
+    pub from_callsign: Option<String>,
     #[serde(default)]
-    pub callsigns: Vec<String>,
+    pub to: Vec<String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
@@ -486,7 +488,8 @@ impl Default for InboxSubmitItem {
             text: String::new(),
             freq: None,
             coords: vec![],
-            callsigns: vec![],
+            from_callsign: None,
+            to: vec![],
             tags: None,
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
@@ -1587,7 +1590,8 @@ mod tests {
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026",
             "freq": "145.0260",
             "coords": [{ "lat": 49.12345, "lon": 37.12345 }],
-            "callsigns": ["ярус", "светлый"],
+            "from": "ярус",
+            "to": ["светлый"],
             "tags": ["БпЛА", "Втрати"],
             "timestamp": "2026-06-25T12:34:56Z",
             "full_body": "Сигнали: dmr",
@@ -1620,6 +1624,8 @@ mod tests {
             item.tags,
             Some(vec!["БпЛА".to_string(), "Втрати".to_string()])
         );
+        assert_eq!(item.from_callsign.as_deref(), Some("ярус"));
+        assert_eq!(item.to, vec!["светлый".to_string()]);
         assert_eq!(
             item.coords,
             vec![SubmitCoordinates {
@@ -1652,6 +1658,9 @@ mod tests {
         assert!(encoded.get("source").is_none());
         assert!(encoded.get("integration").is_none());
         assert!(encoded.get("location").is_none());
+        assert!(encoded.get("callsigns").is_none());
+        assert_eq!(encoded.get("from"), Some(&json!("ярус")));
+        assert_eq!(encoded.get("to"), Some(&json!(["светлый"])));
         let dmr = encoded["dmr"].as_array().unwrap()[0].as_object().unwrap();
         assert_eq!(dmr.get("sender_id"), Some(&json!(2_977_001)));
         assert_eq!(dmr.get("call_group_id"), Some(&json!(2_977_002)));
@@ -1673,6 +1682,7 @@ mod tests {
             "images",
             "image_recognized",
             "callsigns_alg2",
+            "callsigns",
             "post_id",
             "source",
             "integration",
@@ -1796,7 +1806,8 @@ mod tests {
         let req: InboxSubmitItem = serde_json::from_value(json!({
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
             "freq": "145.0260",
-            "callsigns": ["ярус", "светлый"],
+            "from": "ярус",
+            "to": ["светлый"],
             "timestamp": "2026-06-25T12:34:56Z",
             "group_names": ["SC1"],
             "network": {
@@ -1818,6 +1829,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(req.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ");
+        assert_eq!(req.from_callsign.as_deref(), Some("ярус"));
+        assert_eq!(req.to, vec!["светлый".to_string()]);
         assert_eq!(req.group_names, Some(vec!["SC1".into()]));
         assert_eq!(req.dmr[0].sender_id, Some(110));
         assert_eq!(req.dmr[0].call_group_id, Some(50));

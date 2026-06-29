@@ -698,19 +698,8 @@ pub struct FindLiveNetworksRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct FindLiveNetwork {
-    pub details: FindLiveNetworkDetails,
-    pub live_freqs: Vec<String>,
-    pub callsigns: Vec<String>,
-    pub locations: Vec<String>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct FindLiveNetworkDetails {
     pub id: i64,
     pub name: String,
-    pub location: String,
     pub radio_station: Option<String>,
     pub purpose: Option<String>,
     pub operation_mode: Option<String>,
@@ -718,7 +707,9 @@ pub struct FindLiveNetworkDetails {
     pub operation_period: Option<String>,
     pub created_at: i64,
     pub active_from: Option<i64>,
-    pub active_to: Option<i64>,
     pub units: Vec<String>,
     pub post_ids: Vec<i64>,
+    pub live_freqs: Vec<String>,
+    pub callsigns: Vec<String>,
+    pub locations: Vec<String>,
 }

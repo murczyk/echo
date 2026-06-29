@@ -173,7 +173,8 @@ def submit_payload() -> dict:
     payload = {
         "text": message,
         "freq": freq,
-        "callsigns": [sender_callsign, receiver_callsign],
+        "from": sender_callsign,
+        "to": [receiver_callsign],
         "timestamp": timestamp_text,
         "sender": optional_env("CHUMAK_SENDER", "chumak"),
         "full_body": f"{timestamp_text}\n{network_name}\n{sender_callsign}\n{receiver_callsign}\n\n{message}",
@@ -218,7 +219,7 @@ def submit_message() -> None:
     client = connected_client()
     payload = submit_payload()
     print(f"Request payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-    response = client.request("POST", "/api/1.1/rer-importer/inbox/submit", payload)
+    response = client.request("POST", "/api/1.1/submit", payload)
     print(json.dumps(response, ensure_ascii=False, indent=2))
     print("PASS: submitted inbox message")
 

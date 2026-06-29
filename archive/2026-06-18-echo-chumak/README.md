@@ -55,21 +55,17 @@ python3 test_chumak.py find-networks
 {
   "networks": [
     {
-      "details": {
-        "id": 123,
-        "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А",
-        "location": "КОПАНІ",
-        "radio_station": "Motorola DP4800",
-        "purpose": "Управління підрозділом",
-        "operation_mode": "DMR",
-        "operation_type": "Голос",
-        "operation_period": "Цілодобово",
-        "created_at": 1781851200000,
-        "active_from": 1781851200000,
-        "active_to": 1781937600000,
-        "units": ["3 мсб 291 мсп 42 мсд 58 А"],
-        "post_ids": [5]
-      },
+      "id": 123,
+      "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А",
+      "radio_station": "Motorola DP4800",
+      "purpose": "Управління підрозділом",
+      "operation_mode": "DMR",
+      "operation_type": "Голос",
+      "operation_period": "Цілодобово",
+      "created_at": 1781851200000,
+      "active_from": 1781851200000,
+      "units": ["3 мсб 291 мсп 42 мсд 58 А"],
+      "post_ids": [5],
       "live_freqs": ["404.1350"],
       "callsigns": ["ярус", "светлый"],
       "locations": ["КОПАНІ"]
@@ -92,7 +88,7 @@ python3 test_chumak.py submit-message
 ```
 
 Створення нового повідомлення.
-Виконує POST запит на `/api/1.1/rer-importer/inbox/submit`.
+Виконує POST запит на `/api/1.1/submit`.
 
 Усі timestamp-поля в API v1.1 передаються рядками у форматі RFC 3339. Для UTC використовуйте суфікс `Z`, наприклад `2026-02-18T08:49:00Z`. Epoch milliseconds та timestamp без timezone не приймаються.
 
@@ -108,7 +104,8 @@ python3 test_chumak.py submit-message
       "lon": 32.9434
     }
   ],
-  "callsigns": ["ЯРУС", "СВЕТЛЫЙ"],
+  "from": "ЯРУС",
+  "to": ["СВЕТЛЫЙ"],
   "tags": ["БпЛА", "Втрати"],
   "timestamp": "2026-02-18T08:49:00Z",
   "sender": "chumak",
@@ -144,7 +141,7 @@ python3 test_chumak.py submit-message
 
 `locations` передавайте як масив назв локацій. Якщо локацій немає, поле можна не передавати або передати порожній масив.
 
-`tags` передавайте як масив назв тегів Echo. Echo прив'яже тільки наявні активні теги; якщо тег не знайдено, запит не падає, тег пропускається, а помилка записується в error log.
+`tags` передавайте як масив назв тегів. Echo прив'яже тільки наявні активні теги; якщо тег не знайдено, запит не падає, а оригінальні назви тегів зберігаються в `operator_tags`.
 
 Приклад response payload для успішного запиту:
 

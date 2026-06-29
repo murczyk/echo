@@ -6847,7 +6847,17 @@ findLiveNetworksRspEncoder struct =
 
 
 type alias FindLiveNetwork =
-    { details : FindLiveNetworkDetails
+    { id : Int
+    , name : String
+    , radioStation : Maybe (String)
+    , purpose : Maybe (String)
+    , operationMode : Maybe (String)
+    , operationType : Maybe (String)
+    , operationPeriod : Maybe (String)
+    , createdAt : Int
+    , activeFrom : Maybe (Int)
+    , units : List (String)
+    , postIds : List (Int)
     , liveFreqs : List (String)
     , callsigns : List (String)
     , locations : List (String)
@@ -6857,37 +6867,8 @@ type alias FindLiveNetwork =
 findLiveNetworkEncoder : FindLiveNetwork -> Json.Encode.Value
 findLiveNetworkEncoder struct =
     Json.Encode.object
-        [ ( "details", (findLiveNetworkDetailsEncoder) struct.details )
-        , ( "live_freqs", (Json.Encode.list (Json.Encode.string)) struct.liveFreqs )
-        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
-        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
-        ]
-
-
-type alias FindLiveNetworkDetails =
-    { id : Int
-    , name : String
-    , location : String
-    , radioStation : Maybe (String)
-    , purpose : Maybe (String)
-    , operationMode : Maybe (String)
-    , operationType : Maybe (String)
-    , operationPeriod : Maybe (String)
-    , createdAt : Int
-    , activeFrom : Maybe (Int)
-    , activeTo : Maybe (Int)
-    , units : List (String)
-    , aorIds : List (Int)
-    , postIds : List (Int)
-    }
-
-
-findLiveNetworkDetailsEncoder : FindLiveNetworkDetails -> Json.Encode.Value
-findLiveNetworkDetailsEncoder struct =
-    Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
-        , ( "location", (Json.Encode.string) struct.location )
         , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.radioStation )
         , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.purpose )
         , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationMode )
@@ -6895,10 +6876,11 @@ findLiveNetworkDetailsEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeFrom )
-        , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.activeTo )
         , ( "units", (Json.Encode.list (Json.Encode.string)) struct.units )
-        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
         , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
+        , ( "live_freqs", (Json.Encode.list (Json.Encode.string)) struct.liveFreqs )
+        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
         ]
 
 
@@ -13004,18 +12986,8 @@ findLiveNetworksRspDecoder =
 findLiveNetworkDecoder : Json.Decode.Decoder FindLiveNetwork
 findLiveNetworkDecoder =
     Json.Decode.succeed FindLiveNetwork
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "details" (findLiveNetworkDetailsDecoder)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "live_freqs" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
-
-
-findLiveNetworkDetailsDecoder : Json.Decode.Decoder FindLiveNetworkDetails
-findLiveNetworkDetailsDecoder =
-    Json.Decode.succeed FindLiveNetworkDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable (Json.Decode.string))))
@@ -13023,10 +12995,11 @@ findLiveNetworkDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "live_freqs" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
 networkGroupsActivityOneReqDecoder : Json.Decode.Decoder NetworkGroupsActivityOneReq

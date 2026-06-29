@@ -2638,16 +2638,8 @@ export type FindLiveNetworksRsp = {
 };
 
 export type FindLiveNetwork = {
-  details: FindLiveNetworkDetails;
-  liveFreqs: Array<string>;
-  callsigns: Array<string>;
-  locations: Array<string>;
-};
-
-export type FindLiveNetworkDetails = {
   id: number;
   name: string;
-  location: string;
   radioStation: string | null;
   purpose: string | null;
   operationMode: string | null;
@@ -2655,10 +2647,11 @@ export type FindLiveNetworkDetails = {
   operationPeriod: string | null;
   createdAt: number;
   activeFrom: number | null;
-  activeTo: number | null;
   units: Array<string>;
-  aorIds: Array<number>;
   postIds: Array<number>;
+  liveFreqs: Array<string>;
+  callsigns: Array<string>;
+  locations: Array<string>;
 };
 
 export type NetworkGroupsActivityOneReq = {

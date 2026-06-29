@@ -547,7 +547,7 @@ async fn inbox_submit(
     }
 }
 
-#[post("/api/1.1/rer-importer/inbox/submit")]
+#[post("/api/1.1/submit")]
 async fn inbox_submit_v11(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
@@ -587,6 +587,7 @@ async fn submit_generic_inbox_item(
     .await
     .c(h!())?;
     let tag_ids = resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
+    let operator_tags = submit_operator_tags(item.tags.as_deref())?;
     let (mut message, timestamp) = generic_submit_item_to_inbox_message(&item)?;
     let post = normalized_optional_string(message.post.as_deref());
     let post_id = match message.post_id {
@@ -607,6 +608,7 @@ async fn submit_generic_inbox_item(
         item.message_uid.as_deref(),
         &message,
         Some(timestamp),
+        operator_tags,
         &groups,
     )
     .await
@@ -677,7 +679,7 @@ fn generic_submit_item_to_inbox_message(
         time: Some(time),
         freq: item.freq.clone(),
         coords: format_submit_coordinates(&item.coords),
-        callsigns: item.callsigns.clone(),
+        callsigns: submit_item_callsigns(item),
         callsigns_alg2: vec![],
         checked: true,
         important: false,
@@ -738,14 +740,28 @@ async fn resolve_submit_tag_ids(
 
     let mut tag_ids = vec![];
     for tag_label in tag_labels {
-        match tag_ids_by_label.get(&tag_label) {
-            Some(tag_id) => tag_ids.push(*tag_id),
-            None => error!(
-                "failed to resolve inbox submit tag '{tag_label}': active tag does not exist in Echo; skipping"
-            ),
+        if let Some(tag_id) = tag_ids_by_label.get(&tag_label) {
+            tag_ids.push(*tag_id);
         }
     }
     Ok(Some(tag_ids))
+}
+
+fn submit_operator_tags(
+    tag_labels: Option<&[String]>,
+) -> Result<Option<serde_json::Value>, AppError> {
+    let Some(tag_labels) = tag_labels else {
+        return Ok(None);
+    };
+    Ok(serde_json::to_value(tag_labels).map(Some).context(h!())?)
+}
+
+fn submit_item_callsigns(item: &InboxSubmitItem) -> Vec<String> {
+    item.from_callsign
+        .iter()
+        .chain(item.to.iter())
+        .filter_map(|callsign| normalized_optional_string(Some(callsign)))
+        .collect()
 }
 
 async fn add_submit_tags(
@@ -978,6 +994,7 @@ async fn upsert_submit_signal_message(
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
+    operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
@@ -1002,6 +1019,7 @@ async fn upsert_submit_signal_message(
             signal_message.datasource_group_id = Set(Some(datasource_group_id));
             signal_message.timestamp = Set(timestamp);
             signal_message.sender = Set(message.sender.clone());
+            signal_message.operator_tags = Set(operator_tags);
             signal_message.deleted = Set(false);
             signal_message.update(txn).await.c(h!())?
         }
@@ -1016,6 +1034,7 @@ async fn upsert_submit_signal_message(
             deleted: Set(false),
             external_id: Set(None),
             message_uid: NotSet,
+            operator_tags: Set(operator_tags),
         }
         .insert(txn)
         .await
@@ -2187,6 +2206,8 @@ mod tests {
                 " ".to_string(),
                 "КОПАНІ".to_string(),
             ],
+            from_callsign: Some("ЯРУС".to_string()),
+            to: vec!["СВЕТЛЫЙ".to_string(), " ".to_string()],
             ..Default::default()
         };
 
@@ -2202,6 +2223,10 @@ mod tests {
         );
         assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
         assert_eq!(message.location.as_deref(), Some("ЛИМАН ПЕРШИЙ, КОПАНІ"));
+        assert_eq!(
+            message.callsigns,
+            vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()]
+        );
     }
 
     #[test]
@@ -2340,6 +2365,8 @@ mod tests {
         next.call_group_id = Some(51);
         next.call_group_name = Some("ВОСТОК".to_string());
         next.hash_id = Some("ABCDEF01".to_string());
+        let operator_tags =
+            vec![tag_label.clone(), "missing-submit-tag".to_string()];
         let item = InboxSubmitItem {
             message_uid: None,
             text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
@@ -2348,12 +2375,13 @@ mod tests {
                 lat: 49.12345,
                 lon: 37.12345,
             }],
-            callsigns: vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()],
+            from_callsign: Some("ЯРУС".to_string()),
+            to: vec!["СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
             full_body: Some("Сигнали: dmr".to_string()),
             post: Some("SC1".to_string()),
-            tags: Some(vec![tag_label, "missing-submit-tag".to_string()]),
+            tags: Some(operator_tags.clone()),
             locations: vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()],
             group_names: Some(vec![
                 "SC1".to_string(),
@@ -2400,6 +2428,7 @@ mod tests {
             message.body.as_deref(),
             Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
         );
+        assert_eq!(message.operator_tags, Some(json!(operator_tags)));
         let groups = signal_message_group::Entity::find()
             .filter(
                 signal_message_group::Column::SignalMessageId.eq(message.id),
@@ -2643,6 +2672,7 @@ mod tests {
             Some(&uid),
             &message,
             Some(now),
+            None,
             &groups,
         )
         .await

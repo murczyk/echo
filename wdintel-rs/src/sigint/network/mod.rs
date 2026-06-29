@@ -458,25 +458,19 @@ fn find_live_network_visible_for_organism(organism_id: i64) -> SimpleExpr {
 }
 
 fn find_live_network_active_now(now: NaiveDateTime) -> SimpleExpr {
-    sigint_network::Column::ActiveTo
-        .is_null()
-        .or(sigint_network::Column::ActiveTo.gte(now))
-        .and(
-            sigint_network::Column::ActiveFrom
-                .is_null()
-                .or(sigint_network::Column::ActiveFrom.lte(now)),
-        )
+    sigint_network::Column::ActiveTo.is_null().and(
+        sigint_network::Column::ActiveFrom
+            .is_null()
+            .or(sigint_network::Column::ActiveFrom.lte(now)),
+    )
 }
 
 fn find_live_network_freq_active_now(now: NaiveDateTime) -> SimpleExpr {
-    sigint_network_freq::Column::ActiveTo
-        .is_null()
-        .or(sigint_network_freq::Column::ActiveTo.gte(now))
-        .and(
-            sigint_network_freq::Column::ActiveFrom
-                .is_null()
-                .or(sigint_network_freq::Column::ActiveFrom.lte(now)),
-        )
+    sigint_network_freq::Column::ActiveTo.is_null().and(
+        sigint_network_freq::Column::ActiveFrom
+            .is_null()
+            .or(sigint_network_freq::Column::ActiveFrom.lte(now)),
+    )
 }
 
 fn find_live_network_color_code_exists(
@@ -563,28 +557,19 @@ async fn build_find_live_networks(
             continue;
         };
         result.push(FindLiveNetwork {
-            details: FindLiveNetworkDetails {
-                id: network.id,
-                name: network.name.clone(),
-                location: network.location.clone(),
-                radio_station: network.radio_station.clone(),
-                purpose: network.purpose.clone(),
-                operation_mode: network.operation_mode.clone(),
-                operation_type: network.operation_type.clone(),
-                operation_period: network.operation_period.clone(),
-                created_at: network.created_at.and_utc().timestamp_millis(),
-                active_from: network
-                    .active_from
-                    .map(|dt| dt.and_utc().timestamp_millis()),
-                active_to: network
-                    .active_to
-                    .map(|dt| dt.and_utc().timestamp_millis()),
-                units: unit_names.get(&network_id).cloned().unwrap_or_default(),
-                post_ids: post_ids
-                    .get(&network_id)
-                    .cloned()
-                    .unwrap_or_default(),
-            },
+            id: network.id,
+            name: network.name.clone(),
+            radio_station: network.radio_station.clone(),
+            purpose: network.purpose.clone(),
+            operation_mode: network.operation_mode.clone(),
+            operation_type: network.operation_type.clone(),
+            operation_period: network.operation_period.clone(),
+            created_at: network.created_at.and_utc().timestamp_millis(),
+            active_from: network
+                .active_from
+                .map(|dt| dt.and_utc().timestamp_millis()),
+            units: unit_names.get(&network_id).cloned().unwrap_or_default(),
+            post_ids: post_ids.get(&network_id).cloned().unwrap_or_default(),
             live_freqs: live_freqs
                 .get(&network_id)
                 .cloned()
@@ -4462,7 +4447,7 @@ mod tests {
     }
 
     #[test]
-    fn find_live_network_ids_query_allows_time_bounded_active_records() {
+    fn find_live_network_ids_query_requires_open_ended_active_records() {
         let req = FindLiveNetworksReq {
             freq: "145.026".to_string(),
             aor_id: None,
@@ -4479,11 +4464,9 @@ mod tests {
         assert!(sql
             .contains("linked_aor.left_bound BETWEEN selected_aor.left_bound"));
         assert!(sql.contains("\"sigint_network\".\"active_to\" IS NULL"));
-        assert!(sql.contains("\"sigint_network\".\"active_to\" >= "));
         assert!(sql.contains("\"sigint_network\".\"active_from\" IS NULL"));
         assert!(sql.contains("\"sigint_network\".\"active_from\" <= "));
         assert!(sql.contains("\"sigint_network_freq\".\"active_to\" IS NULL"));
-        assert!(sql.contains("\"sigint_network_freq\".\"active_to\" >= "));
         assert!(sql.contains("\"sigint_network_freq\".\"active_from\" IS NULL"));
         assert!(sql.contains("\"sigint_network_freq\".\"active_from\" <= "));
     }
