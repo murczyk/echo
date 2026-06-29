@@ -1104,8 +1104,6 @@ pub async fn update_network(
         .await
         .c(h!())?;
     }
-    invalidate_find_live_networks_cache_for_env(&env).await?;
-
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?

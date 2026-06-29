@@ -255,17 +255,13 @@ mod m20260618_120000_rename_modulation_to_encryption_ddl;
 mod m20260619_101731_report_history_created_at_idx;
 mod m20260622_090245_aor_report_order_scope;
 mod m20260622_101608_add_signal_group_archive;
-<<<<<<< HEAD
 mod m20260626_101738_non_rer_interceptions;
 mod m20260626_220129_signal_group_fills_etalonka;
 mod m20260627_101500_add_sigint_network_do_not_archive;
 mod m20260627_180543_signal_group_disable_network_assignment;
 mod m20260628_114539_add_peleng_bounds_to_system_settings;
-mod m20260629_080533_unit_tags_on_sigint_network;
-mod m20260629_085034_signal_message_operator_tags;
-=======
 mod m20260629_072958_add_signal_message_operator_tags;
->>>>>>> 2c1d017b6 (fixed due to the review)
+mod m20260629_080533_unit_tags_on_sigint_network;
 
 pub struct Migrator;
 
@@ -530,17 +526,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20260619_101731_report_history_created_at_idx::Migration),
             Box::new(m20260622_090245_aor_report_order_scope::Migration),
             Box::new(m20260622_101608_add_signal_group_archive::Migration),
-<<<<<<< HEAD
             Box::new(m20260626_101738_non_rer_interceptions::Migration),
             Box::new(m20260626_220129_signal_group_fills_etalonka::Migration),
             Box::new(m20260627_101500_add_sigint_network_do_not_archive::Migration),
             Box::new(m20260627_180543_signal_group_disable_network_assignment::Migration),
             Box::new(m20260628_114539_add_peleng_bounds_to_system_settings::Migration),
-            Box::new(m20260629_080533_unit_tags_on_sigint_network::Migration),
-            Box::new(m20260629_085034_signal_message_operator_tags::Migration),
-=======
             Box::new(m20260629_072958_add_signal_message_operator_tags::Migration),
->>>>>>> 2c1d017b6 (fixed due to the review)
+            Box::new(m20260629_080533_unit_tags_on_sigint_network::Migration),
         ]
     }
 }
