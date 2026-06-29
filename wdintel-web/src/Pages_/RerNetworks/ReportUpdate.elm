@@ -35,12 +35,16 @@ updateCommonSetting settingName checked currentReport =
         ( "includeConfirmation", AccordingToForm settings ) ->
             AccordingToForm { settings | includeConfirmation = checked }
 
+        ( "includeHeadingsAndFreqs", AccordingToForm settings ) ->
+            AccordingToForm { settings | includeHeadingsAndFreqs = checked }
+
         ( "activeFreqsOnly", ExtendedReport settings ) ->
             let
                 newCommon =
                     { activeFreqsOnly = checked
                     , includeSigintSigns = settings.common.includeSigintSigns
                     , includeConfirmation = settings.common.includeConfirmation
+                    , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
                     }
             in
             ExtendedReport { settings | common = newCommon }
@@ -51,6 +55,7 @@ updateCommonSetting settingName checked currentReport =
                     { activeFreqsOnly = settings.common.activeFreqsOnly
                     , includeSigintSigns = checked
                     , includeConfirmation = settings.common.includeConfirmation
+                    , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
                     }
             in
             ExtendedReport { settings | common = newCommon }
@@ -61,6 +66,18 @@ updateCommonSetting settingName checked currentReport =
                     { activeFreqsOnly = settings.common.activeFreqsOnly
                     , includeSigintSigns = settings.common.includeSigintSigns
                     , includeConfirmation = checked
+                    , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
+                    }
+            in
+            ExtendedReport { settings | common = newCommon }
+
+        ( "includeHeadingsAndFreqs", ExtendedReport settings ) ->
+            let
+                newCommon =
+                    { activeFreqsOnly = settings.common.activeFreqsOnly
+                    , includeSigintSigns = settings.common.includeSigintSigns
+                    , includeConfirmation = settings.common.includeConfirmation
+                    , includeHeadingsAndFreqs = checked
                     }
             in
             ExtendedReport { settings | common = newCommon }

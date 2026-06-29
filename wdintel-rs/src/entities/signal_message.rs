@@ -22,6 +22,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
     pub datasource_group_id: Option<i64>,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub operator_tags: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

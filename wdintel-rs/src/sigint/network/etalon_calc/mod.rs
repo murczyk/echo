@@ -439,14 +439,14 @@ where
             .collect());
     }
     let non_rer_item_ids =
-        crate::sigint::unit_machine::non_rer_item_ids_from_items(
+        crate::sigint::unit_tag::non_rer_item_ids_from_items(
             dbx,
             sigint_inbox_item_ids.clone(),
         )
         .await
         .c(h!())?;
     for item_id in &non_rer_item_ids {
-        crate::sigint::unit_machine::enqueue_unit_machine_recalculation_for_inbox_item(
+        crate::sigint::unit_tag::enqueue_unit_tag_recalculation_for_inbox_item(
             dbx, *item_id,
         )
         .await

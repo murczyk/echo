@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "sigint_inbox_item_unit_machine_queue")]
+#[sea_orm(table_name = "sigint_inbox_item_unit_tag_queue")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,

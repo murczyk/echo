@@ -1,6 +1,7 @@
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
   Button,
@@ -16,6 +17,7 @@ import {
   Radio,
   RadioGroup,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import type { Dayjs } from 'dayjs';
@@ -42,6 +44,7 @@ type Props = {
   onActiveFreqsOnlyChange: (activeFreqsOnly: boolean) => void;
   onIncludeSigintSignsChange: (includeSigintSigns: boolean) => void;
   onIncludeConfirmationChange: (includeConfirmation: boolean) => void;
+  onIncludeHeadingsAndFreqsChange: (includeHeadingsAndFreqs: boolean) => void;
   onIncludeUnitCallsignsChange: (includeUnitCallsigns: boolean) => void;
   onIncludePelengsMapChange: (includePelengsMap: boolean) => void;
   onFromDateTimeStrChange: (fromDateTimeStr: string) => void;
@@ -82,14 +85,16 @@ function ReportSectionCard({
   description,
   children,
   disabled = false,
-  minHeight = 0,
+  minHeightMd,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   disabled?: boolean;
-  minHeight?: number;
+  minHeightMd?: number;
 }) {
+  const minHeight = minHeightMd === undefined ? undefined : { xs: 'auto', md: minHeightMd };
+
   return (
     <Paper
       variant="outlined"
@@ -121,6 +126,49 @@ function ReportSectionCard({
   );
 }
 
+function ReportCheckboxRow({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+  infoTitle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+  infoTitle?: string;
+}) {
+  return (
+    <FormControlLabel
+      control={
+        <Checkbox
+          size="small"
+          checked={checked}
+          onChange={(_event, nextChecked) => onChange(nextChecked)}
+          disabled={disabled}
+          sx={{ p: 0.5 }}
+        />
+      }
+      label={
+        infoTitle ? (
+          <Stack component="span" direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+            <Box component="span">{label}</Box>
+            <Tooltip arrow title={infoTitle}>
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: disabled ? 'text.disabled' : 'text.secondary', lineHeight: 0, cursor: 'default' }}>
+                <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+              </Box>
+            </Tooltip>
+          </Stack>
+        ) : (
+          label
+        )
+      }
+      sx={{ m: 0 }}
+    />
+  );
+}
+
 export function NetworkEtalonkaReportDialog({
   report,
   description,
@@ -131,6 +179,7 @@ export function NetworkEtalonkaReportDialog({
   onActiveFreqsOnlyChange,
   onIncludeSigintSignsChange,
   onIncludeConfirmationChange,
+  onIncludeHeadingsAndFreqsChange,
   onIncludeUnitCallsignsChange,
   onIncludePelengsMapChange,
   onFromDateTimeStrChange,
@@ -145,6 +194,10 @@ export function NetworkEtalonkaReportDialog({
   const latestProgressStage = getLatestProgressStage(progressStages);
   const elapsedTime = formatElapsedTime(report.startedAtMs);
   const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const noDescriptions = !report.includeSigintSigns && !report.includeConfirmation;
+  const headingsAndFreqsTooltipTitle = noDescriptions
+    ? 'Увімкніть «Включити сигнали» або «Включити підтвердження» — заголовки та частоти додаються лише до цих секцій'
+    : 'Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань';
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -209,122 +262,112 @@ export function NetworkEtalonkaReportDialog({
               alignItems: 'stretch',
             }}
           >
-            <ReportSectionCard title="Основні налаштування" minHeight={190}>
+            <ReportSectionCard title="Основні налаштування" minHeightMd={220}>
               <Stack spacing={1.25}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.activeFreqsOnly}
-                      onChange={(_event, checked) => onActiveFreqsOnlyChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.activeFreqsOnly}
+                  onChange={onActiveFreqsOnlyChange}
+                  disabled={report.running}
                   label="Лише активні частоти"
                 />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.includeSigintSigns}
-                      onChange={(_event, checked) => onIncludeSigintSignsChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.includeSigintSigns}
+                  onChange={onIncludeSigintSignsChange}
+                  disabled={report.running}
                   label="Включити сигнали"
                 />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.includeConfirmation}
-                      onChange={(_event, checked) => onIncludeConfirmationChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.includeConfirmation}
+                  onChange={onIncludeConfirmationChange}
+                  disabled={report.running}
                   label="Включити підтвердження"
                 />
               </Stack>
             </ReportSectionCard>
 
-            <ReportSectionCard
-              title="Додаткові опції"
-              description={isExtended ? undefined : 'Доступні тільки в розширеному звіті'}
-              disabled={!isExtended}
-              minHeight={190}
-            >
-              {isExtended ? (
-                <Stack spacing={2}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-                    <PowerDateTimePicker
-                      label="Від"
-                      value={fromDateTimeDraft}
-                      allowEmpty={false}
-                      onChange={setFromDateTimeDraft}
-                      onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
-                      onClose={resetDrafts}
-                      disabled={dateTimeDisabled}
-                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                      format="DD.MM.YYYY HH:mm"
-                      slotProps={{
-                        textField: {
-                          size: 'small',
-                          fullWidth: true,
-                          InputLabelProps: { shrink: true },
-                        },
-                      }}
-                    />
-                    <PowerDateTimePicker
-                      label="До"
-                      value={toDateTimeDraft}
-                      allowEmpty={false}
-                      onChange={setToDateTimeDraft}
-                      onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
-                      onClose={resetDrafts}
-                      disabled={dateTimeDisabled}
-                      minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
-                      format="DD.MM.YYYY HH:mm"
-                      slotProps={{
-                        textField: {
-                          size: 'small',
-                          fullWidth: true,
-                          InputLabelProps: { shrink: true },
-                        },
-                      }}
-                    />
-                  </Box>
+            <ReportSectionCard title="Додаткові опції" minHeightMd={220}>
+              <Stack spacing={1.25}>
+                {isExtended ? (
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                      <PowerDateTimePicker
+                        label="Від"
+                        value={fromDateTimeDraft}
+                        allowEmpty={false}
+                        onChange={setFromDateTimeDraft}
+                        onAccept={(value) => onFromDateTimeStrChange(formatDateTime(value))}
+                        onClose={resetDrafts}
+                        disabled={dateTimeDisabled}
+                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                        format="DD.MM.YYYY HH:mm"
+                        slotProps={{
+                          textField: {
+                            size: 'small',
+                            fullWidth: true,
+                            InputLabelProps: { shrink: true },
+                          },
+                        }}
+                      />
+                      <PowerDateTimePicker
+                        label="До"
+                        value={toDateTimeDraft}
+                        allowEmpty={false}
+                        onChange={setToDateTimeDraft}
+                        onAccept={(value) => onToDateTimeStrChange(formatDateTime(value))}
+                        onClose={resetDrafts}
+                        disabled={dateTimeDisabled}
+                        minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                        format="DD.MM.YYYY HH:mm"
+                        slotProps={{
+                          textField: {
+                            size: 'small',
+                            fullWidth: true,
+                            InputLabelProps: { shrink: true },
+                          },
+                        }}
+                      />
+                    </Box>
 
-                  <Stack spacing={0.75}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={report.includeUnitCallsigns}
-                          onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
-                          disabled={report.running}
-                          sx={{ p: 0.5 }}
-                        />
-                      }
-                      label="Включити позивні підрозділів"
-                    />
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={report.includePelengsMap}
-                          onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
-                          disabled={report.running}
-                          sx={{ p: 0.5 }}
-                        />
-                      }
-                      label="Включити карту пеленгів"
-                    />
+                    <Stack spacing={0.75}>
+                      <ReportCheckboxRow
+                        checked={report.includeUnitCallsigns}
+                        onChange={onIncludeUnitCallsignsChange}
+                        disabled={report.running}
+                        label="Включити позивні підрозділів"
+                      />
+                      <ReportCheckboxRow
+                        checked={report.includePelengsMap}
+                        onChange={onIncludePelengsMapChange}
+                        disabled={report.running}
+                        label="Включити карту пеленгів"
+                      />
+                      <ReportCheckboxRow
+                        checked={report.includeHeadingsAndFreqs}
+                        onChange={onIncludeHeadingsAndFreqsChange}
+                        disabled={report.running || noDescriptions}
+                        label="Включити заголовки та частоти"
+                        infoTitle={headingsAndFreqsTooltipTitle}
+                      />
+                    </Stack>
                   </Stack>
-                </Stack>
-              ) : null}
+                ) : (
+                  <Stack spacing={1.25}>
+                    <Typography variant="body2" color="text.secondary">
+                      Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному звіті
+                    </Typography>
+
+                    <Stack spacing={0.75}>
+                      <ReportCheckboxRow
+                        checked={report.includeHeadingsAndFreqs}
+                        onChange={onIncludeHeadingsAndFreqsChange}
+                        disabled={report.running || noDescriptions}
+                        label="Включити заголовки та частоти"
+                        infoTitle={headingsAndFreqsTooltipTitle}
+                      />
+                    </Stack>
+                  </Stack>
+                )}
+              </Stack>
             </ReportSectionCard>
           </Box>
 

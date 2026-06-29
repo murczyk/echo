@@ -356,6 +356,7 @@ type Msg
     | ReportActiveFreqsOnlyChanged Bool
     | ReportIncludeSigintSignsChanged Bool
     | ReportIncludeConfirmationChanged Bool
+    | ReportIncludeHeadingsAndFreqsChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
@@ -808,6 +809,13 @@ update shared msg model =
             let
                 newReport =
                     ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeHeadingsAndFreqsChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -1720,6 +1728,7 @@ filterPanel user shared model =
                 , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
                 , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                 , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
                 , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                 , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                 , reportFromDate = Just model.reportFromDate
