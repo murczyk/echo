@@ -85,14 +85,16 @@ function ReportSectionCard({
   description,
   children,
   disabled = false,
-  minHeight = 0,
+  minHeightMd,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   disabled?: boolean;
-  minHeight?: number;
+  minHeightMd?: number;
 }) {
+  const minHeight = minHeightMd === undefined ? undefined : { xs: 'auto', md: minHeightMd };
+
   return (
     <Paper
       variant="outlined"
@@ -124,6 +126,49 @@ function ReportSectionCard({
   );
 }
 
+function ReportCheckboxRow({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+  infoTitle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+  infoTitle?: string;
+}) {
+  return (
+    <FormControlLabel
+      control={
+        <Checkbox
+          size="small"
+          checked={checked}
+          onChange={(_event, nextChecked) => onChange(nextChecked)}
+          disabled={disabled}
+          sx={{ p: 0.5 }}
+        />
+      }
+      label={
+        infoTitle ? (
+          <Stack component="span" direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+            <Box component="span">{label}</Box>
+            <Tooltip arrow title={infoTitle}>
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: disabled ? 'text.disabled' : 'text.secondary', lineHeight: 0, cursor: 'default' }}>
+                <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+              </Box>
+            </Tooltip>
+          </Stack>
+        ) : (
+          label
+        )
+      }
+      sx={{ m: 0 }}
+    />
+  );
+}
+
 export function NetworkEtalonkaReportDialog({
   report,
   description,
@@ -149,6 +194,10 @@ export function NetworkEtalonkaReportDialog({
   const latestProgressStage = getLatestProgressStage(progressStages);
   const elapsedTime = formatElapsedTime(report.startedAtMs);
   const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const noDescriptions = !report.includeSigintSigns && !report.includeConfirmation;
+  const headingsAndFreqsTooltipTitle = noDescriptions
+    ? 'Увімкніть «Включити сигнали» або «Включити підтвердження» — заголовки та частоти додаються лише до цих секцій'
+    : 'Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань';
 
   useEffect(() => {
     setFromDateTimeDraft(parseDateTime(report.fromDateTimeStr));
@@ -213,51 +262,30 @@ export function NetworkEtalonkaReportDialog({
               alignItems: 'stretch',
             }}
           >
-            <ReportSectionCard title="Основні налаштування" minHeight={190}>
+            <ReportSectionCard title="Основні налаштування" minHeightMd={220}>
               <Stack spacing={1.25}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.activeFreqsOnly}
-                      onChange={(_event, checked) => onActiveFreqsOnlyChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.activeFreqsOnly}
+                  onChange={onActiveFreqsOnlyChange}
+                  disabled={report.running}
                   label="Лише активні частоти"
                 />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.includeSigintSigns}
-                      onChange={(_event, checked) => onIncludeSigintSignsChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.includeSigintSigns}
+                  onChange={onIncludeSigintSignsChange}
+                  disabled={report.running}
                   label="Включити сигнали"
                 />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={report.includeConfirmation}
-                      onChange={(_event, checked) => onIncludeConfirmationChange(checked)}
-                      disabled={report.running}
-                      sx={{ p: 0.5 }}
-                    />
-                  }
+                <ReportCheckboxRow
+                  checked={report.includeConfirmation}
+                  onChange={onIncludeConfirmationChange}
+                  disabled={report.running}
                   label="Включити підтвердження"
                 />
               </Stack>
             </ReportSectionCard>
 
-            <ReportSectionCard
-              title="Додаткові опції"
-              minHeight={190}
-            >
+            <ReportSectionCard title="Додаткові опції" minHeightMd={220}>
               <Stack spacing={1.25}>
                 {isExtended ? (
                   <Stack spacing={2}>
@@ -301,64 +329,44 @@ export function NetworkEtalonkaReportDialog({
                     </Box>
 
                     <Stack spacing={0.75}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={report.includeUnitCallsigns}
-                            onChange={(_event, checked) => onIncludeUnitCallsignsChange(checked)}
-                            disabled={report.running}
-                            sx={{ p: 0.5 }}
-                          />
-                        }
+                      <ReportCheckboxRow
+                        checked={report.includeUnitCallsigns}
+                        onChange={onIncludeUnitCallsignsChange}
+                        disabled={report.running}
                         label="Включити позивні підрозділів"
                       />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={report.includePelengsMap}
-                            onChange={(_event, checked) => onIncludePelengsMapChange(checked)}
-                            disabled={report.running}
-                            sx={{ p: 0.5 }}
-                          />
-                        }
+                      <ReportCheckboxRow
+                        checked={report.includePelengsMap}
+                        onChange={onIncludePelengsMapChange}
+                        disabled={report.running}
                         label="Включити карту пеленгів"
+                      />
+                      <ReportCheckboxRow
+                        checked={report.includeHeadingsAndFreqs}
+                        onChange={onIncludeHeadingsAndFreqsChange}
+                        disabled={report.running || noDescriptions}
+                        label="Включити заголовки та частоти"
+                        infoTitle={headingsAndFreqsTooltipTitle}
                       />
                     </Stack>
                   </Stack>
                 ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному звіті
-                  </Typography>
-                )}
+                  <Stack spacing={1.25}>
+                    <Typography variant="body2" color="text.secondary">
+                      Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному звіті
+                    </Typography>
 
-                {(() => {
-                  const noDescriptions = !report.includeSigintSigns && !report.includeConfirmation;
-                  const tooltipTitle = noDescriptions
-                    ? 'Увімкніть «Включити сигнали» або «Включити підтвердження» — заголовки та частоти додаються лише до цих секцій'
-                    : 'Додатково включити дані з поля «частота» та «заголовок» з розвід ознак та обґрунтувань';
-                  return (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: '-11px' }}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={report.includeHeadingsAndFreqs}
-                            onChange={(_event, checked) => onIncludeHeadingsAndFreqsChange(checked)}
-                            disabled={report.running || noDescriptions}
-                            sx={{ p: 0.5 }}
-                          />
-                        }
-                        label="Включати заголовки та частоти"
-                        sx={{ ml: 0 }}
+                    <Stack spacing={0.75}>
+                      <ReportCheckboxRow
+                        checked={report.includeHeadingsAndFreqs}
+                        onChange={onIncludeHeadingsAndFreqsChange}
+                        disabled={report.running || noDescriptions}
+                        label="Включити заголовки та частоти"
+                        infoTitle={headingsAndFreqsTooltipTitle}
                       />
-                      <Tooltip arrow title={tooltipTitle}>
-                        <InfoOutlinedIcon sx={{ fontSize: 16, color: noDescriptions ? 'text.disabled' : 'text.secondary', cursor: 'default' }} />
-                      </Tooltip>
-                    </Box>
-                  );
-                })()}
+                    </Stack>
+                  </Stack>
+                )}
               </Stack>
             </ReportSectionCard>
           </Box>
