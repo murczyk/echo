@@ -41,6 +41,7 @@ export type NetworkUpsertForm = {
   operationType: string;
   operationPeriod: string;
   doNotArchive: boolean;
+  unitTags: string[];
   status: NetworkStatus;
   aorIds: number[];
   unitIds: number[];
@@ -107,6 +108,7 @@ export type NetworkDetailsNeoPageState = {
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
+  supportNonRerInterceptions: boolean;
   pelengPoints: NetworkPoint[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
@@ -247,6 +249,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   networkActivityLoaded: false,
   networkActivityLoading: false,
   networkActivityError: null,
+  supportNonRerInterceptions: false,
   pelengPoints: [],
   pelengPointsLoaded: false,
   pelengPointsLoading: false,

@@ -49,6 +49,7 @@ createNetwork id freqs unitIds =
     , descriptions = []
     , deleted = False
     , doNotArchive = False
+    , unitTags = []
     , status = B.NetworkActive
     }
 

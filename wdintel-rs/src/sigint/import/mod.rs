@@ -1117,6 +1117,7 @@ where
             location: Set(rec.location),
             active_to: Set(rec.active_to),
             do_not_archive: Set(rec.do_not_archive),
+            unit_tags: Set(rec.unit_tags),
         };
         let new_rec = if new_record {
             num_created += 1;
