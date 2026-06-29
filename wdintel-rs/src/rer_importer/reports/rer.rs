@@ -8,7 +8,7 @@ use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
     RunFonts,
@@ -431,14 +431,15 @@ fn report_message_timestamp(
     item: &sigint_inbox_item::Model,
     message: &signal_message::Model,
 ) -> Option<NaiveDateTime> {
-    item.datetime.or_else(|| {
-        message.timestamp.map(|timestamp| {
-            timestamp
-                .and_utc()
-                .with_timezone(&crate::types::Kyiv)
-                .naive_local()
-        })
-    })
+    item.datetime
+        .or(message.timestamp)
+        .map(utc_naive_to_kyiv_naive)
+}
+
+fn utc_naive_to_kyiv_naive(datetime: NaiveDateTime) -> NaiveDateTime {
+    DateTime::<Utc>::from_naive_utc_and_offset(datetime, Utc)
+        .with_timezone(&crate::types::Kyiv)
+        .naive_local()
 }
 
 fn message_body_without_headers(
@@ -1361,6 +1362,52 @@ mod tests {
             body: Some("Перехоплення".to_string()),
             created_at: dt(1, 0),
             timestamp: Some(dt(5, 58)),
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+            operator_tags: None,
+        };
+
+        assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));
+    }
+
+    #[test]
+    fn report_message_timestamp_converts_item_datetime_to_kyiv() {
+        let item = sigint_inbox_item::Model {
+            id: 1,
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: None,
+            checked: None,
+            reviewed: None,
+            unit: None,
+            callsign_tokens: None,
+            keyword_tokens: None,
+            unit_v2: None,
+            lat: None,
+            lng: None,
+            nominatimres_id: None,
+            location: None,
+            tags: None,
+            callsigns_alg2: None,
+            callsigns_alg1: None,
+            datetime: Some(dt(5, 58)),
+            signal_tokens: None,
+            body_noheader: None,
+            parsed_unit_v2: false,
+            location_v2: None,
+            post_id: None,
+        };
+        let message = signal_message::Model {
+            id: 1,
+            body: Some("Перехоплення".to_string()),
+            created_at: dt(1, 0),
+            timestamp: Some(dt(6, 58)),
             sender: None,
             format: None,
             deleted: false,

@@ -293,6 +293,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
                 activeFreqsOnly: true,
                 includeSigintSigns: true,
                 includeConfirmation: true,
+                includeHeadingsAndFreqs: false,
               },
             },
           }),

@@ -36,6 +36,7 @@ type alias CommonReportSettings =
     { activeFreqsOnly : Bool
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
+    , includeHeadingsAndFreqs : Bool
     }
 
 
@@ -65,6 +66,7 @@ defaultCommonSettings =
     { activeFreqsOnly = True
     , includeSigintSigns = True
     , includeConfirmation = True
+    , includeHeadingsAndFreqs = False
     }
 
 
@@ -112,6 +114,7 @@ toApiEtalonkaType reportType context =
                 { activeFreqsOnly = settings.activeFreqsOnly
                 , includeSigintSigns = settings.includeSigintSigns
                 , includeConfirmation = settings.includeConfirmation
+                , includeHeadingsAndFreqs = settings.includeHeadingsAndFreqs
                 }
 
         ExtendedReport settings ->
@@ -128,6 +131,7 @@ toApiEtalonkaType reportType context =
                 , includeSigintSigns = settings.common.includeSigintSigns
                 , includeConfirmation = settings.common.includeConfirmation
                 , includePelengsMap = settings.includePelengsMap
+                , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
                 }
 
 

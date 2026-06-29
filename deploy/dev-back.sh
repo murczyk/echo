@@ -91,6 +91,7 @@ is_expected_process() {
     local cwd cmdline
 
     [ -d "/proc/$pid" ] || return 1
+
     cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
     [ "$cwd" = "${repo_root}/wdintel-rs" ] || return 1
 
@@ -100,7 +101,20 @@ is_expected_process() {
             return 0
             ;;
     esac
+
     return 1
+}
+
+stop_port_listener_fallback() {
+    local pid
+
+    for pid in $(lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true); do
+        if is_expected_process "$pid"; then
+            stop_pid_and_group "$pid"
+        else
+            echo "refusing to kill unexpected process $pid listening on port $server_port" >&2
+        fi
+    done
 }
 
 stop_existing_server() {
@@ -126,18 +140,6 @@ stop_existing_server() {
 
     rm -f "$pidfile"
     stop_port_listener_fallback
-}
-
-stop_port_listener_fallback() {
-    local pid
-
-    for pid in $(lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true); do
-        if is_expected_process "$pid"; then
-            stop_pid_and_group "$pid"
-        else
-            echo "refusing to kill unexpected process $pid listening on port $server_port" >&2
-        fi
-    done
 }
 
 filter_quiet_output() {
@@ -202,6 +204,7 @@ filter_quiet_output() {
 
 run_server() {
     local server_args=("$@")
+    local pid
     local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server --no-bgworker "$@"'
 
     ensure_pid_dir
@@ -210,8 +213,8 @@ run_server() {
     if [ "$quiet" = "true" ]; then
         export ECHO_DEV_BACK_REST_ONLY=true
         export RUST_LOG=error,access_log=info
-        server_port="${ECHO_SERVER_PORT:-8081}"
-        echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
+
+        echo "starting backend in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
         echo "report workers run separately: just dev-bgworker" >&2
 
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > >(filter_quiet_output) 2>&1 &
@@ -219,17 +222,23 @@ run_server() {
         if [ "$log_sql" = "true" ]; then
             export RUST_LOG=sqlx=trace,seaorm=trace
         fi
+
+        echo "starting backend on port ${server_port}..." >&2
         echo "report workers run separately: just dev-bgworker" >&2
 
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
     fi
 
-    local pid=$!
+    pid=$!
     echo "$pid" > "$pidfile"
 
     cleanup() {
+        if is_expected_process "$pid"; then
+            stop_pid_and_group "$pid"
+        fi
         rm -f "$pidfile"
     }
+
     trap cleanup EXIT INT TERM
 
     wait "$pid"

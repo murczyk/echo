@@ -18,6 +18,7 @@ type alias Config msg =
     , onActiveFreqsOnlyChanged : Bool -> msg
     , onIncludeSigintSignsChanged : Bool -> msg
     , onIncludeConfirmationChanged : Bool -> msg
+    , onIncludeHeadingsAndFreqsChanged : Bool -> msg
     , onIncludeUnitCallsignsChanged : Bool -> msg
     , onIncludePelengsMapChanged : Bool -> msg
     , reportFromDate : Maybe Shared.Components.DateTime.Model
@@ -135,6 +136,12 @@ commonSettingsView config settings =
             , onToggle = config.onIncludeConfirmationChanged
             }
             |> Checkbox.withContent [ text "Включити підтвердження" ]
+            |> Checkbox.view
+        , Checkbox.new
+            { isChecked = settings.includeHeadingsAndFreqs
+            , onToggle = config.onIncludeHeadingsAndFreqsChanged
+            }
+            |> Checkbox.withContent [ text "Включати заголовки та частоти" ]
             |> Checkbox.view
         ]
 

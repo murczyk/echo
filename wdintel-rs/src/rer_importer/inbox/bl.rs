@@ -888,7 +888,11 @@ pub async fn submit_upsert_inbox_item(
         }
     }
 
-    let location = message.location.clone();
+    let location = message
+        .location
+        .clone()
+        .map(|location| location.trim().to_string())
+        .filter(|location| !location.is_empty());
     let m_aor_id = match message.group_master_key.clone() {
         Some(group_master_key) => signal_group_aor::Entity::find()
             .join(
@@ -910,13 +914,13 @@ pub async fn submit_upsert_inbox_item(
         Some(location) => {
             let locations = crate::location::parse_location_with_aor(
                 settlements.clone(),
-                location,
+                location.clone(),
                 m_aor_id,
             )
             .context(h!())?;
-            Some(utils::format_settlements_list(locations))
+            Some(format_manual_location_v2(location, locations))
         }
-        None => location.clone(), //fallback
+        None => None,
     };
 
     let insert_res =
@@ -1014,4 +1018,28 @@ pub async fn submit_upsert_inbox_item(
     .await
     .c(h!())?;
     Ok(inbox_id)
+}
+
+fn format_manual_location_v2(
+    location: String,
+    locations: Vec<crate::location::SettlementDetails>,
+) -> String {
+    if locations.is_empty() {
+        utils::format_locations_list(vec![location])
+    } else {
+        utils::format_settlements_list(locations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_manual_location_v2_keeps_unmatched_manual_location() {
+        assert_eq!(
+            format_manual_location_v2("район 1".to_string(), vec![]),
+            "|район 1|"
+        );
+    }
 }

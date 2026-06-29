@@ -272,6 +272,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     setEtalonkaReportActiveFreqsOnly: actions.setEtalonkaReportActiveFreqsOnly,
     setEtalonkaReportIncludeSigintSigns: actions.setEtalonkaReportIncludeSigintSigns,
     setEtalonkaReportIncludeConfirmation: actions.setEtalonkaReportIncludeConfirmation,
+    setEtalonkaReportIncludeHeadingsAndFreqs: actions.setEtalonkaReportIncludeHeadingsAndFreqs,
     setEtalonkaReportIncludeUnitCallsigns: actions.setEtalonkaReportIncludeUnitCallsigns,
     setEtalonkaReportIncludePelengsMap: actions.setEtalonkaReportIncludePelengsMap,
     setEtalonkaReportFromDateTimeStr: actions.setEtalonkaReportFromDateTimeStr,

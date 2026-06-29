@@ -258,6 +258,13 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     }));
   }, [setState]);
 
+  const setEtalonkaReportIncludeHeadingsAndFreqs = useCallback((includeHeadingsAndFreqs: boolean) => {
+    updateReportState(setState, (current) => ({
+      ...current,
+      includeHeadingsAndFreqs,
+    }));
+  }, [setState]);
+
   const setEtalonkaReportIncludeUnitCallsigns = useCallback((includeUnitCallsigns: boolean) => {
     updateReportState(setState, (current) => ({
       ...current,
@@ -309,6 +316,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     setEtalonkaReportActiveFreqsOnly,
     setEtalonkaReportIncludeSigintSigns,
     setEtalonkaReportIncludeConfirmation,
+    setEtalonkaReportIncludeHeadingsAndFreqs,
     setEtalonkaReportIncludeUnitCallsigns,
     setEtalonkaReportIncludePelengsMap,
     setEtalonkaReportFromDateTimeStr,

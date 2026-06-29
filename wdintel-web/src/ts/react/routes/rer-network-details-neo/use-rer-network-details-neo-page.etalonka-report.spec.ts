@@ -20,6 +20,7 @@ describe('rer-network-details etalonka report helpers', () => {
           activeFreqsOnly: true,
           includeSigintSigns: true,
           includeConfirmation: true,
+          includeHeadingsAndFreqs: false,
         },
       },
     });
@@ -50,6 +51,7 @@ describe('rer-network-details etalonka report helpers', () => {
           includeSigintSigns: false,
           includeConfirmation: true,
           includePelengsMap: false,
+          includeHeadingsAndFreqs: false,
         },
       },
     });
