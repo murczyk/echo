@@ -3122,6 +3122,11 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type SystemSettingsItem = {
@@ -3137,6 +3142,11 @@ export type SystemSettingsItem = {
   updatedBy: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -3151,6 +3161,11 @@ export type CreateSystemSettingsReq = {
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type ActivateSystemSettingsReq = {

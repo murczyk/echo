@@ -14,6 +14,11 @@ type SystemSettingsItemRaw = {
   deleted: boolean;
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
+  peleng_bounds_enabled?: boolean;
+  peleng_bounds_top_left_lat?: number | null;
+  peleng_bounds_top_left_lng?: number | null;
+  peleng_bounds_bottom_right_lat?: number | null;
+  peleng_bounds_bottom_right_lng?: number | null;
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -26,6 +31,11 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_poll_interval_sec: number;
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
+  peleng_bounds_enabled?: boolean;
+  peleng_bounds_top_left_lat?: number | null;
+  peleng_bounds_top_left_lng?: number | null;
+  peleng_bounds_bottom_right_lat?: number | null;
+  peleng_bounds_bottom_right_lng?: number | null;
 };
 
 type SystemSettingsListRspRaw = {
@@ -40,6 +50,11 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
   short_url_enabled: boolean;
+  peleng_bounds_enabled: boolean;
+  peleng_bounds_top_left_lat: number | null;
+  peleng_bounds_top_left_lng: number | null;
+  peleng_bounds_bottom_right_lat: number | null;
+  peleng_bounds_bottom_right_lng: number | null;
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -60,6 +75,11 @@ export type SystemSettingsItem = {
   deleted: boolean;
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type SystemSettingsCurrent = {
@@ -72,6 +92,26 @@ export type SystemSettingsCurrent = {
   rerDutyPollIntervalSec: number;
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
+};
+
+export type CreateSystemSettingsInput = {
+  rerAnalysisUnitsExactMatchOnlyDefault: boolean;
+  rerDutyTestEnabled: boolean;
+  rerDutyInsertHistoricalInterceptions: boolean;
+  rerDutyTestSinceMs: number;
+  rerDutyTestLimit: number;
+  rerDutyPollIntervalSec: number;
+  rerDutyShortUrl: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -91,6 +131,11 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     deleted: raw.deleted,
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
+    pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
+    pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
+    pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
+    pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
+    pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
   };
 }
 
@@ -107,6 +152,11 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
+    pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
+    pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
+    pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
+    pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
+    pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
   };
 }
 
@@ -118,24 +168,23 @@ export async function listSystemSettings(): Promise<SystemSettingsItem[]> {
 }
 
 export async function createSystemSettings(
-  rerAnalysisUnitsExactMatchOnlyDefault: boolean,
-  rerDutyTestEnabled: boolean,
-  rerDutyInsertHistoricalInterceptions: boolean,
-  rerDutyTestSinceMs: number,
-  rerDutyTestLimit: number,
-  rerDutyPollIntervalSec: number,
-  rerDutyShortUrl: boolean,
+  input: CreateSystemSettingsInput,
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
     rer_analysis_units_exact_match_only_default:
-      rerAnalysisUnitsExactMatchOnlyDefault,
-    rer_duty_test_enabled: rerDutyTestEnabled,
+      input.rerAnalysisUnitsExactMatchOnlyDefault,
+    rer_duty_test_enabled: input.rerDutyTestEnabled,
     rer_duty_insert_historical_interceptions:
-      rerDutyInsertHistoricalInterceptions,
-    rer_duty_test_since_ms: rerDutyTestSinceMs,
-    rer_duty_test_limit: rerDutyTestLimit,
-    rer_duty_poll_interval_sec: rerDutyPollIntervalSec,
-    short_url_enabled: rerDutyShortUrl,
+      input.rerDutyInsertHistoricalInterceptions,
+    rer_duty_test_since_ms: input.rerDutyTestSinceMs,
+    rer_duty_test_limit: input.rerDutyTestLimit,
+    rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
+    short_url_enabled: input.rerDutyShortUrl,
+    peleng_bounds_enabled: input.pelengBoundsEnabled,
+    peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
+    peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,
+    peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
+    peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
   };
   const data = await postJson<SystemSettingsItemRaw>(
     '/api/admin/system-settings/create',

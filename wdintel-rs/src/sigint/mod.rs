@@ -180,8 +180,14 @@ pub async fn oneoff_reprocess_coords(
         let Some(ref body) = message.body else {
             continue;
         };
-        let mut coords_vec =
+        let coords_vec =
             crate::rer_importer::coordinates::extract_coords(body).await;
+        let mut coords_vec =
+            crate::location::peleng::filter_allowed_peleng_coords(
+                coords_vec, &dbx,
+            )
+            .await
+            .c(h!())?;
         if !coords_vec.is_empty() {
             found += coords_vec.len();
         }
