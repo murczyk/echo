@@ -18,6 +18,7 @@ export type NetworkEtalonkaReportState = {
   activeFreqsOnly: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
+  includeHeadingsAndFreqs: boolean;
   includeUnitCallsigns: boolean;
   includePelengsMap: boolean;
   fromDateTimeStr: string;
@@ -42,6 +43,7 @@ export function createDefaultNetworkEtalonkaReportState(): NetworkEtalonkaReport
     activeFreqsOnly: true,
     includeSigintSigns: true,
     includeConfirmation: true,
+    includeHeadingsAndFreqs: false,
     includeUnitCallsigns: false,
     includePelengsMap: true,
     fromDateTimeStr: '',
@@ -66,6 +68,7 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
         activeFreqsOnly: report.activeFreqsOnly,
         includeSigintSigns: report.includeSigintSigns,
         includeConfirmation: report.includeConfirmation,
+        includeHeadingsAndFreqs: report.includeHeadingsAndFreqs,
       },
     };
   }
@@ -79,6 +82,7 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
       includeSigintSigns: report.includeSigintSigns,
       includeConfirmation: report.includeConfirmation,
       includePelengsMap: report.includePelengsMap,
+      includeHeadingsAndFreqs: report.includeHeadingsAndFreqs,
     },
   };
 }

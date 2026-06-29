@@ -5999,6 +5999,7 @@ type alias EtalonkaExtendedSettings =
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
     , includePelengsMap : Bool
+    , includeHeadingsAndFreqs : Bool
     }
 
 
@@ -6012,6 +6013,7 @@ etalonkaExtendedSettingsEncoder struct =
         , ( "include_sigint_signs", (Json.Encode.bool) struct.includeSigintSigns )
         , ( "include_confirmation", (Json.Encode.bool) struct.includeConfirmation )
         , ( "include_pelengs_map", (Json.Encode.bool) struct.includePelengsMap )
+        , ( "include_headings_and_freqs", (Json.Encode.bool) struct.includeHeadingsAndFreqs )
         ]
 
 
@@ -6049,6 +6051,7 @@ type alias EtalonkaSettings =
     { activeFreqsOnly : Bool
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
+    , includeHeadingsAndFreqs : Bool
     }
 
 
@@ -6058,6 +6061,7 @@ etalonkaSettingsEncoder struct =
         [ ( "active_freqs_only", (Json.Encode.bool) struct.activeFreqsOnly )
         , ( "include_sigint_signs", (Json.Encode.bool) struct.includeSigintSigns )
         , ( "include_confirmation", (Json.Encode.bool) struct.includeConfirmation )
+        , ( "include_headings_and_freqs", (Json.Encode.bool) struct.includeHeadingsAndFreqs )
         ]
 
 
@@ -12153,6 +12157,7 @@ etalonkaExtendedSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_headings_and_freqs" (Json.Decode.bool)))
 
 
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq
@@ -12176,6 +12181,7 @@ etalonkaSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_headings_and_freqs" (Json.Decode.bool)))
 
 
 etalonkaReportTypeDecoder : Json.Decode.Decoder EtalonkaReportType
@@ -13824,3 +13830,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
+
+

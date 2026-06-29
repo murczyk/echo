@@ -66,6 +66,7 @@ type
     | ReportActiveFreqsOnlyChanged Bool
     | ReportIncludeSigintSignsChanged Bool
     | ReportIncludeConfirmationChanged Bool
+    | ReportIncludeHeadingsAndFreqsChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
