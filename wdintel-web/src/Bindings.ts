@@ -2049,59 +2049,6 @@ export type UnitSearchReq = {
   search: string;
 };
 
-export type UnitMachineItem = {
-  id: number;
-  sigintNetworkId: number;
-  networkDisplayName: string;
-  machineId: string | null;
-  machineTags: Array<string>;
-  deleted: boolean;
-  createdAt: number;
-  updatedAt: number;
-  updatedBy: string | null;
-};
-
-export type UnitMachineListReq = {
-  includeArchived: boolean | null;
-  sigintNetworkId: number | null;
-  query: string | null;
-};
-
-export type UnitMachineListRsp = {
-  items: Array<UnitMachineItem>;
-};
-
-export type UnitMachineCreateReq = {
-  sigintNetworkId: number;
-  machineId: string | null;
-  machineTags: Array<string>;
-};
-
-export type UnitMachineUpdateReq = {
-  id: number;
-  sigintNetworkId: number;
-  machineId: string | null;
-  machineTags: Array<string>;
-};
-
-export type UnitMachineArchiveReq = {
-  id: number;
-};
-
-export type UnitMachineWarningCode =
-  | 'ArchivedDuplicateMachineId'
-;
-
-export type UnitMachineWarning = {
-  code: UnitMachineWarningCode;
-  message: string;
-};
-
-export type UnitMachineMutationRsp = {
-  item: UnitMachineItem;
-  warning: UnitMachineWarning | null;
-};
-
 export type ListSignalsSortBy =
   | 'SignalsCreatedAtAsc'
   | 'SignalsCreatedAtDesc'
@@ -2605,6 +2552,7 @@ export type Network = {
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
   doNotArchive: boolean;
+  unitTags: Array<string>;
   status: NetworkStatus;
 };
 
@@ -2649,6 +2597,7 @@ export type CreateNetworkReq = {
   postIds: Array<number>;
   descriptions: Array<AddNetworkDescription>;
   doNotArchive: boolean;
+  unitTags: Array<string>;
 };
 
 export type DeleteNetworkReq = {
@@ -2668,6 +2617,7 @@ export type UpdateNetworkReq = {
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
   doNotArchive: boolean;
+  unitTags: Array<string> | null;
   status: NetworkStatus;
 };
 

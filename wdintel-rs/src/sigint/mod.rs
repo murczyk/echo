@@ -41,7 +41,7 @@ pub mod signal;
 pub mod source;
 pub mod types;
 pub mod unit;
-pub mod unit_machine;
+pub mod unit_tag;
 pub mod worker;
 pub mod zone;
 
@@ -713,6 +713,7 @@ async fn xlsx_import_process_one(
         deleted: Set(false),
         external_id: NotSet,
         message_uid: NotSet,
+        operator_tags: NotSet,
     }
     .insert(dbx)
     .await

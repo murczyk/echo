@@ -122,6 +122,7 @@ export function NetworkDialogs({ page }: Props) {
         onChange={page.setCreateDialog}
         onSave={() => void page.saveNetworkCreate()}
         frequencyOptional={page.supportNonRerInterceptions}
+        unitTagsVisible={page.supportNonRerInterceptions}
       />
 
       <NetworkEditDrawer
@@ -138,6 +139,7 @@ export function NetworkDialogs({ page }: Props) {
         onClose={page.closeEditDialog}
         onChange={page.setEditDialog}
         onSave={(form) => void page.saveNetworkEdit(form)}
+        unitTagsVisible={page.supportNonRerInterceptions}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 

@@ -308,6 +308,7 @@ async fn replay_source_message(
         external_id: Set(None),
         message_uid: Set(None),
         datasource_group_id: Set(source.message.datasource_group_id),
+        operator_tags: Set(source.message.operator_tags.clone()),
     }
     .insert(&txn)
     .await
