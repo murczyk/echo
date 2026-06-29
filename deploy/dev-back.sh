@@ -6,6 +6,7 @@ log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pidfile="${repo_root}/.dev-pids/dev-back.pid"
+server_port="${ECHO_SERVER_PORT:-8081}"
 
 usage() {
     cat >&2 <<'EOF'
@@ -75,6 +76,16 @@ ensure_pid_dir() {
     mkdir -p "$(dirname "$pidfile")"
 }
 
+stop_pid_and_group() {
+    local pid="$1"
+
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    kill -KILL "$pid" 2>/dev/null || true
+}
+
 is_expected_process() {
     local pid="$1"
     local cwd cmdline
@@ -96,22 +107,37 @@ stop_existing_server() {
     local pid
 
     if [ ! -f "$pidfile" ]; then
+        stop_port_listener_fallback
         return 0
     fi
 
     pid="$(cat "$pidfile" 2>/dev/null || true)"
     if [ -z "$pid" ]; then
         rm -f "$pidfile"
+        stop_port_listener_fallback
         return 0
     fi
 
     if is_expected_process "$pid"; then
-        kill -TERM -- "-$pid" 2>/dev/null || true
-        sleep 1
-        kill -KILL -- "-$pid" 2>/dev/null || true
+        stop_pid_and_group "$pid"
+        rm -f "$pidfile"
+        return 0
     fi
 
     rm -f "$pidfile"
+    stop_port_listener_fallback
+}
+
+stop_port_listener_fallback() {
+    local pid
+
+    for pid in $(lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true); do
+        if is_expected_process "$pid"; then
+            stop_pid_and_group "$pid"
+        else
+            echo "refusing to kill unexpected process $pid listening on port $server_port" >&2
+        fi
+    done
 }
 
 filter_quiet_output() {
