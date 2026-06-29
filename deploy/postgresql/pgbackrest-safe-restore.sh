@@ -7,13 +7,53 @@ if [[ -z "${STANZA}" ]]; then
   exit 2
 fi
 
-PG_VERSION="${ECHO_PGBACKREST_RESTORE_PG_VERSION:-14}"
-PG_CLUSTER="${ECHO_PGBACKREST_RESTORE_PG_CLUSTER:-main}"
-PGDATA="${ECHO_PGBACKREST_RESTORE_PGDATA:-/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}}"
-PGDATA_NEXT="${ECHO_PGBACKREST_RESTORE_PGDATA_NEXT:-${PGDATA}.next}"
-PGDATA_PREV="${ECHO_PGBACKREST_RESTORE_PGDATA_PREV:-${PGDATA}.prev}"
 PGBACKREST_CONF="${ECHO_PGBACKREST_CONF:-/etc/pgbackrest/pgbackrest.conf}"
 PGBACKREST_CONF_INCLUDE="${ECHO_PGBACKREST_CONF_INCLUDE:-/etc/pgbackrest/conf.d}"
+
+detect_stanza_pgdata() {
+  local files=("${PGBACKREST_CONF}")
+  shopt -s nullglob
+  files+=("${PGBACKREST_CONF_INCLUDE}"/*.conf)
+  shopt -u nullglob
+
+  awk -v stanza="${STANZA}" '
+    /^[[:space:]]*\[/ {
+      section = $0
+      sub(/^[[:space:]]*\[/, "", section)
+      sub(/\][[:space:]]*$/, "", section)
+      in_stanza = section == stanza
+      next
+    }
+    in_stanza && /^[[:space:]]*pg1-path[[:space:]]*=/ {
+      value = $0
+      sub(/^[^=]*=/, "", value)
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "${files[@]}" 2>/dev/null || true
+}
+
+PG_VERSION="${ECHO_PGBACKREST_RESTORE_PG_VERSION:-}"
+PG_CLUSTER="${ECHO_PGBACKREST_RESTORE_PG_CLUSTER:-}"
+PGDATA="${ECHO_PGBACKREST_RESTORE_PGDATA:-}"
+if [[ -z "${PGDATA}" ]]; then
+  if [[ -n "${PG_VERSION}" && -n "${PG_CLUSTER}" ]]; then
+    PGDATA="/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}"
+  else
+    PGDATA="$(detect_stanza_pgdata)"
+  fi
+fi
+if [[ "${PGDATA}" =~ ^/var/lib/postgresql/([^/]+)/([^/]+)$ ]]; then
+  PG_VERSION="${PG_VERSION:-${BASH_REMATCH[1]}}"
+  PG_CLUSTER="${PG_CLUSTER:-${BASH_REMATCH[2]}}"
+fi
+PG_VERSION="${PG_VERSION:-14}"
+PG_CLUSTER="${PG_CLUSTER:-main}"
+PGDATA="${PGDATA:-/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}}"
+PGDATA_NEXT="${ECHO_PGBACKREST_RESTORE_PGDATA_NEXT:-${PGDATA}.next}"
+PGDATA_PREV="${ECHO_PGBACKREST_RESTORE_PGDATA_PREV:-${PGDATA}.prev}"
 PGBACKREST_LOG_LEVEL="${ECHO_PGBACKREST_RESTORE_LOG_LEVEL:-detail}"
 PGBACKREST_IO_TIMEOUT="${ECHO_PGBACKREST_RESTORE_IO_TIMEOUT:-10m}"
 PGBACKREST_PROCESS_MAX="${ECHO_PGBACKREST_RESTORE_PROCESS_MAX:-4}"

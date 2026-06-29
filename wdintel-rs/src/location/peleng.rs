@@ -47,6 +47,41 @@ where
     Ok(())
 }
 
+pub fn coord_matches_peleng_bounds(
+    coord: &Coords,
+    peleng_bounds: Option<&crate::system_settings::PelengBounds>,
+) -> bool {
+    peleng_bounds
+        .map(|peleng_bounds| peleng_bounds.contains(coord.lat, coord.lng))
+        .unwrap_or(true)
+}
+
+pub fn filter_coords_by_peleng_bounds(
+    coords: Vec<Coords>,
+    peleng_bounds: Option<&crate::system_settings::PelengBounds>,
+) -> Vec<Coords> {
+    coords
+        .into_iter()
+        .filter(|coord| coord_matches_peleng_bounds(coord, peleng_bounds))
+        .collect()
+}
+
+pub async fn filter_allowed_peleng_coords<'a, 'async_trait, C>(
+    coords: Vec<Coords>,
+    txn: &'a C,
+) -> Result<Vec<Coords>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let peleng_bounds = crate::system_settings::get_active_peleng_bounds(txn)
+        .await
+        .c(h!())?;
+    Ok(filter_coords_by_peleng_bounds(
+        coords,
+        peleng_bounds.as_ref(),
+    ))
+}
+
 pub async fn insert_pelengs<'a, 'async_trait, C>(
     coords: Vec<Coords>,
     inbox_item_id: i64,
@@ -56,12 +91,14 @@ pub async fn insert_pelengs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    for c in coords {
+    let coords = filter_allowed_peleng_coords(coords, txn).await.c(h!())?;
+
+    for coord in coords {
         sigint_peleng::ActiveModel {
             id: NotSet,
             source_inbox_item_id: Set(inbox_item_id),
-            lat: Set(c.lat),
-            lng: Set(c.lng),
+            lat: Set(coord.lat),
+            lng: Set(coord.lng),
             settlement: NotSet,
             locality_direction: NotSet,
             distance_m: NotSet,

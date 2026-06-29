@@ -276,6 +276,23 @@ mod tests {
     }
 
     #[test]
+    fn extract_freq_antenna_name_with_mhz() {
+        let input = "Тип: Антена\nНазва: 141.715 МГц\n24.06.2026 17:32\nКоординати: 36U XB 66512 50880";
+        let res = extract_freq(input).unwrap();
+        let expected = Some("141.7150".to_string());
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_freq_bare_frequency_line() {
+        let input =
+            "24.06.2026, 15:47:37\n138.0000\nУКХ р/м 2 мсб 121 мсп 68 мсд 6 А";
+        let res = extract_freq(input).unwrap();
+        let expected = Some("138.0000".to_string());
+        assert_eq!(res, expected);
+    }
+
+    #[test]
     fn extract_freq_11mar24_bug() {
         let input = r#"08.03, 18:07:55
 416.5200 п65

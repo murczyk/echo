@@ -46,6 +46,8 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id]),
         is_rer: None,
+        fills_etalonka: None,
+        disable_network_assignment: None,
     };
 
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
@@ -70,6 +72,8 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id, aor2.id]),
         is_rer: None,
+        fills_etalonka: None,
+        disable_network_assignment: None,
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
@@ -101,6 +105,94 @@ async fn test_bl_group_update_add_second_aor() {
         res2.group_data.long_note,
         Some("Added second AOR".to_string())
     );
+
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
+async fn test_bl_group_update_fills_etalonka_invalidates_all_history() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let group_created_at = chrono::NaiveDate::from_ymd_opt(2026, 1, 10)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap();
+    let item_datetime = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap();
+
+    let group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            created_at: Set(group_created_at),
+            fills_etalonka: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let msg = mk_signal_message(
+        &txn,
+        signal_message::ActiveModel {
+            created_at: Set(group_created_at),
+            timestamp: Set(Some(item_datetime)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_signal_message_group(
+        &txn,
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(msg.id),
+            group_master_key: Set(Some(group.master_key.clone())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let inbox_item = mk_sigint_inbox_item(
+        &txn,
+        sigint_inbox_item::ActiveModel {
+            id: Set(msg.id),
+            date: Set(Some(item_datetime.date().to_string())),
+            time: Set(Some(
+                item_datetime.time().format("%H:%M:%S").to_string(),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let expected_since_ts = inbox_item.datetime.unwrap();
+    assert!(expected_since_ts < group_created_at);
+
+    let req = GroupUpdateReq {
+        master_key: group.master_key.clone(),
+        short_note: None,
+        long_note: None,
+        area_of_responsibility_id: None,
+        area_of_responsibility_ids: Some(vec![]),
+        is_rer: None,
+        fills_etalonka: Some(false),
+        disable_network_assignment: None,
+    };
+    let res = bl_group_update(&req, &txn).await.unwrap();
+
+    assert!(res.network_invalidation_enqueued);
+    let task = network_invalidation_task::Entity::find()
+        .filter(
+            network_invalidation_task::Column::GroupMasterKey
+                .eq(group.master_key.clone()),
+        )
+        .order_by_desc(network_invalidation_task::Column::Id)
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(task.since_ts, expected_since_ts);
 
     txn.rollback().await.unwrap();
 }

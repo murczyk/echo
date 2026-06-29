@@ -9,7 +9,7 @@ use itertools::Itertools;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-#[derive(Debug, FromQueryResult)]
+#[derive(Clone, Debug, FromQueryResult)]
 pub struct InboxItem {
     pub id: i64,
     pub timestamp: Option<NaiveDateTime>,
@@ -67,10 +67,19 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let message_ids = messages.iter().map(|msg| msg.id).collect::<Vec<_>>();
+    let disabled_message_ids =
+        load_network_assignment_disabled_message_ids(&message_ids, db)
+            .await
+            .c(h!())?;
     let groups_map =
         load_message_group_entries(&message_ids, db).await.c(h!())?;
+    let messages = messages
+        .iter()
+        .filter(|message| !disabled_message_ids.contains(&message.id))
+        .cloned()
+        .collect::<Vec<_>>();
     let expected_map =
-        load_expected_networks_for_messages(messages, &groups_map, db)
+        load_expected_networks_for_messages(&messages, &groups_map, db)
             .await
             .c(h!())?;
     Ok(expected_map)
@@ -139,10 +148,16 @@ where
         HashMap::new();
     for message_ids in message_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
         let group_rows = signal_message_group::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message_group::Relation::SignalGroup.def(),
+            )
             .filter(
                 signal_message_group::Column::SignalMessageId
                     .is_in(message_ids.to_vec()),
             )
+            .filter(signal_group::Column::FillsEtalonka.eq(true))
+            .filter(signal_group::Column::DisableNetworkAssignment.eq(false))
             .all(db)
             .await
             .c(h!())?;
@@ -156,8 +171,80 @@ where
     Ok(groups_map)
 }
 
+async fn load_network_assignment_disabled_message_ids<'a, 'async_trait, C>(
+    message_ids: &[i64],
+    db: &'a C,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if message_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let disabled_message_ids =
+        load_message_ids_with_network_assignment_disabled(
+            message_ids,
+            db,
+            true,
+        )
+        .await
+        .c(h!())?;
+    let enabled_message_ids =
+        load_message_ids_with_network_assignment_disabled(
+            message_ids,
+            db,
+            false,
+        )
+        .await
+        .c(h!())?;
+    Ok(disabled_message_ids
+        .difference(&enabled_message_ids)
+        .copied()
+        .collect())
+}
+
+async fn load_message_ids_with_network_assignment_disabled<
+    'a,
+    'async_trait,
+    C,
+>(
+    message_ids: &[i64],
+    db: &'a C,
+    disable_network_assignment: bool,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut ids = HashSet::new();
+    for message_ids in message_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        ids.extend(
+            signal_message_group::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::SignalGroup.def(),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(message_ids.to_vec()),
+                )
+                .filter(
+                    signal_group::Column::DisableNetworkAssignment
+                        .eq(disable_network_assignment),
+                )
+                .select_only()
+                .column(signal_message_group::Column::SignalMessageId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(ids)
+}
+
 async fn load_expected_networks_for_messages<'a, 'async_trait, C>(
-    messages: &Vec<InboxItem>,
+    messages: &[InboxItem],
     groups_map: &HashMap<i64, Vec<signal_message_group::Model>>,
     db: &'a C,
 ) -> anyhow::Result<HashMap<i64, Vec<i64>>>
@@ -399,7 +486,7 @@ fn split_unit_names(unit_names: &str) -> Vec<String> {
 }
 
 fn match_network_ids_for_messages(
-    messages: &Vec<InboxItem>,
+    messages: &[InboxItem],
     groups_map: &HashMap<i64, Vec<signal_message_group::Model>>,
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
@@ -440,18 +527,12 @@ fn match_network_ids_for_messages(
         let Some(entries) = groups_map.get(&msg.id) else {
             continue;
         };
-        let Some(group_master_key) = entries
-            .iter()
-            .min_by_key(|entry| entry.id)
-            .and_then(|entry| entry.group_master_key.clone())
-        else {
-            continue;
-        };
         let Some(freq) = &msg.freq else { continue };
 
-        let Some(group_bounds) = group_bounds_map.get(&group_master_key) else {
+        let group_bounds = group_bounds_for_entries(entries, group_bounds_map);
+        if group_bounds.is_empty() {
             continue;
-        };
+        }
 
         let Some(candidate_networks) = freq_networks_map.get(freq) else {
             continue;
@@ -477,7 +558,7 @@ fn match_network_ids_for_messages(
                 continue;
             }
             if let Some(net_bounds) = network_bounds_map.get(&network_id) {
-                for (gl, gr) in group_bounds {
+                for (gl, gr) in &group_bounds {
                     for (nl, nr) in net_bounds {
                         // 1. Group starts inside network
                         // Network: |----[nl=======nr]-------|
@@ -515,6 +596,18 @@ fn match_network_ids_for_messages(
     }
 
     Ok(result)
+}
+
+fn group_bounds_for_entries(
+    entries: &[signal_message_group::Model],
+    group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
+) -> Vec<(f64, f64)> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.group_master_key.as_ref())
+        .filter_map(|group_master_key| group_bounds_map.get(group_master_key))
+        .flat_map(|bounds| bounds.iter().copied())
+        .collect()
 }
 
 fn filter_networks_by_post(
@@ -706,6 +799,237 @@ fn log_network_mismatches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn load_message_group_entries_ignores_disabled_group_links() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                fills_etalonka: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(msg.id),
+                group_master_key: Set(Some(disabled_group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(msg.id),
+                group_master_key: Set(Some(enabled_group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let groups_map =
+            load_message_group_entries(&[msg.id], &txn).await.unwrap();
+        let entries = groups_map.get(&msg.id).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].group_master_key, Some(enabled_group.master_key));
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn load_network_assignment_disabled_message_ids_requires_all_groups_disabled(
+    ) {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let enabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_only_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                disable_network_assignment: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mixed_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let disabled_msg = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&enabled_group, &disabled_group] {
+            mk_signal_message_group(
+                &txn,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(mixed_msg.id),
+                    group_master_key: Set(Some(group.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(disabled_msg.id),
+                group_master_key: Set(Some(
+                    disabled_only_group.master_key.clone(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let ids = load_network_assignment_disabled_message_ids(
+            &[mixed_msg.id, disabled_msg.id],
+            &txn,
+        )
+        .await
+        .unwrap();
+
+        assert!(!ids.contains(&mixed_msg.id));
+        assert!(ids.contains(&disabled_msg.id));
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn match_networks_uses_later_group_aor() {
+        let item_id = 1;
+        let messages = vec![InboxItem {
+            id: item_id,
+            timestamp: Some(test_dt()),
+            freq: Some("158.2510".to_string()),
+            unit: None,
+            parsed_unit_v2: false,
+            post_id: None,
+        }];
+        let groups_map = HashMap::from([(
+            item_id,
+            vec![
+                mk_group_entry(1, item_id, "without-aor"),
+                mk_group_entry(2, item_id, "with-aor"),
+            ],
+        )]);
+        let group_bounds_map =
+            HashMap::from([("with-aor".to_string(), vec![(8300.0, 8999.0)])]);
+        let network_bounds_map = HashMap::from([(983, vec![(8300.0, 8999.0)])]);
+        let networks_freqs = vec![NetworkFreqResult {
+            network_id: 983,
+            unit_id: None,
+            unit: None,
+            freq: "158.2510".to_string(),
+            freq_active_from: Some(test_dt()),
+            freq_active_to: None,
+            network_active_from: Some(test_dt()),
+            network_active_to: None,
+        }];
+
+        let matched = match_network_ids_for_messages(
+            &messages,
+            &groups_map,
+            &group_bounds_map,
+            &network_bounds_map,
+            networks_freqs,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            matched
+                .get(&item_id)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from([983])
+        );
+    }
+
+    fn mk_group_entry(
+        id: i64,
+        signal_message_id: i64,
+        group_master_key: &str,
+    ) -> signal_message_group::Model {
+        signal_message_group::Model {
+            id,
+            signal_message_id,
+            group_master_key: Some(group_master_key.to_string()),
+            sender: None,
+            message_uid: None,
+            datasource_group_id: None,
+            created_at: test_dt(),
+        }
+    }
+
+    fn test_dt() -> NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
 
     fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
         sigint_unit::Model {

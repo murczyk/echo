@@ -1,5 +1,6 @@
 use crate::config::{
-    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, REDIS_MGS_ID_TTL,
+    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, IMPORT_DIRECTION_FINDING_UUID,
+    REDIS_MGS_ID_TTL,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
@@ -8,6 +9,7 @@ use crate::messenger::media::{self, MediaUploadInput};
 use crate::types::*;
 use crate::utils::pop_vector;
 use crate::OneoffReprocessCoordsPs;
+use anyhow::anyhow;
 use base64::engine::general_purpose;
 use base64::Engine;
 use calamine::Reader;
@@ -18,7 +20,7 @@ use lazy_static::lazy_static;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use regex::Regex;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::*;
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -100,6 +102,9 @@ pub async fn oneoff_reprocess_coords(
 ) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords {ps:?}");
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let mut import_group_master_key = None;
+    let period = oneoff_reprocess_coords_period(ps)?;
     let cutoff_ts =
         Utc::now().naive_utc() - chrono::TimeDelta::try_days(30).c(h!())?;
     let condition_1 = sigint_inbox_item::Column::Coords
@@ -115,6 +120,31 @@ pub async fn oneoff_reprocess_coords(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(condition_1.or(condition_2));
+    if let Some((start, end)) = period {
+        q = SignalMessage::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(
+                sigint_inbox_item::Column::Coords
+                    .is_not_null()
+                    .and(sigint_inbox_item::Column::Coords.ne("")),
+            )
+            .filter(
+                Expr::cust(
+                    r#"coalesce("sigint_inbox_item"."datetime", "signal_message"."timestamp", "signal_message"."created_at")"#,
+                )
+                .gte(start),
+            )
+            .filter(
+                Expr::cust(
+                    r#"coalesce("sigint_inbox_item"."datetime", "signal_message"."timestamp", "signal_message"."created_at")"#,
+                )
+                .lt(end),
+            );
+    }
     if let Some(days) = ps.clone().days {
         let ts = Utc::now() - chrono::TimeDelta::try_days(days).c(h!())?;
         q = q.filter(sigint_inbox_item::Column::Datetime.gte(ts.naive_utc()));
@@ -123,6 +153,7 @@ pub async fn oneoff_reprocess_coords(
     let mut rows = q.stream(&dbx).await.c(h!())?;
     let pb = ProgressBar::new(count);
     let mut found = 0;
+    let mut cleared = 0;
     while let Some(message) = rows.try_next().await.c(h!())? {
         pb.inc(1);
         let item_id = message.id;
@@ -139,12 +170,24 @@ pub async fn oneoff_reprocess_coords(
             .datetime
             .or(message.timestamp)
             .unwrap_or(message.created_at);
+        let had_coords = inbox_item
+            .coords
+            .as_ref()
+            .is_some_and(|coords| !coords.is_empty())
+            || inbox_item.lat.is_some()
+            || inbox_item.lng.is_some();
         let mut inbox_item: sigint_inbox_item::ActiveModel = inbox_item.into();
         let Some(ref body) = message.body else {
             continue;
         };
+        let coords_vec =
+            crate::rer_importer::coordinates::extract_coords(body).await;
         let mut coords_vec =
-            milgeo_rs::coordinates::rer_extract_coords(body).await;
+            crate::location::peleng::filter_allowed_peleng_coords(
+                coords_vec, &dbx,
+            )
+            .await
+            .c(h!())?;
         if !coords_vec.is_empty() {
             found += coords_vec.len();
         }
@@ -159,17 +202,192 @@ pub async fn oneoff_reprocess_coords(
         )
         .await
         .c(h!())?;
-        let Some(coords) = pop_vector(&mut coords_vec) else {
+        if let Some(coords) = pop_vector(&mut coords_vec) {
+            inbox_item.coords = Set(Some(coords.text.clone()));
+            inbox_item.lat = Set(Some(coords.lat));
+            inbox_item.lng = Set(Some(coords.lng));
+        } else if had_coords {
+            inbox_item.coords = Set(None);
+            inbox_item.lat = Set(None);
+            inbox_item.lng = Set(None);
+            if import_group_master_key.is_none() {
+                import_group_master_key = Some(
+                    oneoff_reprocess_coords_import_group_master_key(
+                        &dbx,
+                        &config.signal_import_group_name,
+                    )
+                    .await
+                    .c(h!())?,
+                );
+            }
+            let import_group_master_key =
+                import_group_master_key.as_ref().c(h!())?;
+            reset_oneoff_reprocess_coords_datasource_group(
+                &dbx,
+                &message,
+                import_group_master_key,
+            )
+            .await
+            .c(h!())?;
+            cleared += 1;
+        } else {
             continue;
         };
 
-        inbox_item.coords = Set(Some(coords.text.clone()));
-        inbox_item.lat = Set(Some(coords.lat));
-        inbox_item.lng = Set(Some(coords.lng));
         inbox_item.update(&dbx).await.c(h!())?;
     }
-    println!("> done! filled {found} new coords");
+    println!("> done! found {found} coords, cleared {cleared} inbox items");
     Ok(())
+}
+
+fn oneoff_reprocess_coords_period(
+    ps: &OneoffReprocessCoordsPs,
+) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {
+    match (&ps.start, &ps.end) {
+        (None, None) => Ok(None),
+        (Some(start), Some(end)) => Ok(Some((
+            parse_oneoff_reprocess_coords_datetime(start)?,
+            parse_oneoff_reprocess_coords_datetime(end)?,
+        ))),
+        _ => Err(AppError::from(anyhow!(
+            "--start and --end must be passed together"
+        ))),
+    }
+}
+
+fn parse_oneoff_reprocess_coords_datetime(
+    value: &str,
+) -> Result<NaiveDateTime, AppError> {
+    let local_datetime = parse_oneoff_reprocess_coords_local_datetime(value)?;
+    Ok(Kyiv
+        .from_local_datetime(&local_datetime)
+        .single()
+        .ok_or_else(|| {
+            AppError::from(anyhow!(
+                "ambiguous or invalid Kyiv datetime: {value}"
+            ))
+        })?
+        .with_timezone(&Utc)
+        .naive_utc())
+}
+
+fn parse_oneoff_reprocess_coords_local_datetime(
+    value: &str,
+) -> Result<NaiveDateTime, AppError> {
+    for format in [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
+    ] {
+        if let Ok(datetime) = NaiveDateTime::parse_from_str(value, format) {
+            return Ok(datetime);
+        }
+    }
+
+    for format in ["%Y-%m-%d", "%d.%m.%Y"] {
+        if let Ok(date) = NaiveDate::parse_from_str(value, format) {
+            return date
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| AppError::from(anyhow!("bad date: {value}")));
+        }
+    }
+
+    Err(AppError::from(anyhow!(
+        "bad datetime {value}; use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS"
+    )))
+}
+
+async fn oneoff_reprocess_coords_import_group_master_key<'a, 'async_trait, C>(
+    dbx: &'a C,
+    group_name: &str,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::Name.eq(group_name.to_string()))
+        .order_by_desc(signal_group::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|group| group.master_key)
+        .ok_or_else(|| {
+            AppError::from(anyhow!(
+                "Signal group for import not found: {group_name}; create in signal_group table"
+            ))
+        })
+}
+
+async fn reset_oneoff_reprocess_coords_datasource_group<'a, 'async_trait, C>(
+    dbx: &'a C,
+    message: &signal_message::Model,
+    import_group_master_key: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let Some(datasource_group_id) = message.datasource_group_id else {
+        return Ok(());
+    };
+
+    let Some(datasource_group) =
+        datasource_group::Entity::find_by_id(datasource_group_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+    else {
+        return Ok(());
+    };
+
+    if datasource_group.group_master_key != IMPORT_DIRECTION_FINDING_UUID {
+        return Ok(());
+    }
+
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            dbx,
+            import_group_master_key.to_string(),
+            datasource_group.datasource_id,
+        )
+        .await
+        .c(h!())?;
+    let mut message = message.clone().into_active_model();
+    message.datasource_group_id = Set(Some(datasource_group_id));
+    message.update(dbx).await.c(h!())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod oneoff_reprocess_coords_tests {
+    use super::*;
+
+    #[test]
+    fn parse_period_dates_as_kyiv_local_and_store_utc_naive() {
+        let period = oneoff_reprocess_coords_period(&OneoffReprocessCoordsPs {
+            days: None,
+            start: Some("2026-06-27".to_string()),
+            end: Some("2026-06-28".to_string()),
+        })
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            period,
+            (
+                NaiveDateTime::parse_from_str(
+                    "2026-06-26T21:00:00",
+                    "%Y-%m-%dT%H:%M:%S",
+                )
+                .unwrap(),
+                NaiveDateTime::parse_from_str(
+                    "2026-06-27T21:00:00",
+                    "%Y-%m-%dT%H:%M:%S",
+                )
+                .unwrap(),
+            )
+        );
+    }
 }
 
 pub async fn find_duplicate_of(

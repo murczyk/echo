@@ -166,6 +166,7 @@ pub(crate) async fn report_docx_generate_file(
     env: &Env,
     mut req: types::ReportPreviewReq,
     save_legacy_log: bool,
+    bgtask_id: Option<i64>,
 ) -> Result<ReportTaskGenerated, AppError> {
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     req.req.nolimit = Some(true);
@@ -264,9 +265,15 @@ pub(crate) async fn report_docx_generate_file(
             .await
             .c(h!())?;
     } else if req.kind == kinds::RER_REPORT {
-        self::rer::report_docx_kind_rer(&user_login, env, &req, &outpath)
-            .await
-            .c(h!())?;
+        self::rer::report_docx_kind_rer(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+            bgtask_id,
+        )
+        .await
+        .c(h!())?;
     } else if req.kind == kinds::POSTS_DOCX {
         self::posts::report_docx_kind_posts(&user_login, env, &req, &outpath)
             .await
