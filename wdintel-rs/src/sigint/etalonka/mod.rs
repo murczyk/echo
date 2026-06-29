@@ -1,4 +1,3 @@
-use crate::delta::bgtask_log;
 use crate::error::AppError;
 use crate::sigint::callsign::bl_network_callsign::*;
 use crate::sigint::callsign::types::*;
@@ -11,9 +10,6 @@ use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::config::{Config, ETALONKA_GEO_SCREENSHOT_CONCURRENCY};
-use crate::report_history::{
-    ensure_report_history_in_progress, set_bgtask_progress,
-};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
@@ -43,26 +39,6 @@ pub mod util;
 pub(crate) struct EtalonkaProgress {
     units: ProgressBar,
     networks: ProgressBar,
-}
-
-async fn report_bgtask_progress(
-    dbx: &DatabaseConnection,
-    bgtask_id: Option<i64>,
-    progress: i64,
-    message: &str,
-) -> Result<(), AppError> {
-    if let Some(bgtask_id) = bgtask_id {
-        set_bgtask_progress(dbx, bgtask_id, progress).await?;
-        bgtask_log(Some(bgtask_id), message, dbx).await.c(h!())?;
-    }
-    Ok(())
-}
-
-async fn ensure_report_still_running(
-    dbx: &DatabaseConnection,
-    report_history_id: i64,
-) -> Result<(), AppError> {
-    ensure_report_history_in_progress(dbx, report_history_id).await
 }
 
 impl EtalonkaProgress {
@@ -152,8 +128,6 @@ pub async fn bl_etalonka_report_networks_data(
     user_login: &str,
     req: &EtalonkaJimForksReq,
     trace_id: Uuid,
-    report_history_id: Option<i64>,
-    bgtask_id: Option<i64>,
 ) -> Result<EtalonkaData, AppError> {
     let groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
@@ -168,8 +142,6 @@ pub async fn bl_etalonka_report_networks_data(
         networks_data,
         &req.etalonka_type,
         trace_id,
-        report_history_id,
-        bgtask_id,
     )
     .await
     .c(h!())?)
@@ -180,8 +152,6 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
     user_login: &str,
     req: &EtalonkaNetworkBatchReq,
     trace_id: Uuid,
-    report_history_id: Option<i64>,
-    bgtask_id: Option<i64>,
 ) -> Result<EtalonkaData, AppError> {
     let groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
@@ -196,8 +166,6 @@ pub async fn bl_etalonka_report_networks_batch_id_data(
         networks_data,
         &req.etalonka_type,
         trace_id,
-        report_history_id,
-        bgtask_id,
     )
     .await
     .c(h!())?)
@@ -309,8 +277,6 @@ pub async fn collect_etalonka_data(
     networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
     trace_id: Uuid,
-    report_history_id: Option<i64>,
-    bgtask_id: Option<i64>,
 ) -> Result<EtalonkaData, AppError> {
     collect_etalonka_data_with_progress(
         dbx,
@@ -319,8 +285,6 @@ pub async fn collect_etalonka_data(
         networks_data,
         report_type,
         trace_id,
-        report_history_id,
-        bgtask_id,
         None,
     )
     .await
@@ -333,8 +297,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
     trace_id: Uuid,
-    report_history_id: Option<i64>,
-    bgtask_id: Option<i64>,
     progress: Option<&EtalonkaProgress>,
 ) -> Result<EtalonkaData, AppError> {
     let mut data = EtalonkaData {
@@ -373,7 +335,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     };
 
     let mut all_known_callsigns = BTreeMap::new();
-    report_bgtask_progress(dbx, bgtask_id, 10, "[1/4] Пошук мереж").await?;
     if is_extended_report {
         info!(
             "[trace_id={trace_id}] collecting general data for extended report"
@@ -406,21 +367,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     };
 
     let show_logs = progress.is_none();
-    let total_networks = data
-        .networks_data
-        .values()
-        .map(|unit_networks| unit_networks.len())
-        .sum::<usize>();
-    let mut processed_networks = 0usize;
-    if total_networks > 0 {
-        report_bgtask_progress(
-            dbx,
-            bgtask_id,
-            20,
-            &format!("[2/4] Обробка мереж 0/{total_networks}"),
-        )
-        .await?;
-    }
     let mut units_remaining = data.networks_data.len();
     for (unit_key, unit_networks) in data.networks_data.iter() {
         let unit_name = &unit_key.unit_name;
@@ -433,9 +379,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         let mut network_remaining = unit_networks.len();
         let mut pelengs_map_jobs = Vec::new();
         for network in unit_networks.iter() {
-            if let Some(report_history_id) = report_history_id {
-                ensure_report_still_running(dbx, report_history_id).await?;
-            }
             let network_id = network.id;
             if show_logs {
                 network_remaining -= 1;
@@ -540,24 +483,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             } else if let Some(progress) = progress {
                 progress.inc_network();
             }
-            if bgtask_id.is_some() {
-                processed_networks += 1;
-                let percent = if total_networks == 0 {
-                    70
-                } else {
-                    20 + ((processed_networks as i64 * 50)
-                        / total_networks as i64)
-                };
-                report_bgtask_progress(
-                    dbx,
-                    bgtask_id,
-                    percent,
-                    &format!(
-                        "[2/4] Обробка мереж {processed_networks}/{total_networks}"
-                    ),
-                )
-                .await?;
-            }
             data.entries.insert(key, entry);
         }
         if include_pelengs_map {
@@ -587,16 +512,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     if let Some(progress) = progress {
         progress.finish();
     }
-    if let Some(report_history_id) = report_history_id {
-        ensure_report_still_running(dbx, report_history_id).await?;
-    }
-    report_bgtask_progress(
-        dbx,
-        bgtask_id,
-        85,
-        "[3/4] Формування еталонного опису",
-    )
-    .await?;
     Ok(data)
 }
 
@@ -2251,8 +2166,6 @@ mod tests {
             &login.login,
             &req,
             Uuid::new_v4(),
-            None,
-            None,
         )
         .await
         .unwrap();

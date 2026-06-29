@@ -2196,31 +2196,16 @@ async fn bgtask_log_progress(
     progress: i64,
     logline: &str,
     dbx: &DatabaseConnection,
-) -> Result<(), AppError> {
-    set_bgtask_progress(dbx, bgtask_id, progress).await?;
-    bgtask_log(Some(bgtask_id), logline, dbx).await.c(h!())?;
-    Ok(())
-}
-
-pub(crate) async fn ensure_report_history_in_progress(
-    dbx: &DatabaseConnection,
-    report_history_id: i64,
-) -> Result<(), AppError> {
-    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
-        .one(dbx)
-        .await
-        .c(h!())?
-    else {
-        return Err(AppError::NotFound);
-    };
-    if report_history.status == STATUS_IN_PROGRESS {
-        return Ok(());
+) {
+    if let Err(err) = set_bgtask_progress(dbx, bgtask_id, progress).await {
+        warn!(
+            "failed to update bgtask progress for {} to {}: {err:?}",
+            bgtask_id, progress
+        );
     }
-    Err(AppError::BL {
-        msg: report_history
-            .last_error
-            .unwrap_or_else(|| "Скасовано користувачем".to_string()),
-    })
+    if let Err(err) = bgtask_log(Some(bgtask_id), logline, dbx).await.c(h!()) {
+        warn!("failed to append bgtask log for {}: {err:?}", bgtask_id);
+    }
 }
 
 async fn generate_and_store_report(
@@ -2229,22 +2214,10 @@ async fn generate_and_store_report(
     bgtask_id: i64,
 ) -> Result<(), AppError> {
     bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
-        .await?;
+        .await;
     let generated = generate_report(env, report_history, bgtask_id).await?;
-    ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
-    let save_progress = if report_history.report_kind == KIND_ETALONKA {
-        95
-    } else {
-        85
-    };
-    bgtask_log_progress(
-        bgtask_id,
-        save_progress,
-        "[2/3] Збереження звіту",
-        &env.dbx,
-    )
-    .await?;
-    ensure_report_history_in_progress(&env.dbx, report_history.id).await?;
+    bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
+        .await;
     let s3_id = upload_report_bytes(env, &generated).await?;
     let res = ReportHistory::update_many()
         .col_expr(
@@ -2287,7 +2260,7 @@ async fn generate_and_store_report(
         "[3/3] Готово до завантаження",
         &env.dbx,
     )
-    .await?;
+    .await;
     Ok(())
 }
 
@@ -2300,8 +2273,6 @@ async fn generate_report(
         serde_json::from_value(report_history.request.clone()).c(h!())?;
     match request {
         ReportHistoryRequest::AnalysisReport { payload } => {
-            ensure_report_history_in_progress(&env.dbx, report_history.id)
-                .await?;
             let generated =
                 crate::rer_importer::reports::report_docx_generate_file(
                     report_history.requested_by.clone(),
@@ -2321,8 +2292,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::AnalysisExport { payload } => {
-            ensure_report_history_in_progress(&env.dbx, report_history.id)
-                .await?;
             let (file_name, content_type, bytes) = match report_history.report_kind.as_str() {
                 KIND_SUMMARY_TABLE => (
                     report_history
@@ -2382,8 +2351,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaFilter { payload } => {
-            ensure_report_history_in_progress(&env.dbx, report_history.id)
-                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_data(
@@ -2391,8 +2358,6 @@ async fn generate_report(
                     &report_history.requested_by,
                     &payload,
                     trace_id,
-                    Some(report_history.id),
-                    Some(bgtask_id),
                 )
                 .await
                 .c(h!())?;
@@ -2403,13 +2368,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                90,
-                "[4/4] Збереження файлу",
-                &env.dbx,
-            )
-            .await?;
             Ok(GeneratedReport {
                 file_name: report_history.file_name.clone().unwrap_or_else(
                     || format!("etalonka_networks_{}.docx", report_history.id),
@@ -2420,8 +2378,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaBatch { payload } => {
-            ensure_report_history_in_progress(&env.dbx, report_history.id)
-                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_batch_id_data(
@@ -2429,8 +2385,6 @@ async fn generate_report(
                     &report_history.requested_by,
                     &payload,
                     trace_id,
-                    Some(report_history.id),
-                    Some(bgtask_id),
                 )
                 .await
                 .c(h!())?;
@@ -2441,13 +2395,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                90,
-                "[4/4] Збереження файлу",
-                &env.dbx,
-            )
-            .await?;
             Ok(GeneratedReport {
                 file_name: report_history.file_name.clone().unwrap_or_else(
                     || format!("etalonka_networks_{}.docx", report_history.id),
@@ -2458,8 +2405,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::GoiReport { .. } => {
-            ensure_report_history_in_progress(&env.dbx, report_history.id)
-                .await?;
             let organism_id = crate::sigint::network::goi::login_organism_id(
                 &env.dbx,
                 &report_history.requested_by,

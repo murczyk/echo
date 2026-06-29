@@ -226,8 +226,6 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
             networks_data,
             &report_req.etalonka_type,
             trace_id,
-            None,
-            None,
             Some(&etalonka_progress),
         )
         .await
