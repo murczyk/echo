@@ -44,6 +44,7 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
     doNotArchive: false,
+    unitTags: [],
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -107,6 +108,7 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
     operationType: network.operationType ?? '',
     operationPeriod: network.operationPeriod ?? '',
     doNotArchive: network.doNotArchive,
+    unitTags: [...network.unitTags],
     status: network.status,
     aorIds: [...network.aorIds],
     unitIds: [...(network.unitIds ?? [])],
@@ -143,9 +145,24 @@ export function toCreateNetworkReq(
     operationType: form.operationType.trim() === '' ? null : form.operationType.trim(),
     operationPeriod: form.operationPeriod.trim() === '' ? null : form.operationPeriod.trim(),
     doNotArchive: form.doNotArchive,
+    unitTags: normalizeNetworkUnitTags(form.unitTags),
     postIds: [...form.postIds],
     descriptions: [],
   };
+}
+
+export function normalizeNetworkUnitTags(unitTags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  unitTags.forEach((unitTag) => {
+    const trimmed = unitTag.trim();
+    if (trimmed === '') return;
+    const key = trimmed.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  });
+  return out;
 }
 
 export type NetworkUpsertValidationError = {

@@ -346,7 +346,6 @@ async fn load_candidate_item_ids(
     }
 
     Ok(query
-        .filter(unit_machine_link_exists())
         .filter(item_network_link_exists())
         .filter(non_empty_comment_exists())
         .select_only()
@@ -378,22 +377,6 @@ fn candidate_report_timestamp_expr() -> SimpleExpr {
     Expr::cust(
         r#"COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#,
     )
-}
-
-fn unit_machine_link_exists() -> SimpleExpr {
-    let subquery = sigint_inbox_item_unit_machine::Entity::find()
-        .select_only()
-        .expr(Expr::value(1))
-        .filter(
-            Expr::col((
-                sigint_inbox_item_unit_machine::Entity,
-                sigint_inbox_item_unit_machine::Column::SigintInboxItemId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .into_query();
-
-    Expr::exists(subquery)
 }
 
 fn item_network_link_exists() -> SimpleExpr {
@@ -1310,6 +1293,7 @@ mod tests {
             external_id: None,
             message_uid: None,
             datasource_group_id: None,
+            operator_tags: None,
         };
 
         assert_eq!(
@@ -1334,6 +1318,7 @@ mod tests {
             external_id: None,
             message_uid: None,
             datasource_group_id: None,
+            operator_tags: None,
         };
 
         assert_eq!(
@@ -1382,6 +1367,7 @@ mod tests {
             external_id: None,
             message_uid: None,
             datasource_group_id: None,
+            operator_tags: None,
         };
 
         assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));

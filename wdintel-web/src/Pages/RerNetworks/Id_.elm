@@ -583,6 +583,7 @@ update shared msg model =
                                 , restoreNetwork = Nothing
                                 , areaOfResponsibilityIds = Nothing
                                 , status = network.status
+                                , unitTags = Nothing
                                 }
                         , editAorSelect =
                             let

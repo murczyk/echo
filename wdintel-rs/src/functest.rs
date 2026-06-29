@@ -1452,6 +1452,9 @@ pub mod tests {
         if out.datasource_group_id == NotSet {
             out.datasource_group_id = Set(None);
         }
+        if out.operator_tags == NotSet {
+            out.operator_tags = Set(None);
+        }
         out
     }
 
@@ -1532,6 +1535,9 @@ pub mod tests {
         }
         if out.do_not_archive == NotSet {
             out.do_not_archive = Set(false);
+        }
+        if out.unit_tags == NotSet {
+            out.unit_tags = Set(serde_json::json!([]));
         }
         out
     }

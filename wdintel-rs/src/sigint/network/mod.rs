@@ -351,6 +351,10 @@ pub async fn create_network(
         });
 
     let (active_from, active_to) = compute_network_activity_range(&freq_ranges);
+    let unit_tags =
+        crate::sigint::unit_tag::normalize_unit_tags(req.unit_tags.clone())
+            .c(h!())?;
+    let has_unit_tags = !unit_tags.is_empty();
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
@@ -369,6 +373,7 @@ pub async fn create_network(
         active_from: Set(active_from),
         active_to: Set(active_to),
         do_not_archive: Set(req.do_not_archive),
+        unit_tags: Set(serde_json::to_value(unit_tags).context(h!())?),
         sigint_origin_id: NotSet,
         original_id: NotSet,
     }
@@ -514,6 +519,13 @@ pub async fn create_network(
     )
     .await
     .c(h!())?;
+    if has_unit_tags {
+        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
+    }
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -543,6 +555,12 @@ pub async fn update_network(
 
     let req: UpdateNetworkReq = req.into_inner();
     let is_restore_network = req.restore_network.unwrap_or(false);
+    let unit_tags = req
+        .unit_tags
+        .clone()
+        .map(crate::sigint::unit_tag::normalize_unit_tags)
+        .transpose()
+        .c(h!())?;
 
     let network = sigint_network::Entity::find_by_id(req.id)
         .filter(sigint_network::Column::Deleted.eq(is_restore_network))
@@ -566,6 +584,10 @@ pub async fn update_network(
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.do_not_archive = Set(req.do_not_archive);
+    if let Some(unit_tags) = &unit_tags {
+        network_model.unit_tags =
+            Set(serde_json::to_value(unit_tags).context(h!())?);
+    }
     network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
     apply_network_status(&mut network_model, req.status.clone());
@@ -629,6 +651,13 @@ pub async fn update_network(
         refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
             .await
             .c(h!())?;
+    }
+    if unit_tags.is_some() {
+        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
     }
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
