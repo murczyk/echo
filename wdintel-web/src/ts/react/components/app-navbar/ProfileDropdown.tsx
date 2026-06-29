@@ -48,24 +48,56 @@ export function ProfileDropdown({
       <div
         className={`absolute right-0 top-full mt-1 z-[3001] ${isOpen ? "block" : "hidden"}`}
       >
-        <ul className="w-48 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200">
+        <ul className="w-max min-w-56 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200">
           <li>
             <a
               href="#"
-              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left"
+              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left whitespace-nowrap"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onThemeChange(shared?.themeMode === "light" ? "dark" : "light");
+                onThemeChange("light");
                 closeDropdowns();
               }}
             >
-              <i
-                className={`bi ${shared?.themeMode === "light" ? "bi-moon" : "bi-sun"} mr-2`}
-              ></i>
-              {shared?.themeMode === "light" ? "Темна тема" : "Світла тема"}
+              <i className="bi bi-sun mr-2"></i>
+              Світла тема
+              {shared?.themeMode === "light" && <i className="bi bi-check ml-auto text-[var(--color-primary)]"></i>}
             </a>
           </li>
+          <li>
+            <a
+              href="#"
+              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left whitespace-nowrap"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onThemeChange("dark");
+                closeDropdowns();
+              }}
+            >
+              <i className="bi bi-moon mr-2"></i>
+              Темна тема
+              {shared?.themeMode === "dark" && <i className="bi bi-check ml-auto text-[var(--color-primary)]"></i>}
+            </a>
+          </li>
+          <li>
+            <a
+              href="#"
+              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left whitespace-nowrap"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onThemeChange("system");
+                closeDropdowns();
+              }}
+            >
+              <i className="bi bi-laptop mr-2"></i>
+              Авто (система)
+              {shared?.themeMode === "system" && <i className="bi bi-check ml-auto text-[var(--color-primary)]"></i>}
+            </a>
+          </li>
+          <li className="my-1 border-t border-[var(--color-border)]"></li>
           {isBasic && (
             <li>
               <a
@@ -76,7 +108,7 @@ export function ProfileDropdown({
                     "/settings-neo?section=my-groups",
                   )
                 }
-                className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer"
+                className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer whitespace-nowrap"
               >
                 <i className="bi bi-gear mr-2"></i>
                 Налаштування
@@ -86,7 +118,7 @@ export function ProfileDropdown({
           <li>
             <a
               href="#"
-              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left"
+              className="w-full flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer border-0 text-left whitespace-nowrap"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

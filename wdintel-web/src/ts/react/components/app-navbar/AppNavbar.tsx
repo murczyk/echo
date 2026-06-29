@@ -205,7 +205,7 @@ export function AppNavbar({
       return (
         <a
           key={index}
-          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 ${active ? "font-medium" : ""}`}
+          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 whitespace-nowrap ${active ? "font-medium" : ""}`}
           role="menuitem"
           href={item.link.path}
           onClick={(e) => handleInternalLinkClick(e, (item.link as any).path)}
@@ -218,7 +218,7 @@ export function AppNavbar({
       return (
         <a
           key={index}
-          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 ${active ? "font-medium" : ""}`}
+          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 whitespace-nowrap ${active ? "font-medium" : ""}`}
           role="menuitem"
           href={item.link.link}
           target="_blank"
@@ -320,7 +320,7 @@ export function AppNavbar({
         <div className="app-navbar-submenu-wrap">
           <ul
             id={dropdownMenuId}
-            className={`app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-64 lg:max-w-none ${isOpen ? "block" : "hidden"}`}
+            className={`app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-max lg:min-w-64 lg:max-w-none ${isOpen ? "block" : "hidden"}`}
             role="menu"
           >
             {subs.map((sub, idx) => renderDropdownItem(sub, idx))}
