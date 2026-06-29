@@ -43,6 +43,16 @@ impl MigrationTrait for Migration {
                     cross join lateral jsonb_array_elements_text(um.machine_tags) machine_tag(tag)
                     where um.deleted = false
                         and btrim(machine_tag.tag) <> ''
+
+                    union all
+
+                    select
+                        um.sigint_network_id as network_id,
+                        btrim(um.machine_id) as tag
+                    from unit_machine um
+                    where um.deleted = false
+                        and um.machine_id is not null
+                        and btrim(um.machine_id) <> ''
                 ),
                 deduped_tags as (
                     select distinct on (network_id, lower(tag))
