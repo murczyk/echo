@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Box } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
 import {
   MaterialReactTable,
   type MRT_ColumnDef,
@@ -32,11 +33,18 @@ type SettingsNeoTableProps<TData extends MRT_RowData> = {
   renderRowActions?: MRT_TableOptions<TData>['renderRowActions'];
   showToolbarInternalActions?: boolean;
   enableTopToolbar?: boolean;
+  enableBottomToolbar?: boolean;
   toolbarFiltersHidden?: boolean;
   toolbarColumnsVisibilityDisabled?: boolean;
   toolbarFullScreenEnabled?: boolean;
   toolbarRowNumberAppearanceControl?: boolean;
   toolbarAdditionalActions?: ReactNode;
+  renderBottomToolbar?: MRT_TableOptions<TData>['renderBottomToolbar'];
+  muiBottomToolbarProps?: MRT_TableOptions<TData>['muiBottomToolbarProps'];
+  tableContainerBorderless?: boolean;
+  tablePaperSx?: SxProps<Theme>;
+  tableContainerSx?: SxProps<Theme>;
+  tableHeadCellSx?: Record<string, unknown>;
   onQueryStateChange?: (state: {
     globalFilter: string;
     columnFilters: Array<{ id: string; value: unknown }>;
@@ -56,16 +64,24 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   renderRowActions,
   showToolbarInternalActions = false,
   enableTopToolbar = false,
+  enableBottomToolbar = false,
   toolbarFiltersHidden = false,
   toolbarColumnsVisibilityDisabled = false,
   toolbarFullScreenEnabled = false,
   toolbarRowNumberAppearanceControl = false,
   toolbarAdditionalActions,
+  renderBottomToolbar,
+  muiBottomToolbarProps,
+  tableContainerBorderless = false,
+  tablePaperSx,
+  tableContainerSx,
+  tableHeadCellSx,
   onQueryStateChange,
 }: SettingsNeoTableProps<TData>) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const baseHeadCellProps = CUSTOM_STYLES.muiTableHeadCellProps as { sx?: object };
 
   const table = useMaterialReactTable({
     columns,
@@ -80,6 +96,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
     enableFacetedValues: true,
     enableRowVirtualization: false,
     enableTopToolbar,
+    enableBottomToolbar: enableBottomToolbar || Boolean(renderBottomToolbar),
     enableRowActions,
     manualFiltering,
     manualSorting,
@@ -116,6 +133,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
             <></>
           )
       : undefined,
+    renderBottomToolbar,
     renderRowActions,
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
@@ -134,6 +152,13 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
         }),
       },
     },
+    muiTableHeadCellProps: {
+      ...baseHeadCellProps,
+      sx: {
+        ...baseHeadCellProps.sx,
+        ...(tableHeadCellSx ?? {}),
+      },
+    },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
       return {
@@ -141,8 +166,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
         sx: {
           ...(baseProps as any)?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
-          backgroundColor: 'transparent',
-          boxShadow: 'none',
+          ...tablePaperSx,
         },
       };
     },
@@ -150,8 +174,11 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
         ...getPageScrollTableContainerSx({ loading, idleOverflow: 'auto' }),
+        ...(tableContainerBorderless ? { border: 0 } : {}),
+        ...tableContainerSx,
       },
     },
+    muiBottomToolbarProps,
     state: {
       showAlertBanner: false,
       showLoadingOverlay: false,

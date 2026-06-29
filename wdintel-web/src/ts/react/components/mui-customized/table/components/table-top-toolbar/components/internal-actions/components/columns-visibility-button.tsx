@@ -67,7 +67,10 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
   const isColumnVisible = useCallback(
     (column: unknown, columnIdentifier: string) => {
       const getIsVisible = typeof column === 'object' && column !== null ? (column as { getIsVisible?: () => boolean }).getIsVisible : undefined;
-      return getIsVisible?.() ?? tableStateContext.columnVisibility[columnIdentifier] ?? true;
+      if (Object.prototype.hasOwnProperty.call(tableStateContext.columnVisibility, columnIdentifier)) {
+        return tableStateContext.columnVisibility[columnIdentifier];
+      }
+      return getIsVisible?.() ?? true;
     },
     [tableStateContext.columnVisibility],
   );

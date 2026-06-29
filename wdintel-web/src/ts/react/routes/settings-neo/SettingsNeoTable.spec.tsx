@@ -6,6 +6,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { SettingsNeoTable } from './SettingsNeoTable';
 
 const tableOptionsMock = vi.hoisted(() => ({
@@ -86,6 +87,86 @@ describe('SettingsNeoTable', () => {
 
     expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.enableTopToolbar).toBe(true);
     expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.renderTopToolbar).toEqual(expect.any(Function));
+
+    root.unmount();
+    container.remove();
+  });
+
+  it('preserves default head cell styles without custom overrides', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(SettingsNeoTable, {
+          columns: [],
+          data: [],
+        }),
+      );
+    });
+
+    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTableHeadCellProps).toMatchObject(
+      CUSTOM_STYLES.muiTableHeadCellProps,
+    );
+
+    root.unmount();
+    container.remove();
+  });
+
+  it('merges custom head cell styles on top of default styles', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(SettingsNeoTable, {
+          columns: [],
+          data: [],
+          tableHeadCellSx: {
+            position: 'sticky',
+            top: 0,
+          },
+        }),
+      );
+    });
+
+    const headCellProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTableHeadCellProps as {
+      sx: Record<string, unknown>;
+    };
+
+    expect(headCellProps.sx.minHeight).toBe('56px');
+    expect(headCellProps.sx.position).toBe('sticky');
+    expect(headCellProps.sx.top).toBe(0);
+
+    root.unmount();
+    container.remove();
+  });
+
+  it('preserves default table paper styles without custom overrides', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(SettingsNeoTable, {
+          columns: [],
+          data: [],
+        }),
+      );
+    });
+
+    const paperProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTablePaperProps as Function;
+    const resolvedPaperProps = paperProps({
+      table: {
+        getState: () => ({ showSkeletons: false }),
+      },
+    });
+
+    expect(resolvedPaperProps.sx.bgcolor).toBe('var(--bs-body-bg)');
+    expect(resolvedPaperProps.sx.backgroundColor).toBeUndefined();
 
     root.unmount();
     container.remove();

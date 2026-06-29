@@ -27,6 +27,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
 import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
+import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 
@@ -57,7 +58,10 @@ export type ReportHistoryTableSectionProps = {
   labelledBy?: string;
   includeAuthor?: boolean;
   fullHeight?: boolean;
+  compactFullHeight?: boolean;
   showReportCount?: boolean;
+  loadingRowCount?: number;
+  loadMoreLabel?: string;
   loadReportHistory?: LoadReportHistory;
   loadReportHistoryBatch?: LoadReportHistoryBatch;
 };
@@ -135,6 +139,58 @@ const REPORTS_FULL_HEIGHT_STACK_SX = {
   flex: 1,
   minHeight: 0,
   overflow: 'hidden',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_SHELL_SX = {
+  flex: 1,
+  minHeight: 0,
+  height: '100%',
+  overflow: 'hidden',
+  border: '1px solid',
+  borderColor: 'var(--bs-border-color)',
+  backgroundColor: 'var(--bs-body-bg)',
+  boxSizing: 'border-box',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_CONTENT_SX = {
+  flex: 1,
+  minHeight: 0,
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  boxSizing: 'border-box',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_TABLE_WRAPPER_SX = {
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_TABLE_PAPER_SX = {
+  flex: 1,
+  height: '100%',
+  minHeight: 0,
+  maxHeight: '100%',
+  overflow: 'hidden',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_TABLE_CONTAINER_SX = {
+  height: '100%',
+  minHeight: 0,
+  maxHeight: '100%',
+  overflowX: 'auto',
+  overflowY: 'auto',
+  overflow: 'auto',
+} as const;
+
+const REPORTS_FULL_HEIGHT_BATCH_HEAD_CELL_SX = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 5,
+  backgroundColor: 'var(--bs-body-bg)',
 } as const;
 
 const REPORTS_TABLE_WRAPPER_SX = {
@@ -239,8 +295,8 @@ function formatReportStatus(row: ReportHistoryRow): string {
   return `${label} ${formatReportProgress(row.progress)}`;
 }
 
-function buildReportLoadingRows(): ReportHistoryRow[] {
-  return Array.from({ length: REPORT_LOADING_ROW_COUNT }, (_, index) => ({
+function buildReportLoadingRows(rowCount: number): ReportHistoryRow[] {
+  return Array.from({ length: rowCount }, (_, index) => ({
     id: -index - 1,
     reportKind: '',
     requestedBy: '',
@@ -324,7 +380,10 @@ export function ReportHistoryTableSection({
   labelledBy,
   includeAuthor = false,
   fullHeight = false,
+  compactFullHeight = false,
   showReportCount = false,
+  loadingRowCount = REPORT_LOADING_ROW_COUNT,
+  loadMoreLabel = 'Load more',
   loadReportHistory = listReportHistory,
   loadReportHistoryBatch,
 }: ReportHistoryTableSectionProps) {
@@ -427,6 +486,11 @@ export function ReportHistoryTableSection({
       setLoadingMore(false);
     }
   }, [active]);
+
+  const useBatchShell = fullHeight && loadReportHistoryBatch !== undefined;
+  const showLoadMoreFooter = loadReportHistoryBatch !== undefined && hasMoreRows && rows.length > 0;
+  const contentPadding = fullHeight && compactFullHeight ? 2 : 3;
+  const contentStackSpacing = fullHeight && compactFullHeight ? 1.5 : 2;
 
   const handleQueryStateChange = useCallback((nextQueryState: ReportHistoryQueryState) => {
     setQueryState((current) => (JSON.stringify(current) === JSON.stringify(nextQueryState) ? current : nextQueryState));
@@ -656,18 +720,14 @@ export function ReportHistoryTableSection({
     >
       <Box
         sx={{
-          p: 3,
+          p: contentPadding,
           ...(fullHeight ? REPORTS_FULL_HEIGHT_CONTENT_SX : {}),
         }}
       >
-        <Stack
-          spacing={2}
-          useFlexGap={fullHeight}
-          sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
-        >
-          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+        <Stack spacing={contentStackSpacing} useFlexGap={fullHeight} sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}>
+          <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={2}>
             <Stack direction="row" alignItems="baseline" gap={1}>
-              <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+              <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}>
                 {title}
               </Typography>
               {showReportCount && loadState === 'success' ? (
@@ -688,46 +748,113 @@ export function ReportHistoryTableSection({
             defaultEnableColumnOrdering={false}
             defaultSorting={DEFAULT_REPORTS_SORTING}
           >
-            <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1}>
-              <InternalTableActions filtersHidden fullScreenEnabled>
-                <Tooltip title="Оновити">
-                  <span>
-                    <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
-                      <RefreshIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </InternalTableActions>
-            </Stack>
-            <Box
-              sx={{
-                ...REPORTS_TABLE_WRAPPER_SX,
-                ...(loadState === 'loading' && !fullHeight ? REPORTS_LOADING_TABLE_WRAPPER_SX : {}),
-                ...(fullHeight ? REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX : {}),
-              }}
-            >
-              <SettingsNeoTable
-                columns={columns}
-                data={rows}
-                loading={loadState === 'loading'}
-                loadingRows={buildReportLoadingRows()}
-                layoutMode="grid"
-                showToolbarInternalActions
-                enableTopToolbar
-                toolbarFiltersHidden
-                toolbarFullScreenEnabled
-                manualFiltering={loadReportHistoryBatch !== undefined}
-                manualSorting={loadReportHistoryBatch !== undefined}
-                onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
-              />
-            </Box>
-            {loadReportHistoryBatch && hasMoreRows ? (
-              <Stack direction="row" justifyContent="center">
-                <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
-                  {loadingMore ? 'Завантаження...' : 'Load more'}
-                </Button>
-              </Stack>
-            ) : null}
+            {useBatchShell ? (
+              <>
+                <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1}>
+                  <InternalTableActions filtersHidden fullScreenEnabled>
+                    <Tooltip title="Оновити">
+                      <span>
+                        <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
+                          <RefreshIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </InternalTableActions>
+                </Stack>
+                <Box sx={REPORTS_FULL_HEIGHT_BATCH_SHELL_SX}>
+                  <Box sx={REPORTS_FULL_HEIGHT_BATCH_CONTENT_SX}>
+                    <Box
+                      sx={{
+                        ...REPORTS_TABLE_WRAPPER_SX,
+                        ...REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX,
+                        ...REPORTS_FULL_HEIGHT_BATCH_TABLE_WRAPPER_SX,
+                      }}
+                    >
+                      <SettingsNeoTable
+                        columns={columns}
+                        data={rows}
+                        loading={loadState === 'loading'}
+                        loadingRows={buildReportLoadingRows(loadingRowCount)}
+                        layoutMode="grid"
+                        showToolbarInternalActions={false}
+                        enableTopToolbar={false}
+                        enableBottomToolbar={showLoadMoreFooter}
+                        tableContainerBorderless
+                        tablePaperSx={REPORTS_FULL_HEIGHT_BATCH_TABLE_PAPER_SX}
+                        tableContainerSx={REPORTS_FULL_HEIGHT_BATCH_TABLE_CONTAINER_SX}
+                        tableHeadCellSx={REPORTS_FULL_HEIGHT_BATCH_HEAD_CELL_SX}
+                        manualFiltering={loadReportHistoryBatch !== undefined}
+                        manualSorting={loadReportHistoryBatch !== undefined}
+                        renderBottomToolbar={
+                          showLoadMoreFooter
+                            ? () => (
+                                <Box
+                                  sx={{
+                                    borderTop: '1px solid',
+                                    borderColor: 'var(--bs-border-color)',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    p: '10px',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
+                                    {loadingMore ? 'Завантаження...' : loadMoreLabel}
+                                  </Button>
+                                </Box>
+                              )
+                            : undefined
+                        }
+                        onQueryStateChange={handleQueryStateChange}
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1}>
+                  <InternalTableActions filtersHidden fullScreenEnabled>
+                    <Tooltip title="Оновити">
+                      <span>
+                        <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
+                          <RefreshIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </InternalTableActions>
+                </Stack>
+                <Box
+                  sx={{
+                    ...REPORTS_TABLE_WRAPPER_SX,
+                    ...(loadState === 'loading' && !fullHeight ? REPORTS_LOADING_TABLE_WRAPPER_SX : {}),
+                    ...(fullHeight ? REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX : {}),
+                  }}
+                >
+                  <SettingsNeoTable
+                    columns={columns}
+                    data={rows}
+                    loading={loadState === 'loading'}
+                    loadingRows={buildReportLoadingRows(loadingRowCount)}
+                    layoutMode="grid"
+                    showToolbarInternalActions
+                    enableTopToolbar
+                    toolbarFiltersHidden
+                    toolbarFullScreenEnabled
+                    manualFiltering={loadReportHistoryBatch !== undefined}
+                    manualSorting={loadReportHistoryBatch !== undefined}
+                    onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
+                  />
+                </Box>
+                {loadReportHistoryBatch && hasMoreRows ? (
+                  <Stack direction="row" justifyContent="center">
+                    <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
+                      {loadingMore ? 'Завантаження...' : loadMoreLabel}
+                    </Button>
+                  </Stack>
+                ) : null}
+              </>
+            )}
           </TableStateProvider>
         </Stack>
       </Box>
