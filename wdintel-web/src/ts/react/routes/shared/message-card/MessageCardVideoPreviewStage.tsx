@@ -1,0 +1,181 @@
+import {
+  forwardRef,
+  useState,
+  useRef,
+  useEffect,
+  type SyntheticEvent,
+} from "react";
+import { Box, Typography } from "@mui/material";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseIcon from "@mui/icons-material/Pause";
+import type { VideoPreviewError } from "./message-card-video-utils";
+
+export const MessageCardVideoPreviewStage = forwardRef<
+  HTMLDivElement,
+  {
+    src: string | null;
+    error?: VideoPreviewError;
+    isPlaying: boolean;
+    onPlay: () => void;
+    onPause: () => void;
+    onEnded: () => void;
+    onLoadedMetadata?: (event: SyntheticEvent<HTMLVideoElement>) => void;
+    onTimeUpdate?: (event: SyntheticEvent<HTMLVideoElement>) => void;
+    onVolumeChange?: (event: SyntheticEvent<HTMLVideoElement>) => void;
+    onRateChange?: (event: SyntheticEvent<HTMLVideoElement>) => void;
+    onError?: (event: SyntheticEvent<HTMLVideoElement>) => void;
+    videoRef: React.RefObject<HTMLVideoElement>;
+  }
+>(function MessageCardVideoPreviewStage(
+  {
+    src,
+    error,
+    isPlaying,
+    onPlay,
+    onPause,
+    onEnded,
+    onLoadedMetadata,
+    onTimeUpdate,
+    onVolumeChange,
+    onRateChange,
+    onError,
+    videoRef,
+  },
+  ref,
+) {
+  const [clickAction, setClickAction] = useState<"play" | "pause">("play");
+  const [showIcon, setShowIcon] = useState(false);
+  const clickActionTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickActionTimer.current)
+        window.clearTimeout(clickActionTimer.current);
+    };
+  }, []);
+
+  return (
+    <Box
+      ref={ref}
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        bgcolor: "#111821",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+        borderRadius: 1.5,
+        overflow: "hidden",
+        px: 1.5,
+        py: 1.5,
+        boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.04)",
+      }}
+    >
+      {src ? (
+        <video
+          ref={videoRef}
+          src={src}
+          controls={false}
+          preload="metadata"
+          playsInline
+          onPlay={onPlay}
+          onPause={onPause}
+          onEnded={onEnded}
+          onLoadedMetadata={onLoadedMetadata}
+          onTimeUpdate={onTimeUpdate}
+          onVolumeChange={onVolumeChange}
+          onRateChange={onRateChange}
+          onError={onError}
+          onClick={() => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (clickActionTimer.current) {
+              window.clearTimeout(clickActionTimer.current);
+            }
+            if (v.paused) {
+              v.play().catch(console.error);
+              setClickAction("play");
+            } else {
+              v.pause();
+              setClickAction("pause");
+            }
+            setShowIcon(true);
+            clickActionTimer.current = window.setTimeout(() => {
+              setShowIcon(false);
+            }, 300);
+          }}
+          style={{
+            maxWidth: "100%",
+            maxHeight: "100%",
+            display: error ? "none" : "block",
+            cursor: "pointer",
+          }}
+        />
+      ) : null}
+
+      {src && !error ? (
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 72,
+              height: 72,
+              borderRadius: "50%",
+              backgroundColor: "rgba(0, 0, 0, 0.45)",
+              color: "rgba(255, 255, 255, 0.95)",
+              backdropFilter: "blur(2px)",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+              opacity: showIcon ? 1 : 0,
+              transform: showIcon ? "scale(1)" : "scale(1.3)",
+              transition: showIcon
+                ? "none"
+                : "opacity 0.4s ease-out, transform 0.4s ease-out",
+            }}
+          >
+            {clickAction === "play" ? (
+              <PlayArrowIcon sx={{ fontSize: 44, ml: 0.5 }} />
+            ) : (
+              <PauseIcon sx={{ fontSize: 44 }} />
+            )}
+          </Box>
+        </Box>
+      ) : null}
+
+      {error ? (
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: "rgba(0, 0, 0, 0.8)",
+            p: 3,
+            textAlign: "center",
+          }}
+        >
+          <Typography variant="body1" color="error" gutterBottom>
+            {error.message}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Спробуйте завантажити оригінальний файл відео.
+          </Typography>
+        </Box>
+      ) : null}
+    </Box>
+  );
+});
