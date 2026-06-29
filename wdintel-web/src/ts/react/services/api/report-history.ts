@@ -3,6 +3,8 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-
 import { postBytes, postJson } from './client';
 import { fetchBgtaskStatusAndLogs, type BgtaskStatusAndLogsRsp } from './bgtask';
 
+const REPORT_CANCELLED_TEXT = 'Скасовано користувачем';
+
 export function parseUtcDateTime(value: string | null | undefined): Date | null {
   if (value == null || value.trim() === '') return null;
   const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
@@ -56,7 +58,11 @@ export function isCancelledReportHistory(
   if (row.isCancelled === true) {
     return true;
   }
-  return row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем');
+  return row.status === 'failed' && isCancelledReportHistoryError(row.lastError);
+}
+
+export function isCancelledReportHistoryError(value: string | null | undefined): boolean {
+  return value?.includes(REPORT_CANCELLED_TEXT) ?? false;
 }
 
 export async function cancelReportHistory(id: number): Promise<ReportHistoryRow> {
