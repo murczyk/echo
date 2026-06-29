@@ -187,6 +187,7 @@ export function useRerNetworkDetailsNeoPageActions({ state, setState, unitNames,
         operationMode: editForm.operationMode.trim() === '' ? null : editForm.operationMode,
         operationType: editForm.operationType.trim() === '' ? null : editForm.operationType,
         operationPeriod: editForm.operationPeriod.trim() === '' ? null : editForm.operationPeriod,
+        doNotArchive: editForm.doNotArchive,
         descriptions: null,
         status: editForm.status,
       });

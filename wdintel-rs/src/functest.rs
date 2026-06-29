@@ -681,6 +681,12 @@ pub mod tests {
         if out.is_rer == NotSet {
             out.is_rer = Set(true);
         }
+        if out.fills_etalonka == NotSet {
+            out.fills_etalonka = Set(true);
+        }
+        if out.disable_network_assignment == NotSet {
+            out.disable_network_assignment = Set(false);
+        }
         out
     }
 
@@ -1523,6 +1529,9 @@ pub mod tests {
         }
         if out.original_id == NotSet {
             out.original_id = Set(None);
+        }
+        if out.do_not_archive == NotSet {
+            out.do_not_archive = Set(false);
         }
         out
     }

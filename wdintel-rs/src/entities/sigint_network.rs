@@ -34,6 +34,7 @@ pub struct Model {
     pub active_to: Option<DateTime>,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    pub do_not_archive: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

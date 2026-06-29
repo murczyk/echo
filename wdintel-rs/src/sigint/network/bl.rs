@@ -74,6 +74,7 @@ where
                 .active_to
                 .map(|d| d.and_utc().timestamp_millis()),
             deleted: network.deleted,
+            do_not_archive: network.do_not_archive,
             status: if network.active_to.is_some() {
                 NetworkStatus::NetworkInactive
             } else {

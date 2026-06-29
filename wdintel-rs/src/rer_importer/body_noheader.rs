@@ -71,6 +71,11 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
             r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
         )
         .unwrap();
+        // Remove data time line dd.mm.yyyy hh:mm
+        static ref RE25A: Regex = Regex::new(
+            r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}[,\s]+[0-9]{1,2}:[0-9]{2}\s*$"#
+        )
+        .unwrap();
         // Remove data time line yyyy-mm-dd, hh:mm
         static ref RE26: Regex = Regex::new(
             r#"^[0-9]{4}\-[0-9]{2}\-[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
@@ -121,6 +126,7 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
         .filter(|l| !RE23.is_match(l))
         .filter(|l| !RE24.is_match(l))
         .filter(|l| !RE25.is_match(l))
+        .filter(|l| !RE25A.is_match(l))
         .filter(|l| !RE26.is_match(l))
         .filter(|l| !RE27.is_match(l))
         .filter(|l| !RE28.is_match(l))
@@ -553,6 +559,14 @@ mod tests {
     #[test]
     fn extract_text_non_rer_header_with_machine_id() {
         let body = "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_full_date_without_seconds_header() {
+        let body = "27.06.2026 20:37\nПерехоплення";
         let res = extract_text(body).unwrap().body;
 
         assert_eq!(res, "Перехоплення");

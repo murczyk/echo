@@ -120,6 +120,7 @@ function buildPage(): ReturnType<typeof useRerNetworksNeoPage> {
     setRowMenuAnchorEl: vi.fn(),
     setRowMenuNetworkId: vi.fn(),
     runDownload: vi.fn(),
+    supportNonRerInterceptions: false,
     loadMoreNetworks: vi.fn(),
     sidebarOpen: false,
     setSidebarOpen: vi.fn(),

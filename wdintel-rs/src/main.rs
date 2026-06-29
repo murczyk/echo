@@ -351,6 +351,10 @@ pub struct OneoffSigintImportMousePs {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffReprocessCoordsPs {
     pub days: Option<i64>,
+    #[arg(long)]
+    pub start: Option<String>,
+    #[arg(long)]
+    pub end: Option<String>,
 }
 
 #[derive(clap::Parser, Debug, Clone)]

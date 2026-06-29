@@ -606,6 +606,8 @@ export type SignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -616,6 +618,8 @@ export type OrphanSignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -1736,6 +1740,8 @@ export type ZoneDatasourceGroup = {
   groupMasterKey: string;
   isGroupSecret: boolean;
   isRer: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1768,6 +1774,8 @@ export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
   isRer: boolean | null;
+  fillsEtalonka: boolean | null;
+  disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   shortNote: string | null;
@@ -1787,6 +1795,8 @@ export type MyAdminSignalGroup = {
   datasourceName: string | null;
   datasourceKind: string | null;
   isGroupSecret: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   allowedUsers: Array<SignalGroupLogin>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -1795,6 +1805,8 @@ export type MyAdminSignalGroup = {
 export type MyAdminSignalGroupUpdateReq = {
   masterKey: string;
   isSecret: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   userLogins: Array<string>;
   adminLogins: Array<string>;
   areaOfResponsibilityIds: Array<number> | null;
@@ -2590,6 +2602,7 @@ export type Network = {
   postIds: Array<number>;
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
+  doNotArchive: boolean;
   status: NetworkStatus;
 };
 
@@ -2633,6 +2646,7 @@ export type CreateNetworkReq = {
   operationPeriod: string | null;
   postIds: Array<number>;
   descriptions: Array<AddNetworkDescription>;
+  doNotArchive: boolean;
 };
 
 export type DeleteNetworkReq = {
@@ -2651,6 +2665,7 @@ export type UpdateNetworkReq = {
   operationType: string | null;
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
+  doNotArchive: boolean;
   status: NetworkStatus;
 };
 
@@ -3105,6 +3120,11 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type SystemSettingsItem = {
@@ -3120,6 +3140,11 @@ export type SystemSettingsItem = {
   updatedBy: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -3134,6 +3159,11 @@ export type CreateSystemSettingsReq = {
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  pelengBoundsEnabled: boolean;
+  pelengBoundsTopLeftLat: number | null;
+  pelengBoundsTopLeftLng: number | null;
+  pelengBoundsBottomRightLat: number | null;
+  pelengBoundsBottomRightLng: number | null;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3277,12 +3307,16 @@ export type GroupUpdateReq = {
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
   isRer: boolean | null;
+  fillsEtalonka: boolean | null;
+  disableNetworkAssignment: boolean | null;
 };
 
 export type GroupEntryF1 = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
+  fillsEtalonka: boolean;
+  disableNetworkAssignment: boolean;
   shortNote: string | null;
   longNote: string | null;
   groupStats: SignalGroupStats;

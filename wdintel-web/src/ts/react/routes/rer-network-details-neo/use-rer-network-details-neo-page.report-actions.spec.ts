@@ -89,6 +89,7 @@ function buildNetwork(id: number): Network {
     operationMode: null,
     operationType: null,
     operationPeriod: null,
+    doNotArchive: false,
     lastUpdatedAt: 1,
     lastUpdatedBy: null,
     activeFrom: null,

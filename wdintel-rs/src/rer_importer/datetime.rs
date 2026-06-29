@@ -67,6 +67,16 @@ pub fn extract_datetime(
                 Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
+            // Work with formats like DD.MM.YYYY HH:MI
+            (
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})[,\s]+(?P<hour>\d{1,2})\s*:(?P<minute>\d{2})(?:\s|$)").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
+            ),
+            // Work with formats like Час: DD.MM.YY HH:MI
+            (
+                Regex::new(r"Час:\s*(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year2>\d{2})\s+(?P<hour>\d{1,2})\s*:(?P<minute>\d{2})(?:\s|$)").unwrap(),
+                parse_datetime_short_year,
+            ),
             // Work with formats like HH:MI:SS DD.MM.YYYY
             // Order here is important, see https://github.com/echoua/echo/issues/2538
             (
@@ -240,6 +250,37 @@ fn parse_datetime(
     Ok(res_tz.naive_local())
 }
 
+fn parse_datetime_short_year(
+    lnow: DateTime<Tz>,
+    capts: &regex::Captures,
+) -> Result<NaiveDateTime, AppError> {
+    let year2: i32 = capts["year2"].parse().c(h!())?;
+    let year = 2000 + year2;
+    let mon: u32 = capts["mon"].parse().c(h!())?;
+    let day: u32 = capts["day"].parse().c(h!())?;
+    let hour: u32 = capts["hour"].parse().c(h!())?;
+    let minute: u32 = capts["minute"].parse().c(h!())?;
+    let Some(res) = NaiveDate::from_ymd_opt(year, mon, day)
+        .and_then(|d| d.and_hms_opt(hour, minute, 0))
+    else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
+    let Some(res_tz) = lnow.timezone().from_local_datetime(&res).earliest()
+    else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
+    if res_tz > lnow + chrono::Duration::days(2) {
+        return Err(AppError::BL {
+            msg: "Date or time too far in future".to_string(),
+        });
+    }
+    Ok(res_tz.naive_local())
+}
+
 fn try_offset_year(
     d: DateTime<Tz>,
     offset: i32,
@@ -359,6 +400,34 @@ mod tests {
             NaiveDate::from_ymd_opt(2023, 9, 4)
                 .unwrap()
                 .and_hms_opt(20, 17, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_handles_full_date_without_seconds() {
+        let input = "Тип: Антена\nНазва: 141.715 МГц\n24.06.2026 17:32\nКоординати: 36U XB 66512 50880";
+        let lnow = Kyiv.with_ymd_and_hms(2026, 6, 27, 20, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 24)
+                .unwrap()
+                .and_hms_opt(17, 32, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_handles_antenna_short_year_time_label() {
+        let input = "Тип: Антена\nНазва: 136.850 МГц\nЧас: 26.06.26  19:46\nКоординати: 36U XB 70617 18612";
+        let lnow = Kyiv.with_ymd_and_hms(2026, 6, 27, 20, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 6, 26)
+                .unwrap()
+                .and_hms_opt(19, 46, 0)
                 .unwrap(),
         );
         assert_eq!(res, expected);
