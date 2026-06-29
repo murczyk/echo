@@ -9,6 +9,7 @@ db_user="${SSH_TUNNEL_DB_USER:-wd}"
 db_name="${SSH_TUNNEL_DB_NAME:-wd}"
 db_password="${SSH_TUNNEL_DB_PASSWORD:-fee_-_-_-FnoeKFBeebu87bf}"
 wait_secs="${SSH_TUNNEL_WAIT_SECS:-30}"
+require_db_health="${SSH_TUNNEL_REQUIRE_DB_HEALTH:-false}"
 
 pids="$(lsof -tiTCP:${port} -sTCP:LISTEN || true)"
 if [ -n "$pids" ]; then
@@ -47,6 +48,17 @@ check_db_health() {
         -tAc "SELECT 1" >/dev/null
 }
 
+db_health_is_required() {
+    case "$require_db_health" in
+        1|true|TRUE|yes|YES|on|ON)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 ssh -nNT -o ExitOnForwardFailure=yes -L "${port}:localhost:5432" "$server" &
 ssh_pid=$!
 
@@ -62,11 +74,17 @@ if ! wait_for_port; then
     exit 1
 fi
 
-if check_db_health; then
+if db_health_output="$(check_db_health 2>&1)"; then
     echo "DB healthy at startup on ${host}:${port}; keep this process running for the tunnel" >&2
 else
-    echo "DB unhealthy on ${host}:${port}" >&2
-    exit 1
+    if db_health_is_required; then
+        echo "DB unhealthy on ${host}:${port}; closing tunnel" >&2
+        [ -n "$db_health_output" ] && printf '%s\n' "$db_health_output" >&2
+        exit 1
+    fi
+
+    echo "DB health check failed; tunnel is still running on ${host}:${port}" >&2
+    [ -n "$db_health_output" ] && printf '%s\n' "$db_health_output" >&2
 fi
 
 wait "$ssh_pid"
