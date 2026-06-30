@@ -882,6 +882,12 @@ type alias ReportHistoryRow =
     , reportKind : String
     , requestedBy : String
     , createdAt : String
+    , startedAt : Maybe (String)
+    , plannedForTs : Maybe (String)
+    , queuePosition : Maybe (Int)
+    , blockedByReportId : Maybe (Int)
+    , blockedByStartedAt : Maybe (String)
+    , blockedByBgtaskId : Maybe (Int)
     , status : String
     , completedAt : Maybe (String)
     , hasFile : Bool
@@ -889,6 +895,7 @@ type alias ReportHistoryRow =
     , contentType : Maybe (String)
     , bgtaskId : Maybe (Int)
     , lastError : Maybe (String)
+    , isCancelled : Bool
     , details : String
     , progress : Int
     , errorLog : Maybe (List (ReportHistoryLogEntry))
@@ -902,6 +909,12 @@ reportHistoryRowEncoder struct =
         , ( "report_kind", (Json.Encode.string) struct.reportKind )
         , ( "requested_by", (Json.Encode.string) struct.requestedBy )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.startedAt )
+        , ( "planned_for_ts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.plannedForTs )
+        , ( "queue_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queuePosition )
+        , ( "blocked_by_report_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.blockedByReportId )
+        , ( "blocked_by_started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedByStartedAt )
+        , ( "blocked_by_bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.blockedByBgtaskId )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
         , ( "has_file", (Json.Encode.bool) struct.hasFile )
@@ -909,6 +922,7 @@ reportHistoryRowEncoder struct =
         , ( "content_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentType )
         , ( "bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.bgtaskId )
         , ( "last_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "is_cancelled", (Json.Encode.bool) struct.isCancelled )
         , ( "details", (Json.Encode.string) struct.details )
         , ( "progress", (Json.Encode.int) struct.progress )
         , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )

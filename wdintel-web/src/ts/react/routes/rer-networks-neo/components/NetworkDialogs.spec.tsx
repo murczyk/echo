@@ -134,6 +134,29 @@ function buildPage(): ReturnType<typeof useRerNetworksNeoPage> {
   } as unknown as ReturnType<typeof useRerNetworksNeoPage>;
 }
 
+function buildBroadReportRequest() {
+  return {
+    filterFreq: null,
+    filterUnit: null,
+    filterUnitArmy: null,
+    filterUnitDivision: null,
+    filterUnitRegiment: null,
+    filterUnitBattalion: null,
+    filterText: null,
+    filterName: null,
+    filterLocation: null,
+    showOnlyFurtherInverstigation: null,
+    showInactive: true,
+    showOnlyDeleted: false,
+    statusFilter: null,
+    aorIds: null,
+    ids: null,
+    limit: null,
+    offset: null,
+    sortBy: null,
+  };
+}
+
 afterEach(() => {
   editDrawerProps.splice(0);
   reportDialogProps.splice(0);
@@ -155,6 +178,32 @@ describe('NetworkDialogs', () => {
     expect(editDrawerProps.find((props) => props.mode === 'create')?.disableRestoreFocus).toBeUndefined();
     expect(editDrawerProps.find((props) => props.mode === 'edit')?.disableRestoreFocus).toBe(true);
     expect(confirmDialogProps.at(-1)?.disableRestoreFocus).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('marks a broad etalonka report with a launch warning', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(NetworkDialogs, {
+          page: {
+            ...buildPage(),
+            reportTargetRequest: buildBroadReportRequest(),
+          },
+        }),
+      );
+    });
+
+    expect(reportDialogProps.at(-1)?.launchWarningText).toBe(
+      'Цей звіт охоплює всі мережі. Сигнали й підтвердження збільшують час формування.',
+    );
 
     act(() => {
       root.unmount();

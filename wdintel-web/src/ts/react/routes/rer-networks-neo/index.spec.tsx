@@ -175,6 +175,8 @@ beforeEach(() => {
     openTopReportDialog: vi.fn(),
     closeReportDialog: vi.fn(),
     downloadEtalonkaReport: vi.fn(),
+    reportTargetRequest: null,
+    reportTargetNetworkIds: null,
     etalonkaReport: {
       dialogOpen: false,
       taskRunId: 0,

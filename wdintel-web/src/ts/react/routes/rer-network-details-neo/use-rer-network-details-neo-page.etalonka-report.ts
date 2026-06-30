@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 
-import type { EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType, ListNetworksReq } from '../../../../Bindings';
+import type { EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType, ListNetworksReq, ReportHistoryRow } from '../../../../Bindings';
 import { APP_TIME_ZONE, combineDateTimeInputToMs } from '../../utils/misc';
 
 export type NetworkEtalonkaReportType = 'AccordingToTheForm' | 'ExtendedReport';
@@ -9,6 +9,7 @@ export type NetworkEtalonkaReportState = {
   dialogOpen: boolean;
   taskRunId: number;
   taskId: number | null;
+  historyRow?: ReportHistoryRow | null;
   startedAtMs: number | null;
   running: boolean;
   curr: number;
@@ -34,6 +35,7 @@ export function createDefaultNetworkEtalonkaReportState(): NetworkEtalonkaReport
     dialogOpen: false,
     taskRunId: 0,
     taskId: null,
+    historyRow: null,
     startedAtMs: null,
     running: false,
     curr: 0,

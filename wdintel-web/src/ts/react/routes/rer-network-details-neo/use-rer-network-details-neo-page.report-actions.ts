@@ -5,18 +5,25 @@ import {
   downloadNetworkEtalonkaReportTaskResult,
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
-import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { fetchReportHistoryTaskStatus } from '../../services/api/report-history';
+import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import {
+  fetchReportHistoryStatus,
+  isCancelledReportHistory,
+  isCancelledReportHistoryError,
+  parseUtcDateTime,
+} from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import { ReportCancelledError } from './report-cancelled-error';
 import {
   buildEtalonkaNetworkBatchReq,
   buildEtalonkaReportFilename,
   type NetworkEtalonkaReportState,
   type NetworkEtalonkaReportType,
 } from './use-rer-network-details-neo-page.etalonka-report';
+import type { ReportHistoryRow } from '../../../../Bindings';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -35,6 +42,55 @@ function updateReportState(
   }));
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function applyCancelledReport(
+  setState: SetState,
+  row: ReportHistoryRow,
+  logs: string[],
+  fileName: string,
+) {
+  updateReportState(setState, (current) => ({
+    ...current,
+    taskId: row.id,
+    historyRow: row,
+    running: false,
+    curr: current.curr,
+    overall: current.overall,
+    logs,
+    error: 'Звіт скасовано в Моїх звітах.',
+    finishedAt: row.completedAt ?? new Date().toISOString(),
+    progressExpanded: current.progressExpanded,
+    downloadFileName: fileName,
+    startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+  }));
+}
+
+function applyReportHistoryRow(
+  setState: SetState,
+  row: ReportHistoryRow,
+  progress: { curr: number; overall: number },
+  logs: string[],
+  fileName: string,
+) {
+  updateReportState(setState, (current) => ({
+    ...current,
+    taskId: row.id,
+    historyRow: row,
+    running: row.status === 'planned' || row.status === 'in_progress',
+    curr: row.bgtaskId === null ? 0 : progress.curr,
+    overall: row.bgtaskId === null ? 100 : progress.overall,
+    logs: row.bgtaskId === null ? [] : logs,
+    error: null,
+    finishedAt: row.status === 'done' ? new Date().toISOString() : null,
+    progressExpanded: current.progressExpanded,
+    downloadFileName: fileName,
+    startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+  }));
+}
+
 export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Args) {
   const runEtalonkaReportTask = useCallback(
     async (report: NetworkEtalonkaReportState) => {
@@ -46,32 +102,62 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
         ...current,
         error: null,
         running: true,
-        curr: 1,
-        overall: 5,
-        logs: ['[1/5] Підготовка даних'],
+        taskId: null,
+        curr: 0,
+        overall: 100,
+        logs: [],
+        historyRow: null,
         finishedAt: null,
-        progressExpanded: true,
+        progressExpanded: false,
         downloadFileName: fileName,
-        startedAtMs: Date.now(),
+        startedAtMs: null,
         taskRunId: current.taskRunId + 1,
       }));
 
       try {
         const taskId = await launchNetworkEtalonkaBatchReportTask(buildEtalonkaNetworkBatchReq(network.id, report));
-        let running = true;
         let serverLogSkip = 0;
-        let logs: string[] = ['[1/5] Підготовка даних'];
+        let logs: string[] = [];
 
-        while (running) {
-          const rsp = await fetchReportHistoryTaskStatus(taskId, serverLogSkip);
+        while (true) {
+          const row = await fetchReportHistoryStatus(taskId);
+          if (row.status === 'failed') {
+            if (isCancelledReportHistory(row)) {
+              applyCancelledReport(setState, row, logs, fileName);
+              throw new ReportCancelledError();
+            }
+            updateReportState(setState, (current) => ({
+              ...current,
+              taskId,
+              historyRow: row,
+              running: false,
+              curr: current.curr,
+              overall: current.overall,
+              logs,
+              error: row.lastError ?? 'Сталася помилка під час формування звіту.',
+              finishedAt: row.completedAt ?? new Date().toISOString(),
+              downloadFileName: fileName,
+              startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+            }));
+            throw new Error(row.lastError ?? 'Сталася помилка під час формування звіту.');
+          }
+
+          if (row.bgtaskId === null) {
+            applyReportHistoryRow(setState, row, { curr: 0, overall: 100 }, [], fileName);
+            await sleep(1000);
+            continue;
+          }
+
+          const rsp = await fetchBgtaskStatusAndLogs(row.bgtaskId, serverLogSkip);
           if (rsp.loglines.length > 0) {
             logs = logs.concat(rsp.loglines);
-            serverLogSkip += rsp.loglines.length;
+            serverLogSkip = logs.length;
           }
           const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
           updateReportState(setState, (current) => ({
             ...current,
             taskId,
+            historyRow: row,
             running: rsp.running,
             curr: rsp.running ? progress.curr : progress.overall,
             overall: progress.overall,
@@ -80,18 +166,22 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
             finishedAt: rsp.running ? null : new Date().toISOString(),
             progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
             downloadFileName: fileName,
-            startedAtMs: current.startedAtMs,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
 
           if (!rsp.running) {
-            running = false;
             if (rsp.finishedWithError) {
+              const latestRow = await fetchReportHistoryStatus(taskId);
+              if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
+                applyCancelledReport(setState, latestRow, logs, fileName);
+                throw new ReportCancelledError();
+              }
               throw new Error(rsp.finishedWithError);
             }
             break;
           }
 
-          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          await sleep(1000);
         }
 
         const blob = await downloadNetworkEtalonkaReportTaskResult(taskId);
@@ -105,15 +195,18 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           finishedAt: new Date().toISOString(),
           progressExpanded: current.progressExpanded,
           downloadFileName: fileName,
-          startedAtMs: current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
         }));
       } catch (error) {
+        if (error instanceof ReportCancelledError) {
+          throw error;
+        }
         updateReportState(setState, (current) => ({
           ...current,
           running: false,
           progressExpanded: true,
           error: formatErrorMessage(error),
-          startedAtMs: current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
         }));
         if (isUnauthorizedError(error)) {
           redirectToLogin();
@@ -220,6 +313,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     try {
       await runEtalonkaReportTask(report);
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        return;
+      }
       if (isUnauthorizedError(error)) {
         redirectToLogin();
       }

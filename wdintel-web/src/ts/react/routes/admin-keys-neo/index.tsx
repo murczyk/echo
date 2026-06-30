@@ -202,11 +202,11 @@ function KeyPoliciesTable(props: {
         size: mrtRowActionsColumnSize(1),
       },
     },
-    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading: props.loading, layout: 'list' }),
+    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading: props.loading, layout: 'workspace' }),
     muiTableContainerProps: ({ table }) =>
       getDefaultMrtContainerProps({
         loading: props.loading,
-        layout: 'list',
+        layout: 'workspace',
         fullScreen: table.getState().isFullScreen,
         hasRows: props.data.length > 0,
       }),

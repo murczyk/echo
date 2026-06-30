@@ -29,6 +29,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import type { BgtaskProgressStage } from '../../../services/api/bgtask';
 import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
+import { parseUtcDateTime } from '../../../services/api/report-history';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
 import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
 
@@ -49,6 +50,7 @@ type Props = {
   onIncludePelengsMapChange: (includePelengsMap: boolean) => void;
   onFromDateTimeStrChange: (fromDateTimeStr: string) => void;
   onToDateTimeStrChange: (toDateTimeStr: string) => void;
+  launchWarningText?: string | null;
   disableRestoreFocus?: boolean;
 };
 
@@ -74,6 +76,22 @@ function formatElapsedTime(startedAtMs: number | null): string | null {
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
   return `${minutes} хв ${seconds} с`;
+}
+
+function formatDurationSinceIso(value: string | null | undefined): string | null {
+  const startedAt = parseUtcDateTime(value);
+  if (startedAt === null) return null;
+  const startedAtMs = startedAt.getTime();
+  return formatElapsedTime(startedAtMs);
+}
+
+function formatDateTimeLabel(value: string | null | undefined): string | null {
+  const date = parseUtcDateTime(value);
+  if (date === null) return null;
+  return date.toLocaleString('uk-UA', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
 }
 
 function getLatestProgressStage(stages: BgtaskProgressStage[]): BgtaskProgressStage | null {
@@ -184,16 +202,41 @@ export function NetworkEtalonkaReportDialog({
   onIncludePelengsMapChange,
   onFromDateTimeStrChange,
   onToDateTimeStrChange,
+  launchWarningText = null,
   disableRestoreFocus = false,
 }: Props) {
   const isExtended = report.reportType === 'ExtendedReport';
+  const historyRow = report.historyRow ?? null;
+  const hasBgtask = historyRow?.bgtaskId != null;
+  const isQueued = report.running && !hasBgtask;
   const dateTimeDisabled = report.running || !isExtended;
   const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
   const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
   const progressStages = parseBgtaskProgressStages(report.logs);
   const latestProgressStage = getLatestProgressStage(progressStages);
+  const visibleLogLines = report.logs.filter((line) => !/^\[\d+\/\d+\]/.test(line));
+  const hasProgressDetails = progressStages.length > 0 || visibleLogLines.length > 0;
   const elapsedTime = formatElapsedTime(report.startedAtMs);
-  const showLongRunningHint = report.running && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const createdAtMs = parseUtcDateTime(historyRow?.createdAt)?.getTime() ?? null;
+  const queuedForTime = formatDurationSinceIso(historyRow?.createdAt);
+  const startedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
+  const plannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
+  const showLongRunningHint = report.running && hasBgtask && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
+  const showQueueWarning = isQueued && createdAtMs !== null && Date.now() - createdAtMs >= 5 * 60 * 1000;
+  const progressVariant = hasBgtask && !report.error && !isQueued ? 'determinate' : 'indeterminate';
+  const progressLabel = report.error
+    ? 'Помилка'
+    : isQueued
+      ? 'Очікує запуску'
+      : report.running
+        ? 'Формування'
+        : 'Готово';
+  const progressStageLabel = isQueued || !hasBgtask ? 'Очікує запуску' : latestProgressStage?.text ?? 'Підготовка';
+  const progressSummaryLabel = isQueued
+    ? historyRow?.blockedByReportId != null
+      ? `Очікує завершення звіту #${historyRow.blockedByReportId} · ${queuedForTime ?? '—'}`
+      : `Позиція #${historyRow?.queuePosition ?? '—'} · очікує ${queuedForTime ?? '—'}`
+    : `${report.curr} / ${report.overall}`;
   const noDescriptions = !report.includeSigintSigns && !report.includeConfirmation;
   const headingsAndFreqsTooltipTitle = noDescriptions
     ? 'Увімкніть «Включити сигнали» або «Включити підтвердження» — заголовки та частоти додаються лише до цих секцій'
@@ -220,7 +263,13 @@ export function NetworkEtalonkaReportDialog({
   return (
     <Dialog
       open={report.dialogOpen}
-      onClose={handleClose}
+      onClose={(_event, reason) => {
+        if (report.running && (reason === 'backdropClick' || reason === 'escapeKeyDown')) {
+          return;
+        }
+        handleClose();
+      }}
+      disableEscapeKeyDown={report.running}
       fullWidth
       maxWidth={false}
       disableRestoreFocus={disableRestoreFocus}
@@ -240,13 +289,14 @@ export function NetworkEtalonkaReportDialog({
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {description}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
           Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування &gt; Мої звіти</Box>
         </Typography>
       </DialogTitle>
 
       <DialogContent dividers sx={{ px: 3, pt: 1.75, pb: 2.5 }}>
         <Stack spacing={2}>
+          {launchWarningText ? <PowerAlert severity="warning">{launchWarningText}</PowerAlert> : null}
           {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
 
           <RadioGroup row value={report.reportType} onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)} sx={{ gap: 2 }}>
@@ -376,120 +426,167 @@ export function NetworkEtalonkaReportDialog({
               <Stack spacing={1.5}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    {report.running ? 'Формування' : report.error ? 'Помилка' : 'Готово'}
+                    {progressLabel}
                   </Typography>
                 </Stack>
 
                 <LinearProgress
-                  variant="determinate"
+                  variant={progressVariant}
                   color={report.error ? 'error' : report.running ? 'primary' : 'success'}
-                  value={progressPercent}
-                  sx={report.running ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                  value={progressVariant === 'determinate' ? progressPercent : undefined}
+                  sx={report.running && progressVariant === 'determinate' ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
                 />
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <Typography variant="body2" color="text.secondary">
-                    {report.curr} / {report.overall}
+                    {progressSummaryLabel}
                   </Typography>
                   <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
                   </Button>
                 </Stack>
 
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
-                    gap: 1,
-                    p: 1.5,
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'background.default',
-                  }}
-                >
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Завдання
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {report.taskId !== null ? `#${report.taskId}` : 'очікує запуску'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Триває
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {elapsedTime ?? '—'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Етап
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {latestProgressStage?.text ?? 'Підготовка'}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Логи
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {report.logs.length}
-                    </Typography>
-                  </Stack>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      Файл
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
-                      {report.downloadFileName ?? '—'}
-                    </Typography>
-                  </Stack>
-                </Box>
-
                 {report.progressExpanded ? (
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
-                    <Stack spacing={0.75}>
-                      {progressStages.map((stage) => {
-                        const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
-                        const stageCurrent = report.running && report.curr === stage.index;
-                        return (
-                          <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
-                            {stageDone ? (
-                              <CheckCircleIcon color="success" fontSize="small" />
-                            ) : stageCurrent ? (
-                              <CircularProgress size={14} />
-                            ) : report.error ? (
-                              <HighlightOffIcon color="error" fontSize="small" />
-                            ) : (
-                              <Typography variant="caption" color="text.disabled">
-                                ○
-                              </Typography>
-                            )}
-                            <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
-                              [{stage.index}/{stage.overall}] {stage.text}
+                  <Stack spacing={1}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 1,
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        bgcolor: 'background.default',
+                      }}
+                    >
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          ID звіту
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {report.taskId !== null ? `#${report.taskId}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Черга
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {historyRow?.queuePosition != null ? `#${historyRow.queuePosition}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Очікує
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {queuedForTime ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Початок
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {startedAtLabel ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          ID задачі
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {historyRow?.bgtaskId != null ? `#${historyRow.bgtaskId}` : '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Заплановано
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {plannedForLabel ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Триває
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {elapsedTime ?? '—'}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Етап
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {progressStageLabel}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Логи
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {report.logs.length}
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Файл
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                          {report.downloadFileName ?? '—'}
+                        </Typography>
+                      </Stack>
+                    </Box>
+
+                    {hasProgressDetails ? (
+                      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
+                        <Stack spacing={0.75}>
+                          {progressStages.map((stage) => {
+                            const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
+                            const stageCurrent = report.running && report.curr === stage.index;
+                            return (
+                              <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
+                                {stageDone ? (
+                                  <CheckCircleIcon color="success" fontSize="small" />
+                                ) : stageCurrent ? (
+                                  <CircularProgress size={14} />
+                                ) : report.error ? (
+                                  <HighlightOffIcon color="error" fontSize="small" />
+                                ) : (
+                                  <Typography variant="caption" color="text.disabled">
+                                    ○
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
+                                  [{stage.index}/{stage.overall}] {stage.text}
+                                </Typography>
+                              </Stack>
+                            );
+                          })}
+                          {visibleLogLines.map((line) => (
+                            <Typography key={line} variant="caption" color="text.secondary">
+                              {line}
                             </Typography>
-                          </Stack>
-                        );
-                      })}
-                      {report.logs
-                        .filter((line) => !/^\[\d+\/\d+\]/.test(line))
-                        .map((line) => (
-                          <Typography key={line} variant="caption" color="text.secondary">
-                            {line}
-                          </Typography>
-                        ))}
-                    </Stack>
-                  </Paper>
+                          ))}
+                        </Stack>
+                      </Paper>
+                    ) : null}
+                  </Stack>
                 ) : null}
 
                 {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
+                {showQueueWarning ? (
+                  <PowerAlert severity="warning">
+                    Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.
+                  </PowerAlert>
+                ) : null}
                 {showLongRunningHint ? (
                   <PowerAlert severity="info">
-                    Формування може тривати кілька хвилин. Можна закрити вікно, звіт завантажиться автоматично після завершення.
+                    Формування може тривати кілька хвилин. Звіт можна переглянути та завантажити пізніше в Налаштування &gt; Мої звіти.
                   </PowerAlert>
                 ) : null}
               </Stack>
@@ -518,7 +615,7 @@ export function NetworkEtalonkaReportDialog({
             variant="contained"
             startIcon={report.running ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />}
           >
-            {report.running ? 'Формування...' : 'Завантажити'}
+            {isQueued ? 'Очікує запуску' : report.running ? 'Формування...' : 'Завантажити'}
           </Button>
         </Stack>
       </DialogActions>

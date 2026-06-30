@@ -18,9 +18,9 @@ const tableStateMock = vi.hoisted(() => ({
     locationSearchText: true,
   } as Record<string, boolean>,
   tableColumns: [
-    { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' } },
-    { id: 'freq', columnDef: { id: 'freq', header: 'Частота' } },
-    { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' } },
+    { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' }, getIsVisible: () => true },
+    { id: 'freq', columnDef: { id: 'freq', header: 'Частота' }, getIsVisible: () => true },
+    { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' }, getIsVisible: () => true },
   ],
 }));
 
@@ -159,5 +159,26 @@ describe('ColumnsVisibilityButton', () => {
     expect(
       columnLabels.map((label) => (label.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked),
     ).toEqual([true, true]);
+  });
+
+  it('prefers controlled visibility over stale MRT visibility', async () => {
+    tableStateMock.columnVisibility = {
+      freq: false,
+      locationSearchText: true,
+    };
+
+    const view = await renderComponent();
+    rendered.push(view);
+
+    const trigger = view.container.querySelector('button');
+    expect(trigger).toBeTruthy();
+
+    await click(trigger as HTMLButtonElement);
+
+    const freqLabel = Array.from(view.container.querySelectorAll('label')).find(
+      (label) => label.textContent?.trim() === 'Частота',
+    );
+    expect(freqLabel).toBeTruthy();
+    expect((freqLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked).toBe(false);
   });
 });

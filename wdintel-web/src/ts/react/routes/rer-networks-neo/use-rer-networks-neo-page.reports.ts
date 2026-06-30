@@ -10,8 +10,8 @@ import {
   launchNetworkEtalonkaBatchReportTask,
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
-import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { downloadReportHistory, fetchReportHistoryTaskStatus } from '../../services/api/report-history';
+import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus, isCancelledReportHistory, isCancelledReportHistoryError, parseUtcDateTime } from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
 import {
@@ -21,10 +21,12 @@ import {
   buildEtalonkaNetworksReportFilename,
   createDefaultNetworkEtalonkaReportState,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
+import { ReportCancelledError } from '../rer-network-details-neo/report-cancelled-error';
 import { buildNetworksReportReq } from './helpers';
 import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
 import { redirectToLogin } from '../../auth-redirect';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
+import type { ReportHistoryRow } from '../../../../Bindings';
 
 type ReportArgs = {
   rows: Array<{ id: number }>;
@@ -54,32 +56,87 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
       ...current,
       error: null,
       running: true,
-      curr: 1,
-      overall: 5,
-      logs: ['[1/5] Підготовка даних'],
+      taskId: null,
+      curr: 0,
+      overall: 100,
+      logs: [],
+      historyRow: null,
       finishedAt: null,
-      progressExpanded: true,
+      progressExpanded: false,
       downloadFileName: fileName,
-      startedAtMs: Date.now(),
+      startedAtMs: null,
       taskRunId: current.taskRunId + 1,
     }));
 
     try {
       const taskId = await launchReport();
-      let running = true;
       let serverLogSkip = 0;
-      let logs: string[] = ['[1/5] Підготовка даних'];
+      let logs: string[] = [];
 
-      while (running) {
-        const rsp = await fetchReportHistoryTaskStatus(taskId, serverLogSkip);
+      while (true) {
+        const row = await fetchReportHistoryStatus(taskId);
+        if (row.status === 'failed') {
+          if (isCancelledReportHistory(row)) {
+            args.setEtalonkaReport((current) => ({
+              ...current,
+              taskId,
+              historyRow: row,
+              running: false,
+              curr: current.curr,
+              overall: current.overall,
+              logs,
+              error: 'Звіт скасовано в Моїх звітах.',
+              finishedAt: row.completedAt ?? new Date().toISOString(),
+              downloadFileName: fileName,
+              startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+            }));
+            throw new ReportCancelledError();
+          }
+          args.setEtalonkaReport((current) => ({
+            ...current,
+            taskId,
+            historyRow: row,
+            running: false,
+            curr: current.curr,
+            overall: current.overall,
+            logs,
+            error: row.lastError ?? 'Сталася помилка під час формування звіту.',
+            finishedAt: row.completedAt ?? new Date().toISOString(),
+            downloadFileName: fileName,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+          }));
+          throw new Error(row.lastError ?? 'Сталася помилка під час формування звіту.');
+        }
+
+        if (row.bgtaskId === null) {
+          args.setEtalonkaReport((current) => ({
+            ...current,
+            taskId,
+            historyRow: row,
+            running: true,
+            curr: 0,
+            overall: 100,
+            logs: [],
+            error: null,
+            finishedAt: null,
+            progressExpanded: current.progressExpanded,
+            downloadFileName: fileName,
+            startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
+          }));
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          continue;
+        }
+
+        const rsp = await fetchBgtaskStatusAndLogs(row.bgtaskId, serverLogSkip);
         if (rsp.loglines.length > 0) {
           logs = logs.concat(rsp.loglines);
-          serverLogSkip += rsp.loglines.length;
+          serverLogSkip = logs.length;
         }
         const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
         args.setEtalonkaReport((current) => ({
           ...current,
           taskId,
+          historyRow: row,
           running: rsp.running,
           curr: rsp.running ? progress.curr : progress.overall,
           overall: progress.overall,
@@ -88,12 +145,28 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           finishedAt: rsp.running ? null : new Date().toISOString(),
           progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
           downloadFileName: fileName,
-          startedAtMs: current.startedAtMs,
+          startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
         }));
 
         if (!rsp.running) {
-          running = false;
           if (rsp.finishedWithError) {
+            const latestRow = await fetchReportHistoryStatus(taskId);
+            if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
+              args.setEtalonkaReport((current) => ({
+                ...current,
+                taskId,
+                historyRow: latestRow,
+                running: false,
+                curr: current.curr,
+                overall: current.overall,
+                logs,
+                error: 'Звіт скасовано в Моїх звітах.',
+                finishedAt: latestRow.completedAt ?? new Date().toISOString(),
+                downloadFileName: fileName,
+                startedAtMs: parseUtcDateTime(latestRow.startedAt)?.getTime() ?? null,
+              }));
+              throw new ReportCancelledError();
+            }
             throw new Error(rsp.finishedWithError);
           }
           break;
@@ -113,15 +186,18 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         finishedAt: new Date().toISOString(),
         progressExpanded: current.progressExpanded,
         downloadFileName: fileName,
-        startedAtMs: current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
       }));
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        throw error;
+      }
       args.setEtalonkaReport((current) => ({
         ...current,
         running: false,
         error: formatErrorMessage(error),
         progressExpanded: true,
-        startedAtMs: current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
       }));
       throw error;
     }
@@ -187,6 +263,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         fileName,
       );
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        return;
+      }
       if (isUnauthorizedError(error)) {
         args.setEtalonkaReport((current) => ({ ...current, running: false, error: null }));
         redirectToLogin();
@@ -251,6 +330,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           args.setEtalonkaReport((current) => ({ ...current, running: false, error: null }));
         }
         redirectToLogin();
+        return;
+      }
+      if (error instanceof ReportCancelledError) {
+        args.setStatus({ kind: 'info', text: 'Звіт скасовано в Моїх звітах.' });
         return;
       }
       args.setStatus({ kind: 'error', text: `Помилка завантаження звіту: ${formatErrorMessage(error)}` });
