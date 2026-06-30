@@ -265,6 +265,7 @@ mod m20260629_072958_add_signal_message_operator_tags;
 mod m20260629_080533_unit_tags_on_sigint_network;
 mod m20260629_085034_signal_message_operator_tags;
 mod m20260630_094347_interseption_kind_and_unit_mask;
+mod m20260630_122002_add_organism_to_tags;
 mod m20260630_130141_signal_group_merge_network_assignment_flags;
 mod m20260630_210912_goi_palitra_sync_upgrade;
 mod m20260701_073733_default_neo_analysis;
@@ -523,9 +524,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260507_151045_add_palitra_goi_sync_job::Migration),
             Box::new(m20260510_101006_operator_dmr_metadata::Migration),
             Box::new(m20260511_145205_delta_login_lower_unique::Migration),
-            Box::new(
-                m20260513_102326_add_sigint_network_description_topic::Migration,
-            ),
+            Box::new(m20260513_102326_add_sigint_network_description_topic::Migration),
             Box::new(m20260702_145245_create_sigint_comment::Migration),
             Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
             Box::new(
@@ -534,8 +533,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
             Box::new(m20260529_110000_add_short_url_to_admin_config::Migration),
-            Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260601_000000_add_release_news_viewed::Migration),
+            Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260605_162305_echo_swapp_sync_state::Migration),
             Box::new(m20260609_115925_add_api_integration::Migration),
             Box::new(m20260610_123823_add_api_integration_sync::Migration),
@@ -575,6 +574,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260702_192716_signal_message_echo_inbox_message_id::Migration,
             ),
+            Box::new(m20260630_122002_add_organism_to_tags::Migration),
         ]
     }
 }

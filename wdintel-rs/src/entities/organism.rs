@@ -70,6 +70,8 @@ pub enum Relation {
     PalitraAccessOrganism,
     #[sea_orm(has_many = "super::sigint_network_encryption_key::Entity")]
     SigintNetworkEncryptionKey,
+    #[sea_orm(has_many = "super::tag::Entity")]
+    Tag,
 }
 
 impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
@@ -135,6 +137,12 @@ impl Related<super::palitra_access_organism::Entity> for Entity {
 impl Related<super::sigint_network_encryption_key::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkEncryptionKey.def()
+    }
+}
+
+impl Related<super::tag::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Tag.def()
     }
 }
 
