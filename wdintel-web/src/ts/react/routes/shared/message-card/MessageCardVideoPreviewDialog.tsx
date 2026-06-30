@@ -252,8 +252,8 @@ export function MessageCardVideoPreviewDialog({
     >
       <DialogContent
         sx={{
-          px: 2,
-          pt: 2,
+          px: playerState.isFullscreen ? 0 : 2,
+          pt: playerState.isFullscreen ? 0 : 2,
           pb: 0,
           display: "flex",
           flexDirection: "column",
@@ -261,17 +261,17 @@ export function MessageCardVideoPreviewDialog({
           minHeight: 0,
           flex: "1 1 auto",
           overflow: "hidden",
-          gap: 1.25,
+          gap: playerState.isFullscreen ? 0 : 1.25,
         }}
       >
         <Box
-          className="bg-black ring-1 ring-inset ring-white/5"
+          className={`bg-black ${playerState.isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
           sx={{
             flex: 1,
             minHeight: 0,
             display: "flex",
             flexDirection: "column",
-            borderRadius: 1.5,
+            borderRadius: playerState.isFullscreen ? 0 : 1.5,
             overflow: "hidden",
           }}
         >
@@ -350,16 +350,18 @@ export function MessageCardVideoPreviewDialog({
           duration={playerState.duration}
         />
       </DialogContent>
-      <MessageCardVideoPreviewActions
-        video={video}
-        onClose={handleClose}
-        hasCarousel={hasCarousel}
-        resolvedIndex={resolvedIndex}
-        videoCount={videoCount}
-        onGoToPrevious={() => onIndexChange?.(resolvedIndex - 1)}
-        onGoToNext={() => onIndexChange?.(resolvedIndex + 1)}
-        onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
-      />
+      {!playerState.isFullscreen && (
+        <MessageCardVideoPreviewActions
+          video={video}
+          onClose={handleClose}
+          hasCarousel={hasCarousel}
+          resolvedIndex={resolvedIndex}
+          videoCount={videoCount}
+          onGoToPrevious={() => onIndexChange?.(resolvedIndex - 1)}
+          onGoToNext={() => onIndexChange?.(resolvedIndex + 1)}
+          onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+        />
+      )}
     </Dialog>
   );
 }
