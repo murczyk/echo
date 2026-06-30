@@ -255,6 +255,7 @@ function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
         active_freqs_only: etalonkaType.AccordingToTheForm.activeFreqsOnly,
         include_sigint_signs: etalonkaType.AccordingToTheForm.includeSigintSigns,
         include_confirmation: etalonkaType.AccordingToTheForm.includeConfirmation,
+        include_headings_and_freqs: etalonkaType.AccordingToTheForm.includeHeadingsAndFreqs,
       },
     };
   }
@@ -268,6 +269,7 @@ function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
       include_sigint_signs: etalonkaType.ExtendedReport.includeSigintSigns,
       include_confirmation: etalonkaType.ExtendedReport.includeConfirmation,
       include_pelengs_map: etalonkaType.ExtendedReport.includePelengsMap,
+      include_headings_and_freqs: etalonkaType.ExtendedReport.includeHeadingsAndFreqs,
     },
   };
 }

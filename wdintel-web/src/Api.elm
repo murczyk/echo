@@ -281,31 +281,7 @@ alpine_download_result toMsg req =
         }
 
 
-kmz_to_fix :
-    (Result ApiError Bytes -> msg)
-    -> File
-    -> Bool
-    -> Cmd msg
-kmz_to_fix toMsg file hideTitles =
-    Http.request
-        { method = "POST"
-        , headers = []
-        , url = "/api/kmz/fix"
-        , body =
-            Http.multipartBody
-                [ Http.filePart (File.name file) file
-                , Http.stringPart "hide_titles"
-                    (if hideTitles then
-                        "1"
 
-                     else
-                        "0"
-                    )
-                ]
-        , expect = Http.expectBytesResponse toMsg (resolve Ok)
-        , timeout = Nothing
-        , tracker = Nothing
-        }
 
 
 inbox_messages_digest :
@@ -406,25 +382,6 @@ delta_csv_to_kmz toMsg file =
         }
 
 
-radios_convert :
-    (Result ApiError Int -> msg)
-    -> File
-    -> Cmd msg
-radios_convert toMsg file =
-    Http.request
-        { method = "POST"
-        , headers = []
-        , url = "/api/radios-convert"
-        , body =
-            Http.multipartBody
-                [ Http.filePart (File.name file) file
-                ]
-        , expect = leExpectJson toMsg Decode.int
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
 rer_csv_import :
     (Result ApiError Int -> msg)
     -> File
@@ -479,42 +436,6 @@ rer_delta_csv_import toMsg file =
         , expect = leExpectJson toMsg Decode.int
         , timeout = Nothing
         , tracker = Nothing
-        }
-
-
-radios_download_result_per_radio :
-    (Result ApiError Bytes -> msg)
-    -> RadiosDownloadResultReq
-    -> Cmd msg
-radios_download_result_per_radio toMsg req =
-    Http.post
-        { url = "/api/radios-download-result-per-radio"
-        , body = Http.jsonBody (radiosDownloadResultReqEncoder req)
-        , expect = Http.expectBytesResponse toMsg (resolve Ok)
-        }
-
-
-radios_download_result_per_date :
-    (Result ApiError Bytes -> msg)
-    -> RadiosDownloadResultReq
-    -> Cmd msg
-radios_download_result_per_date toMsg req =
-    Http.post
-        { url = "/api/radios-download-result-per-date"
-        , body = Http.jsonBody (radiosDownloadResultReqEncoder req)
-        , expect = Http.expectBytesResponse toMsg (resolve Ok)
-        }
-
-
-radios_download_result_csv :
-    (Result ApiError Bytes -> msg)
-    -> RadiosDownloadResultReq
-    -> Cmd msg
-radios_download_result_csv toMsg req =
-    Http.post
-        { url = "/api/radios-download-result-csv"
-        , body = Http.jsonBody (radiosDownloadResultReqEncoder req)
-        , expect = Http.expectBytesResponse toMsg (resolve Ok)
         }
 
 

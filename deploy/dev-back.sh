@@ -72,8 +72,9 @@ done
 
 stop_existing_server() {
     local pids
+    local server_port="${ECHO_SERVER_PORT:-8081}"
 
-    pids="$(lsof -tiTCP:8081 -sTCP:LISTEN 2>/dev/null || true)"
+    pids="$(lsof -tiTCP:"${server_port}" -sTCP:LISTEN 2>/dev/null || true)"
     if [ -n "$pids" ]; then
         kill $pids 2>/dev/null || true
     fi
@@ -152,7 +153,7 @@ if [ "$quiet" = "true" ]; then
     export RUST_LOG=error,access_log=info
 
     server_port="${ECHO_SERVER_PORT:-8081}"
-    echo "backend is running in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
+    echo "starting backend in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown after startup" >&2
 
     run_server --no-bgworker "$@" 2>&1 | filter_quiet_output
 else
@@ -160,5 +161,7 @@ else
         export RUST_LOG=sqlx=trace,seaorm=trace
     fi
 
+    server_port="${ECHO_SERVER_PORT:-8081}"
+    echo "starting backend on port ${server_port}..." >&2
     run_server "$@"
 fi

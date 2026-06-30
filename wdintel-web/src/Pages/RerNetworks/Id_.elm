@@ -923,6 +923,13 @@ update shared msg model =
             in
             ( { model | report = newReport }, E.none )
 
+        ReportIncludeHeadingsAndFreqsChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
         ReportIncludeUnitCallsignsChanged checked ->
             let
                 newReport =
@@ -1264,6 +1271,7 @@ view user shared route model =
                             , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
                             , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                             , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                            , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
                             , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                             , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                             , reportFromDate = Just model.reportFromDate

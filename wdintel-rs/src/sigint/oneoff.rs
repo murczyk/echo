@@ -385,6 +385,7 @@ fn build_etalonka_report_request(
                     active_freqs_only: true,
                     include_sigint_signs: false,
                     include_confirmation: false,
+                    include_headings_and_freqs: false,
                 },
             ),
     }

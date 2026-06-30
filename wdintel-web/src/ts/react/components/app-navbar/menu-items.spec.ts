@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+import { isActiveName, menuIsActive, goiExternalUrl, type Menu } from './menu-items';
+
+describe('menu-items', () => {
+  describe('isActiveName', () => {
+    it('matches exact active names', () => {
+      expect(isActiveName('rer-duty', 'rer-duty')).toBe(true);
+      expect(isActiveName('rer-duty', 'rer-analysis')).toBe(false);
+    });
+
+    it('matches settings-neo prefix', () => {
+      expect(isActiveName('settings-neo', 'settings-neo-duty')).toBe(true);
+      expect(isActiveName('settings-neo', 'settings-neo-analysis')).toBe(true);
+      expect(isActiveName('settings', 'settings-neo-duty')).toBe(false);
+    });
+  });
+
+  describe('menuIsActive', () => {
+    it('checks item menus', () => {
+      const itemMenu: Menu = { type: 'item', link: { type: 'internal', path: '/test' }, activeName: 'test-active', label: 'Test' };
+      expect(menuIsActive('test-active', itemMenu)).toBe(true);
+      expect(menuIsActive('other-active', itemMenu)).toBe(false);
+    });
+
+    it('checks group menus recursively', () => {
+      const groupMenu: Menu = {
+        type: 'group',
+        label: 'Group',
+        subs: [
+          { type: 'item', link: { type: 'internal', path: '/test1' }, activeName: 'test-1', label: 'Test 1' },
+          { type: 'item', link: { type: 'internal', path: '/test2' }, activeName: 'test-2', label: 'Test 2' },
+          { type: 'separator' }
+        ]
+      };
+      expect(menuIsActive('test-2', groupMenu)).toBe(true);
+      expect(menuIsActive('test-3', groupMenu)).toBe(false);
+    });
+
+    it('returns false for separators', () => {
+      expect(menuIsActive('anything', { type: 'separator' })).toBe(false);
+    });
+  });
+
+  describe('goiExternalUrl', () => {
+    it('returns null for empty strings', () => {
+      expect(goiExternalUrl('')).toBeNull();
+      expect(goiExternalUrl('   ')).toBeNull();
+    });
+
+    it('prepends https:// if missing', () => {
+      expect(goiExternalUrl('example.com')).toBe('https://example.com');
+      expect(goiExternalUrl('test.net/path')).toBe('https://test.net/path');
+    });
+
+    it('preserves existing http/https prefix', () => {
+      expect(goiExternalUrl('https://example.com')).toBe('https://example.com');
+      expect(goiExternalUrl('http://insecure.com')).toBe('http://insecure.com');
+      expect(goiExternalUrl('HTTPS://UPPER.COM')).toBe('HTTPS://UPPER.COM');
+    });
+  });
+});

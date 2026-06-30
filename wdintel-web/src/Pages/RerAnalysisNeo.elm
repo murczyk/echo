@@ -2,26 +2,21 @@ module Pages.RerAnalysisNeo exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
-import Html exposing (a, button, div, i, node, span, text)
-import Html.Attributes exposing (attribute, class, href, style, type_)
-import Html.Events exposing (onClick)
+import Html exposing (div, node)
+import Html.Attributes exposing (class)
 import Layouts
 import Page exposing (Page)
-import PagePorts.RerAnalysisNeoPorts as Ports
 import Route exposing (Route)
 import Shared
 import View exposing (View)
 
 
 type alias Model =
-    { showAlphaBanner : Maybe Bool
-    }
+    {}
 
 
 type Msg
     = NoOp
-    | CloseAlphaBanner
-    | AlphaBannerDismissedLoaded Bool
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -45,8 +40,8 @@ toLayout user _ =
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { showAlphaBanner = Nothing }
-    , E.sendCmd <| Ports.rer_analysis_neo_loadAlphaBannerDismissed ()
+    ( {}
+    , E.none
     )
 
 
@@ -56,66 +51,18 @@ update msg model =
         NoOp ->
             ( model, E.none )
 
-        CloseAlphaBanner ->
-            ( { model | showAlphaBanner = Just False }
-            , E.sendCmd <| Ports.rer_analysis_neo_saveAlphaBannerDismissed True
-            )
-
-        AlphaBannerDismissedLoaded isDismissed ->
-            ( { model | showAlphaBanner = Just (not isDismissed) }
-            , E.none
-            )
-
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Ports.rer_analysis_neo_loadAlphaBannerDismissedRes AlphaBannerDismissedLoaded
+    Sub.none
 
 
 view : Model -> View Msg
-view model =
-    let
-        alphaBannerNode =
-            div
-                [ class <|
-                    if model.showAlphaBanner == Just True then
-                        "shrink-0"
-
-                    else
-                        "hidden"
-                ]
-                [ div
-                    [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900" ]
-                    [ div [ class "flex items-center justify-between gap-4" ]
-                        [ div [ class "min-w-0 leading-6" ]
-                            [ span [ class "font-semibold" ] [ text "Альфа-версія: " ]
-                            , text "ця сторінка перебуває у тестовому режимі. "
-                            , a
-                                [ class "inline-flex items-center gap-1 font-semibold underline decoration-2 underline-offset-2 text-[var(--color-warning-dark)] hover:text-[var(--color-warning-darker)] hover:decoration-[var(--color-warning-darker)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)] focus-visible:ring-offset-1 focus-visible:ring-offset-amber-100 rounded-sm"
-                                , href "/rer-analysis"
-                                , style "color" "var(--color-warning-dark) !important"
-                                , style "text-decoration-color" "var(--color-warning-dark) !important"
-                                ]
-                                [ span [] [ text "Перейти на стару сторінку аналізу" ]
-                                , i [ class "bi bi-box-arrow-up-right text-xs" ] []
-                                ]
-                            ]
-                        , button
-                            [ class "shrink-0 self-center inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
-                            , type_ "button"
-                            , onClick CloseAlphaBanner
-                            , attribute "aria-label" "Закрити альфа-банер"
-                            ]
-                            [ i [ class "bi bi-x-lg text-sm" ] [] ]
-                        ]
-                    ]
-                ]
-    in
+view _ =
     { title = "РЕР-аналіз"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
-            [ alphaBannerNode
-            , div [ class "flex-1 min-h-0 w-full" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-analysis-neo"
                     [ class "block w-full h-full" ]
                     []
