@@ -46,7 +46,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             URL
           </Typography>
@@ -57,7 +57,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             Файл
           </Typography>
@@ -68,7 +68,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             Тип
           </Typography>
@@ -77,7 +77,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             Розмір файлу
           </Typography>
@@ -86,7 +86,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             Тривалість
           </Typography>
@@ -96,7 +96,7 @@ export function MessageCardVideoPreviewInfoPopover({
           <Box>
             <Typography
               variant="caption"
-              sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+              className="text-white/75"
             >
               ID
             </Typography>

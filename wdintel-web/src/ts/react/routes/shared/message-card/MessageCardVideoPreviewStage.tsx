@@ -5,7 +5,7 @@ import {
   useEffect,
   type SyntheticEvent,
 } from "react";
-import { Box, Typography, Tooltip, IconButton } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import type { VideoPreviewError } from "./message-card-video-utils";
@@ -63,17 +63,16 @@ export const MessageCardVideoPreviewStage = forwardRef<
   return (
     <Box
       ref={ref}
+      className="bg-black ring-1 ring-inset ring-white/5"
       sx={{
         flex: 1,
         minHeight: 0,
-        bgcolor: "#000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         position: "relative",
         borderRadius: 1.5,
         overflow: "hidden",
-        boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.04)",
       }}
     >
       {src ? (
@@ -131,6 +130,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
           }}
         >
           <Box
+            className="bg-black/45 text-white/95 backdrop-blur-[2px] shadow-md shadow-black/30"
             sx={{
               display: "flex",
               alignItems: "center",
@@ -138,10 +138,6 @@ export const MessageCardVideoPreviewStage = forwardRef<
               width: 72,
               height: 72,
               borderRadius: "50%",
-              backgroundColor: "rgba(0, 0, 0, 0.45)",
-              color: "rgba(255, 255, 255, 0.95)",
-              backdropFilter: "blur(2px)",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
               opacity: showIcon ? 1 : 0,
               transform: showIcon ? "scale(1)" : "scale(1.3)",
               transition: showIcon
@@ -160,6 +156,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
 
       {error ? (
         <Box
+          className="bg-black/80"
           sx={{
             position: "absolute",
             inset: 0,
@@ -167,7 +164,6 @@ export const MessageCardVideoPreviewStage = forwardRef<
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            bgcolor: "rgba(0, 0, 0, 0.8)",
             p: 3,
             textAlign: "center",
           }}
@@ -180,8 +176,6 @@ export const MessageCardVideoPreviewStage = forwardRef<
           </Typography>
         </Box>
       ) : null}
-
-
     </Box>
   );
 });

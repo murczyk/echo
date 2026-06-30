@@ -76,21 +76,15 @@ export function SpeedSelect({
       value={playbackRate}
       onChange={(e: SelectChangeEvent<number>) => onRateChange(Number(e.target.value) as 0.5 | 1 | 1.5 | 2)}
       variant="outlined"
+      className="text-white/80 [&_.MuiOutlinedInput-notchedOutline]:border-white/20 hover:[&_.MuiOutlinedInput-notchedOutline]:border-white/40 [&_.MuiSvgIcon-root]:text-white/80"
       sx={{
-        color: 'rgba(244, 247, 251, 0.8)',
-        '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(244, 247, 251, 0.2)' },
-        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(244, 247, 251, 0.4)' },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.light' },
-        '.MuiSvgIcon-root': { color: 'rgba(244, 247, 251, 0.8)' },
         fontSize: '0.85rem',
         height: 28,
       }}
       MenuProps={{
         PaperProps: {
-          sx: {
-            bgcolor: '#1e2631',
-            color: '#f4f7fb',
-          }
+          className: "bg-slate-800 text-slate-50",
         }
       }}
     >
@@ -137,6 +131,7 @@ export function VideoProgressSlider({
         onSeek(value as number);
       }}
       disabled={!duration}
+      className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
       sx={{
         color: 'primary.main',
         padding: '0',
@@ -147,13 +142,7 @@ export function VideoProgressSlider({
         '& .MuiSlider-thumb': {
           width: 12,
           height: 12,
-          transition: isDragging.current ? 'none' : 'left 0.25s linear, box-shadow 0.15s ease-out, width 0.15s ease-out, height 0.15s ease-out',
-          '&::before': {
-            boxShadow: '0 2px 12px 0 rgba(0,0,0,0.4)',
-          },
-          '&:hover, &.Mui-focusVisible': {
-            boxShadow: '0px 0px 0px 8px rgb(255 255 255 / 16%)',
-          },
+          transition: isDragging.current ? 'none' : 'left 0.25s linear, box-shadow 0.15s ease-out, width 0.15s ease-out, height 0.15s ease-out, box-shadow 0.15s ease-out',
           '&.Mui-active': {
             width: 16,
             height: 16,

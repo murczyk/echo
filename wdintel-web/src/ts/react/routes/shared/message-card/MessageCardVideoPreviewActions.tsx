@@ -95,9 +95,9 @@ export function MessageCardVideoPreviewControls({
 
       <Typography
         variant="body2"
+        className="text-white/80"
         sx={{
           whiteSpace: "nowrap",
-          color: "rgba(244, 247, 251, 0.8)",
           fontFamily: "monospace",
           mr: { xs: 1, sm: 1 },
         }}
@@ -174,7 +174,7 @@ export function MessageCardVideoPreviewActions({
           <IconButton
             size="small"
             onClick={onInfoClick}
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             <InfoIcon />
           </IconButton>
@@ -183,7 +183,7 @@ export function MessageCardVideoPreviewActions({
           <IconButton
             size="small"
             onClick={() => downloadOriginalVideo(video)}
-            sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+            className="text-white/75"
           >
             <DownloadIcon />
           </IconButton>
@@ -195,22 +195,20 @@ export function MessageCardVideoPreviewActions({
             <IconButton
               size="small"
               onClick={onGoToPrevious}
-              sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+              className="text-white/75"
             >
               <ChevronLeftIcon />
             </IconButton>
           </Tooltip>
           <Typography
             variant="body2"
+            className="text-white/75 border border-white/10 bg-white/10"
             sx={{
-              color: "rgba(244, 247, 251, 0.72)",
               fontWeight: 700,
               letterSpacing: 0,
               px: 1,
               py: 0.25,
               borderRadius: 1,
-              border: "1px solid rgba(244, 247, 251, 0.12)",
-              backgroundColor: "rgba(244, 247, 251, 0.08)",
             }}
           >
             {`${resolvedIndex + 1} / ${videoCount}`}
@@ -219,7 +217,7 @@ export function MessageCardVideoPreviewActions({
             <IconButton
               size="small"
               onClick={onGoToNext}
-              sx={{ color: "rgba(244, 247, 251, 0.72)" }}
+              className="text-white/75"
             >
               <ChevronRightIcon />
             </IconButton>

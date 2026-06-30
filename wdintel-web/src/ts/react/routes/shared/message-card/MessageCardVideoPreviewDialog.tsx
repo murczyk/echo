@@ -247,9 +247,7 @@ export function MessageCardVideoPreviewDialog({
         },
       }}
       BackdropProps={{
-        sx: {
-          backgroundColor: "rgba(0, 0, 0, 0.82)",
-        },
+        className: "bg-black/80",
       }}
     >
       <DialogContent
@@ -267,15 +265,14 @@ export function MessageCardVideoPreviewDialog({
         }}
       >
         <Box
+          className="bg-black ring-1 ring-inset ring-white/5"
           sx={{
             flex: 1,
             minHeight: 0,
             display: "flex",
             flexDirection: "column",
-            bgcolor: "#000",
             borderRadius: 1.5,
             overflow: "hidden",
-            boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.04)",
           }}
         >
           <MessageCardVideoPreviewStage
