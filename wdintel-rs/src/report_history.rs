@@ -21,7 +21,7 @@ use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, warn};
 use sea_orm::sea_query::{Expr, SimpleExpr};
@@ -98,6 +98,7 @@ pub struct ReportHistoryRow {
     pub last_error: Option<String>,
     pub is_cancelled: bool,
     pub details: String,
+    pub report_period: Option<String>,
     pub progress: i64,
     pub error_log: Option<Vec<ReportHistoryLogEntry>>,
 }
@@ -341,6 +342,7 @@ fn to_report_history_row(
         None => (None, None, None, None),
     };
     let is_cancelled = report_history_is_cancelled(&report_history);
+    let report_period = report_history_period(&report_history.request);
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
@@ -371,6 +373,7 @@ fn to_report_history_row(
         },
         is_cancelled,
         details,
+        report_period,
         progress,
         error_log,
     }
@@ -663,6 +666,96 @@ fn report_history_log_entry(
         timestamp: value.get("timestamp")?.as_str()?.to_string(),
         message: value.get("message")?.as_str()?.to_string(),
     })
+}
+
+fn report_history_period(request: &serde_json::Value) -> Option<String> {
+    let request =
+        serde_json::from_value::<ReportHistoryRequest>(request.clone()).ok()?;
+    match request {
+        ReportHistoryRequest::AnalysisReport { payload } => {
+            report_history_period_from_ms(
+                payload.req.since_date_inclusive_ms?,
+                payload.req.till_date_inclusive_ms?,
+            )
+        }
+        ReportHistoryRequest::AnalysisExport { payload } => {
+            report_history_period_from_ms(
+                payload.since_date_inclusive_ms,
+                payload.till_date_noninclusive_ms,
+            )
+        }
+        ReportHistoryRequest::EtalonkaFilter { payload } => {
+            report_history_etalonka_period(&payload.etalonka_type)
+        }
+        ReportHistoryRequest::EtalonkaBatch { payload } => {
+            report_history_etalonka_period(&payload.etalonka_type)
+        }
+        ReportHistoryRequest::GoiReport { .. } => None,
+    }
+}
+
+fn report_history_etalonka_period(
+    etalonka_type: &crate::sigint::etalonka::types::EtalonkaReportType,
+) -> Option<String> {
+    match etalonka_type {
+        crate::sigint::etalonka::types::EtalonkaReportType::ExtendedReport(
+            settings,
+        ) => report_history_period_from_ms(
+            settings.since_date_inclusive_ms,
+            settings.till_date_inclusive_ms?,
+        ),
+        _ => None,
+    }
+}
+
+fn report_history_period_from_ms(
+    since_ms: i64,
+    till_ms: i64,
+) -> Option<String> {
+    let since = crate::utils::dt_zoned_from_millis(since_ms).ok()?;
+    let till = crate::utils::dt_zoned_from_millis(till_ms).ok()?;
+    let fmt = if since.year() == till.year() {
+        "%d.%m %H:%M"
+    } else {
+        "%d.%m.%Y %H:%M"
+    };
+    Some(format!("{} - {}", since.format(fmt), till.format(fmt)))
+}
+
+#[cfg(test)]
+mod period_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn kyiv_ms(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
+        chrono_tz::Europe::Kyiv
+            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis()
+    }
+
+    #[test]
+    fn report_history_period_omits_year_for_same_year_range() {
+        let since = kyiv_ms(2026, 6, 30, 14, 15);
+        let till = kyiv_ms(2026, 7, 1, 8, 45);
+
+        assert_eq!(
+            report_history_period_from_ms(since, till),
+            Some("30.06 14:15 - 01.07 08:45".to_string())
+        );
+    }
+
+    #[test]
+    fn report_history_period_includes_year_for_cross_year_range() {
+        let since = kyiv_ms(2026, 12, 31, 23, 15);
+        let till = kyiv_ms(2027, 1, 1, 1, 45);
+
+        assert_eq!(
+            report_history_period_from_ms(since, till),
+            Some("31.12.2026 23:15 - 01.01.2027 01:45".to_string())
+        );
+    }
 }
 
 fn report_history_detail_refs(

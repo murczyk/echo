@@ -1159,6 +1159,7 @@ mod tests {
             },
             report_type: None,
             report_tags_only_this_unit: Some(false),
+            tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
             interception_keep_full_message: None,

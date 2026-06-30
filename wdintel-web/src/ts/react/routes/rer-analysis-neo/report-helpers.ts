@@ -3,6 +3,7 @@ import type {
   ReportPreviewReq,
   ReportType,
   ReoReportFileType,
+  TagReportSortBy,
 } from '../../../../Bindings';
 import { hasMeaningfulFiltersBeyondDateRange } from './helpers';
 import type { AnalysisQueryState } from './types';
@@ -37,6 +38,7 @@ export type AnalysisReportState = {
   reoNoComments: boolean;
   senderAdvancedFreqs: boolean;
   senderAggregation: SenderAggregation;
+  tagReportSortBy: TagReportSortBy;
   template: ReportTemplateId;
   withoutComments: boolean;
   withoutModelTags: boolean;
@@ -69,6 +71,7 @@ export function createDefaultReportState(): AnalysisReportState {
     reoNoComments: false,
     senderAdvancedFreqs: false,
     senderAggregation: 'ByProfile',
+    tagReportSortBy: 'ByTime',
     template: 'tags',
     withoutComments: false,
     withoutModelTags: false,
@@ -150,6 +153,7 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
       withoutModelTags: state.withoutModelTags,
     },
     reportTagsOnlyThisUnit: state.reportTagsOnlyThisUnit,
+    tagReportSortBy: state.template === 'tags' ? state.tagReportSortBy : null,
     report1213LinkedNetworksOnly: null,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
     interceptionKeepFullMessage: state.template === 'interception' ? state.interceptionKeepFullMessage : null,
@@ -225,6 +229,7 @@ export function describeAppliedReportFilters(
   const hasPageFilters = hasMeaningfulFiltersBeyondDateRange(queryState);
   const hasReportOverrides =
     report.reportTagsOnlyThisUnit ||
+    (report.template === 'tags' && report.tagReportSortBy !== 'ByTime') ||
     (report.template === 'babak' && report.withoutComments) ||
     ((report.template === 'babak' || report.template === 'interception') && report.withoutModelTags) ||
     (report.template === 'active_networks' && report.activeNetworksAorIds.length > 0);
@@ -250,6 +255,9 @@ export function describeAppliedReportFilters(
   }
   if (report.reportTagsOnlyThisUnit) {
     inPlaceHints.push('Лише для цього звіту: не змінює фільтри сторінки.');
+  }
+  if (report.template === 'tags' && report.tagReportSortBy === 'ByFreqThenTime') {
+    inPlaceHints.push('Сортування: за частотою та часом.');
   }
   if (report.template === 'babak' && report.withoutComments) {
     inPlaceHints.push('Коментарі не включаються у звіт.');

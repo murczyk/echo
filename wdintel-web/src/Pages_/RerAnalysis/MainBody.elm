@@ -602,6 +602,56 @@ view user model shared route =
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
                 ]
 
+            , HtmlX.viewIf (model.reportTemplate == RTTags) <|
+                let
+                    isDark =
+                        isDarkMode shared.themeMode
+
+                    sortLabel sortBy =
+                        case sortBy of
+                            B.ByTime ->
+                                "За Часом"
+
+                            B.ByFreqThenTime ->
+                                "За Частотою Та Часом"
+
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
+                                ]
+                            ]
+                            [ text "Сортування" ]
+
+                    selItem =
+                        Just
+                            (Select.basicMenuItem
+                                { item = model.reportTagSortBySelect.selected
+                                , label = sortLabel model.reportTagSortBySelect.selected
+                                }
+                            )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        { options | clearable = False }
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportTagSortBy
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelectSingle
+                                selItem
+                                model.reportTagSortBySelect.state
+                                model.reportTagSortBySelect.items
+                                "не обрано"
+                                options2
+                        )
+                    ]
+
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
                 let
