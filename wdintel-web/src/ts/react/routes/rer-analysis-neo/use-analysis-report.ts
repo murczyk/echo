@@ -1,4 +1,4 @@
-import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisStatsReq, InboxMessagesReq, ReportHistoryRow } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
@@ -135,6 +135,28 @@ export function useAnalysisReport({
       setReportTaskRunsState((current) => updater(current));
     }
   }, []);
+
+  const finalizeCancelledReportTaskRun = useCallback((id: number, historyRow: ReportHistoryRow, logs: string[]) => {
+    updateReportTaskRuns((current) =>
+      current.map((run) =>
+        run.id === id
+          ? {
+              ...run,
+              running: false,
+              cancelled: true,
+              curr: run.curr,
+              overall: run.overall,
+              logs,
+              error: null,
+              finishedAt: historyRow.completedAt ?? new Date().toISOString(),
+              expanded: false,
+              historyRow,
+              startedAt: historyRow.startedAt ?? run.startedAt,
+            }
+          : run,
+      ),
+    );
+  }, [updateReportTaskRuns]);
 
   const openReport = useCallback(() => {
     setReport((current) => ({ ...current, open: true }));
@@ -284,24 +306,7 @@ export function useAnalysisReport({
           }
           if (historyRow.status === 'failed') {
             if (isCancelledReportHistory(historyRow)) {
-              updateReportTaskRuns((current) =>
-                current.map((run) =>
-                  run.id !== runId
-                    ? run
-                    : {
-                        ...run,
-                        running: false,
-                        cancelled: true,
-                        curr: 0,
-                        overall: 100,
-                        logs,
-                        error: null,
-                        finishedAt: new Date().toISOString(),
-                        expanded: false,
-                        historyRow,
-                      },
-                ),
-              );
+              finalizeCancelledReportTaskRun(runId, historyRow, logs);
               return;
             }
             const message = toErrorMessage(
@@ -410,6 +415,11 @@ export function useAnalysisReport({
           );
           if (!rsp.running) {
             if (rsp.finishedWithError) {
+              const latestRow = await fetchReportHistoryStatus(taskId);
+              if (isCancelledReportHistory(latestRow)) {
+                finalizeCancelledReportTaskRun(runId, latestRow, logs);
+                return;
+              }
               throw new ReportTaskError(
                 rsp.finishedWithError,
                 normalizeReportTaskErrorCode(rsp.finishedWithErrorCode),
@@ -447,7 +457,18 @@ export function useAnalysisReport({
         }
       }
     },
-    [analysisReq, finalizeAbortedReportTaskRun, fromDateTimeStr, inboxReq, onError, onUnauthorized, setReportProgressExpanded, toDateTimeStr, updateReportTaskRuns],
+    [
+      analysisReq,
+      finalizeAbortedReportTaskRun,
+      finalizeCancelledReportTaskRun,
+      fromDateTimeStr,
+      inboxReq,
+      onError,
+      onUnauthorized,
+      setReportProgressExpanded,
+      toDateTimeStr,
+      updateReportTaskRuns,
+    ],
   );
 
   const repeatReportTaskRun = useCallback(

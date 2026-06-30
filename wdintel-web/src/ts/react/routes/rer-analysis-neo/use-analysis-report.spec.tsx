@@ -138,4 +138,77 @@ describe('useAnalysisReport', () => {
     expect(onError).toHaveBeenCalledWith('');
     expect(onError.mock.calls.filter(([message]) => message !== '')).toEqual([]);
   });
+
+  it('keeps a report cancelled when bgtask stops with a stale error', async () => {
+    renderHook();
+
+    analysisApiMock.launchAnalysisReportTask.mockResolvedValueOnce(123);
+    reportHistoryApiMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 123,
+        reportKind: 'tags',
+        requestedBy: 'tester',
+        createdAt: '2026-06-01 10:00:00',
+        startedAt: '2026-06-01 10:00:05',
+        plannedForTs: null,
+        queuePosition: 1,
+        blockedByReportId: null,
+        blockedByStartedAt: null,
+        blockedByBgtaskId: null,
+        status: 'in_progress',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: null,
+        isCancelled: false,
+        details: '',
+        progress: 45,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 123,
+        reportKind: 'tags',
+        requestedBy: 'tester',
+        createdAt: '2026-06-01 10:00:00',
+        startedAt: '2026-06-01 10:00:05',
+        plannedForTs: null,
+        queuePosition: 1,
+        blockedByReportId: null,
+        blockedByStartedAt: null,
+        blockedByBgtaskId: null,
+        status: 'failed',
+        completedAt: '2026-06-01 10:02:00',
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: 'Скасовано користувачем',
+        isCancelled: true,
+        details: '',
+        progress: 45,
+        errorLog: null,
+      });
+    reportHistoryApiMock.isCancelledReportHistory.mockImplementation((row) => row.status === 'failed' && row.isCancelled === true);
+    bgtaskApiMock.fetchBgtaskStatusAndLogs.mockResolvedValueOnce({
+      running: false,
+      loglines: [],
+      finishedWithError: 'BL { msg: "Скасовано користувачем" }',
+      finishedWithErrorCode: null,
+      progress: 45,
+    });
+
+    await act(async () => {
+      await latest?.downloadReport();
+      await Promise.resolve();
+    });
+
+    expect(reportHistoryApiMock.fetchReportHistoryStatus).toHaveBeenCalledTimes(2);
+    expect(latest?.reportTaskRuns).toHaveLength(1);
+    expect(latest?.reportTaskRuns[0]?.cancelled).toBe(true);
+    expect(latest?.reportTaskRuns[0]?.error).toBeNull();
+    expect(analysisApiMock.downloadAnalysisReportTaskResult).not.toHaveBeenCalled();
+    expect(onError.mock.calls.filter(([message]) => message !== '')).toEqual([]);
+  });
 });

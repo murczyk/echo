@@ -4,7 +4,7 @@ set -euo pipefail
 quiet="false"
 log_sql="false"
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 pidfile="${repo_root}/.dev-pids/dev-bgworker.pid"
 
 usage() {
@@ -77,15 +77,47 @@ stop_pid_and_group() {
     kill -KILL "$pid" 2>/dev/null || true
 }
 
+pid_exists() {
+    kill -0 "$1" 2>/dev/null
+}
+
+pid_cmdline() {
+    local pid="$1"
+
+    if [ -r "/proc/$pid/cmdline" ]; then
+        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true
+        return 0
+    fi
+
+    ps -p "$pid" -o args= 2>/dev/null || true
+}
+
+pid_cwd() {
+    local pid="$1"
+    local cwd
+
+    if [ -e "/proc/$pid/cwd" ]; then
+        readlink -f "/proc/$pid/cwd" 2>/dev/null || true
+        return 0
+    fi
+
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+    if [ -n "$cwd" ]; then
+        (cd "$cwd" 2>/dev/null && pwd -P) || true
+    fi
+}
+
 is_expected_process() {
     local pid="$1"
     local cwd cmdline
 
-    [ -d "/proc/$pid" ] || return 1
-    cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
-    [ "$cwd" = "${repo_root}/wdintel-rs" ] || return 1
+    pid_exists "$pid" || return 1
+    cwd="$(pid_cwd "$pid")"
+    if [ -n "$cwd" ] && [ "$cwd" != "${repo_root}/wdintel-rs" ]; then
+        return 1
+    fi
 
-    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    cmdline="$(pid_cmdline "$pid")"
     case "$cmdline" in
         *" --mode=debug bgworker "*|*" --mode=debug bgworker"|*" --mode=debug bgworker;"*)
             return 0
