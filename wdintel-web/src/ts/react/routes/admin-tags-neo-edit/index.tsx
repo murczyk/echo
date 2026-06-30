@@ -97,6 +97,7 @@ function buildUpsertRequest(form: TagFormState): {
       ord: ordValue,
       enabled: form.enabled,
       isPalitra: form.isPalitra,
+      ownerOrganismId: null,
     },
   };
 }

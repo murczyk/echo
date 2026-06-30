@@ -39,6 +39,8 @@ type TagAdminLike = {
   enabled?: boolean;
   isPalitra?: boolean;
   is_palitra?: boolean;
+  ownerOrganismId?: number | null;
+  owner_organism_id?: number | null;
   keywords?: TagKeywordLike[] | null;
 };
 
@@ -67,6 +69,8 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
     ord: raw.ord ?? null,
     enabled: raw.enabled ?? false,
     isPalitra: raw.isPalitra ?? raw.is_palitra ?? false,
+    ownerOrganismId:
+      raw.ownerOrganismId ?? raw.owner_organism_id ?? null,
     keywords: (raw.keywords ?? []).map(normalizeTagKeyword),
   };
 }
@@ -106,6 +110,7 @@ function toTagUpsertReqBody(req: TagUpsertReq): Record<string, any> {
     ord: req.ord,
     enabled: req.enabled,
     is_palitra: req.isPalitra,
+    owner_organism_id: req.ownerOrganismId,
   };
 }
 

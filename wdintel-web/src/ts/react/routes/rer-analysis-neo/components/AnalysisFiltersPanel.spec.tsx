@@ -530,8 +530,8 @@ describe('AnalysisFiltersPanel', () => {
         { id: 3, name: 'Вся смуга' },
       ],
       tagsMap: {
-        1: { label: 'Бета', extra: false, ord: null, keywords: null, isPalitra: false },
-        2: { label: 'Альфа', extra: false, ord: null, keywords: null, isPalitra: false },
+        1: { label: 'Бета', extra: false, ord: null, keywords: null, isPalitra: false, ownerOrganismId: null },
+        2: { label: 'Альфа', extra: false, ord: null, keywords: null, isPalitra: false, ownerOrganismId: null },
       } as AnalysisPageState['tagsMap'],
       options: {
         ...buildOptions(),

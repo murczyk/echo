@@ -4947,6 +4947,7 @@ type alias Tag =
     , ord : Maybe (Float)
     , keywords : Maybe (List (TagKeyword))
     , isPalitra : Bool
+    , ownerOrganismId : Maybe (Int)
     }
 
 
@@ -4958,6 +4959,7 @@ tagEncoder struct =
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.ord )
         , ( "keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (tagKeywordEncoder))) struct.keywords )
         , ( "is_palitra", (Json.Encode.bool) struct.isPalitra )
+        , ( "owner_organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.ownerOrganismId )
         ]
 
 
@@ -5007,6 +5009,7 @@ type alias TagAdmin =
     , enabled : Bool
     , keywords : List (TagKeyword)
     , isPalitra : Bool
+    , ownerOrganismId : Maybe (Int)
     }
 
 
@@ -5020,6 +5023,7 @@ tagAdminEncoder struct =
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "keywords", (Json.Encode.list (tagKeywordEncoder)) struct.keywords )
         , ( "is_palitra", (Json.Encode.bool) struct.isPalitra )
+        , ( "owner_organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.ownerOrganismId )
         ]
 
 
@@ -5029,6 +5033,7 @@ type alias TagUpsertReq =
     , ord : Maybe (Float)
     , enabled : Bool
     , isPalitra : Bool
+    , ownerOrganismId : Maybe (Int)
     }
 
 
@@ -5040,6 +5045,7 @@ tagUpsertReqEncoder struct =
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.ord )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "is_palitra", (Json.Encode.bool) struct.isPalitra )
+        , ( "owner_organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.ownerOrganismId )
         ]
 
 
@@ -11623,6 +11629,7 @@ tagDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.nullable (Json.Decode.list (tagKeywordDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 tagKeywordDecoder : Json.Decode.Decoder TagKeyword
@@ -11654,6 +11661,7 @@ tagAdminDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.list (tagKeywordDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 tagUpsertReqDecoder : Json.Decode.Decoder TagUpsertReq
@@ -11664,6 +11672,7 @@ tagUpsertReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "owner_organism_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 inboxMessageTagsAddReqDecoder : Json.Decode.Decoder InboxMessageTagsAddReq

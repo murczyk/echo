@@ -15,8 +15,12 @@ pub async fn collect_tags_list(
     user_id: &str,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<(tag::Model, Vec<tag_keyword::Model>)>> {
+    let owner_organism_id =
+        load_login_organism_id(db, user_id).await.c(h!())?;
     let (tag_ids_list, tags) =
-        collect_enabled_regular_tags(db).await.c(h!())?;
+        collect_enabled_regular_tags(db, owner_organism_id)
+            .await
+            .c(h!())?;
     let ordering = ensure_matching_ordering(user_id, db, tag_ids_list, &tags)
         .await
         .c(h!())?;
@@ -24,6 +28,7 @@ pub async fn collect_tags_list(
     let mut extra_tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
         .filter(tag::Column::Extra.eq(true))
+        .filter(accessible_tags_condition(owner_organism_id))
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
@@ -44,22 +49,26 @@ pub async fn collect_tags_list(
 pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
     info!("> oneoff_ensure_tags_ordering start");
     let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let (tag_ids_string, tags) =
-        collect_enabled_regular_tags(&db).await.c(h!())?;
     let logins = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
-        .select_only()
-        .column(login::Column::Login)
-        .into_tuple::<String>()
         .all(&db)
         .await
         .c(h!())?;
     for login in logins {
-        info!("> ensure_matching_ordering for {login}");
-        ensure_matching_ordering(&login, &db, tag_ids_string.clone(), &tags)
-            .await
-            .c(h!())?;
+        info!("> ensure_matching_ordering for {}", login.login);
+        let (tag_ids_string, tags) =
+            collect_enabled_regular_tags(&db, login.organism_id)
+                .await
+                .c(h!())?;
+        ensure_matching_ordering(
+            &login.login,
+            &db,
+            tag_ids_string.clone(),
+            &tags,
+        )
+        .await
+        .c(h!())?;
     }
     info!("> oneoff_ensure_tags_ordering completed");
     Ok(())
@@ -99,10 +108,12 @@ async fn ensure_matching_ordering(
 
 async fn collect_enabled_regular_tags(
     db: &DatabaseConnection,
+    owner_organism_id: Option<i64>,
 ) -> anyhow::Result<(String, BTreeMap<i64, tag::Model>)> {
     let tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
         .filter(tag::Column::Extra.eq(false))
+        .filter(accessible_tags_condition(owner_organism_id))
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
@@ -117,6 +128,32 @@ async fn collect_enabled_regular_tags(
         .map(|x| (x.id, x))
         .collect::<BTreeMap<_, _>>();
     Ok((tag_ids_string, tags))
+}
+
+async fn load_login_organism_id(
+    db: &DatabaseConnection,
+    user_id: &str,
+) -> anyhow::Result<Option<i64>> {
+    login::Entity::find()
+        .filter(login::Column::Login.eq(user_id))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple()
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())
+}
+
+fn accessible_tags_condition(owner_organism_id: Option<i64>) -> Condition {
+    let condition =
+        Condition::any().add(tag::Column::OwnerOrganismId.is_null());
+    if let Some(owner_organism_id) = owner_organism_id {
+        condition.add(tag::Column::OwnerOrganismId.eq(owner_organism_id))
+    } else {
+        condition
+    }
 }
 
 /// collect live known seeds in order to avoid duplicate ordering.
