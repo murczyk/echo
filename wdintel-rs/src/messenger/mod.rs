@@ -228,7 +228,6 @@ pub async fn group_update(
         master_key: res.group.master_key.clone(),
         name: res.group.name.clone().unwrap_or("".to_string()),
         ignore_operativny: res.group.ignore_operativny,
-        fills_etalonka: res.group.fills_etalonka,
         disable_network_assignment: res.group.disable_network_assignment,
         short_note: res.group_data.short_note.clone(),
         long_note: res.group_data.long_note.clone(),

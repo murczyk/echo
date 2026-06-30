@@ -4507,7 +4507,6 @@ async fn collect_group_names(
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
             signal_group::Column::InterseptionKind,
-            signal_group::Column::FillsEtalonka,
             signal_group::Column::DisableNetworkAssignment,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
@@ -4517,7 +4516,6 @@ async fn collect_group_names(
             bool,
             sea_orm_active_enums::InterseptionKind,
             bool,
-            bool,
         )>()
         .all(txn)
         .await
@@ -4525,7 +4523,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _)| key.clone())
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
@@ -4547,7 +4545,6 @@ async fn collect_group_names(
         name,
         ignore_operativny,
         interseption_kind,
-        fills_etalonka,
         disable_network_assignment,
     ) in signal_groups
     {
@@ -4562,7 +4559,6 @@ async fn collect_group_names(
                 name,
                 ignore_operativny,
                 interseption_kind: interseption_kind.into(),
-                fills_etalonka,
                 disable_network_assignment,
                 group_stats: stats,
                 admin_data: group_admin_data,
@@ -4592,7 +4588,6 @@ async fn collect_group_names(
             ignore_operativny,
             interseption_kind:
                 crate::sigint::types::InterseptionKind::InterseptionRer,
-            fills_etalonka: true,
             disable_network_assignment: false,
             group_stats: stats,
             admin_data: group_admin_data,

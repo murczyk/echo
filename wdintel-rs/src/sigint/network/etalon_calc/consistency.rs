@@ -156,8 +156,7 @@ where
                 signal_message_group::Column::SignalMessageId
                     .is_in(message_ids.to_vec()),
             )
-            .filter(signal_group::Column::FillsEtalonka.eq(true))
-            .filter(signal_group::Column::DisableNetworkAssignment.eq(false))
+            .filter(super::network_assignment_enabled_condition())
             .all(db)
             .await
             .c(h!())?;
@@ -182,35 +181,27 @@ where
         return Ok(HashSet::new());
     }
     let disabled_message_ids =
-        load_message_ids_with_network_assignment_disabled(
-            message_ids,
-            db,
-            true,
-        )
-        .await
-        .c(h!())?;
-    let enabled_message_ids =
-        load_message_ids_with_network_assignment_disabled(
+        load_message_ids_with_network_assignment_enabled(
             message_ids,
             db,
             false,
         )
         .await
         .c(h!())?;
+    let enabled_message_ids =
+        load_message_ids_with_network_assignment_enabled(message_ids, db, true)
+            .await
+            .c(h!())?;
     Ok(disabled_message_ids
         .difference(&enabled_message_ids)
         .copied()
         .collect())
 }
 
-async fn load_message_ids_with_network_assignment_disabled<
-    'a,
-    'async_trait,
-    C,
->(
+async fn load_message_ids_with_network_assignment_enabled<'a, 'async_trait, C>(
     message_ids: &[i64],
     db: &'a C,
-    disable_network_assignment: bool,
+    enabled: bool,
 ) -> anyhow::Result<HashSet<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -227,10 +218,11 @@ where
                     signal_message_group::Column::SignalMessageId
                         .is_in(message_ids.to_vec()),
                 )
-                .filter(
-                    signal_group::Column::DisableNetworkAssignment
-                        .eq(disable_network_assignment),
-                )
+                .filter(if enabled {
+                    super::network_assignment_enabled_condition()
+                } else {
+                    super::network_assignment_disabled_condition()
+                })
                 .select_only()
                 .column(signal_message_group::Column::SignalMessageId)
                 .distinct()
@@ -810,7 +802,7 @@ mod tests {
         let disabled_group = mk_signal_group(
             &txn,
             signal_group::ActiveModel {
-                fills_etalonka: Set(false),
+                disable_network_assignment: Set(true),
                 ..Default::default()
             },
         )
@@ -819,7 +811,7 @@ mod tests {
         let enabled_group = mk_signal_group(
             &txn,
             signal_group::ActiveModel {
-                fills_etalonka: Set(true),
+                disable_network_assignment: Set(false),
                 ..Default::default()
             },
         )
@@ -834,6 +826,16 @@ mod tests {
         .await
         .unwrap();
 
+        mk_signal_message_group(
+            &txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(msg.id),
+                group_master_key: Set(Some(disabled_group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         mk_signal_message_group(
             &txn,
             signal_message_group::ActiveModel {

@@ -12,7 +12,6 @@ use sea_orm::*;
 pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
     pub interseption_kind: InterseptionKind,
-    pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
@@ -72,14 +71,6 @@ pub async fn bl_szd_group_update(
         .await
         .c(h!())?;
     let mut network_invalidation_enqueued = false;
-    let fills_etalonka = update_group_fills_etalonka_if_present(
-        req.fills_etalonka,
-        &szd.group_master_key,
-        txn,
-        &mut network_invalidation_enqueued,
-    )
-    .await
-    .c(h!())?;
     let disable_network_assignment =
         update_group_disable_network_assignment_if_present(
             req.disable_network_assignment,
@@ -119,7 +110,6 @@ pub async fn bl_szd_group_update(
     let res = BlSzdGroupUpdateRes {
         is_secret,
         interseption_kind,
-        fills_etalonka,
         disable_network_assignment,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
@@ -176,47 +166,6 @@ async fn update_group_disable_network_assignment_if_present(
         .c(h!())?;
     }
     Ok(group.disable_network_assignment)
-}
-
-async fn update_group_fills_etalonka_if_present(
-    fills_etalonka: Option<bool>,
-    master_key: &str,
-    txn: &DatabaseTransaction,
-    network_invalidation_enqueued: &mut bool,
-) -> Result<bool, AppError> {
-    let Some(fills_etalonka) = fills_etalonka else {
-        return Ok(signal_group::Entity::find_by_id(master_key.to_string())
-            .select_only()
-            .column(signal_group::Column::FillsEtalonka)
-            .into_tuple::<bool>()
-            .one(txn)
-            .await
-            .c(h!())?
-            .unwrap_or(true));
-    };
-
-    let (group, changed) =
-        crate::sigint::network::etalon_calc::set_group_fills_etalonka(
-            txn,
-            master_key,
-            fills_etalonka,
-        )
-        .await
-        .c(h!())?;
-    if changed {
-        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
-            txn,
-            &group,
-            format!(
-                "updated group fills_etalonka from zone group edit: {}",
-                group.master_key
-            ),
-            network_invalidation_enqueued,
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(group.fills_etalonka)
 }
 
 pub async fn group_interseption_kind(
@@ -516,7 +465,6 @@ pub async fn bl_szd_groups_list(
         group_master_key: String,
         is_secret: bool,
         interseption_kind: db_enums::InterseptionKind,
-        fills_etalonka: bool,
         disable_network_assignment: bool,
         short_note: Option<String>,
         long_note: Option<String>,
@@ -546,7 +494,6 @@ pub async fn bl_szd_groups_list(
         .column_as(sigint_zone_datasource::Column::Id, "id")
         .column_as(signal_group::Column::IsSecret, "is_secret")
         .column_as(signal_group::Column::InterseptionKind, "interseption_kind")
-        .column_as(signal_group::Column::FillsEtalonka, "fills_etalonka")
         .column_as(
             signal_group::Column::DisableNetworkAssignment,
             "disable_network_assignment",
@@ -570,7 +517,6 @@ pub async fn bl_szd_groups_list(
             bool,
             InterseptionKind,
             bool,
-            bool,
             i64,
             Vec<String>,
             Option<String>,
@@ -578,7 +524,7 @@ pub async fn bl_szd_groups_list(
         ),
     >::new();
     for row in rows {
-        if let Some((_, _, _, _, _, login_vec, _, _)) =
+        if let Some((_, _, _, _, login_vec, _, _)) =
             res.get_mut(&row.group_master_key)
         {
             if let Some(user_login) = row.login {
@@ -595,7 +541,6 @@ pub async fn bl_szd_groups_list(
                 (
                     row.is_secret,
                     row.interseption_kind.into(),
-                    row.fills_etalonka,
                     row.disable_network_assignment,
                     row.id,
                     logins,
@@ -621,7 +566,6 @@ pub async fn bl_szd_groups_list(
                 (
                     is_secret,
                     interseption_kind,
-                    fills_etalonka,
                     disable_network_assignment,
                     szd_id,
                     allowed_users,
@@ -635,7 +579,6 @@ pub async fn bl_szd_groups_list(
                     sigint_zone_datasource_id: szd_id,
                     is_group_secret: is_secret,
                     interseption_kind,
-                    fills_etalonka,
                     disable_network_assignment,
                     allowed_users,
                     admin_logins: group_admins

@@ -683,9 +683,6 @@ pub mod tests {
         if out.interseption_kind == NotSet {
             out.interseption_kind = Set(InterseptionKind::Rer);
         }
-        if out.fills_etalonka == NotSet {
-            out.fills_etalonka = Set(true);
-        }
         if out.disable_network_assignment == NotSet {
             out.disable_network_assignment = Set(false);
         }

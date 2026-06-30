@@ -167,7 +167,6 @@ function buildGroupInfo(masterKey: string, name: string): SignalGroupEntry {
     name,
     ignoreOperativny: false,
     interseptionKind: 'rer',
-    fillsEtalonka: true,
     disableNetworkAssignment: false,
     groupStats: { activityLastDay: 0, activityLastWeek: 0 },
     adminData: null,

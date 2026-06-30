@@ -66,7 +66,6 @@ pub struct GroupEntryF1 {
     pub master_key: String,
     pub name: String,
     pub ignore_operativny: bool,
-    pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -168,7 +167,6 @@ pub struct GroupUpdateReq {
     pub area_of_responsibility_id: Option<i64>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub interseption_kind: Option<InterseptionKind>,
-    pub fills_etalonka: Option<bool>,
     pub disable_network_assignment: Option<bool>,
 }
 
