@@ -3,6 +3,7 @@ use crate::messenger::group::types::SignalGroupEntry;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
+use serde::de;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -51,6 +52,120 @@ pub struct InboxMessage {
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
     pub metadata: Vec<InboxMessageMetadata>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+)]
+pub struct InboxInsertPayload {
+    pub text: String,
+    #[serde(default)]
+    pub media: Vec<MessageMediaInfo>,
+    #[serde(default)]
+    pub images: Vec<String>,
+    #[serde(default)]
+    pub image_recognized: Vec<String>,
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub time: Option<String>,
+    #[serde(default)]
+    pub freq: Option<String>,
+    #[serde(default)]
+    pub coords: Option<String>,
+    #[serde(default)]
+    pub callsigns: Vec<String>,
+    #[serde(default)]
+    pub callsigns_alg2: Vec<String>,
+    #[serde(default = "default_checked")]
+    pub checked: bool,
+    #[serde(default)]
+    pub important: bool,
+    #[serde(default)]
+    pub bookmarked: bool,
+    #[serde(default)]
+    pub timestamp: Option<i64>,
+    #[serde(default)]
+    pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub sender: Option<String>,
+    #[serde(default)]
+    pub extended_form: Option<String>,
+    #[serde(default)]
+    pub post: Option<String>,
+    #[serde(default)]
+    pub post_id: Option<i64>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub point_tokens: Option<Vec<crate::rer_importer::highlight::CNPoint>>,
+    #[serde(default)]
+    pub no_headers_body:
+        Option<crate::rer_importer::body_noheader::NoHeadersBody>,
+    #[serde(default)]
+    pub datasource_id: Option<i64>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<i64>>,
+    #[serde(default)]
+    pub network_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub inbox_tags: Option<Vec<InboxMessageTag>>,
+    #[serde(default)]
+    pub metadata: Vec<InboxMessageMetadata>,
+}
+
+fn default_checked() -> bool {
+    true
+}
+
+impl From<InboxInsertPayload> for InboxMessage {
+    fn from(payload: InboxInsertPayload) -> Self {
+        Self {
+            message_uid: None,
+            text: payload.text,
+            media: payload.media,
+            images: payload.images,
+            image_recognized: payload.image_recognized,
+            date: payload.date,
+            time: payload.time,
+            freq: payload.freq,
+            coords: payload.coords,
+            callsigns: payload.callsigns,
+            callsigns_alg2: payload.callsigns_alg2,
+            checked: payload.checked,
+            important: payload.important,
+            bookmarked: payload.bookmarked,
+            timestamp: payload.timestamp,
+            group_master_key: payload.group_master_key,
+            sender: payload.sender,
+            extended_form: payload.extended_form,
+            post: payload.post,
+            post_id: payload.post_id,
+            unit: payload.unit,
+            callsign_tokens: None,
+            signal_tokens: None,
+            point_tokens: payload.point_tokens,
+            no_headers_body: payload.no_headers_body,
+            keyword_tokens: None,
+            text_marked: None,
+            datasource_id: payload.datasource_id,
+            location: payload.location,
+            tags: payload.tags,
+            network_ids: payload.network_ids,
+            inbox_tags: payload.inbox_tags,
+            metadata: payload.metadata,
+        }
+    }
 }
 
 #[derive(
@@ -163,7 +278,6 @@ pub struct FreqDetailedPoint {
     pub sk42_coords: String,
     pub freq: Option<String>,
 }
-
 #[derive(
     Elm,
     ElmEncode,
@@ -306,6 +420,139 @@ pub struct InboxDeleteReq {
 )]
 pub struct InboxSubmitReq {
     pub messages: Vec<(i64, InboxMessage)>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub struct InboxSubmitWarning {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub struct InboxSubmitRsp {
+    pub messages: Vec<InboxSubmitMessageRsp>,
+    pub warnings: Vec<InboxSubmitWarning>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub struct InboxSubmitMessageRsp {
+    pub message_id: String,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct GenericInboxSubmitRsp {
+    pub message_uid: String,
+    pub warnings: Vec<InboxSubmitWarning>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct InboxSubmitItem {
+    #[serde(default)]
+    pub message_uid: Option<String>,
+    pub text: String,
+    #[serde(default)]
+    pub freq: Option<String>,
+    #[serde(default)]
+    pub coords: Vec<SubmitCoordinates>,
+    #[serde(default, rename = "from")]
+    pub from_callsign: Option<String>,
+    #[serde(default)]
+    pub to: Vec<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(deserialize_with = "deserialize_rfc3339_string")]
+    pub timestamp: String,
+    #[serde(default)]
+    pub sender: Option<String>,
+    #[serde(default)]
+    pub full_body: Option<String>,
+    #[serde(default)]
+    pub post: Option<String>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub locations: Vec<String>,
+    #[serde(default)]
+    pub group_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub network: Option<SubmitNetwork>,
+    #[serde(default)]
+    pub dmr: Vec<SubmitDmrMetadata>,
+}
+
+impl Default for InboxSubmitItem {
+    fn default() -> Self {
+        Self {
+            message_uid: None,
+            text: String::new(),
+            freq: None,
+            coords: vec![],
+            from_callsign: None,
+            to: vec![],
+            tags: None,
+            timestamp: "1970-01-01T00:00:00Z".to_string(),
+            sender: None,
+            full_body: None,
+            post: None,
+            unit: None,
+            locations: vec![],
+            group_names: None,
+            network: None,
+            dmr: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitCoordinates {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitNetwork {
+    pub signal_name: String,
+    #[serde(default)]
+    pub cc: Option<i32>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitDmrMetadata {
+    #[serde(deserialize_with = "deserialize_rfc3339_string")]
+    pub timestamp: String,
+    #[serde(default)]
+    pub cc: Option<i32>,
+    pub freq: String,
+    pub signal_name: String,
+    #[serde(default)]
+    pub sender_id: Option<i64>,
+    #[serde(default)]
+    pub sender_name: Option<String>,
+    #[serde(default)]
+    pub call_group_id: Option<i64>,
+    #[serde(default)]
+    pub call_group_name: Option<String>,
+    #[serde(default)]
+    pub hash_id: Option<String>,
+}
+
+fn deserialize_rfc3339_string<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    chrono::DateTime::parse_from_rfc3339(&value).map_err(|_| {
+        de::Error::custom(format!("timestamp must be RFC 3339: {value}"))
+    })?;
+    Ok(value)
 }
 
 #[derive(
@@ -1262,4 +1509,343 @@ pub struct PalitraLexeme {
 pub struct PalitraPattern {
     pub palitra_id: i64,
     pub matcher: Arc<HashMap<String, Vec<PalitraLexeme>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn inbox_insert_payload_matches_inbox_message_json_spec() {
+        let payload = InboxInsertPayload {
+            text: "test message".to_string(),
+            media: vec![],
+            images: vec!["image.jpg".to_string()],
+            image_recognized: vec!["ocr text".to_string()],
+            date: Some("25.06.2026".to_string()),
+            time: Some("12:34:56".to_string()),
+            freq: Some("145.0260".to_string()),
+            coords: Some("49.12345, 37.12345".to_string()),
+            callsigns: vec!["ярус".to_string(), "светлый".to_string()],
+            callsigns_alg2: vec!["ярус".to_string()],
+            checked: true,
+            important: false,
+            bookmarked: false,
+            timestamp: Some(1_782_369_296_000),
+            group_master_key: Some("SC1".to_string()),
+            sender: Some("chumak".to_string()),
+            extended_form: Some("Сигнали: dmr".to_string()),
+            post: Some("SC1".to_string()),
+            post_id: Some(7),
+            unit: Some("УКХ р/м вБпЛА 121 мсп 68 мсд 6 А".to_string()),
+            point_tokens: None,
+            no_headers_body: None,
+            datasource_id: None,
+            location: Some("ЛИМАН ПЕРШИЙ".to_string()),
+            tags: Some(vec![1, 2]),
+            network_ids: Some(vec![11, 12]),
+            inbox_tags: None,
+            metadata: vec![],
+        };
+
+        let message = InboxMessage::from(payload.clone());
+        let payload_json = serde_json::to_value(payload).unwrap();
+        let message_json = serde_json::to_value(message).unwrap();
+        let payload_fields = payload_json.as_object().unwrap();
+        let message_fields = message_json.as_object().unwrap();
+
+        for (field, value) in payload_fields {
+            assert_eq!(
+                message_fields.get(field),
+                Some(value),
+                "insert payload field {field} must match InboxMessage"
+            );
+        }
+
+        let payload_keys =
+            payload_fields.keys().cloned().collect::<BTreeSet<_>>();
+        let message_keys =
+            message_fields.keys().cloned().collect::<BTreeSet<_>>();
+        let omitted_keys = message_keys
+            .difference(&payload_keys)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let expected_omitted_keys = BTreeSet::from([
+            "callsign_tokens".to_string(),
+            "keyword_tokens".to_string(),
+            "message_uid".to_string(),
+            "signal_tokens".to_string(),
+            "text_marked".to_string(),
+        ]);
+
+        assert_eq!(omitted_keys, expected_omitted_keys);
+    }
+
+    #[test]
+    fn inbox_submit_item_flattens_v11_payload_fields() {
+        let item_json = json!({
+            "message_uid": "msg-a1208-6734-2879",
+            "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026",
+            "freq": "145.0260",
+            "coords": [{ "lat": 49.12345, "lon": 37.12345 }],
+            "from": "ярус",
+            "to": ["светлый"],
+            "tags": ["БпЛА", "Втрати"],
+            "timestamp": "2026-06-25T12:34:56Z",
+            "full_body": "Сигнали: dmr",
+            "locations": ["ЛИМАН ПЕРШИЙ", "КОПАНІ"],
+            "group_names": ["SC1"],
+            "network": {
+                "signal_name": "dmr",
+                "cc": 5,
+                "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А"
+            },
+            "dmr": [{
+                "timestamp": "2026-06-25T12:34:56Z",
+                "cc": 5,
+                "freq": "145.0260",
+                "signal_name": "dmr",
+                "sender_id": 2977001,
+                "sender_name": "ЯРУС",
+                "call_group_id": 2977002,
+                "call_group_name": "СВЕТЛЫЙ",
+                "hash_id": "2324d327"
+            }]
+        });
+
+        let item: InboxSubmitItem = serde_json::from_value(item_json).unwrap();
+
+        assert_eq!(item.message_uid.as_deref(), Some("msg-a1208-6734-2879"));
+        assert_eq!(item.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026");
+        assert_eq!(item.freq.as_deref(), Some("145.0260"));
+        assert_eq!(
+            item.tags,
+            Some(vec!["БпЛА".to_string(), "Втрати".to_string()])
+        );
+        assert_eq!(item.from_callsign.as_deref(), Some("ярус"));
+        assert_eq!(item.to, vec!["светлый".to_string()]);
+        assert_eq!(
+            item.coords,
+            vec![SubmitCoordinates {
+                lat: 49.12345,
+                lon: 37.12345,
+            }]
+        );
+        assert_eq!(item.full_body.as_deref(), Some("Сигнали: dmr"));
+        assert_eq!(
+            item.locations,
+            vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()]
+        );
+        assert_eq!(item.group_names, Some(vec!["SC1".to_string()]));
+        assert_eq!(item.dmr[0].sender_id, Some(2_977_001));
+        assert_eq!(item.dmr[0].call_group_id, Some(2_977_002));
+        assert_eq!(item.dmr[0].sender_name.as_deref(), Some("ЯРУС"));
+        assert_eq!(item.dmr[0].call_group_name.as_deref(), Some("СВЕТЛЫЙ"));
+
+        let encoded = serde_json::to_value(item).unwrap();
+        let encoded = encoded.as_object().unwrap();
+        assert_eq!(
+            encoded.get("text"),
+            Some(&json!("рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026"))
+        );
+        assert_eq!(
+            encoded.get("message_uid"),
+            Some(&json!("msg-a1208-6734-2879"))
+        );
+        assert!(encoded.get("message_id").is_none());
+        assert!(encoded.get("source").is_none());
+        assert!(encoded.get("integration").is_none());
+        assert!(encoded.get("location").is_none());
+        assert!(encoded.get("callsigns").is_none());
+        assert_eq!(encoded.get("from"), Some(&json!("ярус")));
+        assert_eq!(encoded.get("to"), Some(&json!(["светлый"])));
+        let dmr = encoded["dmr"].as_array().unwrap()[0].as_object().unwrap();
+        assert_eq!(dmr.get("sender_id"), Some(&json!(2_977_001)));
+        assert_eq!(dmr.get("call_group_id"), Some(&json!(2_977_002)));
+    }
+
+    #[test]
+    fn inbox_submit_item_rejects_nested_batch_and_legacy_fields() {
+        for field in [
+            "message_id",
+            "message",
+            "payload",
+            "existing_message_db_id",
+            "messages",
+            "checked",
+            "extended_form",
+            "date",
+            "time",
+            "media",
+            "images",
+            "image_recognized",
+            "callsigns_alg2",
+            "callsigns",
+            "post_id",
+            "source",
+            "integration",
+            "location",
+        ] {
+            let mut item = serde_json::Map::new();
+            item.insert("text".to_string(), json!("рос абонент ЯРУС"));
+            item.insert("timestamp".to_string(), json!("2026-06-25T12:34:56Z"));
+            item.insert(field.to_string(), json!({ "text": "nested" }));
+
+            assert!(
+                serde_json::from_value::<InboxSubmitItem>(
+                    serde_json::Value::Object(item)
+                )
+                .is_err(),
+                "{field} must not be accepted in flattened submit shape"
+            );
+        }
+    }
+
+    #[test]
+    fn inbox_submit_item_rejects_unknown_dmr_fields() {
+        let result = serde_json::from_value::<InboxSubmitItem>(json!({
+            "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
+            "timestamp": "2026-06-25T12:34:56Z",
+            "dmr": [{
+                "timestamp": "2026-06-25T12:34:56Z",
+                "cc": 5,
+                "freq": "145.0260",
+                "signal_name": "dmr",
+                "sender_id": 110,
+                "abonent_id": 50
+            }]
+        }));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn inbox_submit_item_rejects_non_numeric_dmr_numbers() {
+        let result = serde_json::from_value::<InboxSubmitItem>(json!({
+            "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
+            "timestamp": "2026-06-25T12:34:56Z",
+            "network": {
+                "signal_name": "dmr",
+                "cc": "НВ"
+            }
+        }));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn inbox_submit_rsp_uses_message_id_and_warnings() {
+        let rsp = InboxSubmitRsp {
+            messages: vec![InboxSubmitMessageRsp {
+                message_id: "msg-a1208-6734-2879".to_string(),
+            }],
+            warnings: vec![InboxSubmitWarning {
+                code: "dmr_network_cc_conflict".to_string(),
+                message: "using primary color code".to_string(),
+            }],
+        };
+
+        let rsp = serde_json::to_value(rsp).unwrap();
+
+        assert_eq!(
+            rsp["messages"][0]["message_id"],
+            json!("msg-a1208-6734-2879")
+        );
+        assert_eq!(
+            rsp["warnings"][0]["code"],
+            json!("dmr_network_cc_conflict")
+        );
+        assert!(rsp["messages"][0].get("message_uid").is_none());
+    }
+
+    #[test]
+    fn generic_inbox_submit_rsp_uses_single_message_uid_and_warnings() {
+        let rsp = GenericInboxSubmitRsp {
+            message_uid: "msg-a1208-6734-2879".to_string(),
+            warnings: vec![InboxSubmitWarning {
+                code: "dmr_network_cc_conflict".to_string(),
+                message: "using primary color code".to_string(),
+            }],
+        };
+
+        let rsp = serde_json::to_value(rsp).unwrap();
+
+        assert_eq!(rsp["message_uid"], json!("msg-a1208-6734-2879"));
+        assert_eq!(
+            rsp["warnings"][0]["code"],
+            json!("dmr_network_cc_conflict")
+        );
+        assert!(rsp.get("message_id").is_none());
+        assert!(rsp.get("messages").is_none());
+    }
+
+    #[test]
+    fn inbox_submit_req_accepts_legacy_tuple_shape() {
+        let message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy regular submit".to_string(),
+            freq: Some("123.45".to_string()),
+            callsigns: vec!["Alpha".to_string()],
+            checked: true,
+            ..Default::default()
+        });
+
+        let req: InboxSubmitReq = serde_json::from_value(json!({
+            "messages": [[42, message]]
+        }))
+        .unwrap();
+
+        assert_eq!(req.messages.len(), 1);
+        assert_eq!(req.messages[0].0, 42);
+        assert_eq!(req.messages[0].1.text, "legacy regular submit");
+    }
+
+    #[test]
+    fn inbox_submit_item_accepts_flattened_single_generic_shape() {
+        let req: InboxSubmitItem = serde_json::from_value(json!({
+            "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ",
+            "freq": "145.0260",
+            "from": "ярус",
+            "to": ["светлый"],
+            "timestamp": "2026-06-25T12:34:56Z",
+            "group_names": ["SC1"],
+            "network": {
+                "signal_name": "dmr",
+                "cc": 5,
+                "name": "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А"
+            },
+            "dmr": [{
+                "timestamp": "2026-06-25T12:34:56Z",
+                "cc": 5,
+                "freq": "145.0260",
+                "signal_name": "dmr",
+                "sender_id": 110,
+                "sender_name": "ЯРУС",
+                "call_group_id": 50,
+                "call_group_name": "СВЕТЛЫЙ"
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(req.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ");
+        assert_eq!(req.from_callsign.as_deref(), Some("ярус"));
+        assert_eq!(req.to, vec!["светлый".to_string()]);
+        assert_eq!(req.group_names, Some(vec!["SC1".into()]));
+        assert_eq!(req.dmr[0].sender_id, Some(110));
+        assert_eq!(req.dmr[0].call_group_id, Some(50));
+    }
+
+    #[test]
+    fn inbox_submit_item_rejects_non_rfc3339_timestamps() {
+        for timestamp in
+            [json!(1771404540000_i64), json!("2026-06-25T12:34:56")]
+        {
+            assert!(serde_json::from_value::<InboxSubmitItem>(json!({
+                "text": "рос абонент ЯРУС",
+                "timestamp": timestamp
+            }))
+            .is_err());
+        }
+    }
 }

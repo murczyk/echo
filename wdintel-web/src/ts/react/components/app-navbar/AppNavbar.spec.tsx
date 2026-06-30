@@ -1,0 +1,138 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppNavbar } from './AppNavbar';
+
+type Rendered = {
+  container: HTMLDivElement;
+  root: Root;
+};
+
+const rendered: Rendered[] = [];
+
+afterEach(() => {
+  for (const item of rendered.splice(0)) {
+    act(() => {
+      item.root.unmount();
+    });
+    item.container.remove();
+  }
+  vi.clearAllMocks();
+});
+
+vi.mock('./ChangelogDropdown', () => ({
+  ChangelogDropdown: () => <div data-testid="mock-changelog-dropdown" />
+}));
+
+vi.mock('./ProfileDropdown', () => ({
+  ProfileDropdown: () => <div data-testid="mock-profile-dropdown" />
+}));
+
+function renderComponent(props: any) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(<AppNavbar {...props} />);
+  });
+
+  return { container, root };
+}
+
+describe('AppNavbar', () => {
+  const defaultProps = {
+    user: {
+      name: 'Test',
+      roles: ['Basic'],
+      goiFullAccessForOrganism: false,
+      goiIntegrations: [],
+    },
+    shared: {
+      themeMode: 'light',
+      serverInfo: { mode: 'live' },
+      changelogPreview: null,
+      userLoaded: true,
+      changelogLastSeenLoaded: true,
+      changelogLastSeen: null,
+    },
+    activeName: 'rer-duty',
+    isNavbarVisible: true,
+    supportsFullscreenToggle: true,
+    onLogout: vi.fn(),
+    onThemeChange: vi.fn(),
+    onNavbarVisibilityChange: vi.fn(),
+    onOpenChangelog: vi.fn(),
+  };
+
+  it('renders the brand logo and title', () => {
+    const { container } = renderComponent(defaultProps);
+    const logoImg = Array.from(container.querySelectorAll('img')).find(img => img.src.includes('echo-logo.svg'));
+    expect(logoImg).not.toBeUndefined();
+  });
+
+  it('renders main navigation elements for Rer role', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] }
+    });
+    const content = container.textContent;
+    expect(content).toContain('Оперативний');
+    expect(content).toContain('Аналіз');
+    expect(content).toContain('База даних');
+    expect(content).toContain('Конвертери');
+    // Admin should not be present
+    expect(content).not.toContain('Адмін');
+  });
+
+  it('renders Admin menu when user has Admin role', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] }
+    });
+    expect(container.textContent).toContain('Адмін');
+  });
+
+  it('toggles mobile menu on click', () => {
+    const { container } = renderComponent(defaultProps);
+    const mobileButton = container.querySelector('button[aria-controls="app-navbar-links-panel"]');
+    
+    // Initially hidden on mobile (hidden class present on the panel)
+    const panel = container.querySelector('#app-navbar-links-panel');
+    expect(panel?.className).toContain('hidden');
+
+    act(() => {
+      mobileButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    
+    // After click, 'flex' should replace 'hidden lg:flex' for mobile
+    expect(panel?.className).not.toContain('hidden');
+  });
+
+  it('calls onNavbarVisibilityChange when fullscreen toggle is clicked', () => {
+    const onNavbarVisibilityChange = vi.fn();
+    const { container } = renderComponent({
+      ...defaultProps,
+      onNavbarVisibilityChange
+    });
+    
+    // Find the fullscreen toggle button
+    const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
+    expect(toggleButton).not.toBeNull();
+
+    act(() => {
+      toggleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    
+    expect(onNavbarVisibilityChange).toHaveBeenCalled();
+  });
+
+  it('renders child components ProfileDropdown and ChangelogDropdown', () => {
+    const { container } = renderComponent(defaultProps);
+    expect(container.querySelector('[data-testid="mock-changelog-dropdown"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).not.toBeNull();
+  });
+});

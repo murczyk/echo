@@ -95,21 +95,24 @@ async fn receive_once(
         .c(h!())?;
     for id in echo_operator_queue {
         let txn = dbx.begin().await.c(h!())?;
-        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-            settlements.clone(),
-            &txn,
-            rq,
-            config,
-            redis,
-            id,
-            None,
-        )
-        .await;
+        let changed_inbox_item_ids =
+            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+                settlements.clone(),
+                &txn,
+                rq,
+                config,
+                id,
+                None,
+            )
+            .await;
 
         crate::sigint::worker::incoming_message_after_insert(&txn, id)
             .await
             .c(h!())?;
         txn.commit().await.c(h!())?;
+        crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }

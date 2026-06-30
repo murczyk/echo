@@ -21,6 +21,7 @@ import { setupMap, addPointsToLayer } from './ts/maps/maps'
 import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
 import './ts/web-components/analysis-map'
 import './ts/react/analysis-map-search-element'
+import './ts/react/app-navbar-element'
 import './ts/react/analysis-map-palitras-element'
 import './ts/react/analysis-map-coord-menu-element'
 import './ts/react/analysis-map-settings-element'
@@ -71,7 +72,7 @@ import timezone from 'dayjs/plugin/timezone';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY = 'rer-analysis-neo-alpha-banner-dismissed';
+
 const RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY = 'rer-network-details.preferredView';
 
 // Theme management functions
@@ -832,24 +833,6 @@ export const onReady = ({ app, env }) => {
         });
     }
 
-    if (
-        app.ports &&
-        app.ports.rer_analysis_neo_saveAlphaBannerDismissed &&
-        app.ports.rer_analysis_neo_loadAlphaBannerDismissed &&
-        app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes
-    ) {
-        app.ports.rer_analysis_neo_saveAlphaBannerDismissed.subscribe((isDismissed: boolean) => {
-            localStorage.setItem(
-                RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY,
-                isDismissed ? '1' : '0'
-            );
-        });
-
-        app.ports.rer_analysis_neo_loadAlphaBannerDismissed.subscribe(() => {
-            const storedValue = localStorage.getItem(RER_ANALYSIS_NEO_ALPHA_BANNER_DISMISSED_KEY);
-            app.ports.rer_analysis_neo_loadAlphaBannerDismissedRes.send(storedValue === '1');
-        });
-    }
 
 
     if (app.ports && app.ports.rer_freqs_openMap && app.ports.rer_freqs_closeMapRes) {

@@ -25,6 +25,7 @@ pub async fn process_signal_message_queue_item(
     s3: &Option<opendal::Operator>,
     txn: &DatabaseTransaction,
     skip_process_inbox_item: bool,
+    changed_inbox_item_ids: &mut Vec<i64>,
 ) -> Result<String, AppError> {
     // Normalize body
     info!("received message: {:?}", m);
@@ -111,16 +112,17 @@ pub async fn process_signal_message_queue_item(
 
     if !skip_process_inbox_item {
         // inbox item processing happens behind the scene
-        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-            settlements.clone(),
-            txn,
-            rq,
-            config,
-            redis,
-            signal_message.id,
-            None,
-        )
-        .await;
+        changed_inbox_item_ids.extend(
+            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+                settlements.clone(),
+                txn,
+                rq,
+                config,
+                signal_message.id,
+                None,
+            )
+            .await,
+        );
 
         crate::sigint::worker::incoming_message_after_insert(
             txn,

@@ -246,16 +246,8 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Delta "kmz2geojson" "KMZ в GeoJSON"
             , internalMenu Route.Path.CoordsConverter "coords-converter" "Координати"
             ]
-                ++ (if hasRole "Admin" user then
-                        [ internalMenu Route.Path.RadiosConvert "radios-convert" "Радіо KMZ" ]
 
-                    else
-                        []
-                   )
 
-        otherSubs =
-            [ internalMenu Route.Path.DeltaFixkmz "fixkmz" "Очисник KMZ"
-            ]
 
         menuItems =
             let
@@ -278,8 +270,7 @@ navBar user shared activeName props =
                     [ menuWithSubs "import" "Імпорт" importSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "Конвертери" converterSubs ]
-                , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
-                    [ menuWithSubs "other-tools" "Інше" otherSubs ]
+
                 , ifOrEmpty (hasRole "Basic" user)
                     [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "my-groups" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
                 , ifOrEmpty (adminMenuIsVisible user)
