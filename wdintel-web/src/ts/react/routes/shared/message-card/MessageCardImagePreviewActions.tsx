@@ -196,41 +196,48 @@ export function MessageCardImagePreviewActions({
           </IconButton>
         </Tooltip>
       </Box>
-      {hasCarousel && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        {hasCarousel && (
           <Tooltip title="Попереднє" enterDelay={300}>
             <IconButton
+              aria-label="Попереднє"
               size="small"
               onClick={onGoToPrevious}
               className="text-white/75"
+              data-image-preview-nav="prev"
             >
               <ChevronLeftIcon />
             </IconButton>
           </Tooltip>
-          <Typography
-            variant="body2"
-            className="text-white/75 border border-white/10 bg-white/10"
-            sx={{
-              fontWeight: 700,
-              letterSpacing: 0,
-              px: 1,
-              py: 0.25,
-              borderRadius: 1,
-            }}
-          >
-            {`${resolvedIndex + 1} / ${imageCount}`}
-          </Typography>
+        )}
+        <Typography
+          variant="body2"
+          className="text-white/75 border border-white/10 bg-white/10"
+          data-image-preview-counter
+          sx={{
+            fontWeight: 700,
+            letterSpacing: 0,
+            px: 1,
+            py: 0.25,
+            borderRadius: 1,
+          }}
+        >
+          {`${resolvedIndex + 1} / ${imageCount}`}
+        </Typography>
+        {hasCarousel && (
           <Tooltip title="Наступне" enterDelay={300}>
             <IconButton
+              aria-label="Наступне"
               size="small"
               onClick={onGoToNext}
               className="text-white/75"
+              data-image-preview-nav="next"
             >
               <ChevronRightIcon />
             </IconButton>
           </Tooltip>
-        </Box>
-      )}
+        )}
+      </Box>
       <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
         <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
           Закрити

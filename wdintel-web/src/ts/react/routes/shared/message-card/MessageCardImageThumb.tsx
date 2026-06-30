@@ -143,6 +143,7 @@ export function MessageCardImageThumb({
           </Box>
         ) : null}
       </Box>
+      <span className="sr-only">Зображення {index + 1}</span>
     </ButtonBase>
   );
 }
