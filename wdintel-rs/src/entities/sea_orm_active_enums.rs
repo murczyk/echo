@@ -150,6 +150,27 @@ pub enum EchoMessageSource {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
+    enum_name = "interseption_kind"
+)]
+pub enum InterseptionKind {
+    #[sea_orm(string_value = "rer")]
+    Rer,
+    #[sea_orm(string_value = "other")]
+    Other,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
     enum_name = "network_description_type"
 )]
 pub enum NetworkDescriptionType {

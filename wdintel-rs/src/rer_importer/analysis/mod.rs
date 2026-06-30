@@ -1,6 +1,7 @@
 use super::types::*;
 use crate::config::*;
 use crate::delta::types::GeoJson;
+use crate::entities::sea_orm_active_enums;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
@@ -4505,12 +4506,19 @@ async fn collect_group_names(
             signal_group::Column::MasterKey,
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
-            signal_group::Column::IsRer,
+            signal_group::Column::InterseptionKind,
             signal_group::Column::FillsEtalonka,
             signal_group::Column::DisableNetworkAssignment,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool, bool, bool, bool)>()
+        .into_tuple::<(
+            String,
+            Option<String>,
+            bool,
+            sea_orm_active_enums::InterseptionKind,
+            bool,
+            bool,
+        )>()
         .all(txn)
         .await
         .context(h!())?;
@@ -4538,7 +4546,7 @@ async fn collect_group_names(
         master_key,
         name,
         ignore_operativny,
-        is_rer,
+        interseption_kind,
         fills_etalonka,
         disable_network_assignment,
     ) in signal_groups
@@ -4553,7 +4561,7 @@ async fn collect_group_names(
                 master_key,
                 name,
                 ignore_operativny,
-                is_rer,
+                interseption_kind: interseption_kind.into(),
                 fills_etalonka,
                 disable_network_assignment,
                 group_stats: stats,
@@ -4582,7 +4590,8 @@ async fn collect_group_names(
             master_key,
             name,
             ignore_operativny,
-            is_rer: true,
+            interseption_kind:
+                crate::sigint::types::InterseptionKind::InterseptionRer,
             fills_etalonka: true,
             disable_network_assignment: false,
             group_stats: stats,

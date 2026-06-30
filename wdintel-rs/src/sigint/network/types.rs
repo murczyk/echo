@@ -81,7 +81,7 @@ pub struct Network {
     pub descriptions: Vec<NetworkDescription>,
     pub deleted: bool,
     pub do_not_archive: bool,
-    pub unit_tags: Vec<String>,
+    pub unit_mask: Vec<String>,
     pub status: NetworkStatus,
 }
 
@@ -111,7 +111,7 @@ pub struct CreateNetworkReq {
     pub descriptions: Vec<AddNetworkDescription>,
     pub do_not_archive: bool,
     #[serde(default)]
-    pub unit_tags: Vec<String>,
+    pub unit_mask: Vec<String>,
 }
 
 #[derive(
@@ -150,7 +150,7 @@ pub struct UpdateNetworkReq {
     pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
     pub do_not_archive: bool,
     #[serde(default)]
-    pub unit_tags: Option<Vec<String>>,
+    pub unit_mask: Option<Vec<String>>,
     pub status: NetworkStatus,
 }
 

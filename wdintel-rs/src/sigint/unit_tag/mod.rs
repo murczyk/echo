@@ -2,6 +2,7 @@ use crate::config::{
     UNIT_TAG_QUEUE_WORKER_BATCH_SIZE, UNIT_TAG_QUEUE_WORKER_SLEEP_SECS,
     UNIT_TAG_RECALC_HISTORY_DAYS,
 };
+use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -63,7 +64,9 @@ where
             signal_message_group::Relation::SignalGroup.def(),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(since))
-        .filter(signal_group::Column::IsRer.eq(false))
+        .filter(
+            signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
+        )
         .select_only()
         .column(sigint_inbox_item::Column::Id)
         .into_tuple::<i64>()
@@ -338,7 +341,9 @@ where
             signal_message_group::Column::SignalMessageId
                 .eq(sigint_inbox_item_id),
         )
-        .filter(signal_group::Column::IsRer.eq(false))
+        .filter(
+            signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
+        )
         .count(db)
         .await
         .c(h!())?;
@@ -402,7 +407,7 @@ fn network_unit_tag_matches(
     network: sigint_network::Model,
     match_text: &str,
 ) -> Vec<UnitTagMatch> {
-    sigint_network_unit_tags(&network)
+    sigint_network_unit_mask(&network)
         .into_iter()
         .flat_map(|tag| {
             let tag_key = tag.trim().to_lowercase();
@@ -495,30 +500,30 @@ fn is_boundary(text: &str, byte_idx: usize, before: bool) -> bool {
     }
 }
 
-pub fn normalize_unit_tags(
-    unit_tags: Vec<String>,
+pub fn normalize_unit_mask(
+    unit_mask: Vec<String>,
 ) -> Result<Vec<String>, AppError> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    for unit_tag in unit_tags {
-        let unit_tag = unit_tag.trim().to_string();
-        if unit_tag.is_empty() {
+    for unit_mask in unit_mask {
+        let unit_mask = unit_mask.trim().to_string();
+        if unit_mask.is_empty() {
             return Err(AppError::BL {
-                msg: "unit_tags must not contain empty values".to_string(),
+                msg: "unit_mask must not contain empty values".to_string(),
             });
         }
-        let key = unit_tag.to_lowercase();
+        let key = unit_mask.to_lowercase();
         if seen.insert(key) {
-            out.push(unit_tag);
+            out.push(unit_mask);
         }
     }
     Ok(out)
 }
 
-pub fn sigint_network_unit_tags(
+pub fn sigint_network_unit_mask(
     sigint_network: &sigint_network::Model,
 ) -> Vec<String> {
-    serde_json::from_value(sigint_network.unit_tags.clone()).unwrap_or_default()
+    serde_json::from_value(sigint_network.unit_mask.clone()).unwrap_or_default()
 }
 
 pub async fn non_rer_item_ids_from_items<C>(
@@ -540,7 +545,9 @@ where
             signal_message_group::Column::SignalMessageId
                 .is_in(sigint_inbox_item_ids),
         )
-        .filter(signal_group::Column::IsRer.eq(false))
+        .filter(
+            signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
+        )
         .select_only()
         .column(signal_message_group::Column::SignalMessageId)
         .distinct()
@@ -633,7 +640,7 @@ mod tests {
         );
     }
 
-    fn test_network(id: i64, unit_tags: Vec<&str>) -> sigint_network::Model {
+    fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {
         let dt = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -657,7 +664,7 @@ mod tests {
             sigint_origin_id: None,
             original_id: None,
             do_not_archive: false,
-            unit_tags: serde_json::json!(unit_tags),
+            unit_mask: serde_json::json!(unit_mask),
         }
     }
 

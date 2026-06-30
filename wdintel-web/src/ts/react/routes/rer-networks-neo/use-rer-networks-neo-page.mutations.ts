@@ -8,7 +8,7 @@ import { getRestoreNetworkOnEditValue } from '../rer-network-details-neo/network
 import {
   createDefaultNetworkUpsertForm,
   getNetworkUpsertValidationError,
-  normalizeNetworkUnitTags,
+  normalizeNetworkUnitMask,
   shouldIncludeNetworkCreateFrequency,
   toCreateNetworkReq,
   toNetworkEditForm,
@@ -114,7 +114,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
         operationType: editDialog.operationType.trim() === '' ? null : editDialog.operationType.trim(),
         operationPeriod: editDialog.operationPeriod.trim() === '' ? null : editDialog.operationPeriod.trim(),
         doNotArchive: editDialog.doNotArchive,
-        unitTags: args.supportNonRerInterceptions ? normalizeNetworkUnitTags(editDialog.unitTags) : null,
+        unitMask: args.supportNonRerInterceptions ? normalizeNetworkUnitMask(editDialog.unitMask) : null,
         descriptions: null,
         status: editDialog.status,
       });

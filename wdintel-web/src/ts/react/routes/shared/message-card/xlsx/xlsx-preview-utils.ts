@@ -1,14 +1,17 @@
 import readXlsxFile from 'read-excel-file/web-worker';
 import { extractWorkbookSheetNames } from './xlsx-preview-metadata';
 
-type ReadXlsxFileWithSheets = (
+// read-excel-file's runtime parser supports options.sheets and filters sheet
+// IDs before parseSheet(), but the package typings omit that option. Keep this
+// local typed wrapper so MAX_XLSX_SHEETS is enforced before sheet XML parsing.
+type ReadXlsxFileWithRuntimeSheetsOption = (
   input: ArrayBuffer,
   options?: {
     sheets?: Array<number | string>;
   },
 ) => Promise<Array<{ sheet: string; data: unknown[][] }>>;
 
-const readXlsxFileWithSheets = readXlsxFile as unknown as ReadXlsxFileWithSheets;
+const readXlsxFileWithRuntimeSheetsOption = readXlsxFile as unknown as ReadXlsxFileWithRuntimeSheetsOption;
 
 // `read-excel-file` does not support row-range parsing, so the file-size cap
 // plus worker isolation are the primary DoS mitigations for previewing.
@@ -101,13 +104,13 @@ async function buildXlsxPreviewFromWorkbook(
 
   let workbookSheets: Array<{ sheet: string; data: unknown[][] }>;
   try {
-    workbookSheets = await readXlsxFileWithSheets(buffer, { sheets: sheetsToRead });
+    workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, { sheets: sheetsToRead });
   } catch (error) {
     if (sheetNames.length === 0) {
       const availableSheetCount = parseAvailableSheetCount(error);
       if (availableSheetCount != null && availableSheetCount > 0) {
         try {
-          workbookSheets = await readXlsxFileWithSheets(buffer, {
+          workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, {
             sheets: Array.from({ length: availableSheetCount }, (_, index) => index + 1),
           });
         } catch (retryError) {

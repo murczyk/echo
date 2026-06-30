@@ -1,4 +1,5 @@
-import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Box, ButtonBase, Card, CardContent, Checkbox, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -15,6 +16,7 @@ type SystemSettingsTab = 'main' | 'pelengs';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
+  supportNonRerInterceptions: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -32,6 +34,7 @@ type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
 
 type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
+  supportNonRerInterceptions: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -47,6 +50,7 @@ type SystemSettingsPayload = {
 
 const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
+  supportNonRerInterceptions: false,
   dutyTestEnabled: false,
   dutyInsertHistoricalInterceptions: false,
   dutyTestSinceMs: 0,
@@ -60,9 +64,24 @@ const EMPTY_FORM: SystemSettingsForm = {
   pelengBoundsBottomRightLng: '',
 };
 
+const SUPPORT_NON_RER_TOOLTIP =
+  "Потрібно для кібер роботи. Вмикає підтримку перехоплень добутих з альтернативних джерел. Якщо група має саме такі перехоплення а не традиційний РЕР - змініть категорію групи в її налаштуваннях, тоді перехоплення з такої групи буде прив'язано до мережі по масці підрозділу; налаштування маски підрозділу - в Оперативних Параметрах мережі, в Базі Даних";
+
+function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+      {label}
+      <Tooltip title={tooltip} arrow>
+        <InfoOutlinedIcon color="action" fontSize="small" />
+      </Tooltip>
+    </Box>
+  );
+}
+
 function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsForm {
   return {
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
+    supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyInsertHistoricalInterceptions: item?.rerDutyInsertHistoricalInterceptions ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
@@ -80,6 +99,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
 function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
   return (
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
+    a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyInsertHistoricalInterceptions === b.dutyInsertHistoricalInterceptions &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
@@ -144,6 +164,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
 function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
   return {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
+    supportNonRerInterceptions: form.supportNonRerInterceptions,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyInsertHistoricalInterceptions: form.dutyInsertHistoricalInterceptions,
     dutyTestSinceMs: form.dutyTestSinceMs,
@@ -240,6 +261,18 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
           Прапорець «точний збіг за еталонкою» на аналізі увімкнений
         </ButtonBase>
       </Box>
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={form.supportNonRerInterceptions}
+            onChange={(_, checked) => {
+              patchForm({ supportNonRerInterceptions: checked });
+            }}
+          />
+        }
+        label={<InfoLabel label="Підтримка альтернативних перехоплень" tooltip={SUPPORT_NON_RER_TOOLTIP} />}
+      />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Оперативний: тестові повідомлення
@@ -462,6 +495,7 @@ export function AdminSystemSettingsNeoPage() {
         rerDutyTestLimit: payload.dutyTestLimit,
         rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
         rerDutyShortUrl: payload.shortUrlEnabled,
+        supportNonRerInterceptions: payload.supportNonRerInterceptions,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

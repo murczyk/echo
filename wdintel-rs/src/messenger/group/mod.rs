@@ -64,7 +64,7 @@ pub async fn collect_groups(
                 name,
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
-                is_rer: g.is_rer,
+                interseption_kind: g.interseption_kind.clone().into(),
                 fills_etalonka: g.fills_etalonka,
                 disable_network_assignment: g.disable_network_assignment,
                 group_stats: stats,
@@ -384,7 +384,7 @@ where
             is_secret: NotSet,
             deleted: NotSet,
             is_archived: NotSet,
-            is_rer: NotSet,
+            interseption_kind: NotSet,
             fills_etalonka: NotSet,
             disable_network_assignment: NotSet,
         }
