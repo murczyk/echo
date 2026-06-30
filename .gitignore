@@ -30,7 +30,7 @@ deploy/vector/kibana/sink-hammer.yaml
 .j
 .issues/
 wdintel-web/test-results/
-.dev-pids
+.dev-pids/
 
 # GOI local/runtime artifacts
 goi/.deb/

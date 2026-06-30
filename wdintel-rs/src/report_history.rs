@@ -83,6 +83,12 @@ pub struct ReportHistoryRow {
     pub report_kind: String,
     pub requested_by: String,
     pub created_at: String,
+    pub started_at: Option<String>,
+    pub planned_for_ts: Option<String>,
+    pub queue_position: Option<i64>,
+    pub blocked_by_report_id: Option<i64>,
+    pub blocked_by_started_at: Option<String>,
+    pub blocked_by_bgtask_id: Option<i64>,
     pub status: String,
     pub completed_at: Option<String>,
     pub has_file: bool,
@@ -90,6 +96,7 @@ pub struct ReportHistoryRow {
     pub content_type: Option<String>,
     pub bgtask_id: Option<i64>,
     pub last_error: Option<String>,
+    pub is_cancelled: bool,
     pub details: String,
     pub progress: i64,
     pub error_log: Option<Vec<ReportHistoryLogEntry>>,
@@ -165,6 +172,52 @@ struct ReportHistoryNetworkDetailRow {
     unit_name: Option<String>,
 }
 
+#[derive(Debug, Clone, FromQueryResult)]
+struct ReportHistoryQueueMetaRow {
+    id: i64,
+    queue_position: i64,
+    blocked_by_report_id: Option<i64>,
+    blocked_by_started_at: Option<chrono::NaiveDateTime>,
+    blocked_by_bgtask_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReportHistoryQueueScope {
+    report_kind: String,
+    requested_by: Option<String>,
+}
+
+fn report_history_queue_scope(
+    report_kind: &str,
+    requested_by: &str,
+) -> ReportHistoryQueueScope {
+    if report_kind == KIND_ETALONKA {
+        ReportHistoryQueueScope {
+            report_kind: report_kind.to_string(),
+            requested_by: Some(requested_by.to_string()),
+        }
+    } else {
+        ReportHistoryQueueScope {
+            report_kind: report_kind.to_string(),
+            requested_by: None,
+        }
+    }
+}
+
+fn report_history_queue_scope_for_row(
+    report_history: &report_history::Model,
+) -> Option<ReportHistoryQueueScope> {
+    if report_history.status != STATUS_PLANNED
+        && report_history.status != STATUS_IN_PROGRESS
+    {
+        return None;
+    }
+    Some(report_history_queue_scope(
+        &report_history.report_kind,
+        &report_history.requested_by,
+    ))
+}
+
 impl ReportHistoryDetailLookup {
     fn format_details(&self, refs: &ReportHistoryDetailRefs) -> String {
         let mut lines = vec![];
@@ -231,16 +284,20 @@ async fn build_report_history_rows(
     let lookup =
         load_report_history_detail_lookup(dbx, &report_histories, &detail_refs)
             .await?;
+    let queue_meta_by_id =
+        report_history_queue_meta(dbx, &report_histories).await?;
 
     Ok(report_histories
         .into_iter()
         .zip(detail_refs.iter())
         .map(|(report_history, refs)| {
+            let report_history_id = report_history.id;
             let progress = lookup.report_history_progress(&report_history);
             to_report_history_row(
                 report_history,
                 lookup.format_details(refs),
                 progress,
+                queue_meta_by_id.get(&report_history_id).cloned(),
                 expose_last_error,
             )
         })
@@ -262,15 +319,43 @@ fn to_report_history_row(
     report_history: report_history::Model,
     details: String,
     progress: i64,
+    queue_meta: Option<ReportHistoryQueueMetaRow>,
     expose_last_error: bool,
 ) -> ReportHistoryRow {
     let error_log =
         report_history_error_log(&report_history, expose_last_error);
+    let (
+        queue_position,
+        blocked_by_report_id,
+        blocked_by_started_at,
+        blocked_by_bgtask_id,
+    ) = match queue_meta {
+        Some(queue_meta) => (
+            Some(queue_meta.queue_position),
+            queue_meta.blocked_by_report_id,
+            queue_meta
+                .blocked_by_started_at
+                .map(|value| value.to_string()),
+            queue_meta.blocked_by_bgtask_id,
+        ),
+        None => (None, None, None, None),
+    };
+    let is_cancelled = report_history_is_cancelled(&report_history);
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
         requested_by: report_history.requested_by,
         created_at: report_history.created_at.to_string(),
+        started_at: report_history
+            .started_at
+            .map(|started_at| started_at.to_string()),
+        planned_for_ts: report_history
+            .planned_for_ts
+            .map(|planned_for_ts| planned_for_ts.to_string()),
+        queue_position,
+        blocked_by_report_id,
+        blocked_by_started_at,
+        blocked_by_bgtask_id,
         status: report_history.status,
         completed_at: report_history
             .completed_at
@@ -284,10 +369,259 @@ fn to_report_history_row(
         } else {
             None
         },
+        is_cancelled,
         details,
         progress,
         error_log,
     }
+}
+
+fn report_history_is_cancelled(report_history: &report_history::Model) -> bool {
+    report_history.status == STATUS_FAILED
+        && report_history
+            .last_error
+            .as_deref()
+            .map(|last_error| last_error.contains("Скасовано користувачем"))
+            .unwrap_or(false)
+}
+
+async fn report_history_queue_meta(
+    dbx: &DatabaseConnection,
+    report_histories: &[report_history::Model],
+) -> Result<HashMap<i64, ReportHistoryQueueMetaRow>, AppError> {
+    let queued_histories = report_histories
+        .iter()
+        .filter_map(|report_history| {
+            let scope = report_history_queue_scope_for_row(report_history)?;
+            let queued_for = match report_history.status.as_str() {
+                STATUS_IN_PROGRESS => report_history
+                    .started_at
+                    .or(Some(report_history.created_at)),
+                STATUS_PLANNED => report_history
+                    .planned_for_ts
+                    .or(Some(report_history.created_at)),
+                _ => None,
+            };
+            Some((report_history, scope, queued_for))
+        })
+        .collect::<Vec<_>>();
+    if queued_histories.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut sql = String::from(
+        r#"
+        with input_rows(id, report_kind, requested_by, status, queued_for, created_at) as (
+            values
+"#,
+    );
+    let mut values = Vec::with_capacity(queued_histories.len() * 6);
+    for (index, (report_history, scope, queued_for)) in
+        queued_histories.iter().enumerate()
+    {
+        if index > 0 {
+            sql.push_str(",\n");
+        }
+        sql.push_str(&format!(
+            "                (${}, ${}, ${}, ${}, ${}, ${})",
+            index * 6 + 1,
+            index * 6 + 2,
+            index * 6 + 3,
+            index * 6 + 4,
+            index * 6 + 5,
+            index * 6 + 6,
+        ));
+        values.push(report_history.id.into());
+        values.push(scope.report_kind.clone().into());
+        values.push(scope.requested_by.clone().into());
+        values.push(report_history.status.clone().into());
+        values.push((*queued_for).into());
+        values.push(report_history.created_at.into());
+    }
+    sql.push_str(
+        r#"
+            )
+        select
+            i.id,
+            1 + (
+                select count(*)
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+            ) as queue_position,
+            (
+                select other.id
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_report_id,
+            (
+                select other.started_at
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_started_at,
+            (
+                select other.bgtask_id
+                from report_history other
+                where other.status in ('planned', 'in_progress')
+                  and (
+                      (
+                          i.requested_by is not null
+                          and other.report_kind = i.report_kind
+                          and other.requested_by = i.requested_by
+                      )
+                      or (
+                          i.requested_by is null
+                          and other.report_kind = i.report_kind
+                      )
+                  )
+                  and (
+                      case when other.status = 'in_progress' then 0 else 1 end,
+                      coalesce(
+                          case
+                              when other.status = 'in_progress' then other.started_at
+                              else other.planned_for_ts
+                          end,
+                          other.created_at
+                      ),
+                      other.created_at,
+                      other.id
+                  ) < (
+                      case when i.status = 'in_progress' then 0 else 1 end,
+                      coalesce(i.queued_for, i.created_at),
+                      i.created_at,
+                      i.id
+                  )
+                order by
+                    case when other.status = 'in_progress' then 0 else 1 end desc,
+                    coalesce(
+                        case
+                            when other.status = 'in_progress' then other.started_at
+                            else other.planned_for_ts
+                        end,
+                        other.created_at
+                    ) desc,
+                    other.created_at desc,
+                    other.id desc
+                limit 1
+            ) as blocked_by_bgtask_id
+        from input_rows i
+        "#,
+    );
+
+    let stmt =
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values);
+    let rows = ReportHistoryQueueMetaRow::find_by_statement(stmt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
 }
 
 fn report_history_error_log(
@@ -1085,7 +1419,7 @@ async fn archive_completed_report_file(
         bytes,
     };
     let s3_id = upload_report_bytes(env, &generated).await?;
-    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+    let Some(_report_history) = ReportHistory::find_by_id(report_history_id)
         .one(&env.dbx)
         .await
         .c(h!())?
@@ -1095,12 +1429,31 @@ async fn archive_completed_report_file(
         );
         return Ok(());
     };
-    let mut report_history = report_history.into_active_model();
-    report_history.status = Set(STATUS_DONE.to_string());
-    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-    report_history.s3_id = Set(Some(s3_id));
-    report_history.last_error = Set(None);
-    report_history.update(&env.dbx).await.c(h!())?;
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_DONE.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(report_history::Column::S3Id, Expr::value(Some(s3_id)))
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(None::<String>),
+        )
+        .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        warn!(
+            "completed report history row {} was already finished, cancelled, or timed out",
+            report_history_id
+        );
+    }
     Ok(())
 }
 
@@ -1109,7 +1462,7 @@ async fn set_completed_report_archive_error(
     report_history_id: i64,
     err_msg: String,
 ) -> Result<(), AppError> {
-    let Some(report_history) = ReportHistory::find_by_id(report_history_id)
+    let Some(_report_history) = ReportHistory::find_by_id(report_history_id)
         .one(&env.dbx)
         .await
         .c(h!())?
@@ -1119,16 +1472,30 @@ async fn set_completed_report_archive_error(
         );
         return Ok(());
     };
-    let mut report_history = report_history.into_active_model();
-    report_history.status = Set(STATUS_FAILED.to_string());
-    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-    report_history.last_error = Set(Some(err_msg.clone()));
-    report_history.log = Set(append_log_entry(
-        report_history.log.unwrap(),
-        "system",
-        &err_msg,
-    ));
-    report_history.update(&env.dbx).await.c(h!())?;
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_FAILED.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(Some(err_msg.clone())),
+        )
+        .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        warn!(
+            "failed report history row {} was already finished, cancelled, or timed out",
+            report_history_id
+        );
+    }
     Ok(())
 }
 
@@ -1174,7 +1541,7 @@ pub async fn report_history_status(
 ) -> Result<Json<ReportHistoryRow>, AppError> {
     let report_history = find_current_user_report(&env, &user, req.id).await?;
     Ok(Json(
-        build_report_history_row(&env.dbx, report_history, false).await?,
+        build_report_history_row(&env.dbx, report_history, true).await?,
     ))
 }
 
@@ -1213,6 +1580,76 @@ pub async fn report_history_retry(
     let report_history = report_history.update(&env.dbx).await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
+    ))
+}
+
+#[post("/api/report-history/cancel")]
+pub async fn report_history_cancel(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ReportHistoryIdReq>,
+) -> Result<Json<ReportHistoryRow>, AppError> {
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
+    let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_PLANNED
+        && report_history.status != STATUS_IN_PROGRESS
+    {
+        return Err(AppError::BL {
+            msg: "Only queued or running reports can be cancelled".to_string(),
+        });
+    }
+
+    let reason = "Скасовано користувачем".to_string();
+    let res = ReportHistory::update_many()
+        .col_expr(
+            report_history::Column::Status,
+            Expr::value(STATUS_FAILED.to_string()),
+        )
+        .col_expr(
+            report_history::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .col_expr(
+            report_history::Column::PlannedForTs,
+            Expr::value(None::<chrono::NaiveDateTime>),
+        )
+        .col_expr(
+            report_history::Column::LastError,
+            Expr::value(Some(reason.clone())),
+        )
+        .filter(report_history::Column::Id.eq(report_history.id))
+        .filter(
+            report_history::Column::Status
+                .is_in([STATUS_PLANNED, STATUS_IN_PROGRESS]),
+        )
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if res.rows_affected == 0 {
+        return Err(AppError::BL {
+            msg: "Report could not be cancelled because it already finished"
+                .to_string(),
+        });
+    }
+
+    let updated = ReportHistory::find_by_id(report_history.id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    if let Some(bgtask_id) = updated.bgtask_id {
+        let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
+        finish_bgtask(Some(bgtask_id), &env.dbx, &res).await?;
+    }
+
+    Ok(Json(
+        build_report_history_row(&env.dbx, updated, true).await?,
     ))
 }
 
@@ -1673,7 +2110,9 @@ async fn process_report(
     report_history: report_history::Model,
 ) -> Result<(), AppError> {
     let bgtask = create_running_bgtask(&env.dbx).await?;
-    set_report_bgtask(env, report_history.id, bgtask.id).await?;
+    if !attach_report_bgtask(env, &report_history, &bgtask).await? {
+        return Ok(());
+    }
     let (res, timed_out) =
         run_report_with_timeout(env, &report_history, bgtask.id).await;
     let _ = finish_bgtask(Some(bgtask.id), &env.dbx, &res).await;
@@ -1723,21 +2162,40 @@ async fn create_running_bgtask(
     .c(h!())?)
 }
 
+async fn attach_report_bgtask(
+    env: &Env,
+    report_history: &report_history::Model,
+    bgtask: &bgtask::Model,
+) -> Result<bool, AppError> {
+    if !set_report_bgtask(env, report_history.id, bgtask.id).await? {
+        let res: Result<(), AppError> = Err(AppError::BL {
+            msg: format!(
+                "Report history row {} was already finished or cancelled before bgtask attachment",
+                report_history.id
+            ),
+        });
+        let _ = finish_bgtask(Some(bgtask.id), &env.dbx, &res).await;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 async fn set_report_bgtask(
     env: &Env,
     report_history_id: i64,
     bgtask_id: i64,
-) -> Result<(), AppError> {
-    ReportHistory::update_many()
+) -> Result<bool, AppError> {
+    let res = ReportHistory::update_many()
         .col_expr(report_history::Column::BgtaskId, Expr::value(bgtask_id))
         .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
         .exec(&env.dbx)
         .await
         .c(h!())?;
-    Ok(())
+    Ok(res.rows_affected > 0)
 }
 
-async fn set_bgtask_progress(
+pub(crate) async fn set_bgtask_progress(
     dbx: &DatabaseConnection,
     bgtask_id: i64,
     progress: i64,
@@ -1748,6 +2206,7 @@ async fn set_bgtask_progress(
             Expr::value(progress.clamp(0, 100)),
         )
         .filter(bgtask::Column::Id.eq(bgtask_id))
+        .filter(bgtask::Column::Running.eq(true))
         .exec(dbx)
         .await
         .c(h!())?;
@@ -1759,10 +2218,16 @@ async fn bgtask_log_progress(
     progress: i64,
     logline: &str,
     dbx: &DatabaseConnection,
-) -> Result<(), AppError> {
-    set_bgtask_progress(dbx, bgtask_id, progress).await?;
-    bgtask_log(Some(bgtask_id), logline, dbx).await.c(h!())?;
-    Ok(())
+) {
+    if let Err(err) = set_bgtask_progress(dbx, bgtask_id, progress).await {
+        warn!(
+            "failed to update bgtask progress for {} to {}: {err:?}",
+            bgtask_id, progress
+        );
+    }
+    if let Err(err) = bgtask_log(Some(bgtask_id), logline, dbx).await.c(h!()) {
+        warn!("failed to append bgtask log for {}: {err:?}", bgtask_id);
+    }
 }
 
 async fn generate_and_store_report(
@@ -1771,10 +2236,10 @@ async fn generate_and_store_report(
     bgtask_id: i64,
 ) -> Result<(), AppError> {
     bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
-        .await?;
+        .await;
     let generated = generate_report(env, report_history, bgtask_id).await?;
     bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
-        .await?;
+        .await;
     let s3_id = upload_report_bytes(env, &generated).await?;
     let res = ReportHistory::update_many()
         .col_expr(
@@ -1817,7 +2282,7 @@ async fn generate_and_store_report(
         "[3/3] Готово до завантаження",
         &env.dbx,
     )
-    .await?;
+    .await;
     Ok(())
 }
 
@@ -1908,8 +2373,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaFilter { payload } => {
-            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
-                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_data(
@@ -1920,13 +2383,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                60,
-                "[2/5] Формування еталонного опису",
-                &env.dbx,
-            )
-            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,
@@ -1944,8 +2400,6 @@ async fn generate_report(
             })
         }
         ReportHistoryRequest::EtalonkaBatch { payload } => {
-            bgtask_log_progress(bgtask_id, 20, "[1/5] Пошук мереж", &env.dbx)
-                .await?;
             let trace_id = Uuid::new_v4();
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_batch_id_data(
@@ -1956,13 +2410,6 @@ async fn generate_report(
                 )
                 .await
                 .c(h!())?;
-            bgtask_log_progress(
-                bgtask_id,
-                60,
-                "[2/5] Формування еталонного опису",
-                &env.dbx,
-            )
-            .await?;
             let bytes =
                 crate::sigint::etalonka::task::render_networks_docx_report_bytes(
                     &payload.etalonka_type,
@@ -2227,34 +2674,99 @@ async fn handle_report_failure(
     else {
         return Ok(());
     };
+    if report_history.status != STATUS_IN_PROGRESS {
+        warn!(
+            "skipping retry planning for report {} because status is {}",
+            report_history_id, report_history.status
+        );
+        return Ok(());
+    }
     let err_msg = format!("{err:#?}");
     let attempt_count =
         (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
-    let mut report_history = report_history.into_active_model();
-    report_history.log = Set(append_log_entry(
-        report_history.log.unwrap(),
-        "system",
-        &err_msg,
-    ));
+    let report_log = append_log_entry(report_history.log, "system", &err_msg);
+    let now = Utc::now().naive_utc();
     if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
-        report_history.status = Set(STATUS_PLANNED.to_string());
-        report_history.retry_count = Set(attempt_count);
-        report_history.planned_for_ts = Set(Some(
-            Utc::now().naive_utc()
-                + Duration::minutes(5 * i64::from(attempt_count)),
-        ));
-        report_history.started_at = Set(None);
-        report_history.completed_at = Set(None);
-        report_history.bgtask_id = Set(None);
-        report_history.last_error = Set(Some(err_msg));
+        let res = ReportHistory::update_many()
+            .col_expr(
+                report_history::Column::Status,
+                Expr::value(STATUS_PLANNED.to_string()),
+            )
+            .col_expr(
+                report_history::Column::RetryCount,
+                Expr::value(attempt_count),
+            )
+            .col_expr(
+                report_history::Column::PlannedForTs,
+                Expr::value(Some(
+                    now + Duration::minutes(5 * i64::from(attempt_count)),
+                )),
+            )
+            .col_expr(
+                report_history::Column::StartedAt,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::CompletedAt,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::BgtaskId,
+                Expr::value(None::<i64>),
+            )
+            .col_expr(
+                report_history::Column::LastError,
+                Expr::value(Some(err_msg)),
+            )
+            .col_expr(report_history::Column::Log, Expr::value(report_log))
+            .filter(report_history::Column::Id.eq(report_history_id))
+            .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        if res.rows_affected == 0 {
+            warn!(
+                "skipping retry planning for report {} because it finished while preparing retry",
+                report_history_id
+            );
+            return Ok(());
+        }
     } else {
-        report_history.status = Set(STATUS_FAILED.to_string());
-        report_history.retry_count = Set(attempt_count);
-        report_history.planned_for_ts = Set(None);
-        report_history.completed_at = Set(Some(Utc::now().naive_utc()));
-        report_history.last_error = Set(Some(err_msg));
+        let res = ReportHistory::update_many()
+            .col_expr(
+                report_history::Column::Status,
+                Expr::value(STATUS_FAILED.to_string()),
+            )
+            .col_expr(
+                report_history::Column::RetryCount,
+                Expr::value(attempt_count),
+            )
+            .col_expr(
+                report_history::Column::PlannedForTs,
+                Expr::value(None::<chrono::NaiveDateTime>),
+            )
+            .col_expr(
+                report_history::Column::CompletedAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(
+                report_history::Column::LastError,
+                Expr::value(Some(err_msg)),
+            )
+            .col_expr(report_history::Column::Log, Expr::value(report_log))
+            .filter(report_history::Column::Id.eq(report_history_id))
+            .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        if res.rows_affected == 0 {
+            warn!(
+                "skipping failure finalization for report {} because it finished while preparing failure",
+                report_history_id
+            );
+            return Ok(());
+        }
     }
-    report_history.update(&env.dbx).await.c(h!())?;
     Ok(())
 }
 
@@ -2270,4 +2782,686 @@ fn append_log_entry(
         "message": message,
     }));
     json!(log)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::login;
+    use crate::functest::tests::{cleanup, mk_login};
+    use chrono::Timelike;
+    use sea_orm::ActiveValue::{NotSet, Set};
+    use sea_orm::EntityTrait;
+    use serde_json::json;
+    use serial_test::serial;
+
+    async fn insert_report_history(
+        dbx: &DatabaseConnection,
+        requested_by: &str,
+        report_kind: &str,
+        status: &str,
+        created_at: chrono::NaiveDateTime,
+        started_at: Option<chrono::NaiveDateTime>,
+        planned_for_ts: Option<chrono::NaiveDateTime>,
+    ) -> Result<report_history::Model, AppError> {
+        Ok(report_history::ActiveModel {
+            id: NotSet,
+            report_kind: Set(report_kind.to_string()),
+            requested_by: Set(requested_by.to_string()),
+            request: Set(serde_json::to_value(
+                ReportHistoryRequest::GoiReport { payload: json!({}) },
+            )
+            .c(h!())?),
+            created_at: Set(created_at),
+            status: Set(status.to_string()),
+            retry_count: Set(0),
+            planned_for_ts: Set(planned_for_ts),
+            started_at: Set(started_at),
+            completed_at: Set(None),
+            s3_id: Set(None),
+            bgtask_id: Set(None),
+            file_name: Set(None),
+            content_type: Set(None),
+            last_error: Set(None),
+            log: Set(json!([])),
+            legacy_log_id: Set(None),
+            legacy_report_path: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?)
+    }
+
+    fn timestamp_to_db_precision(
+        timestamp: chrono::NaiveDateTime,
+    ) -> chrono::NaiveDateTime {
+        timestamp
+            .with_nanosecond((timestamp.nanosecond() / 1_000) * 1_000)
+            .unwrap_or(timestamp)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn planned_row_after_same_user_in_progress_gets_second_queue_position(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let blocker = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let blocker_id = blocker.id;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![blocker, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
+        assert_eq!(
+            rows[1].blocked_by_started_at,
+            Some(
+                timestamp_to_db_precision(created_at + Duration::minutes(1))
+                    .to_string()
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn queue_positions_are_independent_across_users_and_kinds(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let blocker = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let alice_planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+        let bob_planned = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(3),
+            None,
+            Some(created_at + Duration::minutes(3)),
+        )
+        .await?;
+        let alice_other_kind = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(4),
+            None,
+            Some(created_at + Duration::minutes(4)),
+        )
+        .await?;
+
+        let rows = build_report_history_rows(
+            &env.dbx,
+            vec![blocker, alice_planned, bob_planned, alice_other_kind],
+            false,
+        )
+        .await?;
+
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[2].queue_position, Some(1));
+        assert_eq!(rows[3].queue_position, Some(1));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_etalonka_planned_row_counts_same_kind_blocker(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let blocker = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let blocker_id = blocker.id;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![blocker, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_etalonka_planned_row_counts_cross_user_planned_blocker(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let blocker = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at,
+            None,
+            Some(created_at),
+        )
+        .await?;
+        let blocker_id = blocker.id;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(1),
+            None,
+            Some(created_at + Duration::minutes(1)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![blocker, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(blocker_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_etalonka_future_planned_retry_does_not_block_following_row(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _future_retry = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at - Duration::minutes(10),
+            None,
+            Some(created_at + Duration::minutes(5)),
+        )
+        .await?;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![planned], false).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[0].blocked_by_report_id, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_etalonka_due_retry_blocks_following_row(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _bob = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let retry = insert_report_history(
+            &env.dbx,
+            "report-history-bob",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at - Duration::minutes(10),
+            None,
+            Some(created_at - Duration::minutes(1)),
+        )
+        .await?;
+        let retry_id = retry.id;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![retry, planned], false)
+                .await?;
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].queue_position, Some(1));
+        assert_eq!(rows[1].queue_position, Some(2));
+        assert_eq!(rows[1].blocked_by_report_id, Some(retry_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn page_slice_still_sees_earlier_blocker_from_database(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _alice = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-alice".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let _blocker = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at + Duration::minutes(1)),
+            None,
+        )
+        .await?;
+        let planned = insert_report_history(
+            &env.dbx,
+            "report-history-alice",
+            KIND_ETALONKA,
+            STATUS_PLANNED,
+            created_at + Duration::minutes(2),
+            None,
+            Some(created_at + Duration::minutes(2)),
+        )
+        .await?;
+
+        let rows =
+            build_report_history_rows(&env.dbx, vec![planned], false).await?;
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].queue_position, Some(2));
+        assert_eq!(rows[0].blocked_by_report_id, Some(_blocker.id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cancelled_failed_row_is_not_replanned_on_failure_handler(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-cancel".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-cancel",
+            KIND_ETALONKA,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        report.update(&env.dbx).await.c(h!())?;
+
+        handle_report_failure(
+            &env,
+            report_history::Entity::find()
+                .filter(
+                    report_history::Column::RequestedBy
+                        .eq("report-history-cancel"),
+                )
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?
+                .id,
+            AppError::BL {
+                msg: "should not requeue".to_string(),
+            },
+        )
+        .await?;
+
+        let refreshed = ReportHistory::find()
+            .filter(
+                report_history::Column::RequestedBy.eq("report-history-cancel"),
+            )
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(refreshed.status, STATUS_FAILED);
+        assert_eq!(
+            refreshed.last_error.as_deref(),
+            Some("Скасовано користувачем")
+        );
+        assert!(report_history_is_cancelled(&refreshed));
+        assert_eq!(refreshed.planned_for_ts, None);
+        assert_eq!(refreshed.retry_count, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn list_rows_mark_cancelled_without_exposing_last_error(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-cancel-list".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-cancel-list",
+            KIND_GOI,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        let report_id = report.id.clone().unwrap();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        report.update(&env.dbx).await.c(h!())?;
+
+        let rows = build_report_history_rows(
+            &env.dbx,
+            vec![report_history::Entity::find_by_id(report_id)
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?],
+            false,
+        )
+        .await?;
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_cancelled);
+        assert_eq!(rows[0].last_error, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn guarded_bgtask_attach_skips_cancelled_report(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        bgtask::Entity::delete_many().exec(&env.dbx).await.c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-guard".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-guard",
+            KIND_ETALONKA,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        let bgtask = create_running_bgtask(&env.dbx).await?;
+        let attached = attach_report_bgtask(&env, &report, &bgtask).await?;
+        assert!(!attached);
+
+        let refreshed_report = report_history::Entity::find_by_id(report.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(refreshed_report.bgtask_id, None);
+
+        let refreshed_bgtask = bgtask::Entity::find_by_id(bgtask.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert!(!refreshed_bgtask.running);
+        assert!(refreshed_bgtask
+            .finished_with_error
+            .as_deref()
+            .unwrap_or("")
+            .contains(
+                "already finished or cancelled before bgtask attachment"
+            ));
+        Ok(())
+    }
 }

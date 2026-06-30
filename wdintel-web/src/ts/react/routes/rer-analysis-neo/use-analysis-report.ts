@@ -1,4 +1,4 @@
-import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisStatsReq, InboxMessagesReq, ReportHistoryRow } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
@@ -10,8 +10,9 @@ import {
   launchAnalysisReportTask,
   launchAnalysisSummaryTableTask,
 } from '../../services/api/analysis';
-import { getBgtaskProgressFromPercent } from '../../services/api/bgtask';
+import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadBlob } from '../../utils/download-blob';
+import { fetchReportHistoryStatus, isCancelledReportHistory } from '../../services/api/report-history';
 import {
   buildReportFilename,
   buildReportRequest,
@@ -89,7 +90,7 @@ export function useAnalysisReport({
 }: Props): Result {
   const [report, setReport] = useState(createDefaultReportState);
   const [reportDownloadInFlight, setReportDownloadInFlight] = useState(false);
-  const [reportProgressExpanded, setReportProgressExpandedState] = useState(true);
+  const [reportProgressExpanded, setReportProgressExpandedState] = useState(false);
   const [reportTaskRuns, setReportTaskRunsState] = useState<AnalysisReportTaskRun[]>([]);
   const isMountedRef = useRef(true);
   const runSessionRef = useRef(0);
@@ -134,6 +135,28 @@ export function useAnalysisReport({
       setReportTaskRunsState((current) => updater(current));
     }
   }, []);
+
+  const finalizeCancelledReportTaskRun = useCallback((id: number, historyRow: ReportHistoryRow, logs: string[]) => {
+    updateReportTaskRuns((current) =>
+      current.map((run) =>
+        run.id === id
+          ? {
+              ...run,
+              running: false,
+              cancelled: true,
+              curr: run.curr,
+              overall: run.overall,
+              logs,
+              error: null,
+              finishedAt: historyRow.completedAt ?? new Date().toISOString(),
+              expanded: false,
+              historyRow,
+              startedAt: historyRow.startedAt ?? run.startedAt,
+            }
+          : run,
+      ),
+    );
+  }, [updateReportTaskRuns]);
 
   const openReport = useCallback(() => {
     setReport((current) => ({ ...current, open: true }));
@@ -230,7 +253,7 @@ export function useAnalysisReport({
 
       setReportDownloadInFlight(true);
       onError('');
-      setReportProgressExpanded(true);
+      setReportProgressExpanded(false);
       let runId: number | null = null;
       try {
         const reportName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
@@ -252,13 +275,14 @@ export function useAnalysisReport({
             headerTitle,
             running: true,
             cancelled: false,
-            curr: 1,
-            overall: 4,
-            logs: [headerTitle],
+            curr: 0,
+            overall: 100,
+            logs: [],
             error: null,
-            startedAt: new Date().toISOString(),
+            startedAt: null,
             finishedAt: null,
-            expanded: true,
+            expanded: false,
+            historyRow: null,
           },
         ]);
 
@@ -275,17 +299,94 @@ export function useAnalysisReport({
             finalizeAbortedReportTaskRun(runId);
             return;
           }
-          const rsp = await fetchAnalysisReportTaskStatus(taskId, skip);
+          const historyRow = await fetchReportHistoryStatus(taskId);
           if (shouldStopRun()) {
             finalizeAbortedReportTaskRun(runId);
             return;
           }
+          if (historyRow.status === 'failed') {
+            if (isCancelledReportHistory(historyRow)) {
+              finalizeCancelledReportTaskRun(runId, historyRow, logs);
+              return;
+            }
+            const message = toErrorMessage(
+              new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null),
+            );
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: false,
+                      cancelled: false,
+                      curr: 0,
+                      overall: 100,
+                      logs,
+                      error: message,
+                      startedAt: historyRow.startedAt ?? run.startedAt,
+                      finishedAt: new Date().toISOString(),
+                      expanded: true,
+                      historyRow,
+                    },
+              ),
+            );
+            throw new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null);
+          }
+          if (historyRow.status === 'done') {
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: false,
+                      cancelled: false,
+                      curr: 100,
+                      overall: 100,
+                      logs,
+                      error: null,
+                      startedAt: historyRow.startedAt ?? run.startedAt,
+                      finishedAt: new Date().toISOString(),
+                      expanded: true,
+                      historyRow,
+                    },
+              ),
+            );
+            running = false;
+            break;
+          }
+
+          if (historyRow.bgtaskId === null) {
+            updateReportTaskRuns((current) =>
+              current.map((run) =>
+                run.id !== runId
+                  ? run
+                  : {
+                      ...run,
+                      running: true,
+                      cancelled: false,
+                      curr: 0,
+                      overall: 100,
+                      logs: [],
+                      error: null,
+                      startedAt: historyRow.startedAt ?? null,
+                      finishedAt: null,
+                      expanded: run.expanded,
+                      historyRow,
+                    },
+              ),
+            );
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
+            continue;
+          }
+
+          const rsp = await fetchBgtaskStatusAndLogs(historyRow.bgtaskId, skip);
           if (rsp.loglines.length > 0) {
             logs = logs.concat(rsp.loglines);
             skip = logs.length;
           }
-          const progress =
-            getBgtaskProgressFromPercent(logs, rsp.progress);
+          const progress = getBgtaskProgressFromPercent(logs, rsp.progress);
           updateReportTaskRuns((current) =>
             current.map((run) =>
               run.id !== runId
@@ -296,7 +397,7 @@ export function useAnalysisReport({
                     cancelled: false,
                     curr: rsp.running ? progress.curr : rsp.finishedWithError ? progress.curr : progress.overall,
                     overall: progress.overall,
-                    logs: [run.headerTitle, ...logs],
+                    logs,
                     error: rsp.finishedWithError
                       ? toErrorMessage(
                           new ReportTaskError(
@@ -306,12 +407,19 @@ export function useAnalysisReport({
                         )
                       : null,
                     finishedAt: rsp.running ? null : new Date().toISOString(),
-                    expanded: rsp.running ? true : rsp.finishedWithError != null,
+                    expanded: run.expanded || rsp.finishedWithError != null,
+                    historyRow,
+                    startedAt: historyRow.startedAt ?? run.startedAt,
                   },
             ),
           );
           if (!rsp.running) {
             if (rsp.finishedWithError) {
+              const latestRow = await fetchReportHistoryStatus(taskId);
+              if (isCancelledReportHistory(latestRow)) {
+                finalizeCancelledReportTaskRun(runId, latestRow, logs);
+                return;
+              }
               throw new ReportTaskError(
                 rsp.finishedWithError,
                 normalizeReportTaskErrorCode(rsp.finishedWithErrorCode),
@@ -349,7 +457,18 @@ export function useAnalysisReport({
         }
       }
     },
-    [analysisReq, finalizeAbortedReportTaskRun, fromDateTimeStr, inboxReq, onError, onUnauthorized, setReportProgressExpanded, toDateTimeStr, updateReportTaskRuns],
+    [
+      analysisReq,
+      finalizeAbortedReportTaskRun,
+      finalizeCancelledReportTaskRun,
+      fromDateTimeStr,
+      inboxReq,
+      onError,
+      onUnauthorized,
+      setReportProgressExpanded,
+      toDateTimeStr,
+      updateReportTaskRuns,
+    ],
   );
 
   const repeatReportTaskRun = useCallback(

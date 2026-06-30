@@ -159,6 +159,8 @@ beforeEach(() => {
     status: null,
     setStatus: vi.fn(),
     statusCounts: null,
+    reportTargetRequest: null,
+    reportTargetNetworkIds: null,
     aorOptions: [buildAor(1, 'AOR 1')],
     permissions: { canEdit: true, canExport: true, canDelete: true },
     reportsMenuAnchorEl: null,

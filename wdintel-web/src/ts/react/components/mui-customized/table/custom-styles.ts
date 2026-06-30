@@ -21,6 +21,8 @@ export const FULL_WIDTH_TABLE_PAPER_SX = {
   height: '100%',
   minHeight: 0,
   overflow: 'hidden',
+  borderRadius: 0,
+  backgroundClip: 'padding-box',
 };
 
 export const PAGE_SCROLL_TABLE_CONTAINER_SX = {

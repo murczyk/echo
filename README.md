@@ -34,6 +34,12 @@ Back-end:
 just dev-back
 ```
 
+If report generation does not start locally, run the worker in a second terminal:
+
+```
+just dev-bgworker
+```
+
 Python service (optional, for NLP stuff only):
 
 ```

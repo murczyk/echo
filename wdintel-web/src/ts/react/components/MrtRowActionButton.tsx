@@ -22,6 +22,7 @@ type Props = {
 type GroupProps = {
   children: ReactNode;
   layout?: Layout;
+  forceMenu?: boolean;
 };
 
 type ActionElement = ReactElement<Props, typeof MrtRowActionButton>;
@@ -101,14 +102,18 @@ function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
   };
 }
 
-export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
+export function MrtRowActions({ children, layout = 'row', forceMenu = false }: GroupProps) {
   const actions = Children.toArray(children).filter(isMrtRowActionElement);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const menuButtonId = useId();
   const menuLabelId = `${menuButtonId}-trigger`;
 
-  if (actions.length <= 1) {
+  if (!forceMenu && actions.length <= 1) {
     return actions[0] ?? null;
+  }
+
+  if (actions.length === 0) {
+    return null;
   }
 
   const menuOpen = Boolean(anchorEl);

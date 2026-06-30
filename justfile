@@ -87,6 +87,11 @@ build-front:
 dev-back quiet="false" log_sql="false" *args:
     bash deploy/dev-back.sh --quiet="{{ quiet }}" --log-sql="{{ log_sql }}" -- {{ dev_back_args }} {{ args }}
 
+[arg('log_sql', long='log-sql', value='true')]
+[arg('quiet', long='quiet', value='true')]
+dev-bgworker quiet="false" log_sql="false" *args:
+    bash deploy/dev-bgworker.sh --quiet="{{ quiet }}" --log-sql="{{ log_sql }}" -- {{ args }}
+
 dev-back-noproj:
     # Run backend without `proj` feature for local development
     (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run --no-default-features -- --mode=debug server {{ dev_back_args }})
