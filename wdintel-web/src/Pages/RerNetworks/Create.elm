@@ -145,7 +145,7 @@ init _ _ () =
             , doNotArchive = False
             , postIds = []
             , descriptions = []
-            , unitTags = []
+            , unitMask = []
             }
       , kindSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-kind-state")

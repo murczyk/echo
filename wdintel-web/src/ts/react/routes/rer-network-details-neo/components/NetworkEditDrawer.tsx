@@ -1,4 +1,5 @@
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Autocomplete,
   Box,
@@ -14,6 +15,7 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { memo, useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from 'react';
@@ -37,6 +39,7 @@ import {
 
 const LOADING_TEXT = `Завантаження${ELLIPSIS}`;
 const REFERENCE_LOADING_TEXT = `Завантажуємо довідники${ELLIPSIS}`;
+const UNIT_MASK_TOOLTIP = "Перехопленя що містять такий текст будуть прив'язані до даної мережі";
 
 type Props = {
   open: boolean;
@@ -54,7 +57,7 @@ type Props = {
   onSave: (form?: NetworkUpsertForm | null) => void;
   disableRestoreFocus?: boolean;
   frequencyOptional?: boolean;
-  unitTagsVisible?: boolean;
+  unitMaskVisible?: boolean;
 };
 
 type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'>;
@@ -122,7 +125,7 @@ function NetworkEditDrawerComponent({
   onSave,
   disableRestoreFocus = false,
   frequencyOptional = false,
-  unitTagsVisible = false,
+  unitMaskVisible = false,
 }: Props) {
   const titleId = 'network-edit-drawer-title';
   const includeFrequency = form !== null && mode === 'create'
@@ -169,9 +172,9 @@ function NetworkEditDrawerComponent({
     onChange({ ...form, [key]: next.map((option) => option.id) });
   };
 
-  const handleUnitTagsChange = (_event: SyntheticEvent, next: string[]) => {
+  const handleUnitMaskChange = (_event: SyntheticEvent, next: string[]) => {
     if (!form) return;
-    onChange({ ...form, unitTags: normalizeUnitTags(next) });
+    onChange({ ...form, unitMask: normalizeUnitMask(next) });
   };
 
   const handleStatusChange = (value: string) => {
@@ -362,7 +365,7 @@ function NetworkEditDrawerComponent({
                     size="small"
                   />
 
-                  {unitTagsVisible ? (
+                  {unitMaskVisible ? (
                     <Autocomplete<string, true, false, true>
                       multiple
                       freeSolo
@@ -370,13 +373,20 @@ function NetworkEditDrawerComponent({
                       fullWidth
                       size="small"
                       options={[]}
-                      value={form.unitTags}
+                      value={form.unitMask}
                       disabled={formBlocked}
-                      onChange={handleUnitTagsChange}
+                      onChange={handleUnitMaskChange}
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          label="Теги підрозділу"
+                          label={(
+                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                              Маска підрозділу
+                              <Tooltip title={UNIT_MASK_TOOLTIP} arrow>
+                                <InfoOutlinedIcon color="action" fontSize="small" />
+                              </Tooltip>
+                            </Box>
+                          )}
                           size="small"
                         />
                       )}
@@ -554,11 +564,11 @@ function NetworkEditDrawerComponent({
 
 export const NetworkEditDrawer = memo(NetworkEditDrawerComponent);
 
-function normalizeUnitTags(unitTags: string[]): string[] {
+function normalizeUnitMask(unitMask: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  unitTags.forEach((unitTag) => {
-    const trimmed = unitTag.trim();
+  unitMask.forEach((unitMaskItem) => {
+    const trimmed = unitMaskItem.trim();
     if (trimmed === '') return;
     const key = trimmed.toLocaleLowerCase();
     if (seen.has(key)) return;

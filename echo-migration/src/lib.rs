@@ -263,6 +263,7 @@ mod m20260628_114539_add_peleng_bounds_to_system_settings;
 mod m20260629_072958_add_signal_message_operator_tags;
 mod m20260629_080533_unit_tags_on_sigint_network;
 mod m20260629_085034_signal_message_operator_tags;
+mod m20260630_094347_interseption_kind_and_unit_mask;
 
 pub struct Migrator;
 
@@ -535,6 +536,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260629_072958_add_signal_message_operator_tags::Migration),
             Box::new(m20260629_080533_unit_tags_on_sigint_network::Migration),
             Box::new(m20260629_085034_signal_message_operator_tags::Migration),
+            Box::new(m20260630_094347_interseption_kind_and_unit_mask::Migration),
         ]
     }
 }

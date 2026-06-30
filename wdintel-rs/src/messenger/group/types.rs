@@ -1,4 +1,5 @@
 use crate::sigint::aor::types::AreaOfResponsibility;
+use crate::sigint::types::InterseptionKind;
 use crate::types::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
@@ -13,7 +14,7 @@ pub struct OrphanSignalGroupEntry {
     pub name: String,
     /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
     pub ignore_operativny: bool,
-    pub is_rer: bool,
+    pub interseption_kind: InterseptionKind,
     pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub is_archived: bool,
@@ -33,7 +34,7 @@ pub struct SignalGroupEntry {
     pub master_key: String,
     pub name: String,
     pub ignore_operativny: bool,
-    pub is_rer: bool,
+    pub interseption_kind: InterseptionKind,
     pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub group_stats: SignalGroupStats,

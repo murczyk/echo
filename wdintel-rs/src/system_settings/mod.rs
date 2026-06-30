@@ -67,6 +67,7 @@ fn map_system_settings_item(
         updated_by: settings.updated_by,
         deleted: settings.deleted,
         short_url_enabled: settings.short_url_enabled,
+        support_non_rer_interceptions: settings.support_non_rer_interceptions,
         peleng_bounds_enabled: settings.peleng_bounds_enabled,
         peleng_bounds_top_left_lat: settings.peleng_bounds_top_left_lat,
         peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
@@ -335,10 +336,6 @@ pub async fn create_system_settings(
         .c(h!())?;
 
     validate_peleng_bounds(&req)?;
-    let support_non_rer_interceptions =
-        support_non_rer_interceptions_enabled(&env.dbx)
-            .await
-            .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     deactivate_active_settings(&txn, &login).await.c(h!())?;
     let created = system_settings::ActiveModel {
@@ -358,7 +355,7 @@ pub async fn create_system_settings(
         updated_by: Set(Some(login)),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
-        support_non_rer_interceptions: Set(support_non_rer_interceptions),
+        support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
         peleng_bounds_enabled: Set(req.peleng_bounds_enabled),
         peleng_bounds_top_left_lat: Set(req.peleng_bounds_top_left_lat),
         peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),

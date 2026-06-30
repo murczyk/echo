@@ -21,7 +21,9 @@
 
 #[cfg(test)]
 pub mod tests {
-    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
+    use crate::entities::sea_orm_active_enums::{
+        InterseptionKind, SigintNetworkKind,
+    };
     use crate::entities::*;
     use crate::types::*;
     use sea_orm::*;
@@ -678,8 +680,8 @@ pub mod tests {
         if out.is_archived == NotSet {
             out.is_archived = Set(false);
         }
-        if out.is_rer == NotSet {
-            out.is_rer = Set(true);
+        if out.interseption_kind == NotSet {
+            out.interseption_kind = Set(InterseptionKind::Rer);
         }
         if out.fills_etalonka == NotSet {
             out.fills_etalonka = Set(true);
@@ -1536,8 +1538,8 @@ pub mod tests {
         if out.do_not_archive == NotSet {
             out.do_not_archive = Set(false);
         }
-        if out.unit_tags == NotSet {
-            out.unit_tags = Set(serde_json::json!([]));
+        if out.unit_mask == NotSet {
+            out.unit_mask = Set(serde_json::json!([]));
         }
         out
     }

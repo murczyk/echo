@@ -122,7 +122,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
-        unitTagsVisible={page.supportNonRerInterceptions}
+        unitMaskVisible={page.supportNonRerInterceptions}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 

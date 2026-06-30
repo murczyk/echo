@@ -3,6 +3,7 @@ use crate::messenger::group::types::{
     SignalGroupStats, SignalGroupStatsTimelinePoint,
 };
 use crate::sigint::aor::types::AreaOfResponsibility;
+use crate::sigint::types::InterseptionKind;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
@@ -166,7 +167,7 @@ pub struct GroupUpdateReq {
     /// Deprecated - use area_of_responsibility_ids instead
     pub area_of_responsibility_id: Option<i64>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
-    pub is_rer: Option<bool>,
+    pub interseption_kind: Option<InterseptionKind>,
     pub fills_etalonka: Option<bool>,
     pub disable_network_assignment: Option<bool>,
 }
