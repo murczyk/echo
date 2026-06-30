@@ -23,6 +23,7 @@ const sampleRunningRow = {
   lastError: null,
   isCancelled: false,
   details: 'desc',
+  reportPeriod: null,
   progress: 20,
   errorLog: null,
   startedAt: '2026-06-26 16:45:00',
@@ -158,6 +159,7 @@ describe('SettingsMyReportsSection', () => {
       'mrt-row-numbers',
       'actions',
       'reportKind',
+      'reportPeriod',
       'details',
       'createdAt',
       'status',
@@ -171,6 +173,7 @@ describe('SettingsMyReportsSection', () => {
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
       actions: true,
       reportKind: true,
+      reportPeriod: true,
       details: true,
       createdAt: true,
       status: true,
