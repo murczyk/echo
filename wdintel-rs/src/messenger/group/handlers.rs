@@ -120,7 +120,6 @@ where
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
                 interseption_kind: g.interseption_kind.into(),
-                fills_etalonka: g.fills_etalonka,
                 disable_network_assignment: g.disable_network_assignment,
                 is_archived: g.is_archived,
                 datasource_id: Some(dsid),

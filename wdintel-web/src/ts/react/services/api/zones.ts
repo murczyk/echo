@@ -79,8 +79,6 @@ type SignalGroupEntryLike = {
   interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
-  fillsEtalonka?: boolean;
-  fills_etalonka?: boolean;
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   groupStats?: SignalGroupStatsLike | null;
@@ -101,8 +99,6 @@ type OrphanSignalGroupEntryLike = {
   interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
-  fillsEtalonka?: boolean;
-  fills_etalonka?: boolean;
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isArchived?: boolean;
@@ -156,8 +152,6 @@ type ZoneDatasourceGroupLike = {
   interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
-  fillsEtalonka?: boolean;
-  fills_etalonka?: boolean;
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   allowedUsers?: string[] | null;
@@ -195,8 +189,6 @@ type MyAdminSignalGroupLike = {
   datasource_kind?: string | null;
   isGroupSecret?: boolean;
   is_group_secret?: boolean;
-  fillsEtalonka?: boolean;
-  fills_etalonka?: boolean;
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   allowedUsers?: SignalGroupLoginLike[] | null;
@@ -253,7 +245,6 @@ type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
-  fills_etalonka: boolean | null;
   disable_network_assignment: boolean | null;
   user_logins: string[];
   admin_logins: string[];
@@ -271,7 +262,6 @@ type ZoneDatasourceGroupsReqBody = {
 type MyAdminSignalGroupUpdateReqBody = {
   master_key: string;
   is_secret: boolean;
-  fills_etalonka: boolean;
   disable_network_assignment: boolean;
   user_logins: string[];
   admin_logins: string[];
@@ -370,7 +360,6 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
@@ -384,7 +373,6 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
@@ -401,7 +389,6 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
     adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
@@ -488,7 +475,6 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
     id: req.id,
     is_secret: req.isSecret,
     interseption_kind: req.interseptionKind ?? null,
-    fills_etalonka: req.fillsEtalonka ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     user_logins: req.userLogins,
     admin_logins: req.adminLogins,
@@ -503,7 +489,6 @@ function toMyAdminSignalGroupUpdateReqBody(req: MyAdminSignalGroupUpdateReq): My
   return {
     master_key: req.masterKey,
     is_secret: req.isSecret,
-    fills_etalonka: req.fillsEtalonka,
     disable_network_assignment: req.disableNetworkAssignment,
     user_logins: req.userLogins,
     admin_logins: req.adminLogins,
@@ -575,7 +560,6 @@ function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignal
     datasourceName: raw.datasourceName ?? raw.datasource_name ?? null,
     datasourceKind: raw.datasourceKind ?? raw.datasource_kind ?? null,
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
-    fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: (raw.allowedUsers ?? raw.allowed_users ?? []).map(normalizeSignalGroupLogin),
     adminLogins: (raw.adminLogins ?? raw.admin_logins ?? []).map(normalizeSignalGroupLogin),

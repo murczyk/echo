@@ -606,7 +606,6 @@ export type SignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
@@ -618,7 +617,6 @@ export type OrphanSignalGroupEntry = {
   name: string;
   ignoreOperativny: boolean;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   isArchived: boolean;
   datasourceId: number | null;
@@ -1745,7 +1743,6 @@ export type ZoneDatasourceGroup = {
   groupMasterKey: string;
   isGroupSecret: boolean;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
   adminLogins: Array<string>;
@@ -1779,7 +1776,6 @@ export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
-  fillsEtalonka: boolean | null;
   disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
   adminLogins: Array<string>;
@@ -1800,7 +1796,6 @@ export type MyAdminSignalGroup = {
   datasourceName: string | null;
   datasourceKind: string | null;
   isGroupSecret: boolean;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<SignalGroupLogin>;
   adminLogins: Array<SignalGroupLogin>;
@@ -1810,7 +1805,6 @@ export type MyAdminSignalGroup = {
 export type MyAdminSignalGroupUpdateReq = {
   masterKey: string;
   isSecret: boolean;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   userLogins: Array<string>;
   adminLogins: Array<string>;
@@ -3293,7 +3287,6 @@ export type GroupUpdateReq = {
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
   interseptionKind: InterseptionKind | null;
-  fillsEtalonka: boolean | null;
   disableNetworkAssignment: boolean | null;
 };
 
@@ -3301,7 +3294,6 @@ export type GroupEntryF1 = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   shortNote: string | null;
   longNote: string | null;

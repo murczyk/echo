@@ -77,7 +77,6 @@ type ReferenceDataStatus = 'idle' | 'loading' | 'success' | 'error';
 type MyGroupEditState = {
   group: MyAdminSignalGroup;
   isSecret: boolean;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
@@ -328,21 +327,6 @@ function MyGroupEditDialog(props: {
         <FormControlLabel
           control={
             <Switch
-              checked={editDialog?.fillsEtalonka ?? true}
-              onChange={(event) =>
-                editDialog &&
-                setEditDialog({
-                  ...editDialog,
-                  fillsEtalonka: event.target.checked,
-                })
-              }
-            />
-          }
-          label="Наповнює еталонку"
-        />
-        <FormControlLabel
-          control={
-            <Switch
               checked={editDialog?.disableNetworkAssignment ?? false}
               onChange={(event) =>
                 editDialog &&
@@ -454,7 +438,6 @@ export function SettingsMyGroupsSection({
     setEditDialog({
       group,
       isSecret: group.isGroupSecret,
-      fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: groupLoginValues(group.allowedUsers),
       selectedAdmins: groupLoginValues(group.adminLogins),
@@ -482,7 +465,6 @@ export function SettingsMyGroupsSection({
       await updateMyAdminGroup({
         masterKey: editDialog.group.masterKey,
         isSecret: editDialog.isSecret,
-        fillsEtalonka: editDialog.fillsEtalonka,
         disableNetworkAssignment: editDialog.disableNetworkAssignment,
         userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
         adminLogins: selectedAdmins,

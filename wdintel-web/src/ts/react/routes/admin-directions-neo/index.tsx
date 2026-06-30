@@ -129,7 +129,6 @@ type OrphanAssignState = {
   selectedZones: ZoneEntry[];
   isSecret: boolean;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
@@ -144,7 +143,6 @@ type GroupEditState = {
   groupName: string;
   isSecret: boolean;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
   selectedAdmins: string[];
@@ -159,7 +157,6 @@ type OrphanEditState = {
   group: OrphanSignalGroupEntry;
   groupName: string;
   interseptionKind: InterseptionKind;
-  fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   shortNote: string;
   longNote: string;
@@ -479,7 +476,6 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     datasourceId: null,
     ignoreOperativny: false,
     interseptionKind: 'rer',
-    fillsEtalonka: true,
     disableNetworkAssignment: false,
     isArchived: false,
     groupStats: {
@@ -502,7 +498,6 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       groupMasterKey: '',
       isGroupSecret: false,
       interseptionKind: 'rer',
-      fillsEtalonka: true,
       disableNetworkAssignment: false,
       allowedUsers: [],
       adminLogins: [],
@@ -1706,7 +1701,6 @@ function AdminDirectionsNeoPageBody() {
             name: group.name,
             ignoreOperativny: group.ignoreOperativny,
             interseptionKind: group.interseptionKind,
-            fillsEtalonka: group.fillsEtalonka,
             disableNetworkAssignment: group.disableNetworkAssignment,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
@@ -1742,7 +1736,6 @@ function AdminDirectionsNeoPageBody() {
       groupName,
       isSecret: group.isGroupSecret,
       interseptionKind: group.interseptionKind,
-      fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: group.allowedUsers,
       selectedAdmins: group.adminLogins,
@@ -1761,7 +1754,6 @@ function AdminDirectionsNeoPageBody() {
       group,
       groupName,
       interseptionKind: group.interseptionKind,
-      fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
@@ -1780,7 +1772,6 @@ function AdminDirectionsNeoPageBody() {
       selectedZones: preselectedZones,
       isSecret: false,
       interseptionKind: group.interseptionKind,
-      fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: [],
       selectedAdmins: [],
@@ -1865,7 +1856,6 @@ function AdminDirectionsNeoPageBody() {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
-      fillsEtalonka: editDialog.fillsEtalonka,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       userLogins: selectedUsers,
       adminLogins: editDialog.selectedAdmins,
@@ -1923,7 +1913,6 @@ function AdminDirectionsNeoPageBody() {
             ? orphanEditDialog.selectedAorIds
             : null,
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
-        fillsEtalonka: orphanEditDialog.fillsEtalonka,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
       });
 
@@ -1941,7 +1930,6 @@ function AdminDirectionsNeoPageBody() {
                 : null,
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
             interseptionKind: orphanEditDialog.interseptionKind,
-            fillsEtalonka: orphanEditDialog.fillsEtalonka,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
           };
         })
@@ -2032,7 +2020,6 @@ function AdminDirectionsNeoPageBody() {
               name: response.groupName,
               ignoreOperativny: false,
               interseptionKind: assignDialog.interseptionKind,
-              fillsEtalonka: assignDialog.fillsEtalonka,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
@@ -2236,21 +2223,6 @@ function AdminDirectionsNeoPageBody() {
           <FormControlLabel
             control={
               <Switch
-                checked={editDialog?.fillsEtalonka ?? true}
-                onChange={(event) =>
-                  editDialog &&
-                  setEditDialog({
-                    ...editDialog,
-                    fillsEtalonka: event.target.checked,
-                  })
-                }
-              />
-            }
-            label="Наповнює еталонку"
-          />
-          <FormControlLabel
-            control={
-              <Switch
                 checked={editDialog?.disableNetworkAssignment ?? false}
                 onChange={(event) =>
                   editDialog &&
@@ -2384,21 +2356,6 @@ function AdminDirectionsNeoPageBody() {
               }
             />
           ) : null}
-          <FormControlLabel
-            control={
-              <Switch
-                checked={orphanEditDialog?.fillsEtalonka ?? true}
-                onChange={(event) =>
-                  orphanEditDialog &&
-                  setOrphanEditDialog({
-                    ...orphanEditDialog,
-                    fillsEtalonka: event.target.checked,
-                  })
-                }
-              />
-            }
-            label="Наповнює еталонку"
-          />
           <FormControlLabel
             control={
               <Switch

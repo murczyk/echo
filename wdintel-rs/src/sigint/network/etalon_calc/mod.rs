@@ -13,6 +13,16 @@ pub mod worker;
 pub(super) const ETALON_CALC_QUERY_PARAM_CHUNK_SIZE: usize = 20_000;
 const ETALON_CALC_NETWORK_INSERT_CHUNK_SIZE: usize = 5_000;
 
+fn network_assignment_enabled_condition() -> Condition {
+    Condition::all()
+        .add(signal_group::Column::DisableNetworkAssignment.eq(false))
+}
+
+fn network_assignment_disabled_condition() -> Condition {
+    Condition::all()
+        .add(signal_group::Column::DisableNetworkAssignment.eq(true))
+}
+
 pub async fn invalidate_network_inbox_for_group_with_key<'a, 'async_trait, C>(
     db: &'a C,
     master_key: &str,
@@ -144,29 +154,6 @@ where
         .await
         .c(h!())?
         .flatten())
-}
-
-pub async fn set_group_fills_etalonka<'a, 'async_trait, C>(
-    db: &'a C,
-    master_key: &str,
-    fills_etalonka: bool,
-) -> anyhow::Result<(signal_group::Model, bool)>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let group = signal_group::Entity::find_by_id(master_key.to_string())
-        .one(db)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    if group.fills_etalonka == fills_etalonka {
-        return Ok((group, false));
-    }
-
-    let mut group = group.into_active_model();
-    group.fills_etalonka = Set(fills_etalonka);
-    let group = group.update(db).await.c(h!())?;
-    Ok((group, true))
 }
 
 pub async fn set_group_disable_network_assignment<'a, 'async_trait, C>(
@@ -413,21 +400,13 @@ where
 {
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
-    let disabled_item_ids = fills_etalonka_disabled_item_ids_from_items(
-        dbx,
-        &sigint_inbox_item_ids,
-    )
-    .await
-    .c(h!())?;
-    let mut excluded_item_ids = disabled_item_ids;
-    excluded_item_ids.extend(
+    let mut excluded_item_ids =
         network_assignment_disabled_item_ids_from_items(
             dbx,
             &sigint_inbox_item_ids,
         )
         .await
-        .c(h!())?,
-    );
+        .c(h!())?;
 
     if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
         .await
@@ -459,30 +438,6 @@ where
         .collect())
 }
 
-async fn fills_etalonka_disabled_item_ids_from_items<'a, 'async_trait, C>(
-    db: &'a C,
-    sigint_inbox_item_ids: &[i64],
-) -> anyhow::Result<HashSet<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if sigint_inbox_item_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let disabled_item_ids =
-        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, false)
-            .await
-            .c(h!())?;
-    let enabled_item_ids =
-        group_item_ids_with_fills_etalonka(db, sigint_inbox_item_ids, true)
-            .await
-            .c(h!())?;
-    Ok(disabled_item_ids
-        .difference(&enabled_item_ids)
-        .copied()
-        .collect())
-}
-
 async fn network_assignment_disabled_item_ids_from_items<'a, 'async_trait, C>(
     db: &'a C,
     sigint_inbox_item_ids: &[i64],
@@ -493,17 +448,17 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(HashSet::new());
     }
-    let disabled_item_ids = group_item_ids_with_network_assignment_disabled(
-        db,
-        sigint_inbox_item_ids,
-        true,
-    )
-    .await
-    .c(h!())?;
-    let enabled_item_ids = group_item_ids_with_network_assignment_disabled(
+    let disabled_item_ids = group_item_ids_with_network_assignment_enabled(
         db,
         sigint_inbox_item_ids,
         false,
+    )
+    .await
+    .c(h!())?;
+    let enabled_item_ids = group_item_ids_with_network_assignment_enabled(
+        db,
+        sigint_inbox_item_ids,
+        true,
     )
     .await
     .c(h!())?;
@@ -513,10 +468,10 @@ where
         .collect())
 }
 
-async fn group_item_ids_with_network_assignment_disabled<'a, 'async_trait, C>(
+async fn group_item_ids_with_network_assignment_enabled<'a, 'async_trait, C>(
     db: &'a C,
     sigint_inbox_item_ids: &[i64],
-    disable_network_assignment: bool,
+    enabled: bool,
 ) -> anyhow::Result<HashSet<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -535,45 +490,11 @@ where
                     signal_message_group::Column::SignalMessageId
                         .is_in(sigint_inbox_item_ids.to_vec()),
                 )
-                .filter(
-                    signal_group::Column::DisableNetworkAssignment
-                        .eq(disable_network_assignment),
-                )
-                .select_only()
-                .column(signal_message_group::Column::SignalMessageId)
-                .distinct()
-                .into_tuple::<i64>()
-                .all(db)
-                .await
-                .c(h!())?,
-        );
-    }
-    Ok(ids)
-}
-
-async fn group_item_ids_with_fills_etalonka<'a, 'async_trait, C>(
-    db: &'a C,
-    sigint_inbox_item_ids: &[i64],
-    fills_etalonka: bool,
-) -> anyhow::Result<HashSet<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut ids = HashSet::new();
-    for sigint_inbox_item_ids in
-        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
-    {
-        ids.extend(
-            signal_message_group::Entity::find()
-                .join(
-                    JoinType::InnerJoin,
-                    signal_message_group::Relation::SignalGroup.def(),
-                )
-                .filter(
-                    signal_message_group::Column::SignalMessageId
-                        .is_in(sigint_inbox_item_ids.to_vec()),
-                )
-                .filter(signal_group::Column::FillsEtalonka.eq(fills_etalonka))
+                .filter(if enabled {
+                    network_assignment_enabled_condition()
+                } else {
+                    network_assignment_disabled_condition()
+                })
                 .select_only()
                 .column(signal_message_group::Column::SignalMessageId)
                 .distinct()
@@ -591,96 +512,6 @@ mod tests {
     use super::*;
     use crate::functest::tests::*;
     use serial_test::serial;
-
-    #[serial]
-    #[tokio::test]
-    async fn test_fills_etalonka_disabled_item_ids_keeps_item_with_enabled_group_link(
-    ) {
-        let env = cleanup().await.unwrap();
-        let txn = env.dbx.begin().await.unwrap();
-
-        let enabled_group = mk_signal_group(
-            &txn,
-            signal_group::ActiveModel {
-                fills_etalonka: Set(true),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let disabled_group = mk_signal_group(
-            &txn,
-            signal_group::ActiveModel {
-                fills_etalonka: Set(false),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let disabled_only_group = mk_signal_group(
-            &txn,
-            signal_group::ActiveModel {
-                fills_etalonka: Set(false),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let mixed_msg = mk_signal_message(
-            &txn,
-            signal_message::ActiveModel {
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let disabled_msg = mk_signal_message(
-            &txn,
-            signal_message::ActiveModel {
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        for group in [&enabled_group, &disabled_group] {
-            mk_signal_message_group(
-                &txn,
-                signal_message_group::ActiveModel {
-                    signal_message_id: Set(mixed_msg.id),
-                    group_master_key: Set(Some(group.master_key.clone())),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        }
-        mk_signal_message_group(
-            &txn,
-            signal_message_group::ActiveModel {
-                signal_message_id: Set(disabled_msg.id),
-                group_master_key: Set(Some(
-                    disabled_only_group.master_key.clone(),
-                )),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let mut item_ids = (1..=ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
-            .map(|id| -(id as i64))
-            .collect::<Vec<_>>();
-        item_ids[0] = mixed_msg.id;
-        item_ids.push(disabled_msg.id);
-        let ids = fills_etalonka_disabled_item_ids_from_items(&txn, &item_ids)
-            .await
-            .unwrap();
-
-        assert!(!ids.contains(&mixed_msg.id));
-        assert!(ids.contains(&disabled_msg.id));
-
-        txn.rollback().await.unwrap();
-    }
 
     #[serial]
     #[tokio::test]

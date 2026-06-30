@@ -833,7 +833,7 @@ describe('reloadAnalysisData', () => {
         '195473172345082@lid': { givenName: 'BBC', familyName: 'SPORT' },
       },
       signalGroups: [
-        { masterKey: '120363419907122319@g.us', name: 'BBC NEWS', ignoreOperativny: false, interseptionKind: 'rer', fillsEtalonka: true, disableNetworkAssignment: false, groupStats: { activityLastDay: 0, activityLastWeek: 0 }, adminData: null, areasOfResponsibility: null },
+        { masterKey: '120363419907122319@g.us', name: 'BBC NEWS', ignoreOperativny: false, interseptionKind: 'rer', disableNetworkAssignment: false, groupStats: { activityLastDay: 0, activityLastWeek: 0 }, adminData: null, areasOfResponsibility: null },
       ],
       pageLimit: 20,
     });
@@ -915,7 +915,6 @@ describe('reloadAnalysisData', () => {
         name: 'BBC NEWS',
         ignoreOperativny: false,
         interseptionKind: 'rer',
-        fillsEtalonka: true,
         disableNetworkAssignment: false,
         groupStats: { activityLastDay: 0, activityLastWeek: 0 },
         adminData: null,

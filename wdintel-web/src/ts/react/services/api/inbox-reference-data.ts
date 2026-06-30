@@ -125,7 +125,6 @@ export async function getGroupInfosBatch(masterKeys: string[], options?: Request
     name: (r.name ?? '') as string,
     ignoreOperativny: (r.ignore_operativny ?? r.ignoreOperativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(r),
-    fillsEtalonka: (r.fills_etalonka ?? r.fillsEtalonka ?? true) as boolean,
     disableNetworkAssignment: (r.disable_network_assignment ?? r.disableNetworkAssignment ?? false) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,
     adminData: (r.admin_data ?? r.adminData ?? null) as GroupAdminData | null,
