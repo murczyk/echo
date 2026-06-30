@@ -102,6 +102,7 @@ describe('buildXlsxPreview', () => {
   });
 
   it('caps the parsed sheet count', async () => {
+    expect(MAX_XLSX_SHEETS).toBe(20);
     const preview = await buildXlsxPreview(
       makeWorkbookBuffer(
         Array.from({ length: MAX_XLSX_SHEETS + 2 }, (_, index) => ({
@@ -116,6 +117,19 @@ describe('buildXlsxPreview', () => {
       Array.from({ length: MAX_XLSX_SHEETS }, (_, index) => `Sheet${index + 1}`),
     );
     expect(preview.sheets.every((sheet) => sheet.truncated)).toBe(true);
+  });
+
+  it('reads cached formula values', async () => {
+    const preview = await buildXlsxPreview(
+      makeWorkbookBuffer([
+        {
+          name: 'Formulas',
+          rows: [[{ formula: 'SUM(1,2)', value: 3 }]],
+        },
+      ]),
+    );
+
+    expect(preview.sheets[0]?.rows[0]).toEqual(['3']);
   });
 
   it('rejects oversized files before parsing', async () => {
@@ -161,7 +175,7 @@ describe('buildXlsxPreview', () => {
 });
 
 function makeWorkbookBuffer(
-  sheets: Array<{ name: string; rows: Array<Array<string | number>> }>,
+  sheets: Array<{ name: string; rows: Array<Array<WorkbookCell>> }>,
   options: { omitSheetFiles?: boolean } = {},
 ): ArrayBuffer {
   const files: Record<string, Uint8Array> = {
@@ -230,7 +244,9 @@ function buildWorkbookRelsXml(sheets: Array<unknown>): string {
 </Relationships>`;
 }
 
-function buildSheetXml(rows: Array<Array<string | number>>): string {
+type WorkbookCell = string | number | { formula: string; value: string | number };
+
+function buildSheetXml(rows: Array<Array<WorkbookCell>>): string {
   const rowXml = rows
     .map((row, rowIndex) => {
       const cellXml = row
@@ -238,6 +254,9 @@ function buildSheetXml(rows: Array<Array<string | number>>): string {
           const cellRef = `${columnLabel(columnIndex)}${rowIndex + 1}`;
           if (typeof value === 'number') {
             return `<c r="${cellRef}"><v>${value}</v></c>`;
+          }
+          if (typeof value === 'object') {
+            return `<c r="${cellRef}"><f>${escapeXml(value.formula)}</f><v>${value.value}</v></c>`;
           }
           return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
         })

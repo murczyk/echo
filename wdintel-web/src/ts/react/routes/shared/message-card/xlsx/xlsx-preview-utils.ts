@@ -1,11 +1,20 @@
-import { readSheet } from 'read-excel-file/web-worker';
+import readXlsxFile from 'read-excel-file/web-worker';
 import { extractWorkbookSheetNames } from './xlsx-preview-metadata';
+
+type ReadXlsxFileWithSheets = (
+  input: ArrayBuffer,
+  options?: {
+    sheets?: Array<number | string>;
+  },
+) => Promise<Array<{ sheet: string; data: unknown[][] }>>;
+
+const readXlsxFileWithSheets = readXlsxFile as unknown as ReadXlsxFileWithSheets;
 
 // `read-excel-file` does not support row-range parsing, so the file-size cap
 // plus worker isolation are the primary DoS mitigations for previewing.
 export const MAX_XLSX_FILE_MB = 10;
 export const MAX_XLSX_FILE_BYTES = MAX_XLSX_FILE_MB * 1024 * 1024;
-export const MAX_XLSX_SHEETS = 10;
+export const MAX_XLSX_SHEETS = 20;
 export const MAX_XLSX_ROWS = 5000;
 export const MAX_XLSX_COLUMNS = 100;
 
@@ -72,44 +81,63 @@ export async function buildXlsxPreview(buffer: ArrayBuffer): Promise<XlsxPreview
 
   try {
     const sheetNames = extractWorkbookSheetNames(buffer);
-    return await buildXlsxPreviewFromIndexedSheets(buffer, sheetNames);
+    return await buildXlsxPreviewFromWorkbook(buffer, sheetNames);
   } catch (error) {
     throw error;
   }
 }
 
-async function buildXlsxPreviewFromIndexedSheets(
+async function buildXlsxPreviewFromWorkbook(
   buffer: ArrayBuffer,
   sheetNames: string[],
 ): Promise<XlsxPreviewResult> {
-  const sheets: XlsxPreviewSheet[] = [];
+  // Use the workbook reader once with an explicit capped sheet list so the
+  // archive and metadata are parsed a single time instead of per tab.
+  // read-excel-file returns cached formula values; it does not evaluate formulas.
+  const sheetsToRead =
+    sheetNames.length > 0
+      ? sheetNames.slice(0, MAX_XLSX_SHEETS)
+      : Array.from({ length: MAX_XLSX_SHEETS }, (_, index) => index + 1);
 
-  for (let sheetIndex = 1; sheetIndex <= MAX_XLSX_SHEETS; sheetIndex += 1) {
-    try {
-      const rows = await readSheet(buffer, sheetIndex);
-      const preview = previewXlsxRows(rows);
-      sheets.push({
-        name: sheetNames[sheetIndex - 1] ?? `Sheet ${sheetIndex}`,
-        rows: preview.rows,
-        rowCount: preview.rowCount,
-        columnCount: preview.columnCount,
-        truncated: preview.truncated,
-      });
-    } catch (error) {
-      if (isOutOfBoundsSheetError(error)) {
-        break;
+  let workbookSheets: Array<{ sheet: string; data: unknown[][] }>;
+  try {
+    workbookSheets = await readXlsxFileWithSheets(buffer, { sheets: sheetsToRead });
+  } catch (error) {
+    if (sheetNames.length === 0) {
+      const availableSheetCount = parseAvailableSheetCount(error);
+      if (availableSheetCount != null && availableSheetCount > 0) {
+        try {
+          workbookSheets = await readXlsxFileWithSheets(buffer, {
+            sheets: Array.from({ length: availableSheetCount }, (_, index) => index + 1),
+          });
+        } catch (retryError) {
+          throw new XlsxPreviewError(classifyXlsxError(retryError), messageFromError(retryError, 'Не вдалося відкрити XLSX'));
+        }
+      } else {
+        throw new XlsxPreviewError(classifyXlsxError(error), messageFromError(error, 'Не вдалося відкрити XLSX'));
       }
+    } else {
       throw new XlsxPreviewError(classifyXlsxError(error), messageFromError(error, 'Не вдалося відкрити XLSX'));
     }
   }
+
+  const sheets = workbookSheets.map((currentSheet, index) => {
+    const preview = previewXlsxRows(currentSheet.data);
+    return {
+      name: sheetNames.length > 0 ? currentSheet.sheet ?? sheetNames[index] ?? `Sheet ${index + 1}` : `Sheet ${index + 1}`,
+      rows: preview.rows,
+      rowCount: preview.rowCount,
+      columnCount: preview.columnCount,
+      truncated: preview.truncated,
+    };
+  });
 
   if (sheets.length === 0) {
     throw new XlsxPreviewError('XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE', 'XLSX workbook structure is unsupported');
   }
 
   const previewLimitedBySheetCap =
-    sheetNames.length > MAX_XLSX_SHEETS ||
-    (sheetNames.length === 0 && sheets.length === MAX_XLSX_SHEETS);
+    sheetNames.length > MAX_XLSX_SHEETS || (sheetNames.length === 0 && workbookSheets.length === MAX_XLSX_SHEETS);
 
   return {
     sheets: sheets.map((sheet) => ({
@@ -125,10 +153,6 @@ function normalizeCellValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
   return String(value);
-}
-
-function isOutOfBoundsSheetError(error: unknown): boolean {
-  return error instanceof Error && error.message.toLowerCase().includes('sheet number out of bounds');
 }
 
 function classifyXlsxError(error: unknown): XlsxPreviewErrorCode {
@@ -152,6 +176,15 @@ function classifyXlsxError(error: unknown): XlsxPreviewErrorCode {
   }
 
   return 'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE';
+}
+
+function parseAvailableSheetCount(error: unknown): number | null {
+  const message = error instanceof Error ? error.message : '';
+  const match = message.match(/available sheets count:\s*(\d+)/i);
+  if (match == null) return null;
+
+  const count = Number.parseInt(match[1] ?? '', 10);
+  return Number.isFinite(count) ? count : null;
 }
 
 function messageFromError(error: unknown, fallbackMessage: string): string {

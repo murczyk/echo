@@ -15,6 +15,7 @@ import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
 import type { XlsxGridRange } from './xlsx-grid-utils';
 import { columnLabel, isCellInRange, normalizeXlsxRange } from './xlsx-grid-utils';
 import { copyXlsxSelection } from './copy-xlsx-selection';
+import { MAX_XLSX_COLUMNS, MAX_XLSX_ROWS, MAX_XLSX_SHEETS } from './xlsx-preview-utils';
 
 export function XlsxGrid({
   rows,
@@ -133,7 +134,7 @@ export function XlsxGrid({
       {truncated ? (
         <Box sx={{ px: 2, py: 1, borderBottom: '1px solid rgba(244, 247, 251, 0.08)' }}>
           <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
-            Таблицю обрізано до перших 5000 рядків і 100 колонок
+            {`Попередній перегляд обрізано: показано лише перші ${MAX_XLSX_ROWS} рядків, ${MAX_XLSX_COLUMNS} колонок або ${MAX_XLSX_SHEETS} аркушів.`}
           </Typography>
         </Box>
       ) : null}
