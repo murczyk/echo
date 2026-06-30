@@ -682,16 +682,22 @@ export function ReportHistoryTableSection({
         {
           accessorKey: 'plannedForTs',
           header: 'План',
+          enableSorting: false,
+          enableColumnFilter: false,
           Cell: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
         },
         {
           accessorKey: 'startedAt',
           header: 'Почато',
+          enableSorting: false,
+          enableColumnFilter: false,
           Cell: ({ row }) => formatReportDateOrDash(row.original.startedAt),
         },
         {
           accessorKey: 'queuePosition',
           header: 'Черга',
+          enableSorting: false,
+          enableColumnFilter: false,
           Cell: ({ row }) => formatReportId(row.original.queuePosition),
         },
         {

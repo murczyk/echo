@@ -127,6 +127,33 @@ describe('SettingsMyReportsSection', () => {
     expect(container.querySelector('[aria-label="Дії"]')).toBeTruthy();
     expect(columns.some((column) => column.id === 'mrt-row-actions')).toBe(false);
 
+    const plannedForTsColumn = columns.find((column) => column.accessorKey === 'plannedForTs');
+    const startedAtColumn = columns.find((column) => column.accessorKey === 'startedAt');
+    const queuePositionColumn = columns.find((column) => column.accessorKey === 'queuePosition');
+    const createdAtColumn = columns.find((column) => column.accessorKey === 'createdAt');
+    const statusColumn = columns.find((column) => column.id === 'status');
+    const requestedByColumn = columns.find((column) => column.accessorKey === 'requestedBy');
+    const bgtaskIdColumn = columns.find((column) => column.accessorKey === 'bgtaskId');
+    const completedAtColumn = columns.find((column) => column.accessorKey === 'completedAt');
+
+    expect(plannedForTsColumn?.enableSorting).toBe(false);
+    expect(plannedForTsColumn?.enableColumnFilter).toBe(false);
+    expect(startedAtColumn?.enableSorting).toBe(false);
+    expect(startedAtColumn?.enableColumnFilter).toBe(false);
+    expect(queuePositionColumn?.enableSorting).toBe(false);
+    expect(queuePositionColumn?.enableColumnFilter).toBe(false);
+
+    expect(createdAtColumn?.enableSorting).not.toBe(false);
+    expect(createdAtColumn?.enableColumnFilter).not.toBe(false);
+    expect(statusColumn?.enableSorting).not.toBe(false);
+    expect(statusColumn?.enableColumnFilter).not.toBe(false);
+    expect(requestedByColumn?.enableSorting).not.toBe(false);
+    expect(requestedByColumn?.enableColumnFilter).not.toBe(false);
+    expect(bgtaskIdColumn?.enableSorting).not.toBe(false);
+    expect(bgtaskIdColumn?.enableColumnFilter).not.toBe(false);
+    expect(completedAtColumn?.enableSorting).not.toBe(false);
+    expect(completedAtColumn?.enableColumnFilter).not.toBe(false);
+
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual([
       'mrt-row-numbers',
       'actions',
