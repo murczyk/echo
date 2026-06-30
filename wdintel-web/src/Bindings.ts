@@ -2629,6 +2629,33 @@ export type NetworkFreqsActivityReq = {
   networkId: number;
 };
 
+export type FindLiveNetworksReq = {
+  freq: string;
+  aorId: number | null;
+  colorCode: string | null;
+};
+
+export type FindLiveNetworksRsp = {
+  networks: Array<FindLiveNetwork>;
+};
+
+export type FindLiveNetwork = {
+  id: number;
+  name: string;
+  radioStation: string | null;
+  purpose: string | null;
+  operationMode: string | null;
+  operationType: string | null;
+  operationPeriod: string | null;
+  createdAt: number;
+  activeFrom: number | null;
+  units: Array<string>;
+  postIds: Array<number>;
+  liveFreqs: Array<string>;
+  callsigns: Array<string>;
+  locations: Array<string>;
+};
+
 export type NetworkGroupsActivityOneReq = {
   networkId: number;
   tillDateNoninclusiveMs: number | null;
