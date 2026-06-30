@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, Typography, useTheme } from '@mui/material';
+import { Dialog, DialogContent, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import {
   clamp,
@@ -25,6 +26,7 @@ import { MessageCardImagePreviewActions } from './MessageCardImagePreviewActions
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import {
+  blurActivePreviewDialogElement,
   getMessageCardPreviewCounterSx,
   getMessageCardPreviewDialogPaperSx,
 } from './message-card-preview-shell';
@@ -49,7 +51,6 @@ export function MessageImagePreviewDialog({
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
-  const theme = useTheme();
   const imageCount = imageHrefs.length;
   const hasCarousel = imageCount > 1;
   const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, imageCount);
@@ -85,6 +86,7 @@ export function MessageImagePreviewDialog({
   const stageBackground = stagePalette
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
     : 'none';
+  const theme = useTheme();
 
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
@@ -144,6 +146,7 @@ export function MessageImagePreviewDialog({
   }, [removePointerListeners]);
 
   const closeDialog = () => {
+    blurActivePreviewDialogElement();
     resetPreviewState();
     onClose();
   };

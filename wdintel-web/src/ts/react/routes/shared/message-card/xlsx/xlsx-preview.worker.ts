@@ -1,6 +1,4 @@
-import * as XLSX from 'xlsx';
-
-import { previewXlsxRows } from './xlsx-preview-utils';
+import { buildXlsxPreview, XlsxPreviewError } from './xlsx-preview-utils';
 
 type XlsxPreviewRequest = {
   requestId: string;
@@ -28,34 +26,14 @@ self.addEventListener('message', async (event: MessageEvent<XlsxPreviewRequest>)
   const { requestId, request } = event.data;
 
   try {
-    const workbook = XLSX.read(new Uint8Array(request.buffer), {
-      type: 'array',
-      cellText: true,
-      cellFormula: false,
-      cellStyles: true,
-    });
-
-    const sheets = workbook.SheetNames.map((name) => {
-      const sheet = workbook.Sheets[name];
-      const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: true });
-      const { rows, rowCount, columnCount, truncated } = previewXlsxRows(rawRows);
-
-      return {
-        name,
-        rows,
-        rowCount,
-        columnCount,
-        truncated,
-      };
-    });
-
-    const response: XlsxPreviewResponse = { requestId, ok: true, value: { sheets } };
+    const value = await buildXlsxPreview(request.buffer);
+    const response: XlsxPreviewResponse = { requestId, ok: true, value };
     self.postMessage(response);
   } catch (error) {
     const response: XlsxPreviewResponse = {
       requestId,
       ok: false,
-      error: error instanceof Error ? error.message : 'XLSX parsing failed',
+      error: error instanceof XlsxPreviewError ? error.code : 'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE',
     };
     self.postMessage(response);
   }

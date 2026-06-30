@@ -1,5 +1,13 @@
 import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 
+export function blurActivePreviewDialogElement(): void {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) return;
+  if (activeElement.closest('[role="dialog"]') == null) return;
+
+  activeElement.blur();
+}
+
 export function getMessageCardPreviewDialogPaperSx(isFullscreen: boolean): SxProps<Theme> {
   return {
     overflow: 'hidden',

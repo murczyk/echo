@@ -3,17 +3,8 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 
 import { XlsxGrid } from '../xlsx/XlsxGrid';
 import { XlsxSheetTabs } from '../xlsx/XlsxSheetTabs';
+import { formatXlsxPreviewErrorMessage, type XlsxPreviewResult } from '../xlsx/xlsx-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
-
-type XlsxPreviewResult = {
-  sheets: Array<{
-    name: string;
-    rows: string[][];
-    rowCount: number;
-    columnCount: number;
-    truncated: boolean;
-  }>;
-};
 
 export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -47,7 +38,7 @@ export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
-        setError(error instanceof Error ? error.message : 'Не вдалося відкрити XLSX');
+        setError(error instanceof Error ? formatXlsxPreviewErrorMessage(error.message) : 'Не вдалося відкрити XLSX');
         setStatus('error');
       }
     };
@@ -70,7 +61,7 @@ export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number
           Помилка перегляду
         </Typography>
         <Typography variant="body2" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
-          {error ?? 'XLSX недоступний'}
+          {formatXlsxPreviewErrorMessage(error)}
         </Typography>
       </Box>
     );

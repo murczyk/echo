@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
 import { buildDocxHtmlDocument } from '../docx/build-docx-html-document';
 import { sanitizeDocxHtml } from '../docx/sanitize-docx-html';
@@ -10,6 +10,7 @@ type DocxPreviewResult = {
 };
 
 export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number }) {
+  const theme = useTheme();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [html, setHtml] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
         height: '100%',
         minHeight: 0,
         position: 'relative',
-        background: 'linear-gradient(180deg, rgba(8, 12, 18, 0.96) 0%, rgba(14, 19, 27, 0.96) 100%)',
+        backgroundColor: theme.palette.background.default,
       }}
     >
       {status === 'loading' ? (
@@ -93,7 +94,7 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
             width: '100%',
             height: '100%',
             border: 0,
-            background: '#111821',
+            background: theme.palette.background.paper,
           }}
         />
       ) : null}

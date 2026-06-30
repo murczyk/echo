@@ -1,6 +1,7 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
 import { Box, Button, IconButton, Tooltip } from '@mui/material';
+import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
@@ -17,6 +18,10 @@ export function MessageMediaDocumentLink({
   const displayName = deriveDocumentFileName(document, index);
   const downloadName = deriveDocumentDownloadName(document, index);
   const canPreview = document.kind !== 'unsupported' && onPreview != null;
+  const handlePreviewClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.blur();
+    onPreview?.();
+  };
 
   return (
     <Box
@@ -34,7 +39,7 @@ export function MessageMediaDocumentLink({
         <Button
           size="small"
           variant="contained"
-          onClick={canPreview ? onPreview : undefined}
+          onClick={canPreview ? handlePreviewClick : undefined}
           disabled={!canPreview}
           type="button"
           sx={{

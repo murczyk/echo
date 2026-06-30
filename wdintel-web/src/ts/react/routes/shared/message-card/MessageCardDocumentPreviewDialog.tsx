@@ -15,6 +15,7 @@ import { MessageCardDocumentPreviewActions } from './MessageCardDocumentPreviewA
 import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
 import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
 import {
+  blurActivePreviewDialogElement,
   getMessageCardPreviewCounterSx,
   getMessageCardPreviewDialogPaperSx,
 } from './message-card-preview-shell';
@@ -60,6 +61,7 @@ export function MessageCardDocumentPreviewDialog({
   };
 
   const closeDialog = () => {
+    blurActivePreviewDialogElement();
     resetPreviewState();
     onClose();
   };
