@@ -37,7 +37,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "delta"
+        , activeName = "delta-csv2kmz"
         }
 
 
