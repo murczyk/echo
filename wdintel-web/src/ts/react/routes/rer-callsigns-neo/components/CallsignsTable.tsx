@@ -21,9 +21,8 @@ import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay
 import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import {
   CUSTOM_STYLES,
-  FULL_WIDTH_TABLE_PAPER_SX,
-  PAGE_SCROLL_TABLE_CONTAINER_SX,
-  getPageScrollTableContainerSx,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   buildExplicitSingleSelectColumnFilter,
@@ -310,8 +309,6 @@ function CallsignsTableComponent({
     [],
   );
 
-  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
   const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {
@@ -476,39 +473,42 @@ function CallsignsTableComponent({
       },
     },
     muiTablePaperProps: ({ table }) => {
-      const baseProps = resolvedPaperProps({ table });
       const isFullScreen = table.getState().isFullScreen;
+      const paperProps = getDefaultMrtPaperProps({
+        table,
+        loading: showTableOverlay,
+        layout: isFullScreen || isInitialLoading ? 'workspace' : 'list',
+      });
       return {
-        ...baseProps,
+        ...paperProps,
         sx: {
-          ...(baseProps as { sx?: object })?.sx,
-          ...FULL_WIDTH_TABLE_PAPER_SX,
-          height: isInitialLoading ? '100%' : 'auto',
+          ...(paperProps as { sx?: object })?.sx,
           minHeight: isInitialLoading ? '100%' : 0,
-          overflowX: showTableOverlay ? 'hidden' : 'auto',
-          overflowY: showTableOverlay ? 'hidden' : 'auto',
-          overflow: showTableOverlay ? 'hidden' : 'auto',
+          overflow: 'hidden',
         },
         style: {
-          ...(baseProps as { style?: CSSProperties })?.style,
+          ...(paperProps as { style?: CSSProperties })?.style,
           padding: 0,
         },
       };
     },
     muiTableContainerProps: ({ table }) => {
       const isFullScreen = table.getState().isFullScreen;
+      const containerProps = getDefaultMrtContainerProps({
+        loading: showTableOverlay,
+        layout: isFullScreen || isInitialLoading ? 'workspace' : 'list',
+        fullScreen: isFullScreen,
+        hasRows: rows.length > 0,
+      });
+
       return {
+        ...containerProps,
         sx: {
-          ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
-          ...getPageScrollTableContainerSx({
-            loading: showTableOverlay,
-            height: '100%',
-            minHeight: isInitialLoading ? '100%' : 0,
-            maxHeight: isFullScreen ? '100%' : 'none',
-            idleOverflowX: 'auto',
-            idleOverflowY: 'auto',
-            idleOverflow: 'auto',
-          }),
+          ...(containerProps as { sx?: object })?.sx,
+          minHeight: isInitialLoading ? '100%' : 0,
+          overflowX: showTableOverlay ? 'hidden' : 'auto',
+          overflowY: isFullScreen || isInitialLoading ? (showTableOverlay ? 'hidden' : 'auto') : 'hidden',
+          overflow: undefined,
           border: 0,
         },
       };
