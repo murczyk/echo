@@ -8,7 +8,8 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
   file_name?: string | null;
 };
 
-const DOCUMENT_FILE_EXTENSION_RE = /\.(pdf|docx?|xlsx?)(\?|#|$)/i;
+const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?)(\?|#|$)/i;
+const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
 
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
@@ -38,10 +39,8 @@ function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
   }
   if (
     contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    contentType === 'application/vnd.ms-excel' ||
     fileName.endsWith('.xlsx') ||
-    fileName.endsWith('.xls') ||
-    /\.(xlsx?|xls)(\?|#|$)/i.test(href)
+    /\.xlsx(\?|#|$)/i.test(href)
   ) {
     return 'xlsx';
   }
@@ -76,7 +75,7 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
 
   for (const attachment of msg.media ?? []) {
     const kind = getDocumentKind(attachment);
-    if (kind === 'unsupported' && !DOCUMENT_FILE_EXTENSION_RE.test(String(attachment.href ?? ''))) continue;
+    if (kind === 'unsupported' && !isRecognizedDocumentAttachment(attachment)) continue;
 
     const index = documentsByHref.size;
     add({
@@ -90,6 +89,22 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
   }
 
   return Array.from(documentsByHref.values());
+}
+
+function isRecognizedDocumentAttachment(m: MessageMediaInfo): boolean {
+  return DOCUMENT_DOWNLOAD_EXTENSION_RE.test(String(m.href ?? '').toLowerCase()) || isLegacySpreadsheetAttachment(m);
+}
+
+function isLegacySpreadsheetAttachment(m: MessageMediaInfo): boolean {
+  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
+  const href = String(m.href ?? '').toLowerCase();
+  const contentType = mediaAttachmentContentType(m);
+
+  return (
+    LEGACY_SPREADSHEET_CONTENT_TYPES.has(contentType) ||
+    fileName.endsWith('.xls') ||
+    /\.xls(\?|#|$)/i.test(href)
+  );
 }
 
 export function deriveDocumentFileName(document: MessageCardDocument, index: number): string {

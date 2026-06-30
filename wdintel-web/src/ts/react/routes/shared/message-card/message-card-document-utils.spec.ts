@@ -35,6 +35,12 @@ describe('message-card document utils', () => {
       } as MessageMediaInfo),
     ).toBe(true);
     expect(
+      isXlsxAttachment({
+        href: 'https://example.test/report.xls',
+        contentType: 'application/vnd.ms-excel',
+      } as MessageMediaInfo),
+    ).toBe(false);
+    expect(
       isDocumentPreviewAttachment({
         href: 'https://example.test/report.txt',
         contentType: 'text/plain',
@@ -59,13 +65,21 @@ describe('message-card document utils', () => {
           fileName: 'sheet.xlsx',
           sizeBytes: 2048,
         },
+        {
+          id: 'xls-1',
+          href: 'https://example.test/files/legacy.xls',
+          contentType: 'application/vnd.ms-excel',
+          fileName: 'legacy.xls',
+          sizeBytes: 4096,
+        },
       ] as InboxMessage['media'],
     } as InboxMessage;
 
     const documents = collectMessageDocuments(msg);
 
-    expect(documents).toHaveLength(2);
+    expect(documents).toHaveLength(3);
     expect(deriveDocumentFileName(documents[0]!, 0)).toBe('report.pdf');
     expect(deriveDocumentDownloadName(documents[1]!, 1)).toBe('sheet.xlsx');
+    expect(documents[2]?.kind).toBe('unsupported');
   });
 });

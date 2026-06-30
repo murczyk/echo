@@ -3,10 +3,14 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 
 import { XlsxGrid } from '../xlsx/XlsxGrid';
 import { XlsxSheetTabs } from '../xlsx/XlsxSheetTabs';
-import { formatXlsxPreviewErrorMessage, type XlsxPreviewResult } from '../xlsx/xlsx-preview-utils';
+import {
+  formatXlsxPreviewErrorMessage,
+  MAX_XLSX_FILE_BYTES,
+  type XlsxPreviewResult,
+} from '../xlsx/xlsx-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
 
-export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number }) {
+export function XlsxDocumentPreview({ href, zoom, sizeBytes }: { href: string; zoom: number; sizeBytes?: number | null }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [workbook, setWorkbook] = useState<XlsxPreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,10 +27,20 @@ export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number
       setSelectedSheetIndex(0);
 
       try {
+        if (sizeBytes != null && sizeBytes > MAX_XLSX_FILE_BYTES) {
+          throw new Error('XLSX_FILE_TOO_LARGE');
+        }
+
         const response = await fetch(href, { signal: abortController.signal });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
+
+        const contentLength = response.headers.get('content-length');
+        if (contentLength != null && Number.isFinite(Number(contentLength)) && Number(contentLength) > MAX_XLSX_FILE_BYTES) {
+          throw new Error('XLSX_FILE_TOO_LARGE');
+        }
+
         const buffer = await response.arrayBuffer();
         const result = await runWorkerTask<{ buffer: ArrayBuffer }, XlsxPreviewResult>(
           () => new Worker(new URL('../xlsx/xlsx-preview.worker.ts', import.meta.url), { type: 'module' }),
@@ -49,7 +63,7 @@ export function XlsxDocumentPreview({ href, zoom }: { href: string; zoom: number
       disposed = true;
       abortController.abort();
     };
-  }, [href]);
+  }, [href, sizeBytes]);
 
   const sheet = workbook?.sheets[selectedSheetIndex] ?? null;
   const sheetNames = useMemo(() => workbook?.sheets.map((currentSheet) => currentSheet.name) ?? [], [workbook]);
