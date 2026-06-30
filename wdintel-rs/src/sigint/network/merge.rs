@@ -218,6 +218,7 @@ pub async fn merge_two_network_freqs(
         let mut freq_from_record: sigint_network_freq::ActiveModel =
             freq_from.into();
         freq_from_record.deleted = Set(true);
+        freq_from_record.active_to = Set(Some(Utc::now().naive_utc()));
         freq_from_record.update(txn).await.context(h!())?;
     }
 
