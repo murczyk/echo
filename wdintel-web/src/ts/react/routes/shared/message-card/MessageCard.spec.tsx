@@ -894,19 +894,33 @@ describe('MessageCard', () => {
     expect(onCopyLocation).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the location tooltip inline when resolved networks exist', async () => {
+  it('renders the location in the top grid for duty cards with resolved networks', async () => {
     const view = await renderCard({
       msg: buildMessage({ location: 'ХАРКІВ', networkIds: [7] }),
     });
     rendered.push(view);
 
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
     expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label^="Локація:"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
     await click(copyButton);
     expect(view.container.textContent).not.toContain('Копіювати локацію');
+  });
+
+  it('renders the location in the top grid for analysis cards with resolved networks', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: buildMessage({ location: 'ХАРКІВ', networkIds: [7] }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
+    expect(view.container.textContent).toContain('р/м Alpha');
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
   it('renders the unit fallback when no networks resolve and no real location exists', async () => {
@@ -931,6 +945,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).not.toContain('Не встановлена');
     expect(view.container.textContent).toContain('—');
     expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('svg[data-testid="PlaceOutlinedIcon"]')).toBeNull();
@@ -1129,6 +1144,22 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+  });
+
+  it('blurs the focused toolbar button before opening the comment action', async () => {
+    const onComment = vi.fn();
+    const view = await renderCard({ onComment });
+    rendered.push(view);
+
+    const commentButton = view.container.querySelector('button[aria-label="Редагувати коментар"]');
+    if (!(commentButton instanceof HTMLButtonElement)) throw new Error('comment button not found');
+    commentButton.focus();
+    expect(document.activeElement).toBe(commentButton);
+
+    await click(commentButton);
+
+    expect(onComment).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(commentButton);
   });
 
   it('shows only edit and delete in the overflow menu when those handlers exist', async () => {
@@ -1605,11 +1636,14 @@ describe('MessageCard', () => {
     );
     expect(documentButton).not.toBeNull();
     expect(view.container.textContent).toContain('report.pdf');
+    (documentButton as HTMLButtonElement).focus();
+    expect(document.activeElement).toBe(documentButton);
 
     await click(documentButton as HTMLElement);
 
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('document-dialog');
+    expect(document.activeElement).not.toBe(documentButton);
 
     const downloadLink = view.container.querySelector('a[aria-label="Завантажити"]');
     expect(downloadLink).not.toBeNull();
@@ -2037,13 +2071,19 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    if (!(thumb instanceof HTMLButtonElement)) throw new Error('image preview button not found');
+    thumb.focus();
+    expect(document.activeElement).toBe(thumb);
+
+    await click(thumb);
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
     expect(dialog?.textContent).toContain('1 / 1');
     expect(dialog?.querySelector('button[aria-label="Попереднє"]')).toBeNull();
     expect(dialog?.querySelector('button[aria-label="Наступне"]')).toBeNull();
+    expect(document.activeElement).not.toBe(thumb);
   });
 
   it('keeps malformed hrefs from crashing preview download name derivation', async () => {

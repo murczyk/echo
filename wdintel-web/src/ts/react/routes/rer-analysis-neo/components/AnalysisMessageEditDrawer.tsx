@@ -77,7 +77,7 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   };
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose}>
+    <Drawer anchor="right" open={open} onClose={onClose} ModalProps={{ disableRestoreFocus: true }}>
       <Box sx={{ width: { xs: '100vw', sm: 420 }, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="h6">Редагування додаткових полів</Typography>

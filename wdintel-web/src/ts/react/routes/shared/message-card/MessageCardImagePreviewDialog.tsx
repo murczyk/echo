@@ -327,6 +327,7 @@ export function MessageImagePreviewDialog({
       maxWidth={false}
       aria-label="Перегляд зображення"
       disableEscapeKeyDown={isFullscreen}
+      disableRestoreFocus
       PaperProps={{
         sx: {
           ...getMessageCardPreviewDialogPaperSx(isFullscreen),

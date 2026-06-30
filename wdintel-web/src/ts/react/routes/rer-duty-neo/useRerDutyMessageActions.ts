@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
-
 import type {
   InboxMessage,
   InboxMessageTag,
   InboxMessagesReq,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
+  SignalGroupEntry,
   SignalProfileEntry,
   Tag,
 } from '../../../../Bindings';
@@ -28,6 +28,7 @@ import {
 } from '../../services/api/inbox';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { FeedColumnHandle } from './FeedColumn';
+import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import { buildInboxReq, buildSenderOptions, normalizeFeed } from './utils';
 import type { MessageFeedState } from './utils';
 
@@ -58,6 +59,7 @@ export type MessageActionsDeps = {
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
+  groupInfos: Record<string, SignalGroupEntry>;
   savedFilters: SavedFilterDuty[];
   setSavedFilters: Dispatch<SetStateAction<SavedFilterDuty[]>>;
   selectedSavedIdByFeedId: Record<string, number | null>;
@@ -84,6 +86,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     authUserName,
     profiles,
     tagsMap,
+    groupInfos,
     savedFilters,
     setSavedFilters,
     selectedSavedIdByFeedId,
@@ -372,6 +375,15 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setCommentText(currentComment ?? '');
   }, []);
 
+  const commentMessagePreview = useMemo(() => {
+    if (isNullOrUndefined(commentMessageId) || isNullOrUndefined(commentFeedId)) return null;
+    const feed = messageFeeds.find((item) => item.id === commentFeedId);
+    if (!feed) return null;
+    const message = feed.items.find(([id]) => id === commentMessageId)?.[1];
+    if (!message) return null;
+    return buildMessageCardDisplayLabels(message, { groupInfos, profiles }).commentPreview;
+  }, [commentFeedId, commentMessageId, groupInfos, messageFeeds, profiles]);
+
   const handleCommentSave = useCallback(async () => {
     if (isNullOrUndefined(commentMessageId) || isNullOrUndefined(commentFeedId)) return;
     const trimmed = commentText.trim() || null;
@@ -545,6 +557,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
     openCommentDialog,
+    commentMessagePreview,
     handleCommentSave,
     handleToggleTag,
     handleArrowClick,

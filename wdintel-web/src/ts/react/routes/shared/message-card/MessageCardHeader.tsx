@@ -31,6 +31,7 @@ import { Box, Button, ButtonGroup, Menu, MenuItem, Stack, Tooltip, Typography, t
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
+import { blurActiveElement } from './message-card-focus';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import type { MessageEntityExcludeMenuOption, MessageEntityFilterKind } from '../../rer-duty-neo/utils';
@@ -44,6 +45,7 @@ import {
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
+const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
 
 /** Where the card is shown: both modes use a 3-column stacked action grid when the toolbar wraps. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -84,13 +86,16 @@ function ActionIconButton({
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   selected?: boolean;
   buttonProps?: Omit<ComponentProps<typeof Button>, 'children' | 'onClick' | 'startIcon' | 'endIcon'>;
-}) {
+  }) {
   return (
     <Tooltip title={title}>
       <Button
         aria-label={title}
         data-selected={selected}
-        onClick={onClick}
+        onClick={(event) => {
+          blurActiveElement();
+          onClick(event);
+        }}
         {...buttonProps}
         sx={{
           width: 30,
@@ -275,11 +280,13 @@ function ActionIconsRow({
   }
 
   function handleCopyMenuItemClick(action: () => void) {
+    blurActiveElement();
     action();
     closeCopyMenu();
   }
 
   function handleOverflowMenuItemClick(action: () => void) {
+    blurActiveElement();
     action();
     closeOverflowMenu();
   }
@@ -707,8 +714,9 @@ function NetworkEtalonSection({
 }) {
   const { displayValue, locationDisplayValue, primaryKind, renderedNetworks, showInlineLocationTooltip } =
     etalonDisplayModel;
+  const showTopGridLocation = primaryKind === 'network' && locationDisplayValue != null;
 
-  const geoButton = showInlineLocationTooltip && locationDisplayValue != null ? (
+  const geoButton = !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
     <Tooltip title={locationDisplayValue} placement="top">
       <Box
         component="span"
@@ -896,6 +904,8 @@ export function MessageCardHeader({
   onExcludeMessageEntity,
 }: MessageCardHeaderProps) {
   const navigationMenuItems = buildMessageCardNavigationMenuItems(etalonDisplayModel.renderedNetworks, mapHref, analysisHref);
+  const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
+  const showTopGridLocation = etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.75} alignItems="center">
@@ -948,7 +958,7 @@ export function MessageCardHeader({
         sx={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-          gridTemplateRows: 'repeat(3, minmax(0, auto))',
+          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
           width: '100%',
           alignItems: 'center',
           columnGap: 2,
@@ -1064,9 +1074,8 @@ export function MessageCardHeader({
           sx={{
             minWidth: 0,
             display: 'flex',
-            alignItems: 'flex-start',
-            alignSelf: 'start',
-            gridColumn: '1 / -1',
+            alignItems: 'center',
+            gridColumn: '1 / 3',
             gridRow: 3,
             columnGap: 1,
             pr: `${rightInsetPx}px`,
@@ -1076,6 +1085,21 @@ export function MessageCardHeader({
             <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
           </Box>
         </Box>
+        <Box
+          sx={{
+            minWidth: 0,
+            pr: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gridColumn: 3,
+            gridRow: 3,
+          }}
+        >
+          {showTopGridLocation ? (
+            <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+          ) : null}
+        </Box>
       </Box>
     );
   }
@@ -1083,10 +1107,10 @@ export function MessageCardHeader({
   return (
     <Box
       data-message-header-grid="true"
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-        gridTemplateRows: 'repeat(3, minmax(0, auto))',
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
         width: '100%',
         alignItems: 'center',
         columnGap: 4,
@@ -1183,9 +1207,8 @@ export function MessageCardHeader({
         sx={{
           minWidth: 0,
           display: 'flex',
-          alignItems: 'flex-start',
-          alignSelf: 'start',
-          gridColumn: '1 / -1',
+          alignItems: 'center',
+          gridColumn: '1 / 3',
           gridRow: 3,
           columnGap: 1,
           pr: `${rightInsetPx}px`,
@@ -1194,6 +1217,21 @@ export function MessageCardHeader({
         <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
           <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
         </Box>
+      </Box>
+      <Box
+        sx={{
+          minWidth: 0,
+          pr: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gridColumn: 3,
+          gridRow: 3,
+        }}
+      >
+        {showTopGridLocation ? (
+          <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+        ) : null}
       </Box>
     </Box>
   );

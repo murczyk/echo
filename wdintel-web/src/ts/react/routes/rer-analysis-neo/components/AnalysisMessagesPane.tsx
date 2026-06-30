@@ -18,7 +18,9 @@ import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
 import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../../shared/message-card/message-card.utils';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
-import { buildSenderLabel, copyMessageValue } from '../message-utils';
+import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
+import { blurActiveElement } from '../../shared/message-card/message-card-focus';
+import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { filterOtherMessageComments } from '../use-analysis-data.comments';
@@ -168,6 +170,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
     networkDisplayMap,
     networks,
   });
+  const labels = buildMessageCardDisplayLabels(message, { groupInfos, profiles });
 
   return (
     <AnalysisMessageCard
@@ -175,8 +178,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       msg={message}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
-      groupName={message.groupMasterKey ? groupInfos[message.groupMasterKey]?.name ?? message.groupMasterKey : null}
-      senderName={buildSenderLabel(message.sender ? profiles[message.sender] : null, message.sender)}
+      groupName={labels.groupName}
+      senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
       messageComments={filterOtherMessageComments(authUserName, currentUser, users, messageComments)}
       networkDisplayMap={networkDisplayMap}
@@ -327,13 +330,6 @@ function AnalysisMessagesPaneComponent({
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
 
-  const blurActiveElement = useCallback(() => {
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
-  }, []);
-
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
   }, [copiedFeedbackIdProp]);
@@ -451,7 +447,7 @@ function AnalysisMessagesPaneComponent({
 
       <CommentDialog
         open={isPresent(commentMessage)}
-        messagePreview={commentMessage?.message ?? null}
+        messagePreview={commentMessage ? buildMessageCardDisplayLabels(commentMessage.message, { groupInfos, profiles }).commentPreview : null}
         commentText={commentDraft}
         onCommentTextChange={setCommentDraft}
         onClose={() => setCommentMessage(null)}

@@ -5,6 +5,7 @@ import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
+import { blurActiveElement } from './message-card-focus';
 
 export function MessageMediaDocumentLink({
   document,
@@ -18,8 +19,8 @@ export function MessageMediaDocumentLink({
   const displayName = deriveDocumentFileName(document, index);
   const downloadName = deriveDocumentDownloadName(document, index);
   const canPreview = document.kind !== 'unsupported' && onPreview != null;
-  const handlePreviewClick = (event: MouseEvent<HTMLButtonElement>) => {
-    event.currentTarget.blur();
+  const handlePreviewClick = (_event: MouseEvent<HTMLButtonElement>) => {
+    blurActiveElement();
     onPreview?.();
   };
 

@@ -22,6 +22,7 @@ import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDi
 import { collectMessageDocuments } from './message-card-document-utils';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
+import { blurActiveElement } from './message-card-focus';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -85,7 +86,13 @@ export function MessageCardMessageBody({
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
       {images.length > 0 ? (
-        <MessageCardImageList images={images} onOpen={(index) => setImagePreviewIndex(index)} />
+        <MessageCardImageList
+          images={images}
+          onOpen={(index) => {
+            blurActiveElement();
+            setImagePreviewIndex(index);
+          }}
+        />
       ) : null}
       <MessageImagePreviewDialog
         imageHrefs={images}
@@ -109,13 +116,20 @@ export function MessageCardMessageBody({
             const previewIndex = previewableDocuments.findIndex((previewableDocument) => previewableDocument.href === document.href);
             return (
               <MessageMediaDocumentLink
-                key={document.id ?? document.href}
-                document={document}
-                index={index}
-                onPreview={previewIndex >= 0 ? () => setDocumentPreviewIndex(previewIndex) : undefined}
-              />
-            );
-          })}
+              key={document.id ?? document.href}
+              document={document}
+              index={index}
+              onPreview={
+                previewIndex >= 0
+                  ? () => {
+                      blurActiveElement();
+                      setDocumentPreviewIndex(previewIndex);
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
           {audioAttachments.map((attachment) => (
             <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
           ))}

@@ -1,15 +1,8 @@
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
-import type { InboxMessage } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 import { ELLIPSIS } from '../../utils/misc';
-
-function blurActiveElement() {
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLElement) {
-    activeElement.blur();
-  }
-}
+import { blurActiveElement } from '../shared/message-card/message-card-focus';
 
 type DeleteConfirmDialogProps = {
   open: boolean;
@@ -34,7 +27,7 @@ export function DeleteConfirmDialog({
   cancelVariant = 'text',
 }: DeleteConfirmDialogProps) {
   return (
-    <Dialog open={open} onClose={confirmDisabled ? undefined : onClose}>
+    <Dialog open={open} onClose={confirmDisabled ? undefined : onClose} disableRestoreFocus>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>{content}</DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
@@ -57,17 +50,28 @@ export function DeleteConfirmDialog({
 
 type CommentDialogProps = {
   open: boolean;
-  messagePreview?: InboxMessage | null;
+  messagePreview?: CommentDialogMessagePreview | null;
   commentText: string;
   onCommentTextChange: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
 };
 
-function renderCommentPreview(message: InboxMessage | null | undefined) {
+export type CommentDialogMessagePreview = {
+  text: string | null;
+  freq: string | null;
+  groupMasterKey: string | null;
+  groupName?: string | null;
+  sender: string | null;
+  senderName?: string | null;
+};
+
+function renderCommentPreview(message: CommentDialogMessagePreview | null | undefined) {
   if (!message) return null;
 
-  const title = [message.freq, message.groupMasterKey, message.sender].filter(Boolean).join(' • ');
+  const title = [message.freq, message.groupName ?? message.groupMasterKey, message.senderName ?? message.sender]
+    .filter(Boolean)
+    .join(' • ');
   const text = (message.text ?? '').trim();
 
   return (
@@ -108,6 +112,7 @@ export function CommentDialog({ open, messagePreview, commentText, onCommentText
       }}
       fullWidth
       maxWidth="md"
+      disableRestoreFocus
     >
       <DialogTitle>Коментар</DialogTitle>
       <DialogContent>
