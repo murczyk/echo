@@ -9,7 +9,7 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
@@ -101,6 +101,17 @@ type Props = {
 
 type Updater<T> = T | ((prev: T) => T);
 
+export function getCallsignsTableContainerOverflowY({
+  hasVerticalOverflow,
+  showTableOverlay,
+}: {
+  hasVerticalOverflow: boolean;
+  showTableOverlay: boolean;
+}) {
+  if (showTableOverlay) return 'hidden';
+  return hasVerticalOverflow ? 'auto' : 'hidden';
+}
+
 function CommentCell({ comment }: { comment: string }) {
   const text = formatMrtCellTextValue(comment);
   if (text.length <= 80) return renderMrtCellTextValue(text);
@@ -167,12 +178,14 @@ function CallsignsTableComponent({
 }: Props) {
   const tableStateContext = useTableStateContext();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const [overlayViewport, setOverlayViewport] = useState({
     top: 0,
     left: 0,
     width: 0,
     height: 0,
   });
+  const [tableContainerHasVerticalOverflow, setTableContainerHasVerticalOverflow] = useState(false);
 
   const columns = useMemo<MRT_ColumnDef<CallsignRowView>[]>(
     () => [
@@ -332,6 +345,28 @@ function CallsignsTableComponent({
   );
   const showTableOverlay = loading || refreshing || loadingMore;
   const isInitialLoading = loading && rows.length === 0;
+
+  const syncTableContainerOverflow = useCallback(() => {
+    const element = tableContainerRef.current;
+    if (!element) return;
+
+    const hasVerticalOverflow = element.scrollHeight - element.clientHeight > 1;
+    setTableContainerHasVerticalOverflow((prev) => prev === hasVerticalOverflow ? prev : hasVerticalOverflow);
+  }, []);
+
+  useLayoutEffect(() => {
+    syncTableContainerOverflow();
+
+    const element = tableContainerRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(syncTableContainerOverflow);
+    observer.observe(element);
+    const tableElement = element.querySelector('table');
+    if (tableElement) observer.observe(tableElement);
+
+    return () => observer.disconnect();
+  }, [rows, syncTableContainerOverflow, tableStateContext.columnSizing, tableStateContext.density]);
 
   const syncOverlayViewport = useCallback(() => {
     const element = scrollContainerRef.current;
@@ -503,11 +538,15 @@ function CallsignsTableComponent({
 
       return {
         ...containerProps,
+        ref: tableContainerRef,
         sx: {
           ...(containerProps as { sx?: object })?.sx,
           minHeight: isInitialLoading ? '100%' : 0,
           overflowX: showTableOverlay ? 'hidden' : 'auto',
-          overflowY: isFullScreen || isInitialLoading ? (showTableOverlay ? 'hidden' : 'auto') : 'hidden',
+          overflowY: getCallsignsTableContainerOverflowY({
+            hasVerticalOverflow: tableContainerHasVerticalOverflow,
+            showTableOverlay,
+          }),
           overflow: undefined,
           border: 0,
         },
