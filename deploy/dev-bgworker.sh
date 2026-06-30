@@ -67,6 +67,16 @@ ensure_pid_dir() {
     mkdir -p "$(dirname "$pidfile")"
 }
 
+stop_pid_and_group() {
+    local pid="$1"
+
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    kill -KILL "$pid" 2>/dev/null || true
+}
+
 is_expected_process() {
     local pid="$1"
     local cwd cmdline
@@ -98,9 +108,7 @@ stop_existing_bgworker() {
     fi
 
     if is_expected_process "$pid"; then
-        kill -TERM -- "-$pid" 2>/dev/null || true
-        sleep 1
-        kill -KILL -- "-$pid" 2>/dev/null || true
+        stop_pid_and_group "$pid"
     fi
 
     rm -f "$pidfile"
@@ -127,9 +135,14 @@ run_bgworker() {
     echo "$pid" > "$pidfile"
 
     cleanup() {
+        local cleanup_pid="$1"
+
+        if [ -n "$cleanup_pid" ]; then
+            stop_pid_and_group "$cleanup_pid"
+        fi
         rm -f "$pidfile"
     }
-    trap cleanup EXIT INT TERM
+    trap "cleanup '$pid'" EXIT INT TERM
 
     wait "$pid"
 }

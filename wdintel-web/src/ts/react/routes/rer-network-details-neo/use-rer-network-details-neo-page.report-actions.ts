@@ -6,7 +6,12 @@ import {
   launchNetworkEtalonkaBatchReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { fetchReportHistoryStatus, isCancelledReportHistory, parseUtcDateTime } from '../../services/api/report-history';
+import {
+  fetchReportHistoryStatus,
+  isCancelledReportHistory,
+  isCancelledReportHistoryError,
+  parseUtcDateTime,
+} from '../../services/api/report-history';
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
@@ -165,8 +170,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
 
           if (!rsp.running) {
             if (rsp.finishedWithError) {
-              if (rsp.finishedWithError === 'Скасовано користувачем') {
-                applyCancelledReport(setState, row, logs, fileName);
+              const latestRow = await fetchReportHistoryStatus(taskId);
+              if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
+                applyCancelledReport(setState, latestRow, logs, fileName);
                 return;
               }
               throw new Error(rsp.finishedWithError);
