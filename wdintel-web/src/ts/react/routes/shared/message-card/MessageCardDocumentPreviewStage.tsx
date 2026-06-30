@@ -2,12 +2,14 @@ import { forwardRef } from 'react';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Box, IconButton, Tooltip } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { DocxDocumentPreview } from './renderers/DocxDocumentPreview';
 import { PdfDocumentPreview } from './renderers/PdfDocumentPreview';
 import { UnsupportedDocumentPreview } from './renderers/UnsupportedDocumentPreview';
 import { XlsxDocumentPreview } from './renderers/XlsxDocumentPreview';
+import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
 
 export const MessageCardDocumentPreviewStage = forwardRef<
   HTMLDivElement,
@@ -23,6 +25,7 @@ export const MessageCardDocumentPreviewStage = forwardRef<
   { documents, currentIndex, zoom, isFullscreen, onGoToPrevious, onGoToNext },
   ref,
 ) {
+  const theme = useTheme();
   const currentDocument = documents[currentIndex] ?? null;
   const hasCarousel = documents.length > 1;
 
@@ -38,9 +41,8 @@ export const MessageCardDocumentPreviewStage = forwardRef<
         minHeight: 0,
         overflow: 'hidden',
         borderRadius: isFullscreen ? 0 : 1.5,
-        backgroundColor: '#111821',
-        boxShadow: isFullscreen ? 'none' : 'inset 0 0 0 1px rgba(255, 255, 255, 0.04)',
-        color: '#f4f7fb',
+        ...getMessageCardPreviewStageSx(theme, isFullscreen),
+        color: theme.palette.text.primary,
       }}
     >
       {hasCarousel ? (

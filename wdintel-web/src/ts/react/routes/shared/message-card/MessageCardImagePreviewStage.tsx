@@ -4,9 +4,11 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import type { MessageCardImage } from './message-card-image-utils';
 import { ZOOM_MIN } from './message-card-image-preview-utils';
+import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
 
 type StageSize = {
   width: number;
@@ -58,6 +60,7 @@ export const MessageCardImagePreviewStage = forwardRef<
   },
   ref,
 ) {
+  const theme = useTheme();
   const hasCarousel = imageCount > 1;
   const imageTransform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`;
 
@@ -78,12 +81,11 @@ export const MessageCardImagePreviewStage = forwardRef<
         overflow: 'hidden',
         borderRadius: isFullscreen ? 0 : 1.5,
         backgroundImage: stageBackground,
-        backgroundColor: '#111821',
+        ...getMessageCardPreviewStageSx(theme, isFullscreen),
         backgroundRepeat: 'no-repeat',
         backgroundSize: 'cover',
         px: 1.5,
         py: 1.5,
-        boxShadow: isFullscreen ? 'none' : 'inset 0 0 0 1px rgba(255, 255, 255, 0.04)',
         cursor: zoom > ZOOM_MIN ? 'grab' : 'default',
         userSelect: 'none',
       }}

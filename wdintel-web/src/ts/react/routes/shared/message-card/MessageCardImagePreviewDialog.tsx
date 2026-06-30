@@ -11,6 +11,7 @@ import {
   type MessageCardImage,
   type Point,
 } from './message-card-image-utils';
+import { shouldIgnoreArrowNavigation } from './document-preview-utils';
 import {
   isInteractivePreviewTarget,
   sampleCornerColors,
@@ -23,6 +24,10 @@ import {
 import { MessageCardImagePreviewActions } from './MessageCardImagePreviewActions';
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
+import {
+  getMessageCardPreviewCounterSx,
+  getMessageCardPreviewDialogPaperSx,
+} from './message-card-preview-shell';
 
 type StageSize = {
   width: number;
@@ -79,7 +84,7 @@ export function MessageImagePreviewDialog({
   const stagePalette = currentHref !== '' ? stagePaletteByHrefRef.current.get(currentHref) ?? null : null;
   const stageBackground = stagePalette
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
-    : `linear-gradient(135deg, ${theme.palette.grey[900]} 0%, ${theme.palette.background.default} 100%)`;
+    : 'none';
 
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
@@ -205,11 +210,6 @@ export function MessageImagePreviewDialog({
   useEffect(() => {
     if (!open) return;
 
-    const shouldIgnoreArrowNavigation = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return false;
-      return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="slider"]'));
-    };
-
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       if (isFullscreen && event.key === 'Escape') {
         event.preventDefault();
@@ -326,18 +326,14 @@ export function MessageImagePreviewDialog({
       disableEscapeKeyDown={isFullscreen}
       PaperProps={{
         sx: {
-          backgroundColor: '#0b0f14',
-          backgroundImage: 'none',
-          color: '#f4f7fb',
+          ...getMessageCardPreviewDialogPaperSx(isFullscreen),
           display: 'flex',
           flexDirection: 'column',
           width: isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
           height: isFullscreen ? '100svh' : '92svh',
           maxWidth: isFullscreen ? '100vw' : 'min(92vw, 1280px)',
           maxHeight: isFullscreen ? '100svh' : '92svh',
-          borderRadius: isFullscreen ? 0 : 2,
           m: 0,
-          overflow: 'hidden',
         },
       }}
       BackdropProps={{
@@ -385,14 +381,12 @@ export function MessageImagePreviewDialog({
           data-image-preview-counter
           sx={{
             alignSelf: 'center',
-            color: 'rgba(244, 247, 251, 0.72)',
             fontWeight: 700,
             letterSpacing: 0,
             px: 1,
             py: 0.25,
             borderRadius: 1,
-            border: '1px solid rgba(244, 247, 251, 0.12)',
-            backgroundColor: 'rgba(244, 247, 251, 0.08)',
+            ...getMessageCardPreviewCounterSx(theme),
           }}
         >
           {`${resolvedIndex + 1} / ${imageCount}`}

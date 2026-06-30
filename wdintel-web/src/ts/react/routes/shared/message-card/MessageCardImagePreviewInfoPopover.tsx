@@ -1,6 +1,8 @@
 import { Box, Popover, Stack, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 import { formatSizeBytes, type MessageCardImage } from './message-card-image-utils';
+import { getMessageCardPreviewPopoverPaperSx } from './message-card-preview-shell';
 
 type StageSize = {
   width: number;
@@ -24,6 +26,7 @@ export function MessageCardImagePreviewInfoPopover({
   fileSize: string | number | null | undefined;
   imageSize: StageSize | null;
 }) {
+  const theme = useTheme();
   const imageId = image.id?.trim() ?? '';
   const showImageId = imageId !== '';
   const contentType = image.contentType?.trim() || '—';
@@ -38,13 +41,7 @@ export function MessageCardImagePreviewInfoPopover({
       transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       slotProps={{
         paper: {
-          sx: {
-            p: 1.5,
-            minWidth: 280,
-            maxWidth: 360,
-            backgroundColor: '#111821',
-            color: '#f4f7fb',
-          },
+          sx: getMessageCardPreviewPopoverPaperSx(theme),
         },
       }}
     >

@@ -112,4 +112,48 @@ describe('MessageCardDocumentPreviewDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     root.unmount();
   });
+
+  it('keeps arrow keys on the zoom slider from changing the preview index', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onIndexChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report-1.pdf',
+              fileName: 'report-1.pdf',
+              sizeBytes: 1024,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+            {
+              href: 'https://example.test/files/report-2.pdf',
+              fileName: 'report-2.pdf',
+              sizeBytes: 2048,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+          ]}
+          currentIndex={0}
+          open
+          onClose={vi.fn()}
+          onIndexChange={onIndexChange}
+        />,
+      );
+    });
+
+    const slider = document.body.querySelector('input[type="range"]');
+    expect(slider).not.toBeNull();
+
+    await act(async () => {
+      slider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+
+    expect(onIndexChange).not.toHaveBeenCalled();
+    root.unmount();
+  });
 });

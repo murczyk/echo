@@ -7,8 +7,10 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { Button, DialogActions, IconButton, Slider, Stack, Tooltip } from '@mui/material';
 import type { MouseEvent } from 'react';
+import { useTheme } from '@mui/material/styles';
 
 import { DOCUMENT_PREVIEW_ZOOM_MAX, DOCUMENT_PREVIEW_ZOOM_MARKS, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_STEP } from './document-preview-utils';
+import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewActions({
   zoom,
@@ -29,19 +31,9 @@ export function MessageCardDocumentPreviewActions({
   onInfoClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onClose: () => void;
 }) {
+  const theme = useTheme();
   return (
-    <DialogActions
-      sx={{
-        px: 2,
-        py: '28px',
-        borderTop: '1px solid',
-        borderColor: 'rgba(244, 247, 251, 0.12)',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
-        alignItems: 'center',
-        gap: 1,
-      }}
-    >
+    <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ justifySelf: 'start', minWidth: 0, flexWrap: 'wrap' }}>
         <Tooltip title="Інформація" enterDelay={300}>
           <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'inherit' }}>

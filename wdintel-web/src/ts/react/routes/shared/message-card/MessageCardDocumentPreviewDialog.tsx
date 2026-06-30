@@ -3,11 +3,21 @@ import { Dialog, DialogContent, Typography, useTheme } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
-import { clamp, DOCUMENT_PREVIEW_ZOOM_MAX, DOCUMENT_PREVIEW_ZOOM_MIN, normalizePreviewIndex } from './document-preview-utils';
+import {
+  clamp,
+  DOCUMENT_PREVIEW_ZOOM_MAX,
+  DOCUMENT_PREVIEW_ZOOM_MIN,
+  normalizePreviewIndex,
+  shouldIgnoreArrowNavigation,
+} from './document-preview-utils';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
 import { MessageCardDocumentPreviewActions } from './MessageCardDocumentPreviewActions';
 import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
 import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
+import {
+  getMessageCardPreviewCounterSx,
+  getMessageCardPreviewDialogPaperSx,
+} from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewDialog({
   documents,
@@ -64,6 +74,7 @@ export function MessageCardDocumentPreviewDialog({
     if (!open || !hasCarousel) return;
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (shouldIgnoreArrowNavigation(event.target)) return;
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         event.stopPropagation();
@@ -111,11 +122,7 @@ export function MessageCardDocumentPreviewDialog({
           maxWidth: dialogWidth,
           maxHeight: dialogHeight,
           margin: 0,
-          backgroundColor: '#111821',
-          color: '#f4f7fb',
-          overflow: 'hidden',
-          border: isFullscreen ? 0 : `1px solid ${theme.palette.divider}`,
-          borderRadius: isFullscreen ? 0 : 2,
+          ...getMessageCardPreviewDialogPaperSx(isFullscreen),
         },
       }}
     >
@@ -144,14 +151,12 @@ export function MessageCardDocumentPreviewDialog({
               data-document-preview-counter
               sx={{
                 alignSelf: 'center',
-                color: 'rgba(244, 247, 251, 0.72)',
                 fontWeight: 700,
                 letterSpacing: 0,
                 px: 1,
                 py: 0.25,
                 borderRadius: 1,
-                border: '1px solid rgba(244, 247, 251, 0.12)',
-                backgroundColor: 'rgba(244, 247, 251, 0.08)',
+                ...getMessageCardPreviewCounterSx(theme),
               }}
             >
               {`${resolvedIndex + 1} / ${documentCount}`}
