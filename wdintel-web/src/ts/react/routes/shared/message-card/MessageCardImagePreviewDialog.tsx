@@ -347,8 +347,8 @@ export function MessageImagePreviewDialog({
     >
       <DialogContent
         sx={{
-          px: isFullscreen ? 0 : 2,
-          pt: isFullscreen ? 0 : 2,
+          px: 0,
+          pt: 0,
           pb: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -356,7 +356,7 @@ export function MessageImagePreviewDialog({
           minHeight: 0,
           flex: '1 1 auto',
           overflow: 'hidden',
-          gap: isFullscreen ? 0 : 1.25,
+          gap: 0,
         }}
       >
         <Box

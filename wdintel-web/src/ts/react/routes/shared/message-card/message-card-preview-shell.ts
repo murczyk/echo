@@ -18,7 +18,6 @@ export function getMessageCardPreviewDialogPaperSx(isFullscreen: boolean): SxPro
 export function getMessageCardPreviewStageSx(theme: Theme, isFullscreen: boolean): SxProps<Theme> {
   return {
     backgroundColor: theme.palette.background?.default ?? theme.palette.background?.paper ?? '#fff',
-    boxShadow: isFullscreen ? 'none' : `inset 0 0 0 1px ${alpha(theme.palette.divider ?? 'rgba(0, 0, 0, 0.12)', 0.24)}`,
   };
 }
 

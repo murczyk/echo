@@ -37,7 +37,6 @@ export function MessageCardImagePreviewControls({
         backgroundColor: "black",
         py: 1.5,
         px: 3,
-        borderRadius: 2,
       }}
     >
       <Tooltip title="Зменшити" enterDelay={300}>
@@ -54,22 +53,40 @@ export function MessageCardImagePreviewControls({
         </span>
       </Tooltip>
       <Slider
+        size="small"
         value={zoom}
         min={ZOOM_MIN}
         max={ZOOM_MAX}
         step={ZOOM_STEP}
-        marks={ZOOM_MARKS}
-        valueLabelDisplay="auto"
+        marks={ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
+        className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
         onChange={(_, value) => {
           const nextZoom = Array.isArray(value) ? value[0] ?? ZOOM_MIN : value;
           onSetPreviewZoom(nextZoom);
         }}
         sx={{
           width: { xs: 180, sm: 260 },
-          color: 'primary.light',
-          '& .MuiSlider-markLabel': {
-            color: 'rgba(255, 255, 255, 0.68)',
+          color: 'primary.main',
+          padding: 0,
+          height: 4,
+          '& .MuiSlider-track': {
+            border: 'none',
+          },
+          '& .MuiSlider-thumb': {
+            width: 12,
+            height: 12,
+            '&.Mui-active': {
+              width: 16,
+              height: 16,
+            },
+          },
+          '& .MuiSlider-rail': {
+            opacity: 0.28,
+          },
+          '& .MuiSlider-mark': {
+            width: 2,
+            height: 4,
           },
         }}
       />
