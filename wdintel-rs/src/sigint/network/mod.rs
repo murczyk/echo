@@ -23,6 +23,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 use sea_query::{Alias, Expr, Query};
+use serde_json;
 use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
@@ -287,6 +288,451 @@ pub async fn network_info_batch_id(
     Ok(Json(res))
 }
 
+#[post("/api/sigint/network/find-live")]
+pub async fn find_live_networks(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FindLiveNetworksReq>,
+) -> Result<Json<FindLiveNetworksRsp>, AppError> {
+    let user_id = user.id().c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", "Api", "ApiAgent"],
+    )
+    .await?;
+
+    let req = normalize_find_live_networks_req(req.into_inner());
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+    let organism_id = load_user_organism_id(&env.dbx, &user_id).await?;
+    let network_ids =
+        find_live_network_ids(&env.dbx, &groups, &req, organism_id).await?;
+    let networks =
+        build_find_live_networks(&env.dbx, &groups, &req.freq, network_ids)
+            .await?;
+
+    Ok(Json(FindLiveNetworksRsp {
+        networks: networks
+            .into_iter()
+            .take(SIGINT_NETWORK_FIND_LIVE_RETURN_LIMIT)
+            .collect(),
+    }))
+}
+
+fn normalize_find_live_networks_req(
+    mut req: FindLiveNetworksReq,
+) -> FindLiveNetworksReq {
+    req.freq = crate::rer_importer::frequency::etalon(req.freq.trim());
+    req.color_code = req
+        .color_code
+        .map(|cc| cc.trim().to_string())
+        .filter(|cc| !cc.is_empty());
+    req
+}
+
+pub async fn fanout_network_changed(
+    env: &actix_web::web::Data<Env>,
+) -> Result<(), AppError> {
+    let mut redis = env.redis.clone();
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut redis, event).await.context(h!())?;
+    Ok(())
+}
+
+async fn find_live_network_ids(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    req: &FindLiveNetworksReq,
+    organism_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    #[derive(FromQueryResult)]
+    struct NetworkIdRow {
+        id: i64,
+    }
+
+    if req.color_code.is_some() && groups.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let query = build_find_live_network_ids_query(
+        req,
+        groups,
+        organism_id,
+        Utc::now().naive_utc(),
+    );
+
+    Ok(query
+        .into_model::<NetworkIdRow>()
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
+}
+
+fn build_find_live_network_ids_query(
+    req: &FindLiveNetworksReq,
+    groups: &[String],
+    organism_id: i64,
+    now: NaiveDateTime,
+) -> Select<sigint_network::Entity> {
+    let mut query = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkFreq.def(),
+        )
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(find_live_network_visible_for_organism(organism_id))
+        .filter(find_live_network_active_now(now))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(find_live_network_freq_active_now(now))
+        .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
+        .group_by(sigint_network::Column::Id)
+        .order_by_desc(Expr::cust("MAX(sigint_network_freq.last_seen_dt)"))
+        .order_by_asc(sigint_network::Column::Id)
+        .limit(SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT);
+
+    if let Some(aor_id) = req.aor_id {
+        query = query.filter(Expr::exists(
+            sigint_network_aor::Entity::find()
+                .select_only()
+                .expr(Expr::value(1))
+                .filter(
+                    sigint_network_aor::Column::NetworkId
+                        .into_simple_expr()
+                        .eq(sigint_network::Column::Id.into_simple_expr()),
+                )
+                .filter(sigint_network_aor::Column::AorId.eq(aor_id))
+                .into_query(),
+        ));
+    }
+
+    if let Some(color_code) = req.color_code.as_ref() {
+        query = query.filter(find_live_network_color_code_exists(
+            &req.freq, color_code, groups,
+        ));
+    }
+
+    query
+}
+
+fn find_live_network_visible_for_organism(organism_id: i64) -> SimpleExpr {
+    Expr::cust_with_values(
+        r#"
+        EXISTS (
+            SELECT 1
+            FROM organism_aor
+            JOIN area_of_responsibility selected_aor
+                ON selected_aor.id = organism_aor.aor_id
+            WHERE organism_aor.organism_id = $1
+              AND selected_aor.deleted = false
+              AND EXISTS (
+                  SELECT 1
+                  FROM sigint_network_aor
+                  JOIN area_of_responsibility linked_aor
+                      ON linked_aor.id = sigint_network_aor.aor_id
+                  WHERE sigint_network_aor.network_id = sigint_network.id
+                    AND linked_aor.deleted = false
+                    AND (
+                        linked_aor.left_bound BETWEEN selected_aor.left_bound
+                            AND selected_aor.right_bound
+                        OR (
+                            linked_aor.left_bound <= selected_aor.left_bound
+                            AND linked_aor.right_bound >= selected_aor.right_bound
+                        )
+                    )
+              )
+        )
+        "#,
+        vec![organism_id],
+    )
+}
+
+fn find_live_network_active_now(now: NaiveDateTime) -> SimpleExpr {
+    sigint_network::Column::ActiveTo.is_null().and(
+        sigint_network::Column::ActiveFrom
+            .is_null()
+            .or(sigint_network::Column::ActiveFrom.lte(now)),
+    )
+}
+
+fn find_live_network_freq_active_now(now: NaiveDateTime) -> SimpleExpr {
+    sigint_network_freq::Column::ActiveTo.is_null().and(
+        sigint_network_freq::Column::ActiveFrom
+            .is_null()
+            .or(sigint_network_freq::Column::ActiveFrom.lte(now)),
+    )
+}
+
+fn find_live_network_color_code_exists(
+    freq: &str,
+    color_code: &str,
+    groups: &[String],
+) -> SimpleExpr {
+    Expr::exists(
+        sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SignalMessage.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintInboxItemMetadata.def(),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
+                    .into_simple_expr()
+                    .eq(sigint_network::Column::Id.into_simple_expr()),
+            )
+            .filter(sigint_inbox_item::Column::Freq.eq(freq.to_string()))
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(
+                sigint_inbox_item_metadata::Column::ColorCode
+                    .eq(color_code.to_string()),
+            )
+            .filter(Expr::exists(
+                signal_message_group::Entity::find()
+                    .select_only()
+                    .expr(Expr::value(1))
+                    .filter(
+                        signal_message_group::Column::SignalMessageId
+                            .into_simple_expr()
+                            .eq(signal_message::Column::Id.into_simple_expr()),
+                    )
+                    .filter(
+                        signal_message_group::Column::GroupMasterKey
+                            .eq_any(groups.to_vec()),
+                    )
+                    .into_query(),
+            ))
+            .into_query(),
+    )
+}
+
+async fn build_find_live_networks(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    freq: &str,
+    network_ids: Vec<i64>,
+) -> Result<Vec<FindLiveNetwork>, AppError> {
+    if network_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let networks = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.eq_any(network_ids.clone()))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let live_freqs = load_find_live_network_freqs(dbx, &network_ids).await?;
+    let unit_names = load_find_live_network_units(dbx, &network_ids).await?;
+    let post_ids = load_find_live_network_posts(dbx, &network_ids).await?;
+    let callsigns = load_find_live_network_callsigns(dbx, &network_ids).await?;
+    let locations =
+        load_find_live_network_locations(dbx, groups, freq, &network_ids)
+            .await?;
+
+    let network_by_id = networks
+        .into_iter()
+        .map(|network| (network.id, network))
+        .collect::<HashMap<_, _>>();
+    let mut result = vec![];
+    for network_id in network_ids {
+        let Some(network) = network_by_id.get(&network_id) else {
+            continue;
+        };
+        result.push(FindLiveNetwork {
+            id: network.id,
+            name: network.name.clone(),
+            radio_station: network.radio_station.clone(),
+            purpose: network.purpose.clone(),
+            operation_mode: network.operation_mode.clone(),
+            operation_type: network.operation_type.clone(),
+            operation_period: network.operation_period.clone(),
+            created_at: network.created_at.and_utc().timestamp_millis(),
+            active_from: network
+                .active_from
+                .map(|dt| dt.and_utc().timestamp_millis()),
+            units: unit_names.get(&network_id).cloned().unwrap_or_default(),
+            post_ids: post_ids.get(&network_id).cloned().unwrap_or_default(),
+            live_freqs: live_freqs
+                .get(&network_id)
+                .cloned()
+                .unwrap_or_default(),
+            callsigns: callsigns.get(&network_id).cloned().unwrap_or_default(),
+            locations: locations.get(&network_id).cloned().unwrap_or_default(),
+        });
+    }
+    Ok(result)
+}
+
+async fn load_find_live_network_freqs(
+    dbx: &DatabaseConnection,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let rows = sigint_network_freq::Entity::find()
+        .filter(
+            sigint_network_freq::Column::NetworkId.eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(find_live_network_freq_active_now(Utc::now().naive_utc()))
+        .order_by_asc(sigint_network_freq::Column::Freq)
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut result = HashMap::new();
+    for row in rows {
+        result
+            .entry(row.network_id)
+            .or_insert_with(Vec::new)
+            .push(row.freq);
+    }
+    Ok(result)
+}
+
+async fn load_find_live_network_units(
+    dbx: &DatabaseConnection,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let rows = sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
+        .filter(
+            sigint_network_unit::Column::NetworkId.eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_network_unit::Column::NetworkId)
+        .column(sigint_unit::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut names = HashMap::new();
+    for (network_id, name) in rows {
+        names.entry(network_id).or_insert_with(Vec::new).push(name);
+    }
+    Ok(names)
+}
+
+async fn load_find_live_network_posts(
+    dbx: &DatabaseConnection,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    let rows = sigint_network_post::Entity::find()
+        .filter(
+            sigint_network_post::Column::NetworkId.eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut result = HashMap::new();
+    for row in rows {
+        result
+            .entry(row.network_id)
+            .or_insert_with(Vec::new)
+            .push(row.post_id);
+    }
+    Ok(result)
+}
+
+async fn load_find_live_network_callsigns(
+    dbx: &DatabaseConnection,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let rows = sigint_network_callsign::Entity::find()
+        .filter(
+            sigint_network_callsign::Column::SigintNetworkId
+                .eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network_callsign::Column::SigintCallsign)
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut result = HashMap::new();
+    for row in rows {
+        result
+            .entry(row.sigint_network_id)
+            .or_insert_with(Vec::new)
+            .push(row.sigint_callsign);
+    }
+    Ok(result)
+}
+
+#[derive(Debug, FromRow)]
+struct FindLiveNetworkLocationRow {
+    network_id: i64,
+    location: Option<String>,
+}
+
+async fn load_find_live_network_locations(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    freq: &str,
+    network_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    if groups.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query_as::<_, FindLiveNetworkLocationRow>(
+        r#"
+        SELECT DISTINCT
+            iin.sigint_network_id AS network_id,
+            COALESCE(NULLIF(ii.location_v2, ''), NULLIF(ii.location, '')) AS location
+        FROM sigint_inbox_item_network iin
+        JOIN sigint_inbox_item ii ON ii.id = iin.sigint_inbox_item_id
+        JOIN signal_message sm ON sm.id = ii.id
+        WHERE iin.sigint_network_id = ANY($1)
+          AND ii.freq = $2
+          AND sm.deleted = false
+          AND EXISTS (
+              SELECT 1
+              FROM signal_message_group smg
+              WHERE smg.signal_message_id = sm.id
+                AND smg.group_master_key = ANY($3)
+          )
+          AND COALESCE(NULLIF(ii.location_v2, ''), NULLIF(ii.location, '')) IS NOT NULL
+        ORDER BY network_id, location
+        "#,
+    )
+    .bind(network_ids)
+    .bind(freq)
+    .bind(groups)
+    .fetch_all(dbx.get_postgres_connection_pool())
+    .await
+    .context(h!())?;
+
+    let mut result = HashMap::new();
+    for row in rows {
+        if let Some(location) = row.location {
+            result
+                .entry(row.network_id)
+                .or_insert_with(Vec::new)
+                .push(location);
+        }
+    }
+    Ok(result)
+}
+
 #[post("/api/sigint/network-info-one")]
 pub async fn network_info_one(
     user: actix_identity::Identity,
@@ -508,8 +954,7 @@ pub async fn create_network(
 
     txn.commit().await.context(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed(&env).await?;
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
@@ -659,7 +1104,6 @@ pub async fn update_network(
         .await
         .c(h!())?;
     }
-
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?
@@ -731,8 +1175,7 @@ pub async fn delete_network(
     .await
     .context(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed(&env).await?;
 
     etalon_calc::invalidate_network_inbox(
         network.clone(),
@@ -1491,8 +1934,7 @@ pub async fn update_freq_networks(
     .await
     .c(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed(&env).await?;
 
     Ok(result_json)
 }
@@ -1555,17 +1997,21 @@ async fn finish_network_freq_mutation(
     })
 }
 
-async fn load_user_organism_id(
-    txn: &DatabaseTransaction,
+async fn load_user_organism_id<'a, 'async_trait, C>(
+    dbx: &'a C,
     user_id: &str,
-) -> Result<i64, AppError> {
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     login::Entity::find_by_id(user_id.to_string())
         .select_only()
         .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(txn)
+        .into_tuple::<Option<i64>>()
+        .one(dbx)
         .await
         .c(h!())?
+        .flatten()
         .ok_or_else(|| AppError::BL {
             msg: "User has no organism assigned".to_string(),
         })
@@ -1764,8 +2210,7 @@ pub async fn add_network_freq(
     .await
     .c(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed(&env).await?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -1901,8 +2346,7 @@ pub async fn add_network_freq_v2(
     )
     .await
     .c(h!())?;
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout_network_changed(&env).await?;
 
     let response = load_network_freq_mutation_response(
         &env,
@@ -3998,6 +4442,54 @@ mod tests {
         let active_from = update_network_freq_active_from(active_from_millis);
 
         assert_eq!(active_from, dt(5));
+    }
+
+    #[test]
+    fn find_live_network_ids_query_requires_open_ended_active_records() {
+        let req = FindLiveNetworksReq {
+            freq: "145.026".to_string(),
+            aor_id: None,
+            color_code: None,
+        };
+
+        let sql = build_find_live_network_ids_query(&req, &[], 42, dt(5))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("FROM organism_aor"));
+        assert!(sql.contains("organism_aor.organism_id = 42"));
+        assert!(sql.contains("FROM sigint_network_aor"));
+        assert!(sql
+            .contains("linked_aor.left_bound BETWEEN selected_aor.left_bound"));
+        assert!(sql.contains("\"sigint_network\".\"active_to\" IS NULL"));
+        assert!(sql.contains("\"sigint_network\".\"active_from\" IS NULL"));
+        assert!(sql.contains("\"sigint_network\".\"active_from\" <= "));
+        assert!(sql.contains("\"sigint_network_freq\".\"active_to\" IS NULL"));
+        assert!(sql.contains("\"sigint_network_freq\".\"active_from\" IS NULL"));
+        assert!(sql.contains("\"sigint_network_freq\".\"active_from\" <= "));
+    }
+
+    #[test]
+    fn find_live_network_color_code_query_requires_visible_live_message() {
+        let req = FindLiveNetworksReq {
+            freq: "145.026".to_string(),
+            aor_id: None,
+            color_code: Some("7".to_string()),
+        };
+        let groups = vec!["group-a".to_string()];
+
+        let sql = build_find_live_network_ids_query(&req, &groups, 42, dt(5))
+            .build(DbBackend::Postgres)
+            .to_string();
+        let sql_lowercase = sql.to_lowercase();
+
+        assert!(sql.contains("JOIN \"signal_message\""));
+        assert!(
+            sql_lowercase.contains("\"signal_message\".\"deleted\" = false")
+        );
+        assert!(sql.contains("FROM \"signal_message_group\""));
+        assert!(sql.contains("\"signal_message_group\".\"group_master_key\""));
+        assert!(sql.contains("'group-a'"));
     }
 
     #[test]

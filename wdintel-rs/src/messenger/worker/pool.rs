@@ -290,6 +290,8 @@ async fn process_item_once(
     let datasource_id = item.datasource_id;
     let client_name = item.client_name;
     let txn = context.dbx.begin().await.c(h!())?;
+    let mut changed_inbox_item_ids = vec![];
+    let mut redis = context.redis.clone();
     // let current_time = Utc::now().naive_utc();
     // if m.timestamp < current_time - TimeDelta::minutes(15) {
     //     warn!(
@@ -307,7 +309,6 @@ async fn process_item_once(
             datasource_id,
             inbox_message_id: Some(m.internal_id as i64),
         };
-        let mut redis = context.redis.clone();
         if let Err(e) = crate::message_queue::process_signal_message_queue_item(
             message,
             m.attachments,
@@ -318,6 +319,7 @@ async fn process_item_once(
             &context.s3,
             &txn,
             false,
+            &mut changed_inbox_item_ids,
         )
         .await
         {
@@ -327,5 +329,8 @@ async fn process_item_once(
         warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
     }
     txn.commit().await.c(h!())?;
+    crate::inbox::fanout_inbox_changes(&mut redis, changed_inbox_item_ids)
+        .await
+        .c(h!())?;
     Ok(())
 }
