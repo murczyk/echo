@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import { Box, ButtonBase, Typography } from '@mui/material';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import { Box, ButtonBase, Typography, Skeleton } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { mediaAttachmentDisplayName } from './MessageCardMedia';
@@ -28,11 +28,10 @@ export function MessageCardVideoThumb({
       aria-label="Відкрити відео"
       sx={{
         display: 'inline-flex',
-        width: 160,
-        height: 120,
+        maxWidth: 150,
+        height: 150,
+        minWidth: 85,
         alignSelf: 'flex-start',
-        alignItems: 'stretch',
-        justifyContent: 'stretch',
         textAlign: 'left',
         cursor: canOpen ? 'pointer' : 'default',
         color: 'inherit',
@@ -63,6 +62,19 @@ export function MessageCardVideoThumb({
           backgroundColor: 'rgba(255, 255, 255, 0.02)',
         }}
       >
+        {!loaded && (
+          <Skeleton
+            variant="rectangular"
+            animation="wave"
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              zIndex: 0,
+            }}
+          />
+        )}
         <Box
           component="video"
           src={href}
@@ -70,9 +82,10 @@ export function MessageCardVideoThumb({
           onLoadedMetadata={() => setLoaded(true)}
           sx={{
             display: 'block',
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
+            maxWidth: 150,
+            height: 150,
+            width: 'auto',
+            objectFit: 'cover',
             opacity: loaded ? 1 : 0,
             transition: 'opacity 120ms ease-out',
             pointerEvents: 'none',
@@ -89,27 +102,29 @@ export function MessageCardVideoThumb({
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: loaded ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
+            backgroundColor: loaded ? 'rgba(0, 0, 0, 0.15)' : 'transparent',
             transition: 'background-color 120ms ease-out',
           }}
         >
-          <PlayCircleOutlineIcon sx={{ fontSize: 40, color: 'rgba(255, 255, 255, 0.8)' }} />
-          {!loaded && (
-            <Typography
-              variant="caption"
-              sx={{
-                mt: 1,
-                px: 1,
-                width: '100%',
-                textAlign: 'center',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: 'text.secondary'
-              }}
-            >
-              {displayName}
-            </Typography>
+          {loaded ? (
+            <PlayArrowIcon sx={{ fontSize: 32, color: 'rgba(255, 255, 255, 0.9)' }} />
+          ) : (
+            <>
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 1,
+                  width: '100%',
+                  textAlign: 'center',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: 'text.secondary'
+                }}
+              >
+                {displayName}
+              </Typography>
+            </>
           )}
         </Box>
       </Box>
