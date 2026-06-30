@@ -46,7 +46,6 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id]),
         interseption_kind: None,
-        fills_etalonka: None,
         disable_network_assignment: None,
     };
 
@@ -72,7 +71,6 @@ async fn test_bl_group_update_add_second_aor() {
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![aor1.id, aor2.id]),
         interseption_kind: None,
-        fills_etalonka: None,
         disable_network_assignment: None,
     };
 
@@ -111,7 +109,8 @@ async fn test_bl_group_update_add_second_aor() {
 
 #[serial]
 #[tokio::test]
-async fn test_bl_group_update_fills_etalonka_invalidates_all_history() {
+async fn test_bl_group_update_disable_network_assignment_invalidates_all_history(
+) {
     let env = cleanup().await.unwrap();
     let txn = env.dbx.begin().await.unwrap();
     let group_created_at = chrono::NaiveDate::from_ymd_opt(2026, 1, 10)
@@ -127,7 +126,7 @@ async fn test_bl_group_update_fills_etalonka_invalidates_all_history() {
         &txn,
         signal_group::ActiveModel {
             created_at: Set(group_created_at),
-            fills_etalonka: Set(true),
+            disable_network_assignment: Set(false),
             ..Default::default()
         },
     )
@@ -176,8 +175,7 @@ async fn test_bl_group_update_fills_etalonka_invalidates_all_history() {
         area_of_responsibility_id: None,
         area_of_responsibility_ids: Some(vec![]),
         interseption_kind: None,
-        fills_etalonka: Some(false),
-        disable_network_assignment: None,
+        disable_network_assignment: Some(true),
     };
     let res = bl_group_update(&req, &txn).await.unwrap();
 

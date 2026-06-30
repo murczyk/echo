@@ -725,32 +725,6 @@ pub async fn bl_group_update(
         .c(h!())?
         .c(h!())?;
     let mut network_invalidation_enqueued = false;
-    let group = if let Some(fills_etalonka) = req.fills_etalonka {
-        let (group, changed) =
-            crate::sigint::network::etalon_calc::set_group_fills_etalonka(
-                txn,
-                &req.master_key,
-                fills_etalonka,
-            )
-            .await
-            .c(h!())?;
-        if changed {
-            crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_all_history_once(
-                txn,
-                &group,
-                format!(
-                    "updated group fills_etalonka from messenger group edit: {}",
-                    group.master_key
-                ),
-                &mut network_invalidation_enqueued,
-            )
-            .await
-            .c(h!())?;
-        }
-        group
-    } else {
-        group
-    };
     let group = if let Some(disable_network_assignment) =
         req.disable_network_assignment
     {

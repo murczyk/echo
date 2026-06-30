@@ -19,7 +19,6 @@ pub struct Model {
     pub is_secret: bool,
     pub deleted: bool,
     pub is_archived: bool,
-    pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
 }

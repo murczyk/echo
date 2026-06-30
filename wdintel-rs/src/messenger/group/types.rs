@@ -15,7 +15,6 @@ pub struct OrphanSignalGroupEntry {
     /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
     pub ignore_operativny: bool,
     pub interseption_kind: InterseptionKind,
-    pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
@@ -35,7 +34,6 @@ pub struct SignalGroupEntry {
     pub name: String,
     pub ignore_operativny: bool,
     pub interseption_kind: InterseptionKind,
-    pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,

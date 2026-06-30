@@ -264,6 +264,7 @@ mod m20260629_072958_add_signal_message_operator_tags;
 mod m20260629_080533_unit_tags_on_sigint_network;
 mod m20260629_085034_signal_message_operator_tags;
 mod m20260630_094347_interseption_kind_and_unit_mask;
+mod m20260630_130141_signal_group_merge_network_assignment_flags;
 
 pub struct Migrator;
 
@@ -537,6 +538,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260629_080533_unit_tags_on_sigint_network::Migration),
             Box::new(m20260629_085034_signal_message_operator_tags::Migration),
             Box::new(m20260630_094347_interseption_kind_and_unit_mask::Migration),
+            Box::new(
+                m20260630_130141_signal_group_merge_network_assignment_flags::Migration,
+            ),
         ]
     }
 }

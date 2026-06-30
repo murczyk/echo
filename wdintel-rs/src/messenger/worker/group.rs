@@ -159,7 +159,6 @@ pub async fn sync_groups(
                     deleted: NotSet,
                     is_archived: NotSet,
                     interseption_kind: NotSet,
-                    fills_etalonka: NotSet,
                     disable_network_assignment: NotSet,
                 };
                 crate::messenger::group::add_group(model, txn)
