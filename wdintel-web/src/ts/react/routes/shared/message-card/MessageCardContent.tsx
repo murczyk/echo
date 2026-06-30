@@ -113,7 +113,10 @@ export function MessageCardMessageBody({
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
 
-  const videoAttachments = attachmentMedia.filter(isVideoMediaAttachment);
+  const videoAttachments = attachmentMedia.filter(
+    (attachment) =>
+      isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment)
+  );
 
   const downloadAttachments = attachmentMedia.filter(
     (attachment) =>
