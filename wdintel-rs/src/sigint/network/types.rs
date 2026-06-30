@@ -677,3 +677,39 @@ pub struct UpdateNetworkUnitsReq {
 pub struct NetworkFreqsActivityReq {
     pub network_id: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworksReq {
+    pub freq: String,
+    pub aor_id: Option<i64>,
+    pub color_code: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetworksRsp {
+    pub networks: Vec<FindLiveNetwork>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FindLiveNetwork {
+    pub id: i64,
+    pub name: String,
+    pub radio_station: Option<String>,
+    pub purpose: Option<String>,
+    pub operation_mode: Option<String>,
+    pub operation_type: Option<String>,
+    pub operation_period: Option<String>,
+    pub created_at: i64,
+    pub active_from: Option<i64>,
+    pub units: Vec<String>,
+    pub post_ids: Vec<i64>,
+    pub live_freqs: Vec<String>,
+    pub callsigns: Vec<String>,
+    pub locations: Vec<String>,
+}

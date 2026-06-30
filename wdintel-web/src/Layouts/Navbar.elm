@@ -2,12 +2,14 @@ module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
 import Browser.Events
+import Core.Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (attribute, class, id, title)
-import Html.Events exposing (onClick, stopPropagationOn)
+import Html.Attributes exposing (attribute, class, id, property, title)
+import Html.Events exposing (onClick, stopPropagationOn, on)
 import Json.Decode
+import Json.Encode as Encode
 import Layout exposing (Layout)
 import Process
 import Route exposing (Route)
@@ -212,24 +214,72 @@ view user activeName shared route { toContentMsg, model, content } =
                 || route.url.path
                 == "/rer-analysis-neo"
 
-        navbarProps =
-            { onToggleTheme = ToggleDarkTheme
-            , onLogout = SignOutClicked
-            , onThemeChange = SetThemeMode
-            , onNavbarVisibilityChange = ToggleNavbarVisibility
-            , supportsFullscreenToggle = supportsFullscreenToggle
-            , isNavbarVisible = model.isNavbarVisible
-            , openDropdown = model.openDropdown
-            , onDropdownToggle = SetOpenDropdown
-            , onChangelogSeen = ChangelogSeen
-            , onOpenChangelog = OpenChangelog
-            , onCloseDropdownOnly = CloseDropdownOnly
-            , mobileNavOpen = model.mobileNavOpen
-            , onToggleMobileNav = ToggleMobileNav
-            }
+        navbarPropsJson =
+            Encode.object
+                [ ( "user"
+                  , Encode.object
+                        [ ( "name", Encode.string user.name )
+                        , ( "roles", Encode.list Encode.string user.roles )
+                        , ( "goiFullAccessForOrganism", Encode.bool user.goiFullAccessForOrganism )
+                        , ( "goiIntegrations"
+                          , Encode.list
+                                (\integration ->
+                                    Encode.object
+                                        [ ( "id", Encode.int integration.id )
+                                        , ( "ownerOrganismName", Encode.string integration.ownerOrganismName )
+                                        , ( "goiUrl"
+                                          , case integration.goiUrl of
+                                                Just url -> Encode.string url
+                                                Nothing -> Encode.null
+                                          )
+                                        ]
+                                )
+                                user.goiIntegrations
+                          )
+                        ]
+                  )
+                , ( "shared",
+                        Encode.object
+                            [ ( "serverInfo"
+                              , case shared.serverInfo of
+                                    Just info -> Encode.object [ ( "mode", Encode.string info.mode ) ]
+                                    Nothing -> Encode.null
+                              )
+                            , ( "themeMode", Encode.string (Shared.Model.themeModeToString shared.themeMode) )
+                            , ( "changelogPreview"
+                              , case shared.changelogPreview of
+                                    Just preview ->
+                                        Encode.object
+                                            [ ( "version", Encode.string preview.version )
+                                            , ( "preview", Encode.list Encode.string preview.preview )
+                                            , ( "fullUrl", Encode.string preview.fullUrl )
+                                            ]
+                                    Nothing ->
+                                        Encode.null
+                              )
+                            , ( "userLoaded", Encode.bool shared.userLoaded )
+                            , ( "changelogLastSeenLoaded", Encode.bool shared.changelogLastSeenLoaded )
+                            , ( "changelogLastSeen"
+                              , case shared.changelogLastSeen of
+                                    Just ls -> Encode.string ls
+                                    Nothing -> Encode.null
+                              )
+                            ]
+                  )
+                , ( "activeName", Encode.string activeName )
+                , ( "isNavbarVisible", Encode.bool model.isNavbarVisible )
+                , ( "supportsFullscreenToggle", Encode.bool supportsFullscreenToggle )
+                ]
 
         navbarHtml =
-            Shared.Components.Navbar.navBar user shared activeName navbarProps
+            node "app-navbar"
+                [ property "props" navbarPropsJson
+                , on "navbar-logout" (Json.Decode.succeed SignOutClicked)
+                , on "navbar-theme-toggle" (Json.Decode.map (\t -> SetThemeMode (Shared.Model.themeModeFromString t)) (Json.Decode.at [ "detail" ] Json.Decode.string))
+                , on "navbar-visibility-toggle" (Json.Decode.succeed ToggleNavbarVisibility)
+                , on "navbar-open-changelog" (Json.Decode.map OpenChangelog (Json.Decode.at [ "detail" ] Json.Decode.string))
+                ]
+                []
     in
     { title = content.title
     , body =

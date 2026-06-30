@@ -843,7 +843,6 @@ pub async fn submit_upsert_inbox_item(
         .freq
         .as_ref()
         .map(|x| crate::rer_importer::frequency::etalon(x));
-
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
         let m_comment = sigint_comment::Entity::find()
