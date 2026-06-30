@@ -914,7 +914,6 @@ where
             expr_callsigns.clone(),
         ))
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(build_datetime_filter(filter)?)
         .into_query();
 
