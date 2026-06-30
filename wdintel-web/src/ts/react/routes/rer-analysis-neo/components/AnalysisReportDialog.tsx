@@ -336,6 +336,21 @@ export function AnalysisReportDialog({
             )}
           </Stack>
 
+          {report.template === 'tags' ? (
+            <FormControl size="small" sx={{ flex: '1 1 220px', maxWidth: 320, minWidth: 220 }}>
+              <InputLabel id="analysis-report-tag-sort-label">Сортування</InputLabel>
+              <Select
+                labelId="analysis-report-tag-sort-label"
+                label="Сортування"
+                value={report.tagReportSortBy}
+                onChange={(event) => onUpdate({ tagReportSortBy: event.target.value as AnalysisReportState['tagReportSortBy'] })}
+              >
+                <MenuItem value="ByTime">За Часом</MenuItem>
+                <MenuItem value="ByFreqThenTime">За Частотою Та Часом</MenuItem>
+              </Select>
+            </FormControl>
+          ) : null}
+
           {report.template === 'senders' ? (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap">
               <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>

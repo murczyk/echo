@@ -46,7 +46,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div class="mt-4 grid gap-3">
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Назва</span>
-            <input id="nameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="goi-signal-1" required />
+            <input id="nameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="goi-signal-1" aria-describedby="nameHint" required />
+            <span id="nameHint" class="text-xs text-zinc-500">Довільна назва вашої інтеграції, наприклад goi signal 333 ombr</span>
           </label>
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Месенджер</span>
