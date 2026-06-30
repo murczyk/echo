@@ -2,6 +2,7 @@ import type {
   AnalysisStatsReq,
   AreaOfResponsibility,
   GroupAdminData,
+  InterseptionKind,
   PostStatsRsp,
   SignalGroupEntry,
   SignalGroupStats,
@@ -12,6 +13,12 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-
 import { isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
+
+function normalizeInterseptionKind(raw: Record<string, unknown>): InterseptionKind {
+  const interseptionKind = raw.interseptionKind ?? raw.interseption_kind;
+  if (interseptionKind === 'rer' || interseptionKind === 'other') return interseptionKind;
+  return (raw.is_rer ?? raw.isRer ?? true) ? 'rer' : 'other';
+}
 
 /** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
 export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Record<number, Tag>> {
@@ -117,7 +124,7 @@ export async function getGroupInfosBatch(masterKeys: string[], options?: Request
     masterKey: (r.master_key ?? r.masterKey) as string,
     name: (r.name ?? '') as string,
     ignoreOperativny: (r.ignore_operativny ?? r.ignoreOperativny ?? false) as boolean,
-    isRer: (r.is_rer ?? r.isRer ?? true) as boolean,
+    interseptionKind: normalizeInterseptionKind(r),
     fillsEtalonka: (r.fills_etalonka ?? r.fillsEtalonka ?? true) as boolean,
     disableNetworkAssignment: (r.disable_network_assignment ?? r.disableNetworkAssignment ?? false) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,

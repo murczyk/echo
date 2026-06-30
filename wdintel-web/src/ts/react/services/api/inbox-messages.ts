@@ -7,6 +7,7 @@ import type {
   InboxMessageTag,
   InboxMessagesReq,
   InboxMessagesRsp,
+  InterseptionKind,
   MessageMediaInfo,
   SignalGroupEntry,
   SignalGroupStats,
@@ -20,6 +21,12 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
   activityLastWeek: 0,
 };
+
+function normalizeInterseptionKind(raw: Record<string, unknown>): InterseptionKind {
+  const interseptionKind = raw.interseptionKind ?? raw.interseption_kind;
+  if (interseptionKind === 'rer' || interseptionKind === 'other') return interseptionKind;
+  return (raw.isRer ?? raw.is_rer ?? true) ? 'rer' : 'other';
+}
 
 /** Raw API response (snake_case). */
 export type InboxMessagesRspRaw = {
@@ -199,7 +206,7 @@ function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][numbe
     masterKey: (g.masterKey ?? g.master_key ?? '') as string,
     name: (g.name ?? '') as string,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
-    isRer: (raw.isRer ?? raw.is_rer ?? true) as boolean,
+    interseptionKind: normalizeInterseptionKind(raw),
     fillsEtalonka: (raw.fillsEtalonka ?? raw.fills_etalonka ?? true) as boolean,
     disableNetworkAssignment: (raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false) as boolean,
     groupStats: groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,

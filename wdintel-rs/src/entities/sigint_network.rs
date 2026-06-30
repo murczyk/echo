@@ -36,7 +36,7 @@ pub struct Model {
     pub original_id: Option<i64>,
     pub do_not_archive: bool,
     #[sea_orm(column_type = "JsonBinary")]
-    pub unit_tags: Json,
+    pub unit_mask: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

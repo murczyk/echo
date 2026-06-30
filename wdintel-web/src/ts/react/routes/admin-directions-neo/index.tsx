@@ -4,7 +4,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
-import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Tab, Switch, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Tab, Switch, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
   MRT_RowData,
@@ -21,6 +21,7 @@ import type { ReactNode } from 'react';
 import {
   AreaOfResponsibility,
   Datasource,
+  InterseptionKind,
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupEntry,
@@ -78,6 +79,42 @@ import { GroupStatsTimelineCell } from './GroupStatsTimelineCell';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
+const INTERSEPTION_KIND_TOOLTIP =
+  'РЕР перехоплення відобувається шляхом прослуховування радіомере, і ідентифікуються за частотою на якій було здійснено перехоплення. Інше - для перехоплень які було отримані із інших джерел. Такі перехоплення ідентифікуються за маскою підрозділу, перевірте Оперативні Параметри мережі підрозділу для налаштувань маски';
+
+function InfoFieldLabel({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+      {label}
+      <Tooltip title={tooltip} arrow>
+        <InfoOutlinedIcon color="action" fontSize="small" />
+      </Tooltip>
+    </Box>
+  );
+}
+
+function InterseptionKindSelect({
+  value,
+  onChange,
+}: {
+  value: InterseptionKind;
+  onChange: (value: InterseptionKind) => void;
+}) {
+  return (
+    <TextField
+      select
+      fullWidth
+      size="small"
+      label={<InfoFieldLabel label="Категорія групи" tooltip={INTERSEPTION_KIND_TOOLTIP} />}
+      value={value}
+      onChange={(event) => onChange(event.target.value as InterseptionKind)}
+    >
+      <MenuItem value="rer">РЕР</MenuItem>
+      <MenuItem value="other">Інше</MenuItem>
+    </TextField>
+  );
+}
+
 type DatasourceEntry = [number, Datasource];
 type ZoneEntry = [number, SigintZone];
 type ZoneGroupRow = {
@@ -91,7 +128,7 @@ type OrphanAssignState = {
   group: OrphanSignalGroupEntry;
   selectedZones: ZoneEntry[];
   isSecret: boolean;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
@@ -106,7 +143,7 @@ type GroupEditState = {
   group: ZoneDatasourceGroup;
   groupName: string;
   isSecret: boolean;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
@@ -121,7 +158,7 @@ type GroupEditState = {
 type OrphanEditState = {
   group: OrphanSignalGroupEntry;
   groupName: string;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   shortNote: string;
@@ -441,7 +478,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     name: '',
     datasourceId: null,
     ignoreOperativny: false,
-    isRer: true,
+    interseptionKind: 'rer',
     fillsEtalonka: true,
     disableNetworkAssignment: false,
     isArchived: false,
@@ -462,16 +499,13 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
     datasourceId: 0,
     group: {
       sigintZoneDatasourceId: index,
-      sigintZoneId: 0,
-      datasourceId: 0,
       groupMasterKey: '',
       isGroupSecret: false,
-      isRer: true,
+      interseptionKind: 'rer',
       fillsEtalonka: true,
       disableNetworkAssignment: false,
       allowedUsers: [],
       adminLogins: [],
-      areaOfResponsibilityId: null,
       areasOfResponsibility: null,
       shortNote: null,
       longNote: null,
@@ -1671,7 +1705,7 @@ function AdminDirectionsNeoPageBody() {
             masterKey: group.masterKey,
             name: group.name,
             ignoreOperativny: group.ignoreOperativny,
-            isRer: group.isRer,
+            interseptionKind: group.interseptionKind,
             fillsEtalonka: group.fillsEtalonka,
             disableNetworkAssignment: group.disableNetworkAssignment,
             groupStats: group.groupStats,
@@ -1707,7 +1741,7 @@ function AdminDirectionsNeoPageBody() {
       group,
       groupName,
       isSecret: group.isGroupSecret,
-      isRer: group.isRer,
+      interseptionKind: group.interseptionKind,
       fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: group.allowedUsers,
@@ -1726,7 +1760,7 @@ function AdminDirectionsNeoPageBody() {
     setOrphanEditDialog({
       group,
       groupName,
-      isRer: group.isRer,
+      interseptionKind: group.interseptionKind,
       fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       shortNote: group.groupAdminData?.shortNote ?? '',
@@ -1745,7 +1779,7 @@ function AdminDirectionsNeoPageBody() {
       group,
       selectedZones: preselectedZones,
       isSecret: false,
-      isRer: group.isRer,
+      interseptionKind: group.interseptionKind,
       fillsEtalonka: group.fillsEtalonka,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: [],
@@ -1830,7 +1864,7 @@ function AdminDirectionsNeoPageBody() {
     const req: ZoneDatasourceGroupUpdateReq = {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
-      isRer: supportNonRerInterceptions ? editDialog.isRer : null,
+      interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       fillsEtalonka: editDialog.fillsEtalonka,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       userLogins: selectedUsers,
@@ -1888,7 +1922,7 @@ function AdminDirectionsNeoPageBody() {
           orphanEditDialog.selectedAorIds.length > 0
             ? orphanEditDialog.selectedAorIds
             : null,
-        isRer: supportNonRerInterceptions ? orphanEditDialog.isRer : null,
+        interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         fillsEtalonka: orphanEditDialog.fillsEtalonka,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
       });
@@ -1906,7 +1940,7 @@ function AdminDirectionsNeoPageBody() {
                   }
                 : null,
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
-            isRer: orphanEditDialog.isRer,
+            interseptionKind: orphanEditDialog.interseptionKind,
             fillsEtalonka: orphanEditDialog.fillsEtalonka,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
           };
@@ -1955,7 +1989,7 @@ function AdminDirectionsNeoPageBody() {
         datasourceId,
         masterKey: assignDialog.group.masterKey,
         isSecret: assignDialog.isSecret,
-        isRer: supportNonRerInterceptions ? assignDialog.isRer : null,
+        interseptionKind: supportNonRerInterceptions ? assignDialog.interseptionKind : null,
         userLogins: selectedUsers,
         adminLogins: assignDialog.selectedAdmins,
         shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
@@ -1997,7 +2031,7 @@ function AdminDirectionsNeoPageBody() {
               masterKey: response.groupMasterKey,
               name: response.groupName,
               ignoreOperativny: false,
-              isRer: assignDialog.isRer,
+              interseptionKind: assignDialog.interseptionKind,
               fillsEtalonka: assignDialog.fillsEtalonka,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               groupStats: assignDialog.group.groupStats,
@@ -2188,20 +2222,15 @@ function AdminDirectionsNeoPageBody() {
             label="Прихована група"
           />
           {supportNonRerInterceptions ? (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editDialog?.isRer ?? true}
-                  onChange={(event) =>
-                    editDialog &&
-                    setEditDialog({
-                      ...editDialog,
-                      isRer: event.target.checked,
-                    })
-                  }
-                />
+            <InterseptionKindSelect
+              value={editDialog?.interseptionKind ?? 'rer'}
+              onChange={(interseptionKind) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  interseptionKind,
+                })
               }
-              label="РЕР група"
             />
           ) : null}
           <FormControlLabel
@@ -2344,20 +2373,15 @@ function AdminDirectionsNeoPageBody() {
             Група: {orphanEditDialog?.groupName}
           </div>
           {supportNonRerInterceptions ? (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={orphanEditDialog?.isRer ?? true}
-                  onChange={(event) =>
-                    orphanEditDialog &&
-                    setOrphanEditDialog({
-                      ...orphanEditDialog,
-                      isRer: event.target.checked,
-                    })
-                  }
-                />
+            <InterseptionKindSelect
+              value={orphanEditDialog?.interseptionKind ?? 'rer'}
+              onChange={(interseptionKind) =>
+                orphanEditDialog &&
+                setOrphanEditDialog({
+                  ...orphanEditDialog,
+                  interseptionKind,
+                })
               }
-              label="РЕР група"
             />
           ) : null}
           <FormControlLabel
@@ -2517,20 +2541,15 @@ function AdminDirectionsNeoPageBody() {
             label="Прихована група"
           />
           {supportNonRerInterceptions ? (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={assignDialog?.isRer ?? true}
-                  onChange={(event) =>
-                    assignDialog &&
-                    setAssignDialog({
-                      ...assignDialog,
-                      isRer: event.target.checked,
-                    })
-                  }
-                />
+            <InterseptionKindSelect
+              value={assignDialog?.interseptionKind ?? 'rer'}
+              onChange={(interseptionKind) =>
+                assignDialog &&
+                setAssignDialog({
+                  ...assignDialog,
+                  interseptionKind,
+                })
               }
-              label="РЕР група"
             />
           ) : null}
           {assignDialog?.isSecret ? (

@@ -605,7 +605,7 @@ export type SignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   groupStats: SignalGroupStats;
@@ -617,7 +617,7 @@ export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
   ignoreOperativny: boolean;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   isArchived: boolean;
@@ -1735,11 +1735,16 @@ export type SigintZone = {
   createdAt: number;
 };
 
+export type InterseptionKind =
+  | 'rer'
+  | 'other'
+;
+
 export type ZoneDatasourceGroup = {
   sigintZoneDatasourceId: number;
   groupMasterKey: string;
   isGroupSecret: boolean;
-  isRer: boolean;
+  interseptionKind: InterseptionKind;
   fillsEtalonka: boolean;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
@@ -1762,7 +1767,7 @@ export type ZoneDatasourceGroupAddReq = {
   zoneId: number;
   datasourceId: number;
   isSecret: boolean;
-  isRer: boolean | null;
+  interseptionKind: InterseptionKind | null;
   masterKey: string;
   userLogins: Array<string>;
   adminLogins: Array<string>;
@@ -1773,7 +1778,7 @@ export type ZoneDatasourceGroupAddReq = {
 export type ZoneDatasourceGroupUpdateReq = {
   id: number;
   isSecret: boolean;
-  isRer: boolean | null;
+  interseptionKind: InterseptionKind | null;
   fillsEtalonka: boolean | null;
   disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
@@ -2552,7 +2557,7 @@ export type Network = {
   descriptions: Array<NetworkDescription>;
   deleted: boolean;
   doNotArchive: boolean;
-  unitTags: Array<string>;
+  unitMask: Array<string>;
   status: NetworkStatus;
 };
 
@@ -2597,7 +2602,7 @@ export type CreateNetworkReq = {
   postIds: Array<number>;
   descriptions: Array<AddNetworkDescription>;
   doNotArchive: boolean;
-  unitTags: Array<string>;
+  unitMask: Array<string>;
 };
 
 export type DeleteNetworkReq = {
@@ -2617,7 +2622,7 @@ export type UpdateNetworkReq = {
   operationPeriod: string | null;
   descriptions: Array<UpdateNetworkDescriptionReq> | null;
   doNotArchive: boolean;
-  unitTags: Array<string> | null;
+  unitMask: Array<string> | null;
   status: NetworkStatus;
 };
 
@@ -3119,6 +3124,7 @@ export type SystemSettingsItem = {
   updatedBy: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  supportNonRerInterceptions: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3138,6 +3144,7 @@ export type CreateSystemSettingsReq = {
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  supportNonRerInterceptions: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3285,7 +3292,7 @@ export type GroupUpdateReq = {
   longNote: string | null;
   areaOfResponsibilityId: number | null;
   areaOfResponsibilityIds: Array<number> | null;
-  isRer: boolean | null;
+  interseptionKind: InterseptionKind | null;
   fillsEtalonka: boolean | null;
   disableNetworkAssignment: boolean | null;
 };

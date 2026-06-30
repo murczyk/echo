@@ -1,4 +1,6 @@
+use crate::entities::sea_orm_active_enums as db_enums;
 use crate::entities::*;
+use crate::sigint::types::InterseptionKind;
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -9,7 +11,7 @@ use sea_orm::*;
 #[derive(Debug)]
 pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
-    pub is_rer: bool,
+    pub interseption_kind: InterseptionKind,
     pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
@@ -59,20 +61,16 @@ pub async fn bl_szd_group_update(
         .await
         .c(h!())?
         .unwrap_or(false);
-    update_group_is_rer_if_enabled(req.is_rer, &szd.group_master_key, txn)
+    update_group_interseption_kind_if_enabled(
+        req.interseption_kind,
+        &szd.group_master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
+    let interseption_kind = group_interseption_kind(&szd.group_master_key, txn)
         .await
         .c(h!())?;
-    let is_rer = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::IsArchived.eq(false))
-        .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
-        .select_only()
-        .column(signal_group::Column::IsRer)
-        .into_tuple::<bool>()
-        .one(txn)
-        .await
-        .c(h!())?
-        .unwrap_or(true);
     let mut network_invalidation_enqueued = false;
     let fills_etalonka = update_group_fills_etalonka_if_present(
         req.fills_etalonka,
@@ -120,7 +118,7 @@ pub async fn bl_szd_group_update(
 
     let res = BlSzdGroupUpdateRes {
         is_secret,
-        is_rer,
+        interseption_kind,
         fills_etalonka,
         disable_network_assignment,
         aor: if aor.is_empty() { None } else { Some(aor) },
@@ -221,8 +219,23 @@ async fn update_group_fills_etalonka_if_present(
     Ok(group.fills_etalonka)
 }
 
-async fn update_group_is_rer_if_enabled(
-    is_rer: Option<bool>,
+pub async fn group_interseption_kind(
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> Result<InterseptionKind, AppError> {
+    Ok(signal_group::Entity::find_by_id(master_key.to_string())
+        .select_only()
+        .column(signal_group::Column::InterseptionKind)
+        .into_tuple::<db_enums::InterseptionKind>()
+        .one(txn)
+        .await
+        .c(h!())?
+        .map(InterseptionKind::from)
+        .unwrap_or(InterseptionKind::InterseptionRer))
+}
+
+pub async fn update_group_interseption_kind_if_enabled(
+    interseption_kind: Option<InterseptionKind>,
     master_key: &str,
     txn: &DatabaseTransaction,
 ) -> Result<(), AppError> {
@@ -232,20 +245,22 @@ async fn update_group_is_rer_if_enabled(
     {
         return Ok(());
     }
-    let Some(is_rer) = is_rer else {
+    let Some(interseption_kind) = interseption_kind else {
         return Ok(());
     };
+    let interseption_kind: db_enums::InterseptionKind =
+        interseption_kind.into();
     if let Some(group) =
         signal_group::Entity::find_by_id(master_key.to_string())
             .one(txn)
             .await
             .c(h!())?
     {
-        if group.is_rer == is_rer {
+        if group.interseption_kind == interseption_kind {
             return Ok(());
         }
         let mut group = group.into_active_model();
-        group.is_rer = Set(is_rer);
+        group.interseption_kind = Set(interseption_kind);
         group.update(txn).await.c(h!())?;
         crate::sigint::unit_tag::enqueue_recent_unit_tag_recalculation_for_group(
             txn, master_key,
@@ -500,7 +515,7 @@ pub async fn bl_szd_groups_list(
         id: i64,
         group_master_key: String,
         is_secret: bool,
-        is_rer: bool,
+        interseption_kind: db_enums::InterseptionKind,
         fills_etalonka: bool,
         disable_network_assignment: bool,
         short_note: Option<String>,
@@ -530,7 +545,7 @@ pub async fn bl_szd_groups_list(
         )
         .column_as(sigint_zone_datasource::Column::Id, "id")
         .column_as(signal_group::Column::IsSecret, "is_secret")
-        .column_as(signal_group::Column::IsRer, "is_rer")
+        .column_as(signal_group::Column::InterseptionKind, "interseption_kind")
         .column_as(signal_group::Column::FillsEtalonka, "fills_etalonka")
         .column_as(
             signal_group::Column::DisableNetworkAssignment,
@@ -553,7 +568,7 @@ pub async fn bl_szd_groups_list(
         String,
         (
             bool,
-            bool,
+            InterseptionKind,
             bool,
             bool,
             i64,
@@ -579,7 +594,7 @@ pub async fn bl_szd_groups_list(
                 row.group_master_key,
                 (
                     row.is_secret,
-                    row.is_rer,
+                    row.interseption_kind.into(),
                     row.fills_etalonka,
                     row.disable_network_assignment,
                     row.id,
@@ -605,7 +620,7 @@ pub async fn bl_szd_groups_list(
                 master_key,
                 (
                     is_secret,
-                    is_rer,
+                    interseption_kind,
                     fills_etalonka,
                     disable_network_assignment,
                     szd_id,
@@ -619,7 +634,7 @@ pub async fn bl_szd_groups_list(
                     areas_of_responsibility: aors,
                     sigint_zone_datasource_id: szd_id,
                     is_group_secret: is_secret,
-                    is_rer,
+                    interseption_kind,
                     fills_etalonka,
                     disable_network_assignment,
                     allowed_users,

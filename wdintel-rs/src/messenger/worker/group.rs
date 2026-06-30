@@ -158,7 +158,7 @@ pub async fn sync_groups(
                     is_secret: NotSet,
                     deleted: NotSet,
                     is_archived: NotSet,
-                    is_rer: NotSet,
+                    interseption_kind: NotSet,
                     fills_etalonka: NotSet,
                     disable_network_assignment: NotSet,
                 };

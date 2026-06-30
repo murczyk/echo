@@ -2,6 +2,7 @@ import {
   AreaOfResponsibility,
   BatchSignalGroupReq,
   Datasource,
+  InterseptionKind,
   MyAdminSignalGroup,
   MyAdminSignalGroupEditReferenceReq,
   MyAdminSignalGroupEditReferenceRsp,
@@ -74,6 +75,8 @@ type SignalGroupEntryLike = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  interseptionKind?: InterseptionKind;
+  interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
   fillsEtalonka?: boolean;
@@ -94,6 +97,8 @@ type OrphanSignalGroupEntryLike = {
   name?: string;
   ignoreOperativny?: boolean;
   ignore_operativny?: boolean;
+  interseptionKind?: InterseptionKind;
+  interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
   fillsEtalonka?: boolean;
@@ -147,6 +152,8 @@ type ZoneDatasourceGroupLike = {
   group_master_key?: string;
   isGroupSecret?: boolean;
   is_group_secret?: boolean;
+  interseptionKind?: InterseptionKind;
+  interseption_kind?: InterseptionKind;
   isRer?: boolean;
   is_rer?: boolean;
   fillsEtalonka?: boolean;
@@ -234,7 +241,7 @@ type ZoneDatasourceGroupAddReqBody = {
   zone_id: number;
   datasource_id: number;
   is_secret: boolean;
-  is_rer: boolean | null;
+  interseption_kind: InterseptionKind | null;
   master_key: string;
   user_logins: string[];
   admin_logins: string[];
@@ -245,7 +252,7 @@ type ZoneDatasourceGroupAddReqBody = {
 type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
   is_secret: boolean;
-  is_rer: boolean | null;
+  interseption_kind: InterseptionKind | null;
   fills_etalonka: boolean | null;
   disable_network_assignment: boolean | null;
   user_logins: string[];
@@ -346,12 +353,23 @@ function normalizeGroupAdminData(raw: GroupAdminDataLike | null | undefined) {
   return { shortNote, longNote };
 }
 
+function normalizeInterseptionKind(raw: {
+  interseptionKind?: InterseptionKind | null;
+  interseption_kind?: InterseptionKind | null;
+  isRer?: boolean | null;
+  is_rer?: boolean | null;
+}): InterseptionKind {
+  const interseptionKind = raw.interseptionKind ?? raw.interseption_kind;
+  if (interseptionKind === 'rer' || interseptionKind === 'other') return interseptionKind;
+  return raw.isRer ?? raw.is_rer ?? true ? 'rer' : 'other';
+}
+
 function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry {
   return {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
-    isRer: raw.isRer ?? raw.is_rer ?? true,
+    interseptionKind: normalizeInterseptionKind(raw),
     fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
@@ -365,7 +383,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
-    isRer: raw.isRer ?? raw.is_rer ?? true,
+    interseptionKind: normalizeInterseptionKind(raw),
     fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
@@ -382,7 +400,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     sigintZoneDatasourceId: raw.sigintZoneDatasourceId ?? raw.sigint_zone_datasource_id ?? 0,
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
-    isRer: raw.isRer ?? raw.is_rer ?? true,
+    interseptionKind: normalizeInterseptionKind(raw),
     fillsEtalonka: raw.fillsEtalonka ?? raw.fills_etalonka ?? true,
     disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
@@ -456,7 +474,7 @@ function toZoneDatasourceGroupAddReqBody(req: ZoneDatasourceGroupAddReq): ZoneDa
     zone_id: req.zoneId,
     datasource_id: req.datasourceId,
     is_secret: req.isSecret,
-    is_rer: req.isRer ?? null,
+    interseption_kind: req.interseptionKind ?? null,
     master_key: req.masterKey,
     user_logins: req.userLogins,
     admin_logins: req.adminLogins,
@@ -469,7 +487,7 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
   return {
     id: req.id,
     is_secret: req.isSecret,
-    is_rer: req.isRer ?? null,
+    interseption_kind: req.interseptionKind ?? null,
     fills_etalonka: req.fillsEtalonka ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     user_logins: req.userLogins,

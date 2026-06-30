@@ -797,10 +797,10 @@ pub async fn create_network(
         });
 
     let (active_from, active_to) = compute_network_activity_range(&freq_ranges);
-    let unit_tags =
-        crate::sigint::unit_tag::normalize_unit_tags(req.unit_tags.clone())
+    let unit_mask =
+        crate::sigint::unit_tag::normalize_unit_mask(req.unit_mask.clone())
             .c(h!())?;
-    let has_unit_tags = !unit_tags.is_empty();
+    let has_unit_mask = !unit_mask.is_empty();
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
@@ -819,7 +819,7 @@ pub async fn create_network(
         active_from: Set(active_from),
         active_to: Set(active_to),
         do_not_archive: Set(req.do_not_archive),
-        unit_tags: Set(serde_json::to_value(unit_tags).context(h!())?),
+        unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,
         original_id: NotSet,
     }
@@ -964,7 +964,7 @@ pub async fn create_network(
     )
     .await
     .c(h!())?;
-    if has_unit_tags {
+    if has_unit_mask {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
             &env.dbx,
         )
@@ -1000,10 +1000,10 @@ pub async fn update_network(
 
     let req: UpdateNetworkReq = req.into_inner();
     let is_restore_network = req.restore_network.unwrap_or(false);
-    let unit_tags = req
-        .unit_tags
+    let unit_mask = req
+        .unit_mask
         .clone()
-        .map(crate::sigint::unit_tag::normalize_unit_tags)
+        .map(crate::sigint::unit_tag::normalize_unit_mask)
         .transpose()
         .c(h!())?;
 
@@ -1029,9 +1029,9 @@ pub async fn update_network(
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.do_not_archive = Set(req.do_not_archive);
-    if let Some(unit_tags) = &unit_tags {
-        network_model.unit_tags =
-            Set(serde_json::to_value(unit_tags).context(h!())?);
+    if let Some(unit_mask) = &unit_mask {
+        network_model.unit_mask =
+            Set(serde_json::to_value(unit_mask).context(h!())?);
     }
     network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
@@ -1097,7 +1097,7 @@ pub async fn update_network(
             .await
             .c(h!())?;
     }
-    if unit_tags.is_some() {
+    if unit_mask.is_some() {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
             &env.dbx,
         )
