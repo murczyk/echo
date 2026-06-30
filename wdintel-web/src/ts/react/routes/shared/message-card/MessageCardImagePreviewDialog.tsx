@@ -340,15 +340,13 @@ export function MessageImagePreviewDialog({
         },
       }}
       BackdropProps={{
-        sx: {
-          backgroundColor: 'rgba(0, 0, 0, 0.82)',
-        },
+        className: 'bg-black/80',
       }}
     >
       <DialogContent
         sx={{
-          px: 0,
-          pt: 0,
+          px: isFullscreen ? 0 : 2,
+          pt: isFullscreen ? 0 : 2,
           pb: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -356,20 +354,17 @@ export function MessageImagePreviewDialog({
           minHeight: 0,
           flex: '1 1 auto',
           overflow: 'hidden',
-          gap: 0,
+          gap: isFullscreen ? 0 : 1.25,
         }}
       >
         <Box
-          className="bg-black"
+          className={`bg-black ${isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
           sx={{
             flex: 1,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderTopLeftRadius: isFullscreen ? 0 : 12,
-            borderTopRightRadius: isFullscreen ? 0 : 12,
-            borderBottomLeftRadius: 0,
-            borderBottomRightRadius: 0,
+            borderRadius: isFullscreen ? 0 : 1.5,
             overflow: 'hidden',
           }}
         >
@@ -420,17 +415,19 @@ export function MessageImagePreviewDialog({
           imageSize={imageSize}
         />
       </DialogContent>
-      <MessageCardImagePreviewActions
-        currentHref={currentHref}
-        downloadFileName={downloadFileName}
-        hasCarousel={hasCarousel}
-        resolvedIndex={resolvedIndex}
-        imageCount={imageCount}
-        onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
-        onGoToNext={() => goToIndex(resolvedIndex + 1)}
-        onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
-        onClose={closeDialog}
-      />
+      {!isFullscreen && (
+        <MessageCardImagePreviewActions
+          currentHref={currentHref}
+          downloadFileName={downloadFileName}
+          hasCarousel={hasCarousel}
+          resolvedIndex={resolvedIndex}
+          imageCount={imageCount}
+          onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
+          onGoToNext={() => goToIndex(resolvedIndex + 1)}
+          onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+          onClose={closeDialog}
+        />
+      )}
     </Dialog>
   );
 }

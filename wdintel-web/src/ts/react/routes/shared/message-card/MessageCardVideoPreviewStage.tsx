@@ -5,7 +5,7 @@ import {
   useEffect,
   type SyntheticEvent,
 } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, CircularProgress, Typography } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import type { VideoPreviewError } from "./message-card-video-utils";
@@ -51,6 +51,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
 ) {
   const [clickAction, setClickAction] = useState<"play" | "pause">("play");
   const [showIcon, setShowIcon] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
   const clickActionTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -82,6 +83,10 @@ export const MessageCardVideoPreviewStage = forwardRef<
           controls={false}
           preload="metadata"
           playsInline
+          onLoadStart={() => setIsBuffering(true)}
+          onWaiting={() => setIsBuffering(true)}
+          onCanPlay={() => setIsBuffering(false)}
+          onPlaying={() => setIsBuffering(false)}
           onPlay={onPlay}
           onPause={onPause}
           onEnded={onEnded}
@@ -115,6 +120,12 @@ export const MessageCardVideoPreviewStage = forwardRef<
             cursor: "pointer",
           }}
         />
+      ) : null}
+
+      {(!src && !error) || (src && !error && isBuffering) ? (
+        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+          <CircularProgress size={22} />
+        </Box>
       ) : null}
 
       {src && !error ? (

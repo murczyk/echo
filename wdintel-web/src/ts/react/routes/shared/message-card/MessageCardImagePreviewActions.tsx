@@ -104,6 +104,18 @@ export function MessageCardImagePreviewControls({
         </span>
       </Tooltip>
 
+      <Typography
+        variant="caption"
+        className="font-mono text-white/75"
+        sx={{
+          minWidth: 44,
+          textAlign: 'center',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {Math.round(zoom)}%
+      </Typography>
+
       <Box sx={{ ml: { xs: 0, sm: 1 } }}>
         <Tooltip title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'} enterDelay={300}>
           <IconButton

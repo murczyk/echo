@@ -1,12 +1,11 @@
-import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
-import { forwardRef } from 'react';
-import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from "react";
+import { forwardRef } from "react";
+import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 
-import type { MessageCardImage } from './message-card-image-utils';
-import { ZOOM_MIN } from './message-card-image-preview-utils';
-import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
+import type { MessageCardImage } from "./message-card-image-utils";
+import { ZOOM_MIN } from "./message-card-image-preview-utils";
+import { getMessageCardPreviewStageSx } from "./message-card-preview-shell";
 
 type StageSize = {
   width: number;
@@ -65,44 +64,21 @@ export const MessageCardImagePreviewStage = forwardRef<
       onPointerUp={onStopPan}
       onPointerLeave={onStopPan}
       sx={{
-        flex: '1 1 auto',
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        flex: "1 1 auto",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         minHeight: 0,
-        overflow: 'hidden',
+        overflow: "hidden",
         backgroundImage: stageBackground,
         ...getMessageCardPreviewStageSx(theme, isFullscreen),
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: 'cover',
-        px: 1.5,
-        py: 1.5,
-        cursor: zoom > ZOOM_MIN ? 'grab' : 'default',
-        userSelect: 'none',
+        backgroundRepeat: "no-repeat",
+        backgroundSize: "cover",
+        cursor: zoom > ZOOM_MIN ? "grab" : "default",
+        userSelect: "none",
       }}
     >
-      {isFullscreen ? (
-        <Tooltip title="Вийти з повноекранного режиму" enterDelay={300}>
-          <IconButton
-            aria-label="Вийти з повноекранного режиму"
-            onClick={onExitFullscreen}
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            size="small"
-            sx={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              zIndex: 11,
-              color: 'inherit',
-              backgroundColor: 'rgba(0, 0, 0, 0.28)',
-            }}
-          >
-            <FullscreenExitIcon />
-          </IconButton>
-        </Tooltip>
-      ) : null}
       <Box
         component="img"
         src={currentHref}
@@ -112,28 +88,31 @@ export const MessageCardImagePreviewStage = forwardRef<
         data-image-preview-pan-x={pan.x}
         data-image-preview-pan-y={pan.y}
         data-image-preview-file-name={previewFileName}
-        data-image-preview-size-bytes={currentImage.sizeBytes ?? ''}
-        data-image-preview-natural-width={imageSize?.width ?? ''}
-        data-image-preview-natural-height={imageSize?.height ?? ''}
+        data-image-preview-size-bytes={currentImage.sizeBytes ?? ""}
+        data-image-preview-natural-width={imageSize?.width ?? ""}
+        data-image-preview-natural-height={imageSize?.height ?? ""}
         draggable={false}
         onLoad={onImageLoad}
         onError={onImageError}
         decoding="async"
         sx={{
-          display: failedHref === currentHref ? 'none' : 'block',
-          maxWidth: '100%',
-          maxHeight: '100%',
-          objectFit: 'contain',
+          display: failedHref === currentHref ? "none" : "block",
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain",
           transform: imageTransform,
-          transformOrigin: 'center center',
-          transition: zoom === ZOOM_MIN ? 'transform 120ms ease-out' : 'none',
-          willChange: 'transform',
-          pointerEvents: 'none',
-          filter: 'drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3))',
+          transformOrigin: "center center",
+          transition: zoom === ZOOM_MIN ? "transform 120ms ease-out" : "none",
+          willChange: "transform",
+          pointerEvents: "none",
+          filter: "drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3))",
         }}
       />
       {failedHref === currentHref ? (
-        <Typography variant="body2" sx={{ color: 'rgba(244, 247, 251, 0.8)', textAlign: 'center' }}>
+        <Typography
+          variant="body2"
+          sx={{ color: "rgba(244, 247, 251, 0.8)", textAlign: "center" }}
+        >
           Зображення недоступне
         </Typography>
       ) : null}
