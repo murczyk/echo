@@ -1637,16 +1637,17 @@ pub async fn report_history_cancel(
         });
     }
 
-    if let Some(bgtask_id) = report_history.bgtask_id {
-        let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
-        finish_bgtask(Some(bgtask_id), &env.dbx, &res).await?;
-    }
-
     let updated = ReportHistory::find_by_id(report_history.id)
         .one(&env.dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+
+    if let Some(bgtask_id) = updated.bgtask_id {
+        let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
+        finish_bgtask(Some(bgtask_id), &env.dbx, &res).await?;
+    }
+
     Ok(Json(
         build_report_history_row(&env.dbx, updated, true).await?,
     ))
@@ -2109,7 +2110,9 @@ async fn process_report(
     report_history: report_history::Model,
 ) -> Result<(), AppError> {
     let bgtask = create_running_bgtask(&env.dbx).await?;
-    set_report_bgtask(env, report_history.id, bgtask.id).await?;
+    if !attach_report_bgtask(env, &report_history, &bgtask).await? {
+        return Ok(());
+    }
     let (res, timed_out) =
         run_report_with_timeout(env, &report_history, bgtask.id).await;
     let _ = finish_bgtask(Some(bgtask.id), &env.dbx, &res).await;
@@ -2159,18 +2162,37 @@ async fn create_running_bgtask(
     .c(h!())?)
 }
 
+async fn attach_report_bgtask(
+    env: &Env,
+    report_history: &report_history::Model,
+    bgtask: &bgtask::Model,
+) -> Result<bool, AppError> {
+    if !set_report_bgtask(env, report_history.id, bgtask.id).await? {
+        let res: Result<(), AppError> = Err(AppError::BL {
+            msg: format!(
+                "Report history row {} was already finished or cancelled before bgtask attachment",
+                report_history.id
+            ),
+        });
+        let _ = finish_bgtask(Some(bgtask.id), &env.dbx, &res).await;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 async fn set_report_bgtask(
     env: &Env,
     report_history_id: i64,
     bgtask_id: i64,
-) -> Result<(), AppError> {
-    ReportHistory::update_many()
+) -> Result<bool, AppError> {
+    let res = ReportHistory::update_many()
         .col_expr(report_history::Column::BgtaskId, Expr::value(bgtask_id))
         .filter(report_history::Column::Id.eq(report_history_id))
+        .filter(report_history::Column::Status.eq(STATUS_IN_PROGRESS))
         .exec(&env.dbx)
         .await
         .c(h!())?;
-    Ok(())
+    Ok(res.rows_affected > 0)
 }
 
 pub(crate) async fn set_bgtask_progress(
@@ -3378,6 +3400,68 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows[0].is_cancelled);
         assert_eq!(rows[0].last_error, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn guarded_bgtask_attach_skips_cancelled_report(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        bgtask::Entity::delete_many().exec(&env.dbx).await.c(h!())?;
+
+        let created_at = Utc::now().naive_utc();
+        let _login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-history-guard".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let report = insert_report_history(
+            &env.dbx,
+            "report-history-guard",
+            KIND_ETALONKA,
+            STATUS_FAILED,
+            created_at,
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.last_error = Set(Some("Скасовано користувачем".to_string()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        let bgtask = create_running_bgtask(&env.dbx).await?;
+        let attached = attach_report_bgtask(&env, &report, &bgtask).await?;
+        assert!(!attached);
+
+        let refreshed_report = report_history::Entity::find_by_id(report.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(refreshed_report.bgtask_id, None);
+
+        let refreshed_bgtask = bgtask::Entity::find_by_id(bgtask.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert!(!refreshed_bgtask.running);
+        assert!(refreshed_bgtask
+            .finished_with_error
+            .as_deref()
+            .unwrap_or("")
+            .contains(
+                "already finished or cancelled before bgtask attachment"
+            ));
         Ok(())
     }
 }
