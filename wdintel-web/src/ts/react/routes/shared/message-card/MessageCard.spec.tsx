@@ -70,6 +70,10 @@ vi.mock('@mui/icons-material/ExpandLess', () => ({
   default: () => <span>collapse</span>,
 }));
 
+vi.mock('./MessageCardDocumentPreviewDialog', () => ({
+  MessageCardDocumentPreviewDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog">document-dialog</div> : null),
+}));
+
 /** Narrow width for tag-row measurement in compact layout (MessageCardTagChips `useLayoutEffect`). */
 const TAG_ROW_MEASURE_WIDTH_PX = 200;
 const LIGHT_CARD_BG = '#F8F9FB';
@@ -1577,6 +1581,41 @@ describe('MessageCard', () => {
     expect(downloadButtons[1]?.querySelector('svg')).not.toBeNull();
     expect(downloadButtons[0]?.textContent).toContain('HByMR1VD5nrYaiQRyaFV.txt');
     expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.txt');
+  });
+
+  it('renders document attachments with preview and download affordances', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'doc-1',
+            href: 'https://example.test/files/report.pdf',
+            contentType: 'application/pdf',
+            fileName: 'report.pdf',
+            sizeBytes: 2048,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const documentButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('report.pdf'),
+    );
+    expect(documentButton).not.toBeNull();
+    expect(view.container.textContent).toContain('report.pdf');
+
+    await click(documentButton as HTMLElement);
+
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('document-dialog');
+
+    const downloadLink = view.container.querySelector('a[aria-label="Завантажити"]');
+    expect(downloadLink).not.toBeNull();
+    expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/report.pdf');
+    expect(downloadLink?.getAttribute('download')).toBe('report.pdf');
+    expect(view.container.querySelector('button[aria-label="Попередній перегляд"]')).toBeNull();
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {

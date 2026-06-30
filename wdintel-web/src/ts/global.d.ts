@@ -13,3 +13,16 @@ interface Window {
 }
 
 declare var NetJSONGraph: any;
+
+declare module 'mammoth' {
+  export type ConvertToHtmlResult = {
+    value: string;
+    messages?: Array<{ type?: string; message?: string }>;
+  };
+
+  export function convertToHtml(input: { arrayBuffer: ArrayBuffer }, options?: Record<string, unknown>): Promise<ConvertToHtmlResult>;
+  const mammoth: {
+    convertToHtml: typeof convertToHtml;
+  };
+  export default mammoth;
+}

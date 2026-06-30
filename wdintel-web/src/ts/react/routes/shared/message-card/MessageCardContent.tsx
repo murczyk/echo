@@ -37,6 +37,9 @@ import type {
   AnalysisCallsignActions,
   MessageCardBotTagAction,
 } from "./message-card.types";
+import { MessageMediaDocumentLink } from "./MessageMediaDocumentLink";
+import { MessageCardDocumentPreviewDialog } from "./MessageCardDocumentPreviewDialog";
+import { collectMessageDocuments } from "./message-card-document-utils";
 
 export type {
   AnalysisCallsignActions,
@@ -80,23 +83,36 @@ export function MessageCardMessageBody({
   searchText?: string | null;
 }) {
   const images = collectMessageImages(msg);
-  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
-  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(
+    null,
+  );
+  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(
+    null,
+  );
 
   const imageHrefSet = useMemo(
     () => new Set(images.map((image) => image.href)),
     [images],
   );
+  const documents = collectMessageDocuments(msg);
+  const previewableDocuments = documents.filter(
+    (document) => document.kind !== "unsupported",
+  );
+  const [documentPreviewIndex, setDocumentPreviewIndex] = useState<
+    number | null
+  >(null);
+  const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? "");
     if (imageHrefSet.has(href)) return false;
+    if (documentHrefSet.has(href)) return false;
     const contentType = mediaAttachmentContentType(attachment);
     if (contentType.startsWith("image/")) return false;
     if (contentType !== "") return true;
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
-  
+
   const videoAttachments = attachmentMedia.filter(isVideoMediaAttachment);
 
   const downloadAttachments = attachmentMedia.filter(
@@ -149,7 +165,16 @@ export function MessageCardMessageBody({
         onClose={() => setImagePreviewIndex(null)}
         onIndexChange={(index) => setImagePreviewIndex(index)}
       />
-      {audioAttachments.length > 0 ||
+      <MessageCardDocumentPreviewDialog
+        documents={previewableDocuments}
+        initialIndex={documentPreviewIndex ?? 0}
+        currentIndex={documentPreviewIndex ?? 0}
+        open={documentPreviewIndex != null && previewableDocuments.length > 0}
+        onClose={() => setDocumentPreviewIndex(null)}
+        onIndexChange={(index) => setDocumentPreviewIndex(index)}
+      />
+      {documents.length > 0 ||
+      audioAttachments.length > 0 ||
       videoAttachments.length > 0 ||
       downloadAttachments.length > 0 ? (
         <Box
@@ -161,6 +186,24 @@ export function MessageCardMessageBody({
             width: "100%",
           }}
         >
+          {documents.map((document, index) => {
+            const previewIndex = previewableDocuments.findIndex(
+              (previewableDocument) =>
+                previewableDocument.href === document.href,
+            );
+            return (
+              <MessageMediaDocumentLink
+                key={document.id ?? document.href}
+                document={document}
+                index={index}
+                onPreview={
+                  previewIndex >= 0
+                    ? () => setDocumentPreviewIndex(previewIndex)
+                    : undefined
+                }
+              />
+            );
+          })}
           {audioAttachments.map((attachment) => (
             <MessageMediaAudioPlayer
               key={attachment.id}
