@@ -16,6 +16,7 @@ import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import { ReportCancelledError } from './report-cancelled-error';
 import {
   buildEtalonkaNetworkBatchReq,
   buildEtalonkaReportFilename,
@@ -123,7 +124,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           if (row.status === 'failed') {
             if (isCancelledReportHistory(row)) {
               applyCancelledReport(setState, row, logs, fileName);
-              return;
+              throw new ReportCancelledError();
             }
             updateReportState(setState, (current) => ({
               ...current,
@@ -173,7 +174,7 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
               const latestRow = await fetchReportHistoryStatus(taskId);
               if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
                 applyCancelledReport(setState, latestRow, logs, fileName);
-                return;
+                throw new ReportCancelledError();
               }
               throw new Error(rsp.finishedWithError);
             }
@@ -197,6 +198,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
         }));
       } catch (error) {
+        if (error instanceof ReportCancelledError) {
+          throw error;
+        }
         updateReportState(setState, (current) => ({
           ...current,
           running: false,
@@ -309,6 +313,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     try {
       await runEtalonkaReportTask(report);
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        return;
+      }
       if (isUnauthorizedError(error)) {
         redirectToLogin();
       }

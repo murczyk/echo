@@ -21,6 +21,7 @@ import {
   buildEtalonkaNetworksReportFilename,
   createDefaultNetworkEtalonkaReportState,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
+import { ReportCancelledError } from '../rer-network-details-neo/report-cancelled-error';
 import { buildNetworksReportReq } from './helpers';
 import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
 import { redirectToLogin } from '../../auth-redirect';
@@ -89,7 +90,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
               downloadFileName: fileName,
               startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
             }));
-            return;
+            throw new ReportCancelledError();
           }
           args.setEtalonkaReport((current) => ({
             ...current,
@@ -164,7 +165,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
                 downloadFileName: fileName,
                 startedAtMs: parseUtcDateTime(latestRow.startedAt)?.getTime() ?? null,
               }));
-              return;
+              throw new ReportCancelledError();
             }
             throw new Error(rsp.finishedWithError);
           }
@@ -188,6 +189,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
       }));
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        throw error;
+      }
       args.setEtalonkaReport((current) => ({
         ...current,
         running: false,
@@ -259,6 +263,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         fileName,
       );
     } catch (error) {
+      if (error instanceof ReportCancelledError) {
+        return;
+      }
       if (isUnauthorizedError(error)) {
         args.setEtalonkaReport((current) => ({ ...current, running: false, error: null }));
         redirectToLogin();
@@ -323,6 +330,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           args.setEtalonkaReport((current) => ({ ...current, running: false, error: null }));
         }
         redirectToLogin();
+        return;
+      }
+      if (error instanceof ReportCancelledError) {
+        args.setStatus({ kind: 'info', text: 'Звіт скасовано в Моїх звітах.' });
         return;
       }
       args.setStatus({ kind: 'error', text: `Помилка завантаження звіту: ${formatErrorMessage(error)}` });

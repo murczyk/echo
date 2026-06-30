@@ -991,7 +991,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
   });
 
-  it('shows the cancelled message when the top etalonka report is cancelled', async () => {
+  it('shows the cancelled message when the dialog etalonka report is cancelled', async () => {
     await renderHook();
     await flushEffects();
 
@@ -1035,20 +1035,11 @@ describe('useRerNetworksNeoPage', () => {
         details: '',
         progress: 0,
         errorLog: null,
-      });
+    });
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
 
     await act(async () => {
-      latest?.setEtalonkaReport((current) => ({
-        ...current,
-        reportType: 'AccordingToTheForm',
-        activeFreqsOnly: true,
-        includeSigintSigns: true,
-        includeConfirmation: true,
-        includeUnitCallsigns: false,
-        includePelengsMap: false,
-      }));
       latest?.openTopReportDialog();
     });
     await flushEffects();
@@ -1062,6 +1053,7 @@ describe('useRerNetworksNeoPage', () => {
 
     expect(latest?.etalonkaReport.running).toBe(false);
     expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
+    expect(latest?.status).toBeNull();
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
   });
 
@@ -1121,21 +1113,13 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
 
     await act(async () => {
-      latest?.setEtalonkaReport((current) => ({
-        ...current,
-        reportType: 'AccordingToTheForm',
-      }));
-      latest?.openTopReportDialog();
-    });
-    await flushEffects();
-
-    await act(async () => {
-      const downloadPromise = latest?.downloadEtalonkaReport();
+      const downloadPromise = latest?.runDownload('etalonka');
       await downloadPromise;
     });
     vi.useRealTimers();
 
     expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenCalledTimes(2);
+    expect(latest?.status).toEqual({ kind: 'info', text: 'Звіт скасовано в Моїх звітах.' });
     expect(latest?.etalonkaReport.running).toBe(false);
     expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
