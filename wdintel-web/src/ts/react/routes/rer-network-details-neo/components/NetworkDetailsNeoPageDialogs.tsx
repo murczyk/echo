@@ -122,6 +122,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
+        unitTagsVisible={page.supportNonRerInterceptions}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
@@ -188,6 +189,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
         onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}
         onIncludeConfirmationChange={page.setEtalonkaReportIncludeConfirmation}
+        onIncludeHeadingsAndFreqsChange={page.setEtalonkaReportIncludeHeadingsAndFreqs}
         onIncludeUnitCallsignsChange={page.setEtalonkaReportIncludeUnitCallsigns}
         onIncludePelengsMapChange={page.setEtalonkaReportIncludePelengsMap}
         onFromDateTimeStrChange={page.setEtalonkaReportFromDateTimeStr}

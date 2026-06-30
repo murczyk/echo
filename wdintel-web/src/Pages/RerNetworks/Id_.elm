@@ -583,6 +583,7 @@ update shared msg model =
                                 , restoreNetwork = Nothing
                                 , areaOfResponsibilityIds = Nothing
                                 , status = network.status
+                                , unitTags = Nothing
                                 }
                         , editAorSelect =
                             let
@@ -919,6 +920,13 @@ update shared msg model =
             let
                 newReport =
                     ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeHeadingsAndFreqsChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -1263,6 +1271,7 @@ view user shared route model =
                             , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
                             , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                             , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                            , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
                             , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                             , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                             , reportFromDate = Just model.reportFromDate

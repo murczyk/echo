@@ -190,14 +190,6 @@ navBar user shared activeName props =
                   , internalMenu Route.Path.RerSignals "signals" "Сигнали"
                   , internalMenu Route.Path.RerFreqs "freqs" "Частоти"
                   ]
-                , ifOrEmpty
-                    ((shared.systemSettings
-                        |> Maybe.map .supportNonRerInterceptions
-                        |> Maybe.withDefault False
-                     )
-                        && hasRole "NetworkEditor" user
-                    )
-                    [ internalMenu Route.Path.Machines "machines" "Машини" ]
                 ]
 
         goiSubs =

@@ -725,7 +725,7 @@ pub async fn bl_group_update(
                     let mut group = group.into_active_model();
                     group.is_rer = Set(is_rer);
                     let group = group.update(txn).await.c(h!())?;
-                    crate::sigint::unit_machine::enqueue_recent_unit_machine_recalculation_for_group(
+                    crate::sigint::unit_tag::enqueue_recent_unit_tag_recalculation_for_group(
                         txn,
                         &master_key,
                     )

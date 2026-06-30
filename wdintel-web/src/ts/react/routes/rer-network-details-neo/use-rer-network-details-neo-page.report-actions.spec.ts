@@ -199,6 +199,7 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
           activeFreqsOnly: true,
           includeSigintSigns: true,
           includeConfirmation: true,
+          includeHeadingsAndFreqs: false,
         },
       },
     });

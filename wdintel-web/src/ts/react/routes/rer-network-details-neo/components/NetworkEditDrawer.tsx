@@ -54,6 +54,7 @@ type Props = {
   onSave: (form?: NetworkUpsertForm | null) => void;
   disableRestoreFocus?: boolean;
   frequencyOptional?: boolean;
+  unitTagsVisible?: boolean;
 };
 
 type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'>;
@@ -121,6 +122,7 @@ function NetworkEditDrawerComponent({
   onSave,
   disableRestoreFocus = false,
   frequencyOptional = false,
+  unitTagsVisible = false,
 }: Props) {
   const titleId = 'network-edit-drawer-title';
   const includeFrequency = form !== null && mode === 'create'
@@ -165,6 +167,11 @@ function NetworkEditDrawerComponent({
   const handleAutocompleteChange = (key: 'aorIds' | 'postIds') => (_event: SyntheticEvent, next: LookupOption[]) => {
     if (!form) return;
     onChange({ ...form, [key]: next.map((option) => option.id) });
+  };
+
+  const handleUnitTagsChange = (_event: SyntheticEvent, next: string[]) => {
+    if (!form) return;
+    onChange({ ...form, unitTags: normalizeUnitTags(next) });
   };
 
   const handleStatusChange = (value: string) => {
@@ -355,6 +362,27 @@ function NetworkEditDrawerComponent({
                     size="small"
                   />
 
+                  {unitTagsVisible ? (
+                    <Autocomplete<string, true, false, true>
+                      multiple
+                      freeSolo
+                      filterSelectedOptions
+                      fullWidth
+                      size="small"
+                      options={[]}
+                      value={form.unitTags}
+                      disabled={formBlocked}
+                      onChange={handleUnitTagsChange}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Теги підрозділу"
+                          size="small"
+                        />
+                      )}
+                    />
+                  ) : null}
+
                   <FormControlLabel
                     control={(
                       <Checkbox
@@ -525,4 +553,18 @@ function NetworkEditDrawerComponent({
 }
 
 export const NetworkEditDrawer = memo(NetworkEditDrawerComponent);
+
+function normalizeUnitTags(unitTags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  unitTags.forEach((unitTag) => {
+    const trimmed = unitTag.trim();
+    if (trimmed === '') return;
+    const key = trimmed.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  });
+  return out;
+}
 export const NetworkUpsertDrawer = NetworkEditDrawer;
