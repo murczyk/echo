@@ -11,6 +11,7 @@ import {
   LinkEchoOperatorReq,
   GroupEntryF1,
   GroupUpdateReq,
+  InterseptionKind,
   QrCodeReq,
   QrCodeRsp,
 } from '../../../../Bindings';
@@ -68,7 +69,7 @@ type GroupUpdateReqBody = {
   long_note: string | null;
   area_of_responsibility_id: number | null;
   area_of_responsibility_ids: number[] | null;
-  is_rer: boolean | null;
+  interseption_kind: InterseptionKind | null;
   fills_etalonka: boolean | null;
   disable_network_assignment: boolean | null;
 };
@@ -225,7 +226,7 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     long_note: req.longNote ?? null,
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
     area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
-    is_rer: req.isRer ?? null,
+    interseption_kind: req.interseptionKind ?? null,
     fills_etalonka: req.fillsEtalonka ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
   };

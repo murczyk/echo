@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
 import { Box, ButtonBase, Skeleton, Typography, useMediaQuery, useTheme } from '@mui/material';
 
@@ -121,12 +122,16 @@ export function MessageCardImageThumb({
     decoding: 'async',
     fetchpriority: 'low',
   } as const;
+  const handleOpenClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.blur();
+    onOpen(index);
+  };
 
   return (
     <ButtonBase
       component="button"
       type="button"
-      onClick={canOpen ? () => onOpen(index) : undefined}
+      onClick={canOpen ? handleOpenClick : undefined}
       disabled={!canOpen}
       aria-label="Відкрити зображення"
       data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}

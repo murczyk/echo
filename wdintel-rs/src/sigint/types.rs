@@ -1,7 +1,46 @@
 use crate::types::*;
 
+use crate::entities::sea_orm_active_enums as db_enums;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum InterseptionKind {
+    #[serde(rename = "rer")]
+    InterseptionRer,
+    #[serde(rename = "other")]
+    InterseptionOther,
+}
+
+impl From<db_enums::InterseptionKind> for InterseptionKind {
+    fn from(interseption_kind: db_enums::InterseptionKind) -> Self {
+        match interseption_kind {
+            db_enums::InterseptionKind::Rer => Self::InterseptionRer,
+            db_enums::InterseptionKind::Other => Self::InterseptionOther,
+        }
+    }
+}
+
+impl From<InterseptionKind> for db_enums::InterseptionKind {
+    fn from(interseption_kind: InterseptionKind) -> Self {
+        match interseption_kind {
+            InterseptionKind::InterseptionRer => Self::Rer,
+            InterseptionKind::InterseptionOther => Self::Other,
+        }
+    }
+}
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -26,7 +65,7 @@ pub struct ZoneDatasourceGroup {
     pub sigint_zone_datasource_id: i64,
     pub group_master_key: String,
     pub is_group_secret: bool,
-    pub is_rer: bool,
+    pub interseption_kind: InterseptionKind,
     pub fills_etalonka: bool,
     pub disable_network_assignment: bool,
     pub allowed_users: Vec<String>,
@@ -49,7 +88,7 @@ pub struct ZoneDatasourceGroupListRsp {
 pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
     pub is_secret: bool,
-    pub is_rer: Option<bool>,
+    pub interseption_kind: Option<InterseptionKind>,
     pub fills_etalonka: Option<bool>,
     pub disable_network_assignment: Option<bool>,
     pub user_logins: Vec<String>,
@@ -68,7 +107,7 @@ pub struct ZoneDatasourceGroupAddReq {
     pub zone_id: i64,
     pub datasource_id: i64,
     pub is_secret: bool,
-    pub is_rer: Option<bool>,
+    pub interseption_kind: Option<InterseptionKind>,
     pub master_key: String,
     pub user_logins: Vec<String>,
     pub admin_logins: Vec<String>,

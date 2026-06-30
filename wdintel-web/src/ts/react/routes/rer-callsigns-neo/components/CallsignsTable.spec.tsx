@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallsignRowView } from '../types';
-import { CallsignsTable } from './CallsignsTable';
+import { CallsignsTable, getCallsignsTableContainerOverflowY } from './CallsignsTable';
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -73,9 +73,9 @@ vi.mock('../../../components/mui-customized/table/table-state-provider', () => (
   }),
 }));
 
-function buildRow(): CallsignRowView {
+function buildRow(id = 1): CallsignRowView {
   return {
-    id: 1,
+    id,
     callsign: 'ЛЕС',
     position: 'Командир',
     fullName: 'Іваненко Іван',
@@ -92,48 +92,66 @@ function buildRow(): CallsignRowView {
   } as CallsignRowView;
 }
 
+function renderTable(rows: CallsignRowView[]) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(
+      <CallsignsTable
+        canEdit
+        rows={rows}
+        loading={false}
+        refreshing={false}
+        loadingMore={false}
+        showLoadMore={false}
+        hasActiveFilters={false}
+        textFilters={{ filterCallsign: '', filterPosition: '', filterFullName: '', filterComment: '', filterUnit: '' }}
+        inFlightDeleteId={null}
+        bulkDeleteInFlight={false}
+        selectedCallsignIds={[]}
+        sort={{ column: 'callsign', direction: 'asc' }}
+        statusFilter="All"
+        onSort={vi.fn()}
+        onStatusFilterChange={vi.fn()}
+        onTextColumnFiltersChange={vi.fn()}
+        onClearFilters={vi.fn()}
+        onSetSelectedCallsignIds={vi.fn()}
+        onLoadMore={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+  });
+
+  return { container, root };
+}
+
 afterEach(() => {
   document.body.innerHTML = '';
 });
 
 describe('CallsignsTable', () => {
   it('marks edit and delete row actions as modal actions', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(
-        <CallsignsTable
-          canEdit
-          rows={[buildRow()]}
-          loading={false}
-          refreshing={false}
-          loadingMore={false}
-          showLoadMore={false}
-          hasActiveFilters={false}
-          textFilters={{ filterCallsign: '', filterPosition: '', filterFullName: '', filterComment: '', filterUnit: '' }}
-          inFlightDeleteId={null}
-          bulkDeleteInFlight={false}
-          selectedCallsignIds={[]}
-          sort={{ column: 'callsign', direction: 'asc' }}
-          statusFilter="All"
-          onSort={vi.fn()}
-          onStatusFilterChange={vi.fn()}
-          onTextColumnFiltersChange={vi.fn()}
-          onClearFilters={vi.fn()}
-          onSetSelectedCallsignIds={vi.fn()}
-          onLoadMore={vi.fn()}
-          onEdit={vi.fn()}
-          onDelete={vi.fn()}
-        />,
-      );
-    });
+    const { container, root } = renderTable([buildRow()]);
 
     expect(container.querySelector('[data-opens-modal="true"][aria-label="Редагувати"]')).toBeTruthy();
     expect(container.querySelector('[data-opens-modal="true"][aria-label="Видалити"]')).toBeTruthy();
 
     root.unmount();
     container.remove();
+  });
+
+  it('hides vertical container overflow when loaded content fits', () => {
+    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: false, showTableOverlay: false })).toBe('hidden');
+  });
+
+  it('keeps vertical container scrolling when loaded content overflows', () => {
+    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: false })).toBe('auto');
+  });
+
+  it('hides vertical container overflow while the table overlay is shown', () => {
+    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: true })).toBe('hidden');
   });
 });

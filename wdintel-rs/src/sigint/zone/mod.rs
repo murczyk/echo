@@ -129,7 +129,7 @@ pub async fn zones_datasources_group_update(
         sigint_zone_datasource_id: szd.id,
         group_master_key: szd.group_master_key,
         is_group_secret: rsp.is_secret,
-        is_rer: rsp.is_rer,
+        interseption_kind: rsp.interseption_kind,
         fills_etalonka: rsp.fills_etalonka,
         disable_network_assignment: rsp.disable_network_assignment,
         areas_of_responsibility: rsp
@@ -218,39 +218,17 @@ pub async fn zones_datasources_group_add(
         .await
         .c(h!())?
         .flatten();
-    if crate::system_settings::support_non_rer_interceptions_enabled(&txn)
-        .await
-        .c(h!())?
-    {
-        if let Some(is_rer) = req.is_rer {
-            if let Some(group) =
-                signal_group::Entity::find_by_id(group_master_key.clone())
-                    .one(&txn)
-                    .await
-                    .c(h!())?
-            {
-                if group.is_rer != is_rer {
-                    let mut group = group.into_active_model();
-                    group.is_rer = Set(is_rer);
-                    group.update(&txn).await.c(h!())?;
-                    crate::sigint::unit_tag::enqueue_recent_unit_tag_recalculation_for_group(
-                        &txn,
-                        &group_master_key,
-                    )
-                    .await
-                    .c(h!())?;
-                }
-            }
-        }
-    }
-    let is_rer = signal_group::Entity::find_by_id(group_master_key.clone())
-        .select_only()
-        .column(signal_group::Column::IsRer)
-        .into_tuple::<bool>()
-        .one(&txn)
-        .await
-        .c(h!())?
-        .unwrap_or(true);
+    bl::update_group_interseption_kind_if_enabled(
+        req.interseption_kind,
+        &group_master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    let interseption_kind =
+        bl::group_interseption_kind(&group_master_key, &txn)
+            .await
+            .c(h!())?;
     let fills_etalonka =
         signal_group::Entity::find_by_id(group_master_key.clone())
             .select_only()
@@ -302,7 +280,7 @@ pub async fn zones_datasources_group_add(
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
-            is_rer,
+            interseption_kind,
             fills_etalonka,
             disable_network_assignment,
             areas_of_responsibility,

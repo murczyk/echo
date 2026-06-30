@@ -1611,7 +1611,7 @@ type alias SignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
-    , isRer : Bool
+    , interseptionKind : InterseptionKind
     , fillsEtalonka : Bool
     , disableNetworkAssignment : Bool
     , groupStats : SignalGroupStats
@@ -1626,7 +1626,7 @@ signalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
-        , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
@@ -1639,7 +1639,7 @@ type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
-    , isRer : Bool
+    , interseptionKind : InterseptionKind
     , fillsEtalonka : Bool
     , disableNetworkAssignment : Bool
     , isArchived : Bool
@@ -1657,7 +1657,7 @@ orphanSignalGroupEntryEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
-        , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
@@ -4549,11 +4549,24 @@ sigintZoneEncoder struct =
         ]
 
 
+type InterseptionKind
+    = InterseptionRer
+    | InterseptionOther
+
+
+interseptionKindEncoder : InterseptionKind -> Json.Encode.Value
+interseptionKindEncoder enum =
+    case enum of
+        InterseptionRer ->
+            Json.Encode.string "rer"
+        InterseptionOther ->
+            Json.Encode.string "other"
+
 type alias ZoneDatasourceGroup =
     { sigintZoneDatasourceId : Int
     , groupMasterKey : String
     , isGroupSecret : Bool
-    , isRer : Bool
+    , interseptionKind : InterseptionKind
     , fillsEtalonka : Bool
     , disableNetworkAssignment : Bool
     , allowedUsers : List (String)
@@ -4570,7 +4583,7 @@ zoneDatasourceGroupEncoder struct =
         [ ( "sigint_zone_datasource_id", (Json.Encode.int) struct.sigintZoneDatasourceId )
         , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
-        , ( "is_rer", (Json.Encode.bool) struct.isRer )
+        , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "fills_etalonka", (Json.Encode.bool) struct.fillsEtalonka )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
@@ -4611,7 +4624,7 @@ type alias ZoneDatasourceGroupAddReq =
     { zoneId : Int
     , datasourceId : Int
     , isSecret : Bool
-    , isRer : Maybe (Bool)
+    , interseptionKind : Maybe (InterseptionKind)
     , masterKey : String
     , userLogins : List (String)
     , adminLogins : List (String)
@@ -4626,7 +4639,7 @@ zoneDatasourceGroupAddReqEncoder struct =
         [ ( "zone_id", (Json.Encode.int) struct.zoneId )
         , ( "datasource_id", (Json.Encode.int) struct.datasourceId )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
-        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
+        , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -4638,7 +4651,7 @@ zoneDatasourceGroupAddReqEncoder struct =
 type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
     , isSecret : Bool
-    , isRer : Maybe (Bool)
+    , interseptionKind : Maybe (InterseptionKind)
     , fillsEtalonka : Maybe (Bool)
     , disableNetworkAssignment : Maybe (Bool)
     , userLogins : List (String)
@@ -4655,7 +4668,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
-        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
+        , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "fills_etalonka", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fillsEtalonka )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
@@ -6618,7 +6631,7 @@ type alias Network =
     , descriptions : List (NetworkDescription)
     , deleted : Bool
     , doNotArchive : Bool
-    , unitTags : List (String)
+    , unitMask : List (String)
     , status : NetworkStatus
     }
 
@@ -6646,7 +6659,7 @@ networkEncoder struct =
         , ( "descriptions", (Json.Encode.list (networkDescriptionEncoder)) struct.descriptions )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
-        , ( "unit_tags", (Json.Encode.list (Json.Encode.string)) struct.unitTags )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
         , ( "status", (networkStatusEncoder) struct.status )
         ]
 
@@ -6738,7 +6751,7 @@ type alias CreateNetworkReq =
     , postIds : List (Int)
     , descriptions : List (AddNetworkDescription)
     , doNotArchive : Bool
-    , unitTags : List (String)
+    , unitMask : List (String)
     }
 
 
@@ -6758,7 +6771,7 @@ createNetworkReqEncoder struct =
         , ( "post_ids", (Json.Encode.list (Json.Encode.int)) struct.postIds )
         , ( "descriptions", (Json.Encode.list (addNetworkDescriptionEncoder)) struct.descriptions )
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
-        , ( "unit_tags", (Json.Encode.list (Json.Encode.string)) struct.unitTags )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
         ]
 
 
@@ -6787,7 +6800,7 @@ type alias UpdateNetworkReq =
     , operationPeriod : Maybe (String)
     , descriptions : Maybe (List (UpdateNetworkDescriptionReq))
     , doNotArchive : Bool
-    , unitTags : Maybe (List (String))
+    , unitMask : Maybe (List (String))
     , status : NetworkStatus
     }
 
@@ -6807,7 +6820,7 @@ updateNetworkReqEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationPeriod )
         , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (updateNetworkDescriptionReqEncoder))) struct.descriptions )
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
-        , ( "unit_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitTags )
+        , ( "unit_mask", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitMask )
         , ( "status", (networkStatusEncoder) struct.status )
         ]
 
@@ -8088,6 +8101,7 @@ type alias SystemSettingsItem =
     , updatedBy : Maybe (String)
     , deleted : Bool
     , shortUrlEnabled : Bool
+    , supportNonRerInterceptions : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8111,6 +8125,7 @@ systemSettingsItemEncoder struct =
         , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedBy )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8139,6 +8154,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
+    , supportNonRerInterceptions : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8157,6 +8173,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8526,7 +8543,7 @@ type alias GroupUpdateReq =
     , longNote : Maybe (String)
     , areaOfResponsibilityId : Maybe (Int)
     , areaOfResponsibilityIds : Maybe (List (Int))
-    , isRer : Maybe (Bool)
+    , interseptionKind : Maybe (InterseptionKind)
     , fillsEtalonka : Maybe (Bool)
     , disableNetworkAssignment : Maybe (Bool)
     }
@@ -8540,7 +8557,7 @@ groupUpdateReqEncoder struct =
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.areaOfResponsibilityIds )
-        , ( "is_rer", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isRer )
+        , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "fills_etalonka", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fillsEtalonka )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
         ]
@@ -9862,7 +9879,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
@@ -9942,7 +9959,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
@@ -11263,13 +11280,36 @@ sigintZoneDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
 
 
+interseptionKindDecoder : Json.Decode.Decoder InterseptionKind
+interseptionKindDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "rer" ->
+                            Json.Decode.succeed InterseptionRer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "other" ->
+                            Json.Decode.succeed InterseptionOther
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 zoneDatasourceGroupDecoder : Json.Decode.Decoder ZoneDatasourceGroup
 zoneDatasourceGroupDecoder =
     Json.Decode.succeed ZoneDatasourceGroup
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_datasource_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
@@ -11298,7 +11338,7 @@ zoneDatasourceGroupAddReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -11311,7 +11351,7 @@ zoneDatasourceGroupUpdateReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
@@ -12578,7 +12618,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (networkDescriptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_tags" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
 
 
@@ -12675,7 +12715,7 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (addNetworkDescriptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_tags" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
 
 
 deleteNetworkReqDecoder : Json.Decode.Decoder DeleteNetworkReq
@@ -12699,7 +12739,7 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list (updateNetworkDescriptionReqDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
 
 
@@ -13483,6 +13523,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13506,6 +13547,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13873,7 +13915,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rer" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fills_etalonka" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
 
@@ -13943,5 +13985,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

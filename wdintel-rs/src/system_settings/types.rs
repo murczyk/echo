@@ -37,6 +37,7 @@ pub struct SystemSettingsItem {
     pub updated_by: Option<String>,
     pub deleted: bool,
     pub short_url_enabled: bool,
+    pub support_non_rer_interceptions: bool,
     pub peleng_bounds_enabled: bool,
     pub peleng_bounds_top_left_lat: Option<f64>,
     pub peleng_bounds_top_left_lng: Option<f64>,
@@ -62,6 +63,8 @@ pub struct CreateSystemSettingsReq {
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
     pub short_url_enabled: bool,
+    #[serde(default)]
+    pub support_non_rer_interceptions: bool,
     #[serde(default)]
     pub peleng_bounds_enabled: bool,
     pub peleng_bounds_top_left_lat: Option<f64>,
