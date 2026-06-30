@@ -10,6 +10,7 @@ module Shared exposing
 
 import Api
 import Bindings as B
+import Char
 import Core.Auth
 import Core.EventService
 import Core.EventTypes
@@ -20,6 +21,7 @@ import Http
 import Json.Decode
 import PagePorts.SharedPorts as Ports
 import Process
+import Random
 import Route exposing (Route)
 import Route.Path
 import Shared.Components.Navbar
@@ -454,6 +456,23 @@ update req msg model =
             , E.sendCmd <| Shared.Components.Toast.addErrorV2 ToastMsg title content
             )
 
+        ShowLoggedResponseDecodeError error ->
+            ( model
+            , E.sendCmd <| Random.generate (ShowLoggedResponseDecodeErrorWithCode error) responseDecodeErrorCodeGenerator
+            )
+
+        ShowLoggedResponseDecodeErrorWithCode error errorId ->
+            ( model
+            , E.sendCmd <|
+                Cmd.batch
+                    [ Shared.Components.Toast.addErrorV2 ToastMsg error.title ("Помилка обробки відповіді, код " ++ errorId)
+                    , Api.logError ("Response decode error id=" ++ errorId ++ " title=" ++ error.title ++ " details=" ++ error.message) LoggedResponseDecodeError
+                    ]
+            )
+
+        LoggedResponseDecodeError _ ->
+            ( model, E.none )
+
         EventServiceStartPolling ->
             let
                 eventService =
@@ -683,3 +702,26 @@ formatError error =
 
         Http.BadUrl url ->
             "Invalid URL: " ++ url
+
+
+responseDecodeErrorCodeGenerator : Random.Generator String
+responseDecodeErrorCodeGenerator =
+    Random.map2
+        (\left right -> left ++ "-" ++ right)
+        responseDecodeErrorCodePartGenerator
+        responseDecodeErrorCodePartGenerator
+
+
+responseDecodeErrorCodePartGenerator : Random.Generator String
+responseDecodeErrorCodePartGenerator =
+    Random.list 3 (Random.int 0 35)
+        |> Random.map (List.map responseDecodeErrorCodeSymbol >> String.fromList)
+
+
+responseDecodeErrorCodeSymbol : Int -> Char
+responseDecodeErrorCodeSymbol n =
+    if n < 10 then
+        Char.fromCode (Char.toCode '0' + n)
+
+    else
+        Char.fromCode (Char.toCode 'a' + n - 10)

@@ -3,6 +3,7 @@ module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, 
 import Core.Types
 import Effect as E
 import Http
+import Shared.Msg
 
 
 {-| Error details structure for comprehensive error handling
@@ -148,15 +149,17 @@ formatErrorForShowError customTitle error =
 -}
 formatErrorForShowErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
 formatErrorForShowErrorWithDetails customTitle error =
-    let
-        errorDetails =
-            formatErrorWithCustomTitle customTitle error
-    in
     case error.httpError of
         Http.BadStatus 401 ->
             -- For 401 errors, trigger logout instead of showing error
             E.logout
 
+        Http.BadBody message ->
+            E.sendSharedMsg (Shared.Msg.ShowLoggedResponseDecodeError { title = customTitle, message = message })
+
         _ ->
-            -- For other errors, show the error message
+            let
+                errorDetails =
+                    formatErrorWithCustomTitle customTitle error
+            in
             E.showErrorWithDetails errorDetails.title errorDetails.content
