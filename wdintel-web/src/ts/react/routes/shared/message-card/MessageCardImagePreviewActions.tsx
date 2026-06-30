@@ -5,49 +5,140 @@ import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { Button, DialogActions, IconButton, Slider, Stack, Tooltip } from '@mui/material';
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { Box, Button, DialogActions, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
 import { useTheme } from '@mui/material/styles';
 
 import { ZOOM_MAX, ZOOM_MARKS, ZOOM_MIN, ZOOM_STEP } from './message-card-image-preview-utils';
 import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
-export function MessageCardImagePreviewActions({
+export function MessageCardImagePreviewControls({
   zoom,
-  currentHref,
-  downloadFileName,
   isFullscreen,
   onSetPreviewZoom,
   onToggleFullscreen,
-  onInfoClick,
-  onClose,
 }: {
   zoom: number;
-  currentHref: string;
-  downloadFileName: string;
   isFullscreen: boolean;
   onSetPreviewZoom: (zoom: number) => void;
   onToggleFullscreen: () => void;
-  onInfoClick: (event: MouseEvent<HTMLButtonElement>) => void;
-  onClose: () => void;
 }) {
-  const theme = useTheme();
   return (
-    <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ justifySelf: 'start', minWidth: 0, flexWrap: 'wrap' }}>
-        <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'inherit' }}>
-            <InfoIcon />
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 1.5,
+        flex: 1,
+        minWidth: 0,
+        backgroundColor: "black",
+        py: 1.5,
+        px: 3,
+        borderRadius: 2,
+      }}
+    >
+      <Tooltip title="Зменшити" enterDelay={300}>
+        <span>
+          <IconButton
+            aria-label="Зменшити"
+            size="small"
+            onClick={() => onSetPreviewZoom(zoom - ZOOM_STEP)}
+            disabled={zoom <= ZOOM_MIN}
+            className="text-white/80"
+          >
+            <ZoomOutIcon />
           </IconButton>
-        </Tooltip>
+        </span>
+      </Tooltip>
+      <Slider
+        value={zoom}
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={ZOOM_STEP}
+        marks={ZOOM_MARKS}
+        valueLabelDisplay="auto"
+        aria-label="Масштаб"
+        onChange={(_, value) => {
+          const nextZoom = Array.isArray(value) ? value[0] ?? ZOOM_MIN : value;
+          onSetPreviewZoom(nextZoom);
+        }}
+        sx={{
+          width: { xs: 180, sm: 260 },
+          color: 'primary.light',
+          '& .MuiSlider-markLabel': {
+            color: 'rgba(255, 255, 255, 0.68)',
+          },
+        }}
+      />
+      <Tooltip title="Збільшити" enterDelay={300}>
+        <span>
+          <IconButton
+            aria-label="Збільшити"
+            size="small"
+            onClick={() => onSetPreviewZoom(zoom + ZOOM_STEP)}
+            disabled={zoom >= ZOOM_MAX}
+            className="text-white/80"
+          >
+            <ZoomInIcon />
+          </IconButton>
+        </span>
+      </Tooltip>
+
+      <Box sx={{ ml: { xs: 0, sm: 1 } }}>
         <Tooltip title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'} enterDelay={300}>
           <IconButton
             aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
             size="small"
             onClick={onToggleFullscreen}
-            sx={{ color: 'inherit' }}
+            className="text-white/80"
           >
             {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+          </IconButton>
+        </Tooltip>
+      </Box>
+    </Box>
+  );
+}
+
+export function MessageCardImagePreviewActions({
+  currentHref,
+  downloadFileName,
+  hasCarousel,
+  resolvedIndex,
+  imageCount,
+  onGoToPrevious,
+  onGoToNext,
+  onInfoClick,
+  onClose,
+}: {
+  currentHref: string;
+  downloadFileName: string;
+  hasCarousel: boolean;
+  resolvedIndex: number;
+  imageCount: number;
+  onGoToPrevious: () => void;
+  onGoToNext: () => void;
+  onInfoClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <DialogActions
+      sx={{
+        px: 2,
+        py: "20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 2,
+      }}
+    >
+      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-start", gap: 0.5 }}>
+        <Tooltip title="Інформація" enterDelay={300}>
+          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} className="text-white/75">
+            <InfoIcon />
           </IconButton>
         </Tooltip>
         <Tooltip title="Відкрити в новій вкладці" enterDelay={300}>
@@ -58,7 +149,7 @@ export function MessageCardImagePreviewActions({
             rel="noopener noreferrer"
             aria-label="Відкрити в новій вкладці"
             size="small"
-            sx={{ color: 'inherit' }}
+            className="text-white/75"
           >
             <OpenInNewIcon />
           </IconButton>
@@ -70,63 +161,52 @@ export function MessageCardImagePreviewActions({
             download={downloadFileName}
             aria-label="Завантажити"
             size="small"
-            sx={{ color: 'inherit' }}
+            className="text-white/75"
           >
             <DownloadIcon />
           </IconButton>
         </Tooltip>
-      </Stack>
-      <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="center" sx={{ justifySelf: 'center', minWidth: 0 }}>
-        <Tooltip title="Зменшити" enterDelay={300}>
-          <span>
+      </Box>
+      {hasCarousel && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Tooltip title="Попереднє" enterDelay={300}>
             <IconButton
-              aria-label="Зменшити"
               size="small"
-              onClick={() => onSetPreviewZoom(zoom - ZOOM_STEP)}
-              disabled={zoom <= ZOOM_MIN}
-              sx={{ color: 'inherit' }}
+              onClick={onGoToPrevious}
+              className="text-white/75"
             >
-              <ZoomOutIcon />
+              <ChevronLeftIcon />
             </IconButton>
-          </span>
-        </Tooltip>
-        <Slider
-          value={zoom}
-          min={ZOOM_MIN}
-          max={ZOOM_MAX}
-          step={ZOOM_STEP}
-          marks={ZOOM_MARKS}
-          valueLabelDisplay="auto"
-          aria-label="Масштаб"
-          onChange={(_, value) => {
-            const nextZoom = Array.isArray(value) ? value[0] ?? ZOOM_MIN : value;
-            onSetPreviewZoom(nextZoom);
-          }}
-          sx={{
-            width: { xs: 180, sm: 260 },
-            color: 'primary.light',
-            '& .MuiSlider-markLabel': {
-              color: 'rgba(244, 247, 251, 0.68)',
-            },
-          }}
-        />
-        <Tooltip title="Збільшити" enterDelay={300}>
-          <span>
+          </Tooltip>
+          <Typography
+            variant="body2"
+            className="text-white/75 border border-white/10 bg-white/10"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: 0,
+              px: 1,
+              py: 0.25,
+              borderRadius: 1,
+            }}
+          >
+            {`${resolvedIndex + 1} / ${imageCount}`}
+          </Typography>
+          <Tooltip title="Наступне" enterDelay={300}>
             <IconButton
-              aria-label="Збільшити"
               size="small"
-              onClick={() => onSetPreviewZoom(zoom + ZOOM_STEP)}
-              disabled={zoom >= ZOOM_MAX}
-              sx={{ color: 'inherit' }}
+              onClick={onGoToNext}
+              className="text-white/75"
             >
-              <ZoomInIcon />
+              <ChevronRightIcon />
             </IconButton>
-          </span>
-        </Tooltip>
-      </Stack>
-      <Stack direction="row" justifyContent="flex-end" sx={{ justifySelf: 'end' }}>
-        <Button onClick={onClose}>Закрити</Button>
-      </Stack>
+          </Tooltip>
+        </Box>
+      )}
+      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+        <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
+          Закрити
+        </Button>
+      </Box>
     </DialogActions>
   );
 }

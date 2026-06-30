@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, Typography } from '@mui/material';
+import { Box, Dialog, DialogContent, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import {
@@ -22,7 +22,7 @@ import {
   type DragState,
   type StagePalette,
 } from './message-card-image-preview-utils';
-import { MessageCardImagePreviewActions } from './MessageCardImagePreviewActions';
+import { MessageCardImagePreviewActions, MessageCardImagePreviewControls } from './MessageCardImagePreviewActions';
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import {
@@ -347,53 +347,69 @@ export function MessageImagePreviewDialog({
     >
       <DialogContent
         sx={{
-          px: 2,
-          py: 2,
+          px: isFullscreen ? 0 : 2,
+          pt: isFullscreen ? 0 : 2,
+          pb: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
           minHeight: 0,
           flex: '1 1 auto',
           overflow: 'hidden',
-          gap: 1.25,
+          gap: isFullscreen ? 0 : 1.25,
         }}
       >
-        <MessageCardImagePreviewStage
-          ref={setStageNode}
-          currentImage={currentImage}
-          currentHref={currentHref}
-          imageCount={imageCount}
-          resolvedIndex={resolvedIndex}
-          previewFileName={previewFileName}
-          zoom={zoom}
-          pan={pan}
-          failedHref={failedHref}
-          imageSize={imageSize}
-          stageBackground={stageBackground}
-          isFullscreen={isFullscreen}
-          onImageLoad={handleImageLoad}
-          onImageError={handleImageError}
-          onStartPan={startPan}
-          onStopPan={stopPan}
-          onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
-          onGoToNext={() => goToIndex(resolvedIndex + 1)}
-          onExitFullscreen={() => setIsFullscreen(false)}
-        />
-        <Typography
-          variant="body2"
-          data-image-preview-counter
+        <Box
+          className="bg-black"
           sx={{
-            alignSelf: 'center',
-            fontWeight: 700,
-            letterSpacing: 0,
-            px: 1,
-            py: 0.25,
-            borderRadius: 1,
-            ...getMessageCardPreviewCounterSx(theme),
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            borderTopLeftRadius: isFullscreen ? 0 : 12,
+            borderTopRightRadius: isFullscreen ? 0 : 12,
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+            overflow: 'hidden',
           }}
         >
-          {`${resolvedIndex + 1} / ${imageCount}`}
-        </Typography>
+          <MessageCardImagePreviewStage
+            ref={setStageNode}
+            currentImage={currentImage}
+            currentHref={currentHref}
+            imageCount={imageCount}
+            resolvedIndex={resolvedIndex}
+            previewFileName={previewFileName}
+            zoom={zoom}
+            pan={pan}
+            failedHref={failedHref}
+            imageSize={imageSize}
+            stageBackground={stageBackground}
+            isFullscreen={isFullscreen}
+            onImageLoad={handleImageLoad}
+            onImageError={handleImageError}
+            onStartPan={startPan}
+            onStopPan={stopPan}
+            onExitFullscreen={() => setIsFullscreen(false)}
+          />
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
+            }}
+          >
+            <Box sx={{ width: '100%', maxWidth: 800 }}>
+              <MessageCardImagePreviewControls 
+                zoom={zoom} 
+                isFullscreen={isFullscreen}
+                onSetPreviewZoom={setPreviewZoom} 
+                onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+              />
+            </Box>
+          </Box>
+        </Box>
+
         <MessageCardImagePreviewInfoPopover
           open={infoOpen}
           anchorEl={infoAnchorEl}
@@ -405,12 +421,13 @@ export function MessageImagePreviewDialog({
         />
       </DialogContent>
       <MessageCardImagePreviewActions
-        zoom={zoom}
         currentHref={currentHref}
         downloadFileName={downloadFileName}
-        isFullscreen={isFullscreen}
-        onSetPreviewZoom={setPreviewZoom}
-        onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+        hasCarousel={hasCarousel}
+        resolvedIndex={resolvedIndex}
+        imageCount={imageCount}
+        onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
+        onGoToNext={() => goToIndex(resolvedIndex + 1)}
         onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
         onClose={closeDialog}
       />
