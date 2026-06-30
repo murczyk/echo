@@ -261,11 +261,11 @@ export function MessageCardVideoPreviewDialog({
           minHeight: 0,
           flex: "1 1 auto",
           overflow: "hidden",
-          gap: playerState.isFullscreen ? 0 : 1.25,
+          gap: 0,
         }}
       >
         <Box
-          className={`bg-black ${playerState.isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
+          className={`bg-[#121212] ${playerState.isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
           sx={{
             flex: 1,
             minHeight: 0,

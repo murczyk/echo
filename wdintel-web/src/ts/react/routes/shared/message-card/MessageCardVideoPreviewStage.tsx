@@ -64,7 +64,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
   return (
     <Box
       ref={ref}
-      className="bg-black ring-1 ring-inset ring-white/5"
+      className="bg-[#121212] ring-1 ring-inset ring-white/5"
       sx={{
         flex: 1,
         minHeight: 0,

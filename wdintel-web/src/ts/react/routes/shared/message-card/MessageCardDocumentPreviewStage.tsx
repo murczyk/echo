@@ -1,7 +1,5 @@
 import { forwardRef } from 'react';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import { Box, IconButton, Tooltip } from '@mui/material';
+import { Box } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { MessageCardDocument } from './document-preview.types';
@@ -18,11 +16,9 @@ export const MessageCardDocumentPreviewStage = forwardRef<
     currentIndex: number;
     zoom: number;
     isFullscreen: boolean;
-    onGoToPrevious: () => void;
-    onGoToNext: () => void;
   }
 >(function MessageCardDocumentPreviewStage(
-  { documents, currentIndex, zoom, isFullscreen, onGoToPrevious, onGoToNext },
+  { documents, currentIndex, zoom, isFullscreen },
   ref,
 ) {
   const theme = useTheme();
@@ -45,95 +41,10 @@ export const MessageCardDocumentPreviewStage = forwardRef<
         color: theme.palette.text.primary,
       }}
     >
-      {hasCarousel ? (
-        <>
-          <Box
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              left: 0,
-              width: '4rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(90deg, rgba(0,0,0,0.14), transparent)',
-              pointerEvents: 'auto',
-              zIndex: 10,
-            }}
-          >
-            <Tooltip title="Попереднє" enterDelay={300}>
-              <IconButton
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onGoToPrevious();
-                }}
-                aria-label="Попереднє"
-                sx={{
-                  pointerEvents: 'auto',
-                  color: '#fff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.42)',
-                  border: '1px solid rgba(255, 255, 255, 0.18)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                  '&:hover, &:focus-visible': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-                  },
-                }}
-              >
-                <ChevronLeftIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          <Box
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: '4rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(270deg, rgba(0,0,0,0.14), transparent)',
-              pointerEvents: 'auto',
-              zIndex: 10,
-            }}
-          >
-            <Tooltip title="Наступне" enterDelay={300}>
-              <IconButton
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onGoToNext();
-                }}
-                aria-label="Наступне"
-                sx={{
-                  pointerEvents: 'auto',
-                  color: '#fff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.42)',
-                  border: '1px solid rgba(255, 255, 255, 0.18)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                  '&:hover, &:focus-visible': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-                  },
-                }}
-              >
-                <ChevronRightIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </>
-      ) : null}
-
       <Box
         sx={{
           flex: '1 1 auto',
           minHeight: 0,
-          overflow: 'auto',
-          p: 1.5,
           width: '100%',
         }}
       >

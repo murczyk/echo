@@ -354,11 +354,11 @@ export function MessageImagePreviewDialog({
           minHeight: 0,
           flex: '1 1 auto',
           overflow: 'hidden',
-          gap: isFullscreen ? 0 : 1.25,
+          gap: 0,
         }}
       >
         <Box
-          className={`bg-black ${isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
+          className={`bg-[#121212] ${isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
           sx={{
             flex: 1,
             minHeight: 0,

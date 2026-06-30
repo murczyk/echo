@@ -1,24 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, Typography, useTheme } from '@mui/material';
-import type { MouseEvent } from 'react';
+import { useEffect, useMemo, useState } from "react";
+import {
+  Box,
+  Dialog,
+  DialogContent,
+  Typography,
+  useTheme,
+} from "@mui/material";
+import type { MouseEvent } from "react";
 
-import type { MessageCardDocument } from './document-preview.types';
+import type { MessageCardDocument } from "./document-preview.types";
 import {
   clamp,
   DOCUMENT_PREVIEW_ZOOM_MAX,
   DOCUMENT_PREVIEW_ZOOM_MIN,
   normalizePreviewIndex,
   shouldIgnoreArrowNavigation,
-} from './document-preview-utils';
-import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
-import { MessageCardDocumentPreviewActions } from './MessageCardDocumentPreviewActions';
-import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
-import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
+} from "./document-preview-utils";
+import {
+  deriveDocumentDownloadName,
+  deriveDocumentFileName,
+} from "./message-card-document-utils";
+import {
+  MessageCardDocumentPreviewActions,
+  MessageCardDocumentPreviewControls,
+} from "./MessageCardDocumentPreviewActions";
+import { MessageCardDocumentPreviewInfoPopover } from "./MessageCardDocumentPreviewInfoPopover";
+import { MessageCardDocumentPreviewStage } from "./MessageCardDocumentPreviewStage";
 import {
   blurActivePreviewDialogElement,
   getMessageCardPreviewCounterSx,
   getMessageCardPreviewDialogPaperSx,
-} from './message-card-preview-shell';
+} from "./message-card-preview-shell";
 
 export function MessageCardDocumentPreviewDialog({
   documents,
@@ -38,19 +50,30 @@ export function MessageCardDocumentPreviewDialog({
   const theme = useTheme();
   const documentCount = documents.length;
   const hasCarousel = documentCount > 1;
-  const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, documentCount);
+  const resolvedIndex = normalizePreviewIndex(
+    currentIndex ?? initialIndex,
+    documentCount,
+  );
   const currentDocument = documents[resolvedIndex] ?? null;
   const [zoom, setZoom] = useState(100);
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
+    null,
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
   const previewFileName = useMemo(
-    () => (currentDocument != null ? deriveDocumentFileName(currentDocument, resolvedIndex) : `document-${resolvedIndex + 1}`),
+    () =>
+      currentDocument != null
+        ? deriveDocumentFileName(currentDocument, resolvedIndex)
+        : `document-${resolvedIndex + 1}`,
     [currentDocument, resolvedIndex],
   );
   const downloadFileName = useMemo(
-    () => (currentDocument != null ? deriveDocumentDownloadName(currentDocument, resolvedIndex) : `document-${resolvedIndex + 1}`),
+    () =>
+      currentDocument != null
+        ? deriveDocumentDownloadName(currentDocument, resolvedIndex)
+        : `document-${resolvedIndex + 1}`,
     [currentDocument, resolvedIndex],
   );
 
@@ -77,39 +100,41 @@ export function MessageCardDocumentPreviewDialog({
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       if (shouldIgnoreArrowNavigation(event.target)) return;
-      if (event.key === 'ArrowLeft') {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount));
-      } else if (event.key === 'ArrowRight') {
+      } else if (event.key === "ArrowRight") {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount));
       }
     };
 
-    window.addEventListener('keydown', handleWindowKeyDown, true);
+    window.addEventListener("keydown", handleWindowKeyDown, true);
     return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown, true);
+      window.removeEventListener("keydown", handleWindowKeyDown, true);
     };
   }, [documentCount, hasCarousel, onIndexChange, open, resolvedIndex]);
 
   const setPreviewZoom = (nextZoom: number) => {
-    setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));
+    setZoom(
+      clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX),
+    );
   };
 
   const handleInfoClick = (event: MouseEvent<HTMLButtonElement>) => {
     setInfoAnchorEl(event.currentTarget);
   };
 
-  const dialogWidth = isFullscreen ? '100vw' : '92vw';
-  const dialogHeight = isFullscreen ? '100vh' : '92svh';
+  const dialogWidth = isFullscreen ? "100vw" : "92vw";
+  const dialogHeight = isFullscreen ? "100vh" : "92svh";
 
   return (
     <Dialog
       open={open && documentCount > 0}
       onClose={(_, reason) => {
-        if (reason === 'escapeKeyDown' && isFullscreen) {
+        if (reason === "escapeKeyDown" && isFullscreen) {
           setIsFullscreen(false);
           return;
         }
@@ -127,43 +152,57 @@ export function MessageCardDocumentPreviewDialog({
           ...getMessageCardPreviewDialogPaperSx(isFullscreen),
         },
       }}
+      BackdropProps={{
+        className: "bg-black/80",
+      }}
     >
       <DialogContent
         sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
+          display: "flex",
+          flexDirection: "column",
+          px: isFullscreen ? 0 : 2,
+          pt: isFullscreen ? 0 : 2,
+          pb: 0,
+          gap: 0,
           minHeight: 0,
-          p: 1.5,
-          overflow: 'hidden',
+          overflow: "hidden",
         }}
       >
         {currentDocument != null ? (
-          <>
+          <Box
+            className={`bg-[#121212] ${isFullscreen ? "" : "ring-1 ring-inset ring-white/5"}`}
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: isFullscreen ? 0 : 1.5,
+              overflow: "hidden",
+            }}
+          >
             <MessageCardDocumentPreviewStage
               documents={documents}
               currentIndex={resolvedIndex}
               zoom={zoom}
               isFullscreen={isFullscreen}
-              onGoToPrevious={() => onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount))}
-              onGoToNext={() => onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount))}
             />
-            <Typography
-              variant="body2"
-              data-document-preview-counter
+            <Box
               sx={{
-                alignSelf: 'center',
-                fontWeight: 700,
-                letterSpacing: 0,
-                px: 1,
-                py: 0.25,
-                borderRadius: 1,
-                ...getMessageCardPreviewCounterSx(theme),
+                display: "flex",
+                justifyContent: "center",
+                width: "100%",
               }}
             >
-              {`${resolvedIndex + 1} / ${documentCount}`}
-            </Typography>
-          </>
+              <Box sx={{ width: "100%", maxWidth: 800 }}>
+                <MessageCardDocumentPreviewControls
+                  zoom={zoom}
+                  isFullscreen={isFullscreen}
+                  onSetPreviewZoom={setPreviewZoom}
+                  onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+                />
+              </Box>
+            </Box>
+          </Box>
         ) : (
           <Typography variant="body2">Документ недоступний</Typography>
         )}
@@ -178,14 +217,23 @@ export function MessageCardDocumentPreviewDialog({
           fileSize={currentDocument.sizeBytes ?? null}
         />
       ) : null}
-      {currentDocument != null ? (
+      {currentDocument != null && !isFullscreen ? (
         <MessageCardDocumentPreviewActions
-          zoom={zoom}
           currentHref={currentDocument.href}
           downloadFileName={downloadFileName}
-          isFullscreen={isFullscreen}
-          onSetPreviewZoom={setPreviewZoom}
-          onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+          hasCarousel={hasCarousel}
+          resolvedIndex={resolvedIndex}
+          documentCount={documentCount}
+          onGoToPrevious={() =>
+            onIndexChange(
+              normalizePreviewIndex(resolvedIndex - 1, documentCount),
+            )
+          }
+          onGoToNext={() =>
+            onIndexChange(
+              normalizePreviewIndex(resolvedIndex + 1, documentCount),
+            )
+          }
           onInfoClick={handleInfoClick}
           onClose={closeDialog}
         />

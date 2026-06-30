@@ -34,7 +34,7 @@ export function MessageCardImagePreviewControls({
         gap: 1.5,
         flex: 1,
         minWidth: 0,
-        backgroundColor: "black",
+        backgroundColor: "#121212",
         py: 1.5,
         px: 3,
       }}

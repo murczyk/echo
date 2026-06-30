@@ -17,7 +17,7 @@ export function getMessageCardPreviewDialogPaperSx(isFullscreen: boolean): SxPro
 
 export function getMessageCardPreviewStageSx(theme: Theme, isFullscreen: boolean): SxProps<Theme> {
   return {
-    backgroundColor: theme.palette.background?.default ?? theme.palette.background?.paper ?? '#fff',
+    backgroundColor: 'transparent',
   };
 }
 
@@ -25,7 +25,6 @@ export function getMessageCardPreviewActionBarSx(theme: Theme): SxProps<Theme> {
   return {
     px: 3,
     py: 2.5,
-    borderTop: `1px solid ${alpha(theme.palette.divider ?? 'rgba(0, 0, 0, 0.12)', 0.12)}`,
     backgroundColor: 'transparent',
     display: 'grid',
     gridTemplateColumns: '1fr auto 1fr',
