@@ -181,6 +181,7 @@ pub(crate) async fn report_docx_generate_file(
         .await
         .c(h!())?;
     }
+    ensure_report_request_valid(&req)?;
 
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
@@ -351,6 +352,7 @@ pub async fn report_docx_task_launch(
         &report_kind,
     )
     .await?;
+    ensure_report_request_valid(&req_inner)?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &user_login,
@@ -380,6 +382,15 @@ async fn ensure_report_launch_permissions_with_error_code_header(
         }),
         Err(err) => Err(err.c(h!())),
     }
+}
+
+fn ensure_report_request_valid(
+    req: &types::ReportPreviewReq,
+) -> Result<(), AppError> {
+    if req.kind == kinds::SPOSOB {
+        self::rer::sposob_report_unit_name(req)?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn save_report_log(

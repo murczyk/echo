@@ -65,6 +65,9 @@ mainBody user model shared route =
         messagesCountOverall =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
 
+        isSposobUnitNameMissing =
+            model.reportTemplate == RTSposob && String.isEmpty (String.trim model.reportSposobUnitName)
+
         deleteConfirmationModal =
             modalDialog
                 (model.deleteMessageModalId /= Nothing)
@@ -663,6 +666,19 @@ view user model shared route =
                         )
                     ]
 
+            , HtmlX.viewIf (model.reportTemplate == RTSposob) <|
+                div [ class "flex flex-col justify-center items-center mb-4 gap-2" ]
+                    [ label [ class "text-sm text-secondary" ] [ text "Назва підрозділу" ]
+                    , input
+                        [ class "form-control max-w-md"
+                        , value model.reportSposobUnitName
+                        , onInput ReportSposobUnitNameInput
+                        ]
+                        []
+                    , HtmlX.viewIf isSposobUnitNameMissing <|
+                        div [ class "text-sm text-danger" ] [ text "Обовʼязково для звіту Способ" ]
+                    ]
+
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
                 let
@@ -1031,6 +1047,7 @@ view user model shared route =
                           else
                             i [ class "bi bi-filetype-docx" ] []
                         ]
+                    |> Button.withDisabled (model.reportDownloadInProgress || isSposobUnitNameMissing)
                     |> Button.view
                 , a
                     [ href "/settings-neo?section=my-reports"

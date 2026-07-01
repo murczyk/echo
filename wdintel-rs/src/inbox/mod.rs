@@ -84,7 +84,10 @@ where
     }
     let tz = crate::config::get_tz();
     let lnow = Local::now().with_timezone(&tz);
-    let (mut m_dt, meow_format) = extract_message_datetime(lnow, &body)?;
+    let allow_kraken_audio =
+        message_has_other_interseption_group(txn, &message).await?;
+    let (mut m_dt, meow_format) =
+        extract_message_datetime(lnow, &body, allow_kraken_audio)?;
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
@@ -325,6 +328,7 @@ where
 fn extract_message_datetime(
     lnow: DateTime<Tz>,
     body: &str,
+    allow_kraken_audio: bool,
 ) -> Result<
     (
         Option<DateTime<Tz>>,
@@ -332,6 +336,21 @@ fn extract_message_datetime(
     ),
     AppError,
 > {
+    if allow_kraken_audio {
+        if let Some(kraken_audio) =
+            crate::rer_importer::meow_format::parse_kraken_audio(body)
+        {
+            return Ok((
+                Some(kraken_audio.datetime),
+                Some(kraken_audio.clone()),
+            ));
+        }
+    } else if crate::rer_importer::meow_format::parse_kraken_audio(body)
+        .is_some()
+    {
+        return Ok((None, None));
+    }
+
     let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
     if let Some(meow_format) = &meow_format {
         return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
@@ -360,6 +379,49 @@ fn extract_generic_body_datetime(
             None
         }
     })
+}
+
+async fn message_has_other_interseption_group<'a, 'async_trait, C>(
+    txn: &'a C,
+    message: &signal_message::Model,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let linked_other_count = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .filter(signal_message_group::Column::SignalMessageId.eq(message.id))
+        .filter(
+            signal_group::Column::InterseptionKind.eq(
+                crate::entities::sea_orm_active_enums::InterseptionKind::Other,
+            ),
+        )
+        .count(txn)
+        .await
+        .c(h!())?;
+    if linked_other_count > 0 {
+        return Ok(true);
+    }
+
+    let Some(datasource_group_id) = message.datasource_group_id else {
+        return Ok(false);
+    };
+    let direct_other_count =
+        datasource_group::Entity::find_by_id(datasource_group_id)
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .filter(signal_group::Column::InterseptionKind.eq(
+                crate::entities::sea_orm_active_enums::InterseptionKind::Other,
+            ))
+            .count(txn)
+            .await
+            .c(h!())?;
+    Ok(direct_other_count > 0)
 }
 pub async fn fanout_inbox_changed(
     redis: &mut redis::aio::ConnectionManager,
@@ -542,7 +604,8 @@ mod tests {
         let body =
             "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
 
-        let (m_dt, meow_format) = extract_message_datetime(now, body).unwrap();
+        let (m_dt, meow_format) =
+            extract_message_datetime(now, body, false).unwrap();
 
         assert_eq!(
             m_dt,
@@ -559,7 +622,8 @@ mod tests {
         let now = Kyiv.with_ymd_and_hms(2026, 7, 2, 12, 0, 0).unwrap();
         let body = "50 обрБпС | 2026-07-01\n01-12\nПерехоплення о 08:30";
 
-        let (m_dt, meow_format) = extract_message_datetime(now, body).unwrap();
+        let (m_dt, meow_format) =
+            extract_message_datetime(now, body, false).unwrap();
 
         assert_eq!(
             m_dt,
@@ -568,6 +632,29 @@ mod tests {
         assert_eq!(
             meow_format.unwrap().body_noheader.body,
             "Перехоплення о 08:30"
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_uses_kraken_audio_only_when_allowed() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 2, 12, 0, 0).unwrap();
+        let body =
+            "передмова\n audio | 2026-07-01_14-47-03\nПерехоплення о 08:30";
+
+        let (m_dt, meow_format) =
+            extract_message_datetime(now, body, false).unwrap();
+        assert_eq!(m_dt, None);
+        assert!(meow_format.is_none());
+
+        let (m_dt, meow_format) =
+            extract_message_datetime(now, body, true).unwrap();
+        assert_eq!(
+            m_dt,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 1, 14, 47, 3).unwrap())
+        );
+        assert_eq!(
+            meow_format.unwrap().body_noheader.body,
+            "Перехоплення о 08:30\n(Коментар: передмова)"
         );
     }
 }

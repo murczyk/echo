@@ -138,6 +138,7 @@ type Msg
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle
+    | ReportSposobUnitNameInput String
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
