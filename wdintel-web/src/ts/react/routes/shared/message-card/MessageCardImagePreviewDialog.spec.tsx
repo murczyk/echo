@@ -10,6 +10,7 @@ import { forwardRef } from 'react';
 const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
 
 vi.mock('@mui/material', () => ({
+  Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Dialog: ({ children, open, disableRestoreFocus }: { children?: ReactNode; open?: boolean; disableRestoreFocus?: boolean }) => {
     if (open) dialogProps.push({ disableRestoreFocus });
     return open ? <div role="dialog">{children}</div> : null;
@@ -21,6 +22,7 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('./MessageCardImagePreviewActions', () => ({
   MessageCardImagePreviewActions: () => <div />,
+  MessageCardImagePreviewControls: () => <div />,
 }));
 
 vi.mock('./MessageCardImagePreviewStage', () => ({
