@@ -1413,10 +1413,15 @@ pub async fn fetch_tags_for_login(
     if req.without_model_tags != Some(true)
         && should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())?
     {
-        let result =
-            read_tag_stats_aggregated(env, master_keys, dt_since, dt_till)
-                .await
-                .c(h!())?;
+        let result = read_tag_stats_aggregated(
+            env,
+            login_str,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
         return Ok(result);
     }
 
@@ -1510,9 +1515,14 @@ fn build_tags_query(
                     .into_condition()
                 }),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_tag::Relation::Tag.def(),
+        )
         .select_only()
         .column(sigint_inbox_item_tag::Column::TagId)
         .column_as(Expr::count(Expr::val(1)), "count")
+        .filter(accessible_tag_owner_condition(login_str))
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())

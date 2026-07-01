@@ -842,6 +842,10 @@ fn get_related_tag_items_filter(
     let expected_count = unique_tags.len();
 
     let mut q = sigint_inbox_item_tag::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_tag::Relation::Tag.def(),
+        )
         .filter(
             Expr::col((
                 sigint_inbox_item_tag::Entity,
@@ -857,6 +861,7 @@ fn get_related_tag_items_filter(
             sigint_inbox_item_tag::Column::Confidence
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
+        .filter(accessible_tag_owner_condition(user_id))
         .select_only();
 
     if without_model_tags {
@@ -902,6 +907,19 @@ fn get_related_tag_items_filter(
                 .eq(expected_count as u64)
         }
     }
+}
+
+pub(crate) fn accessible_tag_owner_condition(user_id: &str) -> Condition {
+    let mut organism_query = Query::select();
+    organism_query
+        .column(login::Column::OrganismId)
+        .from(login::Entity)
+        .and_where(login::Column::Login.eq(user_id.to_string()))
+        .and_where(login::Column::DeletedPermanently.eq(false));
+
+    Condition::any()
+        .add(tag::Column::OwnerOrganismId.is_null())
+        .add(tag::Column::OwnerOrganismId.in_subquery(organism_query))
 }
 
 fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
@@ -977,10 +995,15 @@ where
 {
     let mut q = q.clone();
     let mut m_inner_expr = None;
+    let mut m_access_expr = None;
     if let Some(selected_tags) = selected_tags.as_ref() {
         if !selected_tags.is_empty() {
             let unique_tags: BTreeSet<i64> =
                 selected_tags.iter().cloned().collect();
+            m_access_expr = Some(selected_tags_accessible_expr(
+                unique_tags.clone(),
+                user_id,
+            ));
             let tag_filter_option =
                 filter_tags_option.unwrap_or(TagFilterOption::OneOfTags);
             let without_model_tags = without_model_tags.unwrap_or(false);
@@ -1062,6 +1085,9 @@ where
     if let Some(ref inner_expr) = m_inner_expr {
         q = q.filter(inner_expr.clone());
     }
+    if let Some(ref access_expr) = m_access_expr {
+        q = q.filter(access_expr.clone());
+    }
 
     if let Some(denied_tags) = denied_tags.as_ref() {
         if !denied_tags.is_empty() {
@@ -1104,6 +1130,22 @@ where
     //     q.build(DbBackend::Postgres).to_string()
     // );
     Ok(q)
+}
+
+fn selected_tags_accessible_expr(
+    unique_tags: BTreeSet<i64>,
+    user_id: &str,
+) -> SimpleExpr {
+    let expected_count = unique_tags.len();
+    let subquery = tag::Entity::find()
+        .filter(tag::Column::Id.eq_any(unique_tags.into_iter().collect()))
+        .filter(accessible_tag_owner_condition(user_id))
+        .select_only()
+        .expr(Expr::col(tag::Column::Id).count())
+        .into_query()
+        .into_sub_query_statement();
+
+    SimpleExpr::SubQuery(None, Box::new(subquery)).eq(expected_count as u64)
 }
 
 fn build_selected_aor_overlap_exists(
