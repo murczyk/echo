@@ -240,6 +240,7 @@ function RerPalitraNeoPageBody() {
         palitra={page.previewPalitra}
         preview={page.previewData}
         loading={page.previewLoading}
+        error={page.previewError}
         onClose={page.closePreview}
       />
 

@@ -5,6 +5,7 @@ import type { MutableRefObject } from 'react';
 
 import type { Palitra as ReadPalitra, PalitraGeometryDetails as ReadGeometry, PalitraReadV2 } from '../../../../../Bindings';
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Typography } from '@mui/material';
+import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { PalitraCacheManager } from '../../../../maps/palitra-cache-manager';
 import { PalitraPointClusterRenderer } from '../../../../maps/palitra-point-cluster-renderer';
@@ -27,6 +28,7 @@ type Props = {
   palitra: ReadPalitra | null;
   preview: PalitraReadV2 | null;
   loading: boolean;
+  error?: string | null;
   onClose: () => void;
 };
 
@@ -310,7 +312,7 @@ function destroyPreviewPointStack(
   stateRef.current = [];
 }
 
-export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose }: Props) {
+export function PalitraPreviewDialog({ open, palitra, preview, loading, error, onClose }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.FeatureGroup | null>(null);
@@ -329,6 +331,8 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
   const hasRenderablePreviewGeometry = previewPalitras.some((entry) => hasRenderableGeometry(entry.palitra.geometry));
   const hasRenderablePreviewGeometryRef = useRef(hasRenderablePreviewGeometry);
   const previewRenderReadyRef = useRef(previewRenderReady);
+  const hasPreviewError = Boolean(error);
+  const showPreviewLoading = !hasPreviewError && (loading || !preview || !mapReady || !previewRenderReady);
 
   useEffect(() => {
     hasRenderablePreviewGeometryRef.current = hasRenderablePreviewGeometry;
@@ -514,7 +518,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
             flex: '1 1 auto',
           }}
         >
-          {(loading || !preview || !mapReady || !previewRenderReady) ? (
+          {showPreviewLoading ? (
             <Box
               sx={{
                 position: 'absolute',
@@ -525,8 +529,31 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
                 bgcolor: 'background.paper',
                 zIndex: 1000,
               }}
+              >
+                <CircularProgress />
+              </Box>
+            ) : null}
+          {hasPreviewError ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                px: 3,
+                zIndex: 1001,
+                bgcolor: 'background.paper',
+              }}
             >
-              <CircularProgress />
+              <PowerAlert severity='error' autoHideDuration={null} dismissible={false} sx={{ width: '100%', maxWidth: 560 }}>
+                <Typography variant='h6' sx={{ mb: 1 }}>
+                  Не вдалося завантажити попередній перегляд палітри
+                </Typography>
+                <Typography variant='body1' sx={{ lineHeight: 1.6 }}>
+                  {error}
+                </Typography>
+              </PowerAlert>
             </Box>
           ) : null}
           {!loading && preview && mapReady && !hasRenderablePreviewGeometry ? (
