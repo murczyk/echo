@@ -264,6 +264,14 @@ view user activeName shared route { toContentMsg, model, content } =
                                     Just ls -> Encode.string ls
                                     Nothing -> Encode.null
                               )
+                            , ( "systemSettings"
+                              , case shared.systemSettings of
+                                    Just settings ->
+                                        Encode.object
+                                            [ ( "defaultNeoAnalysis", Encode.bool settings.defaultNeoAnalysis ) ]
+                                    Nothing ->
+                                        Encode.null
+                              )
                             ]
                   )
                 , ( "activeName", Encode.string activeName )

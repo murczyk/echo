@@ -13,6 +13,7 @@ import {
 } from "./menu-items";
 import { ChangelogDropdown } from "./ChangelogDropdown";
 import { ProfileDropdown } from "./ProfileDropdown";
+import { currentSystemSettings } from "../../services/api/system-settings";
 
 export interface AppNavbarProps {
   user: {
@@ -32,6 +33,7 @@ export interface AppNavbarProps {
     userLoaded: boolean;
     changelogLastSeenLoaded: boolean;
     changelogLastSeen: string | null;
+    systemSettings?: { defaultNeoAnalysis: boolean } | null;
   };
   activeName: string;
   isNavbarVisible: boolean;
@@ -55,7 +57,36 @@ export function AppNavbar({
 }: AppNavbarProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(null);
   const navbarRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (shared?.systemSettings) {
+      setLoadedNeoAnalysis(shared.systemSettings.defaultNeoAnalysis);
+    }
+  }, [shared?.systemSettings]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchSettings = () => {
+      currentSystemSettings()
+        .then((settings) => {
+          if (mounted) {
+            setLoadedNeoAnalysis(settings.defaultNeoAnalysis);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchSettings();
+    window.addEventListener("system-settings-saved", fetchSettings);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener("system-settings-saved", fetchSettings);
+    };
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -411,7 +442,11 @@ export function AppNavbar({
                   "analysis",
                   "Аналіз",
                   analysisSubs,
-                  "/rer-analysis",
+                  loadedNeoAnalysis === null
+                    ? undefined
+                    : loadedNeoAnalysis
+                      ? "/rer-analysis-neo"
+                      : "/rer-analysis",
                 )}
               {serverModeIsLive &&
                 isRer &&
