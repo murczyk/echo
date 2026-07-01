@@ -52,6 +52,7 @@ function emptySystemSettingsResponse() {
     rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
     short_url_enabled: true,
+    default_neo_analysis: false,
   };
 }
 
