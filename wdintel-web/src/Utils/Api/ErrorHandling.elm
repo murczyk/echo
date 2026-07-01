@@ -3,6 +3,8 @@ module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, 
 import Core.Types
 import Effect as E
 import Http
+import Shared.Msg
+import Utils.Api.Temp exposing (responseDecodeErrorPrefix)
 
 
 {-| Error details structure for comprehensive error handling
@@ -90,7 +92,22 @@ getErrorDetails httpError =
             "Код статусу: " ++ String.fromInt code
 
         Http.BadBody message ->
-            "Деталі: " ++ message
+            "Деталі: " ++ badBodyDetails message
+
+
+badBodyDetails : String -> String
+badBodyDetails message =
+    responseDecodeErrorDetails message
+        |> Maybe.withDefault message
+
+
+responseDecodeErrorDetails : String -> Maybe String
+responseDecodeErrorDetails message =
+    if String.startsWith responseDecodeErrorPrefix message then
+        Just (String.dropLeft (String.length responseDecodeErrorPrefix) message)
+
+    else
+        Nothing
 
 
 {-| Extracts HTTP status code from ApiError as a string. Returns "0" for non-HTTP errors.
@@ -148,15 +165,27 @@ formatErrorForShowError customTitle error =
 -}
 formatErrorForShowErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
 formatErrorForShowErrorWithDetails customTitle error =
-    let
-        errorDetails =
-            formatErrorWithCustomTitle customTitle error
-    in
     case error.httpError of
         Http.BadStatus 401 ->
             -- For 401 errors, trigger logout instead of showing error
             E.logout
 
+        Http.BadBody message ->
+            case responseDecodeErrorDetails message of
+                Just details ->
+                    E.sendSharedMsg (Shared.Msg.ShowLoggedResponseDecodeError { title = customTitle, message = details })
+
+                Nothing ->
+                    showFormattedErrorWithDetails customTitle error
+
         _ ->
-            -- For other errors, show the error message
-            E.showErrorWithDetails errorDetails.title errorDetails.content
+            showFormattedErrorWithDetails customTitle error
+
+
+showFormattedErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
+showFormattedErrorWithDetails customTitle error =
+    let
+        errorDetails =
+            formatErrorWithCustomTitle customTitle error
+    in
+    E.showErrorWithDetails errorDetails.title errorDetails.content

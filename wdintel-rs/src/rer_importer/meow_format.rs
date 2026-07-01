@@ -18,6 +18,10 @@ struct Line<'a> {
 }
 
 pub fn parse(lnow: DateTime<Tz>, input: &str) -> Option<MeowFormat> {
+    parse_meow(lnow, input).or_else(|| parse_meow_7d(input))
+}
+
+fn parse_meow(lnow: DateTime<Tz>, input: &str) -> Option<MeowFormat> {
     let lines = lines_with_offsets(input);
     if lines.len() < 4
         || lines[0].text.trim().is_empty()
@@ -28,6 +32,21 @@ pub fn parse(lnow: DateTime<Tz>, input: &str) -> Option<MeowFormat> {
     let time = parse_time_line(lines[1].text)?;
     let body_noheader = parse_body(input, lines[3].start)?;
     let datetime = meow_datetime(lnow, time)?;
+    Some(MeowFormat {
+        datetime,
+        body_noheader,
+    })
+}
+
+fn parse_meow_7d(input: &str) -> Option<MeowFormat> {
+    let lines = lines_with_offsets(input);
+    if lines.len() < 3 {
+        return None;
+    }
+    let date = parse_meow_7d_unit_date_line(lines[0].text)?;
+    let time = parse_meow_7d_time_line(lines[1].text)?;
+    let body_noheader = parse_body(input, lines[2].start)?;
+    let datetime = kyiv_datetime(NaiveDateTime::new(date, time))?;
     Some(MeowFormat {
         datetime,
         body_noheader,
@@ -47,6 +66,35 @@ fn lines_with_offsets(input: &str) -> Vec<Line<'_>> {
         });
     }
     lines
+}
+
+fn parse_meow_7d_unit_date_line(line: &str) -> Option<NaiveDate> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(
+            r"^\s*(?P<unit>[^|]+?)\s*\|\s*(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s*$"
+        )
+        .unwrap();
+    }
+    let captures = RE.captures(line)?;
+    if captures.name("unit")?.as_str().trim().is_empty() {
+        return None;
+    }
+    let year = captures.name("year")?.as_str().parse().ok()?;
+    let month = captures.name("month")?.as_str().parse().ok()?;
+    let day = captures.name("day")?.as_str().parse().ok()?;
+    NaiveDate::from_ymd_opt(year, month, day)
+}
+
+fn parse_meow_7d_time_line(line: &str) -> Option<NaiveTime> {
+    lazy_static! {
+        static ref RE: Regex =
+            Regex::new(r"^\s*(?P<hour>[0-2][0-9])-(?P<minute>[0-5][0-9])\s*$")
+                .unwrap();
+    }
+    let captures = RE.captures(line)?;
+    let hour = captures.name("hour")?.as_str().parse().ok()?;
+    let minute = captures.name("minute")?.as_str().parse().ok()?;
+    NaiveTime::from_hms_opt(hour, minute, 0)
 }
 
 fn parse_time_line(line: &str) -> Option<NaiveTime> {
@@ -106,6 +154,25 @@ mod tests {
         assert_eq!(
             parsed.datetime,
             Kyiv.with_ymd_and_hms(2026, 6, 28, 5, 58, 0).unwrap()
+        );
+        assert_eq!(parsed.body_noheader.body, "Перехоплення\nрядок 2");
+        let body_start = input.find("Перехоплення").unwrap();
+        assert_eq!(
+            parsed.body_noheader.start,
+            input[..body_start].chars().count()
+        );
+    }
+
+    #[test]
+    fn parses_meow_7d_format() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 2, 12, 0, 0).unwrap();
+        let input = "50 обрБпС | 2026-07-01\n01-12\nПерехоплення\nрядок 2";
+
+        let parsed = parse(now, input).unwrap();
+
+        assert_eq!(
+            parsed.datetime,
+            Kyiv.with_ymd_and_hms(2026, 7, 1, 1, 12, 0).unwrap()
         );
         assert_eq!(parsed.body_noheader.body, "Перехоплення\nрядок 2");
         let body_start = input.find("Перехоплення").unwrap();

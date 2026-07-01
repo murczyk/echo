@@ -553,4 +553,21 @@ mod tests {
             "Перехоплення о 08:30\nрядок 2"
         );
     }
+
+    #[test]
+    fn extract_message_datetime_prefers_meow_7d_header_over_body_time() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 2, 12, 0, 0).unwrap();
+        let body = "50 обрБпС | 2026-07-01\n01-12\nПерехоплення о 08:30";
+
+        let (m_dt, meow_format) = extract_message_datetime(now, body).unwrap();
+
+        assert_eq!(
+            m_dt,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 1, 1, 12, 0).unwrap())
+        );
+        assert_eq!(
+            meow_format.unwrap().body_noheader.body,
+            "Перехоплення о 08:30"
+        );
+    }
 }

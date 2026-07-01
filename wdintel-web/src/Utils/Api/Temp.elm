@@ -47,7 +47,7 @@ leExpectJson toMsg decoder =
                             Ok value
 
                         Err err ->
-                            Err { httpError = Http.BadBody (Decode.errorToString err), formErrors = Dict.empty, errors = [] }
+                            Err { httpError = Http.BadBody (responseDecodeErrorMessage err), formErrors = Dict.empty, errors = [] }
 
 
 jsonPair : Decode.Decoder a -> Decode.Decoder b -> Decode.Decoder ( a, b )
@@ -70,6 +70,16 @@ jsonPair a b =
                     Decode.fail "Expecting a list of two elements"
         )
         (Decode.list Decode.value)
+
+
+responseDecodeErrorPrefix : String
+responseDecodeErrorPrefix =
+    "ECHO_RESPONSE_DECODE_ERROR:"
+
+
+responseDecodeErrorMessage : Decode.Error -> String
+responseDecodeErrorMessage err =
+    responseDecodeErrorPrefix ++ Decode.errorToString err
 
 
 {-| this helper function copied from <https://github.com/elm/http/blob/2.0.0/src/Http.elm#L514-L521>

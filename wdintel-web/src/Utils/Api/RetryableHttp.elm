@@ -10,6 +10,7 @@ import Http
 import Json.Decode as D
 import Task exposing (Task)
 import Utils.Api.Retry exposing (Policy, exponentialBackoff, maxDuration, maxRetries, with)
+import Utils.Api.Temp exposing (responseDecodeErrorMessage)
 
 
 type alias RetryConfig =
@@ -83,4 +84,4 @@ resolveJson decoder response =
                     Ok value
 
                 Err err ->
-                    Err { httpError = Http.BadBody (D.errorToString err), formErrors = Dict.empty, errors = [] }
+                    Err { httpError = Http.BadBody (responseDecodeErrorMessage err), formErrors = Dict.empty, errors = [] }
