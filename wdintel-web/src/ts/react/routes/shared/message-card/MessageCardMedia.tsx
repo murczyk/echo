@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Box, Button, Tooltip, Typography } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
+import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 
 const AUDIO_PLAYER_MIN_HEIGHT_PX = 120;
 const AUDIO_PLAYER_TOP_PADDING_PX = 12;
@@ -23,7 +25,8 @@ const AUDIO_FILE_EXTENSIONS = [
   '.webm',
 ] as const;
 
-const AUDIO_FILE_EXTENSION_RE = /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|webm)(\?|#|$)/i;
+const AUDIO_FILE_EXTENSION_RE =
+  /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|webm)(\?|#|$)/i;
 
 type MessageMediaInfoRaw = MessageMediaInfo & {
   content_type?: string | null;
@@ -56,7 +59,27 @@ export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {
   return AUDIO_FILE_EXTENSION_RE.test(href);
 }
 
-function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
+const VIDEO_FILE_EXTENSIONS = [
+  '.mp4',
+  '.webm',
+  '.ogg',
+  '.mov',
+  '.mkv',
+] as const;
+
+const VIDEO_FILE_EXTENSION_RE = /\.(mp4|webm|ogg|mov|mkv)(\?|#|$)/i;
+
+export function isVideoMediaAttachment(m: MessageMediaInfo): boolean {
+  const ct = mediaAttachmentContentType(m);
+  if (ct.startsWith('video/')) return true;
+  if (ct.startsWith('audio/') || ct.startsWith('image/')) return false;
+  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
+  if (VIDEO_FILE_EXTENSIONS.some((ext) => fileName.endsWith(ext))) return true;
+  const href = String(m.href ?? '').toLowerCase();
+  return VIDEO_FILE_EXTENSION_RE.test(href);
+}
+
+export function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
   const s = (m.fileName ?? raw.file_name ?? '').trim();
   if (s !== '') return s;
@@ -80,11 +103,18 @@ export function mediaAttachmentSpectrumUrl(mediaId: string): string {
   return `/api/messenger/media/${mediaId}/spectrogram`;
 }
 
-export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' | 'dark') {
+export function syncAudioPlayerTheme(
+  player: HTMLElement,
+  paletteMode: 'light' | 'dark',
+) {
   player.setAttribute('theme', paletteMode);
 }
 
-export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMediaInfo }) {
+export function MessageMediaAudioPlayer({
+  attachment,
+}: {
+  attachment: MessageMediaInfo;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLElement | null>(null);
   const paletteMode = useMuiPaletteMode();
@@ -166,9 +196,16 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   );
 }
 
-export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
+export function MessageMediaDownloadLink({
+  attachment,
+}: {
+  attachment: MessageMediaInfo;
+}) {
   const displayName = mediaAttachmentDisplayName(attachment);
-  const downloadAttr = displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
+  const downloadAttr =
+    displayName === '<файл без назви>'
+      ? 'attachment'
+      : displayName.replace(/[/\\]/g, '_');
   return (
     <Tooltip title={displayName} enterDelay={400}>
       <Button
@@ -194,9 +231,70 @@ export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMe
           alignSelf: 'flex-start',
           overflow: 'hidden',
           justifyContent: 'flex-start',
-          '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& svg': { fontSize: 14 } },
+          '& .MuiButton-startIcon': {
+            mr: 0.35,
+            ml: -0.25,
+            '& svg': { fontSize: 14 },
+          },
         }}
         startIcon={<DownloadOutlinedIcon aria-hidden />}
+      >
+        <Box
+          component="span"
+          sx={{
+            display: 'block',
+            minWidth: 0,
+            width: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            verticalAlign: 'bottom',
+          }}
+        >
+          {displayName}
+        </Box>
+      </Button>
+    </Tooltip>
+  );
+}
+
+export function MessageMediaVideoPreviewButton({
+  attachment,
+  onClick,
+}: {
+  attachment: MessageMediaInfo;
+  onClick: () => void;
+}) {
+  const displayName = mediaAttachmentDisplayName(attachment);
+
+  return (
+    <Tooltip title={displayName} enterDelay={400}>
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={onClick}
+        sx={{
+          mb: 0.5,
+          width: 'fit-content',
+          minWidth: 0,
+          maxWidth: '100%',
+          minHeight: 26,
+          py: 0.25,
+          px: 0.75,
+          fontSize: 11,
+          lineHeight: 1.25,
+          textTransform: 'none',
+          fontWeight: 500,
+          alignSelf: 'flex-start',
+          overflow: 'hidden',
+          justifyContent: 'flex-start',
+          '& .MuiButton-startIcon': {
+            mr: 0.35,
+            ml: -0.25,
+            '& svg': { fontSize: 14 },
+          },
+        }}
+        startIcon={<PlayCircleOutlineIcon aria-hidden />}
       >
         <Box
           component="span"

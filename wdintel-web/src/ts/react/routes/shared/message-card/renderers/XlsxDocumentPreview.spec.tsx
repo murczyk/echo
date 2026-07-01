@@ -29,6 +29,7 @@ vi.mock('../xlsx/XlsxSheetTabs', () => ({
 }));
 
 import { XlsxDocumentPreview } from './XlsxDocumentPreview';
+import { runWorkerTask } from '../workers/worker-client';
 
 describe('XlsxDocumentPreview', () => {
   afterEach(() => {
@@ -72,6 +73,60 @@ describe('XlsxDocumentPreview', () => {
     });
 
     expect(arrayBufferSpy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Файл XLSX завеликий');
+
+    root.unmount();
+  });
+
+  it('passes the fetched buffer to the worker as a transferable', async () => {
+    const arrayBuffer = new ArrayBuffer(8);
+    const arrayBufferSpy = vi.fn(async () => arrayBuffer);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': '8',
+        'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      arrayBuffer: arrayBufferSpy,
+    } as Response);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<XlsxDocumentPreview href="https://example.test/files/report.xlsx" zoom={100} />);
+    });
+
+    expect(runWorkerTask).toHaveBeenCalledWith(expect.any(Function), { buffer: arrayBuffer }, expect.any(AbortSignal), [arrayBuffer]);
+
+    root.unmount();
+  });
+
+  it('rejects oversized actual buffers even when content length is missing or lying', async () => {
+    const largeBuffer = new ArrayBuffer(10 * 1024 * 1024 + 1);
+    const arrayBufferSpy = vi.fn(async () => largeBuffer);
+    const workerSpy = vi.mocked(runWorkerTask);
+    workerSpy.mockClear();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': '1',
+        'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      arrayBuffer: arrayBufferSpy,
+    } as Response);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<XlsxDocumentPreview href="https://example.test/files/report.xlsx" zoom={100} />);
+    });
+
+    expect(arrayBufferSpy).toHaveBeenCalled();
+    expect(workerSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Файл XLSX завеликий');
 
     root.unmount();

@@ -1,7 +1,10 @@
 import { Box, Popover, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
-import { formatSizeBytes, type MessageCardImage } from './message-card-image-utils';
+import {
+  formatSizeBytes,
+  type MessageCardImage,
+} from './message-card-image-utils';
 import { getMessageCardPreviewPopoverPaperSx } from './message-card-preview-shell';
 
 type StageSize = {
@@ -30,7 +33,8 @@ export function MessageCardImagePreviewInfoPopover({
   const imageId = image.id?.trim() ?? '';
   const showImageId = imageId !== '';
   const contentType = image.contentType?.trim() || '—';
-  const normalizedFileSize = typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
+  const normalizedFileSize =
+    typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
 
   return (
     <Popover
@@ -47,7 +51,7 @@ export function MessageCardImagePreviewInfoPopover({
     >
       <Stack spacing={1}>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             URL
           </Typography>
           <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
@@ -55,7 +59,7 @@ export function MessageCardImagePreviewInfoPopover({
           </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Файл
           </Typography>
           <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
@@ -63,26 +67,30 @@ export function MessageCardImagePreviewInfoPopover({
           </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Тип
           </Typography>
           <Typography variant="body2">{contentType}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Розмір файлу
           </Typography>
           <Typography variant="body2">{normalizedFileSize}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Розмір зображення
           </Typography>
-          <Typography variant="body2">{imageSize != null ? `${imageSize.width} × ${imageSize.height}` : '—'}</Typography>
+          <Typography variant="body2">
+            {imageSize != null
+              ? `${imageSize.width} × ${imageSize.height}`
+              : '—'}
+          </Typography>
         </Box>
         {showImageId ? (
           <Box>
-            <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               ID
             </Typography>
             <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>

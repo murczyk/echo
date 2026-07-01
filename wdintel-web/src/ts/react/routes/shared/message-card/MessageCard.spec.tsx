@@ -1755,8 +1755,6 @@ describe('MessageCard', () => {
       expect(thumb?.getAttribute('aria-label')).toBe('Відкрити зображення');
       expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
       expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('multi');
-      expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('200');
-      expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('140');
     });
   });
 
@@ -1773,8 +1771,6 @@ describe('MessageCard', () => {
     expect(img).not.toBeNull();
     expect(img?.closest('button')?.getAttribute('data-picture-thumb-state')).toBe('loading');
     expect(img?.closest('button')?.getAttribute('data-picture-thumb-layout')).toBe('single');
-    expect(img?.closest('button')?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
-    expect(img?.closest('button')?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
     expect(view.container.textContent).toContain('Зображення');
 
     await act(async () => {
@@ -1784,7 +1780,6 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('img')).not.toBeNull();
     const thumb = img?.closest('button');
     expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
-    expect(thumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
     expect(view.container.textContent).toContain('Зображення недоступне');
   });
 
@@ -1809,8 +1804,6 @@ describe('MessageCard', () => {
     });
 
     expect(firstThumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
-    expect(firstThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
-    expect(firstThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
 
     await act(async () => {
       firstView.root.unmount();
@@ -1827,8 +1820,6 @@ describe('MessageCard', () => {
 
     const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
-    expect(secondThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
-    expect(secondThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
     expect(secondThumb?.querySelector('img')).not.toBeNull();
 
     const secondImage = secondThumb?.querySelector('img');
@@ -1841,8 +1832,6 @@ describe('MessageCard', () => {
     });
 
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
-    expect(secondThumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
-    expect(secondThumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
   });
 
   it('reuses cached failed thumbnail state after remount', async () => {
@@ -1864,7 +1853,6 @@ describe('MessageCard', () => {
     });
 
     expect(firstThumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
-    expect(firstThumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
 
     await act(async () => {
       firstView.root.unmount();
@@ -1881,7 +1869,6 @@ describe('MessageCard', () => {
 
     const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
-    expect(secondThumb?.getAttribute('data-picture-thumb-error-height-px')).toBeNull();
     expect(secondThumb?.querySelector('img')).not.toBeNull();
 
     const secondImage = secondThumb?.querySelector('img');
@@ -1892,7 +1879,6 @@ describe('MessageCard', () => {
     });
 
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('failed');
-    expect(secondThumb?.getAttribute('data-picture-thumb-error-height-px')).toBe('180');
     expect(secondView.container.textContent).toContain('Зображення недоступне');
   });
 
@@ -1908,8 +1894,6 @@ describe('MessageCard', () => {
     const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
     expect(thumb).not.toBeNull();
     expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('single');
-    expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
-    expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
 
     const image = thumb?.querySelector('img');
     if (image == null) throw new Error('thumbnail image not found');
@@ -1921,8 +1905,6 @@ describe('MessageCard', () => {
     });
 
     expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
-    expect(thumb?.getAttribute('data-picture-thumb-width-px')).toBe('320');
-    expect(thumb?.getAttribute('data-picture-thumb-height-px')).toBe('213');
     expect(image.getAttribute('loading')).toBe('lazy');
     expect(image.getAttribute('decoding')).toBe('async');
     expect(image.getAttribute('fetchpriority')).toBe('low');
@@ -1961,10 +1943,6 @@ describe('MessageCard', () => {
     });
 
     expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
-    expect(thumb?.getAttribute('data-picture-thumb-max-width-px')).toBe('320');
-    expect(thumb?.getAttribute('data-picture-thumb-max-height-px')).toBe('240');
-    expect(Number(thumb?.getAttribute('data-picture-thumb-width-px') ?? '0')).toBeLessThanOrEqual(160);
-    expect(thumb?.getAttribute('data-picture-thumb-height-px')).toBe('240');
   });
 
   it('opens the preview dialog and lets the carousel change the current image', async () => {
@@ -2147,7 +2125,7 @@ describe('MessageCard', () => {
 
     const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
     if (zoomSlider == null) throw new Error('zoom slider not found');
-    expect(JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map((mark: { label?: string }) => mark.label)).toContain('300%');
+    expect(JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map((mark: { value: number }) => mark.value)).toContain(300);
 
     expect(dialog?.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();

@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, Typography } from '@mui/material';
+import { Box, Dialog, DialogContent, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import {
@@ -22,7 +22,10 @@ import {
   type DragState,
   type StagePalette,
 } from './message-card-image-preview-utils';
-import { MessageCardImagePreviewActions } from './MessageCardImagePreviewActions';
+import {
+  MessageCardImagePreviewActions,
+  MessageCardImagePreviewControls,
+} from './MessageCardImagePreviewActions';
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import {
@@ -53,7 +56,10 @@ export function MessageImagePreviewDialog({
 }) {
   const imageCount = imageHrefs.length;
   const hasCarousel = imageCount > 1;
-  const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, imageCount);
+  const resolvedIndex = normalizePreviewIndex(
+    currentIndex ?? initialIndex,
+    imageCount,
+  );
   const currentImage = imageHrefs[resolvedIndex] ?? null;
   const currentHref = currentImage?.href ?? '';
   const [failedHref, setFailedHref] = useState<string | null>(null);
@@ -61,7 +67,9 @@ export function MessageImagePreviewDialog({
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
   const [, setStagePaletteVersion] = useState(0);
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
+    null,
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const stagePaletteByHrefRef = useRef(new Map<string, StagePalette>());
@@ -75,14 +83,23 @@ export function MessageImagePreviewDialog({
   } | null>(null);
   const infoOpen = infoAnchorEl !== null;
   const previewFileName = useMemo(
-    () => (currentImage != null ? derivePreviewFileName(currentImage, resolvedIndex) : `image-${resolvedIndex + 1}`),
+    () =>
+      currentImage != null
+        ? derivePreviewFileName(currentImage, resolvedIndex)
+        : `image-${resolvedIndex + 1}`,
     [currentImage, resolvedIndex],
   );
   const downloadFileName = useMemo(
-    () => (currentImage != null ? deriveImageDownloadName(currentImage, resolvedIndex) : `image-${resolvedIndex + 1}`),
+    () =>
+      currentImage != null
+        ? deriveImageDownloadName(currentImage, resolvedIndex)
+        : `image-${resolvedIndex + 1}`,
     [currentImage, resolvedIndex],
   );
-  const stagePalette = currentHref !== '' ? stagePaletteByHrefRef.current.get(currentHref) ?? null : null;
+  const stagePalette =
+    currentHref !== ''
+      ? (stagePaletteByHrefRef.current.get(currentHref) ?? null)
+      : null;
   const stageBackground = stagePalette
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
     : 'none';
@@ -139,8 +156,13 @@ export function MessageImagePreviewDialog({
       removePointerListeners();
     };
 
-    pointerListenersRef.current = { move: handlePointerMove, end: handlePointerEnd };
-    window.addEventListener('pointermove', handlePointerMove as EventListener, { passive: false });
+    pointerListenersRef.current = {
+      move: handlePointerMove,
+      end: handlePointerEnd,
+    };
+    window.addEventListener('pointermove', handlePointerMove as EventListener, {
+      passive: false,
+    });
     window.addEventListener('pointerup', handlePointerEnd as EventListener);
     window.addEventListener('pointercancel', handlePointerEnd as EventListener);
   }, [removePointerListeners]);
@@ -177,7 +199,14 @@ export function MessageImagePreviewDialog({
     }
 
     if (clampedZoom < currentZoom && stage != null) {
-      setPan((currentPan) => clampPan(currentPan, stage.clientWidth, stage.clientHeight, clampedZoom));
+      setPan((currentPan) =>
+        clampPan(
+          currentPan,
+          stage.clientWidth,
+          stage.clientHeight,
+          clampedZoom,
+        ),
+      );
     }
 
     zoomRef.current = clampedZoom;
@@ -204,9 +233,17 @@ export function MessageImagePreviewDialog({
       setIsFullscreen(false);
     };
 
-    window.addEventListener('keydown', handleFullscreenEscape as EventListener, true);
+    window.addEventListener(
+      'keydown',
+      handleFullscreenEscape as EventListener,
+      true,
+    );
     return () => {
-      window.removeEventListener('keydown', handleFullscreenEscape as EventListener, true);
+      window.removeEventListener(
+        'keydown',
+        handleFullscreenEscape as EventListener,
+        true,
+      );
     };
   }, [isFullscreen]);
 
@@ -253,7 +290,9 @@ export function MessageImagePreviewDialog({
       }
     };
 
-    stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
+    stageEl.addEventListener('wheel', handleStageWheelNative, {
+      passive: false,
+    });
     return () => {
       stageEl.removeEventListener('wheel', handleStageWheelNative);
     };
@@ -263,7 +302,8 @@ export function MessageImagePreviewDialog({
 
   if (!open || imageCount === 0 || currentImage === null) return null;
 
-  const goToIndex = (nextIndex: number) => onIndexChange(normalizePreviewIndex(nextIndex, imageCount));
+  const goToIndex = (nextIndex: number) =>
+    onIndexChange(normalizePreviewIndex(nextIndex, imageCount));
 
   const sampleStagePalette = (image: HTMLImageElement) => {
     const sampleHref = currentHref;
@@ -310,7 +350,9 @@ export function MessageImagePreviewDialog({
     dragRef.current = null;
     removePointerListeners();
     try {
-      (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
+      (event.currentTarget as HTMLDivElement).releasePointerCapture(
+        event.pointerId,
+      );
     } catch {
       // Ignore pointer-capture teardown failures.
     }
@@ -340,60 +382,73 @@ export function MessageImagePreviewDialog({
         },
       }}
       BackdropProps={{
-        sx: {
-          backgroundColor: 'rgba(0, 0, 0, 0.82)',
-        },
+        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
       }}
     >
       <DialogContent
         sx={{
-          px: 2,
-          py: 2,
+          px: isFullscreen ? 0 : 2,
+          pt: isFullscreen ? 0 : 2,
+          pb: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
           minHeight: 0,
           flex: '1 1 auto',
           overflow: 'hidden',
-          gap: 1.25,
+          gap: 0,
         }}
       >
-        <MessageCardImagePreviewStage
-          ref={setStageNode}
-          currentImage={currentImage}
-          currentHref={currentHref}
-          imageCount={imageCount}
-          resolvedIndex={resolvedIndex}
-          previewFileName={previewFileName}
-          zoom={zoom}
-          pan={pan}
-          failedHref={failedHref}
-          imageSize={imageSize}
-          stageBackground={stageBackground}
-          isFullscreen={isFullscreen}
-          onImageLoad={handleImageLoad}
-          onImageError={handleImageError}
-          onStartPan={startPan}
-          onStopPan={stopPan}
-          onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
-          onGoToNext={() => goToIndex(resolvedIndex + 1)}
-          onExitFullscreen={() => setIsFullscreen(false)}
-        />
-        <Typography
-          variant="body2"
-          data-image-preview-counter
+        <Box
           sx={{
-            alignSelf: 'center',
-            fontWeight: 700,
-            letterSpacing: 0,
-            px: 1,
-            py: 0.25,
-            borderRadius: 1,
-            ...getMessageCardPreviewCounterSx(theme),
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: isFullscreen ? 0 : 1.5,
+            overflow: 'hidden',
+            backgroundColor: 'background.paper',
+            border: isFullscreen ? 'none' : 1,
+            borderColor: 'divider',
           }}
         >
-          {`${resolvedIndex + 1} / ${imageCount}`}
-        </Typography>
+          <MessageCardImagePreviewStage
+            ref={setStageNode}
+            currentImage={currentImage}
+            currentHref={currentHref}
+            imageCount={imageCount}
+            resolvedIndex={resolvedIndex}
+            previewFileName={previewFileName}
+            zoom={zoom}
+            pan={pan}
+            failedHref={failedHref}
+            imageSize={imageSize}
+            stageBackground={stageBackground}
+            isFullscreen={isFullscreen}
+            onImageLoad={handleImageLoad}
+            onImageError={handleImageError}
+            onStartPan={startPan}
+            onStopPan={stopPan}
+            onExitFullscreen={() => setIsFullscreen(false)}
+          />
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
+            }}
+          >
+            <Box sx={{ width: '100%', maxWidth: 800 }}>
+              <MessageCardImagePreviewControls
+                zoom={zoom}
+                isFullscreen={isFullscreen}
+                onSetPreviewZoom={setPreviewZoom}
+                onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+              />
+            </Box>
+          </Box>
+        </Box>
+
         <MessageCardImagePreviewInfoPopover
           open={infoOpen}
           anchorEl={infoAnchorEl}
@@ -404,16 +459,19 @@ export function MessageImagePreviewDialog({
           imageSize={imageSize}
         />
       </DialogContent>
-      <MessageCardImagePreviewActions
-        zoom={zoom}
-        currentHref={currentHref}
-        downloadFileName={downloadFileName}
-        isFullscreen={isFullscreen}
-        onSetPreviewZoom={setPreviewZoom}
-        onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-        onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
-        onClose={closeDialog}
-      />
+      {!isFullscreen && (
+        <MessageCardImagePreviewActions
+          currentHref={currentHref}
+          downloadFileName={downloadFileName}
+          hasCarousel={hasCarousel}
+          resolvedIndex={resolvedIndex}
+          imageCount={imageCount}
+          onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
+          onGoToNext={() => goToIndex(resolvedIndex + 1)}
+          onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+          onClose={closeDialog}
+        />
+      )}
     </Dialog>
   );
 }
