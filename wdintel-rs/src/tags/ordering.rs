@@ -34,6 +34,7 @@ pub async fn collect_tags_list(
         .await
         .c(h!())?;
     regular_tags.append(&mut extra_tags);
+    regular_tags.sort_by_key(|tag| tag.owner_organism_id.is_none());
 
     let keywords = regular_tags
         .load_many(tag_keyword::Entity, db)
