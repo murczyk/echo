@@ -5,20 +5,20 @@ import type {
   Network,
   Tag,
   Unit,
-} from "../../../../../Bindings";
-import { Box, CircularProgress, Stack, Typography } from "@mui/material";
-import ChatBubbleOutlineOutlinedIcon from "@mui/icons-material/ChatBubbleOutlineOutlined";
-import { useState, useMemo } from "react";
-import { isPresent } from "../../../utils/misc";
+} from '../../../../../Bindings';
+import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import { useState, useMemo } from 'react';
+import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
   messageHasPalitraTag,
   type TagsLayoutVariant,
-} from "../../rer-duty-neo/utils";
-import { renderMarkedText } from "./MarkedText";
-import { MessageCardBotTagPrompt } from "./MessageCardBotTagPrompt";
-import { MessageCardComments } from "./MessageCardComments";
-import { MessageCardCallsignsSection } from "./MessageCardCallsignsSection";
+} from '../../rer-duty-neo/utils';
+import { renderMarkedText } from './MarkedText';
+import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
+import { MessageCardComments } from './MessageCardComments';
+import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
 import {
   isAudioMediaAttachment,
   isVideoMediaAttachment,
@@ -26,25 +26,25 @@ import {
   mediaAttachmentDisplayName,
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
-} from "./MessageCardMedia";
-import { MessageCardVideoThumb } from "./MessageCardVideoThumb";
-import { MessageImagePreviewDialog } from "./MessageCardImagePreviewDialog";
-import { MessageCardVideoPreviewDialog } from "./MessageCardVideoPreviewDialog";
-import { collectMessageImages } from "./message-card-image-utils";
-import { MessageCardImageList } from "./MessageCardImageList";
-import { MessageCardTags } from "./MessageCardTags";
+} from './MessageCardMedia';
+import { MessageCardVideoThumb } from './MessageCardVideoThumb';
+import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
+import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
+import { collectMessageImages } from './message-card-image-utils';
+import { MessageCardImageList } from './MessageCardImageList';
+import { MessageCardTags } from './MessageCardTags';
 import type {
   AnalysisCallsignActions,
   MessageCardBotTagAction,
-} from "./message-card.types";
-import { MessageMediaDocumentLink } from "./MessageMediaDocumentLink";
-import { MessageCardDocumentPreviewDialog } from "./MessageCardDocumentPreviewDialog";
-import { collectMessageDocuments } from "./message-card-document-utils";
+} from './message-card.types';
+import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
+import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
+import { collectMessageDocuments } from './message-card-document-utils';
 
 export type {
   AnalysisCallsignActions,
   MessageCardBotTagAction,
-} from "./message-card.types";
+} from './message-card.types';
 
 export function MessageCardMessageBody({
   compact = false,
@@ -52,7 +52,7 @@ export function MessageCardMessageBody({
   tagsMap,
   tagsLoading = false,
   onToggleTag,
-  tagsLayout = "full",
+  tagsLayout = 'full',
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -96,26 +96,26 @@ export function MessageCardMessageBody({
   );
   const documents = collectMessageDocuments(msg);
   const previewableDocuments = documents.filter(
-    (document) => document.kind !== "unsupported",
+    (document) => document.kind !== 'unsupported',
   );
   const [documentPreviewIndex, setDocumentPreviewIndex] = useState<
     number | null
   >(null);
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
-    const href = String(attachment.href ?? "");
+    const href = String(attachment.href ?? '');
     if (imageHrefSet.has(href)) return false;
     if (documentHrefSet.has(href)) return false;
     const contentType = mediaAttachmentContentType(attachment);
-    if (contentType.startsWith("image/")) return false;
-    if (contentType !== "") return true;
+    if (contentType.startsWith('image/')) return false;
+    if (contentType !== '') return true;
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
 
   const videoAttachments = attachmentMedia.filter(
     (attachment) =>
-      isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment)
+      isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment),
   );
 
   const downloadAttachments = attachmentMedia.filter(
@@ -128,9 +128,9 @@ export function MessageCardMessageBody({
     return videoAttachments.map((a) => {
       const raw = a as any;
       return {
-        id: a.id ?? "",
+        id: a.id ?? '',
         name: mediaAttachmentDisplayName(a),
-        source: String(a.href ?? ""),
+        source: String(a.href ?? ''),
         mimeType: raw.content_type ?? undefined,
         sizeBytes: raw.size_bytes ?? undefined,
       };
@@ -138,7 +138,7 @@ export function MessageCardMessageBody({
   }, [videoAttachments]);
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
-  const hasTags = tagsLayout !== "hidden" && Object.keys(tagsMap).length > 0;
+  const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
   const textPrimary = useMemoText(
     msg,
     tagsMap,
@@ -183,10 +183,10 @@ export function MessageCardMessageBody({
         <Box
           className="mt-1"
           sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-start",
-            width: "100%",
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            width: '100%',
           }}
         >
           {documents.map((document, index) => {
@@ -216,8 +216,8 @@ export function MessageCardMessageBody({
           {videoAttachments.length > 0 && (
             <Box
               sx={{
-                display: "flex",
-                flexWrap: "wrap",
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: 1,
                 mt: 1,
                 mb: 0.5,
@@ -253,19 +253,19 @@ export function MessageCardMessageBody({
           component="div"
           className={
             msg.textMarked && msg.textMarked.length > 0
-              ? "text-marked"
+              ? 'text-marked'
               : undefined
           }
           sx={{
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
             lineHeight: 1.35,
           }}
         >
           {textPrimary}
         </Box>
       ) : null}
-      {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== "" ? (
+      {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <Stack
           direction="row"
           spacing={0.75}
@@ -273,12 +273,12 @@ export function MessageCardMessageBody({
           sx={{ minWidth: 0 }}
         >
           <ChatBubbleOutlineOutlinedIcon
-            sx={{ fontSize: 13, color: "var(--color-action)", flexShrink: 0 }}
+            sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
             titleAccess="Коментар"
           />
           <Typography
             variant="caption"
-            sx={{ fontWeight: 700, overflowWrap: "anywhere" }}
+            sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}
           >
             {msg.extendedForm}
           </Typography>
@@ -292,8 +292,8 @@ export function MessageCardMessageBody({
           sx={{
             pt: 0.25,
             minHeight: 34,
-            display: "flex",
-            alignItems: "center",
+            display: 'flex',
+            alignItems: 'center',
           }}
           aria-label="Завантаження тегів"
         >
@@ -343,7 +343,7 @@ function useMemoText(
   return msg.textMarked && msg.textMarked.length > 0
     ? renderMarkedText(
         msg.textMarked,
-        msg.text ?? "",
+        msg.text ?? '',
         getPointEtalonsFromMessage(msg, tagsMap),
         {
           showPointLinks,
@@ -357,8 +357,8 @@ function useMemoText(
         },
       )
     : (() => {
-        const text = msg.text?.trim() ?? "";
-        if (text === "" || text === "—" || text === "-") return null;
+        const text = msg.text?.trim() ?? '';
+        if (text === '' || text === '—' || text === '-') return null;
         return msg.text;
       })();
 }

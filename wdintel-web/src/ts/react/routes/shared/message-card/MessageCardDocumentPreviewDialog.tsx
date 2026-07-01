@@ -1,36 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Dialog,
   DialogContent,
   Typography,
   useTheme,
-} from "@mui/material";
-import type { MouseEvent } from "react";
+} from '@mui/material';
+import type { MouseEvent } from 'react';
 
-import type { MessageCardDocument } from "./document-preview.types";
+import type { MessageCardDocument } from './document-preview.types';
 import {
   clamp,
   DOCUMENT_PREVIEW_ZOOM_MAX,
   DOCUMENT_PREVIEW_ZOOM_MIN,
   normalizePreviewIndex,
   shouldIgnoreArrowNavigation,
-} from "./document-preview-utils";
+} from './document-preview-utils';
 import {
   deriveDocumentDownloadName,
   deriveDocumentFileName,
-} from "./message-card-document-utils";
+} from './message-card-document-utils';
 import {
   MessageCardDocumentPreviewActions,
   MessageCardDocumentPreviewControls,
-} from "./MessageCardDocumentPreviewActions";
-import { MessageCardDocumentPreviewInfoPopover } from "./MessageCardDocumentPreviewInfoPopover";
-import { MessageCardDocumentPreviewStage } from "./MessageCardDocumentPreviewStage";
+} from './MessageCardDocumentPreviewActions';
+import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
+import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
 import {
   blurActivePreviewDialogElement,
   getMessageCardPreviewCounterSx,
   getMessageCardPreviewDialogPaperSx,
-} from "./message-card-preview-shell";
+} from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewDialog({
   documents,
@@ -100,20 +100,20 @@ export function MessageCardDocumentPreviewDialog({
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       if (shouldIgnoreArrowNavigation(event.target)) return;
-      if (event.key === "ArrowLeft") {
+      if (event.key === 'ArrowLeft') {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount));
-      } else if (event.key === "ArrowRight") {
+      } else if (event.key === 'ArrowRight') {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount));
       }
     };
 
-    window.addEventListener("keydown", handleWindowKeyDown, true);
+    window.addEventListener('keydown', handleWindowKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", handleWindowKeyDown, true);
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
     };
   }, [documentCount, hasCarousel, onIndexChange, open, resolvedIndex]);
 
@@ -127,14 +127,14 @@ export function MessageCardDocumentPreviewDialog({
     setInfoAnchorEl(event.currentTarget);
   };
 
-  const dialogWidth = isFullscreen ? "100vw" : "92vw";
-  const dialogHeight = isFullscreen ? "100vh" : "92svh";
+  const dialogWidth = isFullscreen ? '100vw' : '92vw';
+  const dialogHeight = isFullscreen ? '100vh' : '92svh';
 
   return (
     <Dialog
       open={open && documentCount > 0}
       onClose={(_, reason) => {
-        if (reason === "escapeKeyDown" && isFullscreen) {
+        if (reason === 'escapeKeyDown' && isFullscreen) {
           setIsFullscreen(false);
           return;
         }
@@ -158,14 +158,14 @@ export function MessageCardDocumentPreviewDialog({
     >
       <DialogContent
         sx={{
-          display: "flex",
-          flexDirection: "column",
+          display: 'flex',
+          flexDirection: 'column',
           px: isFullscreen ? 0 : 2,
           pt: isFullscreen ? 0 : 2,
           pb: 0,
           gap: 0,
           minHeight: 0,
-          overflow: "hidden",
+          overflow: 'hidden',
         }}
       >
         {currentDocument != null ? (
@@ -173,13 +173,13 @@ export function MessageCardDocumentPreviewDialog({
             sx={{
               flex: 1,
               minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
+              display: 'flex',
+              flexDirection: 'column',
               borderRadius: isFullscreen ? 0 : 1.5,
-              overflow: "hidden",
-              backgroundColor: "background.paper",
-              border: isFullscreen ? "none" : 1,
-              borderColor: "divider",
+              overflow: 'hidden',
+              backgroundColor: 'background.paper',
+              border: isFullscreen ? 'none' : 1,
+              borderColor: 'divider',
             }}
           >
             <MessageCardDocumentPreviewStage
@@ -190,12 +190,12 @@ export function MessageCardDocumentPreviewDialog({
             />
             <Box
               sx={{
-                display: "flex",
-                justifyContent: "center",
-                width: "100%",
+                display: 'flex',
+                justifyContent: 'center',
+                width: '100%',
               }}
             >
-              <Box sx={{ width: "100%", maxWidth: 800 }}>
+              <Box sx={{ width: '100%', maxWidth: 800 }}>
                 <MessageCardDocumentPreviewControls
                   zoom={zoom}
                   isFullscreen={isFullscreen}

@@ -5,13 +5,27 @@ import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { Box, Button, DialogActions, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import {
+  Box,
+  Button,
+  DialogActions,
+  IconButton,
+  Slider,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { MouseEvent } from 'react';
 import { useTheme } from '@mui/material/styles';
 
-import { ZOOM_MAX, ZOOM_MARKS, ZOOM_MIN, ZOOM_STEP } from './message-card-image-preview-utils';
+import {
+  ZOOM_MAX,
+  ZOOM_MARKS,
+  ZOOM_MIN,
+  ZOOM_STEP,
+} from './message-card-image-preview-utils';
 import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
 export function MessageCardImagePreviewControls({
@@ -28,9 +42,9 @@ export function MessageCardImagePreviewControls({
   return (
     <Box
       sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         gap: 1.5,
         flex: 1,
         minWidth: 0,
@@ -61,7 +75,9 @@ export function MessageCardImagePreviewControls({
         marks={ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
         onChange={(_, value) => {
-          const nextZoom = Array.isArray(value) ? value[0] ?? ZOOM_MIN : value;
+          const nextZoom = Array.isArray(value)
+            ? (value[0] ?? ZOOM_MIN)
+            : value;
           onSetPreviewZoom(nextZoom);
         }}
         sx={{
@@ -118,9 +134,20 @@ export function MessageCardImagePreviewControls({
       </Typography>
 
       <Box sx={{ ml: { xs: 0, sm: 1 } }}>
-        <Tooltip title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'} enterDelay={300}>
+        <Tooltip
+          title={
+            isFullscreen
+              ? 'Вийти з повноекранного режиму'
+              : 'Повноекранний режим'
+          }
+          enterDelay={300}
+        >
           <IconButton
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            aria-label={
+              isFullscreen
+                ? 'Вийти з повноекранного режиму'
+                : 'Повноекранний режим'
+            }
             size="small"
             onClick={onToggleFullscreen}
             sx={{ color: 'text.secondary' }}
@@ -158,16 +185,28 @@ export function MessageCardImagePreviewActions({
     <DialogActions
       sx={{
         px: 2,
-        py: "20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
+        py: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 2,
       }}
     >
-      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-start", gap: 0.5 }}>
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
+          justifyContent: 'flex-start',
+          gap: 0.5,
+        }}
+      >
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
+          <IconButton
+            aria-label="Інформація"
+            size="small"
+            onClick={onInfoClick}
+            sx={{ color: 'text.secondary' }}
+          >
             <InfoIcon />
           </IconButton>
         </Tooltip>
@@ -197,7 +236,7 @@ export function MessageCardImagePreviewActions({
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         {hasCarousel && (
           <Tooltip title="Попереднє" enterDelay={300}>
             <IconButton
@@ -240,7 +279,7 @@ export function MessageCardImagePreviewActions({
           </Tooltip>
         )}
       </Box>
-      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+      <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
         <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
           Закрити
         </Button>

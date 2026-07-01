@@ -5,13 +5,27 @@ import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { Box, Button, DialogActions, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import {
+  Box,
+  Button,
+  DialogActions,
+  IconButton,
+  Slider,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { MouseEvent } from 'react';
 import { useTheme } from '@mui/material/styles';
 
-import { DOCUMENT_PREVIEW_ZOOM_MAX, DOCUMENT_PREVIEW_ZOOM_MARKS, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_STEP } from './document-preview-utils';
+import {
+  DOCUMENT_PREVIEW_ZOOM_MAX,
+  DOCUMENT_PREVIEW_ZOOM_MARKS,
+  DOCUMENT_PREVIEW_ZOOM_MIN,
+  DOCUMENT_PREVIEW_ZOOM_STEP,
+} from './document-preview-utils';
 import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewControls({
@@ -28,9 +42,9 @@ export function MessageCardDocumentPreviewControls({
   return (
     <Box
       sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         gap: 1.5,
         flex: 1,
         minWidth: 0,
@@ -58,11 +72,13 @@ export function MessageCardDocumentPreviewControls({
         min={DOCUMENT_PREVIEW_ZOOM_MIN}
         max={DOCUMENT_PREVIEW_ZOOM_MAX}
         step={DOCUMENT_PREVIEW_ZOOM_STEP}
-        marks={DOCUMENT_PREVIEW_ZOOM_MARKS.map(m => ({ value: m.value }))}
+        marks={DOCUMENT_PREVIEW_ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
         className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
         onChange={(_, value) => {
-          const nextZoom = Array.isArray(value) ? value[0] ?? DOCUMENT_PREVIEW_ZOOM_MIN : value;
+          const nextZoom = Array.isArray(value)
+            ? (value[0] ?? DOCUMENT_PREVIEW_ZOOM_MIN)
+            : value;
           onSetPreviewZoom(nextZoom);
         }}
         sx={{
@@ -117,9 +133,18 @@ export function MessageCardDocumentPreviewControls({
         {Math.round(zoom)}%
       </Typography>
 
-      <Tooltip title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'} enterDelay={300}>
+      <Tooltip
+        title={
+          isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'
+        }
+        enterDelay={300}
+      >
         <IconButton
-          aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+          aria-label={
+            isFullscreen
+              ? 'Вийти з повноекранного режиму'
+              : 'Повноекранний режим'
+          }
           size="small"
           onClick={onToggleFullscreen}
           sx={{ color: 'text.secondary' }}
@@ -155,9 +180,19 @@ export function MessageCardDocumentPreviewActions({
   const theme = useTheme();
   return (
     <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ justifySelf: 'start', minWidth: 0, flexWrap: 'wrap' }}>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        sx={{ justifySelf: 'start', minWidth: 0, flexWrap: 'wrap' }}
+      >
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
+          <IconButton
+            aria-label="Інформація"
+            size="small"
+            onClick={onInfoClick}
+            sx={{ color: 'text.secondary' }}
+          >
             <InfoIcon />
           </IconButton>
         </Tooltip>
@@ -232,7 +267,11 @@ export function MessageCardDocumentPreviewActions({
         )}
       </Stack>
 
-      <Stack direction="row" justifyContent="flex-end" sx={{ justifySelf: 'end' }}>
+      <Stack
+        direction="row"
+        justifyContent="flex-end"
+        sx={{ justifySelf: 'end' }}
+      >
         <Button aria-label="Закрити" onClick={onClose}>
           Закрити
         </Button>

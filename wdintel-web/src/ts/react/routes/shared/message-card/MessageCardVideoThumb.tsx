@@ -106,7 +106,13 @@ export function MessageCardVideoThumb({
           }}
         >
           {loaded ? (
-            <PlayArrowIcon sx={{ fontSize: 32, color: '#fff', filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }} />
+            <PlayArrowIcon
+              sx={{
+                fontSize: 32,
+                color: '#fff',
+                filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))',
+              }}
+            />
           ) : (
             <>
               <Typography
@@ -118,7 +124,7 @@ export function MessageCardVideoThumb({
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  color: 'text.secondary'
+                  color: 'text.secondary',
                 }}
               >
                 {displayName}

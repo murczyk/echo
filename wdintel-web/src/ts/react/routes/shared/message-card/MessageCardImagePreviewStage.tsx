@@ -1,11 +1,11 @@
-import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from "react";
-import { forwardRef } from "react";
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
+import { forwardRef } from 'react';
+import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
-import type { MessageCardImage } from "./message-card-image-utils";
-import { ZOOM_MIN } from "./message-card-image-preview-utils";
-import { getMessageCardPreviewStageSx } from "./message-card-preview-shell";
+import type { MessageCardImage } from './message-card-image-utils';
+import { ZOOM_MIN } from './message-card-image-preview-utils';
+import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
 
 type StageSize = {
   width: number;
@@ -64,19 +64,19 @@ export const MessageCardImagePreviewStage = forwardRef<
       onPointerUp={onStopPan}
       onPointerLeave={onStopPan}
       sx={{
-        flex: "1 1 auto",
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        flex: '1 1 auto',
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         minHeight: 0,
-        overflow: "hidden",
+        overflow: 'hidden',
         backgroundImage: stageBackground,
         ...getMessageCardPreviewStageSx(theme, isFullscreen),
-        backgroundRepeat: "no-repeat",
-        backgroundSize: "cover",
-        cursor: zoom > ZOOM_MIN ? "grab" : "default",
-        userSelect: "none",
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: 'cover',
+        cursor: zoom > ZOOM_MIN ? 'grab' : 'default',
+        userSelect: 'none',
       }}
     >
       <Box
@@ -88,30 +88,30 @@ export const MessageCardImagePreviewStage = forwardRef<
         data-image-preview-pan-x={pan.x}
         data-image-preview-pan-y={pan.y}
         data-image-preview-file-name={previewFileName}
-        data-image-preview-size-bytes={currentImage.sizeBytes ?? ""}
-        data-image-preview-natural-width={imageSize?.width ?? ""}
-        data-image-preview-natural-height={imageSize?.height ?? ""}
+        data-image-preview-size-bytes={currentImage.sizeBytes ?? ''}
+        data-image-preview-natural-width={imageSize?.width ?? ''}
+        data-image-preview-natural-height={imageSize?.height ?? ''}
         draggable={false}
         onLoad={onImageLoad}
         onError={onImageError}
         decoding="async"
         sx={{
-          display: failedHref === currentHref ? "none" : "block",
-          maxWidth: "100%",
-          maxHeight: "100%",
-          objectFit: "contain",
+          display: failedHref === currentHref ? 'none' : 'block',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain',
           transform: imageTransform,
-          transformOrigin: "center center",
-          transition: zoom === ZOOM_MIN ? "transform 120ms ease-out" : "none",
-          willChange: "transform",
-          pointerEvents: "none",
-          filter: "drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3))",
+          transformOrigin: 'center center',
+          transition: zoom === ZOOM_MIN ? 'transform 120ms ease-out' : 'none',
+          willChange: 'transform',
+          pointerEvents: 'none',
+          filter: 'drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3))',
         }}
       />
       {failedHref === currentHref ? (
         <Typography
           variant="body2"
-          sx={{ color: "text.secondary", textAlign: "center" }}
+          sx={{ color: 'text.secondary', textAlign: 'center' }}
         >
           Зображення недоступне
         </Typography>

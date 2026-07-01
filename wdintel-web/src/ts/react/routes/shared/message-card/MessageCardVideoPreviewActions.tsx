@@ -1,9 +1,9 @@
-import DownloadIcon from "@mui/icons-material/Download";
-import InfoIcon from "@mui/icons-material/Info";
-import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
-import FullscreenIcon from "@mui/icons-material/Fullscreen";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import DownloadIcon from '@mui/icons-material/Download';
+import InfoIcon from '@mui/icons-material/Info';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   Box,
   Button,
@@ -11,22 +11,22 @@ import {
   IconButton,
   Tooltip,
   Typography,
-} from "@mui/material";
+} from '@mui/material';
 import type {
   VideoPreviewSource,
   VideoPlayerState,
-} from "./message-card-video-utils";
+} from './message-card-video-utils';
 import {
   formatVideoTime,
   downloadOriginalVideo,
-} from "./message-card-video-utils";
+} from './message-card-video-utils';
 import {
   PlayPauseButton,
   StopButton,
   VolumeControl,
   SpeedSelect,
   VideoProgressSlider,
-} from "./MessageCardVideoControls";
+} from './MessageCardVideoControls';
 
 export function MessageCardVideoPreviewControls({
   playerState,
@@ -62,8 +62,8 @@ export function MessageCardVideoPreviewControls({
   return (
     <Box
       sx={{
-        display: "flex",
-        alignItems: "center",
+        display: 'flex',
+        alignItems: 'center',
         gap: 1,
         flex: 1,
         minWidth: 0,
@@ -81,8 +81,8 @@ export function MessageCardVideoPreviewControls({
           flex: 1,
           mx: { xs: 1, sm: 2 },
           minWidth: 100,
-          display: "flex",
-          alignItems: "center",
+          display: 'flex',
+          alignItems: 'center',
         }}
       >
         <VideoProgressSlider
@@ -97,8 +97,8 @@ export function MessageCardVideoPreviewControls({
         variant="body2"
         sx={{
           color: 'text.secondary',
-          whiteSpace: "nowrap",
-          fontFamily: "monospace",
+          whiteSpace: 'nowrap',
+          fontFamily: 'monospace',
           mr: { xs: 1, sm: 1 },
         }}
       >
@@ -113,24 +113,19 @@ export function MessageCardVideoPreviewControls({
       />
 
       <Box sx={{ mr: { xs: 0, sm: 1 }, ml: { xs: 1, sm: 1 } }}>
-        <SpeedSelect
-          playbackRate={playbackRate}
-          onRateChange={onRateChange}
-        />
+        <SpeedSelect playbackRate={playbackRate} onRateChange={onRateChange} />
       </Box>
 
       <Tooltip
         title={
-          isFullscreen
-            ? "Вийти з повноекранного режиму"
-            : "Повноекранний режим"
+          isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'
         }
         enterDelay={300}
       >
         <IconButton
           size="small"
           onClick={onToggleFullscreen}
-          sx={{ color: "inherit" }}
+          sx={{ color: 'inherit' }}
         >
           {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
         </IconButton>
@@ -162,14 +157,21 @@ export function MessageCardVideoPreviewActions({
     <DialogActions
       sx={{
         px: 2,
-        py: "20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
+        py: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 2,
       }}
     >
-      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-start", gap: 0.5 }}>
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
+          justifyContent: 'flex-start',
+          gap: 0.5,
+        }}
+      >
         <Tooltip title="Інформація" enterDelay={300}>
           <IconButton
             size="small"
@@ -190,7 +192,7 @@ export function MessageCardVideoPreviewActions({
         </Tooltip>
       </Box>
       {hasCarousel && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Tooltip title="Попереднє" enterDelay={300}>
             <IconButton
               size="small"
@@ -225,7 +227,7 @@ export function MessageCardVideoPreviewActions({
           </Tooltip>
         </Box>
       )}
-      <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+      <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
         <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
           Закрити
         </Button>

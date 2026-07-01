@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   CircularProgress,
   Stack,
   Typography,
   useTheme,
-} from "@mui/material";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
+} from '@mui/material';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
 
@@ -22,11 +22,11 @@ const MAX_PDF_FILE_MB = 10;
 const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_MB * 1024 * 1024;
 
 function formatPdfPreviewErrorMessage(error: string | null): string {
-  if (error === "PDF_FILE_TOO_LARGE") {
+  if (error === 'PDF_FILE_TOO_LARGE') {
     return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_MB} МБ.`;
   }
 
-  return error ?? "PDF недоступний";
+  return error ?? 'PDF недоступний';
 }
 
 export function PdfDocumentPreview({
@@ -56,7 +56,7 @@ export function PdfDocumentPreview({
     const load = async () => {
       try {
         if (sizeBytes != null && sizeBytes > MAX_PDF_FILE_BYTES) {
-          throw new Error("PDF_FILE_TOO_LARGE");
+          throw new Error('PDF_FILE_TOO_LARGE');
         }
 
         const response = await fetch(href, { signal: abortController.signal });
@@ -64,23 +64,23 @@ export function PdfDocumentPreview({
           throw new Error(`HTTP ${response.status}`);
         }
 
-        const contentLength = response.headers.get("content-length");
+        const contentLength = response.headers.get('content-length');
         if (
           contentLength != null &&
           Number.isFinite(Number(contentLength)) &&
           Number(contentLength) > MAX_PDF_FILE_BYTES
         ) {
-          throw new Error("PDF_FILE_TOO_LARGE");
+          throw new Error('PDF_FILE_TOO_LARGE');
         }
 
         const buffer = await response.arrayBuffer();
         if (buffer.byteLength > MAX_PDF_FILE_BYTES) {
-          throw new Error("PDF_FILE_TOO_LARGE");
+          throw new Error('PDF_FILE_TOO_LARGE');
         }
 
         objectUrl = URL.createObjectURL(
           new Blob([buffer], {
-            type: response.headers.get("content-type") ?? "application/pdf",
+            type: response.headers.get('content-type') ?? 'application/pdf',
           }),
         );
         if (disposed) {
@@ -117,30 +117,30 @@ export function PdfDocumentPreview({
   return (
     <Box
       sx={{
-        width: "100%",
-        height: "100%",
+        width: '100%',
+        height: '100%',
         minHeight: 0,
-        position: "relative",
-        overflow: "auto",
+        position: 'relative',
+        overflow: 'auto',
         borderRadius: 1,
-        backgroundColor: "transparent",
+        backgroundColor: 'transparent',
       }}
     >
       {error == null && pageCount == null ? (
         <Box
           sx={{
-            position: "absolute",
+            position: 'absolute',
             inset: 0,
             zIndex: 2,
-            display: "grid",
-            placeItems: "center",
+            display: 'grid',
+            placeItems: 'center',
           }}
         >
           <CircularProgress size={22} />
         </Box>
       ) : null}
       {error != null ? (
-        <Box sx={{ p: 3, textAlign: "center" }}>
+        <Box sx={{ p: 3, textAlign: 'center' }}>
           <Typography variant="h6" sx={{ mb: 1 }}>
             Помилка перегляду
           </Typography>
@@ -158,7 +158,7 @@ export function PdfDocumentPreview({
             setError(
               loadError instanceof Error
                 ? loadError.message
-                : "Не вдалося відкрити PDF",
+                : 'Не вдалося відкрити PDF',
             )
           }
           renderMode="canvas"
@@ -169,7 +169,7 @@ export function PdfDocumentPreview({
             sx={{
               px: { xs: 2, sm: 2.5, md: 3 },
               py: { xs: 2.5, md: 3 },
-              alignItems: "center",
+              alignItems: 'center',
             }}
           >
             {Array.from({ length: renderedPageCount }, (_, pageIndex) => (
@@ -187,7 +187,7 @@ export function PdfDocumentPreview({
           </Stack>
         </Document>
       ) : null}
-      <Typography variant="caption" sx={{ display: "none" }}>
+      <Typography variant="caption" sx={{ display: 'none' }}>
         PDF preview
       </Typography>
     </Box>
@@ -208,7 +208,7 @@ function LazyPdfPage({
     const pageShell = pageShellRef.current;
     if (pageShell == null) return;
 
-    if (typeof IntersectionObserver === "undefined") {
+    if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
       return;
     }
@@ -222,7 +222,7 @@ function LazyPdfPage({
       },
       {
         root: null,
-        rootMargin: "40% 0px",
+        rootMargin: '40% 0px',
         threshold: 0.01,
       },
     );
@@ -237,36 +237,36 @@ function LazyPdfPage({
       data-pdf-page-shell
       data-pdf-page-number={pageNumber}
       sx={{
-        width: "fit-content",
+        width: 'fit-content',
         maxWidth: `${PDF_PAGE_MAX_WIDTH_PX * Math.max(1, scale)}px`,
         minHeight: 240,
-        display: "flex",
-        justifyContent: "center",
-        mx: "auto",
+        display: 'flex',
+        justifyContent: 'center',
+        mx: 'auto',
         px: { xs: 0, sm: 0.5 },
-        "& .react-pdf__Page": {
-          backgroundColor: "background.paper",
+        '& .react-pdf__Page': {
+          backgroundColor: 'background.paper',
           borderRadius: 2,
           border: 1,
-          borderColor: "divider",
+          borderColor: 'divider',
           boxShadow: 4,
-          overflow: "hidden",
+          overflow: 'hidden',
         },
-        "& .react-pdf__Page__textContent": {
-          inset: "0 !important",
+        '& .react-pdf__Page__textContent': {
+          inset: '0 !important',
           lineHeight: 1.4,
-          fontFamily: "inherit",
+          fontFamily: 'inherit',
         },
-        "& .react-pdf__Page__textContent span": {
-          color: "transparent",
-          WebkitTextFillColor: "transparent",
-          textShadow: "none",
+        '& .react-pdf__Page__textContent span': {
+          color: 'transparent',
+          WebkitTextFillColor: 'transparent',
+          textShadow: 'none',
         },
-        "& .react-pdf__Page__annotations": {
-          inset: "0 !important",
+        '& .react-pdf__Page__annotations': {
+          inset: '0 !important',
         },
-        "& .react-pdf__Page__canvas": {
-          display: "block",
+        '& .react-pdf__Page__canvas': {
+          display: 'block',
         },
       }}
     >

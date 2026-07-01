@@ -49,13 +49,27 @@ export const MessageCardDocumentPreviewStage = forwardRef<
         }}
       >
         {currentDocument == null ? null : currentDocument.kind === 'pdf' ? (
-          <PdfDocumentPreview href={currentDocument.href} zoom={zoom} sizeBytes={currentDocument.sizeBytes ?? null} />
+          <PdfDocumentPreview
+            href={currentDocument.href}
+            zoom={zoom}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+          />
         ) : currentDocument.kind === 'docx' ? (
-          <DocxDocumentPreview href={currentDocument.href} zoom={zoom} sizeBytes={currentDocument.sizeBytes ?? null} />
+          <DocxDocumentPreview
+            href={currentDocument.href}
+            zoom={zoom}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+          />
         ) : currentDocument.kind === 'xlsx' ? (
-          <XlsxDocumentPreview href={currentDocument.href} zoom={zoom} sizeBytes={currentDocument.sizeBytes ?? null} />
+          <XlsxDocumentPreview
+            href={currentDocument.href}
+            zoom={zoom}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+          />
         ) : (
-          <UnsupportedDocumentPreview fileName={currentDocument.fileName ?? currentDocument.href} />
+          <UnsupportedDocumentPreview
+            fileName={currentDocument.fileName ?? currentDocument.href}
+          />
         )}
       </Box>
     </Box>

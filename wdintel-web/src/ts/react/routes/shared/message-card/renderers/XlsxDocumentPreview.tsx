@@ -103,10 +103,7 @@ export function XlsxDocumentPreview({
   if (status === 'error') {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography
-          variant="h6"
-          sx={{ mb: 1, color: 'text.primary' }}
-        >
+        <Typography variant="h6" sx={{ mb: 1, color: 'text.primary' }}>
           Помилка перегляду
         </Typography>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
