@@ -240,7 +240,7 @@ where
     Ok(tag.update(db).await.c(h!())?)
 }
 
-fn accessible_tag_condition(owner_organism_id: Option<i64>) -> Condition {
+pub fn accessible_tag_condition(owner_organism_id: Option<i64>) -> Condition {
     let condition =
         Condition::any().add(tag::Column::OwnerOrganismId.is_null());
     if let Some(owner_organism_id) = owner_organism_id {

@@ -197,9 +197,14 @@ async fn messages_by_id_bl(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
+    let owner_organism_id =
+        crate::tags::query::current_user_organism_id(&env.dbx, login)
+            .await
+            .c(h!())?;
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
+        .join(JoinType::InnerJoin, sigint_inbox_item_tag::Relation::Tag.def())
         .join(JoinType::LeftJoin, sigint_inbox_item_tag::Relation::Login.def())
         .expr_as(
             Expr::cust_with_exprs(
@@ -267,6 +272,9 @@ async fn messages_by_id_bl(
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
+        .filter(crate::tags::query::accessible_tag_condition(
+            owner_organism_id,
+        ))
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .into_query();
     let query_metadata = build_inbox_metadata_lateral_query();
