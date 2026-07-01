@@ -1,5 +1,5 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Box, ButtonBase, Card, CardContent, Checkbox, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -270,7 +270,7 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
 
       <FormControlLabel
         control={
-          <Checkbox
+          <Switch
             checked={form.supportNonRerInterceptions}
             onChange={(_, checked) => {
               patchForm({ supportNonRerInterceptions: checked });
