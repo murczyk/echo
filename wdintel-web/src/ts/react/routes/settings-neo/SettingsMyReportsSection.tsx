@@ -237,6 +237,7 @@ const REPORT_KIND_LABELS: Record<string, string> = {
   reo: 'РЕО',
   digest: 'Дайджест',
   rer_report: 'РЕР Звіт',
+  sposob: 'Способ',
   active_networks: 'Активні радіомережі',
   network_frequencies: 'Частоти Радіомереж',
   report_1213: 'Звіт 1.2.13',

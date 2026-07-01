@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getMetadataStats, getEncryptions, getNetworkCallsigns, getNetworkCallsignsActivity, getNetworkCallsignsList, getNetworkFreqCallsigns, getNetworkFreqsActivity, getNetworkGoiReport, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getSystemSettings, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, reactivateNetworkFreq, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
+    , CallsignsByNetwork, ReportDownloadResult, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getMetadataStats, getEncryptions, getNetworkCallsigns, getNetworkCallsignsActivity, getNetworkCallsignsList, getNetworkFreqCallsigns, getNetworkFreqsActivity, getNetworkGoiReport, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getSystemSettings, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, reactivateNetworkFreq, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
 
 {-|
@@ -99,7 +99,7 @@ type Effect msg
     | GetMessagesMapPoints (Result ApiError B.MapPointsRsp -> msg) B.MapPointsReq
     | GetGroupsActivityStats (Result ApiError GroupsActivityPerDayRsp -> msg) B.ListGroupsByFreqsPerDayReq
     | GetUnits2 (Result ApiError B.UnitStatsRsp -> msg) B.AnalysisStatsReq
-    | GetDocxReportForDownload (Result ApiError Bytes -> msg) B.ReportPreviewReq
+    | GetDocxReportForDownload (Result ApiError ReportDownloadResult -> msg) B.ReportPreviewReq
     | DownloadFile String String Bytes
     | ScrollToElement { elemId : String, x : Int, y : Int }
     | InitNetjsonGraph { graphDataAndMeta : B.NetJsonGraphAndMeta, elemId : String }
@@ -467,7 +467,13 @@ getUnits2 toMsg payload =
     GetUnits2 toMsg payload
 
 
-getDocxReportForDownload : (Result ApiError Bytes -> msg) -> B.ReportPreviewReq -> Effect msg
+type alias ReportDownloadResult =
+    { bytes : Bytes
+    , fileName : Maybe String
+    }
+
+
+getDocxReportForDownload : (Result ApiError ReportDownloadResult -> msg) -> B.ReportPreviewReq -> Effect msg
 getDocxReportForDownload toMsg payload =
     GetDocxReportForDownload toMsg payload
 
@@ -792,14 +798,16 @@ postBytesTask url body =
 
 reportHistoryStatusDecoder : Decode.Decoder ReportHistoryStatus
 reportHistoryStatusDecoder =
-    Decode.map2 ReportHistoryStatus
+    Decode.map3 ReportHistoryStatus
         (Decode.field "status" Decode.string)
         (Decode.field "last_error" (Decode.nullable Decode.string))
+        (Decode.field "file_name" (Decode.nullable Decode.string))
 
 
 type alias ReportHistoryStatus =
     { status : String
     , lastError : Maybe String
+    , fileName : Maybe String
     }
 
 
@@ -813,6 +821,12 @@ reportHistoryError row =
 
 waitReportHistoryDone : Int -> Task.Task ApiError Int
 waitReportHistoryDone reportHistoryId =
+    waitReportHistoryDoneWithFilename reportHistoryId
+        |> Task.map .id
+
+
+waitReportHistoryDoneWithFilename : Int -> Task.Task ApiError { id : Int, fileName : Maybe String }
+waitReportHistoryDoneWithFilename reportHistoryId =
     postJsonTask
         "/api/report-history/status"
         (B.reportHistoryIdReqEncoder { id = reportHistoryId })
@@ -821,18 +835,18 @@ waitReportHistoryDone reportHistoryId =
             (\row ->
                 case row.status of
                     "done" ->
-                        Task.succeed reportHistoryId
+                        Task.succeed { id = reportHistoryId, fileName = row.fileName }
 
                     "failed" ->
                         Task.fail (reportHistoryError row)
 
                     "planned" ->
                         Process.sleep reportPollDelayMillis
-                            |> Task.andThen (\_ -> waitReportHistoryDone reportHistoryId)
+                            |> Task.andThen (\_ -> waitReportHistoryDoneWithFilename reportHistoryId)
 
                     "in_progress" ->
                         Process.sleep reportPollDelayMillis
-                            |> Task.andThen (\_ -> waitReportHistoryDone reportHistoryId)
+                            |> Task.andThen (\_ -> waitReportHistoryDoneWithFilename reportHistoryId)
 
                     _ ->
                         Task.fail (reportHistoryError row)
@@ -854,14 +868,23 @@ launchReportTaskAndDownload url body toMsg =
         |> Task.attempt toMsg
 
 
-launchAnalysisReportTaskAndDownload : B.ReportPreviewReq -> (Result ApiError Bytes -> msg) -> Cmd msg
+launchAnalysisReportTaskAndDownload : B.ReportPreviewReq -> (Result ApiError ReportDownloadResult -> msg) -> Cmd msg
 launchAnalysisReportTaskAndDownload payload toMsg =
     postJsonTaskWithReportPermissionHeader
         "/api/rer/report-docx-task-launch"
         (B.reportPreviewReqEncoder payload)
         Decode.int
-        |> Task.andThen waitReportHistoryDone
-        |> Task.andThen downloadReportHistoryTask
+        |> Task.andThen waitReportHistoryDoneWithFilename
+        |> Task.andThen
+            (\row ->
+                downloadReportHistoryTask row.id
+                    |> Task.map
+                        (\bytes ->
+                            { bytes = bytes
+                            , fileName = row.fileName
+                            }
+                        )
+            )
         |> Task.attempt toMsg
 
 

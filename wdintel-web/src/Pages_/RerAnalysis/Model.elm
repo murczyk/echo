@@ -234,6 +234,7 @@ type ReportTemplate
     | RTReo
     | RTDigest
     | RTRerReport
+    | RTSposob
     | ActiveNetworks
     | RTNetworkFrequencies
     | RTSummaryTable

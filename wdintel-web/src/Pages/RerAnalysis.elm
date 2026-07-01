@@ -5,6 +5,7 @@ import Auth
 import Bindings as B
 import Config
 import Core.EventHelpers
+import Date
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -3689,7 +3690,7 @@ update user shared route msg model =
                 bytes
             )
 
-        ReportDownloadDocxDone (Ok bytes) ->
+        ReportDownloadDocxDone (Ok download) ->
             let
                 m2 =
                     { model | reportDownloadInProgress = False }
@@ -3734,6 +3735,9 @@ update user shared route msg model =
                         RTRerReport ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
+                        RTSposob ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
                         ActiveNetworks ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
@@ -3746,23 +3750,27 @@ update user shared route msg model =
                         RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
-                -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
-                    "report_"
-                        ++ (model.from.datePosix
-                                |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
-                                |> def ""
-                           )
-                        ++ "_"
-                        ++ (model.to.datePosix
-                                |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
-                                |> def ""
-                           )
-                        ++ "."
-                        ++ extension
+                    case ( model.reportTemplate, model.to.datePosix ) of
+                        ( RTRerReport, Just tillPosix ) ->
+                            rerReportFilename shared.timeZone tillPosix
+
+                        _ ->
+                            "report_"
+                                ++ (model.from.datePosix
+                                        |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                                        |> def ""
+                                   )
+                                ++ "_"
+                                ++ (model.to.datePosix
+                                        |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                                        |> def ""
+                                   )
+                                ++ "."
+                                ++ extension
             in
             ( m2
-            , E.downloadFile fname mimeType bytes
+            , E.downloadFile (download.fileName |> Maybe.withDefault fname) mimeType download.bytes
             )
 
         ScrollMessagesToTop ->
@@ -4236,6 +4244,21 @@ subscriptions _ =
     Sub.none
 
 
+rerReportFilename : Time.Zone -> Posix -> String
+rerReportFilename zone till =
+    "Звіт про результати аналізу радіоперехоплень станом на "
+        ++ Utils.twoSign (Time.toHour zone till)
+        ++ "."
+        ++ Utils.twoSign (Time.toMinute zone till)
+        ++ " "
+        ++ Utils.twoSign (Time.toDay zone till)
+        ++ "."
+        ++ Utils.twoSign (Date.monthToNumber (Time.toMonth zone till))
+        ++ "."
+        ++ String.fromInt (Time.toYear zone till)
+        ++ ".docx"
+
+
 reportTemplateToApiType : Model -> ReportTemplate -> Maybe B.ReportType
 reportTemplateToApiType model template =
     case template of
@@ -4281,6 +4304,9 @@ reportTemplateToApiType model template =
 
         RTRerReport ->
             Just B.Rer
+
+        RTSposob ->
+            Nothing
 
         ActiveNetworks ->
             Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })

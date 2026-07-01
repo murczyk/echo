@@ -8,7 +8,7 @@ use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
     RunFonts,
@@ -102,17 +102,45 @@ struct RerReport {
     parents: BTreeMap<UnitPath, ParentSection>,
 }
 
+#[derive(Clone, Debug)]
+struct SposobReportMessage {
+    unit: String,
+    timestamp: NaiveDateTime,
+    body: String,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SposobReport {
+    units: BTreeSet<String>,
+    messages: BTreeMap<i64, SposobReportMessage>,
+}
+
 pub async fn report_docx_kind_rer(
     user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
     bgtask_id: Option<i64>,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     let report = load_report(user_login, env, req, bgtask_id).await.c(h!())?;
     let report_till = format_report_till(req).c(h!())?;
     write_report_docx(&report, &report_till, outpath).c(h!())?;
-    Ok(())
+    Ok(rer_report_filename(&report_till))
+}
+
+pub async fn report_docx_kind_sposob(
+    user_login: &str,
+    env: &Env,
+    req: &ReportPreviewReq,
+    outpath: &Path,
+    bgtask_id: Option<i64>,
+) -> Result<String, AppError> {
+    let report = load_sposob_report(user_login, env, req, bgtask_id)
+        .await
+        .c(h!())?;
+    let (start_date, _end_date) = sposob_report_date_range(&report, req)?;
+    write_sposob_report_docx(&report, start_date, outpath).c(h!())?;
+    sposob_report_filename(&report, req)
 }
 
 fn write_report_docx(
@@ -214,6 +242,64 @@ fn write_report_docx(
     Ok(())
 }
 
+fn write_sposob_report_docx(
+    report: &SposobReport,
+    fallback_date: NaiveDate,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let mut docx = Docx::new()
+        .page_size(DOCX_A4_WIDTH, DOCX_A4_HEIGHT)
+        .page_margin(
+            PageMargin::new()
+                .top(DOCX_PAGE_MARGIN_20MM)
+                .right(DOCX_PAGE_MARGIN_20MM)
+                .bottom(DOCX_PAGE_MARGIN_20MM)
+                .left(DOCX_PAGE_MARGIN_20MM),
+        )
+        .default_size(DOCX_FONT_SIZE)
+        .default_fonts(
+            RunFonts::new()
+                .ascii(DOCX_FONT)
+                .east_asia(DOCX_FONT)
+                .cs(DOCX_FONT),
+        )
+        .add_paragraph(text_paragraph(
+            &join_set_comma(&report.units),
+            true,
+            false,
+            AlignmentType::Left,
+            false,
+        ));
+
+    let mut messages = report.messages.values().collect::<Vec<_>>();
+    messages.sort_by_key(|message| message.timestamp);
+    if messages.is_empty() {
+        docx = docx.add_paragraph(sposob_date_paragraph(fallback_date));
+    }
+
+    let mut current_date = None;
+    for message in messages {
+        let message_date = message.timestamp.date();
+        if current_date != Some(message_date) {
+            docx = docx.add_paragraph(sposob_date_paragraph(message_date));
+            current_date = Some(message_date);
+        }
+        docx = docx
+            .add_paragraph(text_paragraph(
+                &format_sposob_message(message),
+                false,
+                false,
+                AlignmentType::Left,
+                false,
+            ))
+            .add_paragraph(blank_paragraph());
+    }
+
+    let file = std::fs::File::create(outpath)?;
+    docx.build().pack(file).c(h!())?;
+    Ok(())
+}
+
 async fn load_report(
     user_login: &str,
     env: &Env,
@@ -221,7 +307,7 @@ async fn load_report(
     bgtask_id: Option<i64>,
 ) -> Result<RerReport, AppError> {
     let dbx = &env.dbx;
-    let item_ids = load_candidate_item_ids(dbx, user_login, env, req)
+    let item_ids = load_candidate_item_ids(dbx, user_login, env, req, true)
         .await
         .c(h!())?;
     let mut report = RerReport::default();
@@ -253,7 +339,7 @@ async fn load_report(
         let candidates =
             load_item_unit_candidates(dbx, item_id, req).await.c(h!())?;
         let Some(target) =
-            resolve_item_unit(dbx, bgtask_id, item_id, &candidates)
+            resolve_item_unit(dbx, bgtask_id, "РЕР Звіт", item_id, &candidates)
                 .await
                 .c(h!())?
         else {
@@ -268,6 +354,55 @@ async fn load_report(
             message_body_without_headers(&message).c(h!())?,
             parse_callsigns(&item),
             parse_points(&item),
+        );
+    }
+    Ok(report)
+}
+
+async fn load_sposob_report(
+    user_login: &str,
+    env: &Env,
+    req: &ReportPreviewReq,
+    bgtask_id: Option<i64>,
+) -> Result<SposobReport, AppError> {
+    let dbx = &env.dbx;
+    let item_ids = load_candidate_item_ids(dbx, user_login, env, req, false)
+        .await
+        .c(h!())?;
+    let mut report = SposobReport::default();
+    for item_id in item_ids {
+        let Some(item) = sigint_inbox_item::Entity::find_by_id(item_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        let Some(message) = signal_message::Entity::find_by_id(item_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        let Some(timestamp) = report_message_timestamp(&item, &message) else {
+            continue;
+        };
+        let candidates =
+            load_item_unit_candidates(dbx, item_id, req).await.c(h!())?;
+        let Some(target) =
+            resolve_item_unit(dbx, bgtask_id, "Способ", item_id, &candidates)
+                .await
+                .c(h!())?
+        else {
+            continue;
+        };
+        insert_sposob_report_message(
+            &mut report,
+            target,
+            item_id,
+            timestamp,
+            message_body_without_headers(&message).c(h!())?,
         );
     }
     Ok(report)
@@ -324,11 +459,31 @@ fn insert_report_message(
         });
 }
 
+fn insert_sposob_report_message(
+    report: &mut SposobReport,
+    target: ResolvedItemUnit,
+    item_id: i64,
+    timestamp: NaiveDateTime,
+    body: String,
+) {
+    let unit = format_unit_identity(&target.identity);
+    report.units.insert(unit.clone());
+    report
+        .messages
+        .entry(item_id)
+        .or_insert_with(|| SposobReportMessage {
+            unit,
+            timestamp,
+            body,
+        });
+}
+
 async fn load_candidate_item_ids(
     dbx: &DatabaseConnection,
     user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
+    require_non_empty_comments: bool,
 ) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
@@ -345,9 +500,12 @@ async fn load_candidate_item_ids(
         query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
     }
 
+    let mut query = query.filter(item_network_link_exists());
+    if require_non_empty_comments {
+        query = query.filter(non_empty_comment_exists());
+    }
+
     Ok(query
-        .filter(item_network_link_exists())
-        .filter(non_empty_comment_exists())
         .select_only()
         .distinct()
         .column(signal_message::Column::Id)
@@ -574,6 +732,7 @@ async fn item_has_other_tag(
 async fn resolve_item_unit(
     dbx: &DatabaseConnection,
     bgtask_id: Option<i64>,
+    report_name: &str,
     item_id: i64,
     candidates: &[ItemUnitCandidate],
 ) -> Result<Option<ResolvedItemUnit>, AppError> {
@@ -581,9 +740,15 @@ async fn resolve_item_unit(
         ItemUnitResolution::None => Ok(None),
         ItemUnitResolution::Target(target) => Ok(Some(target)),
         ItemUnitResolution::Conflict(identities) => {
-            log_unrelated_unit_conflict(dbx, bgtask_id, item_id, &identities)
-                .await
-                .c(h!())?;
+            log_unrelated_unit_conflict(
+                dbx,
+                bgtask_id,
+                report_name,
+                item_id,
+                &identities,
+            )
+            .await
+            .c(h!())?;
             Ok(None)
         }
     }
@@ -636,6 +801,7 @@ fn resolve_item_unit_candidates(
 async fn log_unrelated_unit_conflict(
     dbx: &DatabaseConnection,
     bgtask_id: Option<i64>,
+    report_name: &str,
     item_id: i64,
     identities: &[UnitIdentity],
 ) -> Result<(), AppError> {
@@ -645,7 +811,7 @@ async fn log_unrelated_unit_conflict(
         .collect::<Vec<_>>()
         .join("; ");
     let message = format!(
-        "РЕР Звіт: пропущено перехоплення #{item_id}, повʼязане з неповʼязаними підрозділами: {units}"
+        "{report_name}: пропущено перехоплення #{item_id}, повʼязане з неповʼязаними підрозділами: {units}"
     );
     error!("{message}");
     bgtask_log(bgtask_id, &message, dbx).await.c(h!())?;
@@ -731,6 +897,12 @@ fn format_report_till(req: &ReportPreviewReq) -> Result<String, AppError> {
     ))
 }
 
+fn rer_report_filename(report_till: &str) -> String {
+    sanitize_report_filename(&format!(
+        "Звіт про результати аналізу радіоперехоплень станом на {report_till}.docx"
+    ))
+}
+
 fn format_unit_heading(
     identity: &UnitIdentity,
     locations: &BTreeSet<String>,
@@ -764,6 +936,113 @@ fn format_message_heading(message: &RerReportMessage) -> String {
     }
 }
 
+fn format_sposob_message(message: &SposobReportMessage) -> String {
+    format!(
+        "{}\n{}\n{}",
+        message.unit,
+        message.timestamp.format("%H-%M-%S"),
+        message.body
+    )
+}
+
+fn sposob_date_paragraph(date: NaiveDate) -> Paragraph {
+    text_paragraph(
+        &date.format("%Y-%m-%d").to_string(),
+        true,
+        false,
+        AlignmentType::Left,
+        false,
+    )
+}
+
+fn sposob_report_date_range(
+    report: &SposobReport,
+    req: &ReportPreviewReq,
+) -> Result<(NaiveDate, NaiveDate), AppError> {
+    let mut dates = report
+        .messages
+        .values()
+        .map(|message| message.timestamp.date())
+        .collect::<Vec<_>>();
+    dates.sort();
+    if let (Some(start), Some(end)) = (dates.first(), dates.last()) {
+        return Ok((*start, *end));
+    }
+
+    let start_date = req
+        .req
+        .since_date_inclusive_ms
+        .map(sposob_req_date)
+        .transpose()?;
+    let end_date = req
+        .req
+        .till_date_inclusive_ms
+        .map(sposob_req_date)
+        .transpose()?;
+    let today = Utc::now().with_timezone(&crate::types::Kyiv).date_naive();
+    Ok((
+        start_date.or(end_date).unwrap_or(today),
+        end_date.or(start_date).unwrap_or(today),
+    ))
+}
+
+fn sposob_req_date(ms: i64) -> Result<NaiveDate, AppError> {
+    Ok(dt_zoned_from_millis(ms).c(h!())?.date_naive())
+}
+
+fn sposob_report_filename(
+    report: &SposobReport,
+    req: &ReportPreviewReq,
+) -> Result<String, AppError> {
+    let (start_date, end_date) = sposob_report_date_range(report, req)?;
+    let units = join_set_space(&report.units);
+    let prefix = if units.is_empty() {
+        "Способ".to_string()
+    } else {
+        units
+    };
+    Ok(sanitize_report_filename(&format!(
+        "{prefix} {}.docx",
+        format_sposob_date_range(start_date, end_date)
+    )))
+}
+
+fn format_sposob_date_range(
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> String {
+    if start_date.year() == end_date.year()
+        && start_date.month() == end_date.month()
+    {
+        format!(
+            "{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    } else if start_date.year() == end_date.year() {
+        format!(
+            "{:02}.{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            start_date.month(),
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    } else {
+        format!(
+            "{:02}.{:02}.{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            start_date.month(),
+            start_date.year() % 100,
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    }
+}
+
 fn insert_non_empty(values: &mut BTreeSet<String>, value: &str) {
     let value = value.trim();
     if !value.is_empty() {
@@ -781,6 +1060,29 @@ fn join_set_semicolon(values: &BTreeSet<String>) -> String {
     let mut values = values.iter().cloned().collect::<Vec<_>>();
     values.sort_by(|left, right| cmp_uk(left, right));
     values.join("; ")
+}
+
+fn join_set_space(values: &BTreeSet<String>) -> String {
+    let mut values = values.iter().cloned().collect::<Vec<_>>();
+    values.sort_by(|left, right| cmp_uk(left, right));
+    values.join(" ")
+}
+
+fn sanitize_report_filename(filename: &str) -> String {
+    let sanitized = filename
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            ch if ch.is_control() => ' ',
+            ch => ch,
+        })
+        .collect::<String>();
+    let sanitized = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
+    if sanitized.is_empty() {
+        "report.docx".to_string()
+    } else {
+        sanitized
+    }
 }
 
 fn cmp_uk(left: &str, right: &str) -> Ordering {
@@ -1233,6 +1535,14 @@ mod tests {
     }
 
     #[test]
+    fn rer_report_filename_uses_report_till() {
+        assert_eq!(
+            rer_report_filename("15.00 30.06.2026"),
+            "Звіт про результати аналізу радіоперехоплень станом на 15.00 30.06.2026.docx"
+        );
+    }
+
+    #[test]
     fn write_report_docx_renders_report_maker_text_order() {
         let identity =
             unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
@@ -1278,6 +1588,115 @@ mod tests {
         }
         assert!(!xml.contains("Network"));
         assert!(xml.contains("<w:br"));
+    }
+
+    #[test]
+    fn write_sposob_report_docx_groups_messages_by_date() {
+        let mut report = SposobReport::default();
+        report.units.insert("68 мсд 6 А".to_string());
+        report.units.insert("20 мсд 8 А".to_string());
+        report.messages.insert(
+            10,
+            SposobReportMessage {
+                unit: "68 мсд 6 А".to_string(),
+                timestamp: dt(9, 15),
+                body: "Перший рядок\nДругий рядок".to_string(),
+            },
+        );
+        report.messages.insert(
+            11,
+            SposobReportMessage {
+                unit: "20 мсд 8 А".to_string(),
+                timestamp: NaiveDate::from_ymd_opt(2026, 6, 28)
+                    .unwrap()
+                    .and_hms_opt(1, 2, 3)
+                    .unwrap(),
+                body: "Наступна доба".to_string(),
+            },
+        );
+        let file = NamedTempFile::new().unwrap();
+
+        write_sposob_report_docx(
+            &report,
+            NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+            file.path(),
+        )
+        .unwrap();
+
+        let xml = document_xml(file.path());
+        let expected_order = [
+            "20 мсд 8 А, 68 мсд 6 А",
+            "2026-06-27",
+            "68 мсд 6 А",
+            "09-15-00",
+            "Перший рядок",
+            "Другий рядок",
+            "2026-06-28",
+            "20 мсд 8 А",
+            "01-02-03",
+            "Наступна доба",
+        ];
+        let mut prev_idx = 0;
+        for value in expected_order {
+            let idx = xml[prev_idx..].find(value).unwrap_or_else(|| {
+                panic!("missing {value} after index {prev_idx}")
+            }) + prev_idx;
+            prev_idx = idx;
+        }
+        assert!(xml.contains("<w:br"));
+    }
+
+    #[test]
+    fn sposob_report_filename_uses_units_and_date_range() {
+        let mut report = SposobReport::default();
+        report.units.insert("68/мсд".to_string());
+        report.units.insert("20 мсд".to_string());
+        report.messages.insert(
+            1,
+            SposobReportMessage {
+                unit: "68/мсд".to_string(),
+                timestamp: NaiveDate::from_ymd_opt(2026, 6, 27)
+                    .unwrap()
+                    .and_hms_opt(1, 0, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        report.messages.insert(
+            2,
+            SposobReportMessage {
+                unit: "20 мсд".to_string(),
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(1, 0, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        let req = report_preview_req_with_till(0);
+
+        assert_eq!(
+            sposob_report_filename(&report, &req).unwrap(),
+            "20 мсд 68 мсд 27.06-01.07.26.docx"
+        );
+    }
+
+    #[test]
+    fn format_sposob_date_range_handles_same_month_and_different_years() {
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 6, 30).unwrap(),
+            ),
+            "27-30.06.26"
+        );
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            ),
+            "31.12.26-01.01.27"
+        );
     }
 
     #[test]

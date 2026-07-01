@@ -19,6 +19,7 @@ export type ReportTemplateId =
   | 'reo'
   | 'digest'
   | 'rer_report'
+  | 'sposob'
   | 'active_networks'
   | 'summary_table'
   | 'kmz'
@@ -133,6 +134,8 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
       return 'Digest';
     case 'rer_report':
       return 'Rer';
+    case 'sposob':
+      return null;
     case 'active_networks':
       return { ActiveNetworks: { aorIds: state.activeNetworksAorIds } };
     case 'summary_table':
@@ -213,6 +216,8 @@ export function reportTemplateToUiTitle(state: AnalysisReportState): string {
       return 'активні радіомережі';
     case 'rer_report':
       return 'РЕР звіт';
+    case 'sposob':
+      return 'способ';
     case 'summary_table':
       return 'підсумкова таблиця';
     case 'kmz':

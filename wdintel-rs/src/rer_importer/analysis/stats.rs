@@ -5,6 +5,7 @@ use actix_identity::Identity;
 use actix_web::web::Json;
 use chrono::Duration;
 use echo_migration::{Expr, JoinType};
+use sea_orm::sea_query::{SimpleExpr, UnionType};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -2384,6 +2385,65 @@ fn build_networks_query(
     )
 }
 
+fn network_stats_group_join_condition(
+    message_alias: Alias,
+    group_alias: Alias,
+    network_left: SimpleExpr,
+    network_right: SimpleExpr,
+) -> Condition {
+    Condition::all()
+        .add(
+            Expr::col((message_alias, Alias::new("group_master_key")))
+                .equals((group_alias.clone(), Alias::new("master_key"))),
+        )
+        .add(group_network_aor_overlap_condition(
+            group_alias,
+            network_left,
+            network_right,
+        ))
+}
+
+fn group_network_aor_overlap_condition(
+    group_alias: Alias,
+    network_left: SimpleExpr,
+    network_right: SimpleExpr,
+) -> Condition {
+    Condition::any()
+        .add(
+            Condition::all()
+                .add(
+                    Expr::col((group_alias.clone(), Alias::new("g_left")))
+                        .gte(network_left.clone()),
+                )
+                .add(
+                    Expr::col((group_alias.clone(), Alias::new("g_left")))
+                        .lte(network_right.clone()),
+                ),
+        )
+        .add(
+            Condition::all()
+                .add(
+                    Expr::col((group_alias.clone(), Alias::new("g_right")))
+                        .gte(network_left.clone()),
+                )
+                .add(
+                    Expr::col((group_alias.clone(), Alias::new("g_right")))
+                        .lte(network_right.clone()),
+                ),
+        )
+        .add(
+            Condition::all()
+                .add(
+                    Expr::col((group_alias.clone(), Alias::new("g_left")))
+                        .lte(network_left),
+                )
+                .add(
+                    Expr::col((group_alias, Alias::new("g_right")))
+                        .gte(network_right),
+                ),
+        )
+}
+
 fn build_networks_query_for_login(
     req: &AnalysisStatsReq,
     login_str: &str,
@@ -2607,10 +2667,17 @@ fn build_networks_query_for_login(
     let n = Alias::new("n");
     let g = Alias::new("g");
 
-    let mut main_q = Query::select();
-    main_q
-        .expr_as(Expr::col((n.clone(), Alias::new("network_id"))), Alias::new("network_id"))
-        .expr_as(Expr::cust("count(distinct m.dedup_key)"), Alias::new("msg_count"))
+    let mut freq_matches_q = Query::select();
+    freq_matches_q
+        .distinct()
+        .expr_as(
+            Expr::col((m.clone(), Alias::new("dedup_key"))),
+            Alias::new("dedup_key"),
+        )
+        .expr_as(
+            Expr::col((n.clone(), Alias::new("network_id"))),
+            Alias::new("network_id"),
+        )
         .from_as(messages_cte_alias.clone(), m.clone())
         .join_as(
             JoinType::InnerJoin,
@@ -2629,28 +2696,128 @@ fn build_networks_query_for_login(
             JoinType::InnerJoin,
             groups_cte_alias.clone(),
             g.clone(),
-            Condition::all()
-                .add(Expr::col((m.clone(), Alias::new("group_master_key"))).equals((g.clone(), Alias::new("master_key"))))
-                .add(
-                    Condition::any()
-                        .add(
-                            Condition::all()
-                                .add(Expr::col((g.clone(), Alias::new("g_left"))).gte(Expr::col((n.clone(), Alias::new("n_left")))))
-                                .add(Expr::col((g.clone(), Alias::new("g_left"))).lte(Expr::col((n.clone(), Alias::new("n_right")))))
-                        )
-                        .add(
-                            Condition::all()
-                                .add(Expr::col((g.clone(), Alias::new("g_right"))).gte(Expr::col((n.clone(), Alias::new("n_left")))))
-                                .add(Expr::col((g.clone(), Alias::new("g_right"))).lte(Expr::col((n.clone(), Alias::new("n_right")))))
-                        )
-                        .add(
-                            Condition::all()
-                                .add(Expr::col((g.clone(), Alias::new("g_left"))).lte(Expr::col((n.clone(), Alias::new("n_left")))))
-                                .add(Expr::col((g.clone(), Alias::new("g_right"))).gte(Expr::col((n.clone(), Alias::new("n_right")))))
-                        )
-                ),
+            network_stats_group_join_condition(
+                m.clone(),
+                g.clone(),
+                Expr::col((n.clone(), Alias::new("n_left"))).into(),
+                Expr::col((n.clone(), Alias::new("n_right"))).into(),
+            ),
+        );
+
+    let linked_m = Alias::new("linked_m");
+    let linked_network_link = Alias::new("linked_network_link");
+    let linked_network = Alias::new("linked_network");
+    let linked_network_aor = Alias::new("linked_network_aor");
+    let linked_network_value = Alias::new("linked_network_value");
+    let linked_g = Alias::new("linked_g");
+
+    let mut linked_matches_q = Query::select();
+    linked_matches_q
+        .distinct()
+        .expr_as(
+            Expr::col((linked_m.clone(), Alias::new("dedup_key"))),
+            Alias::new("dedup_key"),
         )
-        .group_by_col((n.clone(), Alias::new("network_id")));
+        .expr_as(
+            Expr::col((
+                linked_network_link.clone(),
+                sigint_inbox_item_network::Column::SigintNetworkId,
+            )),
+            Alias::new("network_id"),
+        )
+        .from_as(messages_cte_alias.clone(), linked_m.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Entity,
+            linked_network_link.clone(),
+            Expr::col((
+                linked_network_link.clone(),
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .equals((linked_m.clone(), Alias::new("dedup_key"))),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            linked_network.clone(),
+            Expr::col((linked_network.clone(), sigint_network::Column::Id))
+                .equals((
+                    linked_network_link.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
+                )),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_aor::Entity,
+            linked_network_aor.clone(),
+            Expr::col((
+                linked_network_aor.clone(),
+                sigint_network_aor::Column::NetworkId,
+            ))
+            .equals((linked_network.clone(), sigint_network::Column::Id)),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            linked_network_value.clone(),
+            Expr::col((
+                linked_network_aor.clone(),
+                sigint_network_aor::Column::AorId,
+            ))
+            .equals((
+                linked_network_value.clone(),
+                area_of_responsibility::Column::Id,
+            )),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            groups_cte_alias.clone(),
+            linked_g.clone(),
+            network_stats_group_join_condition(
+                linked_m.clone(),
+                linked_g.clone(),
+                Expr::col((
+                    linked_network_value.clone(),
+                    area_of_responsibility::Column::LeftBound,
+                ))
+                .into(),
+                Expr::col((
+                    linked_network_value.clone(),
+                    area_of_responsibility::Column::RightBound,
+                ))
+                .into(),
+            ),
+        )
+        .and_where(
+            Expr::col((
+                linked_network.clone(),
+                sigint_network::Column::Deleted,
+            ))
+            .eq(false),
+        );
+    if let Some(condition) =
+        selected_aor_overlap_condition(linked_network_value, &req.selected_aors)
+    {
+        linked_matches_q.cond_where(condition);
+    }
+    freq_matches_q.union(UnionType::All, linked_matches_q.to_owned());
+
+    let message_network_alias = Alias::new("message_network");
+    let mut main_q = Query::select();
+    main_q
+        .expr_as(
+            Expr::col((
+                message_network_alias.clone(),
+                Alias::new("network_id"),
+            )),
+            Alias::new("network_id"),
+        )
+        .expr_as(
+            Expr::cust("count(distinct message_network.dedup_key)"),
+            Alias::new("msg_count"),
+        )
+        .from_subquery(freq_matches_q.to_owned(), message_network_alias.clone())
+        .group_by_col((message_network_alias, Alias::new("network_id")));
 
     // Build WITH (using Select)
     let query = Query::with()

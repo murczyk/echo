@@ -1625,6 +1625,43 @@ async fn rer_analysis_selected_network_filter_uses_explicit_network_links() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_network_stats_use_explicit_network_links_without_freq_match(
+) {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+
+    mk_analysis_message(
+        db,
+        "network-link-without-freq-match",
+        "906.3",
+        test_dt(2026, 3, 2, 10, 0),
+        &[&fixture.group_x],
+        &[fixture.network_k.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+    req.selected_aors = Some(vec![fixture.aor_a.id]);
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        BTreeMap::from([(fixture.network_k.network.id, 1)])
+    );
+
+    req.selected_networks = Some(vec![fixture.network_k.network.id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_deleted_networks_behave_like_missing_networks() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
