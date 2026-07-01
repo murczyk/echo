@@ -74,6 +74,11 @@ type ActionIconsRowProps = {
   sx?: SxProps<Theme>;
 };
 
+type MenuAnchorPosition = {
+  top: number;
+  left: number;
+};
+
 function ActionIconButton({
   title,
   icon,
@@ -203,10 +208,10 @@ function ActionIconsRow({
   const copyMenuId = useId();
   const overflowMenuId = useId();
   const navigationMenuId = useId();
-  const [excludeMenuAnchorEl, setExcludeMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [copyMenuAnchorEl, setCopyMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [overflowMenuAnchorEl, setOverflowMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [navigationMenuAnchorEl, setNavigationMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [excludeMenuAnchorPosition, setExcludeMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [copyMenuAnchorPosition, setCopyMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [overflowMenuAnchorPosition, setOverflowMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
   const [stackedLayout, setStackedLayout] = useState(compact);
   const canShowExcludeMenu = displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
@@ -238,43 +243,56 @@ function ActionIconsRow({
   ].filter((item): item is { key: string; title: string; icon: JSX.Element; selected: boolean; onClick: () => void } => item != null);
   const canShowOverflowMenu = overflowMenuItems.length > 0;
 
+  function getMenuAnchorPosition(event: MouseEvent<HTMLButtonElement>): MenuAnchorPosition {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      top: rect.bottom,
+      left: rect.left,
+    };
+  }
+
   function openExcludeMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setExcludeMenuAnchorEl(event.currentTarget);
+    setExcludeMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeExcludeMenu() {
-    setExcludeMenuAnchorEl(null);
+    blurActiveElement();
+    setExcludeMenuAnchorPosition(null);
   }
 
   function openCopyMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setCopyMenuAnchorEl(event.currentTarget);
+    setCopyMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeCopyMenu() {
-    setCopyMenuAnchorEl(null);
+    blurActiveElement();
+    setCopyMenuAnchorPosition(null);
   }
 
   function openOverflowMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setOverflowMenuAnchorEl(event.currentTarget);
+    setOverflowMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeOverflowMenu() {
-    setOverflowMenuAnchorEl(null);
+    blurActiveElement();
+    setOverflowMenuAnchorPosition(null);
   }
 
   function openNavigationMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setNavigationMenuAnchorEl(event.currentTarget);
+    setNavigationMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeNavigationMenu() {
-    setNavigationMenuAnchorEl(null);
+    blurActiveElement();
+    setNavigationMenuAnchorPosition(null);
   }
 
   function handleExcludeMenuItemClick(option: MessageEntityExcludeMenuOption) {
+    blurActiveElement();
     onExcludeMessageEntity?.(option.entity, option.value);
     closeExcludeMenu();
   }
@@ -318,9 +336,9 @@ function ActionIconsRow({
       icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
       onClick={openCopyMenu}
       buttonProps={{
-        'aria-controls': copyMenuAnchorEl ? copyMenuId : undefined,
+        'aria-controls': copyMenuAnchorPosition ? copyMenuId : undefined,
         'aria-haspopup': 'menu',
-        'aria-expanded': copyMenuAnchorEl ? 'true' : undefined,
+        'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
       }}
     />,
     canShowNavigationMenu ? (
@@ -330,9 +348,9 @@ function ActionIconsRow({
         icon={<LaunchIcon fontSize="inherit" />}
         onClick={openNavigationMenu}
         buttonProps={{
-          'aria-controls': navigationMenuAnchorEl ? navigationMenuId : undefined,
+          'aria-controls': navigationMenuAnchorPosition ? navigationMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': navigationMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': navigationMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -343,9 +361,9 @@ function ActionIconsRow({
         icon={<RemoveIcon fontSize="inherit" />}
         onClick={openExcludeMenu}
         buttonProps={{
-          'aria-controls': excludeMenuAnchorEl ? excludeMenuId : undefined,
+          'aria-controls': excludeMenuAnchorPosition ? excludeMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': excludeMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': excludeMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -356,9 +374,9 @@ function ActionIconsRow({
         icon={<MoreVertIcon fontSize="inherit" />}
         onClick={openOverflowMenu}
         buttonProps={{
-          'aria-controls': overflowMenuAnchorEl ? overflowMenuId : undefined,
+          'aria-controls': overflowMenuAnchorPosition ? overflowMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': overflowMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': overflowMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -503,8 +521,9 @@ function ActionIconsRow({
       </div>
       <Menu
         id={overflowMenuId}
-        anchorEl={overflowMenuAnchorEl}
-        open={isPresent(overflowMenuAnchorEl) && canShowOverflowMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={overflowMenuAnchorPosition ?? undefined}
+        open={isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu}
         onClose={closeOverflowMenu}
         MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
       >
@@ -519,8 +538,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={copyMenuId}
-        anchorEl={copyMenuAnchorEl}
-        open={isPresent(copyMenuAnchorEl)}
+        anchorReference="anchorPosition"
+        anchorPosition={copyMenuAnchorPosition ?? undefined}
+        open={isPresent(copyMenuAnchorPosition)}
         onClose={closeCopyMenu}
         MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
       >
@@ -573,8 +593,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={navigationMenuId}
-        anchorEl={navigationMenuAnchorEl}
-        open={isPresent(navigationMenuAnchorEl) && canShowNavigationMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={navigationMenuAnchorPosition ?? undefined}
+        open={isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu}
         onClose={closeNavigationMenu}
         MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
         slotProps={{
@@ -657,8 +678,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={excludeMenuId}
-        anchorEl={excludeMenuAnchorEl}
-        open={isPresent(excludeMenuAnchorEl) && canShowExcludeMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={excludeMenuAnchorPosition ?? undefined}
+        open={isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu}
         onClose={closeExcludeMenu}
         MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
       >

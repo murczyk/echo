@@ -22,6 +22,7 @@ import {
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
+const latestMenuProps: Array<{ anchorReference?: string; anchorPosition?: { top: number; left: number } | null; open?: boolean; id?: string }> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
 
@@ -45,6 +46,8 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.onKeyDown;
   delete clone.valueLabelDisplay;
   delete clone.anchorEl;
+  delete clone.anchorReference;
+  delete clone.anchorPosition;
   delete clone.onClose;
   delete clone.open;
   delete clone.anchorOrigin;
@@ -206,7 +209,17 @@ vi.mock('@mui/material', () => ({
   Popover: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
     open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
   Menu: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+    open ? (
+      (() => {
+        latestMenuProps.push({
+          anchorReference: props.anchorReference as string | undefined,
+          anchorPosition: (props.anchorPosition as { top: number; left: number } | undefined) ?? null,
+          open,
+          id: props.id as string | undefined,
+        });
+        return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+      })()
+    ) : null,
   MenuItem: ({
     children,
     component,
@@ -568,6 +581,7 @@ describe('MessageCard', () => {
 
   afterEach(() => {
     resizeObserverCallbacks.splice(0);
+    latestMenuProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
     }
@@ -1177,6 +1191,41 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Видалити');
     expect(view.container.textContent).not.toContain('Позначити як важливе');
     expect(view.container.textContent).not.toContain('Додати в закладки');
+  });
+
+  it('anchors the overflow menu by position instead of a button element', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 24,
+      height: 24,
+      x: 16,
+      y: 48,
+      top: 48,
+      left: 16,
+      right: 40,
+      bottom: 72,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    try {
+      const view = await renderCard({
+        onEditDetails: vi.fn(),
+        onDelete: vi.fn(),
+      });
+      rendered.push(view);
+
+      const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
+      if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+
+      await click(overflowButton);
+
+      expect(latestMenuProps.at(-1)).toMatchObject({
+        anchorReference: 'anchorPosition',
+        anchorPosition: { top: 72, left: 16 },
+        open: true,
+      });
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it('renders inactive and active important and bookmark icons in the toolbar', async () => {
