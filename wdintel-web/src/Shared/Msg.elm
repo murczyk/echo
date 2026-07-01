@@ -46,6 +46,9 @@ type Msg
     | ToastMsg Shared.Components.Toast.Msg
     | ShowToast String
     | ShowToastWithDetails String String
+    | ShowLoggedResponseDecodeError { title : String, message : String }
+    | ShowLoggedResponseDecodeErrorWithCode { title : String, message : String } String
+    | LoggedResponseDecodeError (Result ApiError ())
     | EventServiceStartPolling
     | EventServiceStopPolling
     | EventServicePollEvents
