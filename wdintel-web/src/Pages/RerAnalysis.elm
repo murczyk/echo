@@ -3690,7 +3690,7 @@ update user shared route msg model =
                 bytes
             )
 
-        ReportDownloadDocxDone (Ok bytes) ->
+        ReportDownloadDocxDone (Ok download) ->
             let
                 m2 =
                     { model | reportDownloadInProgress = False }
@@ -3770,7 +3770,7 @@ update user shared route msg model =
                                 ++ extension
             in
             ( m2
-            , E.downloadFile fname mimeType bytes
+            , E.downloadFile (download.fileName |> Maybe.withDefault fname) mimeType download.bytes
             )
 
         ScrollMessagesToTop ->

@@ -104,6 +104,7 @@ struct RerReport {
 
 #[derive(Clone, Debug)]
 struct SposobReportMessage {
+    unit: String,
     timestamp: NaiveDateTime,
     body: String,
 }
@@ -465,11 +466,16 @@ fn insert_sposob_report_message(
     timestamp: NaiveDateTime,
     body: String,
 ) {
-    report.units.insert(format_unit_identity(&target.identity));
+    let unit = format_unit_identity(&target.identity);
+    report.units.insert(unit.clone());
     report
         .messages
         .entry(item_id)
-        .or_insert_with(|| SposobReportMessage { timestamp, body });
+        .or_insert_with(|| SposobReportMessage {
+            unit,
+            timestamp,
+            body,
+        });
 }
 
 async fn load_candidate_item_ids(
@@ -931,7 +937,12 @@ fn format_message_heading(message: &RerReportMessage) -> String {
 }
 
 fn format_sposob_message(message: &SposobReportMessage) -> String {
-    format!("{}\n{}", message.timestamp.format("%H-%M-%S"), message.body)
+    format!(
+        "{}\n{}\n{}",
+        message.unit,
+        message.timestamp.format("%H-%M-%S"),
+        message.body
+    )
 }
 
 fn sposob_date_paragraph(date: NaiveDate) -> Paragraph {
@@ -1587,6 +1598,7 @@ mod tests {
         report.messages.insert(
             10,
             SposobReportMessage {
+                unit: "68 мсд 6 А".to_string(),
                 timestamp: dt(9, 15),
                 body: "Перший рядок\nДругий рядок".to_string(),
             },
@@ -1594,6 +1606,7 @@ mod tests {
         report.messages.insert(
             11,
             SposobReportMessage {
+                unit: "20 мсд 8 А".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 28)
                     .unwrap()
                     .and_hms_opt(1, 2, 3)
@@ -1614,10 +1627,12 @@ mod tests {
         let expected_order = [
             "20 мсд 8 А, 68 мсд 6 А",
             "2026-06-27",
+            "68 мсд 6 А",
             "09-15-00",
             "Перший рядок",
             "Другий рядок",
             "2026-06-28",
+            "20 мсд 8 А",
             "01-02-03",
             "Наступна доба",
         ];
@@ -1639,6 +1654,7 @@ mod tests {
         report.messages.insert(
             1,
             SposobReportMessage {
+                unit: "68/мсд".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 27)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
@@ -1649,6 +1665,7 @@ mod tests {
         report.messages.insert(
             2,
             SposobReportMessage {
+                unit: "20 мсд".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
