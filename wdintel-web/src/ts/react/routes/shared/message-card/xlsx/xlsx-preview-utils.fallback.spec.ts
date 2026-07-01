@@ -11,15 +11,38 @@ vi.mock('./xlsx-preview-metadata', () => ({
 import { buildXlsxPreview } from './xlsx-preview-utils';
 
 describe('buildXlsxPreview fallback names', () => {
-  it('falls back to generated names when workbook metadata does not provide them', async () => {
+  it('does not mark exactly capped fallback sheets as truncated', async () => {
     const preview = await buildXlsxPreview(
-      makeWorkbookBuffer([
-        { name: 'Alpha', rows: [['A1']] },
-        { name: 'Beta', rows: [['B1']] },
-      ]),
+      makeWorkbookBuffer(
+        Array.from({ length: 20 }, (_, index) => ({
+          name: `Sheet ${index + 1}`,
+          rows: [[`S${index + 1}`]],
+        })),
+      ),
     );
 
-    expect(preview.sheets.map((sheet) => sheet.name)).toEqual(['Sheet 1', 'Sheet 2']);
+    expect(preview.sheets).toHaveLength(20);
+    expect(preview.sheets.map((sheet) => sheet.name)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `Sheet ${index + 1}`),
+    );
+    expect(preview.sheets.every((sheet) => sheet.truncated)).toBe(false);
+  });
+
+  it('marks fallback sheets as truncated when more than the cap exist', async () => {
+    const preview = await buildXlsxPreview(
+      makeWorkbookBuffer(
+        Array.from({ length: 22 }, (_, index) => ({
+          name: `Sheet ${index + 1}`,
+          rows: [[`S${index + 1}`]],
+        })),
+      ),
+    );
+
+    expect(preview.sheets).toHaveLength(20);
+    expect(preview.sheets.map((sheet) => sheet.name)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `Sheet ${index + 1}`),
+    );
+    expect(preview.sheets.every((sheet) => sheet.truncated)).toBe(true);
   });
 });
 

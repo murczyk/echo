@@ -9,9 +9,29 @@ type DocxPreviewResult = {
   html: string;
 };
 
-export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number }) {
+const MAX_DOCX_FILE_MB = 10;
+const MAX_DOCX_FILE_BYTES = MAX_DOCX_FILE_MB * 1024 * 1024;
+
+function formatDocxPreviewErrorMessage(error: string | null): string {
+  if (error === 'DOCX_FILE_TOO_LARGE') {
+    return `Файл DOCX завеликий для попереднього перегляду. Максимум: ${MAX_DOCX_FILE_MB} МБ.`;
+  }
+  return error ?? 'DOCX недоступний';
+}
+
+export function DocxDocumentPreview({
+  href,
+  zoom,
+  sizeBytes,
+}: {
+  href: string;
+  zoom: number;
+  sizeBytes?: number | null;
+}) {
   const theme = useTheme();
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
   const [html, setHtml] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -25,15 +45,40 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
       setHtml('');
 
       try {
+        if (sizeBytes != null && sizeBytes > MAX_DOCX_FILE_BYTES) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
+
         const response = await fetch(href, { signal: abortController.signal });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
+
+        const contentLength = response.headers.get('content-length');
+        if (
+          contentLength != null &&
+          Number.isFinite(Number(contentLength)) &&
+          Number(contentLength) > MAX_DOCX_FILE_BYTES
+        ) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
+
         const buffer = await response.arrayBuffer();
-        const result = await runWorkerTask<{ buffer: ArrayBuffer }, DocxPreviewResult>(
-          () => new Worker(new URL('../docx/docx-preview.worker.ts', import.meta.url), { type: 'module' }),
+        if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
+        const result = await runWorkerTask<
+          { buffer: ArrayBuffer },
+          DocxPreviewResult
+        >(
+          () =>
+            new Worker(
+              new URL('../docx/docx-preview.worker.ts', import.meta.url),
+              { type: 'module' },
+            ),
           { buffer },
           abortController.signal,
+          [buffer],
         );
         if (disposed) return;
         const sanitizedHtml = sanitizeDocxHtml(result.html);
@@ -41,7 +86,11 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
-        setError(error instanceof Error ? error.message : 'Не вдалося відкрити DOCX');
+        setError(
+          formatDocxPreviewErrorMessage(
+            error instanceof Error ? error.message : null,
+          ),
+        );
         setStatus('error');
       }
     };
@@ -52,17 +101,17 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
       disposed = true;
       abortController.abort();
     };
-  }, [href]);
+  }, [href, sizeBytes]);
 
   const srcDoc = useMemo(() => buildDocxHtmlDocument(html, zoom), [html, zoom]);
 
   if (status === 'error') {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography variant="h6" sx={{ mb: 1, color: 'rgba(244, 247, 251, 0.92)' }}>
+        <Typography variant="h6" sx={{ mb: 1, color: 'text.primary' }}>
           Помилка перегляду
         </Typography>
-        <Typography variant="body2" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {error ?? 'DOCX недоступний'}
         </Typography>
       </Box>
@@ -75,12 +124,20 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
         width: '100%',
         height: '100%',
         minHeight: 0,
-        position: 'relative',
-        backgroundColor: theme.palette.background.default,
+        borderRadius: 1,
+        backgroundColor: 'transparent',
       }}
     >
       {status === 'loading' ? (
-        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center' }}>
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
           <CircularProgress size={22} />
         </Box>
       ) : null}
@@ -94,7 +151,7 @@ export function DocxDocumentPreview({ href, zoom }: { href: string; zoom: number
             width: '100%',
             height: '100%',
             border: 0,
-            background: theme.palette.background.paper,
+            background: 'transparent',
           }}
         />
       ) : null}

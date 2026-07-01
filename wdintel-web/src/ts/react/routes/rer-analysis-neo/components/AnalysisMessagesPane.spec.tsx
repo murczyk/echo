@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 import { ELLIPSIS } from '../../../utils/misc';
 
-import type { InboxMessage } from '../../../../../Bindings';
+import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -70,15 +70,15 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
 }));
 
 vi.mock('../../rer-duty-neo/dialogs', () => ({
-  CommentDialog: (props: { open: boolean; messagePreview?: { text?: string | null; freq?: string | null; groupMasterKey?: string | null; sender?: string | null } | null; onSave: () => void; onClose: () => void }) =>
+  CommentDialog: (props: { open: boolean; messagePreview?: { text?: string | null; freq?: string | null; groupMasterKey?: string | null; groupName?: string | null; sender?: string | null; senderName?: string | null } | null; onSave: () => void; onClose: () => void }) =>
     props.open ? (
       <div data-testid="comment-dialog">
         <div data-testid="comment-preview">
           {props.messagePreview?.freq ?? ''}
           {' '}
-          {props.messagePreview?.groupMasterKey ?? ''}
+          {props.messagePreview?.groupName ?? props.messagePreview?.groupMasterKey ?? ''}
           {' '}
-          {props.messagePreview?.sender ?? ''}
+          {props.messagePreview?.senderName ?? props.messagePreview?.sender ?? ''}
           {' '}
           {props.messagePreview?.text ?? ''}
         </div>
@@ -300,6 +300,12 @@ describe('AnalysisMessagesPane', () => {
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
+        groupInfos: {
+          'group-1': { masterKey: 'group-1', name: 'Група 1' } as SignalGroupEntry,
+        },
+        profiles: {
+          'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
+        },
         onSaveMessageComment,
       }),
     );
@@ -307,8 +313,10 @@ describe('AnalysisMessagesPane', () => {
 
     await click(getButton(view.container, 'comment-7'));
     expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('100.000');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('group-1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('sender-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('Група 1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).not.toContain('group-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('BBC SPORT');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).not.toContain('sender-1');
     expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('hello');
     await click(getButton(view.container, 'save-comment'));
 

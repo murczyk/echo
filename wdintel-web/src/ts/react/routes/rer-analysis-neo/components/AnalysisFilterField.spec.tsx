@@ -42,6 +42,7 @@ describe('AnalysisFilterField', () => {
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
         reason: 'createOption' | 'selectOption' | 'removeOption' | 'blur' | 'clear' | 'escape',
       ) => void;
+      onInputChange: (_event: unknown, nextInputValue: string, reason: 'input' | 'reset' | 'clear') => void;
       onClose?: () => void;
       onOpen?: () => void;
       renderOption: (props: { key: string; [key: string]: unknown }, option: { key: string; value: string; label: string; count: number; values: string[] }) => unknown;
@@ -54,6 +55,7 @@ describe('AnalysisFilterField', () => {
       loading?: boolean;
       loadingText?: string;
       noOptionsText?: string;
+      inputValue?: string;
       open?: boolean;
     };
   }
@@ -116,6 +118,127 @@ describe('AnalysisFilterField', () => {
 
     props.onChange(null, [props.options[0], props.options[1]], 'selectOption');
     expect(onChange).toHaveBeenCalledWith(['group-b', 'group-c']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('preserves typed input across loading and option refreshes', () => {
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [{ value: 'u1', label: 'Unit 1', count: 1 }],
+      value: [],
+      loading: false,
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onInputChange(null, 'черга', 'input');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      root.render(
+        <AnalysisFilterField
+          label="Підрозділи"
+          options={[
+            { value: 'u1', label: 'Unit 1', count: 1 },
+            { value: 'u2', label: 'Unit 2', count: 2 },
+          ]}
+          value={[]}
+          loading
+          onChange={vi.fn()}
+        />,
+      );
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      root.render(
+        <AnalysisFilterField
+          label="Підрозділи"
+          options={[
+            { value: 'u1', label: 'Unit 1', count: 1 },
+            { value: 'u3', label: 'Unit 3', count: 3 },
+          ]}
+          value={[]}
+          loading={false}
+          onChange={vi.fn()}
+        />,
+      );
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('ignores reset events so typed input survives option reloads', () => {
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [{ value: 'u1', label: 'Unit 1', count: 1 }],
+      value: [],
+      onChange: vi.fn(),
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onInputChange(null, 'черга', 'input');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      props.onInputChange(null, '', 'reset');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      props.onChange(null, [], 'clear');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('clears typed input after an explicit selection or clear action', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: 'Unit 1', count: 1 },
+        { value: 'u2', label: 'Unit 2', count: 2 },
+      ],
+      value: ['u1'],
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onInputChange(null, 'черга', 'input');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      props.onChange(null, [props.options[1]], 'selectOption');
+    });
+    expect(onChange).toHaveBeenCalledWith(['u2']);
+    expect(latestAutocompleteProps().inputValue).toBe('');
+
+    act(() => {
+      props.onInputChange(null, 'черга', 'input');
+    });
+    expect(latestAutocompleteProps().inputValue).toBe('черга');
+
+    act(() => {
+      props.onChange(null, [], 'clear');
+    });
+    expect(onChange).toHaveBeenCalledWith([]);
+    expect(latestAutocompleteProps().inputValue).toBe('');
 
     act(() => {
       root.unmount();

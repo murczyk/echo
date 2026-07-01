@@ -1,28 +1,118 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, Stack, Typography, useTheme } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  Stack,
+  Typography,
+  useTheme,
+} from '@mui/material';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 const PDF_PAGE_MAX_WIDTH_PX = 920;
 const PDF_PAGE_RENDER_LIMIT = 24;
 const PDF_DOCUMENT_OPTIONS = { useWorkerFetch: true };
+const MAX_PDF_FILE_MB = 10;
+const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_MB * 1024 * 1024;
 
-export function PdfDocumentPreview({ href, zoom }: { href: string; zoom: number }) {
+function formatPdfPreviewErrorMessage(error: string | null): string {
+  if (error === 'PDF_FILE_TOO_LARGE') {
+    return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_MB} МБ.`;
+  }
+
+  return error ?? 'PDF недоступний';
+}
+
+export function PdfDocumentPreview({
+  href,
+  zoom,
+  sizeBytes,
+}: {
+  href: string;
+  zoom: number;
+  sizeBytes?: number | null;
+}) {
   const theme = useTheme();
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const scale = useMemo(() => zoom / 100, [zoom]);
 
   useEffect(() => {
     setPageCount(null);
     setError(null);
-  }, [href]);
+    setPdfBlobUrl(null);
+
+    const abortController = new AbortController();
+    let disposed = false;
+    let objectUrl: string | null = null;
+
+    const load = async () => {
+      try {
+        if (sizeBytes != null && sizeBytes > MAX_PDF_FILE_BYTES) {
+          throw new Error('PDF_FILE_TOO_LARGE');
+        }
+
+        const response = await fetch(href, { signal: abortController.signal });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const contentLength = response.headers.get('content-length');
+        if (
+          contentLength != null &&
+          Number.isFinite(Number(contentLength)) &&
+          Number(contentLength) > MAX_PDF_FILE_BYTES
+        ) {
+          throw new Error('PDF_FILE_TOO_LARGE');
+        }
+
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > MAX_PDF_FILE_BYTES) {
+          throw new Error('PDF_FILE_TOO_LARGE');
+        }
+
+        objectUrl = URL.createObjectURL(
+          new Blob([buffer], {
+            type: response.headers.get('content-type') ?? 'application/pdf',
+          }),
+        );
+        if (disposed) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        setPdfBlobUrl(objectUrl);
+      } catch (loadError) {
+        if (disposed || abortController.signal.aborted) return;
+        setError(
+          formatPdfPreviewErrorMessage(
+            loadError instanceof Error ? loadError.message : null,
+          ),
+        );
+      }
+    };
+
+    void load();
+
+    return () => {
+      disposed = true;
+      abortController.abort();
+      if (objectUrl != null) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [href, sizeBytes]);
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
-  const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
+  const isPreviewLimited =
+    pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
 
   return (
     <Box
@@ -33,11 +123,19 @@ export function PdfDocumentPreview({ href, zoom }: { href: string; zoom: number 
         position: 'relative',
         overflow: 'auto',
         borderRadius: 1,
-        backgroundColor: theme.palette.background.default,
+        backgroundColor: 'transparent',
       }}
     >
       {error == null && pageCount == null ? (
-        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center' }}>
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
           <CircularProgress size={22} />
         </Box>
       ) : null}
@@ -47,29 +145,48 @@ export function PdfDocumentPreview({ href, zoom }: { href: string; zoom: number 
             Помилка перегляду
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {error}
+            {formatPdfPreviewErrorMessage(error)}
           </Typography>
         </Box>
       ) : null}
-      <Document
-        file={href}
-        loading={null}
-        onLoadSuccess={({ numPages }) => setPageCount(numPages)}
-        onLoadError={(loadError) => setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF')}
-        renderMode="canvas"
-        options={PDF_DOCUMENT_OPTIONS}
-      >
-        <Stack spacing={{ xs: 2.5, md: 4 }} sx={{ px: { xs: 2, sm: 2.5, md: 3 }, py: { xs: 2.5, md: 3 }, alignItems: 'center' }}>
-          {Array.from({ length: renderedPageCount }, (_, pageIndex) => (
-            <LazyPdfPage key={`pdf-page-${pageIndex + 1}`} pageNumber={pageIndex + 1} scale={scale} />
-          ))}
-          {isPreviewLimited ? (
-            <Typography variant="caption" color="text.secondary">
-              Показано перші {PDF_PAGE_RENDER_LIMIT} сторінок
-            </Typography>
-          ) : null}
-        </Stack>
-      </Document>
+      {pdfBlobUrl != null ? (
+        <Document
+          file={pdfBlobUrl}
+          loading={null}
+          onLoadSuccess={({ numPages }) => setPageCount(numPages)}
+          onLoadError={(loadError) =>
+            setError(
+              loadError instanceof Error
+                ? loadError.message
+                : 'Не вдалося відкрити PDF',
+            )
+          }
+          renderMode="canvas"
+          options={PDF_DOCUMENT_OPTIONS}
+        >
+          <Stack
+            spacing={{ xs: 2.5, md: 4 }}
+            sx={{
+              px: { xs: 2, sm: 2.5, md: 3 },
+              py: { xs: 2.5, md: 3 },
+              alignItems: 'center',
+            }}
+          >
+            {Array.from({ length: renderedPageCount }, (_, pageIndex) => (
+              <LazyPdfPage
+                key={`pdf-page-${pageIndex + 1}`}
+                pageNumber={pageIndex + 1}
+                scale={scale}
+              />
+            ))}
+            {isPreviewLimited ? (
+              <Typography variant="caption" color="text.secondary">
+                Показано перші {PDF_PAGE_RENDER_LIMIT} сторінок
+              </Typography>
+            ) : null}
+          </Stack>
+        </Document>
+      ) : null}
       <Typography variant="caption" sx={{ display: 'none' }}>
         PDF preview
       </Typography>
@@ -77,7 +194,13 @@ export function PdfDocumentPreview({ href, zoom }: { href: string; zoom: number 
   );
 }
 
-function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number }) {
+function LazyPdfPage({
+  pageNumber,
+  scale,
+}: {
+  pageNumber: number;
+  scale: number;
+}) {
   const pageShellRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -122,10 +245,11 @@ function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number 
         mx: 'auto',
         px: { xs: 0, sm: 0.5 },
         '& .react-pdf__Page': {
-          backgroundColor: '#fff',
+          backgroundColor: 'background.paper',
           borderRadius: 2,
-          border: '1px solid rgba(148, 163, 184, 0.12)',
-          boxShadow: '0 18px 40px rgba(0, 0, 0, 0.26)',
+          border: 1,
+          borderColor: 'divider',
+          boxShadow: 4,
           overflow: 'hidden',
         },
         '& .react-pdf__Page__textContent': {
@@ -146,7 +270,15 @@ function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number 
         },
       }}
     >
-      {isVisible ? <Page pageNumber={pageNumber} scale={scale} renderTextLayer renderAnnotationLayer loading={<Box sx={{ minHeight: 240 }} />} /> : null}
+      {isVisible ? (
+        <Page
+          pageNumber={pageNumber}
+          scale={scale}
+          renderTextLayer
+          renderAnnotationLayer
+          loading={<Box sx={{ minHeight: 240 }} />}
+        />
+      ) : null}
     </Box>
   );
 }

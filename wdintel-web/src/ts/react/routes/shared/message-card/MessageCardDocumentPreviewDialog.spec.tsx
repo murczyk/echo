@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 let latestDialogOnClose: ((event: Event, reason: string) => void) | null = null;
 let dialogEscapeListenerInstalled = false;
+const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
 
 vi.mock('@mui/material', () => {
   const passthrough =
@@ -17,7 +18,20 @@ vi.mock('@mui/material', () => {
   return {
     Box: passthrough('div'),
     Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <button {...props}>{children}</button>,
-    Dialog: ({ children, open, onClose }: { children?: ReactNode; open?: boolean; onClose?: (event: Event, reason: string) => void }) => {
+    Dialog: ({
+      children,
+      open,
+      onClose,
+      disableRestoreFocus,
+    }: {
+      children?: ReactNode;
+      open?: boolean;
+      onClose?: (event: Event, reason: string) => void;
+      disableRestoreFocus?: boolean;
+    }) => {
+      if (open) {
+        dialogProps.push({ disableRestoreFocus });
+      }
       latestDialogOnClose = onClose ?? null;
       if (open && !dialogEscapeListenerInstalled) {
         document.addEventListener('keydown', (event) => {
@@ -61,6 +75,7 @@ describe('MessageCardDocumentPreviewDialog', () => {
     document.body.innerHTML = '';
     latestDialogOnClose = null;
     dialogEscapeListenerInstalled = false;
+    dialogProps.splice(0);
   });
 
   it('exits fullscreen on Escape before closing the dialog', async () => {
@@ -87,6 +102,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
         />,
       );
     });
+
+    expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(true);
 
     const fullscreenButton = document.body.querySelector('button[aria-label="Повноекранний режим"]');
     expect(fullscreenButton).not.toBeNull();
