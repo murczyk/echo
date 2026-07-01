@@ -110,7 +110,13 @@ function getPreviewShellSx() {
     borderRadius: 2,
     bgcolor: 'background.paper',
     '& .leaflet-container': {
-      bgcolor: 'background.paper',
+      background: 'transparent',
+    },
+    '& .leaflet-tile-pane': {
+      zIndex: 200,
+    },
+    '& .leaflet-overlay-pane': {
+      zIndex: 400,
     },
   };
 }
@@ -119,23 +125,14 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.FeatureGroup | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const initRafRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
   const [previewRenderReady, setPreviewRenderReady] = useState(false);
-  const [tileLoadState, setTileLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const hasRenderablePreviewGeometry = (preview?.geometries ?? []).some(hasRenderableGeometry);
-  const previewReadyToShow =
-    Boolean(preview) &&
-    mapReady &&
-    mapVisible &&
-    previewRenderReady &&
-    tileLoadState !== 'loading';
   const hasRenderablePreviewGeometryRef = useRef(hasRenderablePreviewGeometry);
   const previewRenderReadyRef = useRef(previewRenderReady);
-  const tileLoadStateRef = useRef(tileLoadState);
 
   useEffect(() => {
     hasRenderablePreviewGeometryRef.current = hasRenderablePreviewGeometry;
@@ -145,19 +142,9 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
     previewRenderReadyRef.current = previewRenderReady;
   }, [previewRenderReady]);
 
-  useEffect(() => {
-    tileLoadStateRef.current = tileLoadState;
-  }, [tileLoadState]);
-
   useLayoutEffect(() => {
     setPreviewRenderReady(false);
   }, [open, loading, preview]);
-
-  useEffect(() => {
-    if (open) {
-      setTileLoadState('loading');
-    }
-  }, [open]);
 
   useLayoutEffect(() => {
     if (!open || !mapVisible) return;
@@ -188,11 +175,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
         minZoom: 2,
       }).setView(DEFAULT_PREVIEW_CENTER, DEFAULT_PREVIEW_ZOOM);
 
-      const tileLayer = getTileLayers().openStreetMap;
-      tileLayer.on('load', () => setTileLoadState('loaded'));
-      tileLayer.on('tileerror', () => setTileLoadState('error'));
-      tileLayer.addTo(map);
-      tileLayerRef.current = tileLayer;
+      getTileLayers().openStreetMap.addTo(map);
 
       const layerGroup = L.featureGroup().addTo(map);
       mapRef.current = map;
@@ -202,11 +185,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserverRef.current = new ResizeObserver(() => {
           map.invalidateSize();
-          if (
-            hasRenderablePreviewGeometryRef.current &&
-            previewRenderReadyRef.current &&
-            tileLoadStateRef.current !== 'loading'
-          ) {
+          if (hasRenderablePreviewGeometryRef.current && previewRenderReadyRef.current) {
             fitGeometryLayers(map, layerGroup);
           }
         });
@@ -232,8 +211,6 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
       resizeObserverRef.current = null;
       layerGroupRef.current?.clearLayers();
       layerGroupRef.current = null;
-      tileLayerRef.current?.off();
-      tileLayerRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
       setMapReady(false);
@@ -269,7 +246,6 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
       }
     }
 
-    setTileLoadState('loading');
     fitGeometryLayers(map, layerGroup);
     setPreviewRenderReady(true);
   }, [open, mapReady, mapVisible, preview, hasRenderablePreviewGeometry]);
@@ -297,15 +273,9 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
       <DialogContent sx={{ px: 3, pt: 3, pb: 0, overflow: 'hidden' }}>
         <Box
           ref={mapContainerRef}
-          sx={{
-            ...getPreviewShellSx(),
-            '& .leaflet-pane, & .leaflet-control-container': {
-              opacity: previewReadyToShow ? 1 : 0,
-              transition: 'opacity 140ms ease-out',
-            },
-          }}
+          sx={getPreviewShellSx()}
         >
-          {(!previewReadyToShow || loading) && (loading || !preview || !mapReady || hasRenderablePreviewGeometry) ? (
+          {(loading || !preview || !mapReady || !previewRenderReady) ? (
             <Box
               sx={{
                 position: 'absolute',
@@ -337,26 +307,6 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, onClose 
               }}
             >
               <Typography variant='body1'>Для цієї палітри немає геометрій для попереднього перегляду.</Typography>
-            </Box>
-          ) : null}
-          {!loading && preview && mapReady && tileLoadState === 'error' ? (
-            <Box
-              sx={{
-                position: 'absolute',
-                left: 12,
-                bottom: 12,
-                px: 1.5,
-                py: 0.75,
-                borderRadius: 1.5,
-                bgcolor: 'background.paper',
-                border: '1px solid',
-                borderColor: 'divider',
-                boxShadow: 3,
-                zIndex: 1001,
-                color: 'text.secondary',
-              }}
-            >
-              <Typography variant='body2'>Не вдалося завантажити мапу</Typography>
             </Box>
           ) : null}
         </Box>
