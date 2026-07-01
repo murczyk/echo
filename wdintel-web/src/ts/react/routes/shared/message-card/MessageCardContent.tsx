@@ -40,8 +40,6 @@ import type {
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
-import { MessageCardTags } from './MessageCardTags';
-import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { blurActiveElement } from '../../../utils/focus';
 
 export type {
