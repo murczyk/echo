@@ -1166,6 +1166,7 @@ mod tests {
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
+            sposob_unit_name: None,
         };
 
         let res = bl_babak_report(&login.login, &env, &req).await.unwrap();

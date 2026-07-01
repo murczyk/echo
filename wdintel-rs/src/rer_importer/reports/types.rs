@@ -66,6 +66,7 @@ pub struct ReportPreviewReq {
     pub interception_keep_old_colors: Option<bool>,
     pub digest_omit_exo_id: Option<bool>,
     pub digest_form_1_2_17: Option<bool>,
+    pub sposob_unit_name: Option<String>,
 }
 
 #[derive(

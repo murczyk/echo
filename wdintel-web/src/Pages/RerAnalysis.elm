@@ -212,6 +212,7 @@ init route _ =
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
             , reportAdvancedSenders = False
+            , reportSposobUnitName = ""
             , reportTagSortBySelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportTagSortBy")
                 , items =
@@ -3586,6 +3587,11 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportSposobUnitNameInput unitName ->
+            ( { model | reportSposobUnitName = unitName }
+            , E.none
+            )
+
         ReportTagsWithoutBotTagsToggle ->
             ( if model.withoutModelTags then
                 { model | withoutModelTags = False }
@@ -3647,6 +3653,12 @@ update user shared route msg model =
                         , digestForm1217 =
                             if model.reportTemplate == RTDigest then
                                 Just model.reportDigestForm1217
+
+                            else
+                                Nothing
+                        , sposobUnitName =
+                            if model.reportTemplate == RTSposob then
+                                Just (String.trim model.reportSposobUnitName)
 
                             else
                                 Nothing

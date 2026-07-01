@@ -24,6 +24,7 @@ import {
   Tab,
   Tabs,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { useId } from 'react';
@@ -243,6 +244,7 @@ export function AnalysisReportDialog({
     (historyRow == null || historyRow.status === 'planned' || (historyRow.status === 'in_progress' && historyRow.bgtaskId == null));
   const hasBgtask = historyRow?.bgtaskId != null;
   const isDialogLocked = downloadInFlight || latestTaskRun?.running === true;
+  const isSposobUnitNameMissing = report.template === 'sposob' && report.sposobUnitName.trim() === '';
   const reportCreatedAtLabel = formatDateTimeLabel(historyRow?.createdAt ?? null);
   const reportQueuedForLabel = formatDurationSinceIso(historyRow?.createdAt ?? null);
   const reportStartedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
@@ -353,6 +355,19 @@ export function AnalysisReportDialog({
                 <MenuItem value="ByFreqThenTime">За Частотою Та Часом</MenuItem>
               </Select>
             </FormControl>
+          ) : null}
+
+          {report.template === 'sposob' ? (
+            <TextField
+              label="Назва підрозділу"
+              size="small"
+              required
+              value={report.sposobUnitName}
+              onChange={(event) => onUpdate({ sposobUnitName: event.target.value })}
+              error={isSposobUnitNameMissing}
+              helperText={isSposobUnitNameMissing ? 'Обовʼязково для звіту Способ' : undefined}
+              sx={{ maxWidth: 360 }}
+            />
           ) : null}
 
           {report.template === 'senders' ? (
@@ -746,7 +761,7 @@ export function AnalysisReportDialog({
         </Typography>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
           <Button onClick={onClose}>Закрити</Button>
-          <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight}>
+          <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight || isSposobUnitNameMissing}>
             {downloadInFlight ? PREPARING_TEXT : downloadButtonLabel}
           </Button>
         </Stack>

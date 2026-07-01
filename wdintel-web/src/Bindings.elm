@@ -5140,6 +5140,7 @@ type alias ReportPreviewReq =
     , interceptionKeepOldColors : Maybe (Bool)
     , digestOmitExoId : Maybe (Bool)
     , digestForm1217 : Maybe (Bool)
+    , sposobUnitName : Maybe (String)
     }
 
 
@@ -5157,6 +5158,7 @@ reportPreviewReqEncoder struct =
         , ( "interception_keep_old_colors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepOldColors )
         , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestOmitExoId )
         , ( "digest_form_1_2_17", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestForm1217 )
+        , ( "sposob_unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sposobUnitName )
         ]
 
 
@@ -11589,6 +11591,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_old_colors" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_form_1_2_17" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sposob_unit_name" (Json.Decode.nullable (Json.Decode.string))))
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType
@@ -11680,7 +11683,7 @@ senderReportSettingsDecoder =
 
 
 tagReportSortByDecoder : Json.Decode.Decoder TagReportSortBy
-tagReportSortByDecoder =
+tagReportSortByDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -14011,4 +14014,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
+
 
