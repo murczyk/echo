@@ -142,6 +142,7 @@ export function MessageCardDocumentPreviewDialog({
       }}
       maxWidth={false}
       fullScreen={isFullscreen}
+      disableRestoreFocus
       PaperProps={{
         sx: {
           width: dialogWidth,

@@ -240,6 +240,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
     openCommentDialog,
+    commentMessagePreview,
     handleCommentSave,
     handleToggleTag,
     handleArrowClick,
@@ -367,6 +368,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
       <CommentDialog
         open={isPresent(commentMessageId)}
+        messagePreview={commentMessagePreview}
         commentText={commentText}
         onCommentTextChange={setCommentText}
         onClose={() => {

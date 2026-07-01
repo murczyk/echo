@@ -6,7 +6,7 @@ import { useState, act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import type { InboxMessage, InboxMessagesReq, SavedFilterDuty } from '../../../../Bindings';
+import type { InboxMessage, InboxMessagesReq, SavedFilterDuty, SignalGroupEntry } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { buildInboxReq, emptyFilter, type MessageFeedState } from './utils';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -69,6 +69,14 @@ type HarnessApi = ReturnType<typeof useRerDutyMessageActions> & {
   setSelectedSavedIdByFeedId: Dispatch<SetStateAction<Record<string, number | null>>>;
   saveFilterNameByFeedId: Record<string, string>;
   setSaveFilterNameByFeedId: Dispatch<SetStateAction<Record<string, string>>>;
+  commentMessagePreview: {
+    text?: string | null;
+    freq?: string | null;
+    groupMasterKey?: string | null;
+    groupName?: string | null;
+    sender?: string | null;
+    senderName?: string | null;
+  } | null;
 };
 
 function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMessagesReq {
@@ -124,8 +132,13 @@ function TestHarness(props: {
     setWatchModeByFeedId: vi.fn(),
     setLoadingNewerFeedId: vi.fn(),
     authUserName: null,
-    profiles: {},
+    profiles: {
+      'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
+    },
     tagsMap: {},
+    groupInfos: {
+      'group-1': { masterKey: 'group-1', name: 'Група 1' } as SignalGroupEntry,
+    },
     savedFilters,
     setSavedFilters,
     selectedSavedIdByFeedId,
@@ -144,6 +157,7 @@ function TestHarness(props: {
     setSelectedSavedIdByFeedId,
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
+    commentMessagePreview: actions.commentMessagePreview,
   };
   return null;
 }
@@ -286,6 +300,49 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleDeleteConfirm();
     });
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  it('derives a friendly comment preview from the opened duty message', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [
+                [
+                  7,
+                  minimalInboxMessage({
+                    groupMasterKey: 'group-1',
+                    sender: 'sender-1',
+                    text: 'hello',
+                    freq: '100.000',
+                  }),
+                ],
+              ],
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setCommentMessageId(7);
+      apiRef.current!.setCommentFeedId('mf-0');
+    });
+
+    expect(apiRef.current!.commentMessagePreview).toEqual({
+      text: 'hello',
+      freq: '100.000',
+      groupMasterKey: 'group-1',
+      groupName: 'Група 1',
+      sender: 'sender-1',
+      senderName: 'BBC SPORT',
+    });
   });
 
   it('keeps saved-filter updates scoped to the feed that selected them', async () => {

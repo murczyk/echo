@@ -31,6 +31,7 @@ import { Box, Button, ButtonGroup, Menu, MenuItem, Stack, Tooltip, Typography, t
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
+import { blurActiveElement } from '../../../utils/focus';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import type { MessageEntityExcludeMenuOption, MessageEntityFilterKind } from '../../rer-duty-neo/utils';
@@ -44,6 +45,7 @@ import {
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
+const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
 
 /** Where the card is shown: both modes use a 3-column stacked action grid when the toolbar wraps. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -72,6 +74,11 @@ type ActionIconsRowProps = {
   sx?: SxProps<Theme>;
 };
 
+type MenuAnchorPosition = {
+  top: number;
+  left: number;
+};
+
 function ActionIconButton({
   title,
   icon,
@@ -84,13 +91,16 @@ function ActionIconButton({
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   selected?: boolean;
   buttonProps?: Omit<ComponentProps<typeof Button>, 'children' | 'onClick' | 'startIcon' | 'endIcon'>;
-}) {
+  }) {
   return (
     <Tooltip title={title}>
       <Button
         aria-label={title}
         data-selected={selected}
-        onClick={onClick}
+        onClick={(event) => {
+          blurActiveElement();
+          onClick(event);
+        }}
         {...buttonProps}
         sx={{
           width: 30,
@@ -198,10 +208,10 @@ function ActionIconsRow({
   const copyMenuId = useId();
   const overflowMenuId = useId();
   const navigationMenuId = useId();
-  const [excludeMenuAnchorEl, setExcludeMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [copyMenuAnchorEl, setCopyMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [overflowMenuAnchorEl, setOverflowMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [navigationMenuAnchorEl, setNavigationMenuAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [excludeMenuAnchorPosition, setExcludeMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [copyMenuAnchorPosition, setCopyMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [overflowMenuAnchorPosition, setOverflowMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
   const [stackedLayout, setStackedLayout] = useState(compact);
   const canShowExcludeMenu = displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
@@ -216,7 +226,7 @@ function ActionIconsRow({
         ? {
           key: 'edit-details',
           title: 'Редагувати додаткові поля та позивні',
-          icon: <EditIcon fontSize="inherit" />,
+          icon: <EditIcon fontSize="small" />,
           selected: false,
           onClick: onEditDetails,
         }
@@ -225,7 +235,7 @@ function ActionIconsRow({
       ? {
           key: 'delete',
           title: 'Видалити',
-          icon: <DeleteIcon fontSize="inherit" color="error" />,
+          icon: <DeleteIcon fontSize="small" color="error" />,
           selected: false,
           onClick: onDelete,
         }
@@ -233,53 +243,68 @@ function ActionIconsRow({
   ].filter((item): item is { key: string; title: string; icon: JSX.Element; selected: boolean; onClick: () => void } => item != null);
   const canShowOverflowMenu = overflowMenuItems.length > 0;
 
+  function getMenuAnchorPosition(event: MouseEvent<HTMLButtonElement>): MenuAnchorPosition {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      top: rect.bottom,
+      left: rect.left,
+    };
+  }
+
   function openExcludeMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setExcludeMenuAnchorEl(event.currentTarget);
+    setExcludeMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeExcludeMenu() {
-    setExcludeMenuAnchorEl(null);
+    blurActiveElement();
+    setExcludeMenuAnchorPosition(null);
   }
 
   function openCopyMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setCopyMenuAnchorEl(event.currentTarget);
+    setCopyMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeCopyMenu() {
-    setCopyMenuAnchorEl(null);
+    blurActiveElement();
+    setCopyMenuAnchorPosition(null);
   }
 
   function openOverflowMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setOverflowMenuAnchorEl(event.currentTarget);
+    setOverflowMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeOverflowMenu() {
-    setOverflowMenuAnchorEl(null);
+    blurActiveElement();
+    setOverflowMenuAnchorPosition(null);
   }
 
   function openNavigationMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
-    setNavigationMenuAnchorEl(event.currentTarget);
+    setNavigationMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeNavigationMenu() {
-    setNavigationMenuAnchorEl(null);
+    blurActiveElement();
+    setNavigationMenuAnchorPosition(null);
   }
 
   function handleExcludeMenuItemClick(option: MessageEntityExcludeMenuOption) {
+    blurActiveElement();
     onExcludeMessageEntity?.(option.entity, option.value);
     closeExcludeMenu();
   }
 
   function handleCopyMenuItemClick(action: () => void) {
+    blurActiveElement();
     action();
     closeCopyMenu();
   }
 
   function handleOverflowMenuItemClick(action: () => void) {
+    blurActiveElement();
     action();
     closeOverflowMenu();
   }
@@ -311,9 +336,9 @@ function ActionIconsRow({
       icon={<ContentCopyOutlinedIcon fontSize="inherit" />}
       onClick={openCopyMenu}
       buttonProps={{
-        'aria-controls': copyMenuAnchorEl ? copyMenuId : undefined,
+        'aria-controls': copyMenuAnchorPosition ? copyMenuId : undefined,
         'aria-haspopup': 'menu',
-        'aria-expanded': copyMenuAnchorEl ? 'true' : undefined,
+        'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
       }}
     />,
     canShowNavigationMenu ? (
@@ -323,9 +348,9 @@ function ActionIconsRow({
         icon={<LaunchIcon fontSize="inherit" />}
         onClick={openNavigationMenu}
         buttonProps={{
-          'aria-controls': navigationMenuAnchorEl ? navigationMenuId : undefined,
+          'aria-controls': navigationMenuAnchorPosition ? navigationMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': navigationMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': navigationMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -336,9 +361,9 @@ function ActionIconsRow({
         icon={<RemoveIcon fontSize="inherit" />}
         onClick={openExcludeMenu}
         buttonProps={{
-          'aria-controls': excludeMenuAnchorEl ? excludeMenuId : undefined,
+          'aria-controls': excludeMenuAnchorPosition ? excludeMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': excludeMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': excludeMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -349,9 +374,9 @@ function ActionIconsRow({
         icon={<MoreVertIcon fontSize="inherit" />}
         onClick={openOverflowMenu}
         buttonProps={{
-          'aria-controls': overflowMenuAnchorEl ? overflowMenuId : undefined,
+          'aria-controls': overflowMenuAnchorPosition ? overflowMenuId : undefined,
           'aria-haspopup': 'menu',
-          'aria-expanded': overflowMenuAnchorEl ? 'true' : undefined,
+          'aria-expanded': overflowMenuAnchorPosition ? 'true' : undefined,
         }}
       />
     ) : null,
@@ -496,8 +521,9 @@ function ActionIconsRow({
       </div>
       <Menu
         id={overflowMenuId}
-        anchorEl={overflowMenuAnchorEl}
-        open={isPresent(overflowMenuAnchorEl) && canShowOverflowMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={overflowMenuAnchorPosition ?? undefined}
+        open={isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu}
         onClose={closeOverflowMenu}
         MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
       >
@@ -512,8 +538,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={copyMenuId}
-        anchorEl={copyMenuAnchorEl}
-        open={isPresent(copyMenuAnchorEl)}
+        anchorReference="anchorPosition"
+        anchorPosition={copyMenuAnchorPosition ?? undefined}
+        open={isPresent(copyMenuAnchorPosition)}
         onClose={closeCopyMenu}
         MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
       >
@@ -566,8 +593,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={navigationMenuId}
-        anchorEl={navigationMenuAnchorEl}
-        open={isPresent(navigationMenuAnchorEl) && canShowNavigationMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={navigationMenuAnchorPosition ?? undefined}
+        open={isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu}
         onClose={closeNavigationMenu}
         MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
         slotProps={{
@@ -650,8 +678,9 @@ function ActionIconsRow({
       </Menu>
       <Menu
         id={excludeMenuId}
-        anchorEl={excludeMenuAnchorEl}
-        open={isPresent(excludeMenuAnchorEl) && canShowExcludeMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={excludeMenuAnchorPosition ?? undefined}
+        open={isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu}
         onClose={closeExcludeMenu}
         MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
       >
@@ -707,8 +736,9 @@ function NetworkEtalonSection({
 }) {
   const { displayValue, locationDisplayValue, primaryKind, renderedNetworks, showInlineLocationTooltip } =
     etalonDisplayModel;
+  const showTopGridLocation = primaryKind === 'network' && locationDisplayValue != null;
 
-  const geoButton = showInlineLocationTooltip && locationDisplayValue != null ? (
+  const geoButton = !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
     <Tooltip title={locationDisplayValue} placement="top">
       <Box
         component="span"
@@ -896,6 +926,8 @@ export function MessageCardHeader({
   onExcludeMessageEntity,
 }: MessageCardHeaderProps) {
   const navigationMenuItems = buildMessageCardNavigationMenuItems(etalonDisplayModel.renderedNetworks, mapHref, analysisHref);
+  const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
+  const showTopGridLocation = etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.75} alignItems="center">
@@ -948,7 +980,7 @@ export function MessageCardHeader({
         sx={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-          gridTemplateRows: 'repeat(3, minmax(0, auto))',
+          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
           width: '100%',
           alignItems: 'center',
           columnGap: 2,
@@ -1064,9 +1096,8 @@ export function MessageCardHeader({
           sx={{
             minWidth: 0,
             display: 'flex',
-            alignItems: 'flex-start',
-            alignSelf: 'start',
-            gridColumn: '1 / -1',
+            alignItems: 'center',
+            gridColumn: '1 / 3',
             gridRow: 3,
             columnGap: 1,
             pr: `${rightInsetPx}px`,
@@ -1076,6 +1107,21 @@ export function MessageCardHeader({
             <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
           </Box>
         </Box>
+        <Box
+          sx={{
+            minWidth: 0,
+            pr: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gridColumn: 3,
+            gridRow: 3,
+          }}
+        >
+          {showTopGridLocation ? (
+            <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+          ) : null}
+        </Box>
       </Box>
     );
   }
@@ -1083,10 +1129,10 @@ export function MessageCardHeader({
   return (
     <Box
       data-message-header-grid="true"
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-        gridTemplateRows: 'repeat(3, minmax(0, auto))',
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
         width: '100%',
         alignItems: 'center',
         columnGap: 4,
@@ -1183,9 +1229,8 @@ export function MessageCardHeader({
         sx={{
           minWidth: 0,
           display: 'flex',
-          alignItems: 'flex-start',
-          alignSelf: 'start',
-          gridColumn: '1 / -1',
+          alignItems: 'center',
+          gridColumn: '1 / 3',
           gridRow: 3,
           columnGap: 1,
           pr: `${rightInsetPx}px`,
@@ -1194,6 +1239,21 @@ export function MessageCardHeader({
         <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
           <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
         </Box>
+      </Box>
+      <Box
+        sx={{
+          minWidth: 0,
+          pr: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gridColumn: 3,
+          gridRow: 3,
+        }}
+      >
+        {showTopGridLocation ? (
+          <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+        ) : null}
       </Box>
     </Box>
   );

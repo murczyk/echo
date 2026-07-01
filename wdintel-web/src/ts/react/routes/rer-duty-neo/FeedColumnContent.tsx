@@ -5,10 +5,10 @@ import type { ComponentProps, Ref, RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './FeedColumn';
-import { profileLabel } from './utils';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../shared/message-card/message-card.utils';
+import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
@@ -239,8 +239,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
         }}
         className="m-0 list-none rer-duty pt-2"
         itemContent={(_index, [id, msg]) => {
-          const senderName = isPresent(msg.sender) ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
-          const groupName = isPresent(msg.groupMasterKey) ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
+          const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
           const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
             featureStrictNetworks,
             networkDisplayMap,
@@ -255,8 +254,8 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               tagsLayout={tagsLayout}
               referenceTimeMs={feed.referenceTimeMs}
               authUserName={authUserName}
-              groupName={groupName}
-              senderName={senderName}
+              groupName={labels.groupName}
+              senderName={labels.senderName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
               messageComments={[]}

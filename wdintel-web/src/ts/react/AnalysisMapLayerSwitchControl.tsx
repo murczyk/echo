@@ -1,6 +1,6 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LayersIcon from '@mui/icons-material/Layers';
-import { Box, Checkbox, IconButton, Radio, ThemeProvider, Typography } from '@mui/material';
+import { Badge, Box, Checkbox, IconButton, Radio, ThemeProvider, Typography } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { FeatureToggleState } from '../maps/control-modules';
@@ -19,6 +19,7 @@ type AnalysisMapLayerSwitchControlProps = {
 const STORAGE_KEY = 'layer-control-collapsed';
 
 function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControlProps) {
+  const showLayersBadge = !props.features.pelengsEnabled;
   const [isCollapsed, setCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -57,15 +58,17 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
     <Box className={`palitras-control layer-switch-control ${isCollapsed ? 'collapsed' : ''}`}>
       <Box className="palitras-control-header">
         {isCollapsed ? (
-          <IconButton
-            className="palitras-palette-icon layer-switch-toggle-icon"
-            onClick={toggleCollapsed}
-            aria-label="Розгорнути список шарів"
-            title="Розгорнути список шарів"
-            size="small"
-          >
-            <LayersIcon fontSize="small" />
-          </IconButton>
+          <Badge color="error" variant="dot" invisible={!showLayersBadge} overlap="circular" className="layer-switch-toggle-badge">
+            <IconButton
+              className="palitras-palette-icon layer-switch-toggle-icon"
+              onClick={toggleCollapsed}
+              aria-label="Розгорнути список шарів"
+              title="Розгорнути список шарів"
+              size="small"
+            >
+              <LayersIcon fontSize="small" />
+            </IconButton>
+          </Badge>
         ) : (
           <>
             <Typography className="palitras-control-title">Шари</Typography>
