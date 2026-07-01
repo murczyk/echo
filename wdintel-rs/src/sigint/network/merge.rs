@@ -215,10 +215,11 @@ pub async fn merge_two_network_freqs(
         .c(h!())?;
 
     if !freq_from.deleted {
+        let cutoff = freq_to.active_from.max(freq_from.active_from);
         let mut freq_from_record: sigint_network_freq::ActiveModel =
             freq_from.into();
         freq_from_record.deleted = Set(true);
-        freq_from_record.active_to = Set(Some(Utc::now().naive_utc()));
+        freq_from_record.active_to = Set(Some(cutoff));
         freq_from_record.update(txn).await.context(h!())?;
     }
 
