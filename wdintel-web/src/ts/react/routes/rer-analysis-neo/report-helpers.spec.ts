@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { InboxMessagesReq } from '../../../../Bindings';
 import { emptyQueryState } from './helpers';
 import {
+  buildReportRequest,
   createDefaultReportState,
   describeAppliedReportFilters,
   reportDownloadMeta,
@@ -47,5 +49,25 @@ describe('report-helpers', () => {
   it('renders direct export titles', () => {
     expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'kmz' })).toBe('KMZ');
     expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'geojson' })).toBe('GeoJSON');
+  });
+
+  it('sends time sorting by default for tag reports', () => {
+    const request = buildReportRequest(createDefaultReportState(), {} as InboxMessagesReq);
+
+    expect(request.tagReportSortBy).toBe('ByTime');
+  });
+
+  it('sends frequency then time sorting only for tag reports', () => {
+    const request = buildReportRequest(
+      { ...createDefaultReportState(), tagReportSortBy: 'ByFreqThenTime' },
+      {} as InboxMessagesReq,
+    );
+    const nonTagRequest = buildReportRequest(
+      { ...createDefaultReportState(), template: 'babak', tagReportSortBy: 'ByFreqThenTime' },
+      {} as InboxMessagesReq,
+    );
+
+    expect(request.tagReportSortBy).toBe('ByFreqThenTime');
+    expect(nonTagRequest.tagReportSortBy).toBeNull();
   });
 });

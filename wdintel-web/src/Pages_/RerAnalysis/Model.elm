@@ -136,6 +136,11 @@ type alias Model =
     , reportDigestOmitExoId : Bool
     , reportDigestForm1217 : Bool
     , reportAdvancedSenders : Bool
+    , reportTagSortBySelect :
+        { state : Select.State
+        , items : List (Select.MenuItem B.TagReportSortBy)
+        , selected : B.TagReportSortBy
+        }
     , reportAdjacentFreqsRangeSelect :
         { state : Select.State
         , items : List (Select.MenuItem Float)

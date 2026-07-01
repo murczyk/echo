@@ -1,8 +1,5 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { forwardRef } from 'react';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -33,8 +30,6 @@ export const MessageCardImagePreviewStage = forwardRef<
     onImageError: () => void;
     onStartPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
     onStopPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
-    onGoToPrevious: () => void;
-    onGoToNext: () => void;
     onExitFullscreen: () => void;
   }
 >(function MessageCardImagePreviewStage(
@@ -54,14 +49,11 @@ export const MessageCardImagePreviewStage = forwardRef<
     onImageError,
     onStartPan,
     onStopPan,
-    onGoToPrevious,
-    onGoToNext,
     onExitFullscreen,
   },
   ref,
 ) {
   const theme = useTheme();
-  const hasCarousel = imageCount > 1;
   const imageTransform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`;
 
   return (
@@ -79,38 +71,14 @@ export const MessageCardImagePreviewStage = forwardRef<
         justifyContent: 'center',
         minHeight: 0,
         overflow: 'hidden',
-        borderRadius: isFullscreen ? 0 : 1.5,
         backgroundImage: stageBackground,
         ...getMessageCardPreviewStageSx(theme, isFullscreen),
         backgroundRepeat: 'no-repeat',
         backgroundSize: 'cover',
-        px: 1.5,
-        py: 1.5,
         cursor: zoom > ZOOM_MIN ? 'grab' : 'default',
         userSelect: 'none',
       }}
     >
-      {isFullscreen ? (
-        <Tooltip title="Вийти з повноекранного режиму" enterDelay={300}>
-          <IconButton
-            aria-label="Вийти з повноекранного режиму"
-            onClick={onExitFullscreen}
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            size="small"
-            sx={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              zIndex: 11,
-              color: 'inherit',
-              backgroundColor: 'rgba(0, 0, 0, 0.28)',
-            }}
-          >
-            <FullscreenExitIcon />
-          </IconButton>
-        </Tooltip>
-      ) : null}
       <Box
         component="img"
         src={currentHref}
@@ -141,95 +109,12 @@ export const MessageCardImagePreviewStage = forwardRef<
         }}
       />
       {failedHref === currentHref ? (
-        <Typography variant="body2" sx={{ color: 'rgba(244, 247, 251, 0.8)', textAlign: 'center' }}>
+        <Typography
+          variant="body2"
+          sx={{ color: 'text.secondary', textAlign: 'center' }}
+        >
           Зображення недоступне
         </Typography>
-      ) : null}
-      {hasCarousel ? (
-        <>
-          <Box
-            data-image-preview-nav="prev"
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              left: 0,
-              width: '4rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(90deg, rgba(0,0,0,0.14), transparent)',
-              pointerEvents: 'auto',
-              zIndex: 10,
-            }}
-          >
-            <Tooltip title="Попереднє" enterDelay={300}>
-              <IconButton
-                data-image-preview-nav="prev"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onGoToPrevious();
-                }}
-                aria-label="Попереднє"
-                sx={{
-                  pointerEvents: 'auto',
-                  color: '#fff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.42)',
-                  border: '1px solid rgba(255, 255, 255, 0.18)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                  '&:hover, &:focus-visible': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-                  },
-                }}
-              >
-                <ChevronLeftIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          <Box
-            data-image-preview-nav="next"
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            sx={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: '4rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(270deg, rgba(0,0,0,0.14), transparent)',
-              pointerEvents: 'auto',
-              zIndex: 10,
-            }}
-          >
-            <Tooltip title="Наступне" enterDelay={300}>
-              <IconButton
-                data-image-preview-nav="next"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onGoToNext();
-                }}
-                aria-label="Наступне"
-                sx={{
-                  pointerEvents: 'auto',
-                  color: '#fff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.42)',
-                  border: '1px solid rgba(255, 255, 255, 0.18)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                  '&:hover, &:focus-visible': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-                  },
-                }}
-              >
-                <ChevronRightIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </>
       ) : null}
     </Box>
   );

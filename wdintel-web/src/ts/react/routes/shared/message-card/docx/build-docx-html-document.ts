@@ -7,10 +7,10 @@ export function buildDocxHtmlDocument(bodyHtml: string, zoom: number): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" />
     <style>
       :root {
-        color-scheme: dark;
+        color-scheme: light dark;
         --docx-preview-zoom: ${zoom}%;
       }
-      html, body { margin: 0; padding: 0; background: #111821; color: #111827; }
+      html, body { margin: 0; padding: 0; background: transparent; color: #111827; }
       body {
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         font-size: 14px;
@@ -26,9 +26,9 @@ export function buildDocxHtmlDocument(bodyHtml: string, zoom: number): string {
         margin: 0 auto;
         padding: 42px 48px;
         background: #fff;
-        border: 1px solid rgba(148, 163, 184, 0.28);
-        border-radius: 10px;
-        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
+        border-radius: 8px;
+        box-shadow: 0px 2px 4px -1px rgba(0,0,0,0.2), 0px 4px 5px 0px rgba(0,0,0,0.14), 0px 1px 10px 0px rgba(0,0,0,0.12);
+        border: 1px solid rgba(148, 163, 184, 0.12);
         color: #111827;
         zoom: var(--docx-preview-zoom);
       }

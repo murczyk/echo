@@ -83,9 +83,22 @@ describe('PdfDocumentPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     intersectionObserverInstances.splice(0, intersectionObserverInstances.length);
+    vi.restoreAllMocks();
   });
 
   it('uses the bundled PDF.js worker and renders pages lazily', async () => {
+    const arrayBufferSpy = vi.fn(async () => new ArrayBuffer(8));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': '8',
+        'content-type': 'application/pdf',
+      }),
+      arrayBuffer: arrayBufferSpy,
+    } as Response);
+    vi.spyOn(globalThis.URL, 'createObjectURL').mockReturnValue('blob:https://example.test/pdf');
+    vi.spyOn(globalThis.URL, 'revokeObjectURL').mockImplementation(() => {});
+
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -118,6 +131,31 @@ describe('PdfDocumentPreview', () => {
     });
 
     expect(container.querySelectorAll('[data-page]')).toHaveLength(2);
+
+    root.unmount();
+  });
+
+  it('rejects oversized files before fetching the body', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error('should not fetch');
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <PdfDocumentPreview
+          href="https://example.test/files/report.pdf"
+          zoom={100}
+          sizeBytes={10 * 1024 * 1024 + 1}
+        />,
+      );
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Файл PDF завеликий');
 
     root.unmount();
   });

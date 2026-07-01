@@ -334,6 +334,7 @@ export type ReportHistoryRow = {
   lastError: string | null;
   isCancelled: boolean;
   details: string;
+  reportPeriod: string | null;
   progress: number;
   errorLog: Array<ReportHistoryLogEntry> | null;
 };
@@ -1969,6 +1970,7 @@ export type ReportPreviewReq = {
   req: InboxMessagesReq;
   reportType: ReportType | null;
   reportTagsOnlyThisUnit: boolean | null;
+  tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
   interceptionKeepFullMessage: boolean | null;
@@ -1996,6 +1998,11 @@ export type SenderReportSettings = {
   aggregation: ReportAggregation;
   advancedFreqs: boolean;
 };
+
+export type TagReportSortBy =
+  | 'ByTime'
+  | 'ByFreqThenTime'
+;
 
 export type ListUnitsSortBy =
   | 'CreatedAtDesc'
@@ -3105,6 +3112,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3126,6 +3134,7 @@ export type SystemSettingsItem = {
   deleted: boolean;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3146,6 +3155,7 @@ export type CreateSystemSettingsReq = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;

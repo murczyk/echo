@@ -1,5 +1,5 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Box, ButtonBase, Card, CardContent, Checkbox, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -17,6 +17,7 @@ type SystemSettingsTab = 'main' | 'pelengs';
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -35,6 +36,7 @@ type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
 type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -51,6 +53,7 @@ type SystemSettingsPayload = {
 const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
   supportNonRerInterceptions: false,
+  defaultNeoAnalysis: false,
   dutyTestEnabled: false,
   dutyInsertHistoricalInterceptions: false,
   dutyTestSinceMs: 0,
@@ -82,6 +85,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
   return {
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
     supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
+    defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyInsertHistoricalInterceptions: item?.rerDutyInsertHistoricalInterceptions ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
@@ -100,6 +104,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
   return (
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
     a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
+    a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyInsertHistoricalInterceptions === b.dutyInsertHistoricalInterceptions &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
@@ -165,6 +170,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
   return {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
     supportNonRerInterceptions: form.supportNonRerInterceptions,
+    defaultNeoAnalysis: form.defaultNeoAnalysis,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyInsertHistoricalInterceptions: form.dutyInsertHistoricalInterceptions,
     dutyTestSinceMs: form.dutyTestSinceMs,
@@ -264,7 +270,7 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
 
       <FormControlLabel
         control={
-          <Checkbox
+          <Switch
             checked={form.supportNonRerInterceptions}
             onChange={(_, checked) => {
               patchForm({ supportNonRerInterceptions: checked });
@@ -272,6 +278,18 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
           />
         }
         label={<InfoLabel label="Підтримка альтернативних перехоплень" tooltip={SUPPORT_NON_RER_TOOLTIP} />}
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.defaultNeoAnalysis}
+            onChange={(_, checked) => {
+              patchForm({ defaultNeoAnalysis: checked });
+            }}
+          />
+        }
+        label="Використовувати новий аналіз за замовчуванням"
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
@@ -496,6 +514,7 @@ export function AdminSystemSettingsNeoPage() {
         rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
         rerDutyShortUrl: payload.shortUrlEnabled,
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
+        defaultNeoAnalysis: payload.defaultNeoAnalysis,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

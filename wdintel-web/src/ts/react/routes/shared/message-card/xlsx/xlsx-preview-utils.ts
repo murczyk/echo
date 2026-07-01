@@ -101,6 +101,7 @@ async function buildXlsxPreviewFromWorkbook(
     sheetNames.length > 0
       ? sheetNames.slice(0, MAX_XLSX_SHEETS)
       : Array.from({ length: MAX_XLSX_SHEETS }, (_, index) => index + 1);
+  let sourceSheetCount: number | null = sheetNames.length > 0 ? sheetNames.length : null;
 
   let workbookSheets: Array<{ sheet: string; data: unknown[][] }>;
   try {
@@ -109,9 +110,10 @@ async function buildXlsxPreviewFromWorkbook(
     if (sheetNames.length === 0) {
       const availableSheetCount = parseAvailableSheetCount(error);
       if (availableSheetCount != null && availableSheetCount > 0) {
+        sourceSheetCount = availableSheetCount;
         try {
           workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, {
-            sheets: Array.from({ length: availableSheetCount }, (_, index) => index + 1),
+            sheets: Array.from({ length: Math.min(availableSheetCount, MAX_XLSX_SHEETS) }, (_, index) => index + 1),
           });
         } catch (retryError) {
           throw new XlsxPreviewError(classifyXlsxError(retryError), messageFromError(retryError, 'Не вдалося відкрити XLSX'));
@@ -121,6 +123,15 @@ async function buildXlsxPreviewFromWorkbook(
       }
     } else {
       throw new XlsxPreviewError(classifyXlsxError(error), messageFromError(error, 'Не вдалося відкрити XLSX'));
+    }
+  }
+
+  if (sheetNames.length === 0 && workbookSheets.length === MAX_XLSX_SHEETS && sourceSheetCount == null) {
+    try {
+      await readXlsxFileWithRuntimeSheetsOption(buffer, { sheets: [MAX_XLSX_SHEETS + 1] });
+      sourceSheetCount = MAX_XLSX_SHEETS + 1;
+    } catch {
+      // Ignore probe failures. The first capped pass already produced a usable preview.
     }
   }
 
@@ -139,8 +150,7 @@ async function buildXlsxPreviewFromWorkbook(
     throw new XlsxPreviewError('XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE', 'XLSX workbook structure is unsupported');
   }
 
-  const previewLimitedBySheetCap =
-    sheetNames.length > MAX_XLSX_SHEETS || (sheetNames.length === 0 && workbookSheets.length === MAX_XLSX_SHEETS);
+  const previewLimitedBySheetCap = sourceSheetCount != null && sourceSheetCount > MAX_XLSX_SHEETS;
 
   return {
     sheets: sheets.map((sheet) => ({

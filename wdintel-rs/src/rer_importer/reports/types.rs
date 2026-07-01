@@ -32,6 +32,24 @@ pub enum ReportType {
 }
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+    Default,
+)]
+pub enum TagReportSortBy {
+    #[default]
+    ByTime,
+    ByFreqThenTime,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ReportPreviewReq {
@@ -40,6 +58,8 @@ pub struct ReportPreviewReq {
     pub req: InboxMessagesReq,
     pub report_type: Option<ReportType>,
     pub report_tags_only_this_unit: Option<bool>,
+    #[serde(default)]
+    pub tag_report_sort_by: Option<TagReportSortBy>,
     pub report_1213_linked_networks_only: Option<bool>,
     pub without_comments: Option<bool>,
     pub interception_keep_full_message: Option<bool>,

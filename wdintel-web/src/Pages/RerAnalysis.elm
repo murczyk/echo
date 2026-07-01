@@ -211,6 +211,14 @@ init route _ =
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
             , reportAdvancedSenders = False
+            , reportTagSortBySelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportTagSortBy")
+                , items =
+                    [ Select.basicMenuItem { item = B.ByTime, label = "За Часом" }
+                    , Select.basicMenuItem { item = B.ByFreqThenTime, label = "За Частотою Та Часом" }
+                    ]
+                , selected = B.ByTime
+                }
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
@@ -3607,6 +3615,12 @@ update user shared route msg model =
                         , reportType = reportTemplateToApiType model model.reportTemplate
                         , req = getInboxReq model
                         , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                        , tagReportSortBy =
+                            if model.reportTemplate == RTTags then
+                                Just model.reportTagSortBySelect.selected
+
+                            else
+                                Nothing
                         , report1213LinkedNetworksOnly =
                             if model.reportTemplate == RTReport1213 then
                                 Just model.report1213LinkedNetworksOnly
@@ -4074,6 +4088,28 @@ update user shared route msg model =
                     }
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
+
+        SelectReportTagSortBy imsg ->
+            let
+                ( mAction, imodel2, _ ) =
+                    Select.update imsg model.reportTagSortBySelect.state
+
+                reportTagSortBySelect =
+                    model.reportTagSortBySelect
+
+                a2 =
+                    { reportTagSortBySelect
+                        | state = imodel2
+                        , selected =
+                            case mAction of
+                                Just (Select.Select i) ->
+                                    i
+
+                                _ ->
+                                    reportTagSortBySelect.selected
+                    }
+            in
+            ( { model | reportTagSortBySelect = a2 }, E.none )
 
         SelectReportReoFileType imsg ->
             let

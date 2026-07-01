@@ -162,6 +162,7 @@ type Msg
     | GotFreqActivityDaily (Result ApiError B.FreqDailyActivityCount)
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
+    | SelectReportTagSortBy (Select.Msg B.TagReportSortBy)
     | SelectReportAdjacentFreqsRange (Select.Msg Float)
     | SelectReportReoFileType (Select.Msg B.ReoReportFileType)
     | SelectReportActiveNetworksAors (Select.Msg Int)

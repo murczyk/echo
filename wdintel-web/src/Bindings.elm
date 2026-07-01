@@ -897,6 +897,7 @@ type alias ReportHistoryRow =
     , lastError : Maybe (String)
     , isCancelled : Bool
     , details : String
+    , reportPeriod : Maybe (String)
     , progress : Int
     , errorLog : Maybe (List (ReportHistoryLogEntry))
     }
@@ -924,6 +925,7 @@ reportHistoryRowEncoder struct =
         , ( "last_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
         , ( "is_cancelled", (Json.Encode.bool) struct.isCancelled )
         , ( "details", (Json.Encode.string) struct.details )
+        , ( "report_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reportPeriod )
         , ( "progress", (Json.Encode.int) struct.progress )
         , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )
         ]
@@ -5131,6 +5133,7 @@ type alias ReportPreviewReq =
     , req : InboxMessagesReq
     , reportType : Maybe (ReportType)
     , reportTagsOnlyThisUnit : Maybe (Bool)
+    , tagReportSortBy : Maybe (TagReportSortBy)
     , report1213LinkedNetworksOnly : Maybe (Bool)
     , withoutComments : Maybe (Bool)
     , interceptionKeepFullMessage : Maybe (Bool)
@@ -5147,6 +5150,7 @@ reportPreviewReqEncoder struct =
         , ( "req", (inboxMessagesReqEncoder) struct.req )
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map (reportTypeEncoder)) struct.reportType )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.reportTagsOnlyThisUnit )
+        , ( "tag_report_sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (tagReportSortByEncoder)) struct.tagReportSortBy )
         , ( "report_1213_linked_networks_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.report1213LinkedNetworksOnly )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutComments )
         , ( "interception_keep_full_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepFullMessage )
@@ -5212,6 +5216,19 @@ senderReportSettingsEncoder struct =
         , ( "advanced_freqs", (Json.Encode.bool) struct.advancedFreqs )
         ]
 
+
+type TagReportSortBy
+    = ByTime
+    | ByFreqThenTime
+
+
+tagReportSortByEncoder : TagReportSortBy -> Json.Encode.Value
+tagReportSortByEncoder enum =
+    case enum of
+        ByTime ->
+            Json.Encode.string "ByTime"
+        ByFreqThenTime ->
+            Json.Encode.string "ByFreqThenTime"
 
 type ListUnitsSortBy
     = CreatedAtDesc
@@ -8048,6 +8065,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8068,6 +8086,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8090,6 +8109,7 @@ type alias SystemSettingsItem =
     , deleted : Bool
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8114,6 +8134,7 @@ systemSettingsItemEncoder struct =
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8143,6 +8164,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8162,6 +8184,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -11559,6 +11582,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" (inboxMessagesReqDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable (reportTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_report_sort_by" (Json.Decode.nullable (tagReportSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_1213_linked_networks_only" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_full_message" (Json.Decode.nullable (Json.Decode.bool))))
@@ -11654,6 +11678,29 @@ senderReportSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aggregation" (reportAggregationDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "advanced_freqs" (Json.Decode.bool)))
 
+
+tagReportSortByDecoder : Json.Decode.Decoder TagReportSortBy
+tagReportSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ByTime" ->
+                            Json.Decode.succeed ByTime
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ByFreqThenTime" ->
+                            Json.Decode.succeed ByFreqThenTime
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy
 listUnitsSortByDecoder = 
@@ -13479,6 +13526,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13502,6 +13550,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13526,6 +13575,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13961,5 +14011,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 
