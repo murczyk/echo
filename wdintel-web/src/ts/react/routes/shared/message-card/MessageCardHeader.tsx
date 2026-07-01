@@ -221,7 +221,7 @@ function ActionIconsRow({
         ? {
           key: 'edit-details',
           title: 'Редагувати додаткові поля та позивні',
-          icon: <EditIcon fontSize="inherit" />,
+          icon: <EditIcon fontSize="small" />,
           selected: false,
           onClick: onEditDetails,
         }
@@ -230,7 +230,7 @@ function ActionIconsRow({
       ? {
           key: 'delete',
           title: 'Видалити',
-          icon: <DeleteIcon fontSize="inherit" color="error" />,
+          icon: <DeleteIcon fontSize="small" color="error" />,
           selected: false,
           onClick: onDelete,
         }
