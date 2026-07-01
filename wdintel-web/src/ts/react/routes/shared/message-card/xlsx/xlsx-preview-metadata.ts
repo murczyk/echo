@@ -16,7 +16,7 @@ export function extractWorkbookSheetNames(buffer: ArrayBuffer): string[] {
       const attributes = match[1] ?? '';
       const nameMatch = attributes.match(namePattern);
       if (nameMatch == null) continue;
-      const sheetName = decodeXmlEntities(nameMatch[2] ?? '').trim();
+      const sheetName = decodeXmlEntities(nameMatch[2] ?? '');
       if (sheetName !== '') {
         sheetNames.push(sheetName);
       }

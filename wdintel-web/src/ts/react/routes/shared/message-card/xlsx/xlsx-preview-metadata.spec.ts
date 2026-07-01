@@ -15,6 +15,12 @@ describe('extractWorkbookSheetNames', () => {
     expect(extractWorkbookSheetNames(buffer)).toEqual(['A & B', 'X < Y', 'Quote " Z', "Apostrophe ' Q", 'Hex A']);
   });
 
+  it('preserves trailing whitespace in sheet names', () => {
+    const buffer = makeWorkbookBuffer(['Trailing ']);
+
+    expect(extractWorkbookSheetNames(buffer)).toEqual(['Trailing ']);
+  });
+
   it('returns an empty list for broken metadata', () => {
     const files: Record<string, Uint8Array> = {
       'xl/workbook.xml': strToU8('<workbook><sheets><sheet name="Broken"></sheets>'),
