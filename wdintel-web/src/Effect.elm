@@ -44,7 +44,12 @@ import Task
 import Time
 import TimeZone
 import Url exposing (Url)
-import Utils.Api.Temp exposing (leExpectJson, resolve, resolveWithErrorCodeHeader)
+import Utils.Api.Temp exposing
+    ( leExpectJson
+    , resolve
+    , resolveWithErrorCodeHeader
+    , responseDecodeErrorMessage
+    )
 import Utils.Time
 import Utils.Utils exposing (decodePair)
 
@@ -746,7 +751,7 @@ reportPollDelayMillis =
 decodeJsonBody : Decode.Decoder a -> String -> Result String a
 decodeJsonBody decoder body =
     Decode.decodeString decoder body
-        |> Result.mapError Decode.errorToString
+        |> Result.mapError responseDecodeErrorMessage
 
 
 postJsonTask : String -> Encode.Value -> Decode.Decoder a -> Task.Task ApiError a
