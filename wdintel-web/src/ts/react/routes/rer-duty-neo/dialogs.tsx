@@ -2,7 +2,7 @@ import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, 
 import type { ReactNode } from 'react';
 import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 import { ELLIPSIS } from '../../utils/misc';
-import { blurActiveElement } from '../shared/message-card/message-card-focus';
+import { blurActiveElement } from '../../utils/focus';
 
 type DeleteConfirmDialogProps = {
   open: boolean;

@@ -4,7 +4,7 @@ import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
 import { Box, ButtonBase, Skeleton, Typography, useMediaQuery, useTheme } from '@mui/material';
 
 import type { MessageCardImage } from './message-card-image-utils';
-import { blurActiveElement } from './message-card-focus';
+import { blurActiveElement } from '../../../utils/focus';
 
 type PreviewVariant = 'single' | 'multi';
 

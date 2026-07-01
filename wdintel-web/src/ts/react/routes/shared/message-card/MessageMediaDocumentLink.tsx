@@ -5,7 +5,7 @@ import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
-import { blurActiveElement } from './message-card-focus';
+import { blurActiveElement } from '../../../utils/focus';
 
 export function MessageMediaDocumentLink({
   document,

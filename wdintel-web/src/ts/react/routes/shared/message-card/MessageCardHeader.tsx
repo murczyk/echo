@@ -31,7 +31,7 @@ import { Box, Button, ButtonGroup, Menu, MenuItem, Stack, Tooltip, Typography, t
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
-import { blurActiveElement } from './message-card-focus';
+import { blurActiveElement } from '../../../utils/focus';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import type { MessageEntityExcludeMenuOption, MessageEntityFilterKind } from '../../rer-duty-neo/utils';

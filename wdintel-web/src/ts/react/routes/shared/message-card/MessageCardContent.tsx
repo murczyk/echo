@@ -22,7 +22,7 @@ import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDi
 import { collectMessageDocuments } from './message-card-document-utils';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
-import { blurActiveElement } from './message-card-focus';
+import { blurActiveElement } from '../../../utils/focus';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 

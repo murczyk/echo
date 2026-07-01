@@ -19,7 +19,7 @@ import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
 import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../../shared/message-card/message-card.utils';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
-import { blurActiveElement } from '../../shared/message-card/message-card-focus';
+import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
