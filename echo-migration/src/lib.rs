@@ -265,7 +265,6 @@ mod m20260629_072958_add_signal_message_operator_tags;
 mod m20260629_080533_unit_tags_on_sigint_network;
 mod m20260629_085034_signal_message_operator_tags;
 mod m20260630_094347_interseption_kind_and_unit_mask;
-mod m20260630_122002_add_organism_to_tags;
 mod m20260630_130141_signal_group_merge_network_assignment_flags;
 mod m20260630_210912_goi_palitra_sync_upgrade;
 mod m20260701_073733_default_neo_analysis;
@@ -277,6 +276,7 @@ mod m20260702_145245_create_sigint_comment;
 mod m20260702_155737_echo_im_sync_since;
 mod m20260702_173206_echo_missing_messages;
 mod m20260702_192716_signal_message_echo_inbox_message_id;
+mod m20260701_155738_add_organism_to_tags;
 
 pub struct Migrator;
 
@@ -574,7 +574,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260702_192716_signal_message_echo_inbox_message_id::Migration,
             ),
-            Box::new(m20260630_122002_add_organism_to_tags::Migration),
+            Box::new(m20260701_155738_add_organism_to_tags::Migration),
         ]
     }
 }

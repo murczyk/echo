@@ -164,10 +164,11 @@ async fn admin_organism_list_tags(
     Ok(Json(res))
 }
 
-#[post("/api/tags/organism")]
+#[post("/api/admin/organisms/{organism_id}/tags")]
 async fn create_organism_tag(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64,)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
     let login = user.id().c(h!())?;
@@ -175,18 +176,20 @@ async fn create_organism_tag(
         .await
         .c(h!())?;
 
-    let tag = bl::create_organism_tag(&env.dbx, req.0).await.c(h!())?;
+    let tag = bl::create_organism_tag(&env.dbx, path.0, req.0)
+        .await
+        .c(h!())?;
 
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 
     Ok(Json(tag))
 }
 
-#[put("/api/tags/organism/{tag_id}")]
+#[put("/api/admin/organisms/{organism_id}/tags/{tag_id}")]
 async fn update_organism_tag(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    path: actix_web::web::Path<(i64,)>,
+    path: actix_web::web::Path<(i64, i64)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
     let login = user.id().c(h!())?;
@@ -194,7 +197,8 @@ async fn update_organism_tag(
         .await
         .c(h!())?;
 
-    let tag = bl::update_organism_tag(&env.dbx, path.0, req.0)
+    let (organism_id, tag_id) = path.into_inner();
+    let tag = bl::update_organism_tag(&env.dbx, organism_id, tag_id, req.0)
         .await
         .c(h!())?;
 
@@ -203,18 +207,21 @@ async fn update_organism_tag(
     Ok(Json(tag))
 }
 
-#[delete("/api/tags/organism/{tag_id}")]
+#[delete("/api/admin/organisms/{organism_id}/tags/{tag_id}")]
 async fn delete_organism_tag(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    path: actix_web::web::Path<(i64,)>,
+    path: actix_web::web::Path<(i64, i64)>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
 
-    let tag_id = bl::disable_organism_tag(&env.dbx, path.0).await.c(h!())?;
+    let (organism_id, tag_id) = path.into_inner();
+    let tag_id = bl::disable_organism_tag(&env.dbx, organism_id, tag_id)
+        .await
+        .c(h!())?;
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
     expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
 

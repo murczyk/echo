@@ -197,7 +197,7 @@ where
     C: ConnectionTrait,
 {
     let tag = tag::Entity::find_by_id(tag_id)
-        .filter(tag::Column::OwnerOrganismId.is_not_null())
+        .filter(tag::Column::OwnerOrganismId.eq(organism_id))
         .one(db)
         .await
         .c(h!())?
@@ -223,13 +223,14 @@ where
 
 pub async fn disable_organism_tag<C>(
     db: &C,
+    organism_id: i64,
     tag_id: i64,
 ) -> Result<tag::Model, AppError>
 where
     C: ConnectionTrait,
 {
     let tag = tag::Entity::find_by_id(tag_id)
-        .filter(tag::Column::OwnerOrganismId.is_not_null())
+        .filter(tag::Column::OwnerOrganismId.eq(organism_id))
         .one(db)
         .await
         .c(h!())?

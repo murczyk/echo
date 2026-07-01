@@ -1,6 +1,7 @@
 use crate::entities::{login, tag, tag_keyword, tags_ordering};
 use crate::error::AppError;
 use crate::h;
+use crate::tags::query;
 use crate::types::*;
 use crate::types::{Mode, ShortContext};
 use chrono::Utc;
@@ -28,7 +29,7 @@ pub async fn collect_tags_list(
     let mut extra_tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
         .filter(tag::Column::Extra.eq(true))
-        .filter(accessible_tags_condition(owner_organism_id))
+        .filter(query::accessible_tag_condition(owner_organism_id))
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
@@ -114,7 +115,7 @@ async fn collect_enabled_regular_tags(
     let tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
         .filter(tag::Column::Extra.eq(false))
-        .filter(accessible_tags_condition(owner_organism_id))
+        .filter(query::accessible_tag_condition(owner_organism_id))
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
@@ -145,16 +146,6 @@ async fn load_login_organism_id(
         .await
         .c(h!())?
         .c(h!())
-}
-
-fn accessible_tags_condition(owner_organism_id: Option<i64>) -> Condition {
-    let condition =
-        Condition::any().add(tag::Column::OwnerOrganismId.is_null());
-    if let Some(owner_organism_id) = owner_organism_id {
-        condition.add(tag::Column::OwnerOrganismId.eq(owner_organism_id))
-    } else {
-        condition
-    }
 }
 
 /// collect live known seeds in order to avoid duplicate ordering.

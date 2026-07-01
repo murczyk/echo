@@ -60,12 +60,12 @@ where
 
 pub async fn create_organism_tag<C>(
     db: &C,
+    organism_id: i64,
     req: TagUpsertReq,
 ) -> Result<TagAdmin, AppError>
 where
     C: ConnectionTrait,
 {
-    let organism_id = required_owner_organism_id(&req)?;
     query::ensure_organism_exists(db, organism_id).await?;
     let tag = query::insert_organism_tag(db, req, organism_id).await?;
     Ok(crate::tags::map_tag_admin(tag, vec![]))
@@ -73,13 +73,13 @@ where
 
 pub async fn update_organism_tag<C>(
     db: &C,
+    organism_id: i64,
     tag_id: i64,
     req: TagUpsertReq,
 ) -> Result<TagAdmin, AppError>
 where
     C: ConnectionTrait,
 {
-    let organism_id = required_owner_organism_id(&req)?;
     query::ensure_organism_exists(db, organism_id).await?;
     let (tag, keywords) =
         query::update_organism_tag(db, tag_id, req, organism_id).await?;
@@ -88,12 +88,14 @@ where
 
 pub async fn disable_organism_tag<C>(
     db: &C,
+    organism_id: i64,
     tag_id: i64,
 ) -> Result<i64, AppError>
 where
     C: ConnectionTrait,
 {
-    let tag = query::disable_organism_tag(db, tag_id).await?;
+    query::ensure_organism_exists(db, organism_id).await?;
+    let tag = query::disable_organism_tag(db, organism_id, tag_id).await?;
     Ok(tag.id)
 }
 
@@ -107,12 +109,6 @@ where
     query::current_user_organism_id(db, login)
         .await?
         .ok_or_else(|| AppError::Forbidden("user has no organism".to_string()))
-}
-
-fn required_owner_organism_id(req: &TagUpsertReq) -> Result<i64, AppError> {
-    req.owner_organism_id.ok_or_else(|| AppError::BL {
-        msg: "owner_organism_id is required".to_string(),
-    })
 }
 
 fn map_tag_admin_entries(
