@@ -34,6 +34,7 @@ import { TableStateProvider } from '../../components/mui-customized/table/table-
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
 import { PalitraFolderActionDialog } from './components/PalitraFolderActionDialog';
+import { PalitraPreviewDialog } from './components/PalitraPreviewDialog';
 import {
   DEFAULT_PALITRA_COLUMN_ORDER,
   DEFAULT_PALITRA_COLUMN_VISIBILITY,
@@ -110,6 +111,7 @@ function RerPalitraNeoPageBody() {
   );
   const selectedPalitraActionsBlocked =
     page.selectedPalitraIds.length === 0 ||
+    page.loading ||
     page.folderActionsBlocked ||
     page.bulkDeleteInFlight ||
     page.bulkDownloadInFlight ||
@@ -206,6 +208,7 @@ function RerPalitraNeoPageBody() {
             onRequestAssignFolder={page.requestAssignFolderForPalitra}
             onRequestUnarchive={page.handleUnarchive}
             onDownload={page.handleDownload}
+            onRequestPreview={page.openPreview}
             onRequestUploadPoints={page.requestUploadPoints}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
@@ -225,6 +228,14 @@ function RerPalitraNeoPageBody() {
         onConfirm={page.confirmFolderAction}
         onNextFolderPathChange={page.setFolderDialogNextFolderPath}
         disableRestoreFocus
+      />
+
+      <PalitraPreviewDialog
+        open={page.previewPalitra !== null}
+        palitra={page.previewPalitra}
+        preview={page.previewData}
+        loading={page.previewLoading}
+        onClose={page.closePreview}
       />
 
       <Dialog

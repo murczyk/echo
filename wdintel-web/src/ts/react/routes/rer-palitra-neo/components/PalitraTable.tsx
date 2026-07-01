@@ -51,6 +51,7 @@ type Props = {
   onRequestAssignFolder: (palitra: Palitra) => void;
   onRequestUnarchive: (palitra: Palitra) => void;
   onDownload: (palitra: Palitra) => void;
+  onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onDelete: (palitra: Palitra) => void;
   onSetSelectedPalitraIds: (palitraIds: number[]) => void;
@@ -77,6 +78,7 @@ export function PalitraTable({
   onRequestAssignFolder,
   onRequestUnarchive,
   onDownload,
+  onRequestPreview,
   onRequestUploadPoints,
   onDelete,
   onSetSelectedPalitraIds,
@@ -166,6 +168,7 @@ export function PalitraTable({
     renderRowActions: ({ row }) =>
       renderPalitraTableRowActions({
         row: row.original,
+        loading,
         bulkDeleteInFlight,
         externalBusy,
         onOpenEdit,
@@ -173,6 +176,7 @@ export function PalitraTable({
         onRequestAssignFolder,
         onRequestUnarchive,
         onDownload,
+        onRequestPreview,
         onRequestUploadPoints,
         onDelete,
         onToggleFolderExpanded,
@@ -197,7 +201,7 @@ export function PalitraTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(6),
+        size: mrtRowActionsColumnSize(7),
       },
     },
     muiTablePaperProps: ({ table }) => {

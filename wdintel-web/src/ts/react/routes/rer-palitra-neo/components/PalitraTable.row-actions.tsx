@@ -6,6 +6,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Box, CircularProgress } from '@mui/material';
 
@@ -15,6 +16,7 @@ import type { FolderTableRowView, PalitraRowView, TableRowView } from '../types'
 
 type Props = {
   row: TableRowView;
+  loading: boolean;
   bulkDeleteInFlight: boolean;
   externalBusy: boolean;
   onOpenEdit: (palitra: Palitra) => void;
@@ -22,6 +24,7 @@ type Props = {
   onRequestAssignFolder: (palitra: Palitra) => void;
   onRequestUnarchive: (palitra: Palitra) => void;
   onDownload: (palitra: Palitra) => void;
+  onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onDelete: (palitra: Palitra) => void;
   onToggleFolderExpanded: (path: string) => void;
@@ -37,27 +40,27 @@ function renderFolderRowActions(row: FolderTableRowView, props: Props) {
         <MrtRowActionButton
           label={row.isExpanded ? 'Згорнути папку' : 'Розгорнути папку'}
           onClick={() => props.onToggleFolderExpanded(row.folderPath)}
-          disabled={props.externalBusy}
+          disabled={props.loading || props.externalBusy}
           icon={row.isExpanded ? <ExpandMoreIcon fontSize='small' /> : <ChevronRightIcon fontSize='small' />}
         />
         <MrtRowActionButton
           label='Перейменувати папку'
           onClick={() => props.onRequestRenameFolder(row.folderPath)}
-          disabled={!row.canModify || props.externalBusy}
+          disabled={!row.canModify || props.loading || props.externalBusy}
           icon={<EditIcon fontSize='small' />}
           opensModal
         />
         <MrtRowActionButton
           label='Архівувати всі палітри в папці'
           onClick={() => props.onRequestArchiveFolder(row.folderPath)}
-          disabled={!row.canModify || props.externalBusy}
+          disabled={!row.canModify || props.loading || props.externalBusy}
           icon={<ArchiveOutlinedIcon fontSize='small' />}
           opensModal
         />
         <MrtRowActionButton
           label='Видалити всі палітри в папці'
           onClick={() => props.onRequestDeleteFolder(row.folderPath)}
-          disabled={!row.canModify || props.externalBusy}
+          disabled={!row.canModify || props.loading || props.externalBusy}
           icon={<DeleteIcon fontSize='small' />}
           tone='danger'
           opensModal
@@ -74,6 +77,7 @@ function isPalitraRowActionDisabled(row: PalitraRowView, props: Props): boolean 
     row.deleteInFlight ||
     row.downloadInFlight ||
     row.uploadInFlight ||
+    props.loading ||
     props.bulkDeleteInFlight ||
     props.externalBusy
   );
@@ -90,6 +94,13 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           onClick={() => props.onOpenEdit(row.palitra)}
           disabled={disabled}
           icon={<EditIcon fontSize='small' />}
+          opensModal
+        />
+        <MrtRowActionButton
+          label='Попередній перегляд'
+          onClick={() => props.onRequestPreview(row.palitra)}
+          disabled={disabled}
+          icon={<VisibilityOutlinedIcon fontSize='small' />}
           opensModal
         />
         <MrtRowActionButton
@@ -125,6 +136,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             row.deleteInFlight ||
             row.downloadInFlight ||
             row.uploadInFlight ||
+            props.loading ||
             props.bulkDeleteInFlight ||
             props.externalBusy
           }

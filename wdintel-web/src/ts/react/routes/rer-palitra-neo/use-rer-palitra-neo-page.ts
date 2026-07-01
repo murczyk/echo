@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
+import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, PalitraReadV2, User } from '../../../../Bindings';
 import {
   archivePalitraFolder,
   assignPalitraFolder,
   deletePalitraFolder,
   fetchPalitraReferenceData,
   listPalitras,
+  readPalitraV2,
   renamePalitraFolder,
 } from '../../services/api/palitra';
 import { fetchCurrentUser } from '../../services/api/user';
@@ -53,6 +54,10 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = useState(false);
   const [bulkDownloadInFlight, setBulkDownloadInFlight] = useState(false);
   const [status, setStatus] = useState<UiStatus>(null);
+  const [previewPalitra, setPreviewPalitra] = useState<Palitra | null>(null);
+  const [previewData, setPreviewData] = useState<PalitraReadV2 | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [folderDialogState, setFolderDialogState] = useState<FolderActionDialogState | null>(null);
   const [folderActionInFlight, setFolderActionInFlight] = useState(false);
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
@@ -76,6 +81,7 @@ export function useRerPalitraNeoPage() {
   const uploadPointsInputRef = useRef<HTMLInputElement | null>(null);
   const uploadKmzInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
+  const previewRequestIdRef = useRef(0);
 
   const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
   const expandedFolderPathSet = useMemo(() => new Set(expandedFolderPaths), [expandedFolderPaths]);
@@ -198,6 +204,14 @@ export function useRerPalitraNeoPage() {
 
     setPalitras((prev) => prev.filter((palitra) => !palitraIdSet.has(palitra.id)));
     setSelectedPalitraIds((prev) => prev.filter((id) => !palitraIdSet.has(id)));
+  }, []);
+
+  const closePreview = useCallback(() => {
+    previewRequestIdRef.current += 1;
+    setPreviewPalitra(null);
+    setPreviewData(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
   }, []);
 
   useEffect(() => {
@@ -362,6 +376,36 @@ export function useRerPalitraNeoPage() {
     reloadPalitras,
   });
 
+  const openPreview = useCallback(
+    async (palitra: Palitra) => {
+      if (loading || folderActionsBlocked || previewLoading) return;
+
+      const requestId = previewRequestIdRef.current + 1;
+      previewRequestIdRef.current = requestId;
+      setPreviewPalitra(palitra);
+      setPreviewData(null);
+      setPreviewError(null);
+      setPreviewLoading(true);
+      setStatus(null);
+
+      try {
+        const data = await readPalitraV2(palitra.id);
+        if (previewRequestIdRef.current !== requestId) return;
+        setPreviewData(data);
+      } catch (previewLoadError) {
+        if (previewRequestIdRef.current !== requestId) return;
+        const message = formatErrorMessage(previewLoadError);
+        setPreviewError(message);
+        setStatus({ kind: 'error', text: 'Не вдалося завантажити попередній перегляд палітри: ' + message });
+      } finally {
+        if (previewRequestIdRef.current === requestId) {
+          setPreviewLoading(false);
+        }
+      }
+    },
+    [folderActionsBlocked, loading, previewLoading],
+  );
+
   const {
     requestAssignFolder,
     requestAssignFolderForPalitra,
@@ -428,6 +472,10 @@ export function useRerPalitraNeoPage() {
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,
     bulkDownloadInFlight,
+    previewPalitra,
+    previewData,
+    previewLoading,
+    previewError,
     createOpen,
     createMode,
     createForm,
@@ -481,6 +529,8 @@ export function useRerPalitraNeoPage() {
     handleUploadPointsSelected,
     handleKmzSelected,
     handleBulkDownload,
+    openPreview,
+    closePreview,
     requestAssignFolder,
     requestAssignFolderForPalitra,
     requestRenameFolder,
