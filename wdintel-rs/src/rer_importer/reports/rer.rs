@@ -353,9 +353,10 @@ async fn load_report(
     bgtask_id: Option<i64>,
 ) -> Result<RerReport, AppError> {
     let dbx = &env.dbx;
-    let item_ids = load_candidate_item_ids(dbx, user_login, env, req, true)
-        .await
-        .c(h!())?;
+    let item_ids =
+        load_candidate_item_ids(dbx, user_login, env, req, true, true)
+            .await
+            .c(h!())?;
     let mut report = RerReport::default();
     for item_id in item_ids {
         if item_has_other_tag(dbx, item_id).await.c(h!())? {
@@ -412,9 +413,10 @@ async fn load_sposob_report(
 ) -> Result<SposobReport, AppError> {
     let dbx = &env.dbx;
     let unit_name = sposob_report_unit_name(req)?;
-    let item_ids = load_candidate_item_ids(dbx, user_login, env, req, false)
-        .await
-        .c(h!())?;
+    let item_ids =
+        load_candidate_item_ids(dbx, user_login, env, req, false, false)
+            .await
+            .c(h!())?;
     let mut report = SposobReport {
         unit_name,
         messages: BTreeMap::new(),
@@ -515,27 +517,22 @@ async fn load_candidate_item_ids(
     user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
+    require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
-    let candidate_timestamp = candidate_report_timestamp_expr();
-    let mut query =
+    let query =
         build_filtered_inbox_query(dbx, user_login, env, &candidate_req)
             .await
             .c(h!())?;
-    if let Some(since_ms) = since_ms {
-        query = query
-            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
-    }
-    if let Some(till_ms) = till_ms {
-        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
-    }
-
-    let mut query = query.filter(item_network_link_exists());
-    if require_non_empty_comments {
-        query = query.filter(non_empty_comment_exists());
-    }
+    let query = apply_candidate_item_filters(
+        query,
+        since_ms,
+        till_ms,
+        require_network_link,
+        require_non_empty_comments,
+    )?;
 
     Ok(query
         .select_only()
@@ -545,6 +542,30 @@ async fn load_candidate_item_ids(
         .all(dbx)
         .await
         .c(h!())?)
+}
+
+fn apply_candidate_item_filters(
+    mut query: Select<signal_message::Entity>,
+    since_ms: Option<i64>,
+    till_ms: Option<i64>,
+    require_network_link: bool,
+    require_non_empty_comments: bool,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let candidate_timestamp = candidate_report_timestamp_expr();
+    if let Some(since_ms) = since_ms {
+        query = query
+            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+    }
+    if let Some(till_ms) = till_ms {
+        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
+    }
+    if require_network_link {
+        query = query.filter(item_network_link_exists());
+    }
+    if require_non_empty_comments {
+        query = query.filter(non_empty_comment_exists());
+    }
+    Ok(query)
 }
 
 fn candidate_query_req_without_date_bounds(
@@ -1435,6 +1456,34 @@ mod tests {
             sql,
             r#"SELECT COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#
         );
+    }
+
+    #[test]
+    fn candidate_item_filters_make_network_link_optional() {
+        let query_without_network = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let sql_without_network =
+            query_without_network.build(DbBackend::Postgres).to_string();
+
+        let query_with_network = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            None,
+            None,
+            true,
+            false,
+        )
+        .unwrap();
+        let sql_with_network =
+            query_with_network.build(DbBackend::Postgres).to_string();
+
+        assert!(!sql_without_network.contains("sigint_inbox_item_network"));
+        assert!(sql_with_network.contains("sigint_inbox_item_network"));
     }
 
     #[test]
