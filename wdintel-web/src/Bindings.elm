@@ -8065,6 +8065,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8085,6 +8086,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8107,6 +8109,7 @@ type alias SystemSettingsItem =
     , deleted : Bool
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8131,6 +8134,7 @@ systemSettingsItemEncoder struct =
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8160,6 +8164,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyPollIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
+    , defaultNeoAnalysis : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8179,6 +8184,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
+        , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -13520,6 +13526,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13543,6 +13550,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13567,6 +13575,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))

@@ -3112,6 +3112,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3133,6 +3134,7 @@ export type SystemSettingsItem = {
   deleted: boolean;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3153,6 +3155,7 @@ export type CreateSystemSettingsReq = {
   rerDutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;

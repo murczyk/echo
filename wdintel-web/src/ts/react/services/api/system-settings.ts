@@ -14,6 +14,7 @@ type SystemSettingsItemRaw = {
   deleted: boolean;
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
+  default_neo_analysis?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -31,6 +32,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_poll_interval_sec: number;
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
+  default_neo_analysis?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -51,6 +53,7 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_poll_interval_sec: number;
   short_url_enabled: boolean;
   support_non_rer_interceptions: boolean;
+  default_neo_analysis: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -76,6 +79,7 @@ export type SystemSettingsItem = {
   deleted: boolean;
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -93,6 +97,7 @@ export type SystemSettingsCurrent = {
   rerDutyPollIntervalSec: number;
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -109,6 +114,7 @@ export type CreateSystemSettingsInput = {
   rerDutyPollIntervalSec: number;
   rerDutyShortUrl: boolean;
   supportNonRerInterceptions: boolean;
+  defaultNeoAnalysis: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -133,6 +139,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     deleted: raw.deleted,
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
+    defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -154,6 +161,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
+    defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -183,6 +191,7 @@ export async function createSystemSettings(
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
     short_url_enabled: input.rerDutyShortUrl,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
+    default_neo_analysis: input.defaultNeoAnalysis,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,

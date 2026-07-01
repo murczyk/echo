@@ -32,6 +32,7 @@ pub struct Model {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     #[sea_orm(column_type = "Double", nullable)]
     pub peleng_bounds_bottom_right_lng: Option<f64>,
+    pub default_neo_analysis: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
