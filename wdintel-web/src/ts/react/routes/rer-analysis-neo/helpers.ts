@@ -106,6 +106,13 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   };
 }
 
+export function parseNewestFirstFromWindow(): boolean {
+  if (typeof window === 'undefined') return true;
+  const url = new URL(window.location.href);
+  const param = url.searchParams.get('newestFirst');
+  return param !== 'false';
+}
+
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
@@ -141,7 +148,7 @@ export function hasMeaningfulUiFiltersBeyondDateRange(state: AnalysisQueryState)
   return stateKey !== defaultKey;
 }
 
-export function pushQueryStateToUrl(state: AnalysisQueryState) {
+export function pushQueryStateToUrl(state: AnalysisQueryState, newestFirst: boolean = true) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
@@ -149,6 +156,11 @@ export function pushQueryStateToUrl(state: AnalysisQueryState) {
     url.searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');
   } else {
     url.searchParams.delete(ONLY_WITH_MEDIA_PARAM);
+  }
+  if (!newestFirst) {
+    url.searchParams.set('newestFirst', 'false');
+  } else {
+    url.searchParams.delete('newestFirst');
   }
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }

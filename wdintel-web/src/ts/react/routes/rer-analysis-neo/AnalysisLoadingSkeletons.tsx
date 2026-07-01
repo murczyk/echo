@@ -35,12 +35,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
             <Skeleton variant="rounded" width={108} height={32} />
             <Skeleton variant="rounded" width={160} height={32} />
           </Stack>
-          <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
-            <Skeleton variant="rounded" width={148} height={36} />
-            <Box sx={{ flex: 1, minWidth: 0 }} />
-            <Skeleton variant="rounded" width={94} height={28} />
-            <Skeleton variant="rounded" width={104} height={28} />
-          </Stack>
+
         </Stack>
         <Box
           sx={{

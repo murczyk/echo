@@ -1,5 +1,6 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import { Button, Stack } from '@mui/material';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import { Button, Stack, Chip, Skeleton, Tooltip, IconButton, CircularProgress } from '@mui/material';
 
 import { PageHeader } from '../../components/PageHeader';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function AnalysisPageHeader({ page, isMobileLayout, leftPanelVisible, rightPanelVisible }: Props) {
+  const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
   return (
     <PageHeader
       title="Аналіз"
@@ -42,13 +44,39 @@ export function AnalysisPageHeader({ page, isMobileLayout, leftPanelVisible, rig
       }
       middleGap={4}
       actions={
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={1} alignItems="center">
+          {page.counts ? (
+            <Chip
+              label={`${page.counts.countSelected} з ${page.counts.countOverall}`}
+              size="small"
+              variant="outlined"
+              sx={{
+                height: 28,
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                bgcolor: 'background.paper',
+                borderColor: 'divider',
+              }}
+            />
+          ) : null}
+          <Tooltip title="Оновити" arrow>
+            <span>
+              <IconButton
+                onClick={page.reload}
+                disabled={loading}
+                aria-label="Оновити"
+                sx={{ width: 40, height: 40, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}
+              >
+                {loading ? <CircularProgress size={20} color="inherit" /> : <RefreshOutlinedIcon sx={{ fontSize: 20 }} />}
+              </IconButton>
+            </span>
+          </Tooltip>
           <Button
             variant="contained"
             color="primary"
             onClick={page.openReport}
             title="Відкрити конструктор звітів"
-            sx={{ height: 40, px: 2, display: { xs: 'none', md: 'inline-flex' } }}
+            sx={{ height: 40, px: 2, display: { xs: 'none', md: 'inline-flex' }, ml: 1 }}
           >
             Конструктор звітів
           </Button>
