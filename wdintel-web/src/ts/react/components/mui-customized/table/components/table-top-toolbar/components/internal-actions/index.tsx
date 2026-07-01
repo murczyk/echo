@@ -9,6 +9,7 @@ import type { ActiveFilterDescriptor } from './components/active-filters-utils';
 type IntrernalTableActionsProps<T extends MRT_RowData> = {
   table?: MRT_TableInstance<T> | null;
   children?: ReactNode;
+  leadingInternalActions?: ReactNode;
   filtersHidden?: boolean;
   colOrderHidden?: boolean;
   columnsVisibilityDisabled?: boolean;
@@ -29,6 +30,7 @@ export function InternalTableActions<T extends MRT_RowData>(props: IntrernalTabl
 
   return (
     <div className="flex items-center gap-1">
+      {props.leadingInternalActions}
       {props.children}
       {!props.filtersHidden && (
         <ActiveFiltersButton

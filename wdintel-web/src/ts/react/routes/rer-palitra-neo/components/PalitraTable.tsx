@@ -4,7 +4,6 @@ import { MaterialReactTable, useMaterialReactTable } from 'material-react-table'
 import { useEffect, useMemo } from 'react';
 
 import type { Palitra } from '../../../../../Bindings';
-import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -23,6 +22,7 @@ import { buildPalitraTableColumns, buildLoadingRows } from './PalitraTable.cells
 import { renderPalitraTableRowActions } from './PalitraTable.row-actions';
 
 const defaultMRTOptions = getDefaultMRTOptions<TableRowView>();
+const PALITRA_ROW_ACTIONS_COLUMN_SIZE = 76;
 
 export const DEFAULT_PALITRA_COLUMN_VISIBILITY: MRT_VisibilityState = {
   name: true,
@@ -89,6 +89,13 @@ export function PalitraTable({
 }: Props) {
   const tableStateContext = useTableStateContext();
   const columns = useMemo(() => buildPalitraTableColumns(onToggleFolderExpanded), [onToggleFolderExpanded]);
+  const columnSizing = useMemo(
+    () => ({
+      ...tableStateContext.columnSizing,
+      'mrt-row-actions': PALITRA_ROW_ACTIONS_COLUMN_SIZE,
+    }),
+    [tableStateContext.columnSizing],
+  );
 
   const rowSelection = useMemo(
     () =>
@@ -115,6 +122,7 @@ export function PalitraTable({
   const isInitialLoading = loading && visibleRows.length === 0;
   const showTableOverlay = loading;
   const tableRows = isInitialLoading ? buildLoadingRows() : visibleRows;
+  const tableLayout = isInitialLoading ? 'workspace' : 'list';
 
   useEffect(() => {
     if (selectedPalitraIds.length === 0) return;
@@ -201,11 +209,13 @@ export function PalitraTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(7),
+        size: PALITRA_ROW_ACTIONS_COLUMN_SIZE,
+        minSize: PALITRA_ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: PALITRA_ROW_ACTIONS_COLUMN_SIZE,
       },
     },
     muiTablePaperProps: ({ table }) => {
-      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
+      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: tableLayout });
       return {
         ...paperProps,
         sx: {
@@ -214,6 +224,8 @@ export function PalitraTable({
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
+          height: isInitialLoading ? '100%' : 'auto',
+          minHeight: isInitialLoading ? '100%' : 0,
           ...(isInitialLoading
             ? {
                 backgroundImage: 'none',
@@ -228,13 +240,27 @@ export function PalitraTable({
         },
       };
     },
-    muiTableContainerProps: ({ table }) =>
-      getDefaultMrtContainerProps({
+    muiTableContainerProps: ({ table }) => {
+      const containerProps = getDefaultMrtContainerProps({
         loading: showTableOverlay,
-        layout: 'workspace',
+        layout: tableLayout,
         fullScreen: table.getState().isFullScreen,
         hasRows: rows.length > 0,
-      }),
+      });
+      return {
+        ...containerProps,
+        sx: {
+          ...((containerProps as { sx?: object }).sx ?? {}),
+          height: isInitialLoading ? '100%' : 'auto',
+          minHeight: isInitialLoading ? 0 : 'auto',
+          overflowX: 'auto',
+          overflowY: isInitialLoading ? 'auto' : 'visible',
+          '& .MuiTableBody-root .MuiTableRow-root:last-of-type > .MuiTableCell-root': {
+            borderBottom: '1px solid var(--bs-border-color)',
+          },
+        },
+      };
+    },
     muiTableBodyRowProps: ({ row }) => ({
       hover: true,
       sx: {
@@ -259,7 +285,7 @@ export function PalitraTable({
       density: tableStateContext.density,
       columnVisibility: tableStateContext.columnVisibility,
       columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
+      columnSizing,
       globalFilter: tableStateContext.globalFilter,
       columnFilters: tableStateContext.columnFilters,
       sorting: tableStateContext.sorting,

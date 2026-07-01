@@ -8,9 +8,10 @@ import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
-import { Box, CircularProgress } from '@mui/material';
+import { Box, CircularProgress, Tooltip } from '@mui/material';
 
 import type { Palitra } from '../../../../../Bindings';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import type { FolderTableRowView, PalitraRowView, TableRowView } from '../types';
 
@@ -87,20 +88,46 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
   const disabled = isPalitraRowActionDisabled(row, props);
 
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-      <MrtRowActions>
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+      <Tooltip title='Попередній перегляд'>
+        <span style={{ display: 'inline-flex' }}>
+          <PowerIconButton
+            size='small'
+            aria-label='Попередній перегляд'
+            title='Попередній перегляд'
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onRequestPreview(row.palitra);
+            }}
+            disabled={disabled}
+            sx={(theme) => ({
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              color: theme.palette.text.primary,
+              '&:hover': {
+                backgroundColor: theme.palette.action.hover,
+                color: theme.palette.text.primary,
+              },
+              '&:focus-visible': {
+                outline: `2px solid ${theme.palette.primary.main}`,
+                outlineOffset: 1,
+              },
+              '&.Mui-disabled': {
+                color: theme.palette.action.disabled,
+              },
+            })}
+          >
+            <VisibilityOutlinedIcon fontSize='small' />
+          </PowerIconButton>
+        </span>
+      </Tooltip>
+      <MrtRowActions forceMenu>
         <MrtRowActionButton
           label='Редагувати'
           onClick={() => props.onOpenEdit(row.palitra)}
           disabled={disabled}
           icon={<EditIcon fontSize='small' />}
-          opensModal
-        />
-        <MrtRowActionButton
-          label='Попередній перегляд'
-          onClick={() => props.onRequestPreview(row.palitra)}
-          disabled={disabled}
-          icon={<VisibilityOutlinedIcon fontSize='small' />}
           opensModal
         />
         <MrtRowActionButton

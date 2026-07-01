@@ -1,6 +1,14 @@
 import * as L from 'leaflet';
 import { PalitraPoint } from './palitra-types';
 
+const PALITRA_CACHE_DEBUG = false;
+
+function debugPalitraCache(message: string): void {
+  if (PALITRA_CACHE_DEBUG) {
+    console.log(message);
+  }
+}
+
 export class PalitraCacheManager {
   private cache: Map<string, number> = new Map();
   private tiles: Map<number, Map<string, PalitraPoint[]>> = new Map();
@@ -53,10 +61,10 @@ export class PalitraCacheManager {
     });
     
     if (expiredCount > 0) {
-      console.log(`[Palitra Cache] Expired ${expiredCount} tiles due to TTL`);
+      debugPalitraCache(`[Palitra Cache] Expired ${expiredCount} tiles due to TTL`);
     }
     if (cachedCount > 0) {
-      console.log(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
+      debugPalitraCache(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
     }
 
     return filtered;
@@ -75,7 +83,7 @@ export class PalitraCacheManager {
     tileKey: string,
     onUpdate: () => void
   ): Promise<void> {
-    console.log(`[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`);
+    debugPalitraCache(`[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`);
     try {
       const response = await fetch('/api/palitra/points', {
         method: 'POST',
@@ -186,7 +194,7 @@ export class PalitraCacheManager {
       }
     });
 
-    console.log(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
+    debugPalitraCache(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
     this.logStats();
     
     // Evict old entries if needed
@@ -214,7 +222,7 @@ export class PalitraCacheManager {
     this.cleanOrphaned();
     
     const afterPoints = this.getTotalPoints();
-    console.log(`[Palitra Cache] EVICTION: Removed ${beforeEviction - this.maxTiles} tiles, freed ${beforePoints - afterPoints} points`);
+    debugPalitraCache(`[Palitra Cache] EVICTION: Removed ${beforeEviction - this.maxTiles} tiles, freed ${beforePoints - afterPoints} points`);
     this.logStats();
   }
 
@@ -240,6 +248,10 @@ export class PalitraCacheManager {
   }
 
   logStats(): void {
+    if (!PALITRA_CACHE_DEBUG) {
+      return;
+    }
+
     const totalTiles = this.cache.size;
     const totalPoints = this.getTotalPoints();
     const palitrasWithData = this.tiles.size;
@@ -248,7 +260,7 @@ export class PalitraCacheManager {
     const estimatedMemoryMB = (totalPoints * 70) / (1024 * 1024); // ~70 bytes per point
     const avgPointsPerTile = totalTiles > 0 ? Math.round(totalPoints / totalTiles) : 0;
     
-    console.log(`[Palitra Cache Stats] Tiles: ${totalTiles}/${this.maxTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`);
+    debugPalitraCache(`[Palitra Cache Stats] Tiles: ${totalTiles}/${this.maxTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`);
     
     // Detailed breakdown per palitra
     const breakdown: string[] = [];
@@ -260,7 +272,7 @@ export class PalitraCacheManager {
       breakdown.push(`  Palitra ${palitraId}: ${tiles.size} tiles, ${pointsCount} points`);
     });
     if (breakdown.length > 0) {
-      console.log(breakdown.join('\n'));
+      debugPalitraCache(breakdown.join('\n'));
     }
   }
 

@@ -7,6 +7,7 @@ import {
   Button,
   Checkbox,
   CircularProgress,
+  Badge,
   Dialog,
   DialogActions,
   DialogContent,
@@ -46,6 +47,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 const DEFAULT_PALITRA_SORTING: MRT_SortingState = [{ id: 'lastUploadedAtTs', desc: true }];
 
 type SelectedPalitraActionsMenuProps = {
+  hasSelectedPalitras: boolean;
   downloadDisabled: boolean;
   downloadInFlight: boolean;
   assignDisabled: boolean;
@@ -67,17 +69,19 @@ function SelectedPalitraActionsMenu(props: SelectedPalitraActionsMenuProps) {
   return (
     <>
       <Tooltip title='Дії з обраними палітрами'>
-        <span>
-          <IconButton
-            aria-label='Дії з обраними палітрами'
-            aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
-            aria-expanded={open ? 'true' : undefined}
-            aria-haspopup='menu'
-            onClick={(event) => setAnchorEl(event.currentTarget)}
-          >
-            <MoreVertIcon />
-          </IconButton>
-        </span>
+        <Badge color='error' variant='dot' overlap='circular' invisible={!props.hasSelectedPalitras}>
+          <span>
+            <IconButton
+              aria-label='Дії з обраними палітрами'
+              aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
+              aria-expanded={open ? 'true' : undefined}
+              aria-haspopup='menu'
+              onClick={(event) => setAnchorEl(event.currentTarget)}
+            >
+              <MoreVertIcon />
+            </IconButton>
+          </span>
+        </Badge>
       </Tooltip>
       <Menu id='selected-palitra-actions-menu' open={open} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
         <MenuItem onClick={() => runAction(props.onDownloadSelected)} disabled={props.downloadDisabled}>
@@ -181,8 +185,9 @@ function RerPalitraNeoPageBody() {
               </Button>
             </Stack>
           }
-          trailingActionsAfterInternal={
+          leadingInternalActions={
             <SelectedPalitraActionsMenu
+              hasSelectedPalitras={page.selectedPalitraIds.length > 0}
               downloadDisabled={selectedPalitraActionsBlocked}
               downloadInFlight={page.bulkDownloadInFlight}
               assignDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}

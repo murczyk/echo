@@ -101,8 +101,20 @@ export function buildPalitraPopupContent(
   };
 
   const cleanup = () => {
-    layer._popupCloseRoot?.unmount();
+    const root = layer._popupCloseRoot;
     layer._popupCloseRoot = undefined;
+    if (!root) {
+      return;
+    }
+
+    const scheduleUnmount =
+      typeof queueMicrotask === 'function'
+        ? queueMicrotask
+        : (callback: VoidFunction) => window.setTimeout(callback, 0);
+
+    scheduleUnmount(() => {
+      root.unmount();
+    });
   };
   layer.on?.('popupopen', mountCloseButton);
   layer.on?.('popupclose', cleanup);
