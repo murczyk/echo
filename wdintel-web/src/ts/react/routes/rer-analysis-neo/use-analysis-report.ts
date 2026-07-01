@@ -434,12 +434,23 @@ export function useAnalysisReport({
           finalizeAbortedReportTaskRun(runId);
           return;
         }
+        let downloadFileName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
+        if (state.template === 'rer_report' || state.template === 'sposob') {
+          const latestRow = await fetchReportHistoryStatus(taskId);
+          if (shouldStopRun()) {
+            finalizeAbortedReportTaskRun(runId);
+            return;
+          }
+          if (latestRow.fileName != null) {
+            downloadFileName = latestRow.fileName;
+          }
+        }
         const blob = await downloadAnalysisReportTaskResult(taskId);
         if (shouldStopRun()) {
           finalizeAbortedReportTaskRun(runId);
           return;
         }
-        downloadBlob(blob, buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr));
+        downloadBlob(blob, downloadFileName);
         setReportProgressExpanded(false);
       } catch (error) {
         if (isMountedRef.current && !onUnauthorized(error)) {

@@ -50,6 +50,7 @@ pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
 pub const KIND_RER_REPORT: &str = "rer_report";
+pub const KIND_SPOSOB: &str = "sposob";
 
 const REPORT_HISTORY_MAX_ATTEMPTS: i32 = 2;
 const WORKER_IDLE_SLEEP_SECS: u64 = 5;
@@ -2057,6 +2058,7 @@ fn worker_report_kinds() -> Vec<(&'static str, &'static str)> {
         ("report_history_worker_reo", "reo"),
         ("report_history_worker_digest", "digest"),
         ("report_history_worker_rer_report", KIND_RER_REPORT),
+        ("report_history_worker_sposob", KIND_SPOSOB),
         ("report_history_worker_posts_docx", "posts_docx"),
         ("report_history_worker_active_networks", "active_networks"),
         (

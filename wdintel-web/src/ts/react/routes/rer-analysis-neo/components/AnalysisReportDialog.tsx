@@ -222,7 +222,11 @@ export function AnalysisReportDialog({
   const builderMode = reportTemplateToMode(report.template);
   const hasAdvancedReportAccess = canUseAdvancedReports(currentUser);
   const visibleReportTemplateOptions = supportNonRerInterceptions
-    ? [...reportTemplateOptions, { id: 'rer_report' as const, title: 'РЕР Звіт', description: 'Документ по non-RER перехопленнях з привʼязаними машинами' }]
+    ? [
+        ...reportTemplateOptions,
+        { id: 'rer_report' as const, title: 'РЕР Звіт', description: 'Документ по non-RER перехопленнях з привʼязаними машинами' },
+        { id: 'sposob' as const, title: 'Способ', description: 'Звіт із перехопленнями у форматі підрозділ дата час текст' },
+      ]
     : reportTemplateOptions;
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
