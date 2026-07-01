@@ -32,6 +32,7 @@ export interface AppNavbarProps {
     userLoaded: boolean;
     changelogLastSeenLoaded: boolean;
     changelogLastSeen: string | null;
+    systemSettings?: { defaultNeoAnalysis: boolean } | null;
   };
   activeName: string;
   isNavbarVisible: boolean;
@@ -411,7 +412,9 @@ export function AppNavbar({
                   "analysis",
                   "Аналіз",
                   analysisSubs,
-                  "/rer-analysis",
+                  shared?.systemSettings?.defaultNeoAnalysis
+                    ? "/rer-analysis-neo"
+                    : "/rer-analysis",
                 )}
               {serverModeIsLive &&
                 isRer &&
