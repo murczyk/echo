@@ -3,6 +3,37 @@ use crate::tags::query;
 use crate::tags::types::{TagAdmin, TagUpsertReq};
 use sea_orm::ConnectionTrait;
 
+pub async fn list_global_tags<C>(db: &C) -> Result<Vec<TagAdmin>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let tags = query::list_global_tags(db).await?;
+    Ok(map_tag_admin_entries(tags))
+}
+
+pub async fn create_global_tag<C>(
+    db: &C,
+    req: TagUpsertReq,
+) -> Result<TagAdmin, AppError>
+where
+    C: ConnectionTrait,
+{
+    let tag = query::insert_global_tag(db, req).await?;
+    Ok(crate::tags::map_tag_admin(tag, vec![]))
+}
+
+pub async fn update_global_tag<C>(
+    db: &C,
+    tag_id: i64,
+    req: TagUpsertReq,
+) -> Result<TagAdmin, AppError>
+where
+    C: ConnectionTrait,
+{
+    let (tag, keywords) = query::update_global_tag(db, tag_id, req).await?;
+    Ok(crate::tags::map_tag_admin(tag, keywords))
+}
+
 pub async fn list_current_organism_tags<C>(
     db: &C,
     login: &str,

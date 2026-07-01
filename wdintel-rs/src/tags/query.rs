@@ -70,6 +70,78 @@ where
         .ok_or(AppError::NotFound)
 }
 
+pub async fn list_global_tags<C>(
+    db: &C,
+) -> Result<Vec<(tag::Model, Vec<tag_keyword::Model>)>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let tags = tag::Entity::find()
+        .filter(tag::Column::OwnerOrganismId.is_null())
+        .order_by_asc(tag::Column::Ord)
+        .order_by_asc(tag::Column::Id)
+        .all(db)
+        .await
+        .c(h!())?;
+    let keywords = tags.load_many(tag_keyword::Entity, db).await.c(h!())?;
+
+    Ok(tags.into_iter().zip(keywords.into_iter()).collect())
+}
+
+pub async fn insert_global_tag<C>(
+    db: &C,
+    req: TagUpsertReq,
+) -> Result<tag::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(tag::ActiveModel {
+        label: Set(req.label),
+        extra: Set(req.extra),
+        ord: Set(req.ord),
+        enabled: Set(req.enabled),
+        is_palitra: Set(req.is_palitra),
+        owner_organism_id: Set(None),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .c(h!())?)
+}
+
+pub async fn update_global_tag<C>(
+    db: &C,
+    tag_id: i64,
+    req: TagUpsertReq,
+) -> Result<(tag::Model, Vec<tag_keyword::Model>), AppError>
+where
+    C: ConnectionTrait,
+{
+    let tag = tag::Entity::find_by_id(tag_id)
+        .filter(tag::Column::OwnerOrganismId.is_null())
+        .one(db)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut tag = tag.into_active_model();
+    tag.label = Set(req.label);
+    tag.extra = Set(req.extra);
+    tag.ord = Set(req.ord);
+    tag.enabled = Set(req.enabled);
+    tag.is_palitra = Set(req.is_palitra);
+    tag.owner_organism_id = Set(None);
+
+    let tag = tag.update(db).await.c(h!())?;
+    let keywords = tag
+        .find_related(tag_keyword::Entity)
+        .all(db)
+        .await
+        .c(h!())?;
+
+    Ok((tag, keywords))
+}
+
 pub async fn list_organism_tags<C>(
     db: &C,
     organism_id: i64,

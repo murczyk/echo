@@ -86,23 +86,7 @@ async fn admin_list_tags(
         .await
         .c(h!())?;
 
-    let tags = tag::Entity::find()
-        .filter(tag::Column::OwnerOrganismId.is_null())
-        .order_by_asc(tag::Column::Ord)
-        .order_by_asc(tag::Column::Id)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let keywords = tags
-        .load_many(tag_keyword::Entity, &env.dbx)
-        .await
-        .c(h!())?;
-
-    let res = tags
-        .into_iter()
-        .zip(keywords.into_iter())
-        .map(|(tag, keywords)| map_tag_admin(tag, keywords))
-        .collect();
+    let res = bl::list_global_tags(&env.dbx).await.c(h!())?;
 
     Ok(Json(res))
 }
@@ -118,23 +102,11 @@ async fn create_tag(
         .await
         .c(h!())?;
 
-    let req = req.0;
-    let tag = tag::ActiveModel {
-        label: Set(req.label),
-        extra: Set(req.extra),
-        ord: Set(req.ord),
-        enabled: Set(req.enabled),
-        is_palitra: Set(req.is_palitra),
-        owner_organism_id: Set(None),
-        ..Default::default()
-    }
-    .insert(&env.dbx)
-    .await
-    .c(h!())?;
+    let tag = bl::create_global_tag(&env.dbx, req.0).await.c(h!())?;
 
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 
-    Ok(Json(map_tag_admin(tag, vec![])))
+    Ok(Json(tag))
 }
 
 #[put("/api/admin/tags/{tag_id}")]
@@ -150,31 +122,12 @@ async fn update_tag(
         .c(h!())?;
     let tag_id = path.0;
 
-    let req = req.0;
-    let tag = tag::Entity::find_by_id(tag_id)
-        .filter(tag::Column::OwnerOrganismId.is_null())
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let mut tag = tag.into_active_model();
-    tag.label = Set(req.label);
-    tag.extra = Set(req.extra);
-    tag.ord = Set(req.ord);
-    tag.enabled = Set(req.enabled);
-    tag.is_palitra = Set(req.is_palitra);
-    tag.owner_organism_id = Set(None);
-
-    let tag = tag.update(&env.dbx).await.c(h!())?;
-    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
-    let keywords = tag
-        .find_related(tag_keyword::Entity)
-        .all(&env.dbx)
+    let tag = bl::update_global_tag(&env.dbx, tag_id, req.0)
         .await
         .c(h!())?;
+    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 
-    Ok(Json(map_tag_admin(tag, keywords)))
+    Ok(Json(tag))
 }
 
 #[post("/api/tags/organism/list")]
