@@ -12,12 +12,14 @@ use futures::future::try_join_all;
 use sea_orm::*;
 use sea_query::{Expr, IntoCondition};
 
+pub mod bl;
 pub mod modify;
 pub mod ordering;
+pub mod query;
 pub mod types;
 pub mod worker;
 
-fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
+pub(crate) fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
     TagKeyword {
         tag_keyword_id: model.tag_keyword_id,
         is_regex: model.is_regex,
@@ -27,7 +29,7 @@ fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
     }
 }
 
-fn map_tag_admin(
+pub(crate) fn map_tag_admin(
     tag: tag::Model,
     keywords: Vec<tag_keyword::Model>,
 ) -> TagAdmin {
@@ -41,94 +43,6 @@ fn map_tag_admin(
         is_palitra: tag.is_palitra,
         owner_organism_id: tag.owner_organism_id,
     }
-}
-
-async fn current_user_organism_id<C>(
-    db: &C,
-    login: &str,
-) -> Result<Option<i64>, AppError>
-where
-    C: ConnectionTrait,
-{
-    login::Entity::find_by_id(login.to_string())
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple()
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::Unauthenticated)
-}
-
-async fn current_user_required_organism_id<C>(
-    db: &C,
-    login: &str,
-) -> Result<i64, AppError>
-where
-    C: ConnectionTrait,
-{
-    current_user_organism_id(db, login)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::Forbidden("user has no organism".to_string()))
-}
-
-fn accessible_tag_condition(owner_organism_id: Option<i64>) -> Condition {
-    let condition =
-        Condition::any().add(tag::Column::OwnerOrganismId.is_null());
-    if let Some(owner_organism_id) = owner_organism_id {
-        condition.add(tag::Column::OwnerOrganismId.eq(owner_organism_id))
-    } else {
-        condition
-    }
-}
-
-async fn ensure_tag_access<C>(
-    db: &C,
-    tag_id: i64,
-    owner_organism_id: Option<i64>,
-) -> Result<tag::Model, AppError>
-where
-    C: ConnectionTrait,
-{
-    tag::Entity::find_by_id(tag_id)
-        .filter(accessible_tag_condition(owner_organism_id))
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-}
-
-async fn ensure_global_tag<C>(
-    db: &C,
-    tag_id: i64,
-) -> Result<tag::Model, AppError>
-where
-    C: ConnectionTrait,
-{
-    tag::Entity::find_by_id(tag_id)
-        .filter(tag::Column::OwnerOrganismId.is_null())
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-}
-
-async fn ensure_organism_exists<C>(
-    db: &C,
-    organism_id: i64,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    organism::Entity::find_by_id(organism_id)
-        .filter(organism::Column::DeletedPermanently.eq(false))
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-    Ok(())
 }
 
 #[post("/api/tags/tags-list")]
@@ -272,28 +186,9 @@ async fn organism_list_tags(
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
-    let organism_id = current_user_required_organism_id(&env.dbx, &login)
+    let res = bl::list_current_organism_tags(&env.dbx, &login)
         .await
         .c(h!())?;
-
-    let tags = tag::Entity::find()
-        .filter(tag::Column::OwnerOrganismId.eq(organism_id))
-        .filter(tag::Column::Enabled.eq(true))
-        .order_by_asc(tag::Column::Ord)
-        .order_by_asc(tag::Column::Id)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let keywords = tags
-        .load_many(tag_keyword::Entity, &env.dbx)
-        .await
-        .c(h!())?;
-
-    let res = tags
-        .into_iter()
-        .zip(keywords.into_iter())
-        .map(|(tag, keywords)| map_tag_admin(tag, keywords))
-        .collect();
 
     Ok(Json(res))
 }
@@ -309,27 +204,9 @@ async fn admin_organism_list_tags(
         .await
         .c(h!())?;
     let organism_id = path.0;
-    ensure_organism_exists(&env.dbx, organism_id)
+    let res = bl::list_admin_organism_tags(&env.dbx, organism_id)
         .await
         .c(h!())?;
-
-    let tags = tag::Entity::find()
-        .filter(tag::Column::OwnerOrganismId.eq(organism_id))
-        .order_by_asc(tag::Column::Ord)
-        .order_by_asc(tag::Column::Id)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let keywords = tags
-        .load_many(tag_keyword::Entity, &env.dbx)
-        .await
-        .c(h!())?;
-
-    let res = tags
-        .into_iter()
-        .zip(keywords.into_iter())
-        .map(|(tag, keywords)| map_tag_admin(tag, keywords))
-        .collect();
 
     Ok(Json(res))
 }
@@ -345,30 +222,11 @@ async fn create_organism_tag(
         .await
         .c(h!())?;
 
-    let req = req.0;
-    let organism_id = req.owner_organism_id.ok_or_else(|| AppError::BL {
-        msg: "owner_organism_id is required".to_string(),
-    })?;
-    ensure_organism_exists(&env.dbx, organism_id)
-        .await
-        .c(h!())?;
-
-    let tag = tag::ActiveModel {
-        label: Set(req.label),
-        extra: Set(req.extra),
-        ord: Set(req.ord),
-        enabled: Set(req.enabled),
-        is_palitra: Set(req.is_palitra),
-        owner_organism_id: Set(Some(organism_id)),
-        ..Default::default()
-    }
-    .insert(&env.dbx)
-    .await
-    .c(h!())?;
+    let tag = bl::create_organism_tag(&env.dbx, req.0).await.c(h!())?;
 
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 
-    Ok(Json(map_tag_admin(tag, vec![])))
+    Ok(Json(tag))
 }
 
 #[put("/api/tags/organism/{tag_id}")]
@@ -383,38 +241,13 @@ async fn update_organism_tag(
         .await
         .c(h!())?;
 
-    let req = req.0;
-    let organism_id = req.owner_organism_id.ok_or_else(|| AppError::BL {
-        msg: "owner_organism_id is required".to_string(),
-    })?;
-    ensure_organism_exists(&env.dbx, organism_id)
+    let tag = bl::update_organism_tag(&env.dbx, path.0, req.0)
         .await
         .c(h!())?;
 
-    let tag = tag::Entity::find_by_id(path.0)
-        .filter(tag::Column::OwnerOrganismId.is_not_null())
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let mut tag = tag.into_active_model();
-    tag.label = Set(req.label);
-    tag.extra = Set(req.extra);
-    tag.ord = Set(req.ord);
-    tag.enabled = Set(req.enabled);
-    tag.is_palitra = Set(req.is_palitra);
-    tag.owner_organism_id = Set(Some(organism_id));
-
-    let tag = tag.update(&env.dbx).await.c(h!())?;
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
-    let keywords = tag
-        .find_related(tag_keyword::Entity)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
 
-    Ok(Json(map_tag_admin(tag, keywords)))
+    Ok(Json(tag))
 }
 
 #[delete("/api/tags/organism/{tag_id}")]
@@ -428,18 +261,9 @@ async fn delete_organism_tag(
         .await
         .c(h!())?;
 
-    let tag = tag::Entity::find_by_id(path.0)
-        .filter(tag::Column::OwnerOrganismId.is_not_null())
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let mut tag = tag.into_active_model();
-    tag.enabled = Set(false);
-    let tag = tag.update(&env.dbx).await.c(h!())?;
+    let tag_id = bl::disable_organism_tag(&env.dbx, path.0).await.c(h!())?;
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
-    expire_tag_keyword_regex_cache(tag.id, &env.tag_keyword_regex_cache);
+    expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
 
     Ok(Json(()))
 }
@@ -457,7 +281,7 @@ async fn add_tag_keywords(
         .c(h!())?;
     let tag_id = path.0;
 
-    ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
+    query::ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
 
     let keywords_task = req.0.into_iter().map(
         async |r| -> anyhow::Result<tag_keyword::ActiveModel> {
@@ -543,7 +367,7 @@ async fn delete_tag_keyword(
     let tag_id = path.0;
     let tag_keyword_id = path.1;
 
-    ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
+    query::ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
 
     let tag_keyword = tag_keyword::Entity::find_by_id(tag_keyword_id)
         .filter(tag_keyword::Column::TagId.eq(tag_id))
@@ -572,7 +396,7 @@ async fn update_tag_keyword(
     let tag_id = path.0;
     let tag_keyword_id = path.1;
 
-    ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
+    query::ensure_global_tag(&env.dbx, tag_id).await.c(h!())?;
 
     let tag_keyword = tag_keyword::Entity::find_by_id(tag_keyword_id)
         .filter(tag_keyword::Column::TagId.eq(tag_id))
@@ -628,9 +452,10 @@ async fn inbox_message_tags_add(
         .c(h!())?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
-    let owner_organism_id =
-        current_user_organism_id(&txn, &user_id).await.c(h!())?;
-    let tag = ensure_tag_access(&txn, req.tag_id, owner_organism_id)
+    let owner_organism_id = query::current_user_organism_id(&txn, &user_id)
+        .await
+        .c(h!())?;
+    let tag = query::ensure_accessible_tag(&txn, req.tag_id, owner_organism_id)
         .await
         .c(h!())?;
     if !tag.enabled {
@@ -691,9 +516,10 @@ async fn inbox_message_tags_rm(
         .c(h!())?;
 
     let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
-    let owner_organism_id =
-        current_user_organism_id(&txn, &user_id).await.c(h!())?;
-    ensure_tag_access(&txn, req.tag_id, owner_organism_id)
+    let owner_organism_id = query::current_user_organism_id(&txn, &user_id)
+        .await
+        .c(h!())?;
+    query::ensure_accessible_tag(&txn, req.tag_id, owner_organism_id)
         .await
         .c(h!())?;
 
