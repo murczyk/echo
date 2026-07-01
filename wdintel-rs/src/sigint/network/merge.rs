@@ -383,6 +383,10 @@ async fn reassign_freqs(
     }
     let update_res = update_remaining_freqs
         .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
+        .col_expr(
+            sigint_network_freq::Column::ActiveTo,
+            Expr::cust("COALESCE(sigint_network_freq.active_to, NOW())"),
+        )
         .exec(txn)
         .await
         .context(h!())?;
