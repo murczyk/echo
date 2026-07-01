@@ -4,6 +4,7 @@ import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
 import { Box, ButtonBase, Skeleton, Typography } from '@mui/material';
 
 import type { MessageCardImage } from './message-card-image-utils';
+import { blurActiveElement } from '../../../utils/focus';
 
 type PreviewVariant = 'single' | 'multi';
 
@@ -30,9 +31,8 @@ export function MessageCardImageThumb({
     decoding: 'async',
     fetchpriority: 'low',
   } as const;
-
-  const handleOpenClick = (event: MouseEvent<HTMLButtonElement>) => {
-    event.currentTarget.blur();
+  const handleOpenClick = (_event: MouseEvent<HTMLButtonElement>) => {
+    blurActiveElement();
     onOpen(index);
   };
 

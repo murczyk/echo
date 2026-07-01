@@ -136,6 +136,7 @@ export function AnalysisFilterField({
   const labelCacheRef = useRef<Record<string, string>>({});
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState(value);
+  const [inputValue, setInputValue] = useState('');
   const draftValueRef = useRef(value);
   const lastCommittedValueRef = useRef(value);
 
@@ -174,6 +175,10 @@ export function AnalysisFilterField({
     onChange(nextValue);
   };
 
+  const clearInputValue = () => {
+    setInputValue('');
+  };
+
   return (
     <Autocomplete<AutocompleteOption, true, false, false>
       multiple
@@ -182,6 +187,7 @@ export function AnalysisFilterField({
       size="small"
       options={autocompleteOptions}
       value={autocompleteValue}
+      inputValue={inputValue}
       disabled={disabled}
       loading={loading}
       loadingText={`Завантаження${ELLIPSIS}`}
@@ -205,6 +211,12 @@ export function AnalysisFilterField({
           }
         }
       }}
+      onInputChange={(_event, nextInputValue, reason) => {
+        if (reason === 'reset') {
+          return;
+        }
+        setInputValue(nextInputValue);
+      }}
       renderTags={(tagValue, getTagProps) =>
         tagValue.map((option, index) => {
           const tagProps = getTagProps({ index });
@@ -223,13 +235,16 @@ export function AnalysisFilterField({
           );
         })
       }
-      onChange={(_event, next, _reason) => {
+      onChange={(_event, next, reason) => {
         const nextValues = buildCommittedValues(next, effectiveValue, preserveSelectedOptionValuesOnChange);
         if (deferredCommit && open) {
           updateDraftValue(nextValues);
-          return;
+        } else {
+          commitValue(nextValues);
         }
-        commitValue(nextValues);
+        if (reason !== 'blur') {
+          clearInputValue();
+        }
       }}
       renderOption={(props, option) => {
         const { key: _unusedKey, ...optionProps } = props;

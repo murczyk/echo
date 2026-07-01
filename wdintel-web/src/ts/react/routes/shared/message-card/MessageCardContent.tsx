@@ -40,6 +40,9 @@ import type {
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
+import { MessageCardTags } from './MessageCardTags';
+import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
+import { blurActiveElement } from '../../../utils/focus';
 
 export type {
   AnalysisCallsignActions,
@@ -158,7 +161,10 @@ export function MessageCardMessageBody({
       {images.length > 0 ? (
         <MessageCardImageList
           images={images}
-          onOpen={(index) => setImagePreviewIndex(index)}
+          onOpen={(index) => {
+            blurActiveElement();
+            setImagePreviewIndex(index);
+          }}
         />
       ) : null}
       <MessageImagePreviewDialog
@@ -197,17 +203,20 @@ export function MessageCardMessageBody({
             );
             return (
               <MessageMediaDocumentLink
-                key={document.id ?? document.href}
-                document={document}
-                index={index}
-                onPreview={
-                  previewIndex >= 0
-                    ? () => setDocumentPreviewIndex(previewIndex)
-                    : undefined
-                }
-              />
-            );
-          })}
+              key={document.id ?? document.href}
+              document={document}
+              index={index}
+              onPreview={
+                previewIndex >= 0
+                  ? () => {
+                      blurActiveElement();
+                      setDocumentPreviewIndex(previewIndex);
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
           {audioAttachments.map((attachment) => (
             <MessageMediaAudioPlayer
               key={attachment.id}

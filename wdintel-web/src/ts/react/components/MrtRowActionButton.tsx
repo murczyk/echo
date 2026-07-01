@@ -4,6 +4,7 @@ import { SystemStyleObject } from '@mui/system';
 import { Children, isValidElement, useId, useState } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
 
+import { blurActiveElement } from '../utils/focus';
 import { PowerIconButton } from './PowerIconButton';
 import { PowerMenu } from './PowerMenu';
 
@@ -30,12 +31,6 @@ type ActionElement = ReactElement<Props, typeof MrtRowActionButton>;
 export const MRT_ROW_ACTION_MODAL_PROPS = {
   disableRestoreFocus: true,
 } as const;
-
-function blurActiveElement() {
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-  }
-}
 
 function runRowAction({
   opensModal,

@@ -22,6 +22,7 @@ import {
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
+const latestMenuProps: Array<{ anchorReference?: string; anchorPosition?: { top: number; left: number } | null; open?: boolean; id?: string }> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
 
@@ -45,6 +46,8 @@ function omitMuiLayoutProps(props: Record<string, unknown>) {
   delete clone.onKeyDown;
   delete clone.valueLabelDisplay;
   delete clone.anchorEl;
+  delete clone.anchorReference;
+  delete clone.anchorPosition;
   delete clone.onClose;
   delete clone.open;
   delete clone.anchorOrigin;
@@ -206,7 +209,17 @@ vi.mock('@mui/material', () => ({
   Popover: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
     open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
   Menu: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+    open ? (
+      (() => {
+        latestMenuProps.push({
+          anchorReference: props.anchorReference as string | undefined,
+          anchorPosition: (props.anchorPosition as { top: number; left: number } | undefined) ?? null,
+          open,
+          id: props.id as string | undefined,
+        });
+        return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+      })()
+    ) : null,
   MenuItem: ({
     children,
     component,
@@ -568,6 +581,7 @@ describe('MessageCard', () => {
 
   afterEach(() => {
     resizeObserverCallbacks.splice(0);
+    latestMenuProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
     }
@@ -894,19 +908,33 @@ describe('MessageCard', () => {
     expect(onCopyLocation).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the location tooltip inline when resolved networks exist', async () => {
+  it('renders the location in the top grid for duty cards with resolved networks', async () => {
     const view = await renderCard({
       msg: buildMessage({ location: 'ХАРКІВ', networkIds: [7] }),
     });
     rendered.push(view);
 
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
     expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
-    expect(view.container.querySelector('[aria-label^="Локація:"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
     await click(copyButton);
     expect(view.container.textContent).not.toContain('Копіювати локацію');
+  });
+
+  it('renders the location in the top grid for analysis cards with resolved networks', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: buildMessage({ location: 'ХАРКІВ', networkIds: [7] }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
+    expect(view.container.textContent).toContain('р/м Alpha');
+    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
   it('renders the unit fallback when no networks resolve and no real location exists', async () => {
@@ -931,6 +959,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).not.toContain('Не встановлена');
     expect(view.container.textContent).toContain('—');
     expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('svg[data-testid="PlaceOutlinedIcon"]')).toBeNull();
@@ -1131,6 +1160,22 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
   });
 
+  it('blurs the focused toolbar button before opening the comment action', async () => {
+    const onComment = vi.fn();
+    const view = await renderCard({ onComment });
+    rendered.push(view);
+
+    const commentButton = view.container.querySelector('button[aria-label="Редагувати коментар"]');
+    if (!(commentButton instanceof HTMLButtonElement)) throw new Error('comment button not found');
+    commentButton.focus();
+    expect(document.activeElement).toBe(commentButton);
+
+    await click(commentButton);
+
+    expect(onComment).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(commentButton);
+  });
+
   it('shows only edit and delete in the overflow menu when those handlers exist', async () => {
     const view = await renderCard({
       onEditDetails: vi.fn(),
@@ -1146,6 +1191,41 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Видалити');
     expect(view.container.textContent).not.toContain('Позначити як важливе');
     expect(view.container.textContent).not.toContain('Додати в закладки');
+  });
+
+  it('anchors the overflow menu by position instead of a button element', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 24,
+      height: 24,
+      x: 16,
+      y: 48,
+      top: 48,
+      left: 16,
+      right: 40,
+      bottom: 72,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    try {
+      const view = await renderCard({
+        onEditDetails: vi.fn(),
+        onDelete: vi.fn(),
+      });
+      rendered.push(view);
+
+      const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
+      if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+
+      await click(overflowButton);
+
+      expect(latestMenuProps.at(-1)).toMatchObject({
+        anchorReference: 'anchorPosition',
+        anchorPosition: { top: 72, left: 16 },
+        open: true,
+      });
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it('renders inactive and active important and bookmark icons in the toolbar', async () => {
@@ -1605,11 +1685,14 @@ describe('MessageCard', () => {
     );
     expect(documentButton).not.toBeNull();
     expect(view.container.textContent).toContain('report.pdf');
+    (documentButton as HTMLButtonElement).focus();
+    expect(document.activeElement).toBe(documentButton);
 
     await click(documentButton as HTMLElement);
 
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('document-dialog');
+    expect(document.activeElement).not.toBe(documentButton);
 
     const downloadLink = view.container.querySelector('a[aria-label="Завантажити"]');
     expect(downloadLink).not.toBeNull();
@@ -2015,13 +2098,19 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    const thumb = view.container.querySelector('button[aria-label="Відкрити зображення"]');
+    if (!(thumb instanceof HTMLButtonElement)) throw new Error('image preview button not found');
+    thumb.focus();
+    expect(document.activeElement).toBe(thumb);
+
+    await click(thumb);
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
     expect(dialog?.textContent).toContain('1 / 1');
     expect(dialog?.querySelector('button[aria-label="Попереднє"]')).toBeNull();
     expect(dialog?.querySelector('button[aria-label="Наступне"]')).toBeNull();
+    expect(document.activeElement).not.toBe(thumb);
   });
 
   it('keeps malformed hrefs from crashing preview download name derivation', async () => {
