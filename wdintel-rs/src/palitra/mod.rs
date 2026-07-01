@@ -626,6 +626,23 @@ pub async fn read_palitra_v2(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/v2/read-preview/{palitra_id}")]
+pub async fn read_palitra_preview_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraReadV2>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::read_palitra_preview_v2(login, palitra_id, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
 #[post("/api/palitra/points")]
 pub async fn list_palitra_points(
     user: actix_identity::Identity,

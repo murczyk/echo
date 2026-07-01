@@ -391,6 +391,11 @@ export async function readPalitraV2(palitraId: number): Promise<PalitraReadV2> {
   return normalizePalitraReadV2(data);
 }
 
+export async function readPalitraPreviewV2(palitraId: number): Promise<PalitraReadV2> {
+  const data = await postJson<PalitraReadV2Like>(`/api/palitra/v2/read-preview/${palitraId}`);
+  return normalizePalitraReadV2(data);
+}
+
 async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {
   const cached = primaryGeometryIdByPalitraId.get(palitraId);
   if (cached !== undefined) {

@@ -7,7 +7,7 @@ import {
   deletePalitraFolder,
   fetchPalitraReferenceData,
   listPalitras,
-  readPalitraV2,
+  readPalitraPreviewV2,
   renamePalitraFolder,
 } from '../../services/api/palitra';
 import { fetchCurrentUser } from '../../services/api/user';
@@ -389,7 +389,7 @@ export function useRerPalitraNeoPage() {
       setStatus(null);
 
       try {
-        const data = await readPalitraV2(palitra.id);
+        const data = await readPalitraPreviewV2(palitra.id);
         if (previewRequestIdRef.current !== requestId) return;
         setPreviewData(data);
       } catch (previewLoadError) {

@@ -71,7 +71,7 @@ function renderFolderRowActions(row: FolderTableRowView, props: Props) {
   );
 }
 
-function isPalitraRowActionDisabled(row: PalitraRowView, props: Props): boolean {
+function isPalitraRowMutationDisabled(row: PalitraRowView, props: Props): boolean {
   return (
     !row.canModify ||
     row.archiveInFlight ||
@@ -84,8 +84,22 @@ function isPalitraRowActionDisabled(row: PalitraRowView, props: Props): boolean 
   );
 }
 
+function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean {
+  return (
+    !row.canSelect ||
+    row.archiveInFlight ||
+    row.deleteInFlight ||
+    row.downloadInFlight ||
+    row.uploadInFlight ||
+    props.loading ||
+    props.bulkDeleteInFlight ||
+    props.externalBusy
+  );
+}
+
 function renderPalitraRowActions(row: PalitraRowView, props: Props) {
-  const disabled = isPalitraRowActionDisabled(row, props);
+  const mutationDisabled = isPalitraRowMutationDisabled(row, props);
+  const previewDisabled = isPalitraRowPreviewDisabled(row, props);
 
   return (
     <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
@@ -99,7 +113,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
               event.stopPropagation();
               props.onRequestPreview(row.palitra);
             }}
-            disabled={disabled}
+            disabled={previewDisabled}
             sx={(theme) => ({
               width: 28,
               height: 28,
@@ -126,14 +140,14 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
         <MrtRowActionButton
           label='Редагувати'
           onClick={() => props.onOpenEdit(row.palitra)}
-          disabled={disabled}
+          disabled={mutationDisabled}
           icon={<EditIcon fontSize='small' />}
           opensModal
         />
         <MrtRowActionButton
           label='Перемістити в папку'
           onClick={() => props.onRequestAssignFolder(row.palitra)}
-          disabled={disabled}
+          disabled={mutationDisabled}
           icon={<DriveFileMoveOutlinedIcon fontSize='small' />}
           opensModal
         />
@@ -141,7 +155,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           <MrtRowActionButton
             label='Повернути з архіву'
             onClick={() => props.onRequestUnarchive(row.palitra)}
-            disabled={disabled}
+            disabled={mutationDisabled}
             icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <UnarchiveOutlinedIcon fontSize='small' />}
             opensModal
           />
@@ -149,7 +163,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           <MrtRowActionButton
             label='Перенести в архів'
             onClick={() => props.onRequestArchive(row.palitra)}
-            disabled={disabled}
+            disabled={mutationDisabled}
             icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <ArchiveOutlinedIcon fontSize='small' />}
             opensModal
           />
@@ -172,13 +186,13 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
         <MrtRowActionButton
           label='Додати точки'
           onClick={() => props.onRequestUploadPoints(row.id)}
-          disabled={disabled}
+          disabled={mutationDisabled}
           icon={row.uploadInFlight ? <CircularProgress size={16} color='inherit' /> : <CloudUploadIcon fontSize='small' />}
         />
         <MrtRowActionButton
           label='Видалити'
           onClick={() => props.onDelete(row.palitra)}
-          disabled={disabled}
+          disabled={mutationDisabled}
           icon={row.deleteInFlight ? <CircularProgress size={16} color='inherit' /> : <DeleteIcon fontSize='small' />}
           tone='danger'
           opensModal

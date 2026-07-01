@@ -292,6 +292,23 @@ pub async fn read_palitra_v2(
         .c(h!())
 }
 
+pub async fn read_palitra_preview_v2(
+    login: String,
+    palitra_id: i64,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<PalitraReadV2> {
+    let palitra_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    if !palitra_ids.contains(&palitra_id) {
+        anyhow::bail!(
+            "Palitra {palitra_id} is not accessible for current user"
+        );
+    }
+    render_palitra_v2_without_points(Either::Right(palitra_id), dbx)
+        .await
+        .c(h!())
+}
+
 pub async fn search_palitra_points_by_labels(
     login: String,
     req: PalitraSearchPointsReq,
