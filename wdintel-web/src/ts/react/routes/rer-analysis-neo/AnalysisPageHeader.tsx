@@ -45,20 +45,18 @@ export function AnalysisPageHeader({ page, isMobileLayout, leftPanelVisible, rig
       middleGap={4}
       actions={
         <Stack direction="row" spacing={1} alignItems="center">
-          {page.counts ? (
-            <Chip
-              label={`${page.counts.countSelected} з ${page.counts.countOverall}`}
-              size="small"
-              variant="outlined"
-              sx={{
-                height: 28,
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                bgcolor: 'background.paper',
-                borderColor: 'divider',
-              }}
-            />
-          ) : null}
+          <Chip
+            label={page.counts ? `${page.counts.countSelected} з ${page.counts.countOverall}` : '— з —'}
+            size="small"
+            variant="outlined"
+            sx={{
+              height: 28,
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              bgcolor: 'background.paper',
+              borderColor: 'divider',
+            }}
+          />
           <Tooltip title="Оновити" arrow>
             <span>
               <IconButton
