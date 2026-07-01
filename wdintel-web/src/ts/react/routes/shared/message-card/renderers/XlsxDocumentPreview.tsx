@@ -42,10 +42,14 @@ export function XlsxDocumentPreview({ href, zoom, sizeBytes }: { href: string; z
         }
 
         const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
+          throw new Error('XLSX_FILE_TOO_LARGE');
+        }
         const result = await runWorkerTask<{ buffer: ArrayBuffer }, XlsxPreviewResult>(
           () => new Worker(new URL('../xlsx/xlsx-preview.worker.ts', import.meta.url), { type: 'module' }),
           { buffer },
           abortController.signal,
+          [buffer],
         );
         if (disposed) return;
         setWorkbook(result);

@@ -6,6 +6,7 @@ export function runWorkerTask<TRequest, TResponse>(
   workerFactory: () => Worker,
   request: TRequest,
   signal?: AbortSignal,
+  transferList: Transferable[] = [],
 ): Promise<TResponse> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -46,7 +47,6 @@ export function runWorkerTask<TRequest, TResponse>(
     signal?.addEventListener('abort', onAbort, { once: true });
     worker.addEventListener('message', onMessage);
     worker.addEventListener('error', onError);
-    worker.postMessage({ requestId, request });
+    worker.postMessage({ requestId, request }, transferList);
   });
 }
-

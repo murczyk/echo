@@ -9,12 +9,24 @@ type DocxPreviewResult = {
   html: string;
 };
 
+const MAX_DOCX_FILE_MB = 10;
+const MAX_DOCX_FILE_BYTES = MAX_DOCX_FILE_MB * 1024 * 1024;
+
+function formatDocxPreviewErrorMessage(error: string | null): string {
+  if (error === 'DOCX_FILE_TOO_LARGE') {
+    return `Файл DOCX завеликий для попереднього перегляду. Максимум: ${MAX_DOCX_FILE_MB} МБ.`;
+  }
+  return error ?? 'DOCX недоступний';
+}
+
 export function DocxDocumentPreview({
   href,
   zoom,
+  sizeBytes,
 }: {
   href: string;
   zoom: number;
+  sizeBytes?: number | null;
 }) {
   const theme = useTheme();
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -33,11 +45,24 @@ export function DocxDocumentPreview({
       setHtml("");
 
       try {
+        if (sizeBytes != null && sizeBytes > MAX_DOCX_FILE_BYTES) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
+
         const response = await fetch(href, { signal: abortController.signal });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
+
+        const contentLength = response.headers.get('content-length');
+        if (contentLength != null && Number.isFinite(Number(contentLength)) && Number(contentLength) > MAX_DOCX_FILE_BYTES) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
+
         const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
+          throw new Error('DOCX_FILE_TOO_LARGE');
+        }
         const result = await runWorkerTask<
           { buffer: ArrayBuffer },
           DocxPreviewResult
@@ -49,6 +74,7 @@ export function DocxDocumentPreview({
             ),
           { buffer },
           abortController.signal,
+          [buffer],
         );
         if (disposed) return;
         const sanitizedHtml = sanitizeDocxHtml(result.html);
@@ -56,9 +82,7 @@ export function DocxDocumentPreview({
         setStatus("ready");
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
-        setError(
-          error instanceof Error ? error.message : "Не вдалося відкрити DOCX",
-        );
+        setError(formatDocxPreviewErrorMessage(error instanceof Error ? error.message : null));
         setStatus("error");
       }
     };
@@ -69,7 +93,7 @@ export function DocxDocumentPreview({
       disposed = true;
       abortController.abort();
     };
-  }, [href]);
+  }, [href, sizeBytes]);
 
   const srcDoc = useMemo(() => buildDocxHtmlDocument(html, zoom), [html, zoom]);
 

@@ -134,7 +134,7 @@ export function XlsxGrid({
       {truncated ? (
         <Box sx={{ px: 2, py: 1, borderBottom: '1px solid rgba(244, 247, 251, 0.08)' }}>
           <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
-            {`Попередній перегляд обрізано: показано лише перші ${MAX_XLSX_ROWS} рядків, ${MAX_XLSX_COLUMNS} колонок або ${MAX_XLSX_SHEETS} аркушів.`}
+            {`Показано перші ${MAX_XLSX_ROWS} рядків, ${MAX_XLSX_COLUMNS} колонок або ${MAX_XLSX_SHEETS} аркушів.`}
           </Typography>
         </Box>
       ) : null}
