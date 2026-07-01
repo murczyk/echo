@@ -245,10 +245,11 @@ function LazyPdfPage({
         mx: "auto",
         px: { xs: 0, sm: 0.5 },
         "& .react-pdf__Page": {
-          backgroundColor: "#fff",
+          backgroundColor: "background.paper",
           borderRadius: 2,
-          border: "1px solid rgba(148, 163, 184, 0.12)",
-          boxShadow: "0 18px 40px rgba(0, 0, 0, 0.26)",
+          border: 1,
+          borderColor: "divider",
+          boxShadow: 4,
           overflow: "hidden",
         },
         "& .react-pdf__Page__textContent": {

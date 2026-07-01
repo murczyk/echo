@@ -51,7 +51,6 @@ export function MessageCardVideoThumb({
       }}
     >
       <Box
-        className="bg-white/5"
         sx={{
           position: 'relative',
           display: 'flex',
@@ -92,8 +91,8 @@ export function MessageCardVideoThumb({
           }}
         />
         <Box
-          className={loaded ? 'bg-black/15' : 'bg-transparent'}
           sx={{
+            backgroundColor: 'transparent',
             position: 'absolute',
             inset: 0,
             zIndex: 1,
@@ -107,7 +106,7 @@ export function MessageCardVideoThumb({
           }}
         >
           {loaded ? (
-            <PlayArrowIcon className="text-white/90" sx={{ fontSize: 32 }} />
+            <PlayArrowIcon sx={{ fontSize: 32, color: '#fff', filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }} />
           ) : (
             <>
               <Typography

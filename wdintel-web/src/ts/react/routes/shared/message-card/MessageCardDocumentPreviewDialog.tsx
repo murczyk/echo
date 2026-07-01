@@ -153,7 +153,7 @@ export function MessageCardDocumentPreviewDialog({
         },
       }}
       BackdropProps={{
-        className: "bg-black/80",
+        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
       }}
     >
       <DialogContent
@@ -170,7 +170,6 @@ export function MessageCardDocumentPreviewDialog({
       >
         {currentDocument != null ? (
           <Box
-            className={`bg-[#121212] ${isFullscreen ? "" : "ring-1 ring-inset ring-white/5"}`}
             sx={{
               flex: 1,
               minHeight: 0,
@@ -178,6 +177,9 @@ export function MessageCardDocumentPreviewDialog({
               flexDirection: "column",
               borderRadius: isFullscreen ? 0 : 1.5,
               overflow: "hidden",
+              backgroundColor: "background.paper",
+              border: isFullscreen ? "none" : 1,
+              borderColor: "divider",
             }}
           >
             <MessageCardDocumentPreviewStage

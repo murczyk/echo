@@ -38,7 +38,7 @@ export function MessageCardDocumentPreviewInfoPopover({
     >
       <Stack spacing={1}>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             URL
           </Typography>
           <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
@@ -46,7 +46,7 @@ export function MessageCardDocumentPreviewInfoPopover({
           </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Файл
           </Typography>
           <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
@@ -54,19 +54,19 @@ export function MessageCardDocumentPreviewInfoPopover({
           </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Тип
           </Typography>
           <Typography variant="body2">{document.contentType?.trim() || '—'}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Розмір файлу
           </Typography>
           <Typography variant="body2">{normalizedFileSize}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: 'rgba(244, 247, 251, 0.72)' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Тип перегляду
           </Typography>
           <Typography variant="body2">{document.kind}</Typography>

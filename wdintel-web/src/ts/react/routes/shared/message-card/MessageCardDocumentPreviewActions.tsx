@@ -34,7 +34,7 @@ export function MessageCardDocumentPreviewControls({
         gap: 1.5,
         flex: 1,
         minWidth: 0,
-        backgroundColor: "#121212",
+        backgroundColor: 'background.paper',
         py: 1.5,
         px: 3,
       }}
@@ -46,7 +46,7 @@ export function MessageCardDocumentPreviewControls({
             size="small"
             onClick={() => onSetPreviewZoom(zoom - DOCUMENT_PREVIEW_ZOOM_STEP)}
             disabled={zoom <= DOCUMENT_PREVIEW_ZOOM_MIN}
-            className="text-white/80"
+            sx={{ color: 'text.secondary' }}
           >
             <ZoomOutIcon />
           </IconButton>
@@ -97,7 +97,7 @@ export function MessageCardDocumentPreviewControls({
             size="small"
             onClick={() => onSetPreviewZoom(zoom + DOCUMENT_PREVIEW_ZOOM_STEP)}
             disabled={zoom >= DOCUMENT_PREVIEW_ZOOM_MAX}
-            className="text-white/80"
+            sx={{ color: 'text.secondary' }}
           >
             <ZoomInIcon />
           </IconButton>
@@ -106,8 +106,9 @@ export function MessageCardDocumentPreviewControls({
 
       <Typography
         variant="caption"
-        className="font-mono text-white/75"
+        className="font-mono"
         sx={{
+          color: 'text.secondary',
           minWidth: 44,
           textAlign: 'center',
           fontVariantNumeric: 'tabular-nums',
@@ -121,7 +122,7 @@ export function MessageCardDocumentPreviewControls({
           aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
           size="small"
           onClick={onToggleFullscreen}
-          className="text-white/80"
+          sx={{ color: 'text.secondary' }}
         >
           {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
         </IconButton>
@@ -156,7 +157,7 @@ export function MessageCardDocumentPreviewActions({
     <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ justifySelf: 'start', minWidth: 0, flexWrap: 'wrap' }}>
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'inherit' }}>
+          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
             <InfoIcon />
           </IconButton>
         </Tooltip>
@@ -168,7 +169,7 @@ export function MessageCardDocumentPreviewActions({
             rel="noopener noreferrer"
             aria-label="Відкрити в новій вкладці"
             size="small"
-            sx={{ color: 'inherit' }}
+            sx={{ color: 'text.secondary' }}
           >
             <OpenInNewIcon />
           </IconButton>
@@ -180,7 +181,7 @@ export function MessageCardDocumentPreviewActions({
             download={downloadFileName}
             aria-label="Завантажити"
             size="small"
-            sx={{ color: 'inherit' }}
+            sx={{ color: 'text.secondary' }}
           >
             <DownloadIcon />
           </IconButton>
@@ -200,18 +201,20 @@ export function MessageCardDocumentPreviewActions({
               <IconButton
                 size="small"
                 onClick={onGoToPrevious}
-                sx={{ color: 'inherit' }}
+                sx={{ color: 'text.secondary' }}
               >
                 <ChevronLeftIcon />
               </IconButton>
             </Tooltip>
             <Typography
               variant="caption"
-              className="font-mono bg-white/5"
+              className="font-mono"
               sx={{
                 px: 1,
                 py: 0.25,
                 borderRadius: 1,
+                backgroundColor: 'action.hover',
+                color: 'text.primary',
               }}
             >
               {`${resolvedIndex + 1} / ${documentCount}`}
@@ -220,7 +223,7 @@ export function MessageCardDocumentPreviewActions({
               <IconButton
                 size="small"
                 onClick={onGoToNext}
-                sx={{ color: 'inherit' }}
+                sx={{ color: 'text.secondary' }}
               >
                 <ChevronRightIcon />
               </IconButton>

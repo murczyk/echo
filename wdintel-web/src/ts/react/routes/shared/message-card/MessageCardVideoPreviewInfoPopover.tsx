@@ -36,8 +36,8 @@ export function MessageCardVideoPreviewInfoPopover({
             p: 1.5,
             minWidth: 280,
             maxWidth: 360,
-            backgroundColor: "#111821",
-            color: "#f4f7fb",
+            backgroundColor: 'background.paper',
+            color: 'text.primary',
           },
         },
       }}
@@ -46,7 +46,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             URL
           </Typography>
@@ -57,7 +57,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             Файл
           </Typography>
@@ -68,7 +68,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             Тип
           </Typography>
@@ -77,7 +77,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             Розмір файлу
           </Typography>
@@ -86,7 +86,7 @@ export function MessageCardVideoPreviewInfoPopover({
         <Box>
           <Typography
             variant="caption"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             Тривалість
           </Typography>
@@ -96,7 +96,7 @@ export function MessageCardVideoPreviewInfoPopover({
           <Box>
             <Typography
               variant="caption"
-              className="text-white/75"
+              sx={{ color: 'text.secondary' }}
             >
               ID
             </Typography>

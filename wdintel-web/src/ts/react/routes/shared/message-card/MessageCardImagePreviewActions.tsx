@@ -34,7 +34,7 @@ export function MessageCardImagePreviewControls({
         gap: 1.5,
         flex: 1,
         minWidth: 0,
-        backgroundColor: "#121212",
+        backgroundColor: 'background.paper',
         py: 1.5,
         px: 3,
       }}
@@ -46,7 +46,7 @@ export function MessageCardImagePreviewControls({
             size="small"
             onClick={() => onSetPreviewZoom(zoom - ZOOM_STEP)}
             disabled={zoom <= ZOOM_MIN}
-            className="text-white/80"
+            sx={{ color: 'text.secondary' }}
           >
             <ZoomOutIcon />
           </IconButton>
@@ -60,7 +60,6 @@ export function MessageCardImagePreviewControls({
         step={ZOOM_STEP}
         marks={ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
-        className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
         onChange={(_, value) => {
           const nextZoom = Array.isArray(value) ? value[0] ?? ZOOM_MIN : value;
           onSetPreviewZoom(nextZoom);
@@ -97,7 +96,7 @@ export function MessageCardImagePreviewControls({
             size="small"
             onClick={() => onSetPreviewZoom(zoom + ZOOM_STEP)}
             disabled={zoom >= ZOOM_MAX}
-            className="text-white/80"
+            sx={{ color: 'text.secondary' }}
           >
             <ZoomInIcon />
           </IconButton>
@@ -106,10 +105,12 @@ export function MessageCardImagePreviewControls({
 
       <Typography
         variant="caption"
-        className="font-mono text-white/75"
+        className="font-mono"
         sx={{
+          color: 'text.secondary',
           minWidth: 44,
           textAlign: 'center',
+
           fontVariantNumeric: 'tabular-nums',
         }}
       >
@@ -122,7 +123,7 @@ export function MessageCardImagePreviewControls({
             aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
             size="small"
             onClick={onToggleFullscreen}
-            className="text-white/80"
+            sx={{ color: 'text.secondary' }}
           >
             {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
           </IconButton>
@@ -166,7 +167,7 @@ export function MessageCardImagePreviewActions({
     >
       <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-start", gap: 0.5 }}>
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} className="text-white/75">
+          <IconButton aria-label="Інформація" size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
             <InfoIcon />
           </IconButton>
         </Tooltip>
@@ -178,7 +179,7 @@ export function MessageCardImagePreviewActions({
             rel="noopener noreferrer"
             aria-label="Відкрити в новій вкладці"
             size="small"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             <OpenInNewIcon />
           </IconButton>
@@ -190,7 +191,7 @@ export function MessageCardImagePreviewActions({
             download={downloadFileName}
             aria-label="Завантажити"
             size="small"
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             <DownloadIcon />
           </IconButton>
@@ -203,7 +204,7 @@ export function MessageCardImagePreviewActions({
               aria-label="Попереднє"
               size="small"
               onClick={onGoToPrevious}
-              className="text-white/75"
+              sx={{ color: 'text.secondary' }}
               data-image-preview-nav="prev"
             >
               <ChevronLeftIcon />
@@ -212,9 +213,10 @@ export function MessageCardImagePreviewActions({
         )}
         <Typography
           variant="body2"
-          className="text-white/75 border border-white/10 bg-white/10"
           data-image-preview-counter
           sx={{
+            backgroundColor: 'action.hover',
+            color: 'text.primary',
             fontWeight: 700,
             letterSpacing: 0,
             px: 1,
@@ -230,7 +232,7 @@ export function MessageCardImagePreviewActions({
               aria-label="Наступне"
               size="small"
               onClick={onGoToNext}
-              className="text-white/75"
+              sx={{ color: 'text.secondary' }}
               data-image-preview-nav="next"
             >
               <ChevronRightIcon />

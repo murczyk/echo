@@ -102,11 +102,11 @@ export function DocxDocumentPreview({
       <Box sx={{ p: 3, textAlign: "center" }}>
         <Typography
           variant="h6"
-          sx={{ mb: 1, color: "rgba(244, 247, 251, 0.92)" }}
+          sx={{ mb: 1, color: "text.primary" }}
         >
           Помилка перегляду
         </Typography>
-        <Typography variant="body2" sx={{ color: "rgba(244, 247, 251, 0.72)" }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
           {error ?? "DOCX недоступний"}
         </Typography>
       </Box>

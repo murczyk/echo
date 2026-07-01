@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Dialog, DialogContent, Typography } from "@mui/material";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Box, Dialog, DialogContent, Typography } from '@mui/material';
 import type {
   VideoPreviewSource,
   VideoPlayerState,
-} from "./message-card-video-utils";
-import { MessageCardVideoPreviewStage } from "./MessageCardVideoPreviewStage";
+} from './message-card-video-utils';
+import { MessageCardVideoPreviewStage } from './MessageCardVideoPreviewStage';
 import {
   MessageCardVideoPreviewActions,
   MessageCardVideoPreviewControls,
-} from "./MessageCardVideoPreviewActions";
-import { MessageCardVideoPreviewInfoPopover } from "./MessageCardVideoPreviewInfoPopover";
+} from './MessageCardVideoPreviewActions';
+import { MessageCardVideoPreviewInfoPopover } from './MessageCardVideoPreviewInfoPopover';
 
 export function MessageCardVideoPreviewDialog({
   open,
@@ -39,7 +39,9 @@ export function MessageCardVideoPreviewDialog({
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
 
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
+    null,
+  );
   const infoOpen = infoAnchorEl !== null;
 
   const [playerState, setPlayerState] = useState<VideoPlayerState>({
@@ -55,36 +57,36 @@ export function MessageCardVideoPreviewDialog({
   useEffect(() => {
     if (!open || !video) return;
 
-    if (typeof video.source === "string") {
+    if (typeof video.source === 'string') {
       if (
-        !video.source.startsWith("blob:") &&
-        !video.source.startsWith("data:") &&
-        video.source.startsWith("/")
+        !video.source.startsWith('blob:') &&
+        !video.source.startsWith('data:') &&
+        video.source.startsWith('/')
       ) {
         setSrc(video.source);
         return;
       }
-      if (video.source.startsWith("blob:")) {
+      if (video.source.startsWith('blob:')) {
         setSrc(video.source);
         return;
       }
     }
 
     let isMounted = true;
-    let blobUrl = "";
+    let blobUrl = '';
 
     const source =
-      typeof video.source === "string"
+      typeof video.source === 'string'
         ? video.source
         : URL.createObjectURL(video.source);
 
-    if (typeof video.source !== "string") {
+    if (typeof video.source !== 'string') {
       blobUrl = source;
       setSrc(blobUrl);
     } else {
       fetch(source)
         .then((res) => {
-          if (!res.ok) throw new Error("Video fetch failed");
+          if (!res.ok) throw new Error('Video fetch failed');
           return res.blob();
         })
         .then((blob) => {
@@ -97,8 +99,8 @@ export function MessageCardVideoPreviewDialog({
           setPlayerState((s) => ({
             ...s,
             error: {
-              code: "VIDEO_LOAD_ERROR",
-              message: "Не вдалося завантажити відео.",
+              code: 'VIDEO_LOAD_ERROR',
+              message: 'Не вдалося завантажити відео.',
               cause: err,
             },
           }));
@@ -107,7 +109,7 @@ export function MessageCardVideoPreviewDialog({
 
     return () => {
       isMounted = false;
-      if (blobUrl && typeof video?.source !== "string") {
+      if (blobUrl && typeof video?.source !== 'string') {
         URL.revokeObjectURL(blobUrl);
       }
     };
@@ -130,38 +132,38 @@ export function MessageCardVideoPreviewDialog({
   useEffect(() => {
     if (!playerState.isFullscreen) return;
     const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
       setPlayerState((s) => ({ ...s, isFullscreen: false }));
     };
-    window.addEventListener("keydown", handleFullscreenEscape, true);
+    window.addEventListener('keydown', handleFullscreenEscape, true);
     return () =>
-      window.removeEventListener("keydown", handleFullscreenEscape, true);
+      window.removeEventListener('keydown', handleFullscreenEscape, true);
   }, [playerState.isFullscreen]);
 
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (playerState.isFullscreen && event.key === "Escape") {
+      if (playerState.isFullscreen && event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         setPlayerState((s) => ({ ...s, isFullscreen: false }));
         return;
       }
       if (!hasCarousel) return;
-      if (event.key === "ArrowLeft") {
+      if (event.key === 'ArrowLeft') {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange?.(resolvedIndex - 1);
-      } else if (event.key === "ArrowRight") {
+      } else if (event.key === 'ArrowRight') {
         event.preventDefault();
         event.stopPropagation();
         onIndexChange?.(resolvedIndex + 1);
       }
     };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [
     hasCarousel,
     playerState.isFullscreen,
@@ -233,21 +235,21 @@ export function MessageCardVideoPreviewDialog({
       disableEscapeKeyDown={playerState.isFullscreen}
       PaperProps={{
         sx: {
-          display: "flex",
-          flexDirection: "column",
+          display: 'flex',
+          flexDirection: 'column',
           width: playerState.isFullscreen
-            ? "100vw"
-            : { xs: "96vw", sm: "92vw" },
-          height: playerState.isFullscreen ? "100svh" : "92svh",
-          maxWidth: playerState.isFullscreen ? "100vw" : "min(92vw, 1280px)",
-          maxHeight: playerState.isFullscreen ? "100svh" : "92svh",
+            ? '100vw'
+            : { xs: '96vw', sm: '92vw' },
+          height: playerState.isFullscreen ? '100svh' : '92svh',
+          maxWidth: playerState.isFullscreen ? '100vw' : 'min(92vw, 1280px)',
+          maxHeight: playerState.isFullscreen ? '100svh' : '92svh',
           borderRadius: playerState.isFullscreen ? 0 : 2,
           m: 0,
-          overflow: "hidden",
+          overflow: 'hidden',
         },
       }}
       BackdropProps={{
-        className: "bg-black/80",
+        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
       }}
     >
       <DialogContent
@@ -255,24 +257,26 @@ export function MessageCardVideoPreviewDialog({
           px: playerState.isFullscreen ? 0 : 2,
           pt: playerState.isFullscreen ? 0 : 2,
           pb: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
           minHeight: 0,
-          flex: "1 1 auto",
-          overflow: "hidden",
+          flex: '1 1 auto',
+          overflow: 'hidden',
           gap: 0,
         }}
       >
         <Box
-          className={`bg-[#121212] ${playerState.isFullscreen ? '' : 'ring-1 ring-inset ring-white/5'}`}
           sx={{
             flex: 1,
             minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
+            display: 'flex',
+            flexDirection: 'column',
             borderRadius: playerState.isFullscreen ? 0 : 1.5,
-            overflow: "hidden",
+            overflow: 'hidden',
+            backgroundColor: 'background.paper',
+            border: playerState.isFullscreen ? 'none' : 1,
+            borderColor: 'divider',
           }}
         >
           <MessageCardVideoPreviewStage
@@ -299,7 +303,11 @@ export function MessageCardVideoPreviewDialog({
             }}
             onVolumeChange={(e) => {
               const v = e.currentTarget;
-              setPlayerState((s) => ({ ...s, volume: v.volume, muted: v.muted }));
+              setPlayerState((s) => ({
+                ...s,
+                volume: v.volume,
+                muted: v.muted,
+              }));
             }}
             onRateChange={(e) => {
               const v = e.currentTarget;
@@ -312,22 +320,22 @@ export function MessageCardVideoPreviewDialog({
               setPlayerState((s) => ({
                 ...s,
                 error: {
-                  code: "VIDEO_LOAD_ERROR",
-                  message: "Не вдалося завантажити або відтворити це відео.",
+                  code: 'VIDEO_LOAD_ERROR',
+                  message: 'Не вдалося завантажити або відтворити це відео.',
                   cause: e,
                 },
               }));
             }}
           />
-          
+
           <Box
             sx={{
-              display: "flex",
-              justifyContent: "center",
-              width: "100%",
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
             }}
           >
-            <Box sx={{ width: "100%", maxWidth: 800 }}>
+            <Box sx={{ width: '100%', maxWidth: 800 }}>
               <MessageCardVideoPreviewControls
                 playerState={playerState}
                 videoRef={videoRef}

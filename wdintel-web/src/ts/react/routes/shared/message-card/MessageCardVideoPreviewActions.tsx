@@ -67,7 +67,7 @@ export function MessageCardVideoPreviewControls({
         gap: 1,
         flex: 1,
         minWidth: 0,
-        backgroundColor: "#121212",
+        backgroundColor: 'background.paper',
         py: 1.5,
         px: 3,
         borderRadius: 2,
@@ -95,8 +95,8 @@ export function MessageCardVideoPreviewControls({
 
       <Typography
         variant="body2"
-        className="text-white/80"
         sx={{
+          color: 'text.secondary',
           whiteSpace: "nowrap",
           fontFamily: "monospace",
           mr: { xs: 1, sm: 1 },
@@ -174,7 +174,7 @@ export function MessageCardVideoPreviewActions({
           <IconButton
             size="small"
             onClick={onInfoClick}
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             <InfoIcon />
           </IconButton>
@@ -183,7 +183,7 @@ export function MessageCardVideoPreviewActions({
           <IconButton
             size="small"
             onClick={() => downloadOriginalVideo(video)}
-            className="text-white/75"
+            sx={{ color: 'text.secondary' }}
           >
             <DownloadIcon />
           </IconButton>
@@ -195,15 +195,16 @@ export function MessageCardVideoPreviewActions({
             <IconButton
               size="small"
               onClick={onGoToPrevious}
-              className="text-white/75"
+              sx={{ color: 'text.secondary' }}
             >
               <ChevronLeftIcon />
             </IconButton>
           </Tooltip>
           <Typography
             variant="body2"
-            className="text-white/75 border border-white/10 bg-white/10"
             sx={{
+              backgroundColor: 'action.hover',
+              color: 'text.primary',
               fontWeight: 700,
               letterSpacing: 0,
               px: 1,
@@ -217,7 +218,7 @@ export function MessageCardVideoPreviewActions({
             <IconButton
               size="small"
               onClick={onGoToNext}
-              className="text-white/75"
+              sx={{ color: 'text.secondary' }}
             >
               <ChevronRightIcon />
             </IconButton>

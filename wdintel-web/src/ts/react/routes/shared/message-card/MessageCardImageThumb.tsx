@@ -70,7 +70,6 @@ export function MessageCardImageThumb({
       }}
     >
       <Box
-        className="bg-white/5"
         sx={{
           position: 'relative',
           display: 'flex',

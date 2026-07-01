@@ -76,15 +76,18 @@ export function SpeedSelect({
       value={playbackRate}
       onChange={(e: SelectChangeEvent<number>) => onRateChange(Number(e.target.value) as 0.5 | 1 | 1.5 | 2)}
       variant="outlined"
-      className="text-white/80 [&_.MuiOutlinedInput-notchedOutline]:border-white/20 hover:[&_.MuiOutlinedInput-notchedOutline]:border-white/40 [&_.MuiSvgIcon-root]:text-white/80"
       sx={{
+        color: 'text.secondary',
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
+        '& .MuiSvgIcon-root': { color: 'text.secondary' },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.light' },
         fontSize: '0.85rem',
         height: 28,
       }}
       MenuProps={{
         PaperProps: {
-          className: "bg-slate-800 text-slate-50",
+          sx: { backgroundColor: 'background.paper', color: 'text.primary' },
         }
       }}
     >
@@ -131,7 +134,6 @@ export function VideoProgressSlider({
         onSeek(value as number);
       }}
       disabled={!duration}
-      className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
       sx={{
         color: 'primary.main',
         padding: '0',

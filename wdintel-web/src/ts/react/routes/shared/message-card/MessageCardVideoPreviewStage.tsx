@@ -4,11 +4,11 @@ import {
   useRef,
   useEffect,
   type SyntheticEvent,
-} from "react";
-import { Box, CircularProgress, Typography } from "@mui/material";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PauseIcon from "@mui/icons-material/Pause";
-import type { VideoPreviewError } from "./message-card-video-utils";
+} from 'react';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PauseIcon from '@mui/icons-material/Pause';
+import type { VideoPreviewError } from './message-card-video-utils';
 
 export const MessageCardVideoPreviewStage = forwardRef<
   HTMLDivElement,
@@ -49,7 +49,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
   },
   ref,
 ) {
-  const [clickAction, setClickAction] = useState<"play" | "pause">("play");
+  const [clickAction, setClickAction] = useState<'play' | 'pause'>('play');
   const [showIcon, setShowIcon] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const clickActionTimer = useRef<number | null>(null);
@@ -64,16 +64,15 @@ export const MessageCardVideoPreviewStage = forwardRef<
   return (
     <Box
       ref={ref}
-      className="bg-[#121212] ring-1 ring-inset ring-white/5"
       sx={{
         flex: 1,
         minHeight: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        position: "relative",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
         borderRadius: 1.5,
-        overflow: "hidden",
+        overflow: 'hidden',
       }}
     >
       {src ? (
@@ -103,10 +102,10 @@ export const MessageCardVideoPreviewStage = forwardRef<
             }
             if (v.paused) {
               v.play().catch(console.error);
-              setClickAction("play");
+              setClickAction('play');
             } else {
               v.pause();
-              setClickAction("pause");
+              setClickAction('pause');
             }
             setShowIcon(true);
             clickActionTimer.current = window.setTimeout(() => {
@@ -114,16 +113,25 @@ export const MessageCardVideoPreviewStage = forwardRef<
             }, 300);
           }}
           style={{
-            maxWidth: "100%",
-            maxHeight: "100%",
-            display: error ? "none" : "block",
-            cursor: "pointer",
+            maxWidth: '100%',
+            maxHeight: '100%',
+            display: error ? 'none' : 'block',
+            cursor: 'pointer',
           }}
         />
       ) : null}
 
       {(!src && !error) || (src && !error && isBuffering) ? (
-        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'grid',
+            placeItems: 'center',
+            pointerEvents: 'none',
+          }}
+        >
           <CircularProgress size={22} />
         </Box>
       ) : null}
@@ -131,32 +139,35 @@ export const MessageCardVideoPreviewStage = forwardRef<
       {src && !error ? (
         <Box
           sx={{
-            position: "absolute",
+            position: 'absolute',
             inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "none",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
             zIndex: 10,
           }}
         >
           <Box
-            className="bg-black/45 text-white/95 backdrop-blur-[2px] shadow-md shadow-black/30"
             sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               width: 72,
               height: 72,
-              borderRadius: "50%",
+              borderRadius: '50%',
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              color: '#fff',
+              backdropFilter: 'blur(2px)',
+              boxShadow: 3,
               opacity: showIcon ? 1 : 0,
-              transform: showIcon ? "scale(1)" : "scale(1.3)",
+              transform: showIcon ? 'scale(1)' : 'scale(1.3)',
               transition: showIcon
-                ? "none"
-                : "opacity 0.4s ease-out, transform 0.4s ease-out",
+                ? 'none'
+                : 'opacity 0.4s ease-out, transform 0.4s ease-out',
             }}
           >
-            {clickAction === "play" ? (
+            {clickAction === 'play' ? (
               <PlayArrowIcon sx={{ fontSize: 44, ml: 0.5 }} />
             ) : (
               <PauseIcon sx={{ fontSize: 44 }} />
@@ -167,16 +178,16 @@ export const MessageCardVideoPreviewStage = forwardRef<
 
       {error ? (
         <Box
-          className="bg-black/80"
           sx={{
-            position: "absolute",
+            position: 'absolute',
             inset: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
             p: 3,
-            textAlign: "center",
+            textAlign: 'center',
+            backgroundColor: 'background.default',
           }}
         >
           <Typography variant="body1" color="error" gutterBottom>
