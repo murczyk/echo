@@ -102,11 +102,22 @@ struct RerReport {
     parents: BTreeMap<UnitPath, ParentSection>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct SposobReportMessage {
-    unit: String,
     timestamp: NaiveDateTime,
     body: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SposobReportDay {
+    date: NaiveDate,
+    messages: Vec<SposobReportMessage>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SposobReportContent {
+    unit_heading: String,
+    days: Vec<SposobReportDay>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -247,6 +258,7 @@ fn write_sposob_report_docx(
     fallback_date: NaiveDate,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let content = build_sposob_report_content(report, fallback_date);
     let mut docx = Docx::new()
         .page_size(DOCX_A4_WIDTH, DOCX_A4_HEIGHT)
         .page_margin(
@@ -264,40 +276,76 @@ fn write_sposob_report_docx(
                 .cs(DOCX_FONT),
         )
         .add_paragraph(text_paragraph(
-            &join_set_comma(&report.units),
+            &content.unit_heading,
             true,
             false,
             AlignmentType::Left,
             false,
         ));
 
-    let mut messages = report.messages.values().collect::<Vec<_>>();
-    messages.sort_by_key(|message| message.timestamp);
-    if messages.is_empty() {
-        docx = docx.add_paragraph(sposob_date_paragraph(fallback_date));
-    }
-
-    let mut current_date = None;
-    for message in messages {
-        let message_date = message.timestamp.date();
-        if current_date != Some(message_date) {
-            docx = docx.add_paragraph(sposob_date_paragraph(message_date));
-            current_date = Some(message_date);
+    for day in &content.days {
+        docx = docx.add_paragraph(sposob_date_paragraph(day.date));
+        for message in &day.messages {
+            docx = docx
+                .add_paragraph(text_paragraph(
+                    &format_sposob_message(message),
+                    false,
+                    false,
+                    AlignmentType::Left,
+                    false,
+                ))
+                .add_paragraph(blank_paragraph());
         }
-        docx = docx
-            .add_paragraph(text_paragraph(
-                &format_sposob_message(message),
-                false,
-                false,
-                AlignmentType::Left,
-                false,
-            ))
-            .add_paragraph(blank_paragraph());
     }
 
     let file = std::fs::File::create(outpath)?;
     docx.build().pack(file).c(h!())?;
     Ok(())
+}
+
+fn build_sposob_report_content(
+    report: &SposobReport,
+    fallback_date: NaiveDate,
+) -> SposobReportContent {
+    let mut messages = report.messages.values().cloned().collect::<Vec<_>>();
+    messages.sort_by_key(|message| message.timestamp);
+
+    let mut days: Vec<SposobReportDay> = Vec::new();
+    for message in messages {
+        let date = message.timestamp.date();
+        if let Some(day) = days.last_mut().filter(|day| day.date == date) {
+            day.messages.push(message);
+        } else {
+            days.push(SposobReportDay {
+                date,
+                messages: vec![message],
+            });
+        }
+    }
+    if days.is_empty() {
+        days.push(SposobReportDay {
+            date: fallback_date,
+            messages: vec![],
+        });
+    }
+
+    SposobReportContent {
+        unit_heading: join_set_comma(&report.units),
+        days,
+    }
+}
+
+#[cfg(test)]
+fn format_sposob_report_content_text(content: &SposobReportContent) -> String {
+    let mut parts = vec![content.unit_heading.clone()];
+    for day in &content.days {
+        parts.push(day.date.format("%Y-%m-%d").to_string());
+        for message in &day.messages {
+            parts.push(format_sposob_message(message));
+            parts.push(String::new());
+        }
+    }
+    parts.join("\n")
 }
 
 async fn load_report(
@@ -471,11 +519,7 @@ fn insert_sposob_report_message(
     report
         .messages
         .entry(item_id)
-        .or_insert_with(|| SposobReportMessage {
-            unit,
-            timestamp,
-            body,
-        });
+        .or_insert_with(|| SposobReportMessage { timestamp, body });
 }
 
 async fn load_candidate_item_ids(
@@ -937,12 +981,7 @@ fn format_message_heading(message: &RerReportMessage) -> String {
 }
 
 fn format_sposob_message(message: &SposobReportMessage) -> String {
-    format!(
-        "{}\n{}\n{}",
-        message.unit,
-        message.timestamp.format("%H-%M-%S"),
-        message.body
-    )
+    format!("{}\n{}", message.timestamp.format("%H-%M-%S"), message.body)
 }
 
 fn sposob_date_paragraph(date: NaiveDate) -> Paragraph {
@@ -1011,7 +1050,9 @@ fn format_sposob_date_range(
     start_date: NaiveDate,
     end_date: NaiveDate,
 ) -> String {
-    if start_date.year() == end_date.year()
+    if start_date == end_date {
+        format!("{}", start_date.format("%d.%m.%Y"))
+    } else if start_date.year() == end_date.year()
         && start_date.month() == end_date.month()
     {
         format!(
@@ -1225,6 +1266,26 @@ mod tests {
             .unwrap()
             .and_hms_opt(hour, minute, 0)
             .unwrap()
+    }
+
+    fn dt_on(date: NaiveDate, hour: u32, minute: u32) -> NaiveDateTime {
+        date.and_hms_opt(hour, minute, 0).unwrap()
+    }
+
+    fn signal_message(id: i64, body: &str) -> signal_message::Model {
+        signal_message::Model {
+            id,
+            body: Some(body.to_string()),
+            created_at: chrono::Utc::now().naive_utc(),
+            timestamp: None,
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+            operator_tags: None,
+        }
     }
 
     fn unit(
@@ -1598,7 +1659,6 @@ mod tests {
         report.messages.insert(
             10,
             SposobReportMessage {
-                unit: "68 мсд 6 А".to_string(),
                 timestamp: dt(9, 15),
                 body: "Перший рядок\nДругий рядок".to_string(),
             },
@@ -1606,7 +1666,6 @@ mod tests {
         report.messages.insert(
             11,
             SposobReportMessage {
-                unit: "20 мсд 8 А".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 28)
                     .unwrap()
                     .and_hms_opt(1, 2, 3)
@@ -1627,12 +1686,10 @@ mod tests {
         let expected_order = [
             "20 мсд 8 А, 68 мсд 6 А",
             "2026-06-27",
-            "68 мсд 6 А",
             "09-15-00",
             "Перший рядок",
             "Другий рядок",
             "2026-06-28",
-            "20 мсд 8 А",
             "01-02-03",
             "Наступна доба",
         ];
@@ -1643,7 +1700,51 @@ mod tests {
             }) + prev_idx;
             prev_idx = idx;
         }
+        assert_blank_paragraph_after(&xml, "Другий рядок");
+        assert_blank_paragraph_after(&xml, "Наступна доба");
         assert!(xml.contains("<w:br"));
+    }
+
+    #[test]
+    fn sposob_report_content_uses_noheader_body_without_repeating_unit() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 1).unwrap();
+        let identity =
+            unit_identity(&unit("", "", "100 дшп", "1 пдб", "", "")).unwrap();
+        let target = ResolvedItemUnit {
+            identity,
+            locations: BTreeSet::new(),
+        };
+        let first = signal_message(10, "50 обрБпС | 2026-07-01\n06-45\nfoo");
+        let second = signal_message(
+            11,
+            "50 обрБпС [33hhfg50d] | 2026-07-01_14-47-00\n14-47\nbar",
+        );
+        let mut report = SposobReport::default();
+
+        insert_sposob_report_message(
+            &mut report,
+            target.clone(),
+            first.id,
+            dt_on(date, 6, 45),
+            message_body_without_headers(&first).unwrap(),
+        );
+        insert_sposob_report_message(
+            &mut report,
+            target,
+            second.id,
+            dt_on(date, 14, 47),
+            message_body_without_headers(&second).unwrap(),
+        );
+        let content = build_sposob_report_content(&report, date);
+        let text = format_sposob_report_content_text(&content);
+        println!("\n{text}");
+
+        assert_eq!(
+            text,
+            "1 пдб 100 дшп\n2026-07-01\n06-45-00\nfoo\n\n14-47-00\nbar\n"
+        );
+        assert!(!text.contains("50 обрБпС"));
+        assert!(!text.contains("33hhfg50d"));
     }
 
     #[test]
@@ -1654,7 +1755,6 @@ mod tests {
         report.messages.insert(
             1,
             SposobReportMessage {
-                unit: "68/мсд".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 6, 27)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
@@ -1665,7 +1765,6 @@ mod tests {
         report.messages.insert(
             2,
             SposobReportMessage {
-                unit: "20 мсд".to_string(),
                 timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
                     .unwrap()
                     .and_hms_opt(1, 0, 0)
@@ -1682,7 +1781,46 @@ mod tests {
     }
 
     #[test]
+    fn sposob_report_filename_uses_single_date_for_same_day() {
+        let mut report = SposobReport::default();
+        report.units.insert("1 пдб 100 дшп".to_string());
+        report.messages.insert(
+            1,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(1, 12, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        report.messages.insert(
+            2,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(23, 47, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        let req = report_preview_req_with_till(0);
+
+        assert_eq!(
+            sposob_report_filename(&report, &req).unwrap(),
+            "1 пдб 100 дшп 01.07.2026.docx"
+        );
+    }
+
+    #[test]
     fn format_sposob_date_range_handles_same_month_and_different_years() {
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            ),
+            "01.07.2026"
+        );
         assert_eq!(
             format_sposob_date_range(
                 NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
@@ -1848,5 +1986,27 @@ mod tests {
         let mut xml = String::new();
         document.read_to_string(&mut xml).unwrap();
         xml
+    }
+
+    fn assert_blank_paragraph_after(xml: &str, marker: &str) {
+        let marker_idx = xml.find(marker).unwrap_or_else(|| {
+            panic!("missing marker {marker}");
+        });
+        let paragraph_end =
+            xml[marker_idx..].find("</w:p>").unwrap_or_else(|| {
+                panic!("missing paragraph end after {marker}");
+            }) + marker_idx
+                + "</w:p>".len();
+        let after = xml[paragraph_end..].trim_start();
+        let next_end = after.find("</w:p>").unwrap_or_else(|| {
+            panic!("missing next paragraph after {marker}");
+        }) + "</w:p>".len();
+        let next_paragraph = &after[..next_end];
+        assert!(next_paragraph.starts_with("<w:p"));
+        assert!(
+            !next_paragraph.contains("<w:t")
+                && !next_paragraph.contains("<w:br"),
+            "expected blank paragraph after {marker}"
+        );
     }
 }
