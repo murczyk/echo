@@ -65,9 +65,6 @@ mainBody user model shared route =
         messagesCountOverall =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
 
-        isSposobUnitNameMissing =
-            model.reportTemplate == RTSposob && String.isEmpty (String.trim model.reportSposobUnitName)
-
         deleteConfirmationModal =
             modalDialog
                 (model.deleteMessageModalId /= Nothing)
@@ -328,6 +325,9 @@ view user model shared route =
 
                 Nothing ->
                     False
+
+        isSposobUnitNameMissing =
+            model.reportTemplate == RTSposob && String.isEmpty (String.trim model.reportSposobUnitName)
 
         headerCountsPill data isReloading =
             node "analysis-count-chip"
