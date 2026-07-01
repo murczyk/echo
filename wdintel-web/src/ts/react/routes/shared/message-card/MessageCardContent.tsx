@@ -131,8 +131,9 @@ export function MessageCardMessageBody({
         id: a.id ?? '',
         name: mediaAttachmentDisplayName(a),
         source: String(a.href ?? ''),
-        mimeType: raw.content_type ?? undefined,
-        sizeBytes: raw.size_bytes ?? undefined,
+        // Preserve normalized video metadata
+        mimeType: raw.contentType ?? raw.content_type ?? undefined,
+        sizeBytes: raw.sizeBytes ?? raw.size_bytes ?? undefined,
       };
     });
   }, [videoAttachments]);
