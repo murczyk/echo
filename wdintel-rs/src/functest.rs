@@ -1460,6 +1460,9 @@ pub mod tests {
         if out.external_id == NotSet {
             out.external_id = Set(None);
         }
+        if out.echo_inbox_message_id == NotSet {
+            out.echo_inbox_message_id = Set(None);
+        }
         if out.message_uid == NotSet {
             out.message_uid =
                 Set(Some(random_word::get(random_word::Lang::En).to_string()));

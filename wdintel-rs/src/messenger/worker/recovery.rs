@@ -278,7 +278,10 @@ async fn load_existing_signal_ids(
         .map(|message| (i64::from(message.id), message))
         .collect::<BTreeMap<_, _>>();
     Ok(signal_message::Entity::find()
-        .filter(signal_message::Column::ExternalId.is_in(inbox_ids.to_vec()))
+        .filter(
+            signal_message::Column::EchoInboxMessageId
+                .is_in(inbox_ids.to_vec()),
+        )
         .filter(signal_message::Column::MessageUid.is_not_null())
         .find_also_related(datasource_group::Entity)
         .all(dbx)
@@ -286,8 +289,8 @@ async fn load_existing_signal_ids(
         .c(h!())?
         .into_iter()
         .filter_map(|(signal_message, datasource_group)| {
-            let external_id = signal_message.external_id?;
-            let inbox_message = inbox_messages.get(&external_id)?;
+            let echo_inbox_message_id = signal_message.echo_inbox_message_id?;
+            let inbox_message = inbox_messages.get(&echo_inbox_message_id)?;
             let datasource_group = datasource_group.as_ref()?;
             if signal_message_matches_echo_inbox(
                 inbox_message,
@@ -295,7 +298,7 @@ async fn load_existing_signal_ids(
                 datasources,
                 groups,
             ) {
-                Some(external_id)
+                Some(echo_inbox_message_id)
             } else {
                 None
             }
@@ -786,7 +789,8 @@ pub async fn oneoff_audit_missing_echo_im_messages(
     let echo_inbox_ids =
         load_echo_inbox_message_external_ids(&dbx, since_ts, till_ts).await?;
     let existing_external_ids =
-        load_signal_message_external_ids(&dbx, &echo_inbox_ids).await?;
+        load_signal_message_echo_inbox_message_ids(&dbx, &echo_inbox_ids)
+            .await?;
     let unresolved_external_ids = echo_inbox_ids
         .iter()
         .filter(|external_id| !existing_external_ids.contains(external_id))
@@ -864,7 +868,7 @@ async fn load_echo_inbox_message_external_ids(
         .collect_vec())
 }
 
-async fn load_signal_message_external_ids(
+async fn load_signal_message_echo_inbox_message_ids(
     dbx: &DatabaseConnection,
     external_ids: &[i64],
 ) -> Result<HashSet<i64>, AppError> {
@@ -874,8 +878,11 @@ async fn load_signal_message_external_ids(
 
     Ok(signal_message::Entity::find()
         .select_only()
-        .column(signal_message::Column::ExternalId)
-        .filter(signal_message::Column::ExternalId.is_in(external_ids.to_vec()))
+        .column(signal_message::Column::EchoInboxMessageId)
+        .filter(
+            signal_message::Column::EchoInboxMessageId
+                .is_in(external_ids.to_vec()),
+        )
         .into_tuple::<Option<i64>>()
         .all(dbx)
         .await
@@ -1278,9 +1285,10 @@ mod tests {
         let missing_count = run_recovery(&env).await;
 
         assert_eq!(missing_count, 1);
-        let signal_message = signal_message_by_external_id(&env.dbx, inbox.id)
-            .await
-            .unwrap();
+        let signal_message =
+            signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
+                .await
+                .unwrap();
         assert_eq!(signal_message.created_at, inbox.created_at);
         assert_eq!(signal_message.timestamp, inbox.timestamp);
         assert_eq!(signal_message.body, Some(inbox.body.clone()));
@@ -1324,7 +1332,7 @@ mod tests {
         let missing_count = run_recovery(&env).await;
 
         assert_eq!(missing_count, 1);
-        assert!(signal_message_by_external_id(&env.dbx, inbox.id)
+        assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
             .await
             .is_none());
         assert!(
@@ -1403,6 +1411,8 @@ mod tests {
             datasource_group_id,
             false,
             None,
+            None,
+            Some(i64::from(inbox.id)),
         )
         .await;
 
@@ -1450,6 +1460,8 @@ mod tests {
             datasource_group_id,
             false,
             Some(format!("uid-{}", Uuid::new_v4())),
+            Some(i64::from(inbox.id)),
+            None,
         )
         .await;
 
@@ -1529,7 +1541,7 @@ mod tests {
         let missing_count = run_recovery(&env).await;
 
         assert_eq!(missing_count, 1);
-        assert!(signal_message_by_external_id(&env.dbx, inbox.id)
+        assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
             .await
             .is_some());
         assert!(
@@ -1590,7 +1602,7 @@ mod tests {
         let missing_count = run_recovery(&env).await;
 
         assert_eq!(missing_count, 0);
-        assert!(signal_message_by_external_id(&env.dbx, inbox.id)
+        assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
             .await
             .is_none());
         assert!(signal_message_queue::Entity::find_by_id(queue_item.id)
@@ -1668,7 +1680,7 @@ mod tests {
         let missing_count = run_recovery(&env).await;
 
         assert_eq!(missing_count, 1);
-        assert!(signal_message_by_external_id(&env.dbx, inbox.id)
+        assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
             .await
             .is_none());
         assert!(signal_message_queue::Entity::find_by_id(queue_item.id)
@@ -2024,16 +2036,20 @@ mod tests {
             datasource_group_id,
             false,
             Some(format!("uid-{}", Uuid::new_v4())),
+            None,
+            Some(i64::from(inbox_id)),
         )
         .await
     }
 
     async fn mk_signal_for_inbox_with_datasource_group(
         dbx: &DatabaseConnection,
-        inbox_id: i32,
+        _inbox_id: i32,
         datasource_group_id: i64,
         deleted: bool,
         message_uid: Option<String>,
+        external_id: Option<i64>,
+        echo_inbox_message_id: Option<i64>,
     ) -> signal_message::Model {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
@@ -2045,7 +2061,8 @@ mod tests {
             sender: Set(None),
             format: Set(None),
             deleted: Set(deleted),
-            external_id: Set(Some(i64::from(inbox_id))),
+            external_id: Set(external_id),
+            echo_inbox_message_id: Set(echo_inbox_message_id),
             message_uid: Set(message_uid),
             operator_tags: Set(None),
         }
@@ -2068,7 +2085,8 @@ mod tests {
             sender: Set(None),
             format: Set(None),
             deleted: Set(true),
-            external_id: Set(Some(i64::from(inbox_id))),
+            external_id: Set(None),
+            echo_inbox_message_id: Set(Some(i64::from(inbox_id))),
             message_uid: Set(None),
             operator_tags: Set(None),
         }
@@ -2145,12 +2163,15 @@ mod tests {
         inbox_message.update(dbx).await.unwrap();
     }
 
-    async fn signal_message_by_external_id(
+    async fn signal_message_by_echo_inbox_message_id(
         dbx: &DatabaseConnection,
         inbox_id: i32,
     ) -> Option<signal_message::Model> {
         signal_message::Entity::find()
-            .filter(signal_message::Column::ExternalId.eq(i64::from(inbox_id)))
+            .filter(
+                signal_message::Column::EchoInboxMessageId
+                    .eq(i64::from(inbox_id)),
+            )
             .one(dbx)
             .await
             .unwrap()

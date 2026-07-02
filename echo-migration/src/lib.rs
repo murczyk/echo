@@ -275,6 +275,7 @@ mod m20260701_160523_palitra_conversion_job_goi_upload_flag;
 mod m20260702_145245_create_sigint_comment;
 mod m20260702_155737_echo_im_sync_since;
 mod m20260702_173206_echo_missing_messages;
+mod m20260702_192716_signal_message_echo_inbox_message_id;
 
 pub struct Migrator;
 
@@ -571,6 +572,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260702_155737_echo_im_sync_since::Migration),
             Box::new(m20260702_173206_echo_missing_messages::Migration),
+            Box::new(
+                m20260702_192716_signal_message_echo_inbox_message_id::Migration,
+            ),
         ]
     }
 }

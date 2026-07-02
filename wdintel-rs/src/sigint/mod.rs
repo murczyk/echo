@@ -714,6 +714,7 @@ async fn xlsx_import_process_one(
         format: Set(Some(2)),
         deleted: Set(false),
         external_id: NotSet,
+        echo_inbox_message_id: Set(None),
         message_uid: NotSet,
         operator_tags: NotSet,
     }

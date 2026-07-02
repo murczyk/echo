@@ -306,6 +306,7 @@ async fn replay_source_message(
         format: Set(source.message.format),
         deleted: Set(false),
         external_id: Set(None),
+        echo_inbox_message_id: Set(None),
         message_uid: Set(None),
         datasource_group_id: Set(source.message.datasource_group_id),
         operator_tags: Set(source.message.operator_tags.clone()),

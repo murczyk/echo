@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(unique)]
     pub message_id: i32,
     pub created_at: DateTime,
     pub is_resolved: bool,

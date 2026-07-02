@@ -13,8 +13,6 @@ pub struct Model {
     pub rer_analysis_units_exact_match_only_default: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    pub echo_im_sync_since: DateTime,
-    pub echo_im_sync_since_inbox_message_id: i32,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub deleted: bool,
@@ -35,7 +33,9 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub default_neo_analysis: bool,
+    pub echo_im_sync_since: DateTime,
     pub autofix_echoim_missing_messages: bool,
+    pub echo_im_sync_since_inbox_message_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -29,7 +29,9 @@ where
         .insert(dbx)
         .await
         .c(h!())?;
-        if message.external_id.is_some() {
+        if message.external_id.is_some()
+            || message.echo_inbox_message_id.is_some()
+        {
             let trace_message_uid = duplicate_trace_message_uid(message.id);
             let mut message = message.into_active_model();
             message.message_uid = Set(Some(trace_message_uid));
@@ -122,11 +124,13 @@ mod tests {
         )
         .await
         .unwrap();
+        let echo_inbox_message_id = 4242;
         let staged = mk_signal_message(
             &txn,
             signal_message::ActiveModel {
                 deleted: Set(true),
-                external_id: Set(Some(4242)),
+                external_id: Set(None),
+                echo_inbox_message_id: Set(Some(echo_inbox_message_id)),
                 message_uid: Set(None),
                 ..Default::default()
             },
@@ -160,7 +164,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(trace.deleted);
-        assert_eq!(trace.external_id, staged.external_id);
+        assert_eq!(trace.external_id, None);
+        assert_eq!(trace.echo_inbox_message_id, Some(echo_inbox_message_id));
         assert_eq!(
             trace.message_uid.as_deref(),
             Some(duplicate_trace_message_uid(staged.id).as_str())

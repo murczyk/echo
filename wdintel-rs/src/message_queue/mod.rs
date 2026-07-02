@@ -94,8 +94,9 @@ pub async fn process_signal_message_queue_item_with_options(
         sender: Set(m.sender),
         format: NotSet,
         deleted: Set(true), // unstaged message
-        // Echo IM internal_id is kept here only for tracing messages back to echo_im.
-        external_id: Set(m.inbox_message_id),
+        external_id: Set(None),
+        // Echo IM inbox id is kept here only for tracing messages back to echo_im.
+        echo_inbox_message_id: Set(m.inbox_message_id),
         message_uid: NotSet,
         operator_tags: NotSet,
     }

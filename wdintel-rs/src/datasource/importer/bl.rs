@@ -365,21 +365,13 @@ pub async fn upsert_messages(
     let mut new_messages_counter = 0;
     for messages in message_chunks.into_iter() {
         let message_ids = messages.iter().map(|x| x.message.id).collect_vec();
-        let existing_messages = signal_message::Entity::find()
-            .filter(signal_message::Column::ExternalId.eq_any(message_ids))
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::DatasourceGroup.def(),
-            )
-            .filter(
-                datasource_group::Column::DatasourceId.eq(target_datasource_id),
-            )
-            .all(db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .flat_map(|m| m.external_id.map(|id| (id, m)))
-            .collect::<BTreeMap<_, _>>();
+        let existing_messages = load_existing_imported_messages(
+            db,
+            &message_ids,
+            target_datasource_id,
+        )
+        .await
+        .context(h!())?;
         let existing_message_ids =
             existing_messages.values().map(|m| m.id).collect_vec();
         let mut existing_message_groups: HashMap<
@@ -469,6 +461,7 @@ pub async fn upsert_messages(
             rec.id = NotSet;
             rec.datasource_group_id = Set(datasource_group_id);
             rec.external_id = Set(Some(source_message_id));
+            rec.echo_inbox_message_id = Set(None);
             let inserted = rec.insert(&txn).await.context(h!())?;
             let new_id = inserted.id;
             new_messages_counter += 1;
@@ -510,4 +503,77 @@ pub async fn upsert_messages(
     }
     info!("inserted {new_messages_counter} new messages");
     Ok(())
+}
+
+async fn load_existing_imported_messages(
+    db: &DatabaseConnection,
+    message_ids: &[i64],
+    target_datasource_id: i64,
+) -> anyhow::Result<BTreeMap<i64, signal_message::Model>> {
+    Ok(signal_message::Entity::find()
+        .filter(signal_message::Column::ExternalId.eq_any(message_ids.to_vec()))
+        .filter(signal_message::Column::EchoInboxMessageId.is_null())
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(datasource_group::Column::DatasourceId.eq(target_datasource_id))
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|message| message.external_id.map(|id| (id, message)))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_datasource, mk_datasource_group, mk_signal_message,
+    };
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn existing_imported_messages_ignore_echo_inbox_traces() {
+        let env = cleanup().await.unwrap();
+        let datasource = mk_datasource(
+            &env.dbx,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                external_id: Set(Some(42)),
+                echo_inbox_message_id: Set(Some(42)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let existing =
+            load_existing_imported_messages(&env.dbx, &[42], datasource.id)
+                .await
+                .unwrap();
+
+        assert!(existing.is_empty());
+    }
 }

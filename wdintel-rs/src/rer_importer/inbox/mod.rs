@@ -1034,6 +1034,7 @@ async fn upsert_submit_signal_message(
             format: NotSet,
             deleted: Set(false),
             external_id: Set(None),
+            echo_inbox_message_id: Set(None),
             message_uid: NotSet,
             operator_tags: Set(operator_tags),
         }
