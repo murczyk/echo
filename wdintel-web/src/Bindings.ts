@@ -2749,6 +2749,12 @@ export type NetworkCallsignRelationMessagesReq = {
   limit: number;
 };
 
+export type NetworkCallsignRelationEnrichmentSource =
+  | 'RelationEnrichmentNone'
+  | 'RelationEnrichmentNetwork'
+  | 'RelationEnrichmentCatalog'
+;
+
 export type NetworkCallsignRelationNode = {
   id: string;
   label: string;
@@ -2760,6 +2766,7 @@ export type NetworkCallsignRelationNode = {
   position: string | null;
   unitName: string | null;
   knownCallsignId: number | null;
+  enrichmentSource: NetworkCallsignRelationEnrichmentSource;
 };
 
 export type NetworkCallsignRelationMessage = {

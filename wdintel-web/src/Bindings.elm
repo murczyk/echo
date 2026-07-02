@@ -7128,6 +7128,22 @@ networkCallsignRelationMessagesReqEncoder struct =
         ]
 
 
+type NetworkCallsignRelationEnrichmentSource
+    = RelationEnrichmentNone
+    | RelationEnrichmentNetwork
+    | RelationEnrichmentCatalog
+
+
+networkCallsignRelationEnrichmentSourceEncoder : NetworkCallsignRelationEnrichmentSource -> Json.Encode.Value
+networkCallsignRelationEnrichmentSourceEncoder enum =
+    case enum of
+        RelationEnrichmentNone ->
+            Json.Encode.string "RelationEnrichmentNone"
+        RelationEnrichmentNetwork ->
+            Json.Encode.string "RelationEnrichmentNetwork"
+        RelationEnrichmentCatalog ->
+            Json.Encode.string "RelationEnrichmentCatalog"
+
 type alias NetworkCallsignRelationNode =
     { id : String
     , label : String
@@ -7139,6 +7155,7 @@ type alias NetworkCallsignRelationNode =
     , position : Maybe (String)
     , unitName : Maybe (String)
     , knownCallsignId : Maybe (Int)
+    , enrichmentSource : NetworkCallsignRelationEnrichmentSource
     }
 
 
@@ -7155,6 +7172,7 @@ networkCallsignRelationNodeEncoder struct =
         , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.position )
         , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
         , ( "known_callsign_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.knownCallsignId )
+        , ( "enrichment_source", (networkCallsignRelationEnrichmentSourceEncoder) struct.enrichmentSource )
         ]
 
 
@@ -12857,6 +12875,38 @@ networkCallsignRelationMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.int)))
 
 
+networkCallsignRelationEnrichmentSourceDecoder : Json.Decode.Decoder NetworkCallsignRelationEnrichmentSource
+networkCallsignRelationEnrichmentSourceDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "RelationEnrichmentNone" ->
+                            Json.Decode.succeed RelationEnrichmentNone
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "RelationEnrichmentNetwork" ->
+                            Json.Decode.succeed RelationEnrichmentNetwork
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "RelationEnrichmentCatalog" ->
+                            Json.Decode.succeed RelationEnrichmentCatalog
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 networkCallsignRelationNodeDecoder : Json.Decode.Decoder NetworkCallsignRelationNode
 networkCallsignRelationNodeDecoder =
     Json.Decode.succeed NetworkCallsignRelationNode
@@ -12870,6 +12920,7 @@ networkCallsignRelationNodeDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enrichment_source" (networkCallsignRelationEnrichmentSourceDecoder)))
 
 
 networkCallsignRelationMessageDecoder : Json.Decode.Decoder NetworkCallsignRelationMessage

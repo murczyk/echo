@@ -29,6 +29,7 @@ function createNode(): NetworkCallsignRelationNode {
     position: 'КР',
     unitName: '1 мб',
     knownCallsignId: 10,
+    enrichmentSource: 'RelationEnrichmentNetwork',
   };
 }
 
@@ -117,6 +118,18 @@ describe('NetworkCallsignRelationsGraphDetails', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('boom');
+  });
+
+  it('marks catalog suggestions as unconfirmed', () => {
+    const view = renderDetails({
+      selectedNode: {
+        ...createNode(),
+        enrichmentSource: 'RelationEnrichmentCatalog',
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Каталог · не підтверджено');
   });
 
   it('shows a back action when edge details were opened from a node list', () => {
