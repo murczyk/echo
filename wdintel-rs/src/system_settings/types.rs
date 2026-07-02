@@ -15,6 +15,7 @@ pub struct SystemSettingsCurrentRsp {
     pub short_url_enabled: bool,
     pub support_non_rer_interceptions: bool,
     pub default_neo_analysis: bool,
+    pub autofix_echoim_missing_messages: bool,
     pub peleng_bounds_enabled: bool,
     pub peleng_bounds_top_left_lat: Option<f64>,
     pub peleng_bounds_top_left_lng: Option<f64>,
@@ -40,6 +41,7 @@ pub struct SystemSettingsItem {
     pub short_url_enabled: bool,
     pub support_non_rer_interceptions: bool,
     pub default_neo_analysis: bool,
+    pub autofix_echoim_missing_messages: bool,
     pub peleng_bounds_enabled: bool,
     pub peleng_bounds_top_left_lat: Option<f64>,
     pub peleng_bounds_top_left_lng: Option<f64>,
@@ -69,6 +71,8 @@ pub struct CreateSystemSettingsReq {
     pub support_non_rer_interceptions: bool,
     #[serde(default)]
     pub default_neo_analysis: bool,
+    #[serde(default)]
+    pub autofix_echoim_missing_messages: bool,
     #[serde(default)]
     pub peleng_bounds_enabled: bool,
     pub peleng_bounds_top_left_lat: Option<f64>,

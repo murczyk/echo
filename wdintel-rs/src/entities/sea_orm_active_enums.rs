@@ -150,6 +150,31 @@ pub enum EchoMessageSource {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
+    enum_name = "echo_missing_message_status"
+)]
+pub enum EchoMissingMessageStatus {
+    #[sea_orm(string_value = "pending")]
+    Pending,
+    #[sea_orm(string_value = "scheduled")]
+    Scheduled,
+    #[sea_orm(string_value = "error")]
+    Error,
+    #[sea_orm(string_value = "resolved")]
+    Resolved,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
     enum_name = "interseption_kind"
 )]
 pub enum InterseptionKind {

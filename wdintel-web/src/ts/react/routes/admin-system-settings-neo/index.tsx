@@ -38,6 +38,7 @@ type SystemSettingsForm = {
   dutyTestLimit: number;
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -57,6 +58,7 @@ type SystemSettingsPayload = {
   dutyTestLimit: number;
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -74,6 +76,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyTestLimit: 1,
   dutyPollIntervalSec: 1,
   shortUrlEnabled: false,
+  autofixEchoimMissingMessages: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -106,6 +109,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
+    autofixEchoimMissingMessages:
+      item?.autofixEchoimMissingMessages ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -125,6 +130,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyTestLimit === b.dutyTestLimit &&
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
     a.shortUrlEnabled === b.shortUrlEnabled &&
+    a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -191,6 +197,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyTestLimit: form.dutyTestLimit,
     dutyPollIntervalSec: form.dutyPollIntervalSec,
     shortUrlEnabled: form.shortUrlEnabled,
+    autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -382,6 +389,22 @@ function MainSettingsSection({
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Оперативний: Echo IM
+      </Typography>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.autofixEchoimMissingMessages}
+            onChange={(_, checked) => {
+              patchForm({ autofixEchoimMissingMessages: checked });
+            }}
+          />
+        }
+        label="Автоматично відновлювати відсутні Echo IM повідомлення"
+      />
+
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Оперативний: Короткий URL
       </Typography>
 
@@ -549,6 +572,8 @@ export function AdminSystemSettingsNeoPage() {
         rerDutyShortUrl: payload.shortUrlEnabled,
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
+        autofixEchoimMissingMessages:
+          payload.autofixEchoimMissingMessages,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

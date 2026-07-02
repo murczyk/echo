@@ -25,6 +25,7 @@ pub use super::echo_group::Entity as EchoGroup;
 pub use super::echo_inbox_message::Entity as EchoInboxMessage;
 pub use super::echo_inbox_message_changed::Entity as EchoInboxMessageChanged;
 pub use super::echo_message_reaction_queue::Entity as EchoMessageReactionQueue;
+pub use super::echo_missing_message::Entity as EchoMissingMessage;
 pub use super::echo_outbox_message::Entity as EchoOutboxMessage;
 pub use super::echo_outbox_message_attachment::Entity as EchoOutboxMessageAttachment;
 pub use super::echo_outbox_message_attachment_patch::Entity as EchoOutboxMessageAttachmentPatch;

@@ -183,6 +183,14 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        signal_message_queue_attachment::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        signal_message_queue::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_inbox_item::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -253,6 +261,10 @@ pub mod tests {
             .await
             .context(h!())?;
         report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        system_settings::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -1447,6 +1459,9 @@ pub mod tests {
         }
         if out.external_id == NotSet {
             out.external_id = Set(None);
+        }
+        if out.echo_inbox_message_id == NotSet {
+            out.echo_inbox_message_id = Set(None);
         }
         if out.message_uid == NotSet {
             out.message_uid =

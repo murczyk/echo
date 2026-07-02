@@ -224,6 +224,7 @@ pub async fn rer_delta_kmz_import_go(
             format: Set(Some(2)),
             deleted: Set(false),
             external_id: NotSet,
+            echo_inbox_message_id: Set(None),
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
             operator_tags: NotSet,

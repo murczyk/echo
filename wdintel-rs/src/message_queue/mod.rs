@@ -15,6 +15,11 @@ use sea_orm::*;
 /// - consumes messages from [signal_message_queue table](crate::entities::signal_message_queue)
 /// - inserts them into [signal_message table](crate::entities::signal_message)
 /// - further see [construct_inbox_item](crate::inbox::construct_inbox_item) where we construct [sigint_inbox_item](crate::entities::sigint_inbox_item) entries from [signal_message](crate::entities::signal_message)
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ProcessSignalMessageQueueItemOptions {
+    pub created_at: Option<NaiveDateTime>,
+}
+
 pub async fn process_signal_message_queue_item(
     m: Message,
     attachments: Vec<MessageAttachmentF1>,
@@ -26,6 +31,35 @@ pub async fn process_signal_message_queue_item(
     txn: &DatabaseTransaction,
     skip_process_inbox_item: bool,
     changed_inbox_item_ids: &mut Vec<i64>,
+) -> Result<String, AppError> {
+    process_signal_message_queue_item_with_options(
+        m,
+        attachments,
+        redis,
+        settlements,
+        rq,
+        config,
+        s3,
+        txn,
+        skip_process_inbox_item,
+        changed_inbox_item_ids,
+        ProcessSignalMessageQueueItemOptions::default(),
+    )
+    .await
+}
+
+pub async fn process_signal_message_queue_item_with_options(
+    m: Message,
+    attachments: Vec<MessageAttachmentF1>,
+    redis: &mut ConnectionManager,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    rq: &reqwest::Client,
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+    txn: &DatabaseTransaction,
+    skip_process_inbox_item: bool,
+    changed_inbox_item_ids: &mut Vec<i64>,
+    options: ProcessSignalMessageQueueItemOptions,
 ) -> Result<String, AppError> {
     // Normalize body
     info!("received message: {:?}", m);
@@ -52,12 +86,17 @@ pub async fn process_signal_message_queue_item(
         id: NotSet,
         body: Set(Some(body.clone())),
         datasource_group_id: Set(Some(datasource_group_id)),
-        created_at: NotSet,
+        created_at: match options.created_at {
+            Some(created_at) => Set(created_at),
+            None => NotSet,
+        },
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
         format: NotSet,
         deleted: Set(true), // unstaged message
-        external_id: NotSet,
+        external_id: Set(None),
+        // Echo IM inbox id is kept here only for tracing messages back to echo_im.
+        echo_inbox_message_id: Set(m.inbox_message_id),
         message_uid: NotSet,
         operator_tags: NotSet,
     }
@@ -94,6 +133,7 @@ pub async fn process_signal_message_queue_item(
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
     if !attachments.is_empty() {
+        // Recovery wraps this error in a rollback because media may carry critical context.
         let upload_inputs: Vec<MediaUploadInput> =
             attachments.clone().into_iter().map(Into::into).collect();
         crate::messenger::media::store_media_attachments(

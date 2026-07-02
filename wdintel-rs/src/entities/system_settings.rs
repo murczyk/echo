@@ -33,6 +33,9 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub default_neo_analysis: bool,
+    pub echo_im_sync_since: DateTime,
+    pub autofix_echoim_missing_messages: bool,
+    pub echo_im_sync_since_inbox_message_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -3053,6 +3053,7 @@ export type SystemSettingsCurrentRsp = {
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3075,6 +3076,7 @@ export type SystemSettingsItem = {
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3096,6 +3098,7 @@ export type CreateSystemSettingsReq = {
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -3104,6 +3107,26 @@ export type CreateSystemSettingsReq = {
 };
 
 export type ActivateSystemSettingsReq = {
+  id: number;
+};
+
+export type EchoMissingMessageRow = {
+  id: number;
+  messageId: number;
+  body: string;
+  createdAt: string;
+  isResolved: boolean;
+  resolvedAt: string | null;
+  scheduledBy: string | null;
+  status: string;
+  error: string | null;
+};
+
+export type EchoMissingMessageListRsp = {
+  items: Array<EchoMissingMessageRow>;
+};
+
+export type EchoMissingMessageResolveReq = {
   id: number;
 };
 
