@@ -252,6 +252,8 @@ export function buildAnalysisReq(
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
     selectedTags: query.tags.length ? query.tags : null,
+    deniedTags: null,
+    tagPresence: null,
     selectedNetworks: query.withoutNetwork
       ? null
       : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
@@ -316,6 +318,8 @@ export function buildInboxReq(
     highlightSignals: null,
     highlightPoints: true,
     selectedTags: req.selectedTags,
+    deniedTags: req.deniedTags,
+    tagPresence: req.tagPresence,
     selectedAors: req.selectedAors,
     selectedNetworks: req.selectedNetworks,
     withoutNetwork: req.withoutNetwork,

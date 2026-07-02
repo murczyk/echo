@@ -313,6 +313,8 @@ export function buildInboxReq(opts: {
     highlightSignals: opts.highlightSignals ?? false,
     highlightPoints: true,
     selectedTags: null,
+    deniedTags: null,
+    tagPresence: null,
     selectedAors: null,
     selectedNetworks: null,
     withoutNetwork: null,

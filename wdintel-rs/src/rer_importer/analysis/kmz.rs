@@ -68,6 +68,8 @@ pub(crate) async fn rer_analysis_kmz_bytes(
     let items = filter_selected_tags(
         items,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,

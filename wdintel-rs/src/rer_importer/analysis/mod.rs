@@ -905,24 +905,16 @@ fn get_related_tag_items_filter(
 }
 
 fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
-    let user_alias = Alias::new("t_user");
-    let allowed_logins = Query::select()
-        .column((login::Entity, login::Column::Login))
-        .from(login::Entity)
-        .join_as(
-            JoinType::InnerJoin,
-            login::Entity,
-            user_alias.clone(),
-            Expr::col((login::Entity, login::Column::OrganismId))
-                .equals((user_alias.clone(), login::Column::OrganismId)),
-        )
-        .and_where(
-            Expr::col((user_alias, login::Column::Login))
-                .eq(user_id.to_string()),
-        )
-        .to_owned();
+    tag_presence_exists(false, true, user_id)
+}
 
-    let subquery = sigint_inbox_item_tag::Entity::find()
+fn tag_presence_exists(
+    without_model_tags: bool,
+    report_tags_only_this_unit: bool,
+    user_id: &str,
+) -> SimpleExpr {
+    let user_alias = Alias::new("t_user");
+    let mut q = sigint_inbox_item_tag::Entity::find()
         .select_only()
         .expr(Expr::value(1))
         .filter(
@@ -933,16 +925,43 @@ fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
             .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .filter(
-            sigint_inbox_item_tag::Column::Login.in_subquery(allowed_logins),
-        )
-        .into_query();
+            sigint_inbox_item_tag::Column::Confidence
+                .gte(TAG_MINIMUM_CONFIDENCE),
+        );
 
-    Expr::exists(subquery)
+    if without_model_tags {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
+
+    if report_tags_only_this_unit {
+        let allowed_logins = Query::select()
+            .column((login::Entity, login::Column::Login))
+            .from(login::Entity)
+            .join_as(
+                JoinType::InnerJoin,
+                login::Entity,
+                user_alias.clone(),
+                Expr::col((login::Entity, login::Column::OrganismId))
+                    .equals((user_alias.clone(), login::Column::OrganismId)),
+            )
+            .and_where(
+                Expr::col((user_alias, login::Column::Login))
+                    .eq(user_id.to_string()),
+            )
+            .to_owned();
+        q = q.filter(
+            sigint_inbox_item_tag::Column::Login.in_subquery(allowed_logins),
+        );
+    }
+
+    Expr::exists(q.into_query())
 }
 
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
+    denied_tags: &Option<Vec<i64>>,
+    tag_presence: &Option<TagPresenceFilter>,
     or_bookmarked: &Option<bool>,
     or_important: &Option<bool>,
     or_with_coords: &Option<bool>,
@@ -1044,7 +1063,40 @@ where
         q = q.filter(inner_expr.clone());
     }
 
-    if report_tags_only_this_unit && m_inner_expr.is_none() {
+    if let Some(denied_tags) = denied_tags.as_ref() {
+        if !denied_tags.is_empty() {
+            let unique_tags: BTreeSet<i64> =
+                denied_tags.iter().cloned().collect();
+            let without_model_tags = without_model_tags.unwrap_or(false);
+            q = q.filter(
+                get_related_tag_items_filter(
+                    unique_tags,
+                    TagFilterOption::OneOfTags,
+                    without_model_tags,
+                    report_tags_only_this_unit,
+                    user_id,
+                )
+                .not(),
+            );
+        }
+    }
+
+    if let Some(tag_presence) = tag_presence {
+        let exists = tag_presence_exists(
+            without_model_tags.unwrap_or(false),
+            report_tags_only_this_unit,
+            user_id,
+        );
+        q = match tag_presence {
+            TagPresenceFilter::WithTags => q.filter(exists),
+            TagPresenceFilter::WithoutTags => q.filter(exists.not()),
+        };
+    }
+
+    if report_tags_only_this_unit
+        && m_inner_expr.is_none()
+        && tag_presence.is_none()
+    {
         q = q.filter(tags_from_user_organism_exists(user_id));
     }
     // println!(
@@ -2268,6 +2320,8 @@ pub(crate) fn build_summary_table_filtered_messages_query(
     let q = filter_selected_tags(
         q,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -2938,6 +2992,8 @@ pub async fn edit_freq_unit_name(
         &None,
         &None,
         &None,
+        &None,
+        &None,
         &req.filter_tags_option,
         &reqan.without_model_tags,
         &user.id().c(h!())?,
@@ -3308,6 +3364,8 @@ pub async fn bi_new_callsigns(
     let rows_res = filter_selected_tags(
         rows_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -3393,6 +3451,8 @@ pub async fn bi_new_callsigns(
     let rows_res = filter_selected_tags(
         rows_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,

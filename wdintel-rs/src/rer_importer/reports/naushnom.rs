@@ -346,6 +346,8 @@ pub async fn get_inbox_messages_report_network(
     let mut q = filter_selected_tags(
         q,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
