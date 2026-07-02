@@ -181,6 +181,11 @@ async fn load_recovery_maps(
             .filter(
                 signal_message::Column::ExternalId.is_in(inbox_ids_i64.clone()),
             )
+            .filter(
+                Condition::any()
+                    .add(signal_message::Column::Deleted.eq(false))
+                    .add(signal_message::Column::MessageUid.is_not_null()),
+            )
             .all(dbx)
             .await
             .c(h!())?
@@ -1253,6 +1258,35 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn staged_signal_message_without_uid_is_not_existing_recovery() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, _datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group = mk_echo_group(&env.dbx, account.id, "staged-group").await;
+        let cursor = old_ts();
+        insert_system_settings(&env.dbx, cursor, false).await;
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        mk_staged_signal_for_inbox(&env.dbx, inbox.id).await;
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
+            .await
+            .unwrap();
+        assert!(!missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Pending);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn duplicate_missing_message_record_keeps_single_row() {
         let _guard = TEST_LOCK.lock().await;
         let env = recovery_env().await;
@@ -1776,6 +1810,29 @@ mod tests {
             deleted: Set(false),
             external_id: Set(Some(i64::from(inbox_id))),
             message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
+            operator_tags: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_staged_signal_for_inbox(
+        dbx: &DatabaseConnection,
+        inbox_id: i32,
+    ) -> signal_message::Model {
+        let now = Utc::now().naive_utc();
+        signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(format!("staged {}", Uuid::new_v4()))),
+            datasource_group_id: Set(None),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            sender: Set(None),
+            format: Set(None),
+            deleted: Set(true),
+            external_id: Set(Some(i64::from(inbox_id))),
+            message_uid: Set(None),
             operator_tags: Set(None),
         }
         .insert(dbx)
