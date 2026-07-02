@@ -242,6 +242,7 @@ mod m20260507_151045_add_palitra_goi_sync_job;
 mod m20260510_101006_operator_dmr_metadata;
 mod m20260511_145205_delta_login_lower_unique;
 mod m20260513_102326_add_sigint_network_description_topic;
+mod m20260515_120000_add_sigint_post_id_to_sigint_comment;
 mod m20260519_091147_add_command_control_to_sigint_network_callsign;
 mod m20260520_120000_create_organism_keyword_set;
 mod m20260529_110000_add_short_url_to_admin_config;
@@ -272,6 +273,7 @@ mod m20260701_120000_goi_palitra_sync_multi_palitra;
 mod m20260701_152707_goi_palitra_sync_side_checksums;
 mod m20260701_160523_palitra_conversion_job_goi_upload_flag;
 mod m20260515_120000_add_sigint_post_id_to_sigint_comment;
+mod m20260702_145245_create_sigint_comment;
 
 pub struct Migrator;
 
@@ -280,7 +282,6 @@ impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
             Box::new(m20220101_000001_create_table::Migration),
-            Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
             Box::new(m20231227_163602_sigint_unit::Migration),
             Box::new(m20240205_115451_etalonka::Migration),
             Box::new(m20240207_101323_etalonka_template_rm::Migration),
@@ -523,6 +524,11 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260513_102326_add_sigint_network_description_topic::Migration,
             ),
+            Box::new(m20260702_145245_create_sigint_comment::Migration),
+            Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
+            Box::new(
+                m20260515_120000_add_sigint_post_id_to_sigint_comment::Migration,
+            ),
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
             Box::new(m20260529_110000_add_short_url_to_admin_config::Migration),
@@ -551,8 +557,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260701_073733_default_neo_analysis::Migration),
             Box::new(
                 m20260701_100000_backfill_deleted_freq_active_to::Migration,
-            Box::new(
-                m20260515_120000_add_sigint_post_id_to_sigint_comment::Migration,
             ),
             Box::new(m20260630_210912_goi_palitra_sync_upgrade::Migration),
             Box::new(

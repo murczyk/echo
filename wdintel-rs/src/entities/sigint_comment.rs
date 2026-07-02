@@ -30,14 +30,6 @@ pub enum Relation {
     )]
     Login,
     #[sea_orm(
-        belongs_to = "super::signal_message::Entity",
-        from = "Column::SignalMessageId",
-        to = "super::signal_message::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    SignalMessage,
-    #[sea_orm(
         belongs_to = "super::sigint_post::Entity",
         from = "Column::SigintPostId",
         to = "super::sigint_post::Column::Id",
@@ -45,6 +37,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintPost,
+    #[sea_orm(
+        belongs_to = "super::signal_message::Entity",
+        from = "Column::SignalMessageId",
+        to = "super::signal_message::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SignalMessage,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -53,15 +53,15 @@ impl Related<super::login::Entity> for Entity {
     }
 }
 
-impl Related<super::signal_message::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SignalMessage.def()
-    }
-}
-
 impl Related<super::sigint_post::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintPost.def()
+    }
+}
+
+impl Related<super::signal_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessage.def()
     }
 }
 

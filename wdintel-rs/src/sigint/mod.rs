@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 pub mod aor;
 pub mod callsign;
+pub mod comment_review_tui;
 pub mod comments;
 pub mod etalonka;
 pub mod freq;
