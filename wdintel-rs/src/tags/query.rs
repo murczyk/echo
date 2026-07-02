@@ -95,9 +95,10 @@ pub async fn insert_global_tag<C>(
 where
     C: ConnectionTrait,
 {
+    let extra = normalized_extra(&req);
     Ok(tag::ActiveModel {
         label: Set(req.label),
-        extra: Set(req.extra),
+        extra: Set(extra),
         ord: Set(req.ord),
         enabled: Set(req.enabled),
         is_palitra: Set(req.is_palitra),
@@ -125,8 +126,9 @@ where
         .ok_or(AppError::NotFound)?;
 
     let mut tag = tag.into_active_model();
+    let extra = normalized_extra(&req);
     tag.label = Set(req.label);
-    tag.extra = Set(req.extra);
+    tag.extra = Set(extra);
     tag.ord = Set(req.ord);
     tag.enabled = Set(req.enabled);
     tag.is_palitra = Set(req.is_palitra);
@@ -173,9 +175,10 @@ pub async fn insert_organism_tag<C>(
 where
     C: ConnectionTrait,
 {
+    let extra = normalized_extra(&req);
     Ok(tag::ActiveModel {
         label: Set(req.label),
-        extra: Set(req.extra),
+        extra: Set(extra),
         ord: Set(req.ord),
         enabled: Set(req.enabled),
         is_palitra: Set(req.is_palitra),
@@ -204,8 +207,9 @@ where
         .ok_or(AppError::NotFound)?;
 
     let mut tag = tag.into_active_model();
+    let extra = normalized_extra(&req);
     tag.label = Set(req.label);
-    tag.extra = Set(req.extra);
+    tag.extra = Set(extra);
     tag.ord = Set(req.ord);
     tag.enabled = Set(req.enabled);
     tag.is_palitra = Set(req.is_palitra);
@@ -219,6 +223,10 @@ where
         .c(h!())?;
 
     Ok((tag, keywords))
+}
+
+fn normalized_extra(req: &TagUpsertReq) -> Option<bool> {
+    Some(req.extra.unwrap_or(false))
 }
 
 pub async fn disable_organism_tag<C>(
