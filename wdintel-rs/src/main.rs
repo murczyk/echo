@@ -225,6 +225,16 @@ pub struct OneoffReviewParsedSigintCommentsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffAuditMissingEchoImMessagesPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+    /// End datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long)]
+    pub till_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessInboxPostsPs {
     /// Start day (inclusive). Format: `YYYY-MM-DD`.
     #[arg(long)]
@@ -698,6 +708,7 @@ enum Cmd {
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
+    OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffRefreshAiModels,
@@ -1159,6 +1170,12 @@ async fn async_main(
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffAuditMissingEchoImMessages(ps) => {
+            messenger::worker::recovery::oneoff_audit_missing_echo_im_messages(
                 mode, &ps,
             )
             .await

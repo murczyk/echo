@@ -21,6 +21,7 @@ pub mod cleanup;
 pub mod group;
 pub mod pool;
 pub mod queue;
+pub mod recovery;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
@@ -58,9 +59,9 @@ pub async fn receive_thread_inner(
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
 ) -> Result<(), AppError> {
-    let config = read_config(mode).c(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
-    let mut redis = crate::new_redis(&config).await.c(h!())?;
+    let (config, settlements, rq, mut redis, dbx) =
+        crate::utils::setup_worker(mode).await.c(h!())?;
+    let s3 = mk_s3(&config).c(h!())?;
 
     info!("started receive_thread_inner");
     if let Err(e) =
@@ -71,6 +72,7 @@ pub async fn receive_thread_inner(
 
     let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
     let mut running_ids: HashSet<i64> = HashSet::new();
+    let mut echo_im_sync_recovery_next_at: Option<NaiveDateTime> = None;
 
     loop {
         receive_thread_inner_2(
@@ -85,7 +87,64 @@ pub async fn receive_thread_inner(
         )
         .await
         .c(h!())?;
-        sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
+        let recovered_missing_count = maybe_run_echo_im_sync_recovery(
+            &config,
+            settlements.clone(),
+            &rq,
+            &s3,
+            &dbx,
+            &mut redis,
+            &mut echo_im_sync_recovery_next_at,
+        )
+        .await;
+        if recovered_missing_count < ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize {
+            sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
+        }
+    }
+}
+
+async fn maybe_run_echo_im_sync_recovery(
+    config: &Config,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    rq: &reqwest::Client,
+    s3: &Option<opendal::Operator>,
+    dbx: &DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
+    next_run_at: &mut Option<NaiveDateTime>,
+) -> usize {
+    let now = Utc::now().naive_utc();
+    if next_run_at.is_some_and(|next_run_at| next_run_at > now) {
+        return 0;
+    }
+
+    let deps = recovery::EchoImSyncRecoveryDeps {
+        config,
+        settlements,
+        rq,
+        s3,
+    };
+    match recovery::run_echo_im_sync_recovery_once(dbx, redis, &deps).await {
+        Ok(missing_count) => {
+            if missing_count < ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize {
+                *next_run_at = Some(
+                    now + chrono::TimeDelta::seconds(
+                        ECHO_IM_SYNC_RECOVERY_IDLE_SLEEP_SEC,
+                    ),
+                );
+            } else {
+                *next_run_at = None;
+            }
+            missing_count
+        }
+        Err(err) => {
+            error!("echo_im sync recovery failed: {:?}", err);
+            *next_run_at = Some(
+                now + chrono::TimeDelta::seconds(
+                    ECHO_IM_SYNC_RECOVERY_IDLE_SLEEP_SEC,
+                ),
+            );
+            0
+        }
     }
 }
 

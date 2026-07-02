@@ -91,6 +91,38 @@ where
         .c(h!())?)
 }
 
+pub async fn get_echo_im_sync_since<C>(
+    dbx: &C,
+) -> Result<chrono::NaiveDateTime, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .map(|settings| settings.echo_im_sync_since)
+        .unwrap_or_else(now_utc))
+}
+
+pub async fn advance_echo_im_sync_since<C>(
+    dbx: &C,
+    next_sync_since: chrono::NaiveDateTime,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(settings) = get_active_system_settings(dbx).await.c(h!())? else {
+        return Ok(());
+    };
+    if next_sync_since <= settings.echo_im_sync_since {
+        return Ok(());
+    }
+    let mut settings: system_settings::ActiveModel = settings.into();
+    settings.echo_im_sync_since = Set(next_sync_since);
+    settings.update(dbx).await.c(h!())?;
+    Ok(())
+}
+
 pub async fn get_rer_analysis_units_exact_match_only_default<C>(
     dbx: &C,
 ) -> Result<bool, AppError>
@@ -340,6 +372,7 @@ pub async fn create_system_settings(
 
     validate_peleng_bounds(&req)?;
     let txn = env.dbx.begin().await.c(h!())?;
+    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, &login).await.c(h!())?;
     let created = system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
@@ -355,6 +388,7 @@ pub async fn create_system_settings(
         rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: sea_orm::ActiveValue::NotSet,
+        echo_im_sync_since: Set(echo_im_sync_since),
         updated_by: Set(Some(login)),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
@@ -386,6 +420,7 @@ pub async fn activate_system_settings(
         .c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
+    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, &login).await.c(h!())?;
 
     let settings = system_settings::Entity::find_by_id(req.id)
@@ -398,6 +433,7 @@ pub async fn activate_system_settings(
     settings.deleted = Set(false);
     settings.updated_by = Set(Some(login));
     settings.updated_at = Set(now_utc());
+    settings.echo_im_sync_since = Set(echo_im_sync_since);
     let settings = settings.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
 

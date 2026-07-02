@@ -13,6 +13,7 @@ pub struct Model {
     pub rer_analysis_units_exact_match_only_default: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub echo_im_sync_since: DateTime,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub deleted: bool,
