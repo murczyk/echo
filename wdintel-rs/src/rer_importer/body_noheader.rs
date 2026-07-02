@@ -174,6 +174,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn extract_text_kraken_audio_header() {
+        let body = " audio | 2026-07-01_14-47-03 \nПерехоплення\nрядок 2";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення\nрядок 2");
+    }
+
+    #[test]
     fn extract_text_mouse_01() {
         let body = r#"29.02.2024_15:50 F=446.1125(МГц) П54
 УКХ р/м 70 мсп 42 мсд 58 А (СХ НОВОПРОКОПІВКА)

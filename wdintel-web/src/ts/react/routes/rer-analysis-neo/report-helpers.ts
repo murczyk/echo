@@ -39,6 +39,7 @@ export type AnalysisReportState = {
   reoNoComments: boolean;
   senderAdvancedFreqs: boolean;
   senderAggregation: SenderAggregation;
+  sposobUnitName: string;
   tagReportSortBy: TagReportSortBy;
   template: ReportTemplateId;
   withoutComments: boolean;
@@ -72,6 +73,7 @@ export function createDefaultReportState(): AnalysisReportState {
     reoNoComments: false,
     senderAdvancedFreqs: false,
     senderAggregation: 'ByProfile',
+    sposobUnitName: '',
     tagReportSortBy: 'ByTime',
     template: 'tags',
     withoutComments: false,
@@ -163,6 +165,7 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
     interceptionKeepOldColors: state.template === 'interception' ? state.interceptionKeepOldColors : null,
     digestOmitExoId: state.template === 'digest' ? false : null,
     digestForm1217: state.template === 'digest' ? false : null,
+    sposobUnitName: state.template === 'sposob' ? state.sposobUnitName.trim() : null,
   } as ReportPreviewReq;
 }
 
