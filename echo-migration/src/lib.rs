@@ -272,7 +272,6 @@ mod m20260701_100000_backfill_deleted_freq_active_to;
 mod m20260701_120000_goi_palitra_sync_multi_palitra;
 mod m20260701_152707_goi_palitra_sync_side_checksums;
 mod m20260701_160523_palitra_conversion_job_goi_upload_flag;
-mod m20260515_120000_add_sigint_post_id_to_sigint_comment;
 mod m20260702_145245_create_sigint_comment;
 
 pub struct Migrator;
