@@ -81,7 +81,9 @@ pub async fn run_echo_im_sync_recovery_once(
         return Ok(scheduled_count);
     }
 
-    let maps = load_recovery_maps(dbx, &inbox_messages).await.c(h!())?;
+    let maps = load_recovery_maps(dbx, &datasources, &inbox_messages)
+        .await
+        .c(h!())?;
     let result = process_candidates(
         dbx,
         redis,
@@ -163,6 +165,7 @@ async fn load_candidate_inbox_messages(
 
 async fn load_recovery_maps(
     dbx: &DatabaseConnection,
+    datasources: &BTreeMap<i32, EchoAccountF1>,
     inbox_messages: &[echo_inbox_message::Model],
 ) -> anyhow::Result<RecoveryMaps> {
     let inbox_ids_i64 = inbox_messages
@@ -174,25 +177,32 @@ async fn load_recovery_maps(
         .map(|message| message.id)
         .collect_vec();
 
-    let existing_signal_ids = if inbox_ids_i64.is_empty() {
-        HashSet::new()
+    let group_ids = inbox_messages
+        .iter()
+        .filter_map(|message| message.group_id)
+        .collect_vec();
+    let groups = if group_ids.is_empty() {
+        BTreeMap::new()
     } else {
-        signal_message::Entity::find()
-            .filter(
-                signal_message::Column::ExternalId.is_in(inbox_ids_i64.clone()),
-            )
-            .filter(
-                Condition::any()
-                    .add(signal_message::Column::Deleted.eq(false))
-                    .add(signal_message::Column::MessageUid.is_not_null()),
-            )
+        echo_group::Entity::find()
+            .filter(echo_group::Column::Id.is_in(group_ids))
             .all(dbx)
             .await
             .c(h!())?
             .into_iter()
-            .filter_map(|message| message.external_id)
-            .collect::<HashSet<_>>()
+            .map(|group| (group.id, group))
+            .collect()
     };
+
+    let existing_signal_ids = load_existing_signal_ids(
+        dbx,
+        datasources,
+        &groups,
+        inbox_messages,
+        &inbox_ids_i64,
+    )
+    .await
+    .c(h!())?;
 
     let queue_items_vec = if inbox_ids_i64.is_empty() {
         vec![]
@@ -213,23 +223,6 @@ async fn load_recovery_maps(
             .entry(queue_item.internal_id)
             .or_insert(queue_item);
     }
-
-    let group_ids = inbox_messages
-        .iter()
-        .filter_map(|message| message.group_id)
-        .collect_vec();
-    let groups = if group_ids.is_empty() {
-        BTreeMap::new()
-    } else {
-        echo_group::Entity::find()
-            .filter(echo_group::Column::Id.is_in(group_ids))
-            .all(dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|group| (group.id, group))
-            .collect()
-    };
 
     let sender_ids = inbox_messages
         .iter()
@@ -269,6 +262,72 @@ async fn load_recovery_maps(
     })
 }
 
+async fn load_existing_signal_ids(
+    dbx: &DatabaseConnection,
+    datasources: &BTreeMap<i32, EchoAccountF1>,
+    groups: &BTreeMap<i32, echo_group::Model>,
+    inbox_messages: &[echo_inbox_message::Model],
+    inbox_ids: &[i64],
+) -> anyhow::Result<HashSet<i64>> {
+    if inbox_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let inbox_messages = inbox_messages
+        .iter()
+        .map(|message| (i64::from(message.id), message))
+        .collect::<BTreeMap<_, _>>();
+    Ok(signal_message::Entity::find()
+        .filter(signal_message::Column::ExternalId.is_in(inbox_ids.to_vec()))
+        .filter(
+            Condition::any()
+                .add(signal_message::Column::Deleted.eq(false))
+                .add(signal_message::Column::MessageUid.is_not_null()),
+        )
+        .find_also_related(datasource_group::Entity)
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|(signal_message, datasource_group)| {
+            let external_id = signal_message.external_id?;
+            let inbox_message = inbox_messages.get(&external_id)?;
+            let datasource_group = datasource_group.as_ref()?;
+            if signal_message_matches_echo_inbox(
+                inbox_message,
+                datasource_group,
+                datasources,
+                groups,
+            ) {
+                Some(external_id)
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+fn signal_message_matches_echo_inbox(
+    inbox_message: &echo_inbox_message::Model,
+    datasource_group: &datasource_group::Model,
+    datasources: &BTreeMap<i32, EchoAccountF1>,
+    groups: &BTreeMap<i32, echo_group::Model>,
+) -> bool {
+    let Some(datasource) = datasources.get(&inbox_message.account_id) else {
+        return false;
+    };
+    if datasource_group.datasource_id != datasource.id {
+        return false;
+    }
+    let Some(group_id) = inbox_message.group_id else {
+        return false;
+    };
+    let Some(group) = groups.get(&group_id) else {
+        return false;
+    };
+    datasource_group.group_master_key == group.group_id
+}
+
 async fn process_candidates(
     dbx: &DatabaseConnection,
     redis: &mut ConnectionManager,
@@ -287,19 +346,18 @@ async fn process_candidates(
             break;
         }
 
-        result.max_processed_cursor =
-            Some(crate::system_settings::EchoImSyncCursor {
-                created_at: inbox_message.created_at,
-                inbox_message_id: inbox_message.id,
-            });
         let inbox_id = i64::from(inbox_message.id);
         if maps.existing_signal_ids.contains(&inbox_id) {
+            result.max_processed_cursor =
+                Some(echo_im_sync_cursor_for_message(inbox_message));
             continue;
         }
         if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
             log_queued_inbox(inbox_message, queue_item);
-            continue;
+            break;
         }
+        result.max_processed_cursor =
+            Some(echo_im_sync_cursor_for_message(inbox_message));
         result.missing_count += 1;
         let scheduled_by = if autofix_enabled {
             Some(SYSTEM_SCHEDULED_BY)
@@ -334,6 +392,15 @@ async fn process_candidates(
     Ok(result)
 }
 
+fn echo_im_sync_cursor_for_message(
+    inbox_message: &echo_inbox_message::Model,
+) -> crate::system_settings::EchoImSyncCursor {
+    crate::system_settings::EchoImSyncCursor {
+        created_at: inbox_message.created_at,
+        inbox_message_id: inbox_message.id,
+    }
+}
+
 async fn process_scheduled_missing_messages(
     dbx: &DatabaseConnection,
     redis: &mut ConnectionManager,
@@ -361,7 +428,9 @@ async fn process_scheduled_missing_messages(
         .map(|message| (message.id, message))
         .collect::<BTreeMap<_, _>>();
     let inbox_messages_vec = inbox_messages.values().cloned().collect_vec();
-    let maps = load_recovery_maps(dbx, &inbox_messages_vec).await.c(h!())?;
+    let maps = load_recovery_maps(dbx, datasources, &inbox_messages_vec)
+        .await
+        .c(h!())?;
 
     let mut processed_count = 0usize;
     for missing_message in missing_messages {
@@ -956,11 +1025,24 @@ mod tests {
         let mut queue_inbox = queue_inbox.into_active_model();
         queue_inbox.sender_id = Set(Some(sender.id));
         let queue_inbox = queue_inbox.update(&env.dbx).await.unwrap();
-        mk_existing_signal_for_inbox(&env.dbx, existing_inbox.id).await;
+        mk_existing_signal_for_inbox(
+            &env.dbx,
+            existing_inbox.id,
+            datasource.id,
+            &group.group_id,
+        )
+        .await;
 
-        let maps = load_recovery_maps(&env.dbx, &[existing_inbox, queue_inbox])
+        let datasources = active_linked_datasources_by_account(&env.dbx)
             .await
             .unwrap();
+        let maps = load_recovery_maps(
+            &env.dbx,
+            &datasources,
+            &[existing_inbox, queue_inbox],
+        )
+        .await
+        .unwrap();
 
         assert!(maps
             .existing_signal_ids
@@ -979,7 +1061,7 @@ mod tests {
     async fn existing_messages_do_not_consume_missing_recovery_batch() {
         let _guard = TEST_LOCK.lock().await;
         let env = recovery_env().await;
-        let (account, _datasource) =
+        let (account, datasource) =
             mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
         let group = mk_echo_group(&env.dbx, account.id, "batch-group").await;
         let cursor = old_ts();
@@ -995,7 +1077,13 @@ mod tests {
                 cursor + chrono::TimeDelta::seconds(i as i64 + 1),
             )
             .await;
-            mk_existing_signal_for_inbox(&env.dbx, inbox.id).await;
+            mk_existing_signal_for_inbox(
+                &env.dbx,
+                inbox.id,
+                datasource.id,
+                &group.group_id,
+            )
+            .await;
         }
         for i in 0..ECHO_IM_SYNC_RECOVERY_BATCH_SIZE {
             last_missing_created_at =
@@ -1149,10 +1237,13 @@ mod tests {
 
         assert_eq!(missing_count, 3);
         assert_eq!(
-            crate::system_settings::get_echo_im_sync_since(&env.dbx)
+            crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
                 .await
                 .unwrap(),
-            failed.created_at
+            crate::system_settings::EchoImSyncCursor {
+                created_at: duplicate.created_at,
+                inbox_message_id: duplicate.id,
+            }
         );
         assert_eq!(
             signal_message::Entity::find()
@@ -1287,6 +1378,51 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn external_id_collision_from_other_group_is_not_existing_recovery() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, _datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let (_other_account, other_datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Paused, true).await;
+        let group =
+            mk_echo_group(&env.dbx, account.id, "collision-group").await;
+        let cursor = old_ts();
+        insert_system_settings(&env.dbx, cursor, false).await;
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                "imported-group".to_string(),
+                other_datasource.id,
+            )
+            .await
+            .unwrap();
+        mk_existing_signal_for_inbox_with_datasource_group(
+            &env.dbx,
+            inbox.id,
+            datasource_group_id,
+        )
+        .await;
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
+            .await
+            .unwrap();
+        assert!(!missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Pending);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn duplicate_missing_message_record_keeps_single_row() {
         let _guard = TEST_LOCK.lock().await;
         let env = recovery_env().await;
@@ -1391,6 +1527,13 @@ mod tests {
             cursor + chrono::TimeDelta::minutes(1),
         )
         .await;
+        let later_inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(2),
+        )
+        .await;
         let queue_created_at = cursor + chrono::TimeDelta::minutes(5);
         let queue_item = mk_queue_item(
             &env.dbx,
@@ -1435,6 +1578,18 @@ mod tests {
         assert!(missing_message_by_message_id(&env.dbx, inbox.id)
             .await
             .is_none());
+        assert!(missing_message_by_message_id(&env.dbx, later_inbox.id)
+            .await
+            .is_none());
+        assert_eq!(
+            crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
+                .await
+                .unwrap(),
+            crate::system_settings::EchoImSyncCursor {
+                created_at: cursor,
+                inbox_message_id: 0,
+            }
+        );
     }
 
     #[tokio::test]
@@ -1797,12 +1952,35 @@ mod tests {
     async fn mk_existing_signal_for_inbox(
         dbx: &DatabaseConnection,
         inbox_id: i32,
+        datasource_id: i64,
+        group_master_key: &str,
+    ) -> signal_message::Model {
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                dbx,
+                group_master_key.to_string(),
+                datasource_id,
+            )
+            .await
+            .unwrap();
+        mk_existing_signal_for_inbox_with_datasource_group(
+            dbx,
+            inbox_id,
+            datasource_group_id,
+        )
+        .await
+    }
+
+    async fn mk_existing_signal_for_inbox_with_datasource_group(
+        dbx: &DatabaseConnection,
+        inbox_id: i32,
+        datasource_group_id: i64,
     ) -> signal_message::Model {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(format!("existing {}", Uuid::new_v4()))),
-            datasource_group_id: Set(None),
+            datasource_group_id: Set(Some(datasource_group_id)),
             created_at: Set(now),
             timestamp: Set(Some(now)),
             sender: Set(None),
