@@ -136,6 +136,7 @@ type alias Model =
     , reportDigestOmitExoId : Bool
     , reportDigestForm1217 : Bool
     , reportAdvancedSenders : Bool
+    , reportSposobUnitName : String
     , reportTagSortBySelect :
         { state : Select.State
         , items : List (Select.MenuItem B.TagReportSortBy)
@@ -234,6 +235,7 @@ type ReportTemplate
     | RTReo
     | RTDigest
     | RTRerReport
+    | RTSposob
     | ActiveNetworks
     | RTNetworkFrequencies
     | RTSummaryTable

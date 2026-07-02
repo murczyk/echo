@@ -51,6 +51,7 @@ function renderDialog(
     taskRuns: [],
     open: true,
     currentUser: null,
+    supportNonRerInterceptions: false,
     report: buildReport(),
     queryState: createResetQueryState(),
     onClose,
@@ -148,6 +149,37 @@ describe('AnalysisReportDialog', () => {
     });
 
     expect(view.onClose).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
+
+  it('requires Sposob unit name before download', () => {
+    const view = renderDialog({
+      supportNonRerInterceptions: true,
+      report: buildReport({ template: 'sposob' }),
+    });
+    const downloadButton = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes('Завантажити'),
+    );
+
+    expect(document.body.textContent).toContain('Назва підрозділу');
+    expect(downloadButton?.disabled).toBe(true);
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          report: buildReport({ template: 'sposob', sposobUnitName: 'ручний підрозділ' }),
+        }),
+      );
+    });
+
+    const enabledDownloadButton = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes('Завантажити'),
+    );
+    expect(enabledDownloadButton?.disabled).toBe(false);
 
     act(() => {
       view.root.unmount();

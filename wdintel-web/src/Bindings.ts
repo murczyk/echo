@@ -1977,6 +1977,7 @@ export type ReportPreviewReq = {
   interceptionKeepOldColors: boolean | null;
   digestOmitExoId: boolean | null;
   digestForm1217: boolean | null;
+  sposobUnitName: string | null;
 };
 
 export type ReportType =

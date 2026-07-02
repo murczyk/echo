@@ -19,6 +19,7 @@ export type ReportTemplateId =
   | 'reo'
   | 'digest'
   | 'rer_report'
+  | 'sposob'
   | 'active_networks'
   | 'summary_table'
   | 'kmz'
@@ -38,6 +39,7 @@ export type AnalysisReportState = {
   reoNoComments: boolean;
   senderAdvancedFreqs: boolean;
   senderAggregation: SenderAggregation;
+  sposobUnitName: string;
   tagReportSortBy: TagReportSortBy;
   template: ReportTemplateId;
   withoutComments: boolean;
@@ -71,6 +73,7 @@ export function createDefaultReportState(): AnalysisReportState {
     reoNoComments: false,
     senderAdvancedFreqs: false,
     senderAggregation: 'ByProfile',
+    sposobUnitName: '',
     tagReportSortBy: 'ByTime',
     template: 'tags',
     withoutComments: false,
@@ -133,6 +136,8 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
       return 'Digest';
     case 'rer_report':
       return 'Rer';
+    case 'sposob':
+      return null;
     case 'active_networks':
       return { ActiveNetworks: { aorIds: state.activeNetworksAorIds } };
     case 'summary_table':
@@ -160,6 +165,7 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
     interceptionKeepOldColors: state.template === 'interception' ? state.interceptionKeepOldColors : null,
     digestOmitExoId: state.template === 'digest' ? false : null,
     digestForm1217: state.template === 'digest' ? false : null,
+    sposobUnitName: state.template === 'sposob' ? state.sposobUnitName.trim() : null,
   } as ReportPreviewReq;
 }
 
@@ -213,6 +219,8 @@ export function reportTemplateToUiTitle(state: AnalysisReportState): string {
       return 'активні радіомережі';
     case 'rer_report':
       return 'РЕР звіт';
+    case 'sposob':
+      return 'способ';
     case 'summary_table':
       return 'підсумкова таблиця';
     case 'kmz':

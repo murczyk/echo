@@ -8,7 +8,7 @@ use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
     RunFonts,
@@ -102,17 +102,54 @@ struct RerReport {
     parents: BTreeMap<UnitPath, ParentSection>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SposobReportMessage {
+    timestamp: NaiveDateTime,
+    body: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SposobReportDay {
+    date: NaiveDate,
+    messages: Vec<SposobReportMessage>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SposobReportContent {
+    unit_heading: String,
+    days: Vec<SposobReportDay>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SposobReport {
+    unit_name: String,
+    messages: BTreeMap<i64, SposobReportMessage>,
+}
+
 pub async fn report_docx_kind_rer(
     user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
     bgtask_id: Option<i64>,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     let report = load_report(user_login, env, req, bgtask_id).await.c(h!())?;
     let report_till = format_report_till(req).c(h!())?;
     write_report_docx(&report, &report_till, outpath).c(h!())?;
-    Ok(())
+    Ok(rer_report_filename(&report_till))
+}
+
+pub async fn report_docx_kind_sposob(
+    user_login: &str,
+    env: &Env,
+    req: &ReportPreviewReq,
+    outpath: &Path,
+    _bgtask_id: Option<i64>,
+) -> Result<String, AppError> {
+    let report = load_sposob_report(user_login, env, req).await.c(h!())?;
+    let (start_date, _end_date) = sposob_report_date_range(&report, req)?;
+    write_sposob_report_docx(&report, start_date, outpath).c(h!())?;
+    sposob_report_filename(&report, req)
 }
 
 fn write_report_docx(
@@ -214,6 +251,101 @@ fn write_report_docx(
     Ok(())
 }
 
+fn write_sposob_report_docx(
+    report: &SposobReport,
+    fallback_date: NaiveDate,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let content = build_sposob_report_content(report, fallback_date);
+    let mut docx = Docx::new()
+        .page_size(DOCX_A4_WIDTH, DOCX_A4_HEIGHT)
+        .page_margin(
+            PageMargin::new()
+                .top(DOCX_PAGE_MARGIN_20MM)
+                .right(DOCX_PAGE_MARGIN_20MM)
+                .bottom(DOCX_PAGE_MARGIN_20MM)
+                .left(DOCX_PAGE_MARGIN_20MM),
+        )
+        .default_size(DOCX_FONT_SIZE)
+        .default_fonts(
+            RunFonts::new()
+                .ascii(DOCX_FONT)
+                .east_asia(DOCX_FONT)
+                .cs(DOCX_FONT),
+        )
+        .add_paragraph(text_paragraph(
+            &content.unit_heading,
+            true,
+            false,
+            AlignmentType::Left,
+            false,
+        ));
+
+    for day in &content.days {
+        docx = docx.add_paragraph(sposob_date_paragraph(day.date));
+        for message in &day.messages {
+            docx = docx
+                .add_paragraph(text_paragraph(
+                    &format_sposob_message(message),
+                    false,
+                    false,
+                    AlignmentType::Left,
+                    false,
+                ))
+                .add_paragraph(blank_paragraph());
+        }
+    }
+
+    let file = std::fs::File::create(outpath)?;
+    docx.build().pack(file).c(h!())?;
+    Ok(())
+}
+
+fn build_sposob_report_content(
+    report: &SposobReport,
+    fallback_date: NaiveDate,
+) -> SposobReportContent {
+    let mut messages = report.messages.values().cloned().collect::<Vec<_>>();
+    messages.sort_by_key(|message| message.timestamp);
+
+    let mut days: Vec<SposobReportDay> = Vec::new();
+    for message in messages {
+        let date = message.timestamp.date();
+        if let Some(day) = days.last_mut().filter(|day| day.date == date) {
+            day.messages.push(message);
+        } else {
+            days.push(SposobReportDay {
+                date,
+                messages: vec![message],
+            });
+        }
+    }
+    if days.is_empty() {
+        days.push(SposobReportDay {
+            date: fallback_date,
+            messages: vec![],
+        });
+    }
+
+    SposobReportContent {
+        unit_heading: report.unit_name.clone(),
+        days,
+    }
+}
+
+#[cfg(test)]
+fn format_sposob_report_content_text(content: &SposobReportContent) -> String {
+    let mut parts = vec![content.unit_heading.clone()];
+    for day in &content.days {
+        parts.push(day.date.format("%Y-%m-%d").to_string());
+        for message in &day.messages {
+            parts.push(format_sposob_message(message));
+            parts.push(String::new());
+        }
+    }
+    parts.join("\n")
+}
+
 async fn load_report(
     user_login: &str,
     env: &Env,
@@ -221,9 +353,10 @@ async fn load_report(
     bgtask_id: Option<i64>,
 ) -> Result<RerReport, AppError> {
     let dbx = &env.dbx;
-    let item_ids = load_candidate_item_ids(dbx, user_login, env, req)
-        .await
-        .c(h!())?;
+    let item_ids =
+        load_candidate_item_ids(dbx, user_login, env, req, true, true)
+            .await
+            .c(h!())?;
     let mut report = RerReport::default();
     for item_id in item_ids {
         if item_has_other_tag(dbx, item_id).await.c(h!())? {
@@ -253,7 +386,7 @@ async fn load_report(
         let candidates =
             load_item_unit_candidates(dbx, item_id, req).await.c(h!())?;
         let Some(target) =
-            resolve_item_unit(dbx, bgtask_id, item_id, &candidates)
+            resolve_item_unit(dbx, bgtask_id, "РЕР Звіт", item_id, &candidates)
                 .await
                 .c(h!())?
         else {
@@ -268,6 +401,49 @@ async fn load_report(
             message_body_without_headers(&message).c(h!())?,
             parse_callsigns(&item),
             parse_points(&item),
+        );
+    }
+    Ok(report)
+}
+
+async fn load_sposob_report(
+    user_login: &str,
+    env: &Env,
+    req: &ReportPreviewReq,
+) -> Result<SposobReport, AppError> {
+    let dbx = &env.dbx;
+    let unit_name = sposob_report_unit_name(req)?;
+    let item_ids =
+        load_candidate_item_ids(dbx, user_login, env, req, false, false)
+            .await
+            .c(h!())?;
+    let mut report = SposobReport {
+        unit_name,
+        messages: BTreeMap::new(),
+    };
+    for item_id in item_ids {
+        let Some(item) = sigint_inbox_item::Entity::find_by_id(item_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        let Some(message) = signal_message::Entity::find_by_id(item_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        let Some(timestamp) = sposob_report_message_timestamp(&item) else {
+            continue;
+        };
+        insert_sposob_report_message(
+            &mut report,
+            item_id,
+            timestamp,
+            sposob_message_body_without_headers(&item, &message).c(h!())?,
         );
     }
     Ok(report)
@@ -324,30 +500,41 @@ fn insert_report_message(
         });
 }
 
+fn insert_sposob_report_message(
+    report: &mut SposobReport,
+    item_id: i64,
+    timestamp: NaiveDateTime,
+    body: String,
+) {
+    report
+        .messages
+        .entry(item_id)
+        .or_insert_with(|| SposobReportMessage { timestamp, body });
+}
+
 async fn load_candidate_item_ids(
     dbx: &DatabaseConnection,
     user_login: &str,
     env: &Env,
     req: &ReportPreviewReq,
+    require_network_link: bool,
+    require_non_empty_comments: bool,
 ) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
-    let candidate_timestamp = candidate_report_timestamp_expr();
-    let mut query =
+    let query =
         build_filtered_inbox_query(dbx, user_login, env, &candidate_req)
             .await
             .c(h!())?;
-    if let Some(since_ms) = since_ms {
-        query = query
-            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
-    }
-    if let Some(till_ms) = till_ms {
-        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
-    }
+    let query = apply_candidate_item_filters(
+        query,
+        since_ms,
+        till_ms,
+        require_network_link,
+        require_non_empty_comments,
+    )?;
 
     Ok(query
-        .filter(item_network_link_exists())
-        .filter(non_empty_comment_exists())
         .select_only()
         .distinct()
         .column(signal_message::Column::Id)
@@ -355,6 +542,30 @@ async fn load_candidate_item_ids(
         .all(dbx)
         .await
         .c(h!())?)
+}
+
+fn apply_candidate_item_filters(
+    mut query: Select<signal_message::Entity>,
+    since_ms: Option<i64>,
+    till_ms: Option<i64>,
+    require_network_link: bool,
+    require_non_empty_comments: bool,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let candidate_timestamp = candidate_report_timestamp_expr();
+    if let Some(since_ms) = since_ms {
+        query = query
+            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+    }
+    if let Some(till_ms) = till_ms {
+        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
+    }
+    if require_network_link {
+        query = query.filter(item_network_link_exists());
+    }
+    if require_non_empty_comments {
+        query = query.filter(non_empty_comment_exists());
+    }
+    Ok(query)
 }
 
 fn candidate_query_req_without_date_bounds(
@@ -436,6 +647,12 @@ fn report_message_timestamp(
         .map(utc_naive_to_kyiv_naive)
 }
 
+fn sposob_report_message_timestamp(
+    item: &sigint_inbox_item::Model,
+) -> Option<NaiveDateTime> {
+    item.datetime.map(utc_naive_to_kyiv_naive)
+}
+
 fn utc_naive_to_kyiv_naive(datetime: NaiveDateTime) -> NaiveDateTime {
     DateTime::<Utc>::from_naive_utc_and_offset(datetime, Utc)
         .with_timezone(&crate::types::Kyiv)
@@ -455,6 +672,35 @@ fn message_body_without_headers(
     Ok(crate::rer_importer::body_noheader::extract_text(&body)
         .c(h!())?
         .body)
+}
+
+fn sposob_message_body_without_headers(
+    item: &sigint_inbox_item::Model,
+    message: &signal_message::Model,
+) -> Result<String, AppError> {
+    if let Some(body_noheader) = &item.body_noheader {
+        let body_noheader = serde_json::from_value::<
+            crate::rer_importer::body_noheader::NoHeadersBody,
+        >(body_noheader.clone())
+        .c(h!())?;
+        return Ok(body_noheader.body);
+    }
+    message_body_without_headers(message)
+}
+
+pub(crate) fn sposob_report_unit_name(
+    req: &ReportPreviewReq,
+) -> Result<String, AppError> {
+    let unit_name = req
+        .sposob_unit_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|unit_name| !unit_name.is_empty())
+        .ok_or_else(|| AppError::BL {
+            msg: "Для звіту Способ потрібно вказати назву підрозділу"
+                .to_string(),
+        })?;
+    Ok(unit_name.to_string())
 }
 
 async fn load_item_unit_candidates(
@@ -574,6 +820,7 @@ async fn item_has_other_tag(
 async fn resolve_item_unit(
     dbx: &DatabaseConnection,
     bgtask_id: Option<i64>,
+    report_name: &str,
     item_id: i64,
     candidates: &[ItemUnitCandidate],
 ) -> Result<Option<ResolvedItemUnit>, AppError> {
@@ -581,9 +828,15 @@ async fn resolve_item_unit(
         ItemUnitResolution::None => Ok(None),
         ItemUnitResolution::Target(target) => Ok(Some(target)),
         ItemUnitResolution::Conflict(identities) => {
-            log_unrelated_unit_conflict(dbx, bgtask_id, item_id, &identities)
-                .await
-                .c(h!())?;
+            log_unrelated_unit_conflict(
+                dbx,
+                bgtask_id,
+                report_name,
+                item_id,
+                &identities,
+            )
+            .await
+            .c(h!())?;
             Ok(None)
         }
     }
@@ -636,6 +889,7 @@ fn resolve_item_unit_candidates(
 async fn log_unrelated_unit_conflict(
     dbx: &DatabaseConnection,
     bgtask_id: Option<i64>,
+    report_name: &str,
     item_id: i64,
     identities: &[UnitIdentity],
 ) -> Result<(), AppError> {
@@ -645,7 +899,7 @@ async fn log_unrelated_unit_conflict(
         .collect::<Vec<_>>()
         .join("; ");
     let message = format!(
-        "РЕР Звіт: пропущено перехоплення #{item_id}, повʼязане з неповʼязаними підрозділами: {units}"
+        "{report_name}: пропущено перехоплення #{item_id}, повʼязане з неповʼязаними підрозділами: {units}"
     );
     error!("{message}");
     bgtask_log(bgtask_id, &message, dbx).await.c(h!())?;
@@ -731,6 +985,12 @@ fn format_report_till(req: &ReportPreviewReq) -> Result<String, AppError> {
     ))
 }
 
+fn rer_report_filename(report_till: &str) -> String {
+    sanitize_report_filename(&format!(
+        "Звіт про результати аналізу радіоперехоплень станом на {report_till}.docx"
+    ))
+}
+
 fn format_unit_heading(
     identity: &UnitIdentity,
     locations: &BTreeSet<String>,
@@ -764,6 +1024,109 @@ fn format_message_heading(message: &RerReportMessage) -> String {
     }
 }
 
+fn format_sposob_message(message: &SposobReportMessage) -> String {
+    format!("{}\n{}", message.timestamp.format("%H-%M-%S"), message.body)
+}
+
+fn sposob_date_paragraph(date: NaiveDate) -> Paragraph {
+    text_paragraph(
+        &date.format("%Y-%m-%d").to_string(),
+        true,
+        false,
+        AlignmentType::Left,
+        false,
+    )
+}
+
+fn sposob_report_date_range(
+    report: &SposobReport,
+    req: &ReportPreviewReq,
+) -> Result<(NaiveDate, NaiveDate), AppError> {
+    let mut dates = report
+        .messages
+        .values()
+        .map(|message| message.timestamp.date())
+        .collect::<Vec<_>>();
+    dates.sort();
+    if let (Some(start), Some(end)) = (dates.first(), dates.last()) {
+        return Ok((*start, *end));
+    }
+
+    let start_date = req
+        .req
+        .since_date_inclusive_ms
+        .map(sposob_req_date)
+        .transpose()?;
+    let end_date = req
+        .req
+        .till_date_inclusive_ms
+        .map(sposob_req_date)
+        .transpose()?;
+    let today = Utc::now().with_timezone(&crate::types::Kyiv).date_naive();
+    Ok((
+        start_date.or(end_date).unwrap_or(today),
+        end_date.or(start_date).unwrap_or(today),
+    ))
+}
+
+fn sposob_req_date(ms: i64) -> Result<NaiveDate, AppError> {
+    Ok(dt_zoned_from_millis(ms).c(h!())?.date_naive())
+}
+
+fn sposob_report_filename(
+    report: &SposobReport,
+    req: &ReportPreviewReq,
+) -> Result<String, AppError> {
+    let (start_date, end_date) = sposob_report_date_range(report, req)?;
+    let prefix = if report.unit_name.trim().is_empty() {
+        "Способ".to_string()
+    } else {
+        report.unit_name.clone()
+    };
+    Ok(sanitize_report_filename(&format!(
+        "{prefix} {}.docx",
+        format_sposob_date_range(start_date, end_date)
+    )))
+}
+
+fn format_sposob_date_range(
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> String {
+    if start_date == end_date {
+        format!("{}", start_date.format("%d.%m.%Y"))
+    } else if start_date.year() == end_date.year()
+        && start_date.month() == end_date.month()
+    {
+        format!(
+            "{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    } else if start_date.year() == end_date.year() {
+        format!(
+            "{:02}.{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            start_date.month(),
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    } else {
+        format!(
+            "{:02}.{:02}.{:02}-{:02}.{:02}.{:02}",
+            start_date.day(),
+            start_date.month(),
+            start_date.year() % 100,
+            end_date.day(),
+            end_date.month(),
+            end_date.year() % 100
+        )
+    }
+}
+
 fn insert_non_empty(values: &mut BTreeSet<String>, value: &str) {
     let value = value.trim();
     if !value.is_empty() {
@@ -781,6 +1144,23 @@ fn join_set_semicolon(values: &BTreeSet<String>) -> String {
     let mut values = values.iter().cloned().collect::<Vec<_>>();
     values.sort_by(|left, right| cmp_uk(left, right));
     values.join("; ")
+}
+
+fn sanitize_report_filename(filename: &str) -> String {
+    let sanitized = filename
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            ch if ch.is_control() => ' ',
+            ch => ch,
+        })
+        .collect::<String>();
+    let sanitized = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
+    if sanitized.is_empty() {
+        "report.docx".to_string()
+    } else {
+        sanitized
+    }
 }
 
 fn cmp_uk(left: &str, right: &str) -> Ordering {
@@ -925,6 +1305,60 @@ mod tests {
             .unwrap()
     }
 
+    fn dt_on(date: NaiveDate, hour: u32, minute: u32) -> NaiveDateTime {
+        date.and_hms_opt(hour, minute, 0).unwrap()
+    }
+
+    fn signal_message(id: i64, body: &str) -> signal_message::Model {
+        signal_message::Model {
+            id,
+            body: Some(body.to_string()),
+            created_at: chrono::Utc::now().naive_utc(),
+            timestamp: None,
+            sender: None,
+            format: None,
+            deleted: false,
+            external_id: None,
+            message_uid: None,
+            datasource_group_id: None,
+            operator_tags: None,
+        }
+    }
+
+    fn inbox_item(
+        id: i64,
+        datetime: Option<NaiveDateTime>,
+        body_noheader: Option<serde_json::Value>,
+    ) -> sigint_inbox_item::Model {
+        sigint_inbox_item::Model {
+            id,
+            date: None,
+            time: None,
+            freq: None,
+            coords: None,
+            callsigns: None,
+            checked: None,
+            reviewed: None,
+            unit: None,
+            callsign_tokens: None,
+            keyword_tokens: None,
+            unit_v2: None,
+            lat: None,
+            lng: None,
+            nominatimres_id: None,
+            location: None,
+            tags: None,
+            callsigns_alg2: None,
+            callsigns_alg1: None,
+            datetime,
+            signal_tokens: None,
+            body_noheader,
+            parsed_unit_v2: false,
+            location_v2: None,
+            post_id: None,
+        }
+    }
+
     fn unit(
         army: &str,
         division: &str,
@@ -976,6 +1410,7 @@ mod tests {
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
+            sposob_unit_name: None,
         }
     }
 
@@ -998,6 +1433,7 @@ mod tests {
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
             digest_form_1_2_17: None,
+            sposob_unit_name: None,
         };
 
         let (candidate_req, since_ms, till_ms) =
@@ -1020,6 +1456,34 @@ mod tests {
             sql,
             r#"SELECT COALESCE("sigint_inbox_item"."datetime", "signal_message"."timestamp")"#
         );
+    }
+
+    #[test]
+    fn candidate_item_filters_make_network_link_optional() {
+        let query_without_network = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let sql_without_network =
+            query_without_network.build(DbBackend::Postgres).to_string();
+
+        let query_with_network = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            None,
+            None,
+            true,
+            false,
+        )
+        .unwrap();
+        let sql_with_network =
+            query_with_network.build(DbBackend::Postgres).to_string();
+
+        assert!(!sql_without_network.contains("sigint_inbox_item_network"));
+        assert!(sql_with_network.contains("sigint_inbox_item_network"));
     }
 
     #[test]
@@ -1233,6 +1697,14 @@ mod tests {
     }
 
     #[test]
+    fn rer_report_filename_uses_report_till() {
+        assert_eq!(
+            rer_report_filename("15.00 30.06.2026"),
+            "Звіт про результати аналізу радіоперехоплень станом на 15.00 30.06.2026.docx"
+        );
+    }
+
+    #[test]
     fn write_report_docx_renders_report_maker_text_order() {
         let identity =
             unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
@@ -1278,6 +1750,191 @@ mod tests {
         }
         assert!(!xml.contains("Network"));
         assert!(xml.contains("<w:br"));
+    }
+
+    #[test]
+    fn write_sposob_report_docx_groups_messages_by_date() {
+        let mut report = SposobReport {
+            unit_name: "ручний підрозділ".to_string(),
+            messages: BTreeMap::new(),
+        };
+        report.messages.insert(
+            10,
+            SposobReportMessage {
+                timestamp: dt(9, 15),
+                body: "Перший рядок\nДругий рядок".to_string(),
+            },
+        );
+        report.messages.insert(
+            11,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 6, 28)
+                    .unwrap()
+                    .and_hms_opt(1, 2, 3)
+                    .unwrap(),
+                body: "Наступна доба".to_string(),
+            },
+        );
+        let file = NamedTempFile::new().unwrap();
+
+        write_sposob_report_docx(
+            &report,
+            NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+            file.path(),
+        )
+        .unwrap();
+
+        let xml = document_xml(file.path());
+        let expected_order = [
+            "ручний підрозділ",
+            "2026-06-27",
+            "09-15-00",
+            "Перший рядок",
+            "Другий рядок",
+            "2026-06-28",
+            "01-02-03",
+            "Наступна доба",
+        ];
+        let mut prev_idx = 0;
+        for value in expected_order {
+            let idx = xml[prev_idx..].find(value).unwrap_or_else(|| {
+                panic!("missing {value} after index {prev_idx}")
+            }) + prev_idx;
+            prev_idx = idx;
+        }
+        assert_blank_paragraph_after(&xml, "Другий рядок");
+        assert_blank_paragraph_after(&xml, "Наступна доба");
+        assert!(xml.contains("<w:br"));
+    }
+
+    #[test]
+    fn sposob_report_content_uses_noheader_body_without_repeating_unit() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 1).unwrap();
+        let first = signal_message(10, "50 обрБпС | 2026-07-01\n06-45\nfoo");
+        let second = signal_message(
+            11,
+            "50 обрБпС [33hhfg50d] | 2026-07-01_14-47-00\n14-47\nbar",
+        );
+        let mut report = SposobReport {
+            unit_name: "ручний підрозділ".to_string(),
+            messages: BTreeMap::new(),
+        };
+
+        insert_sposob_report_message(
+            &mut report,
+            first.id,
+            dt_on(date, 6, 45),
+            message_body_without_headers(&first).unwrap(),
+        );
+        insert_sposob_report_message(
+            &mut report,
+            second.id,
+            dt_on(date, 14, 47),
+            message_body_without_headers(&second).unwrap(),
+        );
+        let content = build_sposob_report_content(&report, date);
+        let text = format_sposob_report_content_text(&content);
+        println!("\n{text}");
+
+        assert_eq!(
+            text,
+            "ручний підрозділ\n2026-07-01\n06-45-00\nfoo\n\n14-47-00\nbar\n"
+        );
+        assert!(!text.contains("50 обрБпС"));
+        assert!(!text.contains("33hhfg50d"));
+    }
+
+    #[test]
+    fn sposob_report_filename_uses_manual_unit_and_date_range() {
+        let mut report = SposobReport {
+            unit_name: "68/мсд".to_string(),
+            messages: BTreeMap::new(),
+        };
+        report.messages.insert(
+            1,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 6, 27)
+                    .unwrap()
+                    .and_hms_opt(1, 0, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        report.messages.insert(
+            2,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(1, 0, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        let req = report_preview_req_with_till(0);
+
+        assert_eq!(
+            sposob_report_filename(&report, &req).unwrap(),
+            "68 мсд 27.06-01.07.26.docx"
+        );
+    }
+
+    #[test]
+    fn sposob_report_filename_uses_single_date_for_same_day() {
+        let mut report = SposobReport {
+            unit_name: "1 пдб 100 дшп".to_string(),
+            messages: BTreeMap::new(),
+        };
+        report.messages.insert(
+            1,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(1, 12, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        report.messages.insert(
+            2,
+            SposobReportMessage {
+                timestamp: NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(23, 47, 0)
+                    .unwrap(),
+                body: String::new(),
+            },
+        );
+        let req = report_preview_req_with_till(0);
+
+        assert_eq!(
+            sposob_report_filename(&report, &req).unwrap(),
+            "1 пдб 100 дшп 01.07.2026.docx"
+        );
+    }
+
+    #[test]
+    fn format_sposob_date_range_handles_same_month_and_different_years() {
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            ),
+            "01.07.2026"
+        );
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 6, 30).unwrap(),
+            ),
+            "27-30.06.26"
+        );
+        assert_eq!(
+            format_sposob_date_range(
+                NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            ),
+            "31.12.26-01.01.27"
+        );
     }
 
     #[test]
@@ -1429,5 +2086,81 @@ mod tests {
         let mut xml = String::new();
         document.read_to_string(&mut xml).unwrap();
         xml
+    }
+
+    fn assert_blank_paragraph_after(xml: &str, marker: &str) {
+        let marker_idx = xml.find(marker).unwrap_or_else(|| {
+            panic!("missing marker {marker}");
+        });
+        let paragraph_end =
+            xml[marker_idx..].find("</w:p>").unwrap_or_else(|| {
+                panic!("missing paragraph end after {marker}");
+            }) + marker_idx
+                + "</w:p>".len();
+        let after = xml[paragraph_end..].trim_start();
+        let next_end = after.find("</w:p>").unwrap_or_else(|| {
+            panic!("missing next paragraph after {marker}");
+        }) + "</w:p>".len();
+        let next_paragraph = &after[..next_end];
+        assert!(next_paragraph.starts_with("<w:p"));
+        assert!(
+            !next_paragraph.contains("<w:t")
+                && !next_paragraph.contains("<w:br"),
+            "expected blank paragraph after {marker}"
+        );
+    }
+
+    #[test]
+    fn sposob_report_message_timestamp_requires_inbox_datetime() {
+        let item = inbox_item(1, None, None);
+        assert_eq!(sposob_report_message_timestamp(&item), None);
+
+        let item = inbox_item(
+            1,
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(11, 47, 3)
+                    .unwrap(),
+            ),
+            None,
+        );
+
+        assert_eq!(
+            sposob_report_message_timestamp(&item),
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 1)
+                    .unwrap()
+                    .and_hms_opt(14, 47, 3)
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn sposob_message_body_without_headers_uses_stored_body_noheader() {
+        let item = inbox_item(
+            1,
+            None,
+            Some(
+                serde_json::to_value(
+                    crate::rer_importer::body_noheader::NoHeadersBody {
+                        body: "Перехоплення\n(Коментар: передмова)".to_string(),
+                        start: 42,
+                        end: 78,
+                    },
+                )
+                .unwrap(),
+            ),
+        );
+        let message = signal_message(
+            1,
+            "передмова\naudio | 2026-07-01_14-47-03\nПерехоплення",
+        );
+
+        assert_eq!(
+            sposob_message_body_without_headers(&item, &message).unwrap(),
+            "Перехоплення\n(Коментар: передмова)"
+        );
     }
 }

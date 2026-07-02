@@ -70,4 +70,18 @@ describe('report-helpers', () => {
     expect(request.tagReportSortBy).toBe('ByFreqThenTime');
     expect(nonTagRequest.tagReportSortBy).toBeNull();
   });
+
+  it('sends Sposob unit name only for Sposob reports', () => {
+    const request = buildReportRequest(
+      { ...createDefaultReportState(), template: 'sposob', sposobUnitName: '  ручний підрозділ  ' },
+      {} as InboxMessagesReq,
+    );
+    const nonSposobRequest = buildReportRequest(
+      { ...createDefaultReportState(), template: 'tags', sposobUnitName: 'ручний підрозділ' },
+      {} as InboxMessagesReq,
+    );
+
+    expect(request.sposobUnitName).toBe('ручний підрозділ');
+    expect(nonSposobRequest.sposobUnitName).toBeNull();
+  });
 });

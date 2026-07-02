@@ -45,6 +45,7 @@ mod kinds {
     pub const REO: &str = "reo";
     pub const DIGEST: &str = "digest";
     pub const RER_REPORT: &str = "rer_report";
+    pub const SPOSOB: &str = "sposob";
     pub const POSTS_DOCX: &str = "posts_docx";
     pub const ACTIVE_NETWORKS: &str = "active_networks";
     pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
@@ -173,13 +174,14 @@ pub(crate) async fn report_docx_generate_file(
     ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
         .await
         .c(h!())?;
-    if req.kind == kinds::RER_REPORT {
+    if req.kind == kinds::RER_REPORT || req.kind == kinds::SPOSOB {
         crate::system_settings::ensure_support_non_rer_interceptions_enabled(
             &env.dbx,
         )
         .await
         .c(h!())?;
     }
+    ensure_report_request_valid(&req)?;
 
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
@@ -187,7 +189,7 @@ pub(crate) async fn report_docx_generate_file(
     let _ = std::fs::create_dir_all(&outfolder);
     let file_extension = report_file_extension(&req);
     let content_type = report_content_type(file_extension).to_string();
-    let filename = format!(
+    let mut filename = format!(
         "report_{}.{}",
         Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
         file_extension
@@ -265,7 +267,17 @@ pub(crate) async fn report_docx_generate_file(
             .await
             .c(h!())?;
     } else if req.kind == kinds::RER_REPORT {
-        self::rer::report_docx_kind_rer(
+        filename = self::rer::report_docx_kind_rer(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+            bgtask_id,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::SPOSOB {
+        filename = self::rer::report_docx_kind_sposob(
             &user_login,
             env,
             &req,
@@ -340,6 +352,7 @@ pub async fn report_docx_task_launch(
         &report_kind,
     )
     .await?;
+    ensure_report_request_valid(&req_inner)?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &user_login,
@@ -369,6 +382,15 @@ async fn ensure_report_launch_permissions_with_error_code_header(
         }),
         Err(err) => Err(err.c(h!())),
     }
+}
+
+fn ensure_report_request_valid(
+    req: &types::ReportPreviewReq,
+) -> Result<(), AppError> {
+    if req.kind == kinds::SPOSOB {
+        self::rer::sposob_report_unit_name(req)?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn save_report_log(

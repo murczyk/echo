@@ -524,6 +524,7 @@ export function AdminSystemSettingsNeoPage() {
       setForm(nextForm);
       setSaved(nextForm);
       setSaveSuccess('Нове системне налаштування збережено.');
+      window.dispatchEvent(new Event('system-settings-saved'));
     } catch (error) {
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {

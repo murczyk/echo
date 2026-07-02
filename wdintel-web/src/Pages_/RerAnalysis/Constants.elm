@@ -58,6 +58,9 @@ reportTemplateToString x =
         RTRerReport ->
             "rer_report"
 
+        RTSposob ->
+            "sposob"
+
         ActiveNetworks ->
             "active_networks"
 

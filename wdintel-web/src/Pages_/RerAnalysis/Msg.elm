@@ -3,6 +3,7 @@ module Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Bindings as B
 import Bytes exposing (Bytes)
 import Core.Types exposing (..)
+import Effect as E
 import Pages_.RerAnalysis.Model exposing (..)
 import Select
 import Shared.Components.DateRangePicker
@@ -120,7 +121,7 @@ type Msg
     | ToggleReportConstructor
     | CloseReportConstructor
     | ReportDownloadDocx
-    | ReportDownloadDocxDone (Result ApiError Bytes)
+    | ReportDownloadDocxDone (Result ApiError E.ReportDownloadResult)
     | ReportDownloadSummaryTableDone (Result ApiError Bytes)
     | ScrollMessagesToTop
     | LoadMoreMessages
@@ -137,6 +138,7 @@ type Msg
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle
+    | ReportSposobUnitNameInput String
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())

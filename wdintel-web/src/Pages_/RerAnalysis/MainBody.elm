@@ -326,6 +326,9 @@ view user model shared route =
                 Nothing ->
                     False
 
+        isSposobUnitNameMissing =
+            model.reportTemplate == RTSposob && String.isEmpty (String.trim model.reportSposobUnitName)
+
         headerCountsPill data isReloading =
             node "analysis-count-chip"
                 [ attribute "selected-count" (fromInt data.countSelected)
@@ -580,6 +583,17 @@ view user model shared route =
                         (ReportTemplateSelect RTRerReport)
                         "РЕР Звіт"
                         "Звіт по non-RER перехопленнях з привʼязаними машинами"
+                , HtmlX.viewIf
+                    (shared.systemSettings
+                        |> Maybe.map .supportNonRerInterceptions
+                        |> Maybe.withDefault False
+                    )
+                  <|
+                    templateCard
+                        (model.reportTemplate == RTSposob)
+                        (ReportTemplateSelect RTSposob)
+                        "Способ"
+                        "Звіт із перехопленнями у форматі підрозділ дата час текст"
                 , templateCard
                     (model.reportTemplate == ActiveNetworks)
                     (ReportTemplateSelect ActiveNetworks)
@@ -650,6 +664,19 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
+                    ]
+
+            , HtmlX.viewIf (model.reportTemplate == RTSposob) <|
+                div [ class "flex flex-col justify-center items-center mb-4 gap-2" ]
+                    [ label [ class "text-sm text-secondary" ] [ text "Назва підрозділу" ]
+                    , input
+                        [ class "form-control max-w-md"
+                        , value model.reportSposobUnitName
+                        , onInput ReportSposobUnitNameInput
+                        ]
+                        []
+                    , HtmlX.viewIf isSposobUnitNameMissing <|
+                        div [ class "text-sm text-danger" ] [ text "Обовʼязково для звіту Способ" ]
                     ]
 
             -- Add adjacent-freqs range selector when RTReo is chosen
@@ -1020,6 +1047,7 @@ view user model shared route =
                           else
                             i [ class "bi bi-filetype-docx" ] []
                         ]
+                    |> Button.withDisabled (model.reportDownloadInProgress || isSposobUnitNameMissing)
                     |> Button.view
                 , a
                     [ href "/settings-neo?section=my-reports"
