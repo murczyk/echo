@@ -1,7 +1,23 @@
-import { Autocomplete, Box, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField, Typography } from '@mui/material';
+import {
+  Autocomplete,
+  Box,
+  Checkbox,
+  CircularProgress,
+  FormControlLabel,
+  MenuItem,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
-import { AreaOfResponsibility, CreateOrganismReq, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import {
+  AreaOfResponsibility,
+  CreateOrganismReq,
+  Organism,
+  OrganismGroup,
+  SignalGroupFull,
+  UpdateOrganismReq,
+} from '../../../../Bindings';
 import { FormPageHeader } from '../../components/FormPageHeader';
 import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -117,12 +133,17 @@ function formatAorLabel(aor: AreaOfResponsibility | undefined, fallbackId: numbe
 
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => String(item));
-  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string')
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   return [];
 }
 
 function asNumberArray(value: unknown): number[] {
-  if (Array.isArray(value)) return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+  if (Array.isArray(value))
+    return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
   if (typeof value === 'string' && value.trim()) {
     return value
       .split(',')
@@ -133,10 +154,16 @@ function asNumberArray(value: unknown): number[] {
 }
 
 function getOrganismGroupKeys(organismId: number, organismGroups: OrganismGroup[]): string[] {
-  return organismGroups.filter((item) => item.organismId === organismId).map((item) => item.masterKey);
+  return organismGroups
+    .filter((item) => item.organismId === organismId)
+    .map((item) => item.masterKey);
 }
 
-function buildAvailableGroups(parentId: number | null, allGroups: SignalGroupFull[], organismGroups: OrganismGroup[]) {
+function buildAvailableGroups(
+  parentId: number | null,
+  allGroups: SignalGroupFull[],
+  organismGroups: OrganismGroup[],
+) {
   if (!parentId) return allGroups;
   const parentGroupKeys = organismGroups
     .filter((item) => item.organismId === parentId)
@@ -231,8 +258,10 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
     </MenuItem>
   ));
 
-  const parentValue = props.organisms.find((organism) => organism.id === props.form.parentId) ?? null;
-  const isGoiBusy = props.isSubmitting || props.isCheckingGoiConnection || props.isSettingUpGoiWorker;
+  const parentValue =
+    props.organisms.find((organism) => organism.id === props.form.parentId) ?? null;
+  const isGoiBusy =
+    props.isSubmitting || props.isCheckingGoiConnection || props.isSettingUpGoiWorker;
   const isFullIntegration = isFullGoiIntegration(props.form);
 
   return (
@@ -302,7 +331,12 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
             const values = selected as number[];
             if (values.length === 0) return '—';
             return values
-              .map((id) => formatAorLabel(props.aors.find((aor) => aor.id === id), id))
+              .map((id) =>
+                formatAorLabel(
+                  props.aors.find((aor) => aor.id === id),
+                  id,
+                ),
+              )
               .join(', ');
           },
         }}
@@ -362,7 +396,8 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           label="Обмежити перелік груп"
         />
         <Typography component="div" variant="caption" className="text-muted-foreground block">
-          За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового обмеження.
+          За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового
+          обмеження.
         </Typography>
       </div>
 
@@ -422,8 +457,8 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           ГОІ
         </Typography>
         <PowerAlert severity="info">
-          Керування інтеграціями ГОІ винесено в окрему адмін-панель. Тут налаштування організму більше не містять GOI
-          конфігурацію.
+          Керування інтеграціями ГОІ винесено в окрему адмін-панель. Тут налаштування організму
+          більше не містять GOI конфігурацію.
         </PowerAlert>
         <div>
           <PowerButton
@@ -634,14 +669,18 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     setForm((prev) => {
       const next = { ...prev, ...patch };
       if (
-        (patch.goiIntegrationType === undefined || patch.goiIntegrationType === GOI_INTEGRATION_TYPE_FULL) &&
+        (patch.goiIntegrationType === undefined ||
+          patch.goiIntegrationType === GOI_INTEGRATION_TYPE_FULL) &&
         patch.goiSshHost !== undefined &&
         prev.goiApiHost.trim().length === 0 &&
         (patch.goiApiHost === undefined || patch.goiApiHost.trim().length === 0)
       ) {
         next.goiApiHost = patch.goiSshHost;
       }
-      if (patch.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE && prev.goiIntegrationType !== GOI_INTEGRATION_TYPE_SIMPLE) {
+      if (
+        patch.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE &&
+        prev.goiIntegrationType !== GOI_INTEGRATION_TYPE_SIMPLE
+      ) {
         if (!prev.goiSimpleUrlDirty) {
           next.goiSimpleUrl = getSimpleGoiUrl(
             patch.goiApiHost ?? prev.goiApiHost,
@@ -669,7 +708,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     return Object.keys(errors).length === 0;
   }
 
-  function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
+  function buildGoiSettingsReq(
+    organismId: number,
+    nextForm: OrganismFormState,
+  ): UpdateOrganismGoiSettingsReq {
     const hasGoiApiSettings = hasAnyGoiApiSettings(nextForm);
     if (nextForm.goiIntegrationType === GOI_INTEGRATION_TYPE_SIMPLE) {
       const simpleGoiUrl = nextForm.goiSimpleUrl.trim();
@@ -693,7 +735,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       sshUser: nextForm.goiSshUser.trim(),
       sshPort: nextForm.goiSshPort,
       path: nextForm.goiPath.trim() || GOI_PATH_DEFAULT,
-      apiHost: hasGoiApiSettings ? (nextForm.goiApiHost.trim() || nextForm.goiSshHost.trim()) : '',
+      apiHost: hasGoiApiSettings ? nextForm.goiApiHost.trim() || nextForm.goiSshHost.trim() : '',
       apiPort: nextForm.goiApiPort,
       apiLogin: hasGoiApiSettings ? nextForm.goiApiLogin.trim() : '',
       apiPassword: hasGoiApiSettings ? nextForm.goiApiPassword.trim() : '',
@@ -799,9 +841,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     try {
       const trimmedName = form.name.trim();
       const nextForm = { ...form, name: trimmedName };
-      const selectedGroupIds = nextForm.limitGroups
-        ? nextForm.groupIds
-        : [];
+      const selectedGroupIds = nextForm.limitGroups ? nextForm.groupIds : [];
 
       if (isNew) {
         const createReq: CreateOrganismReq = {
@@ -822,7 +862,6 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
             ),
           );
         }
-
       } else {
         const parsedId = Number(props.organismId);
         if (!Number.isFinite(parsedId)) {
@@ -845,14 +884,19 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         const toRemove = originalGroupKeys.filter((key) => !selectedGroupSet.has(key));
 
         if (toAdd.length > 0) {
-          await Promise.all(toAdd.map((groupId) => addGroupToOrganism({ organismId: parsedId, groupName: groupId })));
+          await Promise.all(
+            toAdd.map((groupId) =>
+              addGroupToOrganism({ organismId: parsedId, groupName: groupId }),
+            ),
+          );
         }
         if (toRemove.length > 0) {
           await Promise.all(
-            toRemove.map((groupId) => removeGroupFromOrganism({ organismId: parsedId, groupName: groupId })),
+            toRemove.map((groupId) =>
+              removeGroupFromOrganism({ organismId: parsedId, groupName: groupId }),
+            ),
           );
         }
-
       }
 
       navigateBack();
@@ -873,7 +917,13 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   }
 
   if (loadStatus === 'error') {
-    return <PageErrorState message={loadError || 'Помилка завантаження'} actionLabel="Назад" onAction={navigateBack} />;
+    return (
+      <PageErrorState
+        message={loadError || 'Помилка завантаження'}
+        actionLabel="Назад"
+        onAction={navigateBack}
+      />
+    );
   }
 
   return (

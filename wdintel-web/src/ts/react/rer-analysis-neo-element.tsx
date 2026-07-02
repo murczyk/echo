@@ -1,6 +1,5 @@
 import { isNullOrUndefined } from './utils/misc';
 
-
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';

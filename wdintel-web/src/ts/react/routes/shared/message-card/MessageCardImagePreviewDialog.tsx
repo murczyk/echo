@@ -56,10 +56,7 @@ export function MessageImagePreviewDialog({
 }) {
   const imageCount = imageHrefs.length;
   const hasCarousel = imageCount > 1;
-  const resolvedIndex = normalizePreviewIndex(
-    currentIndex ?? initialIndex,
-    imageCount,
-  );
+  const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, imageCount);
   const currentImage = imageHrefs[resolvedIndex] ?? null;
   const currentHref = currentImage?.href ?? '';
   const [failedHref, setFailedHref] = useState<string | null>(null);
@@ -67,9 +64,7 @@ export function MessageImagePreviewDialog({
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
   const [, setStagePaletteVersion] = useState(0);
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
-    null,
-  );
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const stagePaletteByHrefRef = useRef(new Map<string, StagePalette>());
@@ -97,9 +92,7 @@ export function MessageImagePreviewDialog({
     [currentImage, resolvedIndex],
   );
   const stagePalette =
-    currentHref !== ''
-      ? (stagePaletteByHrefRef.current.get(currentHref) ?? null)
-      : null;
+    currentHref !== '' ? (stagePaletteByHrefRef.current.get(currentHref) ?? null) : null;
   const stageBackground = stagePalette
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
     : 'none';
@@ -200,12 +193,7 @@ export function MessageImagePreviewDialog({
 
     if (clampedZoom < currentZoom && stage != null) {
       setPan((currentPan) =>
-        clampPan(
-          currentPan,
-          stage.clientWidth,
-          stage.clientHeight,
-          clampedZoom,
-        ),
+        clampPan(currentPan, stage.clientWidth, stage.clientHeight, clampedZoom),
       );
     }
 
@@ -233,17 +221,9 @@ export function MessageImagePreviewDialog({
       setIsFullscreen(false);
     };
 
-    window.addEventListener(
-      'keydown',
-      handleFullscreenEscape as EventListener,
-      true,
-    );
+    window.addEventListener('keydown', handleFullscreenEscape as EventListener, true);
     return () => {
-      window.removeEventListener(
-        'keydown',
-        handleFullscreenEscape as EventListener,
-        true,
-      );
+      window.removeEventListener('keydown', handleFullscreenEscape as EventListener, true);
     };
   }, [isFullscreen]);
 
@@ -350,9 +330,7 @@ export function MessageImagePreviewDialog({
     dragRef.current = null;
     removePointerListeners();
     try {
-      (event.currentTarget as HTMLDivElement).releasePointerCapture(
-        event.pointerId,
-      );
+      (event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId);
     } catch {
       // Ignore pointer-capture teardown failures.
     }

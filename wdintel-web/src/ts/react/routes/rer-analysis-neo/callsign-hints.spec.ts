@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CallsignInfoRes, Network, Unit } from '../../../../Bindings';
-import { formatCallsignHintTooltip, formatCallsignHintTooltipData, getCallsignHintResult } from './callsign-hints';
+import {
+  formatCallsignHintTooltip,
+  formatCallsignHintTooltipData,
+  getCallsignHintResult,
+} from './callsign-hints';
 import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
 
 const unitsMap: Record<number, Unit> = {
@@ -117,7 +121,9 @@ const networks: Network[] = [
   },
 ];
 
-function createCallsignInfoMap(items: Record<string, CallsignInfoRes['res']>): Record<string, CallsignInfoRes> {
+function createCallsignInfoMap(
+  items: Record<string, CallsignInfoRes['res']>,
+): Record<string, CallsignInfoRes> {
   return Object.fromEntries(
     Object.entries(items).map(([callsign, res]) => [
       callsign,
@@ -176,7 +182,9 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.strategy).toBe('system');
     expect(result.iconClass).toBe('info-circle');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1, 2]);
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 командир 1 рота \n🐷 заступник 2 рота ');
+    expect(formatCallsignHintTooltip(result)).toBe(
+      'Позивні з каталогу:\n🐷 командир 1 рота \n🐷 заступник 2 рота ',
+    );
   });
 
   it('returns no tooltip in message context when exact message-network ids are absent', () => {
@@ -291,7 +299,9 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.strategy).toBe('network');
     expect(result.iconClass).toBe('info-circle-fill');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні підрозділів мережі:\n🐷 командир 1 рота ');
+    expect(formatCallsignHintTooltip(result)).toBe(
+      'Позивні підрозділів мережі:\n🐷 командир 1 рота ',
+    );
   });
 
   it('treats empty message network ids the same as no message networks', () => {
@@ -397,7 +407,9 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.strategy).toBe('network');
     expect(result.iconClass).toBe('info-circle-fill');
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні підрозділів мережі:\n🐷 командир взводу 3 тр ');
+    expect(formatCallsignHintTooltip(result)).toBe(
+      'Позивні підрозділів мережі:\n🐷 командир взводу 3 тр ',
+    );
   });
 
   it('returns system tooltip in frequency context when the callsign is not related to frequency networks', () => {
@@ -504,7 +516,9 @@ describe('rer-analysis-neo callsign hints', () => {
       callsign: 'ordered',
     });
 
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 перший u1 \n🐷 другий u2 ');
+    expect(formatCallsignHintTooltip(result)).toBe(
+      'Позивні з каталогу:\n🐷 перший u1 \n🐷 другий u2 ',
+    );
   });
 
   it('hides rows that have no visible tooltip text', () => {

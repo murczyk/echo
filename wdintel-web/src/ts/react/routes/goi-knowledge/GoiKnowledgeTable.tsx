@@ -1,15 +1,5 @@
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import {
-  MRT_ColumnDef,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { Box, Button, CircularProgress, Tooltip, Typography } from '@mui/material';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import {
@@ -74,13 +64,7 @@ type Props = {
   onClearFilters: () => void;
 };
 
-function LongTextCell({
-  value,
-  maxWidth,
-}: {
-  value: string | null | undefined;
-  maxWidth: number;
-}) {
+function LongTextCell({ value, maxWidth }: { value: string | null | undefined; maxWidth: number }) {
   const text = formatMrtCellTextValue(value);
   if (text === '—' || text.length <= 90) {
     return (
@@ -103,9 +87,7 @@ export function GoiKnowledgeTable(props: Props) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
-    typeof basePaperProps === 'function'
-      ? basePaperProps
-      : () => basePaperProps || {};
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const columns = useMemo<MRT_ColumnDef<GoiKnowledgeRowView>[]>(
     () => [
@@ -131,9 +113,7 @@ export function GoiKnowledgeTable(props: Props) {
         enableColumnFilter: true,
         enableSorting: false,
         size: 220,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.serverLabel} maxWidth={220} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.serverLabel} maxWidth={220} />,
       },
       {
         header: 'Назва',
@@ -173,9 +153,7 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'formation',
         enableColumnFilter: true,
         size: 220,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.formation} maxWidth={220} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.formation} maxWidth={220} />,
       },
       {
         header: 'Дата джерела',
@@ -233,12 +211,13 @@ export function GoiKnowledgeTable(props: Props) {
     onSortingChange: tableStateContext.onSortingChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-      noDataMessage: 'Записи інформованості відсутні',
-      filteredMessage: 'Немає записів інформованості за обраними фільтрами',
-      onClearFilters: props.onClearFilters,
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+        noDataMessage: 'Записи інформованості відсутні',
+        filteredMessage: 'Немає записів інформованості за обраними фільтрами',
+        onClearFilters: props.onClearFilters,
+      }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,

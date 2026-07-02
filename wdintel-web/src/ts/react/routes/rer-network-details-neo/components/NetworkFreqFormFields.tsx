@@ -1,5 +1,15 @@
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
-import { Box, ButtonBase, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  ButtonBase,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { EncryptionRec } from '../../../../../Bindings';
@@ -49,9 +59,11 @@ const compactTextFieldSx = (theme: any) => ({
     minHeight: 40,
     fontSize: '0.875rem',
     '&.Mui-disabled': {
-      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      backgroundColor:
+        theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
       '& .MuiOutlinedInput-notchedOutline': {
-        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+        borderColor:
+          theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
       },
     },
     '& input': {
@@ -60,7 +72,8 @@ const compactTextFieldSx = (theme: any) => ({
       fontSize: '0.875rem',
       '&::placeholder': {
         opacity: 1,
-        color: theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary,
+        color:
+          theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary,
       },
     },
   },
@@ -72,9 +85,11 @@ const compactSelectSx = (theme: any) => ({
     minHeight: 40,
     fontSize: '0.875rem',
     '&.Mui-disabled': {
-      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      backgroundColor:
+        theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
       '& .MuiOutlinedInput-notchedOutline': {
-        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+        borderColor:
+          theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
       },
     },
   },
@@ -91,7 +106,14 @@ const compactSelectSx = (theme: any) => ({
   },
 });
 
-function DrawerSection({ title, hint, expanded, disabled = false, onToggle, children }: DrawerSectionProps) {
+function DrawerSection({
+  title,
+  hint,
+  expanded,
+  disabled = false,
+  onToggle,
+  children,
+}: DrawerSectionProps) {
   return (
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
       <ButtonBase
@@ -110,11 +132,25 @@ function DrawerSection({ title, hint, expanded, disabled = false, onToggle, chil
           opacity: disabled ? 0.7 : 1,
         }}
       >
-        <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ minWidth: 0, flexWrap: 'wrap' }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          useFlexGap
+          sx={{ minWidth: 0, flexWrap: 'wrap' }}
+        >
           <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             {title}
           </Typography>
-          <Typography variant="body2" sx={(theme) => ({ color: theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary })}>
+          <Typography
+            variant="body2"
+            sx={(theme) => ({
+              color:
+                theme.palette.mode === 'light'
+                  ? theme.palette.grey[700]
+                  : theme.palette.text.secondary,
+            })}
+          >
             {hint}
           </Typography>
         </Stack>
@@ -170,10 +206,19 @@ function ChipChoiceGroup({
 function isDmrModulationName(name: string): boolean {
   const normalized = name.trim().toUpperCase();
   if (normalized === '') return false;
-  return normalized.startsWith('DMR') || normalized.includes(' DMR ') || normalized.includes(' DMR') || normalized.includes('(DMR') || normalized.includes('/DMR');
+  return (
+    normalized.startsWith('DMR') ||
+    normalized.includes(' DMR ') ||
+    normalized.includes(' DMR') ||
+    normalized.includes('(DMR') ||
+    normalized.includes('/DMR')
+  );
 }
 
-export function isDmrModulationId(encryptions: EncryptionRec[], modulationId: number | null): boolean {
+export function isDmrModulationId(
+  encryptions: EncryptionRec[],
+  modulationId: number | null,
+): boolean {
   if (modulationId === null) return false;
   const selectedModulation = encryptions.find((modulation) => modulation.id === modulationId);
   if (!selectedModulation) return false;
@@ -314,21 +359,76 @@ export function NetworkFreqFormFields({
         onToggle={() => setTechnicalExpanded((current) => !current)}
       >
         <Stack spacing={2}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, opacity: 0.72 }}>
-            <TextField label="Rx" value={freq ?? ''} disabled fullWidth size="small" sx={compactTextFieldSx} />
-            <TextField label="Tx" value="" disabled fullWidth size="small" sx={compactTextFieldSx} />
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 2,
+              opacity: 0.72,
+            }}
+          >
+            <TextField
+              label="Rx"
+              value={freq ?? ''}
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
+            <TextField
+              label="Tx"
+              value=""
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
           </Box>
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 2, opacity: 0.72 }}>
-            <TextField label="CC" value="" disabled fullWidth size="small" sx={compactTextFieldSx} />
-            <TextField label="Slot" value="" disabled fullWidth size="small" sx={compactTextFieldSx} />
-            <TextField label="Group ID" value="" disabled fullWidth size="small" sx={compactTextFieldSx} />
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+              gap: 2,
+              opacity: 0.72,
+            }}
+          >
+            <TextField
+              label="CC"
+              value=""
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
+            <TextField
+              label="Slot"
+              value=""
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
+            <TextField
+              label="Group ID"
+              value=""
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
           </Box>
 
           <Box sx={{ opacity: 0.72 }}>
-            <TextField label="Channel" value="" disabled fullWidth size="small" sx={compactTextFieldSx} />
+            <TextField
+              label="Channel"
+              value=""
+              disabled
+              fullWidth
+              size="small"
+              sx={compactTextFieldSx}
+            />
           </Box>
-
         </Stack>
       </DrawerSection>
 
@@ -359,7 +459,10 @@ export function NetworkFreqFormFields({
 
         {deviationMode === 'offset' ? (
           <FormControl disabled fullWidth size="small">
-            <InputLabel id="network-freq-deviation-select-label" shrink={showDeviationPlaceholder || deviationSelectValue !== ''}>
+            <InputLabel
+              id="network-freq-deviation-select-label"
+              shrink={showDeviationPlaceholder || deviationSelectValue !== ''}
+            >
               Основна частота
             </InputLabel>
             <Select
@@ -370,7 +473,19 @@ export function NetworkFreqFormFields({
               value={showDeviationPlaceholder ? '' : deviationSelectValue}
               renderValue={
                 showDeviationPlaceholder
-                  ? () => <Box component="span" sx={(theme) => ({ color: theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary })}>Оберіть основну частоту</Box>
+                  ? () => (
+                      <Box
+                        component="span"
+                        sx={(theme) => ({
+                          color:
+                            theme.palette.mode === 'light'
+                              ? theme.palette.grey[700]
+                              : theme.palette.text.secondary,
+                        })}
+                      >
+                        Оберіть основну частоту
+                      </Box>
+                    )
                   : undefined
               }
               inputProps={{ name: 'networkFreqDeviationBase' }}

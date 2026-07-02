@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
+import {
+  AnalyzeKmzResponse,
+  AreaOfResponsibility,
+  MyScope,
+  Organism,
+  Palitra,
+  User,
+} from '../../../../Bindings';
 import {
   archivePalitraFolder,
   assignPalitraFolder,
@@ -20,13 +27,27 @@ import {
   getExistingFolderOptions,
   getInitialCreateForm,
 } from './helpers';
-import type { FolderActionDialogState, KmzColorOption, PalitraCreateMode, PalitraFormState, TableRowView, UiStatus } from './types';
+import type {
+  FolderActionDialogState,
+  KmzColorOption,
+  PalitraCreateMode,
+  PalitraFormState,
+  TableRowView,
+  UiStatus,
+} from './types';
 import { createPalitraFolderActionHandlers } from './use-rer-palitra-neo-page.folder-actions';
 import { createPalitraPageActionHandlers } from './use-rer-palitra-neo-page.palitra-actions';
-import { ArchiveView, buildFolderActionStatus, readInitialArchiveViewFromUrl, updateArchiveViewInUrl } from './use-rer-palitra-neo-page.shared';
+import {
+  ArchiveView,
+  buildFolderActionStatus,
+  readInitialArchiveViewFromUrl,
+  updateArchiveViewInUrl,
+} from './use-rer-palitra-neo-page.shared';
 
 export function useRerPalitraNeoPage() {
-  const [archiveView, setArchiveView] = useState<ArchiveView>(() => readInitialArchiveViewFromUrl());
+  const [archiveView, setArchiveView] = useState<ArchiveView>(() =>
+    readInitialArchiveViewFromUrl(),
+  );
   const [user, setUser] = useState<User | null>(null);
   const [palitras, setPalitras] = useState<Palitra[]>([]);
   const [myScope, setMyScope] = useState<MyScope | null>(null);
@@ -77,7 +98,10 @@ export function useRerPalitraNeoPage() {
   const uploadKmzInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
 
-  const availableAccessTypes = useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const availableAccessTypes = useMemo(
+    () => getAvailableAccessTypes(user, myScope),
+    [user, myScope],
+  );
   const expandedFolderPathSet = useMemo(() => new Set(expandedFolderPaths), [expandedFolderPaths]);
   const visiblePalitras = useMemo(() => {
     switch (archiveView) {
@@ -92,28 +116,61 @@ export function useRerPalitraNeoPage() {
   }, [archiveView, palitras]);
   const folderTree = useMemo(() => buildFolderTree(palitras, user), [palitras, user]);
   const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
-  const rows = useMemo<TableRowView[]>(() => buildTableRows({
-    palitras: visiblePalitras,
-    folderPermissionPalitras: palitras,
-    user,
-    myScope,
-    organisms,
-    aors,
-    inFlightArchiveId,
-    inFlightDeleteId,
-    inFlightDownloadId,
-    inFlightUploadId,
-    expandedFolderPaths: expandedFolderPathSet,
-  }), [visiblePalitras, user, myScope, organisms, aors, inFlightArchiveId, inFlightDeleteId, inFlightDownloadId, inFlightUploadId, expandedFolderPathSet]);
-  const palitraRows = useMemo(() => rows.filter((row): row is Extract<TableRowView, { kind: 'palitra' }> => row.kind === 'palitra'), [rows]);
+  const rows = useMemo<TableRowView[]>(
+    () =>
+      buildTableRows({
+        palitras: visiblePalitras,
+        folderPermissionPalitras: palitras,
+        user,
+        myScope,
+        organisms,
+        aors,
+        inFlightArchiveId,
+        inFlightDeleteId,
+        inFlightDownloadId,
+        inFlightUploadId,
+        expandedFolderPaths: expandedFolderPathSet,
+      }),
+    [
+      visiblePalitras,
+      user,
+      myScope,
+      organisms,
+      aors,
+      inFlightArchiveId,
+      inFlightDeleteId,
+      inFlightDownloadId,
+      inFlightUploadId,
+      expandedFolderPathSet,
+    ],
+  );
+  const palitraRows = useMemo(
+    () =>
+      rows.filter(
+        (row): row is Extract<TableRowView, { kind: 'palitra' }> => row.kind === 'palitra',
+      ),
+    [rows],
+  );
   const visibleSelectablePalitraIds = useMemo(
     () => new Set(palitraRows.filter((row) => row.canSelect).map((row) => row.id)),
     [palitraRows],
   );
   const folderActionsBlocked = folderActionInFlight || folderDialogState !== null;
-  const updateCreateForm = useCallback((updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)), []);
-  const updateKmzColorOptions = useCallback((updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)), []);
-  const updateEditForm = useCallback((updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)), []);
+  const updateCreateForm = useCallback(
+    (updater: (prev: PalitraFormState) => PalitraFormState) =>
+      setCreateForm((prev) => updater(prev)),
+    [],
+  );
+  const updateKmzColorOptions = useCallback(
+    (updater: (prev: KmzColorOption[]) => KmzColorOption[]) =>
+      setKmzColorOptions((prev) => updater(prev)),
+    [],
+  );
+  const updateEditForm = useCallback(
+    (updater: (prev: PalitraFormState | null) => PalitraFormState | null) =>
+      setEditForm((prev) => updater(prev)),
+    [],
+  );
 
   useEffect(() => {
     function onPopState() {
@@ -157,39 +214,44 @@ export function useRerPalitraNeoPage() {
     );
   }, []);
 
-  const renameFolderLocally = useCallback((palitraIds: number[], fromFolderPath: string, nextFolderPath: string) => {
-    const palitraIdSet = new Set(palitraIds);
-    const normalizedFromPath = normalizeFolderPathForUi(fromFolderPath);
-    const normalizedNextPath = normalizeFolderPathForUi(nextFolderPath);
-    const fromPrefix = normalizedFromPath + '/';
+  const renameFolderLocally = useCallback(
+    (palitraIds: number[], fromFolderPath: string, nextFolderPath: string) => {
+      const palitraIdSet = new Set(palitraIds);
+      const normalizedFromPath = normalizeFolderPathForUi(fromFolderPath);
+      const normalizedNextPath = normalizeFolderPathForUi(nextFolderPath);
+      const fromPrefix = normalizedFromPath + '/';
 
-    setPalitras((prev) =>
-      prev.map((palitra) => {
-        if (!palitraIdSet.has(palitra.id)) return palitra;
+      setPalitras((prev) =>
+        prev.map((palitra) => {
+          if (!palitraIdSet.has(palitra.id)) return palitra;
 
-        const normalizedFolderPath = normalizeFolderPathForUi(palitra.folder ?? '');
-        if (normalizedFolderPath === normalizedFromPath) {
+          const normalizedFolderPath = normalizeFolderPathForUi(palitra.folder ?? '');
+          if (normalizedFolderPath === normalizedFromPath) {
+            return {
+              ...palitra,
+              folder: normalizedNextPath === '' ? null : normalizedNextPath,
+            };
+          }
+
+          if (!normalizedFolderPath.startsWith(fromPrefix)) return palitra;
+
           return {
             ...palitra,
-            folder: normalizedNextPath === '' ? null : normalizedNextPath,
+            folder: normalizedNextPath + normalizedFolderPath.slice(normalizedFromPath.length),
           };
-        }
-
-        if (!normalizedFolderPath.startsWith(fromPrefix)) return palitra;
-
-        return {
-          ...palitra,
-          folder: normalizedNextPath + normalizedFolderPath.slice(normalizedFromPath.length),
-        };
-      }),
-    );
-  }, []);
+        }),
+      );
+    },
+    [],
+  );
 
   const archiveFolderLocally = useCallback((palitraIds: number[]) => {
     const palitraIdSet = new Set(palitraIds);
 
     setPalitras((prev) =>
-      prev.map((palitra) => (palitraIdSet.has(palitra.id) ? { ...palitra, isArchived: true } : palitra)),
+      prev.map((palitra) =>
+        palitraIdSet.has(palitra.id) ? { ...palitra, isArchived: true } : palitra,
+      ),
     );
   }, []);
 
@@ -222,7 +284,9 @@ export function useRerPalitraNeoPage() {
           if (cancelled) return;
 
           setMyScope(references.myScope);
-          setAllLogins(references.logins?.users.map((entry) => entry.login) ?? references.organismLogins ?? []);
+          setAllLogins(
+            references.logins?.users.map((entry) => entry.login) ?? references.organismLogins ?? [],
+          );
           setOrganisms(references.organisms ?? []);
           setAors(references.aors ?? []);
           setReferenceDataReady(true);
@@ -238,7 +302,10 @@ export function useRerPalitraNeoPage() {
           });
         } catch (referencesError) {
           if (cancelled) return;
-          setStatus({ kind: 'error', text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError) });
+          setStatus({
+            kind: 'error',
+            text: 'Не вдалося завантажити довідники палітр: ' + formatErrorMessage(referencesError),
+          });
         }
 
         try {
@@ -248,11 +315,17 @@ export function useRerPalitraNeoPage() {
           setPalitras(palitrasList);
         } catch (palitrasError) {
           if (cancelled) return;
-          setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError) });
+          setStatus({
+            kind: 'error',
+            text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(palitrasError),
+          });
         }
       } catch (loadError) {
         if (cancelled) return;
-        setStatus({ kind: 'error', text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError) });
+        setStatus({
+          kind: 'error',
+          text: 'Не вдалося завантажити палітри: ' + formatErrorMessage(loadError),
+        });
       } finally {
         if (!cancelled) setLoading(false);
       }

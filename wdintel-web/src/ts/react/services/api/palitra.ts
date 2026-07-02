@@ -159,9 +159,7 @@ function normalizeOptionalNumber(value: number | string | null | undefined): num
 
 function normalizeNumberArray(values: Array<number | string> | null | undefined): number[] {
   if (!Array.isArray(values)) return [];
-  return values
-    .map((value) => normalizeOptionalNumber(value))
-    .filter(isPresent);
+  return values.map((value) => normalizeOptionalNumber(value)).filter(isPresent);
 }
 
 function normalizePalitraBulkActionRsp(raw: PalitraBulkActionRspBody | null | undefined): number[] {
@@ -238,7 +236,9 @@ function normalizePalitraDetails(raw: PalitraDetailsLike | null | undefined): Pa
   };
 }
 
-function normalizePalitraGeometryDetails(raw: PalitraGeometryDetailsLike | null | undefined): PalitraGeometryDetails {
+function normalizePalitraGeometryDetails(
+  raw: PalitraGeometryDetailsLike | null | undefined,
+): PalitraGeometryDetails {
   return {
     id: normalizeNumber(raw?.id),
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
@@ -264,7 +264,9 @@ function normalizeKmzColor(raw: KmzColorInfoLike | null | undefined): KmzColorIn
   };
 }
 
-function normalizeAnalyzeKmzResponse(raw: AnalyzeKmzResponseLike | null | undefined): AnalyzeKmzResponse {
+function normalizeAnalyzeKmzResponse(
+  raw: AnalyzeKmzResponseLike | null | undefined,
+): AnalyzeKmzResponse {
   return {
     topColors: (raw?.topColors ?? raw?.top_colors ?? []).map(normalizeKmzColor),
     filename: raw?.filename ?? '',
@@ -292,7 +294,11 @@ function formatErrorMessage(status: number, text: string): string {
   return `HTTP ${status}`;
 }
 
-async function postMultipart<T>(url: string, formData: FormData, normalize: (raw: any) => T): Promise<T> {
+async function postMultipart<T>(
+  url: string,
+  formData: FormData,
+  normalize: (raw: any) => T,
+): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
     body: formData,
@@ -303,7 +309,10 @@ async function postMultipart<T>(url: string, formData: FormData, normalize: (raw
     if (response.status === 401) {
       emitUnauthorizedEvent();
     }
-    throw new HttpRequestError(response.status, formatErrorMessage(response.status, await response.text()));
+    throw new HttpRequestError(
+      response.status,
+      formatErrorMessage(response.status, await response.text()),
+    );
   }
 
   if (response.status === 204) return normalize(undefined);
@@ -325,7 +334,10 @@ async function postMultipartVoid(url: string, formData: FormData): Promise<void>
     if (response.status === 401) {
       emitUnauthorizedEvent();
     }
-    throw new HttpRequestError(response.status, formatErrorMessage(response.status, await response.text()));
+    throw new HttpRequestError(
+      response.status,
+      formatErrorMessage(response.status, await response.text()),
+    );
   }
 }
 
@@ -365,7 +377,9 @@ async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number 
   return geometryId;
 }
 
-function pickPrimaryGeometryIdForUpdate(geometries: PalitraGeometryDetailsLike[] | null | undefined): number | null {
+function pickPrimaryGeometryIdForUpdate(
+  geometries: PalitraGeometryDetailsLike[] | null | undefined,
+): number | null {
   if (!Array.isArray(geometries) || geometries.length === 0) {
     return null;
   }
@@ -393,11 +407,17 @@ export async function unarchivePalitra(palitraId: number): Promise<Palitra> {
   return normalizePalitra(data);
 }
 
-export async function downloadPalitras(palitraIds: number[], options?: PalitraDownloadOptions): Promise<Blob> {
+export async function downloadPalitras(
+  palitraIds: number[],
+  options?: PalitraDownloadOptions,
+): Promise<Blob> {
   const body: PalitraDownloadReqBody = {
     palitra_ids: palitraIds,
   };
-  return postBytes(options?.splitForDelta ? '/api/palitra/download-delta-split' : '/api/palitra/download', body);
+  return postBytes(
+    options?.splitForDelta ? '/api/palitra/download-delta-split' : '/api/palitra/download',
+    body,
+  );
 }
 
 export async function assignPalitraFolder(palitraIds: number[], folder: string): Promise<number[]> {
@@ -439,11 +459,17 @@ export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {
   return normalizePalitra(data);
 }
 
-export async function updatePalitra(palitraId: number, req: CreatePalitraReq): Promise<PalitraDetails> {
+export async function updatePalitra(
+  palitraId: number,
+  req: CreatePalitraReq,
+): Promise<PalitraDetails> {
   const geometryId = await getPrimaryGeometryIdForUpdate(palitraId);
   if (geometryId === null) {
     primaryGeometryIdByPalitraId.delete(palitraId);
-    const data = await postJson<PalitraDetailsLike>(`/api/palitra/update/${palitraId}`, toCreatePalitraReqBody(req));
+    const data = await postJson<PalitraDetailsLike>(
+      `/api/palitra/update/${palitraId}`,
+      toCreatePalitraReqBody(req),
+    );
     return normalizePalitraDetails(data);
   }
 
@@ -488,11 +514,18 @@ export async function createPalitraWithKmz(req: CreatePalitraReq, file: File): P
   return createPalitraWithKmzVia('/api/palitra/create-with-kmz', req, file);
 }
 
-export async function createPalitraBasicWithKmz(req: CreatePalitraReq, file: File): Promise<Palitra> {
+export async function createPalitraBasicWithKmz(
+  req: CreatePalitraReq,
+  file: File,
+): Promise<Palitra> {
   return createPalitraWithKmzVia('/api/palitra/v2/create-palitra-basic', req, file);
 }
 
-async function createPalitraWithKmzVia(url: string, req: CreatePalitraReq, file: File): Promise<Palitra> {
+async function createPalitraWithKmzVia(
+  url: string,
+  req: CreatePalitraReq,
+  file: File,
+): Promise<Palitra> {
   const formData = new FormData();
   formData.append('name', req.name);
   formData.append('color_hex', req.colorHex);

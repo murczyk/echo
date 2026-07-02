@@ -46,7 +46,7 @@ import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 const FORMING_TEXT = `Формується${ELLIPSIS}`;
 const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
 const QUEUED_TEXT = 'Очікує запуску';
-const REPORT_HISTORY_URL = "/settings-neo?section=my-reports";
+const REPORT_HISTORY_URL = '/settings-neo?section=my-reports';
 
 type Props = {
   aors: AnalysisAorEntry[];
@@ -75,7 +75,8 @@ function extractStages(logs: string[]): Array<{ index: number; overall: number; 
     if (!match) continue;
     const index = Number(match[1]);
     const overall = Number(match[2]);
-    if (!Number.isFinite(index) || !Number.isFinite(overall) || index <= 0 || overall <= 0) continue;
+    if (!Number.isFinite(index) || !Number.isFinite(overall) || index <= 0 || overall <= 0)
+      continue;
     stages.set(index, { index, overall, text: match[3] });
   }
   return [...stages.values()].sort((left, right) => left.index - right.index);
@@ -129,7 +130,11 @@ function formatDateTimeLabel(value: string | null | undefined): string | null {
 }
 
 const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
-  { id: 'tags', title: 'З донесенням', description: 'Простий перелік повідомлень разом з їх донесенням' },
+  {
+    id: 'tags',
+    title: 'З донесенням',
+    description: 'Простий перелік повідомлень разом з їх донесенням',
+  },
   { id: 'pelengs', title: 'Пеленги', description: 'Таблиця з пеленгами' },
   { id: 'babak', title: 'Бабак', description: 'Детальний звіт по підрозділах' },
   { id: 'interception', title: 'Перехоплення', description: 'Звіт по перехопленнях' },
@@ -138,16 +143,37 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   { id: 'mouse', title: 'Мишка', description: 'Детальний почастотний звіт по привʼязках' },
   { id: 'reo', title: 'РЕО', description: 'Доступно лише для розширених ролей звітів' },
   { id: 'digest', title: 'Дайджест', description: 'Доступно лише для розширених ролей звітів' },
-  { id: 'active_networks', title: 'Активні радіомережі', description: 'Доступно лише для розширених ролей звітів' },
+  {
+    id: 'active_networks',
+    title: 'Активні радіомережі',
+    description: 'Доступно лише для розширених ролей звітів',
+  },
 ];
 
 const exportTemplateOptions: Array<{ id: ReportTemplateId; title: string; description: string }> = [
-  { id: 'summary_table', title: 'Підсумкова таблиця', description: 'Частоти, позивні, підрозділи, останні перехоплення й мережі' },
-  { id: 'kmz', title: 'KMZ', description: 'Точки повідомлень з частотою, координатами й коментарями' },
-  { id: 'geojson', title: 'GeoJSON', description: 'Точки повідомлень з частотою, координатами, мережами й коментарями' },
+  {
+    id: 'summary_table',
+    title: 'Підсумкова таблиця',
+    description: 'Частоти, позивні, підрозділи, останні перехоплення й мережі',
+  },
+  {
+    id: 'kmz',
+    title: 'KMZ',
+    description: 'Точки повідомлень з частотою, координатами й коментарями',
+  },
+  {
+    id: 'geojson',
+    title: 'GeoJSON',
+    description: 'Точки повідомлень з частотою, координатами, мережами й коментарями',
+  },
 ];
 
-const ADVANCED_REPORT_ROLES = ['UnitsEditor', 'CallsignsEditor', 'AdvancedReports', 'Admin'] as const;
+const ADVANCED_REPORT_ROLES = [
+  'UnitsEditor',
+  'CallsignsEditor',
+  'AdvancedReports',
+  'Admin',
+] as const;
 
 const checkboxLabelSx = {
   display: 'inline-flex',
@@ -225,34 +251,61 @@ export function AnalysisReportDialog({
   const visibleReportTemplateOptions = supportNonRerInterceptions
     ? [
         ...reportTemplateOptions,
-        { id: 'rer_report' as const, title: 'РЕР Звіт', description: 'Документ по non-RER перехопленнях з привʼязаними машинами' },
-        { id: 'sposob' as const, title: 'Способ', description: 'Звіт із перехопленнями у форматі підрозділ дата час текст' },
+        {
+          id: 'rer_report' as const,
+          title: 'РЕР Звіт',
+          description: 'Документ по non-RER перехопленнях з привʼязаними машинами',
+        },
+        {
+          id: 'sposob' as const,
+          title: 'Способ',
+          description: 'Звіт із перехопленнями у форматі підрозділ дата час текст',
+        },
       ]
     : reportTemplateOptions;
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
-  const showReportTagsOnlyThisUnit = ['tags', 'pelengs', 'babak', 'interception', 'posts_docx', 'mouse', 'reo'].includes(report.template);
+  const showReportTagsOnlyThisUnit = [
+    'tags',
+    'pelengs',
+    'babak',
+    'interception',
+    'posts_docx',
+    'mouse',
+    'reo',
+  ].includes(report.template);
   const latestTaskRun = taskRuns.length > 0 ? taskRuns[taskRuns.length - 1] : null;
   const latestTaskRunDone = latestTaskRun != null && !latestTaskRun.running;
   const latestTaskRunCancelled = latestTaskRunDone && latestTaskRun?.cancelled === true;
-  const latestTaskRunSuccess = latestTaskRunDone && !latestTaskRunCancelled && latestTaskRun.error == null;
+  const latestTaskRunSuccess =
+    latestTaskRunDone && !latestTaskRunCancelled && latestTaskRun.error == null;
   const historyTaskRuns = taskRuns.length > 1 ? taskRuns.slice(0, -1) : [];
   const historyRow = latestTaskRun?.historyRow ?? null;
   const isQueued =
     latestTaskRun != null &&
     latestTaskRun.running &&
-    (historyRow == null || historyRow.status === 'planned' || (historyRow.status === 'in_progress' && historyRow.bgtaskId == null));
+    (historyRow == null ||
+      historyRow.status === 'planned' ||
+      (historyRow.status === 'in_progress' && historyRow.bgtaskId == null));
   const hasBgtask = historyRow?.bgtaskId != null;
   const isDialogLocked = downloadInFlight || latestTaskRun?.running === true;
-  const isSposobUnitNameMissing = report.template === 'sposob' && report.sposobUnitName.trim() === '';
+  const isSposobUnitNameMissing =
+    report.template === 'sposob' && report.sposobUnitName.trim() === '';
   const reportCreatedAtLabel = formatDateTimeLabel(historyRow?.createdAt ?? null);
   const reportQueuedForLabel = formatDurationSinceIso(historyRow?.createdAt ?? null);
   const reportStartedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
   const reportPlannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
   const progressVariant = isQueued || !hasBgtask ? 'indeterminate' : 'determinate';
   const latestProgressStage = extractStages(latestTaskRun?.logs ?? []).at(-1) ?? null;
-  const progressStageLabel = isQueued || !hasBgtask ? QUEUED_TEXT : latestProgressStage?.text ?? PREPARING_TEXT;
-  const progressPercent = Math.max(1, Math.min(100, Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100)));
+  const progressStageLabel =
+    isQueued || !hasBgtask ? QUEUED_TEXT : (latestProgressStage?.text ?? PREPARING_TEXT);
+  const progressPercent = Math.max(
+    1,
+    Math.min(
+      100,
+      Math.round(((latestTaskRun?.curr ?? 0) / Math.max(1, latestTaskRun?.overall ?? 100)) * 100),
+    ),
+  );
   const progressSummaryLabel = isQueued
     ? historyRow?.blockedByReportId != null
       ? `Очікує завершення звіту #${historyRow.blockedByReportId} · ${formatDurationSinceIso(historyRow?.createdAt ?? null) ?? '—'}`
@@ -263,11 +316,11 @@ export function AnalysisReportDialog({
       ? 'Завантажити'
       : report.template === 'summary_table'
         ? 'Завантажити xlsx'
-      : report.template === 'kmz'
-        ? 'Завантажити KMZ'
-        : report.template === 'geojson'
-          ? 'Завантажити GeoJSON'
-          : 'Завантажити docx/xlsx';
+        : report.template === 'kmz'
+          ? 'Завантажити KMZ'
+          : report.template === 'geojson'
+            ? 'Завантажити GeoJSON'
+            : 'Завантажити docx/xlsx';
 
   return (
     <Dialog
@@ -289,7 +342,9 @@ export function AnalysisReportDialog({
           <Stack spacing={1.5}>
             <Tabs
               value={builderMode}
-              onChange={(_event, value) => onUpdate({ template: value === 'exports' ? 'summary_table' : 'tags' })}
+              onChange={(_event, value) =>
+                onUpdate({ template: value === 'exports' ? 'summary_table' : 'tags' })
+              }
               variant="scrollable"
               allowScrollButtonsMobile
             >
@@ -297,7 +352,18 @@ export function AnalysisReportDialog({
               <Tab value="exports" label="Експорт" />
             </Tabs>
             <Typography variant="body2" color="text.secondary">
-              Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування &gt; Мої звіти</Box>
+              Переглядайте свої звіти в{' '}
+              <Box
+                component="a"
+                href={REPORT_HISTORY_URL}
+                sx={{
+                  color: 'primary.main',
+                  textDecoration: 'none',
+                  '&:hover': { textDecoration: 'underline' },
+                }}
+              >
+                Налаштування &gt; Мої звіти
+              </Box>
             </Typography>
 
             {builderMode === 'reports' ? (
@@ -307,9 +373,19 @@ export function AnalysisReportDialog({
                     <Button
                       key={option.id}
                       variant={report.template === option.id ? 'contained' : 'outlined'}
-                      disabled={['reo', 'digest', 'active_networks'].includes(option.id) && !hasAdvancedReportAccess}
+                      disabled={
+                        ['reo', 'digest', 'active_networks'].includes(option.id) &&
+                        !hasAdvancedReportAccess
+                      }
                       onClick={() => onUpdate({ template: option.id })}
-                      sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 0, width: 'fit-content' }}
+                      sx={{
+                        alignItems: 'flex-start',
+                        justifyContent: 'flex-start',
+                        textAlign: 'left',
+                        p: 2,
+                        minWidth: 0,
+                        width: 'fit-content',
+                      }}
                     >
                       <Stack alignItems="flex-start" spacing={0.75}>
                         <Typography variant="subtitle2">{option.title}</Typography>
@@ -328,7 +404,14 @@ export function AnalysisReportDialog({
                     key={option.id}
                     variant={report.template === option.id ? 'contained' : 'outlined'}
                     onClick={() => onUpdate({ template: option.id })}
-                    sx={{ alignItems: 'flex-start', justifyContent: 'flex-start', textAlign: 'left', p: 2, minWidth: 0, width: 'fit-content' }}
+                    sx={{
+                      alignItems: 'flex-start',
+                      justifyContent: 'flex-start',
+                      textAlign: 'left',
+                      p: 2,
+                      minWidth: 0,
+                      width: 'fit-content',
+                    }}
                   >
                     <Stack alignItems="flex-start" spacing={0.75}>
                       <Typography variant="subtitle2">{option.title}</Typography>
@@ -349,7 +432,11 @@ export function AnalysisReportDialog({
                 labelId="analysis-report-tag-sort-label"
                 label="Сортування"
                 value={report.tagReportSortBy}
-                onChange={(event) => onUpdate({ tagReportSortBy: event.target.value as AnalysisReportState['tagReportSortBy'] })}
+                onChange={(event) =>
+                  onUpdate({
+                    tagReportSortBy: event.target.value as AnalysisReportState['tagReportSortBy'],
+                  })
+                }
               >
                 <MenuItem value="ByTime">За Часом</MenuItem>
                 <MenuItem value="ByFreqThenTime">За Частотою Та Часом</MenuItem>
@@ -371,14 +458,24 @@ export function AnalysisReportDialog({
           ) : null}
 
           {report.template === 'senders' ? (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap">
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              alignItems={{ sm: 'center' }}
+              flexWrap="wrap"
+            >
               <FormControl size="small" sx={{ flex: '1 1 240px', maxWidth: 300, minWidth: 220 }}>
                 <InputLabel id="analysis-report-aggregation-label">Агрегація</InputLabel>
                 <Select
                   labelId="analysis-report-aggregation-label"
                   label="Агрегація"
                   value={report.senderAggregation}
-                  onChange={(event) => onUpdate({ senderAggregation: event.target.value as AnalysisReportState['senderAggregation'] })}
+                  onChange={(event) =>
+                    onUpdate({
+                      senderAggregation: event.target
+                        .value as AnalysisReportState['senderAggregation'],
+                    })
+                  }
                 >
                   <MenuItem value="ByProfile">Профілі</MenuItem>
                   <MenuItem value="ByPost">Пости</MenuItem>
@@ -393,14 +490,21 @@ export function AnalysisReportDialog({
           ) : null}
 
           {report.template === 'reo' ? (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap">
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              alignItems={{ sm: 'center' }}
+              flexWrap="wrap"
+            >
               <FormControl size="small" sx={{ flex: '1 1 180px', maxWidth: 240, minWidth: 180 }}>
                 <InputLabel id="analysis-report-reo-adjacent-label">Суміжні частоти</InputLabel>
                 <Select
                   labelId="analysis-report-reo-adjacent-label"
                   label="Суміжні частоти"
                   value={String(report.reoAdjacentFreqsDistance)}
-                  onChange={(event) => onUpdate({ reoAdjacentFreqsDistance: Number(event.target.value) })}
+                  onChange={(event) =>
+                    onUpdate({ reoAdjacentFreqsDistance: Number(event.target.value) })
+                  }
                 >
                   {REPORT_ADJACENT_FREQS_OPTIONS.map((option) => (
                     <MenuItem key={option} value={String(option)}>
@@ -415,13 +519,21 @@ export function AnalysisReportDialog({
                   labelId="analysis-report-reo-file-label"
                   label="Формат"
                   value={report.reoFileType}
-                  onChange={(event) => onUpdate({ reoFileType: event.target.value as AnalysisReportState['reoFileType'] })}
+                  onChange={(event) =>
+                    onUpdate({
+                      reoFileType: event.target.value as AnalysisReportState['reoFileType'],
+                    })
+                  }
                 >
                   <MenuItem value="Docx">docx</MenuItem>
                   <MenuItem value="Xlsx">xlsx</MenuItem>
                 </Select>
               </FormControl>
-              <ReportCheckboxLabel checked={report.reoNoComments} label="Без коментарів" onChange={(value) => onUpdate({ reoNoComments: value })} />
+              <ReportCheckboxLabel
+                checked={report.reoNoComments}
+                label="Без коментарів"
+                onChange={(value) => onUpdate({ reoNoComments: value })}
+              />
             </Stack>
           ) : null}
 
@@ -435,7 +547,11 @@ export function AnalysisReportDialog({
                   multiple
                   value={report.activeNetworksAorIds.map(String)}
                   onChange={(event) =>
-                    onUpdate({ activeNetworksAorIds: (event.target.value as string[]).map((value) => Number(value)).filter(Number.isFinite) })
+                    onUpdate({
+                      activeNetworksAorIds: (event.target.value as string[])
+                        .map((value) => Number(value))
+                        .filter(Number.isFinite),
+                    })
                   }
                   renderValue={(selected) =>
                     (selected as string[])
@@ -472,9 +588,15 @@ export function AnalysisReportDialog({
                   }}
                 />
                 {(() => {
-                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Лише для цього звіту'));
+                  const hint = appliedFilters.inPlaceHints.find((item) =>
+                    item.startsWith('Лише для цього звіту'),
+                  );
                   return hint ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: 'block', ml: 4.5 }}
+                    >
                       {hint}
                     </Typography>
                   ) : null;
@@ -483,7 +605,12 @@ export function AnalysisReportDialog({
                   <ReportCheckboxLabel
                     checked={report.withoutComments}
                     label="Не включати коментарі"
-                    onChange={(value) => onUpdate({ withoutComments: value, reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit })}
+                    onChange={(value) =>
+                      onUpdate({
+                        withoutComments: value,
+                        reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit,
+                      })
+                    }
                   />
                 ) : null}
                 <ReportCheckboxLabel
@@ -506,9 +633,15 @@ export function AnalysisReportDialog({
                   </>
                 ) : null}
                 {(() => {
-                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Без автоматичних тегів'));
+                  const hint = appliedFilters.inPlaceHints.find((item) =>
+                    item.startsWith('Без автоматичних тегів'),
+                  );
                   return hint ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: 'block', ml: 4.5 }}
+                    >
                       {hint}
                     </Typography>
                   ) : null;
@@ -522,7 +655,9 @@ export function AnalysisReportDialog({
                   onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
                 />
                 {(() => {
-                  const hint = appliedFilters.inPlaceHints.find((item) => item.startsWith('Лише для цього звіту'));
+                  const hint = appliedFilters.inPlaceHints.find((item) =>
+                    item.startsWith('Лише для цього звіту'),
+                  );
                   return hint ? (
                     <Typography variant="caption" color="text.secondary">
                       {hint}
@@ -543,18 +678,44 @@ export function AnalysisReportDialog({
                   variant="caption"
                   sx={{
                     flexShrink: 0,
-                    color: latestTaskRun.error ? 'error.main' : latestTaskRunCancelled ? 'warning.main' : latestTaskRunSuccess ? 'success.main' : 'text.secondary',
+                    color: latestTaskRun.error
+                      ? 'error.main'
+                      : latestTaskRunCancelled
+                        ? 'warning.main'
+                        : latestTaskRunSuccess
+                          ? 'success.main'
+                          : 'text.secondary',
                   }}
                 >
-                  {latestTaskRun.error ? 'Помилка' : latestTaskRunCancelled ? 'Скасовано' : isQueued ? QUEUED_TEXT : latestTaskRun.running ? FORMING_TEXT : 'Готово'}
+                  {latestTaskRun.error
+                    ? 'Помилка'
+                    : latestTaskRunCancelled
+                      ? 'Скасовано'
+                      : isQueued
+                        ? QUEUED_TEXT
+                        : latestTaskRun.running
+                          ? FORMING_TEXT
+                          : 'Готово'}
                 </Typography>
               </Stack>
 
               <LinearProgress
                 variant={progressVariant}
-                color={latestTaskRun.error ? 'error' : latestTaskRunCancelled ? 'warning' : latestTaskRunSuccess ? 'success' : 'primary'}
+                color={
+                  latestTaskRun.error
+                    ? 'error'
+                    : latestTaskRunCancelled
+                      ? 'warning'
+                      : latestTaskRunSuccess
+                        ? 'success'
+                        : 'primary'
+                }
                 value={progressVariant === 'determinate' ? progressPercent : undefined}
-                sx={latestTaskRun.running && progressVariant === 'determinate' ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                sx={
+                  latestTaskRun.running && progressVariant === 'determinate'
+                    ? { '& .MuiLinearProgress-bar': { transition: 'none' } }
+                    : undefined
+                }
               />
 
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
@@ -562,7 +723,11 @@ export function AnalysisReportDialog({
                   {progressSummaryLabel}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
-                  <Button size="small" onClick={() => void onRepeatTaskRun(latestTaskRun.id)} disabled={downloadInFlight || latestTaskRun.running}>
+                  <Button
+                    size="small"
+                    onClick={() => void onRepeatTaskRun(latestTaskRun.id)}
+                    disabled={downloadInFlight || latestTaskRun.running}
+                  >
                     Сформувати повторно
                   </Button>
                   <Button size="small" onClick={() => onSetProgressExpanded(!progressExpanded)}>
@@ -572,8 +737,12 @@ export function AnalysisReportDialog({
               </Stack>
 
               {latestTaskRun.error ? <Alert severity="error">{latestTaskRun.error}</Alert> : null}
-              {isQueued && historyRow?.createdAt != null && Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
-                <Alert severity="warning">Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.</Alert>
+              {isQueued &&
+              historyRow?.createdAt != null &&
+              Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
+                <Alert severity="warning">
+                  Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.
+                </Alert>
               ) : null}
 
               {progressExpanded ? (
@@ -581,7 +750,11 @@ export function AnalysisReportDialog({
                   <Box
                     sx={{
                       display: 'grid',
-                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                      gridTemplateColumns: {
+                        xs: '1fr',
+                        sm: 'repeat(2, minmax(0, 1fr))',
+                        md: 'repeat(3, minmax(0, 1fr))',
+                      },
                       gap: 1,
                       p: 1.5,
                       borderRadius: 2,
@@ -651,7 +824,13 @@ export function AnalysisReportDialog({
                         Триває
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {formatElapsedTime(isQueued ? parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null : latestTaskRun.startedAt ? parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null : null) ?? '—'}
+                        {formatElapsedTime(
+                          isQueued
+                            ? (parseUtcDateTime(historyRow?.createdAt ?? null)?.getTime() ?? null)
+                            : latestTaskRun.startedAt
+                              ? (parseUtcDateTime(latestTaskRun.startedAt)?.getTime() ?? null)
+                              : null,
+                        ) ?? '—'}
                       </Typography>
                     </Stack>
                     <Stack spacing={0.25}>
@@ -677,7 +856,8 @@ export function AnalysisReportDialog({
                       run.running &&
                       (run.historyRow == null ||
                         run.historyRow.status === 'planned' ||
-                        (run.historyRow.status === 'in_progress' && run.historyRow.bgtaskId == null));
+                        (run.historyRow.status === 'in_progress' &&
+                          run.historyRow.bgtaskId == null));
                     const stages = extractStages(run.logs);
                     return (
                       <Accordion
@@ -686,20 +866,53 @@ export function AnalysisReportDialog({
                         elevation={0}
                         expanded={run.expanded}
                         onChange={(_event, expanded) => onToggleTaskRunLogs(run.id, expanded)}
-                        sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 1 }}
+                        sx={{
+                          '&:before': { display: 'none' },
+                          border: 1,
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                        }}
                       >
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 44, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
-                          <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                        <AccordionSummary
+                          expandIcon={<ExpandMoreIcon />}
+                          sx={{ minHeight: 44, '& .MuiAccordionSummary-content': { my: 0.5 } }}
+                        >
+                          <Stack
+                            width="100%"
+                            direction="row"
+                            justifyContent="space-between"
+                            alignItems="center"
+                            spacing={2}
+                          >
                             <Stack spacing={0.25} sx={{ minWidth: 0 }}>
                               <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
                                 {run.reportTitle}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {run.startedAt ? formatDateTimeLabel(run.startedAt) ?? '—' : '—'}
+                                {run.startedAt ? (formatDateTimeLabel(run.startedAt) ?? '—') : '—'}
                               </Typography>
                             </Stack>
-                            <Typography variant="caption" color={run.error ? 'error.main' : run.cancelled ? 'warning.main' : run.running ? 'warning.main' : 'success.main'}>
-                              {run.error ? 'Помилка' : run.cancelled ? 'Скасовано' : runQueued ? QUEUED_TEXT : run.running ? FORMING_TEXT : 'Успішно'}
+                            <Typography
+                              variant="caption"
+                              color={
+                                run.error
+                                  ? 'error.main'
+                                  : run.cancelled
+                                    ? 'warning.main'
+                                    : run.running
+                                      ? 'warning.main'
+                                      : 'success.main'
+                              }
+                            >
+                              {run.error
+                                ? 'Помилка'
+                                : run.cancelled
+                                  ? 'Скасовано'
+                                  : runQueued
+                                    ? QUEUED_TEXT
+                                    : run.running
+                                      ? FORMING_TEXT
+                                      : 'Успішно'}
                             </Typography>
                           </Stack>
                         </AccordionSummary>
@@ -723,16 +936,31 @@ export function AnalysisReportDialog({
                                         ○
                                       </Typography>
                                     )}
-                                    <Typography variant="caption" color={status === 'error' ? 'error.main' : status === 'cancelled' ? 'warning.main' : 'text.secondary'}>
+                                    <Typography
+                                      variant="caption"
+                                      color={
+                                        status === 'error'
+                                          ? 'error.main'
+                                          : status === 'cancelled'
+                                            ? 'warning.main'
+                                            : 'text.secondary'
+                                      }
+                                    >
                                       [{stage.index}/{stage.overall}] {stage.text}
                                     </Typography>
                                   </Stack>
-                                  {status === 'error' && run.error ? <Alert severity="error">{run.error}</Alert> : null}
+                                  {status === 'error' && run.error ? (
+                                    <Alert severity="error">{run.error}</Alert>
+                                  ) : null}
                                 </Stack>
                               );
                             })}
                             <Stack direction="row" justifyContent="flex-end">
-                              <Button size="small" onClick={() => void onRepeatTaskRun(run.id)} disabled={downloadInFlight || run.running}>
+                              <Button
+                                size="small"
+                                onClick={() => void onRepeatTaskRun(run.id)}
+                                disabled={downloadInFlight || run.running}
+                              >
                                 Сформувати повторно
                               </Button>
                             </Stack>
@@ -756,12 +984,21 @@ export function AnalysisReportDialog({
           flexWrap: 'wrap',
         }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ flex: '1 1 320px', minWidth: 0 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ flex: '1 1 320px', minWidth: 0 }}
+        >
           {appliedFilters.globalHint}
         </Typography>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
           <Button onClick={onClose}>Закрити</Button>
-          <Button variant="contained" startIcon={<DownloadIcon />} onClick={onDownload} disabled={downloadInFlight || isSposobUnitNameMissing}>
+          <Button
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            onClick={onDownload}
+            disabled={downloadInFlight || isSposobUnitNameMissing}
+          >
             {downloadInFlight ? PREPARING_TEXT : downloadButtonLabel}
           </Button>
         </Stack>

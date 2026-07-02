@@ -25,7 +25,9 @@ vi.mock('../xlsx/XlsxGrid', () => ({
 }));
 
 vi.mock('../xlsx/XlsxSheetTabs', () => ({
-  XlsxSheetTabs: ({ sheetNames }: { sheetNames: string[] }) => <div data-tabs data-count={sheetNames.length} />,
+  XlsxSheetTabs: ({ sheetNames }: { sheetNames: string[] }) => (
+    <div data-tabs data-count={sheetNames.length} />
+  ),
 }));
 
 import { XlsxDocumentPreview } from './XlsxDocumentPreview';
@@ -47,7 +49,13 @@ describe('XlsxDocumentPreview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<XlsxDocumentPreview href="https://example.test/files/report.xlsx" zoom={100} sizeBytes={10 * 1024 * 1024 + 1} />);
+      root.render(
+        <XlsxDocumentPreview
+          href="https://example.test/files/report.xlsx"
+          zoom={100}
+          sizeBytes={10 * 1024 * 1024 + 1}
+        />,
+      );
     });
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -98,7 +106,12 @@ describe('XlsxDocumentPreview', () => {
       root.render(<XlsxDocumentPreview href="https://example.test/files/report.xlsx" zoom={100} />);
     });
 
-    expect(runWorkerTask).toHaveBeenCalledWith(expect.any(Function), { buffer: arrayBuffer }, expect.any(AbortSignal), [arrayBuffer]);
+    expect(runWorkerTask).toHaveBeenCalledWith(
+      expect.any(Function),
+      { buffer: arrayBuffer },
+      expect.any(AbortSignal),
+      [arrayBuffer],
+    );
 
     root.unmount();
   });

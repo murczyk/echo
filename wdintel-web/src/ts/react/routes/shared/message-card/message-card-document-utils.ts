@@ -29,7 +29,8 @@ function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
   const fileName = mediaAttachmentDisplayName(m).toLowerCase();
   const href = String(m.href ?? '').toLowerCase();
 
-  if (contentType === 'application/pdf' || fileName.endsWith('.pdf') || /\.pdf(\?|#|$)/i.test(href)) return 'pdf';
+  if (contentType === 'application/pdf' || fileName.endsWith('.pdf') || /\.pdf(\?|#|$)/i.test(href))
+    return 'pdf';
   if (
     contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     fileName.endsWith('.docx') ||
@@ -70,7 +71,10 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
     const href = document.href.trim();
     if (href === '') return;
     const existing = documentsByHref.get(href);
-    documentsByHref.set(href, existing == null ? { ...document, href } : { ...existing, ...document, href });
+    documentsByHref.set(
+      href,
+      existing == null ? { ...document, href } : { ...existing, ...document, href },
+    );
   };
 
   for (const attachment of msg.media ?? []) {
@@ -92,7 +96,10 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
 }
 
 function isRecognizedDocumentAttachment(m: MessageMediaInfo): boolean {
-  return DOCUMENT_DOWNLOAD_EXTENSION_RE.test(String(m.href ?? '').toLowerCase()) || isLegacySpreadsheetAttachment(m);
+  return (
+    DOCUMENT_DOWNLOAD_EXTENSION_RE.test(String(m.href ?? '').toLowerCase()) ||
+    isLegacySpreadsheetAttachment(m)
+  );
 }
 
 function isLegacySpreadsheetAttachment(m: MessageMediaInfo): boolean {

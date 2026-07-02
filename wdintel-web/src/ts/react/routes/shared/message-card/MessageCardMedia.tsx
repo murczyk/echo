@@ -25,8 +25,7 @@ const AUDIO_FILE_EXTENSIONS = [
   '.webm',
 ] as const;
 
-const AUDIO_FILE_EXTENSION_RE =
-  /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|webm)(\?|#|$)/i;
+const AUDIO_FILE_EXTENSION_RE = /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|webm)(\?|#|$)/i;
 
 type MessageMediaInfoRaw = MessageMediaInfo & {
   content_type?: string | null;
@@ -59,13 +58,7 @@ export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {
   return AUDIO_FILE_EXTENSION_RE.test(href);
 }
 
-const VIDEO_FILE_EXTENSIONS = [
-  '.mp4',
-  '.webm',
-  '.ogg',
-  '.mov',
-  '.mkv',
-] as const;
+const VIDEO_FILE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.mkv'] as const;
 
 const VIDEO_FILE_EXTENSION_RE = /\.(mp4|webm|ogg|mov|mkv)(\?|#|$)/i;
 
@@ -103,18 +96,11 @@ export function mediaAttachmentSpectrumUrl(mediaId: string): string {
   return `/api/messenger/media/${mediaId}/spectrogram`;
 }
 
-export function syncAudioPlayerTheme(
-  player: HTMLElement,
-  paletteMode: 'light' | 'dark',
-) {
+export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' | 'dark') {
   player.setAttribute('theme', paletteMode);
 }
 
-export function MessageMediaAudioPlayer({
-  attachment,
-}: {
-  attachment: MessageMediaInfo;
-}) {
+export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMediaInfo }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLElement | null>(null);
   const paletteMode = useMuiPaletteMode();
@@ -196,16 +182,10 @@ export function MessageMediaAudioPlayer({
   );
 }
 
-export function MessageMediaDownloadLink({
-  attachment,
-}: {
-  attachment: MessageMediaInfo;
-}) {
+export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
   const displayName = mediaAttachmentDisplayName(attachment);
   const downloadAttr =
-    displayName === '<файл без назви>'
-      ? 'attachment'
-      : displayName.replace(/[/\\]/g, '_');
+    displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
   return (
     <Tooltip title={displayName} enterDelay={400}>
       <Button

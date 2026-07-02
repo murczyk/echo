@@ -32,7 +32,9 @@ export const CALLSIGN_FORM_HINT =
 export const UNIT_SELECTION_REQUIRED_ERROR = 'Оберіть підрозділ зі списку.';
 
 function hasCallsignEditorAccess(roles: Set<string>): boolean {
-  return roles.has('Admin') || ((roles.has('Rer') || roles.has('Full')) && roles.has('CallsignsEditor'));
+  return (
+    roles.has('Admin') || ((roles.has('Rer') || roles.has('Full')) && roles.has('CallsignsEditor'))
+  );
 }
 
 export function toUpperCaseCallsign(value: string): string {
@@ -43,7 +45,10 @@ export function normalizeDuplicateLookupValue(value: string): string {
   return value.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
 }
 
-export function getUnitSelectionError(unitSearchInput: string, selectedUnit: { id: number; name: string } | null): string | null {
+export function getUnitSelectionError(
+  unitSearchInput: string,
+  selectedUnit: { id: number; name: string } | null,
+): string | null {
   if (selectedUnit) return null;
   if (normalizeUnitSearchValue(unitSearchInput) === '') return null;
   return UNIT_SELECTION_REQUIRED_ERROR;
@@ -100,8 +105,12 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
     filterUnitRegiment: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.regiment),
     filterUnitBattalion: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.battalion),
     filterDeveloping: filters.filterDeveloping,
-    sinceDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
-    tillDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.toDateTimeLocal),
+    sinceDateInclusiveMs: filters.isIgnoringDateFilter
+      ? null
+      : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
+    tillDateInclusiveMs: filters.isIgnoringDateFilter
+      ? null
+      : parseDateTimeLocalToMs(filters.toDateTimeLocal),
     limit: query.limit,
     sortBy: toBackendSort(sort),
   };
@@ -138,7 +147,20 @@ export function buildDuplicateHintGroups(
 }> {
   if (duplicateHintInputs.length === 0 || callsigns.length === 0) return [];
 
-  const groupsByRowIndex = new Map<number, { rowIndex: number; matches: Array<{ id: number; callsign: string; position: string; fullName: string; comment: string; unitName: string }> }>();
+  const groupsByRowIndex = new Map<
+    number,
+    {
+      rowIndex: number;
+      matches: Array<{
+        id: number;
+        callsign: string;
+        position: string;
+        fullName: string;
+        comment: string;
+        unitName: string;
+      }>;
+    }
+  >();
 
   for (const callsign of callsigns) {
     const callsignValue = normalizeDuplicateLookupValue(callsign.callsign);
@@ -178,8 +200,20 @@ export function buildDuplicateHintGroups(
 
   return duplicateHintInputs
     .map((input) => groupsByRowIndex.get(input.rowIndex))
-    .filter((group): group is { rowIndex: number; matches: Array<{ id: number; callsign: string; position: string; fullName: string; comment: string; unitName: string }> } =>
-      !isNullOrUndefined(group) && group.matches.length > 0,
+    .filter(
+      (
+        group,
+      ): group is {
+        rowIndex: number;
+        matches: Array<{
+          id: number;
+          callsign: string;
+          position: string;
+          fullName: string;
+          comment: string;
+          unitName: string;
+        }>;
+      } => !isNullOrUndefined(group) && group.matches.length > 0,
     );
 }
 
@@ -291,7 +325,9 @@ export function isDevelopingFilter(value: string): value is DevelopingFilter {
   return value === 'OnlyDeveloping' || value === 'OnlyNonDeveloping' || value === 'All';
 }
 
-function normalizeHierarchyFilterValue(value: UnitHierarchyFilter[keyof UnitHierarchyFilter] | undefined): string | null {
+function normalizeHierarchyFilterValue(
+  value: UnitHierarchyFilter[keyof UnitHierarchyFilter] | undefined,
+): string | null {
   if (isNullOrUndefined(value)) return null;
   return value.trim();
 }

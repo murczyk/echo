@@ -6,19 +6,24 @@ import type { MouseEvent, PointerEvent } from 'react';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { buildDefaultColumnOrder } from '../../components/mui-customized/table/get-default-table-options';
 import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
 import { NetworksTable } from './components/NetworksTable';
 import { NetworkDialogs } from './components/NetworkDialogs';
-import { NetworkHoverPopovers, FREQUENCY_HOVER_POPPER_MODIFIERS, FREQUENCY_HOVER_POPPER_PLACEMENT, useHoverPopoverState } from './components/NetworkHoverPopovers';
+import {
+  NetworkHoverPopovers,
+  FREQUENCY_HOVER_POPPER_MODIFIERS,
+  FREQUENCY_HOVER_POPPER_PLACEMENT,
+  useHoverPopoverState,
+} from './components/NetworkHoverPopovers';
 import { NetworkPageHeaderActions } from './components/NetworksPageHeader';
 import { NetworksToolbar } from './components/NetworksToolbar';
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
-import {
-  resolveAorFilterSelectOptions,
-  sanitizeNetworkColumnFilters,
-} from './helpers';
+import { resolveAorFilterSelectOptions, sanitizeNetworkColumnFilters } from './helpers';
 import { getLocationParts } from './components/NetworkCells';
 
 const DEFAULT_NETWORKS_SORTING: MRT_SortingState = [{ id: 'network', desc: false }];
@@ -28,20 +33,40 @@ const columnOrder = buildDefaultColumnOrder({
   withRowActions: true,
 });
 
-export { FREQUENCY_HOVER_POPPER_MODIFIERS, FREQUENCY_HOVER_POPPER_PLACEMENT, getLocationParts, useHoverPopoverState };
+export {
+  FREQUENCY_HOVER_POPPER_MODIFIERS,
+  FREQUENCY_HOVER_POPPER_PLACEMENT,
+  getLocationParts,
+  useHoverPopoverState,
+};
 
 function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerNetworksNeoPage({ authUserRoles });
   const tableStateContext = useTableStateContext();
   const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
-  const aorFilterOptions = useMemo(() => resolveAorFilterSelectOptions(page.aorOptions), [page.aorOptions]);
-  const safeColumnFilters = useMemo(() => sanitizeNetworkColumnFilters(tableStateContext.columnFilters), [tableStateContext.columnFilters]);
-  const { hoverPopover, onHoverAnchorPointerEnter, onHoverLocationPointerEnter, onHoverAnchorPointerLeave, onHoverPopperPointerEnter, onHoverPopperPointerLeave, closeHoverPopover } =
-    useHoverPopoverState();
+  const aorFilterOptions = useMemo(
+    () => resolveAorFilterSelectOptions(page.aorOptions),
+    [page.aorOptions],
+  );
+  const safeColumnFilters = useMemo(
+    () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
+    [tableStateContext.columnFilters],
+  );
+  const {
+    hoverPopover,
+    onHoverAnchorPointerEnter,
+    onHoverLocationPointerEnter,
+    onHoverAnchorPointerLeave,
+    onHoverPopperPointerEnter,
+    onHoverPopperPointerLeave,
+    closeHoverPopover,
+  } = useHoverPopoverState();
 
   const onToggleReportsMenu = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
-      page.setReportsMenuAnchorEl((current) => (current === event.currentTarget ? null : event.currentTarget));
+      page.setReportsMenuAnchorEl((current) =>
+        current === event.currentTarget ? null : event.currentTarget,
+      );
     },
     [page.setReportsMenuAnchorEl],
   );
@@ -53,8 +78,14 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
             {
               id: 'page-unit',
               label: 'Підрозділ',
-              value: page.selectedSidebarUnitFilter.kind === 'leaf' ? page.selectedSidebarUnitFilter.unitName : page.selectedSidebarUnitFilter.label,
-              valuePreview: page.selectedSidebarUnitFilter.kind === 'leaf' ? page.selectedSidebarUnitFilter.unitName : page.selectedSidebarUnitFilter.label,
+              value:
+                page.selectedSidebarUnitFilter.kind === 'leaf'
+                  ? page.selectedSidebarUnitFilter.unitName
+                  : page.selectedSidebarUnitFilter.label,
+              valuePreview:
+                page.selectedSidebarUnitFilter.kind === 'leaf'
+                  ? page.selectedSidebarUnitFilter.unitName
+                  : page.selectedSidebarUnitFilter.label,
               isGlobalFilter: false,
             },
           ]
@@ -97,18 +128,32 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
           ]
         : []),
     ],
-    [page.filters.status, page.filters.unitText, page.filters.showOnlyInvestigating, page.selectedSidebarUnitFilter],
+    [
+      page.filters.status,
+      page.filters.unitText,
+      page.filters.showOnlyInvestigating,
+      page.selectedSidebarUnitFilter,
+    ],
   );
 
   useEffect(() => {
     closeHoverPopover();
-  }, [closeHoverPopover, page.loading, page.loadingMore, page.refreshing, tableStateContext.columnFilters, tableStateContext.globalFilter, tableStateContext.sorting]);
+  }, [
+    closeHoverPopover,
+    page.loading,
+    page.loadingMore,
+    page.refreshing,
+    tableStateContext.columnFilters,
+    tableStateContext.globalFilter,
+    tableStateContext.sorting,
+  ]);
 
   const handleTablePointerMoveCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-network-hover-anchor="true"], [data-network-hover-popper="true"]')) return;
+      if (target.closest('[data-network-hover-anchor="true"], [data-network-hover-popper="true"]'))
+        return;
       if (hoverPopover !== null) {
         closeHoverPopover();
       }
@@ -118,7 +163,11 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
 
   return (
     <Box sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}>
-      <Stack spacing={3} useFlexGap sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}>
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}
+      >
         <TablePageToolbar
           title="Мережі"
           titleLeadingActions={
@@ -138,19 +187,33 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
               canEdit={page.permissions.canEdit}
               canExport={page.permissions.canExport}
               reportsMenuAnchorEl={page.reportsMenuAnchorEl}
-              loading={page.loading || page.refreshing || page.loadingMore || page.downloadInFlight !== null}
+              loading={
+                page.loading ||
+                page.refreshing ||
+                page.loadingMore ||
+                page.downloadInFlight !== null
+              }
               onCreate={page.openCreateDialog}
               onOpenReportsMenu={onToggleReportsMenu}
             />
           }
         />
 
-        {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
+        {page.status ? (
+          <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
+        ) : null}
 
-        <Stack direction={isDesktopLayout ? 'row' : 'column'} spacing={2} useFlexGap sx={{ flex: 1, minHeight: 0, alignItems: 'stretch' }}>
+        <Stack
+          direction={isDesktopLayout ? 'row' : 'column'}
+          spacing={2}
+          useFlexGap
+          sx={{ flex: 1, minHeight: 0, alignItems: 'stretch' }}
+        >
           {isDesktopLayout ? (
             page.sidebarOpen ? (
-              <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0, minHeight: 0 }}>
+              <Box
+                sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0, minHeight: 0 }}
+              >
                 <UnitStatsSidebar
                   stats={page.unitStatsView}
                   open={page.sidebarOpen}

@@ -1,7 +1,6 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { isNullOrUndefined } from './utils/misc';
 
-
 import { createRoot, Root } from 'react-dom/client';
 import { useNeoMuiTheme } from './mui-theme';
 

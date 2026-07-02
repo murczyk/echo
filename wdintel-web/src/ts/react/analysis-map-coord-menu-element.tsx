@@ -1,4 +1,3 @@
-
 import { createRoot, Root } from 'react-dom/client';
 
 import { AnalysisMapCoordMenu } from './AnalysisMapCoordMenu';
@@ -52,7 +51,9 @@ class AnalysisMapCoordMenuElement extends HTMLElement {
         lng={this.lng}
         mgrsCoords={this.mgrsCoords}
         onClose={() => {
-          this.dispatchEvent(new CustomEvent('coord-menu-close', { bubbles: true, composed: true }));
+          this.dispatchEvent(
+            new CustomEvent('coord-menu-close', { bubbles: true, composed: true }),
+          );
         }}
       />,
     );

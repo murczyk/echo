@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { MRT_TableInstance } from 'material-react-table';
 
-import { formatFilterValuePreview, getActiveTableFilters, resolveFilterLabel } from './active-filters-utils';
+import {
+  formatFilterValuePreview,
+  getActiveTableFilters,
+  resolveFilterLabel,
+} from './active-filters-utils';
 
 function buildTable(overrides: Partial<MRT_TableInstance<any>> = {}): MRT_TableInstance<any> {
   const table = {
@@ -26,7 +30,7 @@ function buildTable(overrides: Partial<MRT_TableInstance<any>> = {}): MRT_TableI
                 },
               },
             } as any)
-        : undefined,
+          : undefined,
     ...overrides,
   };
 
@@ -51,13 +55,7 @@ describe('active-filters utils', () => {
     const table = buildTable();
 
     expect(
-      getActiveTableFilters(
-        table,
-        [
-          { id: 'status', value: ['open', 'closed'] },
-        ],
-        'search text',
-      ),
+      getActiveTableFilters(table, [{ id: 'status', value: ['open', 'closed'] }], 'search text'),
     ).toEqual([
       {
         id: 'status',
@@ -89,22 +87,26 @@ describe('active-filters utils', () => {
                 header: 'Статус',
                 meta: {
                   activeFilterValueFormatter: (value: unknown) =>
-                    Array.isArray(value) ? value.map((item) => String(item).toUpperCase()).join(', ') : String(value),
+                    Array.isArray(value)
+                      ? value.map((item) => String(item).toUpperCase()).join(', ')
+                      : String(value),
                 },
               },
             } as any)
           : undefined,
     });
 
-    expect(getActiveTableFilters(table, [{ id: 'status', value: ['open', 'closed'] }], '')).toEqual([
-      {
-        id: 'status',
-        label: 'Статус',
-        value: ['open', 'closed'],
-        valuePreview: 'OPEN, CLOSED',
-        isGlobalFilter: false,
-      },
-    ]);
+    expect(getActiveTableFilters(table, [{ id: 'status', value: ['open', 'closed'] }], '')).toEqual(
+      [
+        {
+          id: 'status',
+          label: 'Статус',
+          value: ['open', 'closed'],
+          valuePreview: 'OPEN, CLOSED',
+          isGlobalFilter: false,
+        },
+      ],
+    );
   });
 
   it('skips filters that match the configured default active value', () => {
@@ -126,6 +128,8 @@ describe('active-filters utils', () => {
           : undefined,
     });
 
-    expect(getActiveTableFilters(table, [{ id: 'developing', value: ['Відомий'] }], '')).toEqual([]);
+    expect(getActiveTableFilters(table, [{ id: 'developing', value: ['Відомий'] }], '')).toEqual(
+      [],
+    );
   });
 });

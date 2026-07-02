@@ -59,15 +59,22 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
   }
 
   const allColumns = tableStateContext.tableInstance?.getAllColumns?.() || [];
-  const hasLayoutChanges = tableStateContext.columnOrderTouched || tableStateContext.columnSizeTouched;
+  const hasLayoutChanges =
+    tableStateContext.columnOrderTouched || tableStateContext.columnSizeTouched;
   const getColumnIdentifier = useCallback(
-    (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) => column.id || column.columnDef.id || column.columnDef.accessorKey || '',
+    (column: { id: string; columnDef: { accessorKey?: string; id?: string } }) =>
+      column.id || column.columnDef.id || column.columnDef.accessorKey || '',
     [],
   );
   const isColumnVisible = useCallback(
     (column: unknown, columnIdentifier: string) => {
-      const getIsVisible = typeof column === 'object' && column !== null ? (column as { getIsVisible?: () => boolean }).getIsVisible : undefined;
-      if (Object.prototype.hasOwnProperty.call(tableStateContext.columnVisibility, columnIdentifier)) {
+      const getIsVisible =
+        typeof column === 'object' && column !== null
+          ? (column as { getIsVisible?: () => boolean }).getIsVisible
+          : undefined;
+      if (
+        Object.prototype.hasOwnProperty.call(tableStateContext.columnVisibility, columnIdentifier)
+      ) {
         return tableStateContext.columnVisibility[columnIdentifier];
       }
       return getIsVisible?.() ?? true;
@@ -111,14 +118,24 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             </div>
             <div>
               <FormControlLabel
-                control={<Switch onChange={onToggleColumnOrdering} checked={tableStateContext.enableColumnOrdering} />}
+                control={
+                  <Switch
+                    onChange={onToggleColumnOrdering}
+                    checked={tableStateContext.enableColumnOrdering}
+                  />
+                }
                 label="Зміна порядку стовпців"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
             <div>
               <FormControlLabel
-                control={<Switch onChange={onToggleColumnResizing} checked={tableStateContext.enableColumnResizing} />}
+                control={
+                  <Switch
+                    onChange={onToggleColumnResizing}
+                    checked={tableStateContext.enableColumnResizing}
+                  />
+                }
                 label="Зміна розміру стовпців"
                 onClick={(e) => e.stopPropagation()}
               />
@@ -174,7 +191,12 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
             return (
               <div key={columnIdentifier}>
                 <FormControlLabel
-                  control={<Switch onChange={(event) => onToggleColumn(event, columnIdentifier)} checked={isColumnVisible(column, columnIdentifier)} />}
+                  control={
+                    <Switch
+                      onChange={(event) => onToggleColumn(event, columnIdentifier)}
+                      checked={isColumnVisible(column, columnIdentifier)}
+                    />
+                  }
                   label={column.columnDef.header}
                   onClick={(e) => e.stopPropagation()}
                 />
@@ -210,7 +232,9 @@ export function ColumnsVisibilityButton(props: ColumnsVisibilityButtonProps) {
                 }}
               />
             )}
-            {props.showTitle && <span className="pl-1 text-sm pointer-events-none">Показати/приховати стовпці</span>}
+            {props.showTitle && (
+              <span className="pl-1 text-sm pointer-events-none">Показати/приховати стовпці</span>
+            )}
           </PowerIconButton>
         </span>
       </Tooltip>

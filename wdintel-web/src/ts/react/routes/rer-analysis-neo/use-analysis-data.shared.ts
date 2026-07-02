@@ -3,7 +3,6 @@ import type { NewCallsignsRes } from '../../../../Bindings';
 import { sortAndTakeTopAnalysisCountItems } from './count-items';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
-
 const FILTER_LABEL_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
 
 export function toErrorMessage(error: unknown): string {
@@ -11,8 +10,14 @@ export function toErrorMessage(error: unknown): string {
   return 'Сталася помилка під час завантаження аналізу.';
 }
 
-export function topItems<T>(list: T[], getKey: (item: T) => string, getCount: (item: T) => number): AnalysisCountItem[] {
-  return sortAndTakeTopAnalysisCountItems(list.map((item) => ({ key: getKey(item), count: getCount(item) })));
+export function topItems<T>(
+  list: T[],
+  getKey: (item: T) => string,
+  getCount: (item: T) => number,
+): AnalysisCountItem[] {
+  return sortAndTakeTopAnalysisCountItems(
+    list.map((item) => ({ key: getKey(item), count: getCount(item) })),
+  );
 }
 
 export function isAnalysisInboxPageExhausted(

@@ -91,7 +91,10 @@ function readFilterValues(raw: Record<string, unknown>, keys: string[]): string[
 function filterValuesForEntity(
   filters: RerDutyFeedFilterState,
   entity: MessageEntityFilterKind,
-): { selected: readonly string[] | null | undefined; denied: readonly string[] | null | undefined } {
+): {
+  selected: readonly string[] | null | undefined;
+  denied: readonly string[] | null | undefined;
+} {
   switch (entity) {
     case 'group':
       return { selected: filters.groupsSelected, denied: filters.groupsDenied };
@@ -122,7 +125,11 @@ function setEntityFilterValues(
   }
 }
 
-export function isMessageEntityExcluded(filters: RerDutyFeedFilterState, entity: MessageEntityFilterKind, value: string): boolean {
+export function isMessageEntityExcluded(
+  filters: RerDutyFeedFilterState,
+  entity: MessageEntityFilterKind,
+  value: string,
+): boolean {
   const trimmed = value.trim();
   if (trimmed === '') return false;
   const { denied } = filterValuesForEntity(filters, entity);
@@ -242,13 +249,13 @@ function isInRange(selectedS: string, freqS: string, range: number): boolean {
 export function findAllAdjacentFreqs(
   allFrequencies: string[],
   selectedFrequencies: string[],
-  range: number
+  range: number,
 ): string[] {
   if (range <= 0) return [];
   return allFrequencies.filter(
     (freq) =>
       !selectedFrequencies.includes(freq) &&
-      selectedFrequencies.some((selected) => isInRange(selected, freq, range))
+      selectedFrequencies.some((selected) => isInRange(selected, freq, range)),
   );
 }
 
@@ -341,14 +348,15 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     postsDenied: readFilterValues(raw, ['postsDenied', 'posts_denied']),
     unitsSelected: readFilterValues(raw, ['unitsSelected', 'units_selected']),
     unitsDenied: readFilterValues(raw, ['unitsDenied', 'units_denied']),
-    unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as boolean | null,
-    lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as number | null,
+    unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as
+      boolean | null,
+    lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as
+      number | null,
     highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??
       raw.highlight_keywords_enabled ??
       null) as boolean | null,
     highlightKeywordSetId: (raw.highlightKeywordSetId ?? raw.highlight_keyword_set_id ?? null) as
-      | number
-      | null,
+      number | null,
   };
 }
 
@@ -516,7 +524,10 @@ export function toDateStr(d: Date): string {
  * Flat query state for `/rer-analysis-neo` (same window as legacy Elm duty links: date range, freq, search).
  * `search` is message UID or comma-joined map point etalons.
  */
-function rerAnalysisNeoQueryStateFromMessage(msg: InboxMessage, search: string): RerAnalysisQueryState {
+function rerAnalysisNeoQueryStateFromMessage(
+  msg: InboxMessage,
+  search: string,
+): RerAnalysisQueryState {
   const now = new Date();
   const from = new Date(now);
   from.setDate(from.getDate() - 15);
@@ -558,11 +569,17 @@ function buildClassicRerAnalysisHref(state: RerAnalysisQueryState, showMap: bool
 }
 
 export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
-  return buildRerAnalysisNeoHref(rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''), showMap);
+  return buildRerAnalysisNeoHref(
+    rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''),
+    showMap,
+  );
 }
 
 export function buildClassicAnalysisHref(msg: InboxMessage, showMap: boolean): string {
-  return buildClassicRerAnalysisHref(rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''), showMap);
+  return buildClassicRerAnalysisHref(
+    rerAnalysisNeoQueryStateFromMessage(msg, msg.messageUid ?? ''),
+    showMap,
+  );
 }
 
 export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
@@ -581,7 +598,10 @@ export function uniquePointEtalonsForMapSearch(etalons: string[]): string[] {
  * Map-focused analysis URL for `/rer-analysis-neo`. When `msg` is passed, includes the same date range
  * and `freqs` as other analysis links from this message.
  */
-export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?: InboxMessage): string {
+export function buildAnalysisMapHrefWithSearch(
+  etalons: string | string[],
+  msg?: InboxMessage,
+): string {
   const searchStr = Array.isArray(etalons)
     ? uniquePointEtalonsForMapSearch(etalons).join(',')
     : String(etalons).trim();
@@ -595,7 +615,10 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[], msg?:
   return buildRerAnalysisNeoHref({ search: searchStr }, true);
 }
 
-export function buildClassicAnalysisMapHrefWithSearch(etalons: string | string[], msg?: InboxMessage): string {
+export function buildClassicAnalysisMapHrefWithSearch(
+  etalons: string | string[],
+  msg?: InboxMessage,
+): string {
   const searchStr = Array.isArray(etalons)
     ? uniquePointEtalonsForMapSearch(etalons).join(',')
     : String(etalons).trim();
@@ -619,7 +642,10 @@ export function messageHasPalitraTag(msg: InboxMessage, tagsMap: Record<number, 
   return false;
 }
 
-export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<number, Tag>): string[] {
+export function getPointEtalonsFromMessage(
+  msg: InboxMessage,
+  tagsMap?: Record<number, Tag>,
+): string[] {
   if (isPresent(tagsMap) && !messageHasPalitraTag(msg, tagsMap)) {
     return [];
   }
@@ -630,7 +656,11 @@ export function getPointEtalonsFromMessage(msg: InboxMessage, tagsMap?: Record<n
   const nodes = msg.textMarked ?? [];
   const etalons: string[] = [];
   for (const n of nodes) {
-    if (typeof n !== 'string' && 'CNPointC' in n && isPresent((n as { CNPointC?: { etalon?: string } }).CNPointC?.etalon)) {
+    if (
+      typeof n !== 'string' &&
+      'CNPointC' in n &&
+      isPresent((n as { CNPointC?: { etalon?: string } }).CNPointC?.etalon)
+    ) {
       const e = String((n as { CNPointC: { etalon: string } }).CNPointC.etalon).trim();
       if (e !== '') etalons.push(e);
     }
@@ -652,7 +682,9 @@ function extractCallsignsFromNodes(nodes: ContentNode[] | null | undefined): str
   return callsigns;
 }
 
-export function collectUniqueCallsignsFromMessages(feeds: Array<{ items: MessageItem[] }>): string[] {
+export function collectUniqueCallsignsFromMessages(
+  feeds: Array<{ items: MessageItem[] }>,
+): string[] {
   const callsigns = new Set<string>();
   feeds.forEach((feed) => {
     feed.items.forEach(([, msg]) => {

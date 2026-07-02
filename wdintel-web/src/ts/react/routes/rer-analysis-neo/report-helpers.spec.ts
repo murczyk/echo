@@ -48,7 +48,9 @@ describe('report-helpers', () => {
 
   it('renders direct export titles', () => {
     expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'kmz' })).toBe('KMZ');
-    expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'geojson' })).toBe('GeoJSON');
+    expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'geojson' })).toBe(
+      'GeoJSON',
+    );
   });
 
   it('sends time sorting by default for tag reports', () => {

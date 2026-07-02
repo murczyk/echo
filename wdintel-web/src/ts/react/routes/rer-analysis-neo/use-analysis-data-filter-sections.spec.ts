@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Unit } from '../../../../Bindings';
 import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
-import { buildFilterSectionsToLoad, filterSectionsToInvalidateForPatch, useAnalysisFilterSections } from './use-analysis-data-filter-sections';
+import {
+  buildFilterSectionsToLoad,
+  filterSectionsToInvalidateForPatch,
+  useAnalysisFilterSections,
+} from './use-analysis-data-filter-sections';
 import { loadFilterSectionData } from './use-analysis-data.reload';
 
 const analysisApiMocks = vi.hoisted(() => ({
@@ -35,7 +39,18 @@ vi.mock('../../services/api/analysis', () => ({
   getTagsMapForDisplay: analysisApiMocks.getTagsMapForDisplay,
 }));
 
-const ALL_OPTION_SECTIONS = ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata'] as const;
+const ALL_OPTION_SECTIONS = [
+  'tags',
+  'aors',
+  'groups',
+  'senders',
+  'callsigns',
+  'units',
+  'locations',
+  'posts',
+  'networks',
+  'metadata',
+] as const;
 
 type HookApi = ReturnType<typeof useAnalysisFilterSections>;
 
@@ -132,7 +147,9 @@ describe('buildFilterSectionsToLoad', () => {
       loadedSections: [],
     });
 
-    expect(sections).toEqual(expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'callsigns']));
+    expect(sections).toEqual(
+      expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'callsigns']),
+    );
   });
 
   it('reloads previously loaded lazy sections on a forced reload', () => {
@@ -143,7 +160,9 @@ describe('buildFilterSectionsToLoad', () => {
       loadedSections: ['units', 'locations', 'posts'],
     });
 
-    expect(sections).toEqual(expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'locations', 'posts']));
+    expect(sections).toEqual(
+      expect.arrayContaining(['tags', 'groups', 'senders', 'units', 'locations', 'posts']),
+    );
     expect(sections).toHaveLength(6);
   });
 
@@ -157,23 +176,73 @@ describe('buildFilterSectionsToLoad', () => {
   });
 
   it.each([
-    ['tags', { tags: [1] }, ['aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata']],
-    ['callsignsSelected', { callsignsSelected: ['a'] }, ['tags', 'aors', 'groups', 'senders', 'units', 'locations', 'posts', 'networks', 'metadata']],
-    ['unitsSelected', { unitsSelected: ['u1'] }, ['tags', 'aors', 'groups', 'senders', 'callsigns', 'locations', 'posts', 'networks', 'metadata']],
-    ['networksSelected', { networksSelected: ['1'] }, ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'metadata']],
+    [
+      'tags',
+      { tags: [1] },
+      [
+        'aors',
+        'groups',
+        'senders',
+        'callsigns',
+        'units',
+        'locations',
+        'posts',
+        'networks',
+        'metadata',
+      ],
+    ],
+    [
+      'callsignsSelected',
+      { callsignsSelected: ['a'] },
+      ['tags', 'aors', 'groups', 'senders', 'units', 'locations', 'posts', 'networks', 'metadata'],
+    ],
+    [
+      'unitsSelected',
+      { unitsSelected: ['u1'] },
+      [
+        'tags',
+        'aors',
+        'groups',
+        'senders',
+        'callsigns',
+        'locations',
+        'posts',
+        'networks',
+        'metadata',
+      ],
+    ],
+    [
+      'networksSelected',
+      { networksSelected: ['1'] },
+      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'metadata'],
+    ],
     ['unitsExactMatchOnly', { unitsExactMatchOnly: true }, [...ALL_OPTION_SECTIONS]],
-    ['metadataCc', { metadataCc: ['cc-1'] }, ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks']],
-    ['onlyWithMetadata', { onlyWithMetadata: true }, ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks']],
-    ['withoutMetadata', { withoutMetadata: true }, ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks']],
+    [
+      'metadataCc',
+      { metadataCc: ['cc-1'] },
+      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
+    ],
+    [
+      'onlyWithMetadata',
+      { onlyWithMetadata: true },
+      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
+    ],
+    [
+      'withoutMetadata',
+      { withoutMetadata: true },
+      ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks'],
+    ],
     ['orWithoutCoords', { orWithoutCoords: true }, [...ALL_OPTION_SECTIONS]],
     ['filterTagsOption', { filterTagsOption: 'AllTags' }, [...ALL_OPTION_SECTIONS]],
     ['withoutModelTags', { withoutModelTags: true }, [...ALL_OPTION_SECTIONS]],
     ['reportTagsOnlyThisUnit', { reportTagsOnlyThisUnit: true }, [...ALL_OPTION_SECTIONS]],
     ['includePelengLocations', { includePelengLocations: false }, [...ALL_OPTION_SECTIONS]],
-  ] as const)('invalidates the expected option sections for %s changes', (_name, patch, expected) => {
-    expect(filterSectionsToInvalidateForPatch(patch)).toEqual(expected);
-  });
-
+  ] as const)(
+    'invalidates the expected option sections for %s changes',
+    (_name, patch, expected) => {
+      expect(filterSectionsToInvalidateForPatch(patch)).toEqual(expected);
+    },
+  );
 });
 
 describe('loadFilterSectionData', () => {
@@ -255,7 +324,10 @@ describe('useAnalysisFilterSections', () => {
   });
 
   it('queues an in-flight excluded section when another targeted invalidation bumps the version', async () => {
-    const groupsDeferred = deferred<{ groups: Array<{ masterKey: string; count: number }>; groupNames: Array<{ masterKey: string; name: string }> }>();
+    const groupsDeferred = deferred<{
+      groups: Array<{ masterKey: string; count: number }>;
+      groupNames: Array<{ masterKey: string; name: string }>;
+    }>();
     analysisApiMocks.fetchAnalysisGroups.mockImplementationOnce(() => groupsDeferred.promise);
 
     await renderHook();

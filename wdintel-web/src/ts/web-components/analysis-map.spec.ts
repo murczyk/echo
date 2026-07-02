@@ -7,7 +7,9 @@ import './analysis-map';
 
 describe('analysis-map', () => {
   it('does not clear popup state when the messages payload becomes empty before loading finishes', () => {
-    const element = Object.create((customElements.get('analysis-map') as CustomElementConstructor).prototype) as HTMLElement;
+    const element = Object.create(
+      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
+    ) as HTMLElement;
     const clickedPoint = { closePopup: vi.fn() };
     const map = { closePopup: vi.fn() };
     const analysisMap = element as unknown as {
@@ -40,7 +42,9 @@ describe('analysis-map', () => {
   });
 
   it('clears stale popup state when loading finishes without messages', () => {
-    const element = Object.create((customElements.get('analysis-map') as CustomElementConstructor).prototype) as HTMLElement;
+    const element = Object.create(
+      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
+    ) as HTMLElement;
     const clickedPoint = { closePopup: vi.fn() };
     const map = { closePopup: vi.fn() };
     const analysisMap = element as unknown as {

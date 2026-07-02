@@ -100,19 +100,37 @@ export function AdminControlPanelNeoPage() {
             <FormGroup>
               <FormControlLabel
                 disableTypography
-                control={<Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />}
+                control={
+                  <Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />
+                }
                 label={
-                  <span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити PostgreSQL (база даних)</span>
+                  <span style={{ color: 'var(--bs-secondary-color)' }}>
+                    Перезапустити PostgreSQL (база даних)
+                  </span>
                 }
               />
               <FormControlLabel
                 disableTypography
-                control={<Checkbox checked={form.restartOutdatedSources} onChange={handleToggleRestartOutdatedSources} />}
-                label={<span style={{ color: 'var(--bs-secondary-color)' }}>Перезапустити месенджери що відстали</span>}
+                control={
+                  <Checkbox
+                    checked={form.restartOutdatedSources}
+                    onChange={handleToggleRestartOutdatedSources}
+                  />
+                }
+                label={
+                  <span style={{ color: 'var(--bs-secondary-color)' }}>
+                    Перезапустити месенджери що відстали
+                  </span>
+                }
               />
             </FormGroup>
             <div className="flex items-center gap-2">
-              <PowerButton variant="contained" color="error" disabled={restarting.value} onClick={handleRestart}>
+              <PowerButton
+                variant="contained"
+                color="error"
+                disabled={restarting.value}
+                onClick={handleRestart}
+              >
                 Перезапустити
               </PowerButton>
               {restarting.value ? <CircularProgress size={18} /> : null}

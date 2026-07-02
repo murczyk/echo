@@ -18,9 +18,7 @@ type UserDutySettingsWire = Omit<UserDutySettingsDto, 'tagsLayout' | 'analysisMa
   analysisMapInSidebar?: boolean | null;
 };
 
-function normalizeTagsLayout(
-  tagsLayout: DutyTagsLayoutWire | null | undefined,
-): TagsLayoutVariant {
+function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
   switch (tagsLayout) {
     case 'compact':
     case 'Compact':
@@ -36,9 +34,7 @@ function normalizeTagsLayout(
   }
 }
 
-function serializeTagsLayout(
-  tagsLayout: TagsLayoutVariant,
-): DutyTagsLayoutWire {
+function serializeTagsLayout(tagsLayout: TagsLayoutVariant): DutyTagsLayoutWire {
   switch (tagsLayout) {
     case 'full':
       return 'full';
@@ -60,10 +56,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
 }
 
 export async function fetchUserSettings(signal?: AbortSignal): Promise<UserDutySettings> {
-  const response = await getJson<UserDutySettingsWire>(
-    '/api/user/settings',
-    { signal },
-  );
+  const response = await getJson<UserDutySettingsWire>('/api/user/settings', { signal });
   return normalizeUserDutySettings(response);
 }
 

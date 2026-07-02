@@ -34,9 +34,19 @@ export type InboxMessagesRspRaw = {
   callsigns: InboxMessagesRsp['callsigns'];
   signal_profiles: Record<
     string,
-    { given_name?: string | null; family_name?: string | null; givenName?: string | null; familyName?: string | null } | null
+    {
+      given_name?: string | null;
+      family_name?: string | null;
+      givenName?: string | null;
+      familyName?: string | null;
+    } | null
   >;
-  signal_groups: Array<{ master_key?: string; masterKey?: string; name?: string; [key: string]: unknown }>;
+  signal_groups: Array<{
+    master_key?: string;
+    masterKey?: string;
+    name?: string;
+    [key: string]: unknown;
+  }>;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
   page_limit?: number | null;
 };
@@ -97,7 +107,9 @@ type ContentNodeCandidate = Partial<{
 
 type InboxTextMarkedNode = NonNullable<InboxMessageType['textMarked']>[number];
 
-function normalizeProfileEntry(v: InboxMessagesRspRaw['signal_profiles'][string]): InboxMessagesRsp['signalProfiles'][string] {
+function normalizeProfileEntry(
+  v: InboxMessagesRspRaw['signal_profiles'][string],
+): InboxMessagesRsp['signalProfiles'][string] {
   if (isNullOrUndefined(v)) return null;
   return {
     givenName: v.givenName ?? v.given_name ?? null,
@@ -116,27 +128,46 @@ export function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag
   };
 }
 
-export function normalizeInboxMessageMetadata(metadata: InboxMessageMetadataRaw): InboxMessageMetadata {
+export function normalizeInboxMessageMetadata(
+  metadata: InboxMessageMetadataRaw,
+): InboxMessageMetadata {
   return {
     colorCode: (metadata.colorCode ?? metadata.color_code ?? null) as string | null,
-    colorCodeStartIndex: (metadata.colorCodeStartIndex ?? metadata.color_code_start_index ?? null) as number | null,
-    colorCodeEndIndex: (metadata.colorCodeEndIndex ?? metadata.color_code_end_index ?? null) as number | null,
+    colorCodeStartIndex: (metadata.colorCodeStartIndex ??
+      metadata.color_code_start_index ??
+      null) as number | null,
+    colorCodeEndIndex: (metadata.colorCodeEndIndex ?? metadata.color_code_end_index ?? null) as
+      number | null,
     callGroupId: (metadata.callGroupId ?? metadata.call_group_id ?? null) as string | null,
-    callGroupIdStartIndex: (metadata.callGroupIdStartIndex ?? metadata.call_group_id_start_index ?? null) as number | null,
-    callGroupIdEndIndex: (metadata.callGroupIdEndIndex ?? metadata.call_group_id_end_index ?? null) as number | null,
+    callGroupIdStartIndex: (metadata.callGroupIdStartIndex ??
+      metadata.call_group_id_start_index ??
+      null) as number | null,
+    callGroupIdEndIndex: (metadata.callGroupIdEndIndex ??
+      metadata.call_group_id_end_index ??
+      null) as number | null,
     callGroupName: (metadata.callGroupName ?? metadata.call_group_name ?? null) as string | null,
-    callGroupNameStartIndex:
-      (metadata.callGroupNameStartIndex ?? metadata.call_group_name_start_index ?? null) as number | null,
-    callGroupNameEndIndex: (metadata.callGroupNameEndIndex ?? metadata.call_group_name_end_index ?? null) as number | null,
+    callGroupNameStartIndex: (metadata.callGroupNameStartIndex ??
+      metadata.call_group_name_start_index ??
+      null) as number | null,
+    callGroupNameEndIndex: (metadata.callGroupNameEndIndex ??
+      metadata.call_group_name_end_index ??
+      null) as number | null,
     senderId: (metadata.senderId ?? metadata.sender_id ?? null) as string | null,
-    senderIdStartIndex: (metadata.senderIdStartIndex ?? metadata.sender_id_start_index ?? null) as number | null,
-    senderIdEndIndex: (metadata.senderIdEndIndex ?? metadata.sender_id_end_index ?? null) as number | null,
+    senderIdStartIndex: (metadata.senderIdStartIndex ?? metadata.sender_id_start_index ?? null) as
+      number | null,
+    senderIdEndIndex: (metadata.senderIdEndIndex ?? metadata.sender_id_end_index ?? null) as
+      number | null,
     senderName: (metadata.senderName ?? metadata.sender_name ?? null) as string | null,
-    senderNameStartIndex: (metadata.senderNameStartIndex ?? metadata.sender_name_start_index ?? null) as number | null,
-    senderNameEndIndex: (metadata.senderNameEndIndex ?? metadata.sender_name_end_index ?? null) as number | null,
+    senderNameStartIndex: (metadata.senderNameStartIndex ??
+      metadata.sender_name_start_index ??
+      null) as number | null,
+    senderNameEndIndex: (metadata.senderNameEndIndex ?? metadata.sender_name_end_index ?? null) as
+      number | null,
     hashId: (metadata.hashId ?? metadata.hash_id ?? null) as string | null,
-    hashIdStartIndex: (metadata.hashIdStartIndex ?? metadata.hash_id_start_index ?? null) as number | null,
-    hashIdEndIndex: (metadata.hashIdEndIndex ?? metadata.hash_id_end_index ?? null) as number | null,
+    hashIdStartIndex: (metadata.hashIdStartIndex ?? metadata.hash_id_start_index ?? null) as
+      number | null,
+    hashIdEndIndex: (metadata.hashIdEndIndex ?? metadata.hash_id_end_index ?? null) as
+      number | null,
   };
 }
 
@@ -145,18 +176,23 @@ function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
   if (isNullOrUndefined(node) || typeof node !== 'object') return null;
   const candidate = node as ContentNodeCandidate;
   if (isPresent(candidate.CNHighlightC)) {
-    return String(candidate.CNHighlightC.text ?? '').trim() !== '' ? (node as InboxTextMarkedNode) : null;
+    return String(candidate.CNHighlightC.text ?? '').trim() !== ''
+      ? (node as InboxTextMarkedNode)
+      : null;
   }
   if (isPresent(candidate.CNPointC)) {
     const displayText = candidate.CNPointC.text ?? '';
     if (displayText.trim() === '') return null;
-    if (String(candidate.CNPointC.etalon ?? '').trim() === '') return { CNTextC: { text: displayText } };
+    if (String(candidate.CNPointC.etalon ?? '').trim() === '')
+      return { CNTextC: { text: displayText } };
     return node as InboxTextMarkedNode;
   }
   return node as InboxTextMarkedNode;
 }
 
-function normalizeTextMarked(textMarked: InboxMessageType['textMarked']): InboxMessageType['textMarked'] {
+function normalizeTextMarked(
+  textMarked: InboxMessageType['textMarked'],
+): InboxMessageType['textMarked'] {
   if (isNullOrUndefined(textMarked) || !Array.isArray(textMarked)) return null;
   return textMarked.flatMap((node) => {
     const normalizedNode = normalizeContentNode(node);
@@ -164,7 +200,9 @@ function normalizeTextMarked(textMarked: InboxMessageType['textMarked']): InboxM
   });
 }
 
-function normalizePointTokens(pointTokens: InboxMessageType['pointTokens']): InboxMessageType['pointTokens'] {
+function normalizePointTokens(
+  pointTokens: InboxMessageType['pointTokens'],
+): InboxMessageType['pointTokens'] {
   if (isNullOrUndefined(pointTokens) || !Array.isArray(pointTokens)) return null;
   return pointTokens.filter((pointToken) => String(pointToken.etalon ?? '').trim() !== '');
 }
@@ -186,20 +224,47 @@ function normalizeInboxMessage(
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
-  const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as InboxMessageTagRaw[] | null | undefined;
-  const inboxTags: InboxMessageType['inboxTags'] = isPresent(rawInboxTags) && Array.isArray(rawInboxTags) ? rawInboxTags.map(normalizeInboxMessageTag) : null;
-  const rawMetadata = (raw.metadata ?? m.metadata ?? null) as InboxMessageMetadataRaw[] | null | undefined;
-  const metadata: InboxMessageType['metadata'] = isPresent(rawMetadata) && Array.isArray(rawMetadata) ? rawMetadata.map(normalizeInboxMessageMetadata) : [];
-  const textMarked = normalizeTextMarked((raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked']);
-  const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
+  const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as
+    InboxMessageTagRaw[] | null | undefined;
+  const inboxTags: InboxMessageType['inboxTags'] =
+    isPresent(rawInboxTags) && Array.isArray(rawInboxTags)
+      ? rawInboxTags.map(normalizeInboxMessageTag)
+      : null;
+  const rawMetadata = (raw.metadata ?? m.metadata ?? null) as
+    InboxMessageMetadataRaw[] | null | undefined;
+  const metadata: InboxMessageType['metadata'] =
+    isPresent(rawMetadata) && Array.isArray(rawMetadata)
+      ? rawMetadata.map(normalizeInboxMessageMetadata)
+      : [];
+  const textMarked = normalizeTextMarked(
+    (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'],
+  );
+  const rawPointTokens = (raw.point_tokens ??
+    m.pointTokens ??
+    null) as InboxMessageType['pointTokens'];
   const pointTokens = normalizePointTokens(rawPointTokens);
   const rawMedia = (raw.media ?? m.media ?? null) as MessageMediaInfoRaw[] | null | undefined;
   const media: InboxMessageType['media'] =
-    isPresent(rawMedia) && Array.isArray(rawMedia) ? rawMedia.map(normalizeMessageMediaInfo) : (m.media ?? []);
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, metadata, textMarked, pointTokens, media };
+    isPresent(rawMedia) && Array.isArray(rawMedia)
+      ? rawMedia.map(normalizeMessageMediaInfo)
+      : (m.media ?? []);
+  return {
+    ...m,
+    groupMasterKey,
+    networkIds,
+    location,
+    extendedForm,
+    inboxTags,
+    metadata,
+    textMarked,
+    pointTokens,
+    media,
+  };
 }
 
-function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
+function normalizeSignalGroupEntry(
+  g: InboxMessagesRspRaw['signal_groups'][number],
+): SignalGroupEntry {
   const raw = g as Record<string, unknown>;
   const groupStats = (raw.groupStats ?? raw.group_stats) as SignalGroupStats | undefined;
   return {
@@ -207,10 +272,14 @@ function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][numbe
     name: (g.name ?? '') as string,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(raw),
-    disableNetworkAssignment: (raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false) as boolean,
-    groupStats: groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
+    disableNetworkAssignment: (raw.disableNetworkAssignment ??
+      raw.disable_network_assignment ??
+      false) as boolean,
+    groupStats:
+      groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,
-    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null) as AreaOfResponsibility[] | null,
+    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null) as
+      AreaOfResponsibility[] | null,
   };
 }
 
@@ -219,8 +288,13 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
   for (const [k, v] of Object.entries(raw.signal_profiles ?? {})) {
     signalProfiles[k] = normalizeProfileEntry(v);
   }
-  const inboxItems: InboxMessagesRsp['inboxItems'] = (raw.inbox_items ?? []).map(([id, msg]) => [id, normalizeInboxMessage(msg)]);
-  const signalGroups: InboxMessagesRsp['signalGroups'] = (raw.signal_groups ?? []).map(normalizeSignalGroupEntry);
+  const inboxItems: InboxMessagesRsp['inboxItems'] = (raw.inbox_items ?? []).map(([id, msg]) => [
+    id,
+    normalizeInboxMessage(msg),
+  ]);
+  const signalGroups: InboxMessagesRsp['signalGroups'] = (raw.signal_groups ?? []).map(
+    normalizeSignalGroupEntry,
+  );
   return {
     inboxItems,
     callsigns: raw.callsigns,
@@ -290,9 +364,16 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
   };
 }
 
-export async function fetchInboxMessages(req: InboxMessagesReq, options?: RequestOptions): Promise<InboxMessagesRsp> {
+export async function fetchInboxMessages(
+  req: InboxMessagesReq,
+  options?: RequestOptions,
+): Promise<InboxMessagesRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<InboxMessagesRspRaw>('/api/rer-importer/get-inbox', body as any, options);
+  const raw = await postJson<InboxMessagesRspRaw>(
+    '/api/rer-importer/get-inbox',
+    body as any,
+    options,
+  );
   return mapRsp(raw);
 }
 
@@ -301,9 +382,16 @@ export type InboxMessagesDigestRsp = {
   firstElementTs: number | null;
 };
 
-export async function fetchInboxCount(req: InboxMessagesReq, options?: RequestOptions): Promise<InboxMessagesDigestRsp> {
+export async function fetchInboxCount(
+  req: InboxMessagesReq,
+  options?: RequestOptions,
+): Promise<InboxMessagesDigestRsp> {
   const body = inboxMsgtoSnakeBody(req);
-  const raw = await postJson<{ quantity: number; first_element_ts: number | null }>('/api/rer-importer/get-inbox-count', body as any, options);
+  const raw = await postJson<{ quantity: number; first_element_ts: number | null }>(
+    '/api/rer-importer/get-inbox-count',
+    body as any,
+    options,
+  );
   return {
     quantity: raw.quantity,
     firstElementTs: raw.first_element_ts ?? null,

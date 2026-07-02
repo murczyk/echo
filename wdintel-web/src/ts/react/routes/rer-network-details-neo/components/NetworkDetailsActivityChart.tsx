@@ -60,7 +60,13 @@ function ActivityTooltip({
             if (count <= 0) return null;
 
             return (
-              <Stack key={groupName} direction="row" spacing={1.25} alignItems="center" justifyContent="space-between">
+              <Stack
+                key={groupName}
+                direction="row"
+                spacing={1.25}
+                alignItems="center"
+                justifyContent="space-between"
+              >
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                   <Box
                     sx={{
@@ -262,10 +268,15 @@ export function NetworkDetailsActivityChart({
               return (
                 <g key={day.dayMs} data-day={String(day.dayMs)} style={{ cursor: 'default' }}>
                   {day.segments.map((segment, segmentIndex) => {
-                    const segmentHeight = chartData.maxValue > 0 ? (segment.count / chartData.maxValue) * innerHeight : 0;
+                    const segmentHeight =
+                      chartData.maxValue > 0
+                        ? (segment.count / chartData.maxValue) * innerHeight
+                        : 0;
                     segmentTop -= segmentHeight;
                     const isTopSegment = segmentIndex === day.segments.length - 1;
-                    const path = isTopSegment ? buildRoundedTopRectPath(x, segmentTop, barWidth, segmentHeight) : '';
+                    const path = isTopSegment
+                      ? buildRoundedTopRectPath(x, segmentTop, barWidth, segmentHeight)
+                      : '';
                     return path ? (
                       <path
                         key={segment.groupName}

@@ -47,7 +47,12 @@ export function NetworkFreqActivityPeriodControl({
   return (
     <Stack spacing={2} aria-labelledby={labelId}>
       <Box>
-        <Typography id={labelId} variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600 }}>
+        <Typography
+          id={labelId}
+          variant="subtitle2"
+          color="text.secondary"
+          sx={{ fontWeight: 600 }}
+        >
           Активність
         </Typography>
 
@@ -64,10 +69,20 @@ export function NetworkFreqActivityPeriodControl({
             },
           }}
         >
-          <Button variant={isActive ? 'contained' : 'outlined'} onClick={handleActivate} disabled={disabled} sx={{ fontSize: '0.875rem' }}>
+          <Button
+            variant={isActive ? 'contained' : 'outlined'}
+            onClick={handleActivate}
+            disabled={disabled}
+            sx={{ fontSize: '0.875rem' }}
+          >
             Активна
           </Button>
-          <Button variant={!isActive ? 'contained' : 'outlined'} onClick={handleDeactivate} disabled={disabled} sx={{ fontSize: '0.875rem' }}>
+          <Button
+            variant={!isActive ? 'contained' : 'outlined'}
+            onClick={handleDeactivate}
+            disabled={disabled}
+            sx={{ fontSize: '0.875rem' }}
+          >
             Неактивна
           </Button>
         </ButtonGroup>
@@ -76,7 +91,9 @@ export function NetworkFreqActivityPeriodControl({
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: isActive ? { xs: '1fr' } : { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          gridTemplateColumns: isActive
+            ? { xs: '1fr' }
+            : { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
           gap: 2,
           alignItems: 'start',
         }}

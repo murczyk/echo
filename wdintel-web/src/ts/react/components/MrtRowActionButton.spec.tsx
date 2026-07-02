@@ -52,13 +52,8 @@ vi.mock('./PowerIconButton', () => ({
 }));
 
 vi.mock('./PowerMenu', () => ({
-  PowerMenu: ({
-    children,
-    open,
-  }: {
-    children: ReactNode;
-    open: boolean;
-  }) => (open ? <div data-testid="overflow-menu">{children}</div> : null),
+  PowerMenu: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div data-testid="overflow-menu">{children}</div> : null,
 }));
 
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from './MrtRowActionButton';
@@ -138,7 +133,12 @@ describe('MrtRowActions', () => {
     const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
     const view = await renderComponent(
       <MrtRowActions>
-        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} opensModal />
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={onEdit}
+          icon={<span>edit-icon</span>}
+          opensModal
+        />
       </MrtRowActions>,
     );
     rendered.push(view);
@@ -178,7 +178,13 @@ describe('MrtRowActions', () => {
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" opensModal />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={onDelete}
+          icon={<span>delete-icon</span>}
+          tone="danger"
+          opensModal
+        />
       </MrtRowActions>,
     );
     rendered.push(view);
@@ -196,7 +202,9 @@ describe('MrtRowActions', () => {
     expect(view.container.textContent).toContain('delete-icon');
     expect(view.container.textContent).toContain('edit-icon');
 
-    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    const menuButtons = Array.from(
+      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
+    );
     expect(menuButtons).toHaveLength(2);
     expect(menuButtons[0]?.textContent).toContain('Редагувати');
     expect(menuButtons[0]?.textContent).toContain('edit-icon');
@@ -223,7 +231,13 @@ describe('MrtRowActions', () => {
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" opensModal />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={onDelete}
+          icon={<span>delete-icon</span>}
+          tone="danger"
+          opensModal
+        />
       </MrtRowActions>,
     );
     rendered.push(view);
@@ -233,7 +247,9 @@ describe('MrtRowActions', () => {
     const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
     blurSpy.mockClear();
 
-    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    const menuButtons = Array.from(
+      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
+    );
     await click(menuButtons[0]!);
 
     expect(onEdit).toHaveBeenCalledTimes(1);
@@ -247,10 +263,23 @@ describe('MrtRowActions', () => {
     const onArchive = vi.fn();
     const view = await renderComponent(
       <MrtRowActions layout="grid">
-        <MrtRowActionButton label="Перезапустити" onClick={() => {}} icon={<span>restart-icon</span>} />
+        <MrtRowActionButton
+          label="Перезапустити"
+          onClick={() => {}}
+          icon={<span>restart-icon</span>}
+        />
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Архівувати" onClick={onArchive} icon={<span>archive-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" />
+        <MrtRowActionButton
+          label="Архівувати"
+          onClick={onArchive}
+          icon={<span>archive-icon</span>}
+        />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={onDelete}
+          icon={<span>delete-icon</span>}
+          tone="danger"
+        />
       </MrtRowActions>,
     );
     rendered.push(view);
@@ -265,7 +294,9 @@ describe('MrtRowActions', () => {
 
     await click(buttonsBeforeOpen[0]!);
 
-    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    const menuButtons = Array.from(
+      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
+    );
     expect(menuButtons).toHaveLength(4);
     expect(menuButtons[0]?.textContent).toContain('Перезапустити');
     expect(menuButtons[0]?.textContent).toContain('restart-icon');
@@ -284,15 +315,27 @@ describe('MrtRowActions', () => {
     const view = await renderComponent(
       <MrtRowActions>
         <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton label="Видалити" onClick={onDelete} icon={<span>delete-icon</span>} tone="danger" disabled />
-        <MrtRowActionButton label="Архівувати" onClick={onArchive} icon={<span>archive-icon</span>} />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={onDelete}
+          icon={<span>delete-icon</span>}
+          tone="danger"
+          disabled
+        />
+        <MrtRowActionButton
+          label="Архівувати"
+          onClick={onArchive}
+          icon={<span>archive-icon</span>}
+        />
       </MrtRowActions>,
     );
     rendered.push(view);
 
     await click(getButtons(view.container)[0]!);
 
-    const menuButtons = Array.from(view.container.querySelectorAll('[data-testid="overflow-menu"] button'));
+    const menuButtons = Array.from(
+      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
+    );
     expect(menuButtons[0]?.disabled).toBe(false);
     expect(menuButtons[1]?.disabled).toBe(true);
     expect(menuButtons[2]?.disabled).toBe(false);

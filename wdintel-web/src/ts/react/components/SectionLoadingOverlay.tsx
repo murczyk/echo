@@ -9,12 +9,7 @@ type Props = {
   sx?: object;
 };
 
-export function SectionLoadingOverlay({
-  open,
-  ariaLabel,
-  showSpinner = true,
-  sx,
-}: Props) {
+export function SectionLoadingOverlay({ open, ariaLabel, showSpinner = true, sx }: Props) {
   if (!open) return null;
 
   return (

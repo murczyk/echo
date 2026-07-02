@@ -4,22 +4,9 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import {
-  Box,
-  Button,
-  DialogActions,
-  IconButton,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import type {
-  VideoPreviewSource,
-  VideoPlayerState,
-} from './message-card-video-utils';
-import {
-  formatVideoTime,
-  downloadOriginalVideo,
-} from './message-card-video-utils';
+import { Box, Button, DialogActions, IconButton, Tooltip, Typography } from '@mui/material';
+import type { VideoPreviewSource, VideoPlayerState } from './message-card-video-utils';
+import { formatVideoTime, downloadOriginalVideo } from './message-card-video-utils';
 import {
   PlayPauseButton,
   StopButton,
@@ -49,15 +36,8 @@ export function MessageCardVideoPreviewControls({
   onToggleFullscreen: () => void;
   videoRef: React.RefObject<HTMLVideoElement>;
 }) {
-  const {
-    isPlaying,
-    currentTime,
-    duration,
-    volume,
-    muted,
-    playbackRate,
-    isFullscreen,
-  } = playerState;
+  const { isPlaying, currentTime, duration, volume, muted, playbackRate, isFullscreen } =
+    playerState;
 
   return (
     <Box
@@ -117,16 +97,10 @@ export function MessageCardVideoPreviewControls({
       </Box>
 
       <Tooltip
-        title={
-          isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'
-        }
+        title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
         enterDelay={300}
       >
-        <IconButton
-          size="small"
-          onClick={onToggleFullscreen}
-          sx={{ color: 'inherit' }}
-        >
+        <IconButton size="small" onClick={onToggleFullscreen} sx={{ color: 'inherit' }}>
           {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
         </IconButton>
       </Tooltip>
@@ -173,11 +147,7 @@ export function MessageCardVideoPreviewActions({
         }}
       >
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton
-            size="small"
-            onClick={onInfoClick}
-            sx={{ color: 'text.secondary' }}
-          >
+          <IconButton size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
             <InfoIcon />
           </IconButton>
         </Tooltip>
@@ -194,11 +164,7 @@ export function MessageCardVideoPreviewActions({
       {hasCarousel && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Tooltip title="Попереднє" enterDelay={300}>
-            <IconButton
-              size="small"
-              onClick={onGoToPrevious}
-              sx={{ color: 'text.secondary' }}
-            >
+            <IconButton size="small" onClick={onGoToPrevious} sx={{ color: 'text.secondary' }}>
               <ChevronLeftIcon />
             </IconButton>
           </Tooltip>
@@ -217,11 +183,7 @@ export function MessageCardVideoPreviewActions({
             {`${resolvedIndex + 1} / ${videoCount}`}
           </Typography>
           <Tooltip title="Наступне" enterDelay={300}>
-            <IconButton
-              size="small"
-              onClick={onGoToNext}
-              sx={{ color: 'text.secondary' }}
-            >
+            <IconButton size="small" onClick={onGoToNext} sx={{ color: 'text.secondary' }}>
               <ChevronRightIcon />
             </IconButton>
           </Tooltip>

@@ -1,18 +1,15 @@
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Drawer,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Drawer, Stack, Typography } from '@mui/material';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { EncryptionKeyData, EncryptionRec, NetworkFreqsRes } from '../../../../../Bindings';
 import { createKey, listKeys } from '../../../services/api/networks';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { formatErrorMessage, type NetworkFreqEditForm, parseNetworkDetailsDateInput } from '../use-rer-network-details-neo-page.shared';
+import {
+  formatErrorMessage,
+  type NetworkFreqEditForm,
+  parseNetworkDetailsDateInput,
+} from '../use-rer-network-details-neo-page.shared';
 import { NetworkFreqFormFields } from './NetworkFreqFormFields';
 import { NetworkFreqKeysSection } from './NetworkFreqKeysSection';
 import { NetworkFreqNewKeyDialog } from './NetworkFreqNewKeyDialog';
@@ -48,7 +45,9 @@ function formatKeyLabel(key: EncryptionKeyData): string {
 
 function buildSelectedKeys(keys: EncryptionKeyData[], selectedIds: number[]): EncryptionKeyData[] {
   const keysById = new Map(keys.map((key) => [key.id, key]));
-  return selectedIds.map((keyId) => keysById.get(keyId)).filter((key): key is EncryptionKeyData => Boolean(key));
+  return selectedIds
+    .map((keyId) => keysById.get(keyId))
+    .filter((key): key is EncryptionKeyData => Boolean(key));
 }
 
 function NetworkFreqEditDrawerComponent({
@@ -78,14 +77,24 @@ function NetworkFreqEditDrawerComponent({
     encryptionId: null,
   });
 
-  const selectedKeys = useMemo(() => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []), [form, keys]);
+  const selectedKeys = useMemo(
+    () => (form ? buildSelectedKeys(keys, form.encryptionKeyIds) : []),
+    [form, keys],
+  );
   const newKeyValidationError = validateNetworkFreqNewKey(newKeyForm.key);
   const newKeyError = newKeyTouched ? newKeyValidationError : null;
-  const activeFromValidationError = form && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
-  const activeToValidationError = form && form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null ? 'Потрібно вказати дату завершення' : null;
+  const activeFromValidationError =
+    form && parseNetworkDetailsDateInput(form.activeFrom) === null
+      ? 'Потрібно вказати дату початку'
+      : null;
+  const activeToValidationError =
+    form && form.activeTo.trim() !== '' && parseNetworkDetailsDateInput(form.activeTo) === null
+      ? 'Потрібно вказати дату завершення'
+      : null;
   const activeFromError = activePeriodTouched ? activeFromValidationError : null;
   const activeToError = activePeriodTouched ? activeToValidationError : null;
-  const saveDisabled = saving || !form || activeFromValidationError !== null || activeToValidationError !== null;
+  const saveDisabled =
+    saving || !form || activeFromValidationError !== null || activeToValidationError !== null;
 
   useEffect(() => {
     if (!open) return;
@@ -121,7 +130,10 @@ function NetworkFreqEditDrawerComponent({
 
   const handleSelectedKeysChange = (_event: unknown, next: EncryptionKeyData[]) => {
     if (!form) return;
-    onChange({ ...form, encryptionKeyIds: next.flatMap((key) => (key.id === null ? [] : [key.id])) });
+    onChange({
+      ...form,
+      encryptionKeyIds: next.flatMap((key) => (key.id === null ? [] : [key.id])),
+    });
   };
 
   const restoreAddNewKeyFocus = () => {
@@ -238,14 +250,16 @@ function NetworkFreqEditDrawerComponent({
               activeTo={form.activeTo}
               activeFromError={activeFromError}
               activeToError={activeToError}
-              onModulationChange={(nextModulation) => onChange({ ...form, modulation: nextModulation as 'DMR' | 'NFM' | 'AM' | '' })}
+              onModulationChange={(nextModulation) =>
+                onChange({ ...form, modulation: nextModulation as 'DMR' | 'NFM' | 'AM' | '' })
+              }
               onEncryptionChange={(encryptionId) => onChange({ ...form, encryptionId })}
               onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
               onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
               onActiveFromBlur={() => setActivePeriodTouched(true)}
               onActiveToBlur={() => setActivePeriodTouched(true)}
               encryptions={encryptions}
-              keysSection={(
+              keysSection={
                 <NetworkFreqKeysSection
                   canManageKeys={Boolean(networkId)}
                   saving={saving}
@@ -259,7 +273,7 @@ function NetworkFreqEditDrawerComponent({
                   addNewKeyButtonRef={addNewKeyButtonRef}
                   formatKeyLabel={formatKeyLabel}
                 />
-              )}
+              }
             />
           ) : null}
         </Stack>
@@ -299,8 +313,12 @@ function NetworkFreqEditDrawerComponent({
           setNewKeyForm((current) => ({ ...current, key: nextValue }));
         }}
         onKeyBlur={() => setNewKeyTouched(true)}
-        onDescriptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, description: nextValue }))}
-        onEncryptionChange={(nextValue) => setNewKeyForm((current) => ({ ...current, encryptionId: nextValue }))}
+        onDescriptionChange={(nextValue) =>
+          setNewKeyForm((current) => ({ ...current, description: nextValue }))
+        }
+        onEncryptionChange={(nextValue) =>
+          setNewKeyForm((current) => ({ ...current, encryptionId: nextValue }))
+        }
         onCreate={handleCreateKey}
         createDisabled={newKeyValidationError !== null}
         disableRestoreFocus

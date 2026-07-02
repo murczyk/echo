@@ -17,10 +17,7 @@ export const MessageCardDocumentPreviewStage = forwardRef<
     zoom: number;
     isFullscreen: boolean;
   }
->(function MessageCardDocumentPreviewStage(
-  { documents, currentIndex, zoom, isFullscreen },
-  ref,
-) {
+>(function MessageCardDocumentPreviewStage({ documents, currentIndex, zoom, isFullscreen }, ref) {
   const theme = useTheme();
   const currentDocument = documents[currentIndex] ?? null;
   const hasCarousel = documents.length > 1;
@@ -67,9 +64,7 @@ export const MessageCardDocumentPreviewStage = forwardRef<
             sizeBytes={currentDocument.sizeBytes ?? null}
           />
         ) : (
-          <UnsupportedDocumentPreview
-            fileName={currentDocument.fileName ?? currentDocument.href}
-          />
+          <UnsupportedDocumentPreview fileName={currentDocument.fileName ?? currentDocument.href} />
         )}
       </Box>
     </Box>

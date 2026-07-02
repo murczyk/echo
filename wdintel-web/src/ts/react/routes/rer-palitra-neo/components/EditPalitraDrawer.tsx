@@ -44,12 +44,14 @@ function EditPalitraDrawerComponent({
   const formBlocked = editInFlight || !referenceDataReady;
 
   return (
-      <Drawer
+    <Drawer
       anchor="right"
       open={open}
       onClose={editInFlight ? undefined : onClose}
       ModalProps={{ disableRestoreFocus }}
-      slotProps={{ paper: { sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } } }}
+      slotProps={{
+        paper: { sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } },
+      }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Typography variant="h6">Редагувати палітру</Typography>
@@ -70,7 +72,16 @@ function EditPalitraDrawerComponent({
           />
         ) : null}
       </Box>
-      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+      <Box
+        sx={{
+          p: 2.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 2,
+        }}
+      >
         <Button onClick={onClose} disabled={editInFlight}>
           Скасувати
         </Button>

@@ -77,7 +77,11 @@ function parseNumberValue(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildCoordinates(latitude: string, longitude: string, settlement: string): AorCoordinates | null {
+function buildCoordinates(
+  latitude: string,
+  longitude: string,
+  settlement: string,
+): AorCoordinates | null {
   if (!latitude.trim() || !longitude.trim()) return null;
 
   const trimmedSettlement = settlement.trim();
@@ -98,7 +102,11 @@ function buildInsertRequest(form: AorFormState): AreaOfResponsibilityInsert {
     leftBound: parseNumberValue(form.leftBound),
     rightBound: parseNumberValue(form.rightBound),
     leftCoordinates: buildCoordinates(form.leftLatitude, form.leftLongitude, form.leftSettlement),
-    rightCoordinates: buildCoordinates(form.rightLatitude, form.rightLongitude, form.rightSettlement),
+    rightCoordinates: buildCoordinates(
+      form.rightLatitude,
+      form.rightLongitude,
+      form.rightSettlement,
+    ),
     isTopLevel: form.isTopLevel,
   };
 }
@@ -230,7 +238,10 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
       <div className="pt-2">
         <FormControlLabel
           control={
-            <MuiCheckbox checked={props.form.isTopLevel} onChange={(event) => update({ isTopLevel: event.target.checked })} />
+            <MuiCheckbox
+              checked={props.form.isTopLevel}
+              onChange={(event) => update({ isTopLevel: event.target.checked })}
+            />
           }
           label="Топ-рівень"
         />
@@ -281,18 +292,28 @@ function FormActions(props: {
   );
 }
 
-function DeleteDialog(props: { open: boolean; onClose: () => void; onConfirm: () => void; disabled: boolean }) {
+function DeleteDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  disabled: boolean;
+}) {
   return (
     <Dialog open={props.open} onClose={props.onClose}>
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent>
-        <Typography className="text-sm text-muted-foreground">Ви впевнені, що хочете видалити цю смугу?</Typography>
+        <Typography className="text-sm text-muted-foreground">
+          Ви впевнені, що хочете видалити цю смугу?
+        </Typography>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <PowerButton onClick={props.onClose}>
-          Скасувати
-        </PowerButton>
-        <PowerButton variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
+        <PowerButton onClick={props.onClose}>Скасувати</PowerButton>
+        <PowerButton
+          variant="contained"
+          color="error"
+          onClick={props.onConfirm}
+          disabled={props.disabled}
+        >
           Видалити
         </PowerButton>
       </DialogActions>
@@ -376,7 +397,9 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
     } catch (error) {
       setActionStatus({
         kind: 'error',
-        message: isNew ? `Помилка створення смуги: ${formatErrorMessage(error)}` : `Помилка оновлення смуги: ${formatErrorMessage(error)}`,
+        message: isNew
+          ? `Помилка створення смуги: ${formatErrorMessage(error)}`
+          : `Помилка оновлення смуги: ${formatErrorMessage(error)}`,
       });
     } finally {
       setIsMutating(false);
@@ -394,7 +417,10 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
       await deleteAor(request);
       navigateBack();
     } catch (error) {
-      setActionStatus({ kind: 'error', message: `Помилка видалення смуги: ${formatErrorMessage(error)}` });
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка видалення смуги: ${formatErrorMessage(error)}`,
+      });
     } finally {
       setIsMutating(false);
     }
@@ -402,14 +428,19 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
 
   if (loadStatus === 'loading') return <LoadingState />;
 
-  if (loadStatus === 'error') return <ErrorState message={loadError || 'Помилка завантаження'} onBack={navigateBack} />;
+  if (loadStatus === 'error')
+    return <ErrorState message={loadError || 'Помилка завантаження'} onBack={navigateBack} />;
 
   return (
     <FormPageLayout>
       <Box className="space-y-6">
         <FormPageHeader
           title={isNew ? 'Створити смугу' : 'Редагувати смугу'}
-          subtitle={isNew ? 'Додайте нову смугу відповідальності' : 'Оновіть параметри смуги відповідальності'}
+          subtitle={
+            isNew
+              ? 'Додайте нову смугу відповідальності'
+              : 'Оновіть параметри смуги відповідальності'
+          }
           onBack={navigateBack}
         />
 
@@ -424,7 +455,9 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
           />
         </Box>
 
-        {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" className="mt-4" /> : null}
+        {actionStatus?.kind === 'error' ? (
+          <Info text={actionStatus.message} color="error" className="mt-4" />
+        ) : null}
       </Box>
       <DeleteDialog
         open={deleteDialogOpen}

@@ -7,13 +7,15 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import dayjs from 'dayjs';
 
-const powerDateTimePickerMock = vi.fn((props: {
-  label?: string;
-  value: unknown;
-  onChange?: (value: unknown) => void;
-  onAccept?: (value: unknown) => void;
-  onClose?: () => void;
-}) => <div data-testid={`picker-${props.label ?? 'unknown'}`} />);
+const powerDateTimePickerMock = vi.fn(
+  (props: {
+    label?: string;
+    value: unknown;
+    onChange?: (value: unknown) => void;
+    onAccept?: (value: unknown) => void;
+    onClose?: () => void;
+  }) => <div data-testid={`picker-${props.label ?? 'unknown'}`} />,
+);
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
   PowerDateTimePicker: (props: {
@@ -111,9 +113,13 @@ describe('NetworkEtalonkaReportDialog', () => {
   it('keeps extended report edits local until accept and resets on close', () => {
     const view = renderDialog();
 
-    const fromPickerProps = powerDateTimePickerMock.mock.calls.filter((call) => call[0].label === 'Від').at(-1)?.[0];
+    const fromPickerProps = powerDateTimePickerMock.mock.calls
+      .filter((call) => call[0].label === 'Від')
+      .at(-1)?.[0];
     expect(fromPickerProps).toBeDefined();
-    expect((fromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe('2026-05-01T10:00');
+    expect((fromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
 
     act(() => {
       fromPickerProps?.onChange?.(dayjs('2026-05-03T12:30'));
@@ -121,8 +127,12 @@ describe('NetworkEtalonkaReportDialog', () => {
 
     expect(view.onFromDateTimeStrChange).not.toHaveBeenCalled();
 
-    const updatedFromPickerProps = powerDateTimePickerMock.mock.calls.filter((call) => call[0].label === 'Від').at(-1)?.[0];
-    expect((updatedFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe('2026-05-03T12:30');
+    const updatedFromPickerProps = powerDateTimePickerMock.mock.calls
+      .filter((call) => call[0].label === 'Від')
+      .at(-1)?.[0];
+    expect((updatedFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-03T12:30',
+    );
 
     act(() => {
       updatedFromPickerProps?.onAccept?.(dayjs('2026-05-03T12:30'));
@@ -146,8 +156,12 @@ describe('NetworkEtalonkaReportDialog', () => {
       updatedFromPickerProps?.onChange?.(dayjs('2026-05-04T13:45'));
     });
 
-    const draftFromPickerProps = powerDateTimePickerMock.mock.calls.filter((call) => call[0].label === 'Від').at(-1)?.[0];
-    expect((draftFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe('2026-05-04T13:45');
+    const draftFromPickerProps = powerDateTimePickerMock.mock.calls
+      .filter((call) => call[0].label === 'Від')
+      .at(-1)?.[0];
+    expect((draftFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-04T13:45',
+    );
 
     act(() => {
       draftFromPickerProps?.onClose?.();
@@ -185,8 +199,12 @@ describe('NetworkEtalonkaReportDialog', () => {
       );
     });
 
-    const resetFromPickerProps = powerDateTimePickerMock.mock.calls.filter((call) => call[0].label === 'Від').at(-1)?.[0];
-    expect((resetFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe('2026-05-01T10:00');
+    const resetFromPickerProps = powerDateTimePickerMock.mock.calls
+      .filter((call) => call[0].label === 'Від')
+      .at(-1)?.[0];
+    expect((resetFromPickerProps?.value as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
 
     act(() => {
       view.root.unmount();

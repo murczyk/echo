@@ -104,14 +104,7 @@ function buildScopes(isAdmin: boolean, integrations: GoiUserIntegration[]): Repo
 }
 
 function SortableReportTabOrderItem(props: SortableReportTabOrderItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.item.aorId,
     disabled: props.disabled,
   });
@@ -171,7 +164,9 @@ export function GoiReportTabOrderSection(props: Props) {
   const [activeScopeKey, setActiveScopeKey] = React.useState('');
   const [items, setItems] = React.useState<GoiReportTabOrderItem[]>([]);
   const [initialItems, setInitialItems] = React.useState<GoiReportTabOrderItem[]>([]);
-  const [loadStatus, setLoadStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [loadStatus, setLoadStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  );
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
@@ -302,12 +297,7 @@ export function GoiReportTabOrderSection(props: Props) {
               sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 44 }}
             >
               {scopes.map((scope) => (
-                <Tab
-                  key={scope.key}
-                  value={scope.key}
-                  label={scope.label}
-                  sx={{ minHeight: 44 }}
-                />
+                <Tab key={scope.key} value={scope.key} label={scope.label} sx={{ minHeight: 44 }} />
               ))}
             </Tabs>
           ) : null}

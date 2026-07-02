@@ -95,7 +95,8 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
   const canSaveAsNewNow = !saveInFlight && canSaveAsNew;
   const canRenameExisting = !saveInFlight && hasLoadedFilter;
   const canDeleteExisting = !saveInFlight && hasLoadedFilter;
-  const canOpenMenu = canSaveAsNewNow || canUpdateExisting || canRenameExisting || canDeleteExisting;
+  const canOpenMenu =
+    canSaveAsNewNow || canUpdateExisting || canRenameExisting || canDeleteExisting;
 
   const closeMenu = () => setMenuAnchorEl(null);
 
@@ -110,7 +111,9 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
   const closeActionDialog = () => setActionDialog(null);
 
   const updateActionName = (value: string) => {
-    setActionDialog((current) => (isNullOrUndefined(current) ? current : { ...current, name: value }));
+    setActionDialog((current) =>
+      isNullOrUndefined(current) ? current : { ...current, name: value },
+    );
   };
 
   const handleActionSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -122,9 +125,8 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
     if (current.kind === 'rename' && nextName === selectedSavedFilterName) return;
 
     try {
-      const result = current.kind === 'rename'
-        ? await onRenameExisting(nextName)
-        : await onSaveAsNew(nextName);
+      const result =
+        current.kind === 'rename' ? await onRenameExisting(nextName) : await onSaveAsNew(nextName);
       if (result === false) return;
       onSavedFilterNameChange(nextName);
       closeActionDialog();
@@ -148,7 +150,15 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
       }}
     >
       <Stack spacing={1}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            minWidth: 0,
+          }}
+        >
           <TypographyLike>{title}</TypographyLike>
           <Tooltip title="Дії">
             <span>
@@ -234,10 +244,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
             <RefreshOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
             Оновити вибраний фільтр
           </MenuItem>
-          <MenuItem
-            onClick={() => openActionDialog('rename')}
-            disabled={!canRenameExisting}
-          >
+          <MenuItem onClick={() => openActionDialog('rename')} disabled={!canRenameExisting}>
             <DriveFileRenameOutlineOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
             Перейменувати
           </MenuItem>
@@ -254,7 +261,12 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           </MenuItem>
         </Menu>
 
-        <Dialog open={isPresent(actionDialog)} onClose={saveInFlight ? undefined : closeActionDialog} fullWidth maxWidth="xs">
+        <Dialog
+          open={isPresent(actionDialog)}
+          onClose={saveInFlight ? undefined : closeActionDialog}
+          fullWidth
+          maxWidth="xs"
+        >
           <Box component="form" onSubmit={handleActionSubmit}>
             <DialogTitle>{actionConfig?.title}</DialogTitle>
             <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
@@ -278,7 +290,8 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
                 disabled={
                   saveInFlight ||
                   trimmedDraftSavedFilterName === '' ||
-                  (actionDialog?.kind === 'rename' && trimmedDraftSavedFilterName === selectedSavedFilterName)
+                  (actionDialog?.kind === 'rename' &&
+                    trimmedDraftSavedFilterName === selectedSavedFilterName)
                 }
               >
                 {actionConfig?.confirmLabel}

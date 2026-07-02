@@ -9,7 +9,9 @@ import {
   updateDutyInboxCallsignInfoMapByFeedId,
 } from './useRerDutyCallsignInfo';
 
-function callsignInfoRow(overrides: Partial<CallsignInfoRes['res'][number]> = {}): CallsignInfoRes['res'][number] {
+function callsignInfoRow(
+  overrides: Partial<CallsignInfoRes['res'][number]> = {},
+): CallsignInfoRes['res'][number] {
   return {
     id: 1,
     comment: '',
@@ -28,7 +30,7 @@ function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignI
 describe('mergeDutyCallsignInfoMap', () => {
   it('unions network ids and preserves richer existing row data for the same callsign', () => {
     const prev = {
-      'борода': callsignInfo('БОРОДА', [
+      борода: callsignInfo('БОРОДА', [
         callsignInfoRow({
           id: 11,
           position: 'Командир відділення 5 мср',
@@ -73,7 +75,7 @@ describe('mergeDutyCallsignInfoMap', () => {
 
   it('handles undefined text fields in incoming rows without crashing', () => {
     const prev = {
-      'борода': callsignInfo('БОРОДА', [
+      борода: callsignInfo('БОРОДА', [
         callsignInfoRow({
           id: 11,
           position: 'Командир відділення 5 мср',
@@ -114,7 +116,7 @@ describe('mergeDutyCallsignInfoMap', () => {
 describe('replaceDutyCallsignInfoMap', () => {
   it('replaces prior feed-scoped inbox rows instead of keeping stale network matches', () => {
     const prev = {
-      'борода': callsignInfo('БОРОДА', [
+      борода: callsignInfo('БОРОДА', [
         callsignInfoRow({
           id: 11,
           networkIdsReportedIn: [1001],
@@ -145,7 +147,7 @@ describe('combineDutyCallsignInfoMaps', () => {
     const next = combineDutyCallsignInfoMaps(
       {
         'mf-1': {
-          'борода': callsignInfo('БОРОДА', [
+          борода: callsignInfo('БОРОДА', [
             callsignInfoRow({
               id: 11,
               networkIdsReportedIn: [1001],
@@ -154,7 +156,7 @@ describe('combineDutyCallsignInfoMaps', () => {
         },
       },
       {
-        'борода': callsignInfo('БОРОДА', [
+        борода: callsignInfo('БОРОДА', [
           callsignInfoRow({
             id: 12,
             position: 'командир',
@@ -181,7 +183,7 @@ describe('combineDutyCallsignInfoMaps', () => {
     const next = combineDutyCallsignInfoMaps(
       {
         'mf-1': {
-          'борода': callsignInfo('БОРОДА', [
+          борода: callsignInfo('БОРОДА', [
             callsignInfoRow({
               id: 11,
               position: 'командир',
@@ -192,7 +194,7 @@ describe('combineDutyCallsignInfoMaps', () => {
         },
       },
       {
-        'борода': callsignInfo('БОРОДА', [
+        борода: callsignInfo('БОРОДА', [
           callsignInfoRow({
             id: 11,
             position: 'Командир відділення 5 мср',
@@ -218,7 +220,7 @@ describe('updateDutyInboxCallsignInfoMapByFeedId', () => {
   it('clears prior feed cache when replace payload is empty', () => {
     const prev = {
       'mf-1': {
-        'борода': callsignInfo('БОРОДА', [
+        борода: callsignInfo('БОРОДА', [
           callsignInfoRow({
             id: 11,
             networkIdsReportedIn: [1001],
@@ -238,7 +240,7 @@ describe('updateDutyInboxCallsignInfoMapByFeedId', () => {
 describe('updateDutyResolvedCallsignInfoMap', () => {
   it('clears stale resolved rows when backend returns an empty result for that callsign', () => {
     const prev = {
-      'борода': callsignInfo('БОРОДА', [
+      борода: callsignInfo('БОРОДА', [
         callsignInfoRow({
           id: 11,
           position: 'командир',
@@ -247,9 +249,7 @@ describe('updateDutyResolvedCallsignInfoMap', () => {
       ]),
     };
 
-    const next = updateDutyResolvedCallsignInfoMap(prev, [
-      callsignInfo('БОРОДА', []),
-    ]);
+    const next = updateDutyResolvedCallsignInfoMap(prev, [callsignInfo('БОРОДА', [])]);
 
     expect(next).toEqual({});
   });

@@ -13,15 +13,12 @@ function flushMicrotasks(): Promise<void> {
 }
 
 function Harness(props: {
-  apiRef: MutableRefObject<
-    | {
-        mode: 'include' | 'exclude';
-        localValue: string[];
-        setLocalValue: Dispatch<SetStateAction<string[]>>;
-        setMode: (mode: 'include' | 'exclude') => void;
-      }
-    | null
-  >;
+  apiRef: MutableRefObject<{
+    mode: 'include' | 'exclude';
+    localValue: string[];
+    setLocalValue: Dispatch<SetStateAction<string[]>>;
+    setMode: (mode: 'include' | 'exclude') => void;
+  } | null>;
   includeValues: string[];
   excludeValues: string[];
   onIncludeChange: (next: string[]) => void;
@@ -210,15 +207,12 @@ describe('useFeedFilterSelectionState', () => {
 
   it('refreshes local labels when reference data changes but the parent selection stays the same', async () => {
     function SenderHarness(props: {
-      apiRef: MutableRefObject<
-        | {
-            mode: 'include' | 'exclude';
-            localValue: Array<{ id: string; label: string }>;
-            setLocalValue: Dispatch<SetStateAction<Array<{ id: string; label: string }>>>;
-            setMode: (mode: 'include' | 'exclude') => void;
-          }
-        | null
-      >;
+      apiRef: MutableRefObject<{
+        mode: 'include' | 'exclude';
+        localValue: Array<{ id: string; label: string }>;
+        setLocalValue: Dispatch<SetStateAction<Array<{ id: string; label: string }>>>;
+        setMode: (mode: 'include' | 'exclude') => void;
+      } | null>;
       labelSuffix: string;
       onIncludeChange: (next: string[]) => void;
       onExcludeChange: (next: string[]) => void;
@@ -228,7 +222,8 @@ describe('useFeedFilterSelectionState', () => {
         excludeValues: [],
         onIncludeChange: props.onIncludeChange,
         onExcludeChange: props.onExcludeChange,
-        toLocalValues: (values) => values.map((id) => ({ id, label: `${id}-${props.labelSuffix}` })),
+        toLocalValues: (values) =>
+          values.map((id) => ({ id, label: `${id}-${props.labelSuffix}` })),
         toParentValues: (values) => values.map((option) => option.id),
       });
       props.apiRef.current = state;

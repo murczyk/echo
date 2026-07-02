@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 
 import type { CallsignInfoRes, SummaryTableFreqRow } from '../../../../Bindings';
-import { downloadAnalysisSummaryTableXlsx, fetchAnalysisCallsignInfos, fetchAnalysisSummaryTable } from '../../services/api/analysis';
+import {
+  downloadAnalysisSummaryTableXlsx,
+  fetchAnalysisCallsignInfos,
+  fetchAnalysisSummaryTable,
+} from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { downloadBlob } from '../../utils/download-blob';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -131,14 +135,24 @@ export function useAnalysisSummaryData({
         try {
           await loadMissingCallsignInfos(callsignIds, requestId, abortController.signal);
         } catch (loadError) {
-          if (requestId !== summaryRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
+          if (
+            requestId !== summaryRequestRef.current ||
+            abortController.signal.aborted ||
+            isAbortError(loadError)
+          )
+            return;
           summaryRequestKeyRef.current = null;
           if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
         }
         if (requestId !== summaryRequestRef.current || abortController.signal.aborted) return;
       }
     } catch (loadError) {
-      if (requestId !== summaryRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
+      if (
+        requestId !== summaryRequestRef.current ||
+        abortController.signal.aborted ||
+        isAbortError(loadError)
+      )
+        return;
       summaryRequestKeyRef.current = null;
       setSummaryRows([]);
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));

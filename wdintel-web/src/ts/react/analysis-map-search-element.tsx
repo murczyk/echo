@@ -1,4 +1,3 @@
-
 import { createRoot, Root } from 'react-dom/client';
 
 import { MapSearchInput } from './components/MapSearchInput';
@@ -52,7 +51,9 @@ class AnalysisMapSearchElement extends HTMLElement {
     }
 
     const onSearch = (value: string) => {
-      this.dispatchEvent(new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }),
+      );
     };
 
     this.root.render(

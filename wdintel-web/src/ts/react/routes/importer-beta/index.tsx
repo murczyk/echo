@@ -55,10 +55,7 @@ import {
 } from './coordinates';
 import { proposeImporterIcons } from './icon-search';
 
-type SelectedCoord =
-  | { kind: 'indices'; indices: number[] }
-  | { kind: 'manual' }
-  | { kind: 'none' };
+type SelectedCoord = { kind: 'indices'; indices: number[] } | { kind: 'manual' } | { kind: 'none' };
 
 type PendingUpload = {
   id: string;
@@ -109,7 +106,11 @@ function createEmptyRow(id: number): ImporterRow {
   };
 }
 
-function updateRow(rows: ImporterRow[], rowId: number, update: (row: ImporterRow, rowIndex: number) => ImporterRow): ImporterRow[] {
+function updateRow(
+  rows: ImporterRow[],
+  rowId: number,
+  update: (row: ImporterRow, rowIndex: number) => ImporterRow,
+): ImporterRow[] {
   return rows.map((row, rowIndex) => (row.id === rowId ? update(row, rowIndex) : row));
 }
 
@@ -200,15 +201,17 @@ function rowsFromPdf(rows: RowInfo[], takeNextRowId: () => number): ImporterRow[
     const lng = Number(row.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
 
-    return [{
-      ...createEmptyRow(takeNextRowId()),
-      content: row.content,
-      imageUrls: row.imageUrls,
-      coordinates: [{ kind: 'wgs84', lat, lng }],
-      selected: { kind: 'indices', indices: [0] },
-      title: row.title,
-      icon: row.icon,
-    }];
+    return [
+      {
+        ...createEmptyRow(takeNextRowId()),
+        content: row.content,
+        imageUrls: row.imageUrls,
+        coordinates: [{ kind: 'wgs84', lat, lng }],
+        selected: { kind: 'indices', indices: [0] },
+        title: row.title,
+        icon: row.icon,
+      },
+    ];
   });
 }
 
@@ -228,11 +231,21 @@ function PdfProgress() {
     <Box sx={{ maxWidth: 680, mb: 3 }}>
       <LinearProgress />
       <Box component="ol" sx={{ mt: 1.5, mb: 0, pl: 3 }}>
-        <Typography component="li" variant="body2">завантажую файл на сервер</Typography>
-        <Typography component="li" variant="body2">перетворюю на текст</Typography>
-        <Typography component="li" variant="body2">виймаю точки</Typography>
-        <Typography component="li" variant="body2" sx={{ fontWeight: 700 }}>вирізаю картинки</Typography>
-        <Typography component="li" variant="body2">готово</Typography>
+        <Typography component="li" variant="body2">
+          завантажую файл на сервер
+        </Typography>
+        <Typography component="li" variant="body2">
+          перетворюю на текст
+        </Typography>
+        <Typography component="li" variant="body2">
+          виймаю точки
+        </Typography>
+        <Typography component="li" variant="body2" sx={{ fontWeight: 700 }}>
+          вирізаю картинки
+        </Typography>
+        <Typography component="li" variant="body2">
+          готово
+        </Typography>
       </Box>
     </Box>
   );
@@ -313,7 +326,13 @@ function ImporterRowView(props: ImporterRowViewProps) {
           наприклад
         </Button>
 
-        <Stack direction="row" flexWrap="wrap" spacing={1} useFlexGap sx={{ mt: 1, alignItems: 'center' }}>
+        <Stack
+          direction="row"
+          flexWrap="wrap"
+          spacing={1}
+          useFlexGap
+          sx={{ mt: 1, alignItems: 'center' }}
+        >
           {row.imageUrls.map((url) => (
             <Box key={url} sx={{ display: 'inline-flex', alignItems: 'flex-start', gap: 0.5 }}>
               <Link href={url} target="_blank" rel="noopener noreferrer">
@@ -321,11 +340,22 @@ function ImporterRowView(props: ImporterRowViewProps) {
                   component="img"
                   src={url}
                   alt=""
-                  sx={{ height: 50, width: 'auto', maxWidth: 96, objectFit: 'cover', borderRadius: 1 }}
+                  sx={{
+                    height: 50,
+                    width: 'auto',
+                    maxWidth: 96,
+                    objectFit: 'cover',
+                    borderRadius: 1,
+                  }}
                 />
               </Link>
               <Tooltip title="Видалити знімок">
-                <IconButton size="small" color="error" onClick={() => onDeleteImage(row.id, url)} aria-label="Видалити знімок">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => onDeleteImage(row.id, url)}
+                  aria-label="Видалити знімок"
+                >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -359,14 +389,28 @@ function ImporterRowView(props: ImporterRowViewProps) {
         {row.coordinates.map((coord, coordIndex) => {
           const checked = selectedIndices(row.selected).includes(coordIndex);
           return (
-            <Box key={`${coordIndex}-${renderCoordinate(coord)}`} component="label" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box
+              key={`${coordIndex}-${renderCoordinate(coord)}`}
+              component="label"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+            >
               <Checkbox
                 size="small"
                 checked={checked}
                 onChange={() => onSelectCoordinate(row.id, coordIndex)}
                 sx={{ p: 0.5 }}
               />
-              <Box component="span" sx={{ px: 0.75, py: 0.125, borderRadius: 1, bgcolor: 'text.secondary', color: 'background.paper', fontSize: '0.75rem' }}>
+              <Box
+                component="span"
+                sx={{
+                  px: 0.75,
+                  py: 0.125,
+                  borderRadius: 1,
+                  bgcolor: 'text.secondary',
+                  color: 'background.paper',
+                  fontSize: '0.75rem',
+                }}
+              >
                 {coordIndex + 1}
               </Box>
               <Typography variant="body2" sx={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
@@ -376,7 +420,12 @@ function ImporterRowView(props: ImporterRowViewProps) {
           );
         })}
         {row.coordinates.length > 1 ? (
-          <Button size="small" variant="text" onClick={() => onSelectAll(row.id)} sx={{ alignSelf: 'center', textTransform: 'none' }}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => onSelectAll(row.id)}
+            sx={{ alignSelf: 'center', textTransform: 'none' }}
+          >
             всі
           </Button>
         ) : null}
@@ -394,7 +443,9 @@ function ImporterRowView(props: ImporterRowViewProps) {
               onClick={() => onSelectManual(row.id)}
               onChange={(event) => onManualCoordChange(row.id, event.target.value)}
               size="small"
-              inputProps={{ style: { textAlign: 'center', fontFamily: 'monospace', padding: '4px 6px' } }}
+              inputProps={{
+                style: { textAlign: 'center', fontFamily: 'monospace', padding: '4px 6px' },
+              }}
               sx={{ width: 140 }}
             />
           </Box>
@@ -422,7 +473,11 @@ function ImporterRowView(props: ImporterRowViewProps) {
               </Select>
             </FormControl>
             <Tooltip title="Застосувати до всіх вниз">
-              <IconButton size="small" onClick={() => onApplyIconDownwards(row.id)} aria-label="Застосувати іконку до всіх рядків нижче">
+              <IconButton
+                size="small"
+                onClick={() => onApplyIconDownwards(row.id)}
+                aria-label="Застосувати іконку до всіх рядків нижче"
+              >
                 <KeyboardDoubleArrowDownIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -431,14 +486,20 @@ function ImporterRowView(props: ImporterRowViewProps) {
           <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ justifyContent: 'center' }}>
             {row.proposedIcons.map((icon) => (
               <Tooltip title={getIcon(icon).name || icon} key={icon}>
-                <IconButton size="small" onClick={() => onIconChange(row.id, icon)} aria-label={`Обрати іконку ${getIcon(icon).name || icon}`}>
+                <IconButton
+                  size="small"
+                  onClick={() => onIconChange(row.id, icon)}
+                  aria-label={`Обрати іконку ${getIcon(icon).name || icon}`}
+                >
                   <ImporterIconImage icon={icon} />
                 </IconButton>
               </Tooltip>
             ))}
           </Stack>
         </Stack>
-      ) : <Box />}
+      ) : (
+        <Box />
+      )}
 
       {hasCoordinates ? (
         <Stack spacing={0.5} sx={{ alignItems: 'stretch' }}>
@@ -449,19 +510,23 @@ function ImporterRowView(props: ImporterRowViewProps) {
             size="small"
             inputProps={{ style: { textAlign: 'center', padding: '6px 8px' } }}
           />
-          {row.proposedTitles.filter((title) => title !== '').map((title) => (
-            <Button
-              key={title}
-              size="small"
-              variant="text"
-              onClick={() => onTitleChange(row.id, title)}
-              sx={{ textTransform: 'none' }}
-            >
-              {title}
-            </Button>
-          ))}
+          {row.proposedTitles
+            .filter((title) => title !== '')
+            .map((title) => (
+              <Button
+                key={title}
+                size="small"
+                variant="text"
+                onClick={() => onTitleChange(row.id, title)}
+                sx={{ textTransform: 'none' }}
+              >
+                {title}
+              </Button>
+            ))}
         </Stack>
-      ) : <Box />}
+      ) : (
+        <Box />
+      )}
 
       <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', lg: 'center' } }}>
         <Tooltip title="Видалити рядок">
@@ -499,7 +564,8 @@ export function ImporterBetaPage() {
         const icons = renameIcons(rawIcons);
         setRows((currentRows) =>
           updateRow(currentRows, rowId, (row) => {
-            if (row.content !== content || requestId < iconProposalRequestRef.current - 8) return row;
+            if (row.content !== content || requestId < iconProposalRequestRef.current - 8)
+              return row;
             const rowWithProposals = { ...row, proposedIcons: icons };
             return icons[0] ? applyIconToRow(rowWithProposals, icons[0]) : rowWithProposals;
           }),
@@ -551,7 +617,10 @@ export function ImporterBetaPage() {
   const handleUploadOneImage = async (rowId: number, image: File | Blob) => {
     const pending = { id: nextUploadId() };
     setRows((currentRows) =>
-      updateRow(currentRows, rowId, (row) => ({ ...row, filesToUpload: [...row.filesToUpload, pending] })),
+      updateRow(currentRows, rowId, (row) => ({
+        ...row,
+        filesToUpload: [...row.filesToUpload, pending],
+      })),
     );
 
     try {
@@ -570,7 +639,10 @@ export function ImporterBetaPage() {
           filesToUpload: row.filesToUpload.filter((item) => item.id !== pending.id),
         })),
       );
-      setStatus({ kind: 'error', text: `Помилка завантаження зображень: ${toErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        text: `Помилка завантаження зображень: ${toErrorMessage(error)}`,
+      });
     }
   };
 
@@ -612,7 +684,8 @@ export function ImporterBetaPage() {
     const req = buildDownloadReq(rows, downloadFileName);
     setDownloadInProgress(kind);
     try {
-      const blob = kind === 'kmz' ? await downloadImporterKmz(req) : await downloadImporterGeojson(req);
+      const blob =
+        kind === 'kmz' ? await downloadImporterKmz(req) : await downloadImporterGeojson(req);
       const now = new Date();
       const fileName =
         kind === 'kmz'
@@ -622,9 +695,10 @@ export function ImporterBetaPage() {
     } catch (error) {
       setStatus({
         kind: 'error',
-        text: kind === 'kmz'
-          ? `Помилка завантаження KMZ: ${toErrorMessage(error)}`
-          : `Помилка завантаження GeoJSON: ${toErrorMessage(error)}`,
+        text:
+          kind === 'kmz'
+            ? `Помилка завантаження KMZ: ${toErrorMessage(error)}`
+            : `Помилка завантаження GeoJSON: ${toErrorMessage(error)}`,
       });
     } finally {
       setDownloadInProgress(null);
@@ -632,7 +706,7 @@ export function ImporterBetaPage() {
   };
 
   return (
-  <Box sx={{ width: '100%', maxWidth: 1280, mx: 'auto' }}>
+    <Box sx={{ width: '100%', maxWidth: 1280, mx: 'auto' }}>
       <PageHeader
         title={
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -709,16 +783,22 @@ export function ImporterBetaPage() {
           onSelectCoordinate={handleSelectCoordinate}
           onSelectAll={handleSelectAll}
           onSelectManual={(rowId) =>
-            setRows((currentRows) => updateRow(currentRows, rowId, (row) => ({ ...row, selected: { kind: 'manual' } })))
+            setRows((currentRows) =>
+              updateRow(currentRows, rowId, (row) => ({ ...row, selected: { kind: 'manual' } })),
+            )
           }
           onManualCoordChange={(rowId, value) =>
-            setRows((currentRows) => updateRow(currentRows, rowId, (row) => ({ ...row, manualCoordTxt: value })))
+            setRows((currentRows) =>
+              updateRow(currentRows, rowId, (row) => ({ ...row, manualCoordTxt: value })),
+            )
           }
           onTitleChange={(rowId, title) =>
             setRows((currentRows) => updateRow(currentRows, rowId, (row) => ({ ...row, title })))
           }
           onIconChange={(rowId, icon) =>
-            setRows((currentRows) => updateRow(currentRows, rowId, (row) => applyIconToRow(row, icon)))
+            setRows((currentRows) =>
+              updateRow(currentRows, rowId, (row) => applyIconToRow(row, icon)),
+            )
           }
           onApplyIconDownwards={(rowId) =>
             setRows((currentRows) => {
@@ -728,7 +808,9 @@ export function ImporterBetaPage() {
               return currentRows.map((row, index) => (index > rowIndex ? { ...row, icon } : row));
             })
           }
-          onDeleteRow={(rowId) => setRows((currentRows) => currentRows.filter((row) => row.id !== rowId))}
+          onDeleteRow={(rowId) =>
+            setRows((currentRows) => currentRows.filter((row) => row.id !== rowId))
+          }
           onUploadImages={(rowId) => {
             setImageUploadRowId(rowId);
             if (imageInputRef.current) {
@@ -748,11 +830,19 @@ export function ImporterBetaPage() {
         />
       ))}
 
-      <Stack direction="row" flexWrap="wrap" spacing={1.5} useFlexGap sx={{ alignItems: 'center', pb: 4 }}>
+      <Stack
+        direction="row"
+        flexWrap="wrap"
+        spacing={1.5}
+        useFlexGap
+        sx={{ alignItems: 'center', pb: 4 }}
+      >
         <Button
           variant="outlined"
           startIcon={<AddCircleOutlineIcon />}
-          onClick={() => setRows((currentRows) => [...currentRows, createEmptyRow(takeNextRowId())])}
+          onClick={() =>
+            setRows((currentRows) => [...currentRows, createEmptyRow(takeNextRowId())])
+          }
         >
           ще
         </Button>
@@ -764,7 +854,13 @@ export function ImporterBetaPage() {
         />
         <Button
           variant="contained"
-          startIcon={downloadInProgress === 'kmz' ? <CircularProgress size={16} color="inherit" /> : <CloudDownloadOutlinedIcon />}
+          startIcon={
+            downloadInProgress === 'kmz' ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <CloudDownloadOutlinedIcon />
+            )
+          }
           disabled={downloadInProgress !== null}
           onClick={() => void handleDownload('kmz')}
         >
@@ -772,7 +868,13 @@ export function ImporterBetaPage() {
         </Button>
         <Button
           variant="contained"
-          startIcon={downloadInProgress === 'geojson' ? <CircularProgress size={16} color="inherit" /> : <CloudDownloadOutlinedIcon />}
+          startIcon={
+            downloadInProgress === 'geojson' ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <CloudDownloadOutlinedIcon />
+            )
+          }
           disabled={downloadInProgress !== null}
           onClick={() => void handleDownload('geojson')}
         >

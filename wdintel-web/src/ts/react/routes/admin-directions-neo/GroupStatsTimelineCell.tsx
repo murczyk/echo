@@ -27,13 +27,13 @@ function loadEcharts() {
 function buildOption(
   points: SignalGroupStatsTimelinePoint[],
   periodHours: number,
-  defaultWindowHours: number
+  defaultWindowHours: number,
 ): EChartsOption {
   const periodEndTimestamp = Date.now();
   const periodStartTimestamp = periodEndTimestamp - periodHours * 60 * 60 * 1000;
   const defaultStartTimestamp = Math.max(
     periodStartTimestamp,
-    periodEndTimestamp - defaultWindowHours * 60 * 60 * 1000
+    periodEndTimestamp - defaultWindowHours * 60 * 60 * 1000,
   );
 
   return {
@@ -117,10 +117,7 @@ export function GroupStatsTimelineCell({
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ECharts | null>(null);
-  const total = useMemo(
-    () => points.reduce((sum, point) => sum + point.count, 0),
-    [points]
-  );
+  const total = useMemo(() => points.reduce((sum, point) => sum + point.count, 0), [points]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -136,7 +133,8 @@ export function GroupStatsTimelineCell({
 
     loadEcharts().then((echarts) => {
       if (cancelled || !hostRef.current) return;
-      const chart = chartRef.current ?? echarts.init(hostRef.current, undefined, { renderer: 'svg' });
+      const chart =
+        chartRef.current ?? echarts.init(hostRef.current, undefined, { renderer: 'svg' });
       chartRef.current = chart;
       chart.setOption(buildOption(points, periodHours, defaultWindowHours), true);
       chart.resize();
@@ -153,7 +151,7 @@ export function GroupStatsTimelineCell({
       chartRef.current?.dispose();
       chartRef.current = null;
     },
-    []
+    [],
   );
 
   if (status === 'loading' || status === 'idle') {

@@ -2,7 +2,16 @@ import { useAnalysisDataMessageActions } from './use-analysis-data.message-actio
 import { useAnalysisDataStateUtils } from './use-analysis-data.state-utils';
 import { emptyNewCallsigns, emptyOptions, toErrorMessage } from './use-analysis-data.shared';
 import type { AnalysisQueryState, AnalysisCountItem } from './types';
-import type { InboxMessage, SummaryTableFreqRow, NewCallsignsRes, CallsignInfoRes, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+import type {
+  InboxMessage,
+  SummaryTableFreqRow,
+  NewCallsignsRes,
+  CallsignInfoRes,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
@@ -57,7 +66,11 @@ type Params = {
 };
 
 export function useAnalysisActions(params: Params) {
-  const { clearAnalysisResults, onUpdateLocalMessage, patchMessages: patchMessagesInternal } = useAnalysisDataStateUtils({
+  const {
+    clearAnalysisResults,
+    onUpdateLocalMessage,
+    patchMessages: patchMessagesInternal,
+  } = useAnalysisDataStateUtils({
     emptyNewCallsigns: params.emptyNewCallsigns,
     emptyOptions: params.emptyOptions,
     invalidateCallsignGraph: params.invalidateCallsignGraph,

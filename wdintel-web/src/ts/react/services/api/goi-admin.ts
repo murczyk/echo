@@ -116,9 +116,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeNumberArray(
-  values: Array<number | string> | null | undefined,
-): number[] {
+function normalizeNumberArray(values: Array<number | string> | null | undefined): number[] {
   if (!Array.isArray(values)) return [];
   return values
     .map((value) => normalizeNumber(value))
@@ -147,16 +145,10 @@ function normalizeGoiAdminIntegration(
 ): GoiAdminIntegration {
   return {
     id: normalizeNumber(raw?.id),
-    ownerOrganismId: normalizeNumber(
-      raw?.ownerOrganismId ?? raw?.owner_organism_id,
-    ),
-    ownerOrganismName: normalizeString(
-      raw?.ownerOrganismName ?? raw?.owner_organism_name,
-    ),
+    ownerOrganismId: normalizeNumber(raw?.ownerOrganismId ?? raw?.owner_organism_id),
+    ownerOrganismName: normalizeString(raw?.ownerOrganismName ?? raw?.owner_organism_name),
     createdAtMs: normalizeNumber(raw?.createdAtMs ?? raw?.created_at_ms),
-    integrationType: normalizeGoiIntegrationType(
-      raw?.integrationType ?? raw?.integration_type,
-    ),
+    integrationType: normalizeGoiIntegrationType(raw?.integrationType ?? raw?.integration_type),
     serverLabel: normalizeString(raw?.serverLabel ?? raw?.server_label),
     sshHost: normalizeString(raw?.sshHost ?? raw?.ssh_host),
     sshUser: normalizeString(raw?.sshUser ?? raw?.ssh_user),
@@ -166,12 +158,8 @@ function normalizeGoiAdminIntegration(
     apiPort: normalizeNumber(raw?.apiPort ?? raw?.api_port) || 8088,
     apiLogin: normalizeString(raw?.apiLogin ?? raw?.api_login),
     apiPassword: normalizeString(raw?.apiPassword ?? raw?.api_password),
-    accessOrganismIds: normalizeNumberArray(
-      raw?.accessOrganismIds ?? raw?.access_organism_ids,
-    ),
-    accessLogins: normalizeStringArray(
-      raw?.accessLogins ?? raw?.access_logins,
-    ),
+    accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
+    accessLogins: normalizeStringArray(raw?.accessLogins ?? raw?.access_logins),
   };
 }
 
@@ -215,19 +203,12 @@ function toSetupWorkerReqBody(req: SetupGoiIntegrationWorkerReq) {
 }
 
 export async function listGoiAdminIntegrations(): Promise<GoiAdminIntegration[]> {
-  const data = await postJson<ListGoiAdminIntegrationsRspLike>(
-    '/api/admin/goi/integrations',
-  );
+  const data = await postJson<ListGoiAdminIntegrationsRspLike>('/api/admin/goi/integrations');
   return (data?.items ?? []).map(normalizeGoiAdminIntegration);
 }
 
-export async function getGoiAdminIntegration(
-  id: number,
-): Promise<GoiAdminIntegration> {
-  const data = await postJson<GoiAdminIntegrationLike>(
-    '/api/admin/goi/integration',
-    { id },
-  );
+export async function getGoiAdminIntegration(id: number): Promise<GoiAdminIntegration> {
+  const data = await postJson<GoiAdminIntegrationLike>('/api/admin/goi/integration', { id });
   return normalizeGoiAdminIntegration(data);
 }
 

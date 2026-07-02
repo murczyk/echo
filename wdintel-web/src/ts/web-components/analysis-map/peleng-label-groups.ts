@@ -67,10 +67,13 @@ export function buildPelengLabelGroups<TPoint extends PelengLabelPoint>(
       gridSize,
       assigned,
     });
-    const componentPoints = componentIndexes.map((componentIndex) => projectedPoints[componentIndex].point);
+    const componentPoints = componentIndexes.map(
+      (componentIndex) => projectedPoints[componentIndex].point,
+    );
     const centroid = getCentroid(componentPoints);
-    const uniqueFreqs = [...new Set(componentIndexes.map((componentIndex) => projectedPoints[componentIndex].freq))]
-      .filter(isKnownPelengFreq);
+    const uniqueFreqs = [
+      ...new Set(componentIndexes.map((componentIndex) => projectedPoints[componentIndex].freq)),
+    ].filter(isKnownPelengFreq);
     const pointsCount = componentPoints.length;
     const knownFreqCount = uniqueFreqs.length;
     const displayKind = getDisplayKind({ pointsCount, knownFreqCount });
@@ -86,15 +89,16 @@ export function buildPelengLabelGroups<TPoint extends PelengLabelPoint>(
       pointsCount,
       knownFreqCount,
       displayKind,
-      displayLabel: knownFreqCount === 0
-        ? null
-        : labelFormatter
-          ? labelFormatter({
-              centroid,
-              points: componentPoints,
-              uniqueFreqs,
-            })
-          : defaultLabel,
+      displayLabel:
+        knownFreqCount === 0
+          ? null
+          : labelFormatter
+            ? labelFormatter({
+                centroid,
+                points: componentPoints,
+                uniqueFreqs,
+              })
+            : defaultLabel,
     });
   }
 
@@ -179,11 +183,16 @@ function getCellKey(x: number, y: number): string {
   return `${x}:${y}`;
 }
 
-function distanceBetween<TPoint extends PelengLabelPoint>(left: ProjectedPoint<TPoint>, right: ProjectedPoint<TPoint>): number {
+function distanceBetween<TPoint extends PelengLabelPoint>(
+  left: ProjectedPoint<TPoint>,
+  right: ProjectedPoint<TPoint>,
+): number {
   return Math.hypot(left.x - right.x, left.y - right.y);
 }
 
-function getCentroid<TPoint extends PelengLabelPoint>(points: TPoint[]): { lat: number; lng: number } {
+function getCentroid<TPoint extends PelengLabelPoint>(
+  points: TPoint[],
+): { lat: number; lng: number } {
   if (points.length === 0) {
     return { lat: 0, lng: 0 };
   }

@@ -1,10 +1,7 @@
 import { Box, Popover, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
-import {
-  formatSizeBytes,
-  type MessageCardImage,
-} from './message-card-image-utils';
+import { formatSizeBytes, type MessageCardImage } from './message-card-image-utils';
 import { getMessageCardPreviewPopoverPaperSx } from './message-card-preview-shell';
 
 type StageSize = {
@@ -33,8 +30,7 @@ export function MessageCardImagePreviewInfoPopover({
   const imageId = image.id?.trim() ?? '';
   const showImageId = imageId !== '';
   const contentType = image.contentType?.trim() || '—';
-  const normalizedFileSize =
-    typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
+  const normalizedFileSize = typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
 
   return (
     <Popover
@@ -83,9 +79,7 @@ export function MessageCardImagePreviewInfoPopover({
             Розмір зображення
           </Typography>
           <Typography variant="body2">
-            {imageSize != null
-              ? `${imageSize.width} × ${imageSize.height}`
-              : '—'}
+            {imageSize != null ? `${imageSize.width} × ${imageSize.height}` : '—'}
           </Typography>
         </Box>
         {showImageId ? (

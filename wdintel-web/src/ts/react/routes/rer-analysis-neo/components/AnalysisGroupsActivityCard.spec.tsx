@@ -23,7 +23,9 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
-  Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => <section ref={ref}>{children}</section>),
+  Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => (
+    <section ref={ref}>{children}</section>
+  )),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   ToggleButton: ({
     children,
@@ -53,7 +55,11 @@ vi.mock('@mui/material', () => ({
                   ...child,
                   props: {
                     ...(child as { props: Record<string, unknown> }).props,
-                    onClick: () => onChange?.(new Event('change'), String((child as { props: { value: string } }).props.value)),
+                    onClick: () =>
+                      onChange?.(
+                        new Event('change'),
+                        String((child as { props: { value: string } }).props.value),
+                      ),
                     key: index,
                   },
                 }
@@ -72,7 +78,9 @@ type Rendered = {
   root: Root;
 };
 
-async function renderComponent(props: ComponentProps<typeof AnalysisGroupsActivityCard>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof AnalysisGroupsActivityCard>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -108,7 +116,9 @@ describe('AnalysisGroupsActivityCard', () => {
     rendered.push(view);
 
     expect(onLoad).not.toHaveBeenCalled();
-    expect(view.container.textContent).toContain('Оберіть частоту вище, щоб завантажити графік активності по датах.');
+    expect(view.container.textContent).toContain(
+      'Оберіть частоту вище, щоб завантажити графік активності по датах.',
+    );
   });
 
   it('loads activity automatically when a frequency is already selected', async () => {
@@ -144,7 +154,9 @@ describe('AnalysisGroupsActivityCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Для частоти 100.100 за цей інтервал активності не знайдено.');
+    expect(view.container.textContent).toContain(
+      'Для частоти 100.100 за цей інтервал активності не знайдено.',
+    );
     expect(view.container.querySelector('dashboard-chart')).toBeNull();
   });
 
@@ -167,5 +179,4 @@ describe('AnalysisGroupsActivityCard', () => {
     expect(view.container.querySelector('dashboard-chart')).not.toBeNull();
     expect(view.container.textContent).not.toContain(`Завантажую активність по датах${ELLIPSIS}`);
   });
-
 });

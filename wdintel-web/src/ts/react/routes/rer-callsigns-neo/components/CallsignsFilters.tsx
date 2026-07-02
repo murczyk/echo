@@ -30,15 +30,12 @@ export function CallsignsFiltersTopRow({
   );
 
   const dateToggle = (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      sx={{ width: 'fit-content', pr: 1 }}
-    >
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 'fit-content', pr: 1 }}>
       <Switch
         checked={!filters.isIgnoringDateFilter}
-        onChange={(event) => onFiltersChange((prev) => ({ ...prev, isIgnoringDateFilter: !event.target.checked }))}
+        onChange={(event) =>
+          onFiltersChange((prev) => ({ ...prev, isIgnoringDateFilter: !event.target.checked }))
+        }
         disabled={filtersDisabled}
         inputProps={{ 'aria-label': 'Фільтр за датою' }}
       />
@@ -69,18 +66,20 @@ export function CallsignsFiltersTopRow({
   );
 
   return (
-    <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
+    <Stack
+      direction="row"
+      spacing={1.5}
+      alignItems="center"
+      useFlexGap
+      sx={{ minWidth: 0, flexWrap: 'nowrap' }}
+    >
       {globalFilterField}
       {dateToggle}
     </Stack>
   );
 }
 
-export function CallsignsDateInputs({
-  filters,
-  filtersDisabled = false,
-  onFiltersChange,
-}: Props) {
+export function CallsignsDateInputs({ filters, filtersDisabled = false, onFiltersChange }: Props) {
   if (filters.isIgnoringDateFilter) return null;
 
   return (
@@ -96,7 +95,9 @@ export function CallsignsDateInputs({
         type="datetime-local"
         size="small"
         value={filters.fromDateTimeLocal}
-        onChange={(event) => onFiltersChange((prev) => ({ ...prev, fromDateTimeLocal: event.target.value }))}
+        onChange={(event) =>
+          onFiltersChange((prev) => ({ ...prev, fromDateTimeLocal: event.target.value }))
+        }
         disabled={filtersDisabled}
         slotProps={{ inputLabel: { shrink: true } }}
       />
@@ -105,7 +106,9 @@ export function CallsignsDateInputs({
         type="datetime-local"
         size="small"
         value={filters.toDateTimeLocal}
-        onChange={(event) => onFiltersChange((prev) => ({ ...prev, toDateTimeLocal: event.target.value }))}
+        onChange={(event) =>
+          onFiltersChange((prev) => ({ ...prev, toDateTimeLocal: event.target.value }))
+        }
         disabled={filtersDisabled}
         slotProps={{ inputLabel: { shrink: true } }}
       />

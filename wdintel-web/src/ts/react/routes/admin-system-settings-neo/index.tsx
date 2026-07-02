@@ -1,5 +1,19 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Box, ButtonBase, Card, CardContent, CircularProgress, FormControlLabel, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  ButtonBase,
+  Card,
+  CardContent,
+  CircularProgress,
+  FormControlLabel,
+  Stack,
+  Switch,
+  Tab,
+  Tabs,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -185,7 +199,12 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
   };
 }
 
-function validateCoordinate(label: string, rawValue: string, min: number, max: number): string | null {
+function validateCoordinate(
+  label: string,
+  rawValue: string,
+  min: number,
+  max: number,
+): string | null {
   const trimmed = rawValue.trim();
   if (trimmed.length === 0) return `${label} не задана.`;
 
@@ -233,7 +252,13 @@ function CoordinateField({ disabled, label, onBlur, onChange, value }: Coordinat
   );
 }
 
-function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; patchForm: PatchSystemSettingsForm }) {
+function MainSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
   return (
     <>
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
@@ -277,7 +302,12 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
             }}
           />
         }
-        label={<InfoLabel label="Підтримка альтернативних перехоплень" tooltip={SUPPORT_NON_RER_TOOLTIP} />}
+        label={
+          <InfoLabel
+            label="Підтримка альтернативних перехоплень"
+            tooltip={SUPPORT_NON_RER_TOOLTIP}
+          />
+        }
       />
 
       <FormControlLabel
@@ -370,7 +400,13 @@ function MainSettingsSection({ form, patchForm }: { form: SystemSettingsForm; pa
   );
 }
 
-function PelengSettingsSection({ form, patchForm }: { form: SystemSettingsForm; patchForm: PatchSystemSettingsForm }) {
+function PelengSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
   const coordinateFieldsDisabled = !form.pelengBoundsEnabled;
 
   return (
@@ -467,9 +503,7 @@ export function AdminSystemSettingsNeoPage() {
         setSaved(nextForm);
         setForm(nextForm);
       } catch (error) {
-        setLoadError(
-          `Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`,
-        );
+        setLoadError(`Помилка завантаження системних налаштувань: ${formatErrorMessage(error)}`);
       } finally {
         setLoadInProgress(false);
       }
@@ -557,8 +591,18 @@ export function AdminSystemSettingsNeoPage() {
                 },
               }}
             >
-              <Tab value="main" label="Основні" id="system-settings-neo-tab-main" aria-controls="system-settings-neo-panel-main" />
-              <Tab value="pelengs" label="Пеленги" id="system-settings-neo-tab-pelengs" aria-controls="system-settings-neo-panel-pelengs" />
+              <Tab
+                value="main"
+                label="Основні"
+                id="system-settings-neo-tab-main"
+                aria-controls="system-settings-neo-panel-main"
+              />
+              <Tab
+                value="pelengs"
+                label="Пеленги"
+                id="system-settings-neo-tab-pelengs"
+                aria-controls="system-settings-neo-panel-pelengs"
+              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>

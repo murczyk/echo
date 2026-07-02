@@ -16,7 +16,15 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   Chip: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  Drawer: ({ children, open, ModalProps }: { children?: ReactNode; open?: boolean; ModalProps?: { disableRestoreFocus?: boolean } }) => {
+  Drawer: ({
+    children,
+    open,
+    ModalProps,
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    ModalProps?: { disableRestoreFocus?: boolean };
+  }) => {
     if (open) drawerProps.push({ ModalProps });
     return open ? <div role="dialog">{children}</div> : null;
   },

@@ -22,7 +22,12 @@ import {
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
-const latestMenuProps: Array<{ anchorReference?: string; anchorPosition?: { top: number; left: number } | null; open?: boolean; id?: string }> = [];
+const latestMenuProps: Array<{
+  anchorReference?: string;
+  anchorPosition?: { top: number; left: number } | null;
+  open?: boolean;
+  id?: string;
+}> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
 
@@ -74,7 +79,8 @@ vi.mock('@mui/icons-material/ExpandLess', () => ({
 }));
 
 vi.mock('./MessageCardDocumentPreviewDialog', () => ({
-  MessageCardDocumentPreviewDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog">document-dialog</div> : null),
+  MessageCardDocumentPreviewDialog: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog">document-dialog</div> : null,
 }));
 
 /** Narrow width for tag-row measurement in compact layout (MessageCardTagChips `useLayoutEffect`). */
@@ -85,7 +91,13 @@ function normalizeCssColor(value: string): { r: number; g: number; b: number; a:
   const trimmed = value.trim();
   if (trimmed.startsWith('#')) {
     const hex = trimmed.slice(1);
-    const normalized = hex.length === 3 ? hex.split('').map((part) => part + part).join('') : hex;
+    const normalized =
+      hex.length === 3
+        ? hex
+            .split('')
+            .map((part) => part + part)
+            .join('')
+        : hex;
     return {
       r: Number.parseInt(normalized.slice(0, 2), 16),
       g: Number.parseInt(normalized.slice(2, 4), 16),
@@ -104,7 +116,10 @@ function normalizeCssColor(value: string): { r: number; g: number; b: number; a:
   };
 }
 
-function compositeOver(fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number; a: number }) {
+function compositeOver(
+  fg: { r: number; g: number; b: number; a: number },
+  bg: { r: number; g: number; b: number; a: number },
+) {
   const alpha = fg.a + bg.a * (1 - fg.a);
   return {
     r: Math.round((fg.r * fg.a + bg.r * bg.a * (1 - fg.a)) / alpha),
@@ -147,7 +162,10 @@ vi.mock('@mui/material', () => ({
     startIcon,
     endIcon,
     ...props
-  }: { children?: ReactNode; startIcon?: ReactNode; endIcon?: ReactNode } & Record<string, unknown>) => (
+  }: { children?: ReactNode; startIcon?: ReactNode; endIcon?: ReactNode } & Record<
+    string,
+    unknown
+  >) => (
     <button {...omitMuiLayoutProps(props)}>
       {startIcon}
       <span>{children}</span>
@@ -157,7 +175,10 @@ vi.mock('@mui/material', () => ({
   ButtonBase: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'button';
     return (
-      <Component {...(Component === 'button' ? { type: 'button' } : {})} {...omitMuiLayoutProps(props)}>
+      <Component
+        {...(Component === 'button' ? { type: 'button' } : {})}
+        {...omitMuiLayoutProps(props)}
+      >
         {children}
       </Component>
     );
@@ -167,8 +188,17 @@ vi.mock('@mui/material', () => ({
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
   CircularProgress: () => <span>tags-loading</span>,
-  Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) => (open ? <>{children}</> : null),
-  Chip: ({ label, onClick, onDelete }: { label?: ReactNode; onClick?: () => void; onDelete?: () => void }) => (
+  Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) =>
+    open ? <>{children}</> : null,
+  Chip: ({
+    label,
+    onClick,
+    onDelete,
+  }: {
+    label?: ReactNode;
+    onClick?: () => void;
+    onDelete?: () => void;
+  }) => (
     <span>
       <button type="button" onClick={onClick}>
         {label}
@@ -180,7 +210,14 @@ vi.mock('@mui/material', () => ({
       ) : null}
     </span>
   ),
-  IconButton: ({ children, component, href, target, rel, ...props }: { children?: ReactNode; component?: string } & Record<string, unknown>) => {
+  IconButton: ({
+    children,
+    component,
+    href,
+    target,
+    rel,
+    ...props
+  }: { children?: ReactNode; component?: string } & Record<string, unknown>) => {
     const Component = component ?? 'button';
     return (
       <Component
@@ -194,32 +231,58 @@ vi.mock('@mui/material', () => ({
       </Component>
     );
   },
-  Dialog: ({ children, open }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+  Dialog: ({
+    children,
+    open,
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
     open ? <div role="dialog">{children}</div> : null,
-  DialogActions: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
-  DialogContent: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
-  DialogTitle: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
-  ImageList: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
-  ImageListItem: ({ children, ...props }: PrimitiveProps) => <div {...omitMuiLayoutProps(props)}>{children}</div>,
-  Link: ({ children, href, ...props }: { children?: ReactNode; href?: string } & Record<string, unknown>) => (
+  DialogActions: ({ children, ...props }: PrimitiveProps) => (
+    <div {...omitMuiLayoutProps(props)}>{children}</div>
+  ),
+  DialogContent: ({ children, ...props }: PrimitiveProps) => (
+    <div {...omitMuiLayoutProps(props)}>{children}</div>
+  ),
+  DialogTitle: ({ children, ...props }: PrimitiveProps) => (
+    <div {...omitMuiLayoutProps(props)}>{children}</div>
+  ),
+  ImageList: ({ children, ...props }: PrimitiveProps) => (
+    <div {...omitMuiLayoutProps(props)}>{children}</div>
+  ),
+  ImageListItem: ({ children, ...props }: PrimitiveProps) => (
+    <div {...omitMuiLayoutProps(props)}>{children}</div>
+  ),
+  Link: ({
+    children,
+    href,
+    ...props
+  }: { children?: ReactNode; href?: string } & Record<string, unknown>) => (
     <a href={href} {...omitMuiLayoutProps(props)}>
       {children}
     </a>
   ),
-  Popover: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+  Popover: ({
+    children,
+    open,
+    ...props
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
     open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
-  Menu: ({ children, open, ...props }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? (
-      (() => {
-        latestMenuProps.push({
-          anchorReference: props.anchorReference as string | undefined,
-          anchorPosition: (props.anchorPosition as { top: number; left: number } | undefined) ?? null,
-          open,
-          id: props.id as string | undefined,
-        });
-        return <div {...omitMuiLayoutProps(props)}>{children}</div>;
-      })()
-    ) : null,
+  Menu: ({
+    children,
+    open,
+    ...props
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
+    open
+      ? (() => {
+          latestMenuProps.push({
+            anchorReference: props.anchorReference as string | undefined,
+            anchorPosition:
+              (props.anchorPosition as { top: number; left: number } | undefined) ?? null,
+            open,
+            id: props.id as string | undefined,
+          });
+          return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+        })()
+      : null,
   MenuItem: ({
     children,
     component,
@@ -277,8 +340,12 @@ vi.mock('@mui/material', () => ({
       max={max}
       step={step}
       data-marks={JSON.stringify(marks ?? [])}
-      onChange={(event) => onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))}
-      onInput={(event) => onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))}
+      onChange={(event) =>
+        onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))
+      }
+      onInput={(event) =>
+        onChange?.({ currentTarget: event.currentTarget }, Number(event.currentTarget.value))
+      }
       {...omitMuiLayoutProps(props)}
     />
   ),
@@ -316,7 +383,9 @@ vi.mock('@mui/material', () => ({
         placeholder={placeholder}
         value={value ?? ''}
         onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
-        onKeyDown={(event) => onKeyDown?.({ key: event.key, preventDefault: () => event.preventDefault() })}
+        onKeyDown={(event) =>
+          onKeyDown?.({ key: event.key, preventDefault: () => event.preventDefault() })
+        }
         {...(inputProps ?? {})}
         {...omitMuiLayoutProps(props)}
       />
@@ -337,19 +406,18 @@ vi.mock('../../../components/PowerChip', () => ({
     label: ReactNode;
     onClick?: () => void;
     onDelete?: () => void;
-  }) =>
-    (
-      <span>
-        <button type="button" onClick={onClick}>
-          {label}
+  }) => (
+    <span>
+      <button type="button" onClick={onClick}>
+        {label}
+      </button>
+      {onDelete ? (
+        <button type="button" onClick={onDelete} aria-label={`delete-${String(label)}`}>
+          delete
         </button>
-        {onDelete ? (
-          <button type="button" onClick={onDelete} aria-label={`delete-${String(label)}`}>
-            delete
-          </button>
-        ) : null}
-      </span>
-    ),
+      ) : null}
+    </span>
+  ),
 }));
 
 vi.mock('./useRelativeTimeDisplayMs', () => ({
@@ -429,7 +497,9 @@ function buildMetadata(overrides: Partial<InboxMessageMetadata> = {}): InboxMess
   };
 }
 
-async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>> = {}): Promise<Rendered> {
+async function renderCard(
+  overrides: Partial<ComponentProps<typeof MessageCard>> = {},
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -476,7 +546,9 @@ async function renderCard(overrides: Partial<ComponentProps<typeof MessageCard>>
   return { container, root, props };
 }
 
-async function renderHeader(overrides: Partial<ComponentProps<typeof MessageCardHeader>> = {}): Promise<Rendered> {
+async function renderHeader(
+  overrides: Partial<ComponentProps<typeof MessageCardHeader>> = {},
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -531,13 +603,23 @@ function setClientWidth(element: HTMLElement, width: number) {
 }
 
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
+  const button = Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(label),
+  );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
 
 function getTagButtonLabels(container: HTMLElement): string[] {
-  const tagLabels = new Set(['переміщення', 'зв’язок', 'РЕБ', 'арта', 'палітра', 'іфо', 'розвідка']);
+  const tagLabels = new Set([
+    'переміщення',
+    'зв’язок',
+    'РЕБ',
+    'арта',
+    'палітра',
+    'іфо',
+    'розвідка',
+  ]);
   return Array.from(container.querySelectorAll('button'))
     .map((button) => button.textContent?.trim() ?? '')
     .filter((label) => tagLabels.has(label));
@@ -632,9 +714,12 @@ describe('MessageCard', () => {
 
   it('resolves the shared etalon and location display model with normalized display values', () => {
     expect(
-      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], location: '  ПІЩАНКА  ' }), {
-        featureStrictNetworks: false,
-      }),
+      resolveMessageCardEtalonDisplayModel(
+        buildMessage({ networkIds: [], location: '  ПІЩАНКА  ' }),
+        {
+          featureStrictNetworks: false,
+        },
+      ),
     ).toMatchObject({
       primaryKind: 'location',
       displayValue: 'Піщанка',
@@ -645,9 +730,12 @@ describe('MessageCard', () => {
     });
     expect(normalizeLocationDisplayValue('ЛИМАН ПЕРШИЙ')).toBe('Лиман Перший');
     expect(
-      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], unit: ' 1-й танк ', location: null }), {
-        featureStrictNetworks: false,
-      }),
+      resolveMessageCardEtalonDisplayModel(
+        buildMessage({ networkIds: [], unit: ' 1-й танк ', location: null }),
+        {
+          featureStrictNetworks: false,
+        },
+      ),
     ).toMatchObject({
       primaryKind: 'unit',
       displayValue: '1-й танк',
@@ -656,9 +744,12 @@ describe('MessageCard', () => {
       showInlineLocationTooltip: false,
     });
     expect(
-      resolveMessageCardEtalonDisplayModel(buildMessage({ networkIds: [], unit: null, location: 'Не встановлена' }), {
-        featureStrictNetworks: true,
-      }),
+      resolveMessageCardEtalonDisplayModel(
+        buildMessage({ networkIds: [], unit: null, location: 'Не встановлена' }),
+        {
+          featureStrictNetworks: true,
+        },
+      ),
     ).toMatchObject({
       primaryKind: 'empty',
       displayValue: '—',
@@ -777,7 +868,10 @@ describe('MessageCard', () => {
   });
 
   it('uses the timestamp for minute-only hover time so seconds are preserved', () => {
-    const tooltipTime = formatMessageCardTooltipTime({ time: '02:45', timestamp: 1_710_000_000_000 } as InboxMessage);
+    const tooltipTime = formatMessageCardTooltipTime({
+      time: '02:45',
+      timestamp: 1_710_000_000_000,
+    } as InboxMessage);
     expect(tooltipTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(tooltipTime).not.toBe('02:45');
   });
@@ -789,7 +883,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
-    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    if (!(navigateButton instanceof HTMLButtonElement))
+      throw new Error('navigate button not found');
     expect(navigateButton.getAttribute('aria-haspopup')).toBe('menu');
     await click(navigateButton);
     expect(navigateButton.getAttribute('aria-expanded')).toBe('true');
@@ -801,10 +896,15 @@ describe('MessageCard', () => {
     expect(networkLinks[0]?.getAttribute('target')).toBe('_blank');
     expect(networkLinks[0]?.getAttribute('rel')).toBe('noopener noreferrer');
 
-    const networkUrl = new URL(String(networkLinks[0]?.getAttribute('href') ?? ''), 'https://example.test');
+    const networkUrl = new URL(
+      String(networkLinks[0]?.getAttribute('href') ?? ''),
+      'https://example.test',
+    );
     expect(networkUrl.pathname).toBe('/rer-networks/7');
 
-    const mapLink = Array.from(view.container.querySelectorAll('a')).find((link) => link.textContent?.includes('На мапу'));
+    const mapLink = Array.from(view.container.querySelectorAll('a')).find((link) =>
+      link.textContent?.includes('На мапу'),
+    );
     if (!(mapLink instanceof HTMLAnchorElement)) throw new Error('map link not found');
     const mapUrl = new URL(String(mapLink.getAttribute('href') ?? ''), 'https://example.test');
     expect(mapUrl.pathname).toBe('/rer-analysis');
@@ -819,7 +919,10 @@ describe('MessageCard', () => {
       link.textContent?.includes('В аналіз'),
     );
     if (!(analysisLink instanceof HTMLAnchorElement)) throw new Error('analysis link not found');
-    const analysisUrl = new URL(String(analysisLink.getAttribute('href') ?? ''), 'https://example.test');
+    const analysisUrl = new URL(
+      String(analysisLink.getAttribute('href') ?? ''),
+      'https://example.test',
+    );
     expect(analysisUrl.pathname).toBe('/rer-analysis');
     expect(JSON.parse(analysisUrl.searchParams.get('state') ?? '')).toMatchObject({
       search: 'uid-1',
@@ -836,7 +939,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
-    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    if (!(navigateButton instanceof HTMLButtonElement))
+      throw new Error('navigate button not found');
     await click(navigateButton);
 
     const networkUrl = new URL(
@@ -855,7 +959,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
-    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    if (!(navigateButton instanceof HTMLButtonElement))
+      throw new Error('navigate button not found');
     await click(navigateButton);
 
     expect(view.container.textContent).toContain('В мережу');
@@ -879,12 +984,16 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('р/м Alpha');
     const navigateButton = view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`);
-    if (!(navigateButton instanceof HTMLButtonElement)) throw new Error('navigate button not found');
+    if (!(navigateButton instanceof HTMLButtonElement))
+      throw new Error('navigate button not found');
     await click(navigateButton);
 
     const networkLinks = Array.from(view.container.querySelectorAll('a[href^="/rer-networks/"]'));
     expect(networkLinks).toHaveLength(2);
-    expect(networkLinks.map((link) => link.getAttribute('href'))).toEqual(['/rer-networks/7', '/rer-networks/8']);
+    expect(networkLinks.map((link) => link.getAttribute('href'))).toEqual([
+      '/rer-networks/7',
+      '/rer-networks/8',
+    ]);
   });
 
   it('renders the location as the primary etalon row when no networks resolve', async () => {
@@ -914,9 +1023,13 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
+    expect(
+      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
+    ).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
+    ).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
@@ -931,9 +1044,13 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).toContain('Харків');
+    expect(
+      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
+    ).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
+    ).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
@@ -945,11 +1062,13 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('1-й танк');
     expect(view.container.textContent).not.toContain('—');
-    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
+    ).not.toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
     await click(copyButton);
-    expect(view.container.textContent).toContain('Копіювати прив\'язку');
+    expect(view.container.textContent).toContain("Копіювати прив'язку");
     expect(view.container.textContent).not.toContain('Копіювати локацію');
   });
 
@@ -959,9 +1078,13 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-message-header-grid="true"]')?.textContent).not.toContain('Не встановлена');
+    expect(
+      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
+    ).not.toContain('Не встановлена');
     expect(view.container.textContent).toContain('—');
-    expect(view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
+    ).not.toBeNull();
     expect(view.container.querySelector('svg[data-testid="PlaceOutlinedIcon"]')).toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
@@ -985,7 +1108,9 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('Відкрити мапу тут');
     expect(view.container.textContent).not.toContain('Відкрити мапу в новому вікні');
     expect(view.container.querySelector('button[aria-label="Відкрити мапу тут"]')).toBeNull();
-    expect(view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]')).toBeNull();
+    expect(
+      view.container.querySelector('button[aria-label="Відкрити мапу в новому вікні"]'),
+    ).toBeNull();
     expect(view.container.querySelector('button[aria-label="Виключити"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Мінус"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
@@ -1011,8 +1136,8 @@ describe('MessageCard', () => {
     await click(removeButton);
     expect(onRemoveCallsign).toHaveBeenCalledWith('ALPHA');
 
-    const suggestedButton = Array.from(view.container.querySelectorAll('button')).find(
-      (button) => button.textContent?.includes('BRAVO'),
+    const suggestedButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('BRAVO'),
     );
     if (suggestedButton == null) throw new Error('suggested button not found');
     await click(suggestedButton);
@@ -1026,7 +1151,9 @@ describe('MessageCard', () => {
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
 
-    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
+    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) =>
+      button.getAttribute('aria-label'),
+    );
     expect(labels).toEqual([
       'Редагувати коментар',
       'Позначити як важливе',
@@ -1048,7 +1175,9 @@ describe('MessageCard', () => {
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
 
-    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
+    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) =>
+      button.getAttribute('aria-label'),
+    );
     expect(labels).toEqual([
       'Редагувати коментар',
       'Позначити як важливе',
@@ -1105,7 +1234,8 @@ describe('MessageCard', () => {
     });
 
     const inlineToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(inlineToolbar instanceof HTMLElement)) throw new Error('toolbar not found after inline resize');
+    if (!(inlineToolbar instanceof HTMLElement))
+      throw new Error('toolbar not found after inline resize');
     expect(inlineToolbar.getAttribute('role')).toBeNull();
 
     setClientWidth(root, 0);
@@ -1114,7 +1244,8 @@ describe('MessageCard', () => {
     });
 
     const hiddenToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(hiddenToolbar instanceof HTMLElement)) throw new Error('toolbar not found after hidden resize');
+    if (!(hiddenToolbar instanceof HTMLElement))
+      throw new Error('toolbar not found after hidden resize');
     expect(hiddenToolbar.getAttribute('role')).toBeNull();
 
     setClientWidth(root, 180);
@@ -1123,7 +1254,8 @@ describe('MessageCard', () => {
     });
 
     const wrappedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(wrappedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after narrow resize');
+    if (!(wrappedToolbar instanceof HTMLElement))
+      throw new Error('toolbar not found after narrow resize');
     expect(wrappedToolbar.getAttribute('role')).toBe('group');
   });
 
@@ -1184,7 +1316,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
-    if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    if (!(overflowButton instanceof HTMLButtonElement))
+      throw new Error('overflow button not found');
     await click(overflowButton);
 
     expect(view.container.textContent).toContain('Редагувати додаткові поля та позивні');
@@ -1214,7 +1347,8 @@ describe('MessageCard', () => {
       rendered.push(view);
 
       const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
-      if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+      if (!(overflowButton instanceof HTMLButtonElement))
+        throw new Error('overflow button not found');
 
       await click(overflowButton);
 
@@ -1233,7 +1367,9 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('svg[data-testid="FlagOutlinedIcon"]')).not.toBeNull();
-    expect(view.container.querySelector('svg[data-testid="BookmarkBorderOutlinedIcon"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[data-testid="BookmarkBorderOutlinedIcon"]'),
+    ).not.toBeNull();
 
     const activeView = await renderCard({
       msg: buildMessage({ important: true, bookmarked: true }),
@@ -1252,7 +1388,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const filterButton = view.container.querySelector('button[aria-label="В фільтр"]');
-    if (!(filterButton instanceof HTMLButtonElement)) throw new Error('frequency filter button not found');
+    if (!(filterButton instanceof HTMLButtonElement))
+      throw new Error('frequency filter button not found');
     await click(filterButton);
 
     expect(onAddFrequencyToFilter).toHaveBeenCalledWith('153.6250');
@@ -1274,7 +1411,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('button[aria-label="Позначити як не важливе"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('button[aria-label="Позначити як не важливе"]'),
+    ).not.toBeNull();
     expect(view.container.querySelector('button[aria-label="Прибрати з закладок"]')).not.toBeNull();
   });
 
@@ -1292,15 +1431,20 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
-    if (!(overflowButton instanceof HTMLButtonElement)) throw new Error('overflow button not found');
+    if (!(overflowButton instanceof HTMLButtonElement))
+      throw new Error('overflow button not found');
 
-    const importantButton = view.container.querySelector('button[aria-label="Позначити як важливе"]');
-    if (!(importantButton instanceof HTMLButtonElement)) throw new Error('important button not found');
+    const importantButton = view.container.querySelector(
+      'button[aria-label="Позначити як важливе"]',
+    );
+    if (!(importantButton instanceof HTMLButtonElement))
+      throw new Error('important button not found');
     await click(importantButton);
     expect(onImportant).toHaveBeenCalledTimes(1);
 
     const bookmarkButton = view.container.querySelector('button[aria-label="Додати в закладки"]');
-    if (!(bookmarkButton instanceof HTMLButtonElement)) throw new Error('bookmark button not found');
+    if (!(bookmarkButton instanceof HTMLButtonElement))
+      throw new Error('bookmark button not found');
     await click(bookmarkButton);
     expect(onBookmark).toHaveBeenCalledTimes(1);
 
@@ -1343,7 +1487,7 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('Копіювати повідомлення');
     expect(view.container.textContent).toContain('Копіювати частоту');
-    expect(view.container.textContent).toContain('Копіювати прив\'язку');
+    expect(view.container.textContent).toContain("Копіювати прив'язку");
 
     await click(getButton(view.container, 'Копіювати повідомлення'));
     expect(onCopyText).toHaveBeenCalledTimes(1);
@@ -1353,7 +1497,7 @@ describe('MessageCard', () => {
     expect(onCopyFreq).toHaveBeenCalledTimes(1);
 
     await click(copyButton);
-    await click(getButton(view.container, 'Копіювати прив\'язку'));
+    await click(getButton(view.container, "Копіювати прив'язку"));
     expect(onCopyEtalon).toHaveBeenCalledTimes(1);
   });
 
@@ -1369,7 +1513,7 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('Копіювати повідомлення');
     expect(view.container.textContent).not.toContain('Копіювати частоту');
-    expect(view.container.textContent).not.toContain('Копіювати прив\'язку');
+    expect(view.container.textContent).not.toContain("Копіювати прив'язку");
     expect(view.container.textContent).toContain('—');
     expect(view.container.textContent).not.toContain('Не встановлена');
   });
@@ -1386,8 +1530,8 @@ describe('MessageCard', () => {
     if (!(excludeButton instanceof HTMLButtonElement)) throw new Error('exclude button not found');
     await click(excludeButton);
 
-    const excludeGroupButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Виключити групу'),
+    const excludeGroupButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Виключити групу'),
     );
     if (excludeGroupButton == null) throw new Error('exclude group menu item not found');
     await click(excludeGroupButton);
@@ -1454,7 +1598,9 @@ describe('MessageCard', () => {
 
       expect(view.container.textContent).toContain('fourth comment');
       expect(
-        consoleErrorSpy.mock.calls.some((call) => String(call[0] ?? '').includes('Encountered two children with the same key')),
+        consoleErrorSpy.mock.calls.some((call) =>
+          String(call[0] ?? '').includes('Encountered two children with the same key'),
+        ),
       ).toBe(false);
     } finally {
       consoleErrorSpy.mockRestore();
@@ -1469,9 +1615,51 @@ describe('MessageCard', () => {
         callsigns: ['ALPHA', 'BRAVO', 'CHARLIE', 'GHOST'],
       },
       callsignInfoMap: {
-        alpha: { callsign: 'alpha', res: [{ id: 1, callsign: 'alpha', position: '', comment: '', unit1: '', unit2: '', unitId: 1, networkIdsReportedIn: [] }] },
-        bravo: { callsign: 'bravo', res: [{ id: 2, callsign: 'bravo', position: '', comment: '', unit1: '', unit2: '', unitId: 1, networkIdsReportedIn: [] }] },
-        charlie: { callsign: 'charlie', res: [{ id: 3, callsign: 'charlie', position: '', comment: '', unit1: '', unit2: '', unitId: 1, networkIdsReportedIn: [] }] },
+        alpha: {
+          callsign: 'alpha',
+          res: [
+            {
+              id: 1,
+              callsign: 'alpha',
+              position: '',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [],
+            },
+          ],
+        },
+        bravo: {
+          callsign: 'bravo',
+          res: [
+            {
+              id: 2,
+              callsign: 'bravo',
+              position: '',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [],
+            },
+          ],
+        },
+        charlie: {
+          callsign: 'charlie',
+          res: [
+            {
+              id: 3,
+              callsign: 'charlie',
+              position: '',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [],
+            },
+          ],
+        },
       },
       analysisCallsignActions: {
         onAddCallsign: vi.fn().mockResolvedValue(true),
@@ -1551,9 +1739,21 @@ describe('MessageCard', () => {
 
     const players = view.container.querySelectorAll('custom-audio-player');
     expect(players).toHaveLength(2);
-    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-min-height-px')).toBe('120');
-    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-top-padding-px')).toBe('12');
-    expect(view.container.querySelector('[data-audio-player-host]')?.getAttribute('data-audio-player-z-index')).toBe('0');
+    expect(
+      view.container
+        .querySelector('[data-audio-player-host]')
+        ?.getAttribute('data-audio-player-min-height-px'),
+    ).toBe('120');
+    expect(
+      view.container
+        .querySelector('[data-audio-player-host]')
+        ?.getAttribute('data-audio-player-top-padding-px'),
+    ).toBe('12');
+    expect(
+      view.container
+        .querySelector('[data-audio-player-host]')
+        ?.getAttribute('data-audio-player-z-index'),
+    ).toBe('0');
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -1604,7 +1804,9 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('audio')).toBeNull();
     expect(view.container.textContent).toContain('recording.mp3');
     expect(
-      Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('recording.mp3')),
+      Array.from(view.container.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('recording.mp3'),
+      ),
     ).toBe(false);
   });
 
@@ -1627,7 +1829,9 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('custom-audio-player')).not.toBeNull();
     expect(
-      Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('intercept.mp3')),
+      Array.from(view.container.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('intercept.mp3'),
+      ),
     ).toBe(false);
   });
 
@@ -1691,7 +1895,9 @@ describe('MessageCard', () => {
     await click(documentButton as HTMLElement);
 
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('document-dialog');
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      'document-dialog',
+    );
     expect(document.activeElement).not.toBe(documentButton);
 
     const downloadLink = view.container.querySelector('a[aria-label="Завантажити"]');
@@ -1756,7 +1962,9 @@ describe('MessageCard', () => {
       const view = await renderCard({
         tagsLayout: 'compact',
         msg: buildMessage({
-          inboxTags: [{ id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 }],
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          ],
         }),
         onToggleTag,
       });
@@ -1790,12 +1998,22 @@ describe('MessageCard', () => {
   it('keeps full tag ordering aligned with the tag map', async () => {
     const view = await renderCard({
       msg: buildMessage({
-        inboxTags: [{ id: 1, tagId: 7, confidence: 1, login: 'tester', model: null, organismId: 1 }],
+        inboxTags: [
+          { id: 1, tagId: 7, confidence: 1, login: 'tester', model: null, organismId: 1 },
+        ],
       }),
     });
     rendered.push(view);
 
-    expect(getTagButtonLabels(view.container)).toEqual(['переміщення', 'зв’язок', 'РЕБ', 'арта', 'палітра', 'іфо', 'розвідка']);
+    expect(getTagButtonLabels(view.container)).toEqual([
+      'переміщення',
+      'зв’язок',
+      'РЕБ',
+      'арта',
+      'палітра',
+      'іфо',
+      'розвідка',
+    ]);
   });
 
   it('shows a tags spinner before analysis tags load', async () => {
@@ -1876,7 +2094,9 @@ describe('MessageCard', () => {
     });
     rendered.push(firstView);
 
-    const firstThumb = firstView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const firstThumb = firstView.container.querySelector(
+      'button[aria-label="Відкрити зображення"]',
+    );
     const firstImage = firstThumb?.querySelector('img');
     if (!(firstImage instanceof HTMLImageElement)) throw new Error('thumbnail image not found');
     Object.defineProperty(firstImage, 'naturalWidth', { configurable: true, value: 1200 });
@@ -1901,12 +2121,15 @@ describe('MessageCard', () => {
     });
     rendered.push(secondView);
 
-    const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const secondThumb = secondView.container.querySelector(
+      'button[aria-label="Відкрити зображення"]',
+    );
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
     expect(secondThumb?.querySelector('img')).not.toBeNull();
 
     const secondImage = secondThumb?.querySelector('img');
-    if (!(secondImage instanceof HTMLImageElement)) throw new Error('thumbnail image not found after remount');
+    if (!(secondImage instanceof HTMLImageElement))
+      throw new Error('thumbnail image not found after remount');
     Object.defineProperty(secondImage, 'naturalWidth', { configurable: true, value: 1200 });
     Object.defineProperty(secondImage, 'naturalHeight', { configurable: true, value: 800 });
 
@@ -1927,7 +2150,9 @@ describe('MessageCard', () => {
     });
     rendered.push(firstView);
 
-    const firstThumb = firstView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const firstThumb = firstView.container.querySelector(
+      'button[aria-label="Відкрити зображення"]',
+    );
     const firstImage = firstThumb?.querySelector('img');
     if (firstImage == null) throw new Error('thumbnail image not found');
 
@@ -1950,7 +2175,9 @@ describe('MessageCard', () => {
     });
     rendered.push(secondView);
 
-    const secondThumb = secondView.container.querySelector('button[aria-label="Відкрити зображення"]');
+    const secondThumb = secondView.container.querySelector(
+      'button[aria-label="Відкрити зображення"]',
+    );
     expect(secondThumb?.getAttribute('data-picture-thumb-state')).toBe('loading');
     expect(secondThumb?.querySelector('img')).not.toBeNull();
 
@@ -1999,9 +2226,15 @@ describe('MessageCard', () => {
     expect(dialog?.textContent).toContain('1 / 1');
     expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).toBeNull();
     expect(dialog?.querySelector('[data-image-preview-nav="next"]')).toBeNull();
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('decoding')).toBe('async');
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('loading')).toBeNull();
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('fetchpriority')).toBeNull();
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('decoding')).toBe(
+      'async',
+    );
+    expect(
+      dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('loading'),
+    ).toBeNull();
+    expect(
+      dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('fetchpriority'),
+    ).toBeNull();
   });
 
   it('fits vertical single images within the height cap', async () => {
@@ -2032,7 +2265,10 @@ describe('MessageCard', () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
-        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+        images: [
+          'https://example.test/files/preview-1.png',
+          'https://example.test/files/preview-2.png',
+        ],
       },
     });
     rendered.push(view);
@@ -2056,7 +2292,11 @@ describe('MessageCard', () => {
       stage.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
     });
 
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('125');
+    expect(
+      dialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-zoom'),
+    ).toBe('125');
     expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).not.toBeNull();
     expect(dialog?.querySelector('[data-image-preview-nav="next"]')).not.toBeNull();
 
@@ -2068,7 +2308,11 @@ describe('MessageCard', () => {
       zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('400');
+    expect(
+      dialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-zoom'),
+    ).toBe('400');
 
     const nextButton = dialog?.querySelector('button[aria-label="Наступне"]');
     expect(nextButton).not.toBeNull();
@@ -2122,7 +2366,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2136,12 +2382,17 @@ describe('MessageCard', () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
-        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+        images: [
+          'https://example.test/files/preview-1.png',
+          'https://example.test/files/preview-2.png',
+        ],
       },
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2183,7 +2434,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2214,7 +2467,11 @@ describe('MessageCard', () => {
 
     const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
     if (zoomSlider == null) throw new Error('zoom slider not found');
-    expect(JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map((mark: { value: number }) => mark.value)).toContain(300);
+    expect(
+      JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map(
+        (mark: { value: number }) => mark.value,
+      ),
+    ).toContain(300);
 
     expect(dialog?.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();
@@ -2252,17 +2509,22 @@ describe('MessageCard', () => {
           clientY: 120,
         }),
       );
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 140, clientY: 120 }));
+      window.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 140, clientY: 120 }),
+      );
     });
 
     expect(Number(image.getAttribute('data-image-preview-pan-x') ?? '0')).not.toBe(0);
     expect(Number(image.getAttribute('data-image-preview-pan-y') ?? '0')).not.toBe(0);
 
     const fullscreenButton = dialog?.querySelector('button[aria-label="Повноекранний режим"]');
-    if (!(fullscreenButton instanceof HTMLButtonElement)) throw new Error('fullscreen button not found');
+    if (!(fullscreenButton instanceof HTMLButtonElement))
+      throw new Error('fullscreen button not found');
     await click(fullscreenButton);
 
-    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(
+      dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).not.toBeNull();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -2276,13 +2538,27 @@ describe('MessageCard', () => {
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const reopenedDialog = document.body.querySelector('[role="dialog"]');
     expect(reopenedDialog).not.toBeNull();
-    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-zoom')).toBe('100');
-    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-pan-x')).toBe('0');
-    expect(reopenedDialog?.querySelector('img[data-image-preview-image]')?.getAttribute('data-image-preview-pan-y')).toBe('0');
+    expect(
+      reopenedDialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-zoom'),
+    ).toBe('100');
+    expect(
+      reopenedDialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-pan-x'),
+    ).toBe('0');
+    expect(
+      reopenedDialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-pan-y'),
+    ).toBe('0');
 
     await click(getButton(reopenedDialog as HTMLElement, 'Закрити'));
   });
@@ -2291,12 +2567,17 @@ describe('MessageCard', () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
-        images: ['https://example.test/files/preview-1.png', 'https://example.test/files/preview-2.png'],
+        images: [
+          'https://example.test/files/preview-1.png',
+          'https://example.test/files/preview-2.png',
+        ],
       },
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2306,14 +2587,18 @@ describe('MessageCard', () => {
 
     await click(dialog?.querySelector('button[aria-label="Повноекранний режим"]') as HTMLElement);
 
-    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(
+      dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     });
 
-    expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(
+      dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
       'https://example.test/files/preview-2.png',
@@ -2332,7 +2617,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2378,7 +2665,9 @@ describe('MessageCard', () => {
           clientY: 100,
         }),
       );
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 120, clientY: 100 }));
+      window.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 120, clientY: 100 }),
+      );
     });
 
     expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
@@ -2388,11 +2677,13 @@ describe('MessageCard', () => {
     const panBeforeExitY = image.getAttribute('data-image-preview-pan-y');
 
     const fullscreenButton = dialog?.querySelector('button[aria-label="Повноекранний режим"]');
-    if (!(fullscreenButton instanceof HTMLButtonElement)) throw new Error('fullscreen button not found');
+    if (!(fullscreenButton instanceof HTMLButtonElement))
+      throw new Error('fullscreen button not found');
     await click(fullscreenButton);
 
     const exitButton = dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]');
-    if (!(exitButton instanceof HTMLButtonElement)) throw new Error('fullscreen exit button not found');
+    if (!(exitButton instanceof HTMLButtonElement))
+      throw new Error('fullscreen exit button not found');
 
     const exitIcon = exitButton.querySelector('svg');
     if (!(exitIcon instanceof SVGElement)) throw new Error('fullscreen exit icon not found');
@@ -2422,7 +2713,9 @@ describe('MessageCard', () => {
           clientY: 40,
         }),
       );
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2, clientX: 56, clientY: 40 }));
+      window.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 2, clientX: 56, clientY: 40 }),
+      );
     });
 
     expect(image.getAttribute('data-image-preview-pan-x')).toBe(panBeforeExitX);
@@ -2462,13 +2755,17 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    const thumbnails = Array.from(view.container.querySelectorAll('button[aria-label="Відкрити зображення"]'));
+    const thumbnails = Array.from(
+      view.container.querySelectorAll('button[aria-label="Відкрити зображення"]'),
+    );
     expect(thumbnails).toHaveLength(3);
     expect(thumbnails[0]?.querySelector('img')?.getAttribute('src')).toBe(imageA);
     expect(thumbnails[1]?.querySelector('img')?.getAttribute('src')).toBe(sharedHref);
     expect(thumbnails[2]?.querySelector('img')?.getAttribute('src')).toBe(imageB);
 
-    await click(view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити зображення"]') as HTMLElement,
+    );
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
@@ -2478,8 +2775,12 @@ describe('MessageCard', () => {
 
     await click(thumbnails[1] as HTMLElement);
 
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(sharedHref);
-    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('merged-from-media.png');
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      sharedHref,
+    );
+    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe(
+      'merged-from-media.png',
+    );
 
     const infoButton = dialog?.querySelector('button[aria-label="Інформація"]');
     expect(infoButton).not.toBeNull();
@@ -2490,7 +2791,11 @@ describe('MessageCard', () => {
     expect(dialog?.textContent).toContain('image/png');
     expect(dialog?.textContent).toContain('4.0 KB');
     expect(dialog?.textContent).toContain('media-image-1');
-    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(sharedHref);
-    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe('merged-from-media.png');
+    expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
+      sharedHref,
+    );
+    expect(dialog?.querySelector('a[download]')?.getAttribute('download')).toBe(
+      'merged-from-media.png',
+    );
   });
 });

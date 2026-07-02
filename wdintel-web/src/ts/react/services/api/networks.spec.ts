@@ -134,7 +134,30 @@ describe('networks API etalonka report download', () => {
 
   it('encodes the network list request in snake_case and normalizes the combined response', async () => {
     postJsonMock.mockResolvedValueOnce({
-      list: [{ id: 1, name: 'Alpha', freqs: [], unit_ids: [], aor_ids: [], location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' }],
+      list: [
+        {
+          id: 1,
+          name: 'Alpha',
+          freqs: [],
+          unit_ids: [],
+          aor_ids: [],
+          location: '',
+          radio_station: null,
+          created_at: 1,
+          purpose: null,
+          operation_mode: null,
+          operation_type: null,
+          operation_period: null,
+          last_updated_at: 1,
+          last_updated_by: null,
+          active_from: null,
+          active_to: null,
+          post_ids: [],
+          descriptions: [],
+          deleted: false,
+          status: 'NetworkActive',
+        },
+      ],
       status_counts: { active: 7, inactive: 1, archived: 2 },
     });
 
@@ -316,7 +339,28 @@ describe('networks API v2 frequency mutations', () => {
 
   it('posts add-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
     postJsonMock.mockResolvedValueOnce({
-      network: { id: 1, freqs: [], unit_ids: [], aor_ids: [], name: 'Net', location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' },
+      network: {
+        id: 1,
+        freqs: [],
+        unit_ids: [],
+        aor_ids: [],
+        name: 'Net',
+        location: '',
+        radio_station: null,
+        created_at: 1,
+        purpose: null,
+        operation_mode: null,
+        operation_type: null,
+        operation_period: null,
+        last_updated_at: 1,
+        last_updated_by: null,
+        active_from: null,
+        active_to: null,
+        post_ids: [],
+        descriptions: [],
+        deleted: false,
+        status: 'NetworkActive',
+      },
       freq: {
         network_freq_id: 9,
         freq: '123.4000',
@@ -363,7 +407,28 @@ describe('networks API v2 frequency mutations', () => {
 
   it('posts update-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
     postJsonMock.mockResolvedValueOnce({
-      network: { id: 1, freqs: [], unit_ids: [], aor_ids: [], name: 'Net', location: '', radio_station: null, created_at: 1, purpose: null, operation_mode: null, operation_type: null, operation_period: null, last_updated_at: 1, last_updated_by: null, active_from: null, active_to: null, post_ids: [], descriptions: [], deleted: false, status: 'NetworkActive' },
+      network: {
+        id: 1,
+        freqs: [],
+        unit_ids: [],
+        aor_ids: [],
+        name: 'Net',
+        location: '',
+        radio_station: null,
+        created_at: 1,
+        purpose: null,
+        operation_mode: null,
+        operation_type: null,
+        operation_period: null,
+        last_updated_at: 1,
+        last_updated_by: null,
+        active_from: null,
+        active_to: null,
+        post_ids: [],
+        descriptions: [],
+        deleted: false,
+        status: 'NetworkActive',
+      },
       freq: {
         network_freq_id: 9,
         freq: '123.4000',

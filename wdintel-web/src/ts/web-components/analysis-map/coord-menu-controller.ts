@@ -9,7 +9,10 @@ export class AnalysisMapCoordMenuController {
   private overlay: HTMLElement | null = null;
   private latlng: L.LatLng | null = null;
 
-  constructor(private map: L.Map, private buildContent: BuildContent) {}
+  constructor(
+    private map: L.Map,
+    private buildContent: BuildContent,
+  ) {}
 
   close(): void {
     this.overlay?.remove();

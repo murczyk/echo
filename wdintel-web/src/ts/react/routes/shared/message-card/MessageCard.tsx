@@ -14,7 +14,11 @@ import type {
 import { MessageCardContent } from './MessageCardContent';
 import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
-import { MessageCardHeader, type MessageCardDisplayMode, type MessageCardHeaderProps } from './MessageCardHeader';
+import {
+  MessageCardHeader,
+  type MessageCardDisplayMode,
+  type MessageCardHeaderProps,
+} from './MessageCardHeader';
 import { MessageCardDmrMetadataPopover } from './MessageCardDmrMetadataPopover';
 import { hasVisibleDmrMetadata } from './message-card-metadata';
 import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
@@ -36,7 +40,9 @@ export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
 
 dayjs.extend(customParseFormat);
 
-export function formatMessageCardTooltipTime(msg: Pick<InboxMessage, 'time' | 'timestamp'>): string {
+export function formatMessageCardTooltipTime(
+  msg: Pick<InboxMessage, 'time' | 'timestamp'>,
+): string {
   const time = msg.time;
   if (time === null) return NO_DATA_LABEL;
   const trimmed = time.trim();
@@ -159,7 +165,8 @@ export function MessageCard({
     networks,
   });
   const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
-  const onCopyLocationAction = etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
+  const onCopyLocationAction =
+    etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
   const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
   const excludeMenuOptions =
     displayMode === 'duty'
@@ -178,7 +185,9 @@ export function MessageCard({
       : undefined;
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
-    isPresent(msg.timestamp) && isPresent(relativeTimeMs) ? messageRenderDistance(msg.timestamp, relativeTimeMs) : null;
+    isPresent(msg.timestamp) && isPresent(relativeTimeMs)
+      ? messageRenderDistance(msg.timestamp, relativeTimeMs)
+      : null;
   const tooltipTime = formatMessageCardTooltipTime(msg);
 
   const topRight =
@@ -191,7 +200,10 @@ export function MessageCard({
             </Typography>
           ) : (
             <Tooltip title={tooltipTime} placement="top" enterDelay={300}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}>
+              <Typography
+                variant="caption"
+                sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}
+              >
                 {timeDistance}
               </Typography>
             </Tooltip>
@@ -206,7 +218,9 @@ export function MessageCard({
 
   const analysisHref = displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined;
   const metadataTrigger =
-    displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? <MessageCardDmrMetadataPopover msg={msg} /> : undefined;
+    displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
+      <MessageCardDmrMetadataPopover msg={msg} />
+    ) : undefined;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -278,7 +292,10 @@ export function MessageCard({
         }}
       >
         {watermarkUserName !== '' && (
-          <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
+          <Box
+            sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
+            aria-hidden
+          >
             <MessageCardWatermark authUserName={watermarkUserName} />
           </Box>
         )}

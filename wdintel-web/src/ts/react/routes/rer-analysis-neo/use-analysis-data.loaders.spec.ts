@@ -19,7 +19,9 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../services/api/analysis', async () => {
-  const actual = await vi.importActual<typeof import('../../services/api/analysis')>('../../services/api/analysis');
+  const actual = await vi.importActual<typeof import('../../services/api/analysis')>(
+    '../../services/api/analysis',
+  );
   return {
     ...actual,
     fetchAnalysisCallsignInfos: apiMocks.fetchAnalysisCallsignInfos,
@@ -129,7 +131,9 @@ afterEach(() => {
 
 describe('normalizeMapMessageIds', () => {
   it('filters nullish and duplicate ids', () => {
-    expect(normalizeMapMessageIds([1, null, 2, undefined, 2, Number.NaN, Number.POSITIVE_INFINITY, 3])).toEqual([1, 2, 3]);
+    expect(
+      normalizeMapMessageIds([1, null, 2, undefined, 2, Number.NaN, Number.POSITIVE_INFINITY, 3]),
+    ).toEqual([1, 2, 3]);
   });
 });
 

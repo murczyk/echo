@@ -65,37 +65,56 @@ function SelectedPalitraActionsMenu(props: SelectedPalitraActionsMenuProps) {
 
   return (
     <>
-      <Tooltip title='Дії з обраними палітрами'>
+      <Tooltip title="Дії з обраними палітрами">
         <span>
           <IconButton
-            aria-label='Дії з обраними палітрами'
+            aria-label="Дії з обраними палітрами"
             aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
             aria-expanded={open ? 'true' : undefined}
-            aria-haspopup='menu'
+            aria-haspopup="menu"
             onClick={(event) => setAnchorEl(event.currentTarget)}
           >
             <MoreVertIcon />
           </IconButton>
         </span>
       </Tooltip>
-      <Menu id='selected-palitra-actions-menu' open={open} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
-        <MenuItem onClick={() => runAction(props.onDownloadSelected)} disabled={props.downloadDisabled}>
+      <Menu
+        id="selected-palitra-actions-menu"
+        open={open}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+      >
+        <MenuItem
+          onClick={() => runAction(props.onDownloadSelected)}
+          disabled={props.downloadDisabled}
+        >
           <ListItemIcon>
-            {props.downloadInFlight ? <CircularProgress size={18} color='inherit' /> : <DownloadIcon fontSize='small' />}
+            {props.downloadInFlight ? (
+              <CircularProgress size={18} color="inherit" />
+            ) : (
+              <DownloadIcon fontSize="small" />
+            )}
           </ListItemIcon>
-          <ListItemText primary='Скачати обрані палітри' />
+          <ListItemText primary="Скачати обрані палітри" />
         </MenuItem>
-        <MenuItem onClick={() => runAction(props.onRequestAssignFolder)} disabled={props.assignDisabled}>
+        <MenuItem
+          onClick={() => runAction(props.onRequestAssignFolder)}
+          disabled={props.assignDisabled}
+        >
           <ListItemIcon>
-            <DriveFileMoveOutlinedIcon fontSize='small' />
+            <DriveFileMoveOutlinedIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary='Перемістити в папку' />
+          <ListItemText primary="Перемістити в папку" />
         </MenuItem>
-        <MenuItem onClick={() => runAction(props.onRequestBulkDelete)} disabled={props.deleteDisabled} sx={{ color: 'error.main' }}>
+        <MenuItem
+          onClick={() => runAction(props.onRequestBulkDelete)}
+          disabled={props.deleteDisabled}
+          sx={{ color: 'error.main' }}
+        >
           <ListItemIcon sx={{ color: 'error.main' }}>
-            <DeleteIcon fontSize='small' />
+            <DeleteIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary='Видалити палітри' />
+          <ListItemText primary="Видалити палітри" />
         </MenuItem>
       </Menu>
     </>
@@ -106,7 +125,8 @@ function RerPalitraNeoPageBody() {
   const page = useRerPalitraNeoPage();
   const selectedPalitraIds = new Set(page.selectedPalitraIds);
   const hasSelectedModifiablePalitras = page.rows.some(
-    (row) => row.kind === 'palitra' && selectedPalitraIds.has(row.id) && row.canSelect && row.canModify,
+    (row) =>
+      row.kind === 'palitra' && selectedPalitraIds.has(row.id) && row.canSelect && row.canModify,
   );
   const selectedPalitraActionsBlocked =
     page.selectedPalitraIds.length === 0 ||
@@ -118,17 +138,17 @@ function RerPalitraNeoPageBody() {
     page.inFlightDownloadId !== null;
 
   return (
-    <Box className='w-full' sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
       <Stack spacing={3} useFlexGap sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
         <TablePageToolbar
-          title='Палітри'
+          title="Палітри"
           withGlobalTextFilter
           filter={
             <ToggleButtonGroup
               value={page.archiveView}
               exclusive
-              size='small'
-              color='primary'
+              size="small"
+              color="primary"
               onChange={(_event, value: 'active' | 'all' | 'archived' | null) => {
                 if (value) page.setArchiveView(value);
               }}
@@ -154,26 +174,30 @@ function RerPalitraNeoPageBody() {
                 },
               }}
             >
-              <ToggleButton value='all'>Усі</ToggleButton>
-              <ToggleButton value='active'>Активні</ToggleButton>
-              <ToggleButton value='archived'>Архів</ToggleButton>
+              <ToggleButton value="all">Усі</ToggleButton>
+              <ToggleButton value="active">Активні</ToggleButton>
+              <ToggleButton value="archived">Архів</ToggleButton>
             </ToggleButtonGroup>
           }
           actions={
-            <Stack direction='row' spacing={2} flexWrap='wrap' useFlexGap>
+            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
               <Button
-                component='a'
-                href='/alpinequest-kmz'
-                target='_blank'
-                rel='noopener noreferrer'
-                variant='outlined'
+                component="a"
+                href="/alpinequest-kmz"
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="outlined"
               >
                 AlpineQuest конвертер
               </Button>
               <Button
-                variant='contained'
+                variant="contained"
                 onClick={page.openCreate}
-                disabled={page.createInFlight || page.folderActionsBlocked || page.availableAccessTypes.length === 0}
+                disabled={
+                  page.createInFlight ||
+                  page.folderActionsBlocked ||
+                  page.availableAccessTypes.length === 0
+                }
               >
                 Додати палітру
               </Button>
@@ -192,7 +216,9 @@ function RerPalitraNeoPageBody() {
           }
         />
 
-        {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
+        {page.status ? (
+          <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
+        ) : null}
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <PalitraTable
@@ -233,18 +259,18 @@ function RerPalitraNeoPageBody() {
         disableRestoreFocus
         TransitionProps={{ onExited: page.onArchiveDialogExited }}
         fullWidth
-        maxWidth='sm'
+        maxWidth="sm"
       >
         <DialogTitle>Перенести палітру в архів</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 1.5, fontSize: '1rem', lineHeight: 1.6 }}>
             {'Перенести палітру «' + (page.archiveDialogPalitra?.name ?? '') + '» в архів?'}
           </DialogContentText>
-          <Typography variant='body1' color='text.primary' sx={{ mb: 1.5, lineHeight: 1.6 }}>
+          <Typography variant="body1" color="text.primary" sx={{ mb: 1.5, lineHeight: 1.6 }}>
             Архівні палітри залишаються в системі, але не беруть участі в активній роботі:
           </Typography>
           <Box
-            component='ul'
+            component="ul"
             sx={{
               m: 0,
               pl: 3,
@@ -255,13 +281,13 @@ function RerPalitraNeoPageBody() {
               },
             }}
           >
-            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+            <Typography component="li" variant="body1" sx={{ lineHeight: 1.6 }}>
               Лишаються в системі з позначкою «Архів»
             </Typography>
-            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+            <Typography component="li" variant="body1" sx={{ lineHeight: 1.6 }}>
               Не відображаються в результатах пошуку
             </Typography>
-            <Typography component='li' variant='body1' sx={{ lineHeight: 1.6 }}>
+            <Typography component="li" variant="body1" sx={{ lineHeight: 1.6 }}>
               Не відображаються на мапах
             </Typography>
           </Box>
@@ -272,10 +298,14 @@ function RerPalitraNeoPageBody() {
           </Button>
           <Button
             onClick={page.confirmArchive}
-            color='warning'
-            variant='contained'
+            color="warning"
+            variant="contained"
             disabled={page.inFlightArchiveId !== null}
-            startIcon={page.inFlightArchiveId !== null ? <CircularProgress color='inherit' size={16} /> : null}
+            startIcon={
+              page.inFlightArchiveId !== null ? (
+                <CircularProgress color="inherit" size={16} />
+              ) : null
+            }
           >
             Перенести в архів
           </Button>
@@ -288,7 +318,7 @@ function RerPalitraNeoPageBody() {
         disableRestoreFocus
         TransitionProps={{ onExited: page.onDownloadDialogExited }}
         fullWidth
-        maxWidth='sm'
+        maxWidth="sm"
       >
         <DialogTitle>Завантажити палітру</DialogTitle>
         <DialogContent>
@@ -303,7 +333,7 @@ function RerPalitraNeoPageBody() {
                 disabled={page.inFlightDownloadId !== null}
               />
             }
-            label='Розбити по 6500 точок (для Дельти)'
+            label="Розбити по 6500 точок (для Дельти)"
           />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
@@ -312,9 +342,13 @@ function RerPalitraNeoPageBody() {
           </Button>
           <Button
             onClick={page.confirmDownload}
-            variant='contained'
+            variant="contained"
             disabled={page.inFlightDownloadId !== null}
-            startIcon={page.inFlightDownloadId !== null ? <CircularProgress color='inherit' size={16} /> : null}
+            startIcon={
+              page.inFlightDownloadId !== null ? (
+                <CircularProgress color="inherit" size={16} />
+              ) : null
+            }
           >
             Завантажити
           </Button>
@@ -339,10 +373,12 @@ function RerPalitraNeoPageBody() {
           </Button>
           <Button
             onClick={page.confirmDelete}
-            color='error'
-            variant='contained'
+            color="error"
+            variant="contained"
             disabled={page.inFlightDeleteId !== null}
-            startIcon={page.inFlightDeleteId !== null ? <CircularProgress color='inherit' size={16} /> : null}
+            startIcon={
+              page.inFlightDeleteId !== null ? <CircularProgress color="inherit" size={16} /> : null
+            }
           >
             Видалити
           </Button>
@@ -366,16 +402,16 @@ function RerPalitraNeoPageBody() {
 
       <input
         ref={page.uploadPointsInputRef}
-        type='file'
-        accept='application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml'
+        type="file"
+        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml"
         style={{ display: 'none' }}
         onChange={page.handleUploadPointsSelected}
       />
 
       <input
         ref={page.uploadKmzInputRef}
-        type='file'
-        accept='application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml'
+        type="file"
+        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml"
         style={{ display: 'none' }}
         onChange={page.handleKmzSelected}
       />
@@ -431,7 +467,7 @@ function RerPalitraNeoPageBody() {
 export function RerPalitraNeoPage() {
   return (
     <TableStateProvider
-      tableId='rer-palitra-neo'
+      tableId="rer-palitra-neo"
       defaultColumnVisibility={DEFAULT_PALITRA_COLUMN_VISIBILITY}
       defaultColumnOrder={DEFAULT_PALITRA_COLUMN_ORDER}
       defaultEnableColumnOrdering={false}

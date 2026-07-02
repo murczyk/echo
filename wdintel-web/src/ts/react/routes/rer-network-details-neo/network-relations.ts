@@ -53,7 +53,9 @@ function normalizeEnabledFreq(value: string): string {
   return value.trim();
 }
 
-function withFrequencyColors(freqs: NetworkCallsignRelationFreq[]): NetworkCallsignRelationFreqView[] {
+function withFrequencyColors(
+  freqs: NetworkCallsignRelationFreq[],
+): NetworkCallsignRelationFreqView[] {
   const palette = buildDistinctColorPalette(freqs.length);
   return freqs.map((freq, index) => ({
     ...freq,
@@ -68,11 +70,14 @@ export function buildNetworkCallsignRelationsGraphView(
   minIntensity: number,
 ): NetworkCallsignRelationsGraphView {
   const normalizedSearch = normalizeRelationText(searchText);
-  const enabledFreqSet = new Set(enabledFreqs.map(normalizeEnabledFreq).filter((freq) => freq !== ''));
+  const enabledFreqSet = new Set(
+    enabledFreqs.map(normalizeEnabledFreq).filter((freq) => freq !== ''),
+  );
 
   const nodes = (graph?.nodes ?? []).map((node) => ({
     ...node,
-    matchedSearch: normalizedSearch !== '' && normalizeRelationText(node.label).includes(normalizedSearch),
+    matchedSearch:
+      normalizedSearch !== '' && normalizeRelationText(node.label).includes(normalizedSearch),
     visible: false,
   }));
 
@@ -87,7 +92,10 @@ export function buildNetworkCallsignRelationsGraphView(
         freq: item.freq,
         weight: item.weight,
       }));
-    const visibleWeight = edge.byFreq.length === 0 ? edge.weight : visibleByFreq.reduce((total, item) => total + item.weight, 0);
+    const visibleWeight =
+      edge.byFreq.length === 0
+        ? edge.weight
+        : visibleByFreq.reduce((total, item) => total + item.weight, 0);
     const visible = visibleWeight >= minIntensity;
 
     if (visible) {
@@ -164,9 +172,14 @@ export function normalizeNetworkCallsignRelationSearch(value: string): string {
   return normalizeRelationText(value);
 }
 
-export function limitGraphEdgesByWeight(edges: NetworkCallsignRelationsEdgeView[], maxEdges: number): NetworkCallsignRelationsEdgeView[] {
+export function limitGraphEdgesByWeight(
+  edges: NetworkCallsignRelationsEdgeView[],
+  maxEdges: number,
+): NetworkCallsignRelationsEdgeView[] {
   return [...edges]
-    .sort((left, right) => right.visibleWeight - left.visibleWeight || left.id.localeCompare(right.id))
+    .sort(
+      (left, right) => right.visibleWeight - left.visibleWeight || left.id.localeCompare(right.id),
+    )
     .slice(0, Math.max(0, maxEdges));
 }
 
@@ -204,8 +217,18 @@ const VIEWBOX_PADDING = 160;
 const GRAPH_MIN_VIEWBOX_SIZE = 320;
 const GRAPH_MAX_VIEWBOX_SIZE = 4200;
 
-export function isPointVisibleInRelationViewBox(x: number, y: number, viewBox: RelationGraphViewBox, padding = 0): boolean {
-  return x >= viewBox.x - padding && x <= viewBox.x + viewBox.width + padding && y >= viewBox.y - padding && y <= viewBox.y + viewBox.height + padding;
+export function isPointVisibleInRelationViewBox(
+  x: number,
+  y: number,
+  viewBox: RelationGraphViewBox,
+  padding = 0,
+): boolean {
+  return (
+    x >= viewBox.x - padding &&
+    x <= viewBox.x + viewBox.width + padding &&
+    y >= viewBox.y - padding &&
+    y <= viewBox.y + viewBox.height + padding
+  );
 }
 
 function clampRelationViewBox(viewBox: RelationGraphViewBox): RelationGraphViewBox {
@@ -217,12 +240,20 @@ function clampRelationViewBox(viewBox: RelationGraphViewBox): RelationGraphViewB
   };
 }
 
-export function createRelationGraphLayout(nodes: NetworkCallsignRelationNode[], edges: NetworkCallsignRelationsEdgeView[]): RelationGraphLayout {
+export function createRelationGraphLayout(
+  nodes: NetworkCallsignRelationNode[],
+  edges: NetworkCallsignRelationsEdgeView[],
+): RelationGraphLayout {
   if (nodes.length === 0) {
     return {
       nodes: [],
       positions: new Map(),
-      bounds: { x: -MIN_VIEWBOX_SIZE / 2, y: -MIN_VIEWBOX_SIZE / 2, width: MIN_VIEWBOX_SIZE, height: MIN_VIEWBOX_SIZE },
+      bounds: {
+        x: -MIN_VIEWBOX_SIZE / 2,
+        y: -MIN_VIEWBOX_SIZE / 2,
+        width: MIN_VIEWBOX_SIZE,
+        height: MIN_VIEWBOX_SIZE,
+      },
     };
   }
 
@@ -253,7 +284,12 @@ export function createRelationGraphLayout(nodes: NetworkCallsignRelationNode[], 
         .strength(0.25),
     )
     .force('center', forceCenter(0, 0))
-    .force('collision', forceCollide<RelationGraphLayoutNode>().radius((node) => node.radius + 18).strength(0.9));
+    .force(
+      'collision',
+      forceCollide<RelationGraphLayoutNode>()
+        .radius((node) => node.radius + 18)
+        .strength(0.9),
+    );
   simulation.stop();
   for (let index = 0; index < 240; index += 1) simulation.tick();
 
@@ -269,11 +305,21 @@ export function createRelationGraphLayout(nodes: NetworkCallsignRelationNode[], 
     maxY = Math.max(maxY, node.y + node.radius);
   }
 
-  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+  if (
+    !Number.isFinite(minX) ||
+    !Number.isFinite(minY) ||
+    !Number.isFinite(maxX) ||
+    !Number.isFinite(maxY)
+  ) {
     return {
       nodes: layoutNodes,
       positions: new Map(layoutNodes.map((node) => [node.id, { x: node.x, y: node.y }] as const)),
-      bounds: { x: -MIN_VIEWBOX_SIZE / 2, y: -MIN_VIEWBOX_SIZE / 2, width: MIN_VIEWBOX_SIZE, height: MIN_VIEWBOX_SIZE },
+      bounds: {
+        x: -MIN_VIEWBOX_SIZE / 2,
+        y: -MIN_VIEWBOX_SIZE / 2,
+        width: MIN_VIEWBOX_SIZE,
+        height: MIN_VIEWBOX_SIZE,
+      },
     };
   }
 
@@ -300,11 +346,17 @@ export function buildRenderableNetworkCallsignRelationsGraphView(
 ): NetworkCallsignRelationsGraphRenderView {
   const { maxRenderNodes, maxRenderEdges, softLimitMultiplier } = renderLimits;
 
-  if (visibleNodes.length > maxRenderNodes * softLimitMultiplier || graphView.edges.length > maxRenderEdges * softLimitMultiplier) {
+  if (
+    visibleNodes.length > maxRenderNodes * softLimitMultiplier ||
+    graphView.edges.length > maxRenderEdges * softLimitMultiplier
+  ) {
     return { ...graphView, nodes: [], edges: [], warning: true };
   }
 
-  const limitedEdges = graphView.edges.length > maxRenderEdges ? limitGraphEdgesByWeight(graphView.edges, maxRenderEdges) : graphView.edges;
+  const limitedEdges =
+    graphView.edges.length > maxRenderEdges
+      ? limitGraphEdgesByWeight(graphView.edges, maxRenderEdges)
+      : graphView.edges;
   if (limitedEdges.length === 0) {
     return { ...graphView, nodes: [], edges: [], warning: false };
   }
@@ -340,7 +392,10 @@ export function buildRenderableNetworkCallsignRelationsGraphView(
   };
 }
 
-export function zoomRelationGraphViewBox(viewBox: RelationGraphViewBox, factor: number): RelationGraphViewBox {
+export function zoomRelationGraphViewBox(
+  viewBox: RelationGraphViewBox,
+  factor: number,
+): RelationGraphViewBox {
   const nextWidth = Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.width * factor);
   const nextHeight = Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.height * factor);
   const centerX = viewBox.x + viewBox.width / 2;
@@ -369,13 +424,22 @@ export function moveRelationGraphViewBox(
   });
 }
 
-export function getRelationEdgeBounds(edge: NetworkCallsignRelationsEdgeView, positions: Map<string, { x: number; y: number }>): RelationGraphViewBox | null {
+export function getRelationEdgeBounds(
+  edge: NetworkCallsignRelationsEdgeView,
+  positions: Map<string, { x: number; y: number }>,
+): RelationGraphViewBox | null {
   const sourcePosition = positions.get(edge.source);
   const targetPosition = positions.get(edge.target);
   if (!sourcePosition || !targetPosition) return null;
 
   const ctrlX = (sourcePosition.x + targetPosition.x) / 2;
-  const ctrlY = (sourcePosition.y + targetPosition.y) / 2 - Math.min(Math.abs(sourcePosition.x - targetPosition.x), Math.abs(sourcePosition.y - targetPosition.y)) * 0.14;
+  const ctrlY =
+    (sourcePosition.y + targetPosition.y) / 2 -
+    Math.min(
+      Math.abs(sourcePosition.x - targetPosition.x),
+      Math.abs(sourcePosition.y - targetPosition.y),
+    ) *
+      0.14;
   const minX = Math.min(sourcePosition.x, targetPosition.x, ctrlX);
   const minY = Math.min(sourcePosition.y, targetPosition.y, ctrlY);
   const maxX = Math.max(sourcePosition.x, targetPosition.x, ctrlX);
@@ -389,7 +453,11 @@ export function getRelationEdgeBounds(edge: NetworkCallsignRelationsEdgeView, po
   };
 }
 
-export function intersectsRelationViewBox(bounds: RelationGraphViewBox | null, viewBox: RelationGraphViewBox, padding = 0): boolean {
+export function intersectsRelationViewBox(
+  bounds: RelationGraphViewBox | null,
+  viewBox: RelationGraphViewBox,
+  padding = 0,
+): boolean {
   if (!bounds) return false;
   return !(
     bounds.x + bounds.width < viewBox.x - padding ||
@@ -403,16 +471,26 @@ export function buildRelationNeighborIds(edge: NetworkCallsignRelationEdge): Set
   return new Set([edge.source, edge.target]);
 }
 
-export function getRelationFreqColor(freq: string, freqs: NetworkCallsignRelationFreqView[]): string {
+export function getRelationFreqColor(
+  freq: string,
+  freqs: NetworkCallsignRelationFreqView[],
+): string {
   return freqs.find((item) => item.freq === freq)?.color ?? '#8b8b8b';
 }
 
-export function getRelationEdgeStroke(edge: NetworkCallsignRelationsEdgeView, freqs: NetworkCallsignRelationFreqView[]): string {
+export function getRelationEdgeStroke(
+  edge: NetworkCallsignRelationsEdgeView,
+  freqs: NetworkCallsignRelationFreqView[],
+): string {
   const topFreq = edge.visibleByFreq[0]?.freq ?? edge.byFreq[0]?.freq ?? null;
   return topFreq ? getRelationFreqColor(topFreq, freqs) : 'rgba(255, 255, 255, 0.3)';
 }
 
-export function getRelationNodeFill(node: NetworkCallsignRelationNode, selected: boolean, highlighted: boolean): string {
+export function getRelationNodeFill(
+  node: NetworkCallsignRelationNode,
+  selected: boolean,
+  highlighted: boolean,
+): string {
   if (selected) return '#e0a25e';
   if (highlighted) return '#c7965c';
   return '#9a8568';

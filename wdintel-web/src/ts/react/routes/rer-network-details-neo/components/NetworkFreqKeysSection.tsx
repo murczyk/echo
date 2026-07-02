@@ -36,9 +36,11 @@ const compactAutocompleteSx = (theme: any, hasSelectedKeys: boolean) => ({
     fontSize: '0.875rem',
     lineHeight: 1.4,
     '&.Mui-disabled': {
-      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      backgroundColor:
+        theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
       '& .MuiOutlinedInput-notchedOutline': {
-        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+        borderColor:
+          theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
       },
     },
   },
@@ -104,12 +106,26 @@ function NetworkFreqKeysSectionComponent({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 0 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          flexWrap: 'wrap',
+        }}
+      >
         <Typography variant="subtitle1" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
           Ключі
         </Typography>
         {canManageKeys ? (
-          <Button ref={addNewKeyButtonRef} size="small" startIcon={<AddIcon />} onClick={onAddNewKey} disabled={saving || networkId === null}>
+          <Button
+            ref={addNewKeyButtonRef}
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={onAddNewKey}
+            disabled={saving || networkId === null}
+          >
             Додати новий ключ
           </Button>
         ) : null}
@@ -147,9 +163,13 @@ function NetworkFreqKeysSectionComponent({
           </>
         )
       ) : (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, minHeight: 56, alignItems: 'center' }}>
+        <Box
+          sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, minHeight: 56, alignItems: 'center' }}
+        >
           {selectedKeys.length > 0 ? (
-            selectedKeys.map((key) => <Chip key={key.id ?? formatKeyLabel(key)} size="small" label={formatKeyLabel(key)} />)
+            selectedKeys.map((key) => (
+              <Chip key={key.id ?? formatKeyLabel(key)} size="small" label={formatKeyLabel(key)} />
+            ))
           ) : (
             <Typography variant="body2" color="text.secondary">
               Ключі доступні лише адміністраторам

@@ -185,7 +185,9 @@ describe('rer analysis query state', () => {
   });
 
   it('does not treat legacy split datetime query params as supported neo query state', () => {
-    const params = new URLSearchParams('dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52');
+    const params = new URLSearchParams(
+      'dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52',
+    );
 
     expect(parseRerAnalysisQueryStateFromSearchParams(params)).toBeNull();
     expect(hasRerAnalysisQueryStateParams(params)).toBe(false);

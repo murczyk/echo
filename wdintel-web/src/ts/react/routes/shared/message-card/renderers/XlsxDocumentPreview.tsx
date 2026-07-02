@@ -19,9 +19,7 @@ export function XlsxDocumentPreview({
   zoom: number;
   sizeBytes?: number | null;
 }) {
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
-  );
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [workbook, setWorkbook] = useState<XlsxPreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedSheetIndex, setSelectedSheetIndex] = useState(0);
@@ -59,15 +57,11 @@ export function XlsxDocumentPreview({
         if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
-        const result = await runWorkerTask<
-          { buffer: ArrayBuffer },
-          XlsxPreviewResult
-        >(
+        const result = await runWorkerTask<{ buffer: ArrayBuffer }, XlsxPreviewResult>(
           () =>
-            new Worker(
-              new URL('../xlsx/xlsx-preview.worker.ts', import.meta.url),
-              { type: 'module' },
-            ),
+            new Worker(new URL('../xlsx/xlsx-preview.worker.ts', import.meta.url), {
+              type: 'module',
+            }),
           { buffer },
           abortController.signal,
           [buffer],

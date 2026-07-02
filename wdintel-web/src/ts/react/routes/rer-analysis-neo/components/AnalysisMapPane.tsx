@@ -12,7 +12,14 @@ type Props = {
   onUnitClick: (unitName: string | null) => void;
 };
 
-export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, onLoadMessages, onUnitClick }: Props) {
+export function AnalysisMapPane({
+  mapAttrs,
+  search,
+  visible,
+  onDateRangeChange,
+  onLoadMessages,
+  onUnitClick,
+}: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
   const [renderedVisible, setRenderedVisible] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -49,11 +56,17 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
       onDateRangeChange((event as CustomEvent<{ startDate: number; endDate: number }>).detail);
     };
     const handleLoadMessages = (event: Event) => {
-      const messageIds = (event as CustomEvent<{ messageIds: Array<number | null | undefined> }>).detail.messageIds ?? [];
+      const messageIds =
+        (event as CustomEvent<{ messageIds: Array<number | null | undefined> }>).detail
+          .messageIds ?? [];
       const requestId = messagesLoadRequestRef.current + 1;
       messagesLoadRequestRef.current = requestId;
       setMessagesLoading(true);
-      void Promise.resolve(onLoadMessages(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))))
+      void Promise.resolve(
+        onLoadMessages(
+          messageIds.filter((messageId): messageId is number => Number.isInteger(messageId)),
+        ),
+      )
         .then((loaded) => {
           if (messagesLoadRequestRef.current !== requestId) {
             return;
@@ -69,7 +82,9 @@ export function AnalysisMapPane({ mapAttrs, search, visible, onDateRangeChange, 
         });
     };
     const handleUnitClick = (event: Event) => {
-      onUnitClick((event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null);
+      onUnitClick(
+        (event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null,
+      );
     };
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);

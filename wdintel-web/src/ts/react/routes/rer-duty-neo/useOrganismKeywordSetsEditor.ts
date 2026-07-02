@@ -19,7 +19,10 @@ export function useOrganismKeywordSetsEditor(
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const selected = useMemo(() => keywordSets.find((s) => s.id === selectedId) ?? null, [keywordSets, selectedId]);
+  const selected = useMemo(
+    () => keywordSets.find((s) => s.id === selectedId) ?? null,
+    [keywordSets, selectedId],
+  );
 
   const isDirty = useMemo(() => {
     if (!selected?.canEdit) return false;
@@ -63,7 +66,10 @@ export function useOrganismKeywordSetsEditor(
   const selectSet = useCallback(
     (id: number) => {
       if (id === selectedId) return;
-      if (isDirty && !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')) {
+      if (
+        isDirty &&
+        !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')
+      ) {
         return;
       }
       setSelectedId(id);
@@ -161,7 +167,10 @@ export function useOrganismKeywordSetsEditor(
     [selected, isDirty, words, reloadKeywordSets],
   );
 
-  const handleDelete = useCallback(async (): Promise<{ deletedId: number; nextId: number | null } | null> => {
+  const handleDelete = useCallback(async (): Promise<{
+    deletedId: number;
+    nextId: number | null;
+  } | null> => {
     if (!selected || !selected.canDelete) return null;
     const deletedId = selected.id;
     const nextId = keywordSets.find((s) => s.id !== deletedId)?.id ?? null;
@@ -180,14 +189,20 @@ export function useOrganismKeywordSetsEditor(
     }
   }, [selected, keywordSets, reloadKeywordSets]);
 
-  const syncSelectedId = useCallback((id: number | null) => {
-    if (id == null) return;
-    if (id === selectedId) return;
-    if (isDirty && !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')) {
-      return;
-    }
-    setSelectedId(id);
-  }, [isDirty, selectedId]);
+  const syncSelectedId = useCallback(
+    (id: number | null) => {
+      if (id == null) return;
+      if (id === selectedId) return;
+      if (
+        isDirty &&
+        !window.confirm('Є не збережені зміни. Перейти до іншого набору без збереження?')
+      ) {
+        return;
+      }
+      setSelectedId(id);
+    },
+    [isDirty, selectedId],
+  );
 
   return {
     selectedId,

@@ -49,8 +49,14 @@ export function SearchableOptionAutocomplete<T extends SearchableOption>({
   disablePortal,
   slotProps,
 }: Props<T>) {
-  const selectedOption = useMemo(() => options.find((option) => option.id === valueId) ?? null, [options, valueId]);
-  const selectedLabel = useMemo(() => (selectedOption ? getOptionLabel(selectedOption) : ''), [getOptionLabel, selectedOption]);
+  const selectedOption = useMemo(
+    () => options.find((option) => option.id === valueId) ?? null,
+    [options, valueId],
+  );
+  const selectedLabel = useMemo(
+    () => (selectedOption ? getOptionLabel(selectedOption) : ''),
+    [getOptionLabel, selectedOption],
+  );
   const [internalInputValue, setInternalInputValue] = useState(() => selectedLabel);
   const controlledInput = inputValue !== undefined;
   const displayedInputValue = controlledInput ? inputValue : internalInputValue;

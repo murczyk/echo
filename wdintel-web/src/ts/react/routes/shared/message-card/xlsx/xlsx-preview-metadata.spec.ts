@@ -10,9 +10,21 @@ describe('extractWorkbookSheetNames', () => {
   it('extracts sheet names and decodes XML entities without DOMParser', () => {
     expect(typeof DOMParser).toBe('undefined');
 
-    const buffer = makeWorkbookBuffer(['A &amp; B', 'X &lt; Y', 'Quote &quot; Z', 'Apostrophe &apos; Q', 'Hex &#x41;']);
+    const buffer = makeWorkbookBuffer([
+      'A &amp; B',
+      'X &lt; Y',
+      'Quote &quot; Z',
+      'Apostrophe &apos; Q',
+      'Hex &#x41;',
+    ]);
 
-    expect(extractWorkbookSheetNames(buffer)).toEqual(['A & B', 'X < Y', 'Quote " Z', "Apostrophe ' Q", 'Hex A']);
+    expect(extractWorkbookSheetNames(buffer)).toEqual([
+      'A & B',
+      'X < Y',
+      'Quote " Z',
+      "Apostrophe ' Q",
+      'Hex A',
+    ]);
   });
 
   it('preserves trailing whitespace in sheet names', () => {
@@ -55,7 +67,10 @@ function makeWorkbookBuffer(sheetNames: string[]): ArrayBuffer {
 
 function buildWorkbookXml(sheetNames: string[]): string {
   const sheetEntries = sheetNames
-    .map((sheetName, index) => `<sheet name="${sheetName}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .map(
+      (sheetName, index) =>
+        `<sheet name="${sheetName}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`,
+    )
     .join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -65,8 +80,10 @@ function buildWorkbookXml(sheetNames: string[]): string {
 }
 
 function buildWorkbookRelsXml(sheetCount: number): string {
-  const relationships = Array.from({ length: sheetCount }, (_value, index) =>
-    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
+  const relationships = Array.from(
+    { length: sheetCount },
+    (_value, index) =>
+      `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
   ).join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -110,7 +110,9 @@ type BuildReloadParamsInput = {
   getLoadedFilterSections: () => AnalysisFilterSectionId[];
   getReloadFilterSections: () => AnalysisFilterSectionId[] | null;
   invalidateFilterSectionLoads: () => void;
-  invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
+  invalidateFilterSectionLoadsForPatch: (
+    patch?: Partial<import('./types').AnalysisQueryState>,
+  ) => void;
   loadInitialFilterSections: (
     analysisReq: NonNullable<ReturnType<typeof import('./helpers').buildAnalysisReq>>,
     plan: FilterSectionLoadPlan | { mode: 'initial'; selectedSections: AnalysisFilterSectionId[] },
@@ -125,7 +127,10 @@ type BuildReloadParamsInput = {
   loadSummaryData: () => Promise<void>;
   loadTopSidebarData: () => Promise<void>;
   clearAnalysisResults: () => void;
-  loadMessageComments: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
+  loadMessageComments: (
+    messages: Array<[number, InboxMessage]>,
+    forceReload?: boolean,
+  ) => Promise<void>;
   invalidateMessagePaging: () => void;
   setAorEntries: MessageList['setAorEntries'];
   setCounts: MessageList['setCounts'];

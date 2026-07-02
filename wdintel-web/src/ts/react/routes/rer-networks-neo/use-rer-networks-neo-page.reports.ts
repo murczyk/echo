@@ -11,7 +11,14 @@ import {
   launchNetworksEtalonkaReportTask,
 } from '../../services/api/networks';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
-import { downloadReportHistory, fetchReportHistoryStatus, fetchReportHistoryTaskStatus, isCancelledReportHistory, isCancelledReportHistoryError, parseUtcDateTime } from '../../services/api/report-history';
+import {
+  downloadReportHistory,
+  fetchReportHistoryStatus,
+  fetchReportHistoryTaskStatus,
+  isCancelledReportHistory,
+  isCancelledReportHistoryError,
+  parseUtcDateTime,
+} from '../../services/api/report-history';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import type { NetworksFilterState } from './helpers';
 import {
@@ -48,10 +55,7 @@ type ReportArgs = {
 };
 
 export function createRerNetworksNeoReportActions(args: ReportArgs) {
-  async function runEtalonkaReportTask(
-    launchReport: () => Promise<number>,
-    fileName: string,
-  ) {
+  async function runEtalonkaReportTask(launchReport: () => Promise<number>, fileName: string) {
     args.setEtalonkaReport((current) => ({
       ...current,
       error: null,
@@ -143,7 +147,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
           logs,
           error: rsp.finishedWithError,
           finishedAt: rsp.running ? null : new Date().toISOString(),
-          progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
+          progressExpanded: rsp.running
+            ? current.progressExpanded
+            : current.progressExpanded || rsp.finishedWithError != null,
           downloadFileName: fileName,
           startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
         }));
@@ -151,7 +157,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         if (!rsp.running) {
           if (rsp.finishedWithError) {
             const latestRow = await fetchReportHistoryStatus(taskId);
-            if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
+            if (
+              isCancelledReportHistory(latestRow) ||
+              isCancelledReportHistoryError(rsp.finishedWithError)
+            ) {
               args.setEtalonkaReport((current) => ({
                 ...current,
                 taskId,
@@ -186,7 +195,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         finishedAt: new Date().toISOString(),
         progressExpanded: current.progressExpanded,
         downloadFileName: fileName,
-        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt
+          ? (parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs)
+          : current.startedAtMs,
       }));
     } catch (error) {
       if (error instanceof ReportCancelledError) {
@@ -197,7 +208,9 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         running: false,
         error: formatErrorMessage(error),
         progressExpanded: true,
-        startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
+        startedAtMs: current.historyRow?.startedAt
+          ? (parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs)
+          : current.startedAtMs,
       }));
       throw error;
     }
@@ -223,7 +236,8 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
       buildNetworksReportReq({
         searchText: args.tableGlobalFilter,
         selectedSidebarUnitFilter: args.selectedSidebarUnitFilter,
-        selectedUnitLabel: args.filters.unitText.trim() === '' ? null : args.filters.unitText.trim(),
+        selectedUnitLabel:
+          args.filters.unitText.trim() === '' ? null : args.filters.unitText.trim(),
         showOnlyInvestigating: args.filters.showOnlyInvestigating,
         status: args.filters.status,
         columnFilters: args.columnFilters,
@@ -241,7 +255,8 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
   async function downloadEtalonkaReport() {
     if (args.etalonkaReport.running) return;
     const isFilteredReport = args.reportTargetRequest !== null;
-    const hasRowReport = args.reportTargetNetworkIds !== null && args.reportTargetNetworkIds.length > 0;
+    const hasRowReport =
+      args.reportTargetNetworkIds !== null && args.reportTargetNetworkIds.length > 0;
     if (!isFilteredReport && !hasRowReport) return;
 
     const fileName = isFilteredReport
@@ -258,7 +273,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
                 buildEtalonkaNetworksReportReq(args.reportTargetRequest!, args.etalonkaReport),
               )
             : launchNetworkEtalonkaBatchReportTask(
-                buildEtalonkaNetworksBatchReq(args.reportTargetNetworkIds ?? [], args.etalonkaReport),
+                buildEtalonkaNetworksBatchReq(
+                  args.reportTargetNetworkIds ?? [],
+                  args.etalonkaReport,
+                ),
               ),
         fileName,
       );
@@ -292,18 +310,19 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
     try {
       if (kind === 'etalonka') {
         await runEtalonkaReportTask(
-          () => launchNetworkEtalonkaBatchReportTask({
-            networkIds,
-            sortBy: null,
-            etalonkaType: {
-              AccordingToTheForm: {
-                activeFreqsOnly: true,
-                includeSigintSigns: true,
-                includeConfirmation: true,
-                includeHeadingsAndFreqs: false,
+          () =>
+            launchNetworkEtalonkaBatchReportTask({
+              networkIds,
+              sortBy: null,
+              etalonkaType: {
+                AccordingToTheForm: {
+                  activeFreqsOnly: true,
+                  includeSigintSigns: true,
+                  includeConfirmation: true,
+                  includeHeadingsAndFreqs: false,
+                },
               },
-            },
-          }),
+            }),
           buildEtalonkaNetworksReportFilename(createDefaultNetworkEtalonkaReportState()),
         );
       } else {
@@ -323,7 +342,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         const blob = await downloadReportHistory(reportHistoryId);
         downloadBlob(blob, 'goi_report.xlsx');
       }
-      args.setStatus({ kind: 'success', text: kind === 'etalonka' ? 'Еталонний опис завантажено.' : 'Звіт ГОІ завантажено.' });
+      args.setStatus({
+        kind: 'success',
+        text: kind === 'etalonka' ? 'Еталонний опис завантажено.' : 'Звіт ГОІ завантажено.',
+      });
     } catch (error) {
       if (isUnauthorizedError(error)) {
         if (kind === 'etalonka') {
@@ -336,7 +358,10 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
         args.setStatus({ kind: 'info', text: 'Звіт скасовано в Моїх звітах.' });
         return;
       }
-      args.setStatus({ kind: 'error', text: `Помилка завантаження звіту: ${formatErrorMessage(error)}` });
+      args.setStatus({
+        kind: 'error',
+        text: `Помилка завантаження звіту: ${formatErrorMessage(error)}`,
+      });
     } finally {
       args.setDownloadInFlight(null);
       args.setReportsMenuAnchorEl(null);

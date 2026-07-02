@@ -84,9 +84,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeOptionalString(
-  value: string | null | undefined,
-): string | null {
+function normalizeOptionalString(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -97,26 +95,19 @@ function normalizeGoiUserIntegration(
 ): GoiUserIntegration {
   return {
     id: normalizeNumber(raw?.id),
-    ownerOrganismId: normalizeNumber(
-      raw?.ownerOrganismId ?? raw?.owner_organism_id,
-    ),
-    ownerOrganismName: normalizeOptionalString(
-      raw?.ownerOrganismName ?? raw?.owner_organism_name,
-    ) ?? '',
+    ownerOrganismId: normalizeNumber(raw?.ownerOrganismId ?? raw?.owner_organism_id),
+    ownerOrganismName:
+      normalizeOptionalString(raw?.ownerOrganismName ?? raw?.owner_organism_name) ?? '',
     integrationType:
-      normalizeOptionalString(raw?.integrationType ?? raw?.integration_type) ??
-      'full',
-    serverLabel:
-      normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
+      normalizeOptionalString(raw?.integrationType ?? raw?.integration_type) ?? 'full',
+    serverLabel: normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
     goiUrl: normalizeOptionalString(raw?.goiUrl ?? raw?.goi_url),
     swappUrl: normalizeOptionalString(raw?.swappUrl ?? raw?.swapp_url),
-    hasDataAccess:
-      raw?.hasDataAccess ?? raw?.has_data_access ?? false,
+    hasDataAccess: raw?.hasDataAccess ?? raw?.has_data_access ?? false,
     canRestart: raw?.canRestart ?? raw?.can_restart ?? false,
-    restartUnavailableReason:
-      normalizeOptionalString(
-        raw?.restartUnavailableReason ?? raw?.restart_unavailable_reason,
-      ),
+    restartUnavailableReason: normalizeOptionalString(
+      raw?.restartUnavailableReason ?? raw?.restart_unavailable_reason,
+    ),
   };
 }
 
@@ -126,9 +117,7 @@ function normalizeGoiReportTabOrderItem(
   return {
     aorId: normalizeNumber(raw?.aorId ?? raw?.aor_id),
     aorName: normalizeOptionalString(raw?.aorName ?? raw?.aor_name) ?? '',
-    orderForReport: normalizeNumber(
-      raw?.orderForReport ?? raw?.order_for_report,
-    ),
+    orderForReport: normalizeNumber(raw?.orderForReport ?? raw?.order_for_report),
   };
 }
 
@@ -196,9 +185,7 @@ export async function unlinkCurrentUserGoiWhatsapp(
   } satisfies UnlinkCurrentUserGoiWhatsappReqBody);
 }
 
-export async function downloadCurrentUserGoiPalettes(
-  integrationId: number,
-): Promise<Blob> {
+export async function downloadCurrentUserGoiPalettes(integrationId: number): Promise<Blob> {
   return postBytes('/api/goi/download-palettes', {
     integration_id: integrationId,
   } satisfies DownloadGoiIntegrationPalettesReqBody);
@@ -210,10 +197,7 @@ export async function uploadCurrentUserGoiCategories(
 ): Promise<void> {
   const formData = new FormData();
   formData.append('file', file);
-  await postMultipartVoid(
-    `/api/goi/upload-categories/${integrationId}`,
-    formData,
-  );
+  await postMultipartVoid(`/api/goi/upload-categories/${integrationId}`, formData);
 }
 
 function formatMultipartErrorMessage(status: number, text: string): string {
@@ -221,10 +205,7 @@ function formatMultipartErrorMessage(status: number, text: string): string {
   return `HTTP ${status}`;
 }
 
-async function postMultipartVoid(
-  url: string,
-  formData: FormData,
-): Promise<void> {
+async function postMultipartVoid(url: string, formData: FormData): Promise<void> {
   const response = await fetch(url, {
     method: 'POST',
     body: formData,

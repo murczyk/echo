@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
-async function setupAnalysisNeoPage(page: Parameters<typeof installAnalysisNeoApiMocks>[0], options?: Parameters<typeof installAnalysisNeoApiMocks>[1]) {
+async function setupAnalysisNeoPage(
+  page: Parameters<typeof installAnalysisNeoApiMocks>[0],
+  options?: Parameters<typeof installAnalysisNeoApiMocks>[1],
+) {
   await installAnalysisNeoApiMocks(page, options);
 }
 
@@ -15,15 +18,21 @@ test.describe('@smoke', () => {
     await expect(page.getByRole('heading', { name: 'Аналіз' })).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Панель фільтрів' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Повідомлення (0)' })).toBeVisible();
-    await expect(page.getByRole('complementary', { name: 'Аналітична права секція' })).toBeVisible();
+    await expect(
+      page.getByRole('complementary', { name: 'Аналітична права секція' }),
+    ).toBeVisible();
   });
 
   test('analysis neo page renders the initial counters', async ({ page }) => {
     await setupAnalysisNeoPage(page);
     await page.goto('/rer-analysis-neo');
 
-    await expect(page.getByRole('status', { name: 'Поточна статистика вибірки' })).toContainText('Всього: 2');
-    await expect(page.getByRole('status', { name: 'Поточна статистика вибірки' })).toContainText('Обрано: 1');
+    await expect(page.getByRole('status', { name: 'Поточна статистика вибірки' })).toContainText(
+      'Всього: 2',
+    );
+    await expect(page.getByRole('status', { name: 'Поточна статистика вибірки' })).toContainText(
+      'Обрано: 1',
+    );
   });
 
   test('analysis neo summary tab loads lazily', async ({ page }) => {

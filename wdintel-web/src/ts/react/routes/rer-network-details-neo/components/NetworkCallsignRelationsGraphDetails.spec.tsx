@@ -54,7 +54,9 @@ function createMessage(): NetworkCallsignRelationMessage {
   };
 }
 
-function renderDetails(overrides: Partial<Parameters<typeof NetworkCallsignRelationsGraphDetails>[0]> = {}) {
+function renderDetails(
+  overrides: Partial<Parameters<typeof NetworkCallsignRelationsGraphDetails>[0]> = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -130,7 +132,9 @@ describe('NetworkCallsignRelationsGraphDetails', () => {
     });
     rendered.push(view);
 
-    const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('До списку ALPHA'));
+    const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('До списку ALPHA'),
+    );
     expect(button).toBeTruthy();
 
     act(() => {

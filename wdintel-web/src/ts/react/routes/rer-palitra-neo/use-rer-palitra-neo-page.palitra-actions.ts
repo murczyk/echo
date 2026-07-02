@@ -1,7 +1,17 @@
 import type { ChangeEvent, Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type { AnalyzeKmzResponse, MyScope, Palitra, User } from '../../../../Bindings';
-import { analyzePalitraKmz, archivePalitra, createPalitraBasicWithKmz, createPalitraWithKmz, deletePalitra, downloadPalitras, unarchivePalitra, updatePalitra, uploadPalitraPoints } from '../../services/api/palitra';
+import {
+  analyzePalitraKmz,
+  archivePalitra,
+  createPalitraBasicWithKmz,
+  createPalitraWithKmz,
+  deletePalitra,
+  downloadPalitras,
+  unarchivePalitra,
+  updatePalitra,
+  uploadPalitraPoints,
+} from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
 import {
   applyRestrictedAccess,
@@ -16,7 +26,13 @@ import {
   palitraToForm,
   toCreateReq,
 } from './helpers';
-import type { KmzColorOption, PalitraCreateMode, PalitraFormState, PalitraRowView, UiStatus } from './types';
+import type {
+  KmzColorOption,
+  PalitraCreateMode,
+  PalitraFormState,
+  PalitraRowView,
+  UiStatus,
+} from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 type Props = {
@@ -119,11 +135,15 @@ export function createPalitraPageActionHandlers(props: Props) {
   function openEdit(palitra: Palitra) {
     if (props.folderActionsBlocked) return;
     props.setEditPalitraId(palitra.id);
-    props.setEditForm(applyRestrictedAccess(palitraToForm(palitra), props.user, props.myScope, props.allLogins));
+    props.setEditForm(
+      applyRestrictedAccess(palitraToForm(palitra), props.user, props.myScope, props.allLogins),
+    );
   }
 
   function replacePalitra(nextPalitra: Palitra) {
-    props.setPalitras((prev) => prev.map((palitra) => (palitra.id === nextPalitra.id ? nextPalitra : palitra)));
+    props.setPalitras((prev) =>
+      prev.map((palitra) => (palitra.id === nextPalitra.id ? nextPalitra : palitra)),
+    );
   }
 
   function closeEdit() {
@@ -133,19 +153,38 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function requestArchive(palitra: Palitra) {
-    if (props.archiveDialogOpen || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight || props.folderActionsBlocked) return;
+    if (
+      props.archiveDialogOpen ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight ||
+      props.folderActionsBlocked
+    )
+      return;
     props.setArchiveDialogPalitra(palitra);
     props.setArchiveDialogOpen(true);
   }
 
   function cancelArchive() {
-    if (props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight) return;
+    if (
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight
+    )
+      return;
     props.setArchiveDialogOpen(false);
   }
 
   async function confirmArchive() {
     const palitra = props.archiveDialogPalitra;
-    if (!palitra || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight || props.folderActionsBlocked) return;
+    if (
+      !palitra ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight ||
+      props.folderActionsBlocked
+    )
+      return;
 
     props.setInFlightArchiveId(palitra.id);
     props.setStatus(null);
@@ -155,7 +194,10 @@ export function createPalitraPageActionHandlers(props: Props) {
       replacePalitra(updatedPalitra);
       props.setArchiveDialogOpen(false);
     } catch (archiveError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося перенести палітру в архів: ' + formatErrorMessage(archiveError),
+      });
     } finally {
       props.setInFlightArchiveId(null);
     }
@@ -167,7 +209,13 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   async function handleUnarchive(palitra: Palitra) {
-    if (props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight || props.folderActionsBlocked) return;
+    if (
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight ||
+      props.folderActionsBlocked
+    )
+      return;
 
     props.setInFlightArchiveId(palitra.id);
     props.setStatus(null);
@@ -176,26 +224,48 @@ export function createPalitraPageActionHandlers(props: Props) {
       const updatedPalitra = await unarchivePalitra(palitra.id);
       replacePalitra(updatedPalitra);
     } catch (archiveError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося повернути палітру з архіву: ' + formatErrorMessage(archiveError),
+      });
     } finally {
       props.setInFlightArchiveId(null);
     }
   }
 
   function requestDelete(palitra: Palitra) {
-    if (props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight || props.bulkDeleteDialogOpen || props.folderActionsBlocked) return;
+    if (
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight ||
+      props.bulkDeleteDialogOpen ||
+      props.folderActionsBlocked
+    )
+      return;
     props.setDeleteDialogPalitra(palitra);
     props.setDeleteDialogOpen(true);
   }
 
   function cancelDelete() {
-    if (props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight) return;
+    if (
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight
+    )
+      return;
     props.setDeleteDialogOpen(false);
   }
 
   async function confirmDelete() {
     const palitra = props.deleteDialogPalitra;
-    if (!palitra || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.bulkDeleteInFlight || props.folderActionsBlocked) return;
+    if (
+      !palitra ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.bulkDeleteInFlight ||
+      props.folderActionsBlocked
+    )
+      return;
 
     props.setInFlightDeleteId(palitra.id);
     props.setStatus(null);
@@ -206,7 +276,10 @@ export function createPalitraPageActionHandlers(props: Props) {
       props.setSelectedPalitraIds((prev) => prev.filter((id) => id !== palitra.id));
       props.setDeleteDialogOpen(false);
     } catch (deleteError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося видалити палітру: ' + formatErrorMessage(deleteError),
+      });
     } finally {
       props.setInFlightDeleteId(null);
     }
@@ -218,7 +291,16 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function requestBulkDelete() {
-    if (props.archiveDialogOpen || props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.deleteDialogOpen || props.folderActionsBlocked) return;
+    if (
+      props.archiveDialogOpen ||
+      props.bulkDeleteInFlight ||
+      props.bulkDownloadInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.deleteDialogOpen ||
+      props.folderActionsBlocked
+    )
+      return;
 
     const selected = getSelectedModifiablePalitras(props.palitraRows, props.selectedPalitraIds);
     if (selected.length === 0) return;
@@ -228,12 +310,25 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function cancelBulkDelete() {
-    if (props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
+    if (
+      props.bulkDeleteInFlight ||
+      props.bulkDownloadInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null
+    )
+      return;
     props.setBulkDeleteDialogOpen(false);
   }
 
   async function confirmBulkDelete() {
-    if (props.bulkDeleteInFlight || props.bulkDownloadInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.folderActionsBlocked) return;
+    if (
+      props.bulkDeleteInFlight ||
+      props.bulkDownloadInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.folderActionsBlocked
+    )
+      return;
 
     const palitrasToDelete = [...props.bulkDeleteDialogPalitras];
     if (palitrasToDelete.length === 0) return;
@@ -281,7 +376,13 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   function handleDownload(palitra: Palitra) {
-    if (props.inFlightDownloadId !== null || props.bulkDownloadInFlight || props.downloadDialogOpen || props.folderActionsBlocked) return;
+    if (
+      props.inFlightDownloadId !== null ||
+      props.bulkDownloadInFlight ||
+      props.downloadDialogOpen ||
+      props.folderActionsBlocked
+    )
+      return;
     props.setStatus(null);
     props.setDownloadDialogPalitra(palitra);
     props.setDownloadSplitForDelta(false);
@@ -289,7 +390,15 @@ export function createPalitraPageActionHandlers(props: Props) {
   }
 
   async function handleBulkDownload() {
-    if (props.bulkDownloadInFlight || props.inFlightDownloadId !== null || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null || props.folderActionsBlocked) return;
+    if (
+      props.bulkDownloadInFlight ||
+      props.inFlightDownloadId !== null ||
+      props.bulkDeleteInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null ||
+      props.folderActionsBlocked
+    )
+      return;
 
     const selected = getSelectedDownloadablePalitras(props.palitraRows, props.selectedPalitraIds);
     if (selected.length === 0) return;
@@ -301,7 +410,10 @@ export function createPalitraPageActionHandlers(props: Props) {
       const blob = await downloadPalitras(selected.map((palitra) => palitra.id));
       downloadBlob(blob, 'palitras-selected.zip');
     } catch (downloadError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося завантажити обрані палітри: ' + formatErrorMessage(downloadError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося завантажити обрані палітри: ' + formatErrorMessage(downloadError),
+      });
     } finally {
       props.setBulkDownloadInFlight(false);
     }
@@ -320,12 +432,20 @@ export function createPalitraPageActionHandlers(props: Props) {
     props.setStatus(null);
 
     try {
-      const blob = await downloadPalitras([palitra.id], { splitForDelta: props.downloadSplitForDelta });
-      downloadBlob(blob, 'palitra-' + String(palitra.id) + (props.downloadSplitForDelta ? '-delta' : '') + '.zip');
+      const blob = await downloadPalitras([palitra.id], {
+        splitForDelta: props.downloadSplitForDelta,
+      });
+      downloadBlob(
+        blob,
+        'palitra-' + String(palitra.id) + (props.downloadSplitForDelta ? '-delta' : '') + '.zip',
+      );
       props.setDownloadDialogOpen(false);
     } catch (downloadError) {
       props.setDownloadDialogOpen(false);
-      props.setStatus({ kind: 'error', text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося завантажити палітру: ' + formatErrorMessage(downloadError),
+      });
     } finally {
       props.setInFlightDownloadId(null);
     }
@@ -349,7 +469,10 @@ export function createPalitraPageActionHandlers(props: Props) {
       await uploadPalitraPoints(palitraId, file);
       await props.reloadPalitras();
     } catch (uploadError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося завантажити точки: ' + formatErrorMessage(uploadError),
+      });
     } finally {
       props.setInFlightUploadId(null);
       props.pendingUploadPalitraIdRef.current = null;
@@ -387,7 +510,10 @@ export function createPalitraPageActionHandlers(props: Props) {
         name: analysis.filename || prev.name,
       }));
     } catch (analysisError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError),
+      });
     } finally {
       props.setKmzAnalyzing(false);
     }
@@ -396,7 +522,12 @@ export function createPalitraPageActionHandlers(props: Props) {
   async function handleCreate(mode: PalitraCreateMode) {
     if (!props.kmzFile || props.createInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(props.createForm, props.user, props.myScope, props.allLogins);
+    const normalizedForm = applyRestrictedAccess(
+      props.createForm,
+      props.user,
+      props.myScope,
+      props.allLogins,
+    );
     if (!isFormValid(normalizedForm)) return;
 
     props.setCreateInFlight(true);
@@ -421,11 +552,20 @@ export function createPalitraPageActionHandlers(props: Props) {
           }),
         );
 
-        const created = results.filter((result): result is PromiseFulfilledResult<Palitra> => result.status === 'fulfilled').map((result) => result.value);
-        const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+        const created = results
+          .filter(
+            (result): result is PromiseFulfilledResult<Palitra> => result.status === 'fulfilled',
+          )
+          .map((result) => result.value);
+        const rejected = results.filter(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
         const firstError = rejected[0];
         if (firstError) {
-          props.setStatus({ kind: 'error', text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason) });
+          props.setStatus({
+            kind: 'error',
+            text: 'Помилка створення палітри: ' + formatErrorMessage(firstError.reason),
+          });
         }
 
         if (created.length > 0) {
@@ -446,7 +586,10 @@ export function createPalitraPageActionHandlers(props: Props) {
       props.setPalitras((prev) => [createdPalitra, ...prev]);
       resetCreateFlow();
     } catch (createError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося створити палітру: ' + formatErrorMessage(createError),
+      });
     } finally {
       props.setCreateInFlight(false);
     }
@@ -455,7 +598,12 @@ export function createPalitraPageActionHandlers(props: Props) {
   async function handleEditSave() {
     if (!props.editForm || props.editPalitraId === null || props.editInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(props.editForm, props.user, props.myScope, props.allLogins);
+    const normalizedForm = applyRestrictedAccess(
+      props.editForm,
+      props.user,
+      props.myScope,
+      props.allLogins,
+    );
     if (!isFormValid(normalizedForm)) return;
 
     props.setEditInFlight(true);
@@ -463,10 +611,15 @@ export function createPalitraPageActionHandlers(props: Props) {
 
     try {
       const details = await updatePalitra(props.editPalitraId, toCreateReq(normalizedForm));
-      props.setPalitras((prev) => prev.map((palitra) => (palitra.id === props.editPalitraId ? details.palitra : palitra)));
+      props.setPalitras((prev) =>
+        prev.map((palitra) => (palitra.id === props.editPalitraId ? details.palitra : palitra)),
+      );
       closeEdit();
     } catch (updateError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося оновити палітру: ' + formatErrorMessage(updateError),
+      });
     } finally {
       props.setEditInFlight(false);
     }

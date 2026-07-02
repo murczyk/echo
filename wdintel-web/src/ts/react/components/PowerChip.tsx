@@ -3,7 +3,6 @@ import { SxProps, Theme, getContrastRatio } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { isNullOrUndefined, isPresent } from '../utils/misc';
 
-
 type PowerChipProps = {
   href?: string;
   label: ReactNode;
@@ -90,18 +89,23 @@ export function PowerChip({
   const defaultUnselectedBorderColor = hasSemanticColor ? `${color}.main` : 'divider';
 
   const activeBackgroundColor = selected
-    ? selectedBackgroundColor ?? backgroundColor ?? defaultSelectedBackgroundColor
-    : unselectedBackgroundColor ?? backgroundColor ?? defaultUnselectedBackgroundColor;
+    ? (selectedBackgroundColor ?? backgroundColor ?? defaultSelectedBackgroundColor)
+    : (unselectedBackgroundColor ?? backgroundColor ?? defaultUnselectedBackgroundColor);
   const activeTextColor = autoTextContrast
     ? getReadableTextColor(activeBackgroundColor)
     : selected
-      ? selectedTextColor ?? defaultSelectedTextColor
-      : unselectedTextColor ?? defaultUnselectedTextColor;
+      ? (selectedTextColor ?? defaultSelectedTextColor)
+      : (unselectedTextColor ?? defaultUnselectedTextColor);
   const activeBorderColor = selected
-    ? selectedBorderColor ?? defaultSelectedBorderColor
-    : unselectedBorderColor ?? defaultUnselectedBorderColor;
-  const inactiveOpacity = unselectedOpacity ?? (hasExplicitPalette ? (isInteractive ? 0.75 : 1) : 1);
-  const variant: ChipProps['variant'] = hasExplicitPalette ? 'filled' : selected ? 'filled' : 'outlined';
+    ? (selectedBorderColor ?? defaultSelectedBorderColor)
+    : (unselectedBorderColor ?? defaultUnselectedBorderColor);
+  const inactiveOpacity =
+    unselectedOpacity ?? (hasExplicitPalette ? (isInteractive ? 0.75 : 1) : 1);
+  const variant: ChipProps['variant'] = hasExplicitPalette
+    ? 'filled'
+    : selected
+      ? 'filled'
+      : 'outlined';
 
   return (
     <Chip

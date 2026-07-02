@@ -12,19 +12,33 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: forwardRef<HTMLButtonElement, { children?: ReactNode; disabled?: boolean; onClick?: () => void }>(({ children, disabled, onClick }, ref) => (
+  Button: forwardRef<
+    HTMLButtonElement,
+    { children?: ReactNode; disabled?: boolean; onClick?: () => void }
+  >(({ children, disabled, onClick }, ref) => (
     <button ref={ref} type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   )),
-  ButtonBase: forwardRef<HTMLButtonElement, { children?: ReactNode; disabled?: boolean; onClick?: () => void }>(({ children, disabled, onClick }, ref) => (
+  ButtonBase: forwardRef<
+    HTMLButtonElement,
+    { children?: ReactNode; disabled?: boolean; onClick?: () => void }
+  >(({ children, disabled, onClick }, ref) => (
     <button ref={ref} type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   )),
   CircularProgress: () => <span data-testid="spinner" />,
-  Autocomplete: ({ children, renderInput }: { children?: ReactNode; renderInput?: (params: any) => ReactNode }) => (
-    <div data-testid="autocomplete">{typeof renderInput === 'function' ? renderInput({}) : children}</div>
+  Autocomplete: ({
+    children,
+    renderInput,
+  }: {
+    children?: ReactNode;
+    renderInput?: (params: any) => ReactNode;
+  }) => (
+    <div data-testid="autocomplete">
+      {typeof renderInput === 'function' ? renderInput({}) : children}
+    </div>
   ),
   Skeleton: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Dialog: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -43,16 +57,61 @@ vi.mock('@mui/material', () => ({
     inputProps,
     sx: _sx,
     ...props
-  }: { children?: ReactNode; value?: string; labelId?: string; id?: string; inputProps?: { name?: string }; sx?: unknown; [key: string]: any }) => (
-    <div data-value={value} data-label-id={labelId} data-id={id} data-name={inputProps?.name} {...props}>
+  }: {
+    children?: ReactNode;
+    value?: string;
+    labelId?: string;
+    id?: string;
+    inputProps?: { name?: string };
+    sx?: unknown;
+    [key: string]: any;
+  }) => (
+    <div
+      data-value={value}
+      data-label-id={labelId}
+      data-id={id}
+      data-name={inputProps?.name}
+      {...props}
+    >
       {children}
     </div>
   ),
   ButtonGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean } }) => (
+  TextField: ({
+    label,
+    value,
+    onChange,
+    onBlur,
+    placeholder,
+    readOnly,
+    required,
+    disabled,
+    inputProps,
+  }: {
+    label?: ReactNode;
+    value?: string;
+    onChange?: (event: any) => void;
+    onBlur?: () => void;
+    placeholder?: string;
+    readOnly?: boolean;
+    required?: boolean;
+    disabled?: boolean;
+    inputProps?: { readOnly?: boolean };
+  }) => (
     <label>
-      <span>{label}{required ? ' *' : ''}</span>
-      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined} disabled={disabled ?? false} />
+      <span>
+        {label}
+        {required ? ' *' : ''}
+      </span>
+      <input
+        aria-label={typeof label === 'string' ? label : undefined}
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={onChange}
+        onBlur={onBlur}
+        readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined}
+        disabled={disabled ?? false}
+      />
     </label>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -178,13 +237,19 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderDrawer(buildForm({ freq: '148.2500' }));
     rendered.push(view);
 
-    const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
+    const techToggle = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('ТЕХНІЧНІ ДАНІ'),
+    ) as HTMLButtonElement | undefined;
     act(() => {
       techToggle?.click();
     });
 
-    const freqField = view.container.querySelector('input[aria-label="Частота *"]') as HTMLInputElement | null;
-    const rxField = view.container.querySelector('input[aria-label="Rx"]') as HTMLInputElement | null;
+    const freqField = view.container.querySelector(
+      'input[aria-label="Частота *"]',
+    ) as HTMLInputElement | null;
+    const rxField = view.container.querySelector(
+      'input[aria-label="Rx"]',
+    ) as HTMLInputElement | null;
     expect(freqField?.value).toBe('148.2500');
     expect(rxField?.value).toBe('148.2500');
   });
@@ -217,7 +282,9 @@ describe('NetworkFreqEditDrawer', () => {
 
     rendered.push({ container, root });
 
-    const freqField = container.querySelector('input[aria-label="Частота *"]') as HTMLInputElement | null;
+    const freqField = container.querySelector(
+      'input[aria-label="Частота *"]',
+    ) as HTMLInputElement | null;
     expect(freqField?.disabled).toBe(true);
     expect(freqField?.readOnly).toBe(true);
     expect(freqField?.value).toBe('148.2500');
@@ -227,14 +294,20 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderManagedDrawer(buildForm());
     rendered.push(view);
 
-    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Додати новий ключ')) as HTMLButtonElement | undefined;
+    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Додати новий ключ'),
+    ) as HTMLButtonElement | undefined;
     act(() => {
       addKeyButton?.click();
     });
 
     expect(view.container.textContent).toContain('Ключ *');
-    expect(view.container.textContent).toContain('Ключ буде додано до системи одразу після створення');
-    expect(view.container.querySelector('input[placeholder="A-Z, 0-9 (4-64 символи)"]')).not.toBeNull();
+    expect(view.container.textContent).toContain(
+      'Ключ буде додано до системи одразу після створення',
+    );
+    expect(
+      view.container.querySelector('input[placeholder="A-Z, 0-9 (4-64 символи)"]'),
+    ).not.toBeNull();
   });
 
   it('shows the base section heading and key section before technical data', () => {
@@ -263,7 +336,9 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderDrawer(buildForm({ activeFrom: '' }));
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
   });
 
@@ -271,7 +346,9 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderDrawer(buildForm({ activeTo: 'not-a-date' }));
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
   });
 
@@ -279,7 +356,9 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderDrawer(buildForm());
     rendered.push(view);
 
-    const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
+    const techToggle = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('ТЕХНІЧНІ ДАНІ'),
+    ) as HTMLButtonElement | undefined;
     act(() => {
       techToggle?.click();
     });
@@ -304,13 +383,17 @@ describe('NetworkFreqEditDrawer', () => {
     const view = renderManagedDrawer(buildForm());
     rendered.push(view);
 
-    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Додати новий ключ')) as HTMLButtonElement | undefined;
+    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Додати новий ключ'),
+    ) as HTMLButtonElement | undefined;
     await act(async () => {
       addKeyButton?.click();
       await Promise.resolve();
     });
 
-    const keyInput = view.container.querySelector('input[aria-label="Ключ"]') as HTMLInputElement | null;
+    const keyInput = view.container.querySelector(
+      'input[aria-label="Ключ"]',
+    ) as HTMLInputElement | null;
     expect(keyInput?.placeholder).toBe('A-Z, 0-9 (4-64 символи)');
 
     await act(async () => {
@@ -319,7 +402,9 @@ describe('NetworkFreqEditDrawer', () => {
       await Promise.resolve();
     });
 
-    const createButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Створити')) as HTMLButtonElement | undefined;
+    const createButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Створити'),
+    ) as HTMLButtonElement | undefined;
     expect(createButton?.disabled).toBe(true);
   });
 });

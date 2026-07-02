@@ -87,13 +87,29 @@ export function sanitizeDocxHtml(html: string): string {
   const sanitized = DOMPurify.sanitize(html, {
     ALLOWED_ATTR: DOCX_ALLOWED_ATTR,
     ALLOWED_TAGS: DOCX_ALLOWED_TAGS,
-    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'textarea', 'select', 'button'],
+    FORBID_TAGS: [
+      'script',
+      'iframe',
+      'object',
+      'embed',
+      'link',
+      'meta',
+      'form',
+      'input',
+      'textarea',
+      'select',
+      'button',
+    ],
   });
 
   const parser = new DOMParser();
   const document = parser.parseFromString(sanitized, 'text/html');
 
-  for (const element of Array.from(document.querySelectorAll('script, iframe, object, embed, link, meta, form, input, textarea, select, button'))) {
+  for (const element of Array.from(
+    document.querySelectorAll(
+      'script, iframe, object, embed, link, meta, form, input, textarea, select, button',
+    ),
+  )) {
     element.remove();
   }
 

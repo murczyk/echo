@@ -48,7 +48,10 @@ export function useGlobalSetting(): GlobalSettingsHook {
   const [saveInProgress, setSaveInProgress] = useState(false);
 
   const zoneOptions = useMemo(() => zones.map(([id, zone]) => ({ id, label: zone.name })), [zones]);
-  const selectedZone = useMemo(() => zoneOptions.find((option) => option.id === zoneId) ?? null, [zoneOptions, zoneId]);
+  const selectedZone = useMemo(
+    () => zoneOptions.find((option) => option.id === zoneId) ?? null,
+    [zoneOptions, zoneId],
+  );
   const isDirty = zoneId !== initialZoneId;
 
   useEffect(() => {

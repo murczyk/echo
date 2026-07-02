@@ -107,9 +107,16 @@ type SingleNetworkCallsignsListRspLike = {
 };
 
 const inFlightNetworkCallsignsListRequests = new Map<string, Promise<ListNetworkCallsignsRes>>();
-const inFlightSingleNetworkCallsignsListRequests = new Map<string, Promise<SingleNetworkCallsignsListRsp>>();
+const inFlightSingleNetworkCallsignsListRequests = new Map<
+  string,
+  Promise<SingleNetworkCallsignsListRsp>
+>();
 
-function dedupeInFlightRequest<T>(requests: Map<string, Promise<T>>, key: string, factory: () => Promise<T>): Promise<T> {
+function dedupeInFlightRequest<T>(
+  requests: Map<string, Promise<T>>,
+  key: string,
+  factory: () => Promise<T>,
+): Promise<T> {
   const existing = requests.get(key);
   if (existing) return existing;
 
@@ -176,7 +183,9 @@ export type CallsignsBootstrapData = {
   callsigns: ListCallsignsRsp;
 };
 
-export async function listNetworkCallsigns(req: ListNetworkCallsignsReq): Promise<ListNetworkCallsignsRes> {
+export async function listNetworkCallsigns(
+  req: ListNetworkCallsignsReq,
+): Promise<ListNetworkCallsignsRes> {
   const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
   const cacheKey = JSON.stringify(payload);
   return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, async () => {
@@ -185,7 +194,9 @@ export async function listNetworkCallsigns(req: ListNetworkCallsignsReq): Promis
   });
 }
 
-export async function getNetworkCallsigns(req: SingleNetworkCallsignsReq): Promise<SingleNetworkCallsignsListRsp> {
+export async function getNetworkCallsigns(
+  req: SingleNetworkCallsignsReq,
+): Promise<SingleNetworkCallsignsListRsp> {
   const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
   const cacheKey = JSON.stringify(payload);
   return dedupeInFlightRequest(inFlightSingleNetworkCallsignsListRequests, cacheKey, async () => {
@@ -194,18 +205,33 @@ export async function getNetworkCallsigns(req: SingleNetworkCallsignsReq): Promi
   });
 }
 
-export async function getNetworkCallsignsActivity(req: NetworkCallsignsActivityReq): Promise<NetworkCallsignsActivityRsp> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsigns/activity', transformCamelToSnake(req));
+export async function getNetworkCallsignsActivity(
+  req: NetworkCallsignsActivityReq,
+): Promise<NetworkCallsignsActivityRsp> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/network-callsigns/activity',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<NetworkCallsignsActivityRsp>(raw);
 }
 
-export async function createNetworkCallsign(req: CreateNetworkCallsignReq): Promise<NetworkCallsign> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsign/create', transformCamelToSnake(req));
+export async function createNetworkCallsign(
+  req: CreateNetworkCallsignReq,
+): Promise<NetworkCallsign> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/network-callsign/create',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<NetworkCallsign>(raw);
 }
 
-export async function updateNetworkCallsign(req: UpdateNetworkCallsignReq): Promise<NetworkCallsign> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsign/update', transformCamelToSnake(req));
+export async function updateNetworkCallsign(
+  req: UpdateNetworkCallsignReq,
+): Promise<NetworkCallsign> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/network-callsign/update',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<NetworkCallsign>(raw);
 }
 
@@ -219,8 +245,13 @@ export async function deleteCallsign(callsignId: number): Promise<Callsign> {
   return transformSnakeToCamel<Callsign>(raw);
 }
 
-export async function addKnownCallsignsToNetwork(req: AddAsKnownNetworkCallsignReq): Promise<NetworkCallsign[]> {
-  const raw = await postJson<unknown>('/api/sigint/network-callsign/add-as-known', transformCamelToSnake(req));
+export async function addKnownCallsignsToNetwork(
+  req: AddAsKnownNetworkCallsignReq,
+): Promise<NetworkCallsign[]> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/network-callsign/add-as-known',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<NetworkCallsign[]>(raw);
 }
 
@@ -240,7 +271,11 @@ function toNullableNumber(value: number | string | null | undefined): number | n
 }
 
 function normalizeCallsign(raw: CallsignLike | null | undefined): Callsign {
-  const callsignAdditionalSources = (raw?.callsignAdditionalSources ?? raw?.callsign_additional_sources ?? [])
+  const callsignAdditionalSources = (
+    raw?.callsignAdditionalSources ??
+    raw?.callsign_additional_sources ??
+    []
+  )
     .map((value) => toNumber(value, Number.NaN))
     .filter(Number.isFinite);
 
@@ -268,7 +303,9 @@ function normalizeSource(raw: SourceLike | null | undefined): Source {
   };
 }
 
-function normalizeUnitStatRow(raw: CallsignUnitStatRowLike | null | undefined): CallsignUnitStatRow {
+function normalizeUnitStatRow(
+  raw: CallsignUnitStatRowLike | null | undefined,
+): CallsignUnitStatRow {
   return {
     unitId: toNumber(raw?.unitId ?? raw?.unit_id),
     count: toNumber(raw?.count),
@@ -288,7 +325,9 @@ function normalizeListSourcesRsp(raw: ListSourcesRspLike | null | undefined): Li
   };
 }
 
-function normalizeCallsignUnitStatsRsp(raw: CallsignUnitStatsRspLike | null | undefined): CallsignUnitStatsRsp {
+function normalizeCallsignUnitStatsRsp(
+  raw: CallsignUnitStatsRspLike | null | undefined,
+): CallsignUnitStatsRsp {
   return {
     units: (raw?.units ?? []).map(normalizeUnitStatRow),
   };
@@ -373,18 +412,31 @@ function toUpdateCallsignReqBody(req: Callsign): UpdateCallsignReqBody {
   };
 }
 
-export async function listCallsigns(req: ListCallsignsReq, signal?: AbortSignal): Promise<ListCallsignsRsp> {
-  const raw = await postJson<ListCallsignsRspLike>('/api/sigint/callsigns', toListCallsignsReqBody(req), { signal });
+export async function listCallsigns(
+  req: ListCallsignsReq,
+  signal?: AbortSignal,
+): Promise<ListCallsignsRsp> {
+  const raw = await postJson<ListCallsignsRspLike>(
+    '/api/sigint/callsigns',
+    toListCallsignsReqBody(req),
+    { signal },
+  );
   return normalizeListCallsignsRsp(raw);
 }
 
 export async function createCallsign(req: CreateCallsignReq): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/create', toCreateCallsignReqBody(req));
+  const raw = await postJson<CallsignLike>(
+    '/api/sigint/callsign/create',
+    toCreateCallsignReqBody(req),
+  );
   return normalizeCallsign(raw);
 }
 
 export async function updateCallsign(req: Callsign): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', toUpdateCallsignReqBody(req));
+  const raw = await postJson<CallsignLike>(
+    '/api/sigint/callsign/update',
+    toUpdateCallsignReqBody(req),
+  );
   return normalizeCallsign(raw);
 }
 
@@ -406,7 +458,9 @@ export async function downloadCallsignsXlsx(req: ListCallsignsReq): Promise<Blob
   return postBytes('/api/sigint/callsigns/xlsx', toListCallsignsReqBody(req));
 }
 
-export async function fetchCallsignsBootstrapData(initialReq: ListCallsignsReq): Promise<CallsignsBootstrapData> {
+export async function fetchCallsignsBootstrapData(
+  initialReq: ListCallsignsReq,
+): Promise<CallsignsBootstrapData> {
   const [user, units, sources, unitStats, callsigns] = await Promise.all([
     fetchCurrentUser(),
     getUnitsList(),

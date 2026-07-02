@@ -39,7 +39,9 @@ export function AnalysisCenterPanel({
     <Paper
       variant="outlined"
       component="section"
-      aria-labelledby={centerTab === 'messages' ? messagesTabId : centerTab === 'summary' ? summaryTabId : mapTabId}
+      aria-labelledby={
+        centerTab === 'messages' ? messagesTabId : centerTab === 'summary' ? summaryTabId : mapTabId
+      }
       sx={{
         minHeight: 0,
         minWidth: 0,
@@ -117,7 +119,13 @@ export function AnalysisCenterPanel({
         </Tabs>
         {centerTab === 'messages' ? (
           <FormControlLabel
-            control={<Switch size="small" checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
+            control={
+              <Switch
+                size="small"
+                checked={page.newestFirst}
+                onChange={(_event, value) => page.setNewestFirst(value)}
+              />
+            }
             label="спочатку нові"
             sx={{
               height: 40,
@@ -125,7 +133,11 @@ export function AnalysisCenterPanel({
               mr: 0,
               flexShrink: 0,
               whiteSpace: 'nowrap',
-              '& .MuiFormControlLabel-label': { fontSize: { xs: 12.5, sm: 13 }, fontWeight: 500, lineHeight: 1.2 },
+              '& .MuiFormControlLabel-label': {
+                fontSize: { xs: 12.5, sm: 13 },
+                fontWeight: 500,
+                lineHeight: 1.2,
+              },
             }}
           />
         ) : null}

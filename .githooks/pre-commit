@@ -5,21 +5,69 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 staged_justfile="$(git diff --cached --name-only -- justfile || true)"
-[ -z "$staged_justfile" ] && exit 0
+if [ -n "$staged_justfile" ]; then
+  unstaged_justfile="$(git diff --name-only -- justfile || true)"
+  if [ -n "$unstaged_justfile" ]; then
+    echo "❌ justfile has unstaged changes." >&2
+    echo "Stage or stash them, then commit again so hook can auto-format safely." >&2
+    exit 1
+  fi
 
-unstaged_justfile="$(git diff --name-only -- justfile || true)"
-if [ -n "$unstaged_justfile" ]; then
-  echo "❌ justfile has unstaged changes." >&2
-  echo "Stage or stash them, then commit again so hook can auto-format safely." >&2
-  exit 1
+  if ! command -v just >/dev/null 2>&1; then
+    echo "❌ 'just' is required for pre-commit formatting of justfile." >&2
+    exit 1
+  fi
+
+  just --unstable --fmt >/dev/null
+  git add justfile
 fi
 
-if ! command -v just >/dev/null 2>&1; then
-  echo "❌ 'just' is required for pre-commit formatting of justfile." >&2
-  exit 1
-fi
+staged_frontend_files="$(
+  git diff --cached --name-only --diff-filter=ACMR \
+    'wdintel-web/package.json' \
+    'wdintel-web/.prettierrc.json' \
+    'wdintel-web/*config*.js' \
+    'wdintel-web/*config*.ts' \
+    'wdintel-web/*config*.mjs' \
+    'wdintel-web/*config*.cjs' \
+    'wdintel-web/tsconfig*.json' \
+    'wdintel-web/scripts/**/*.js' \
+    'wdintel-web/scripts/**/*.jsx' \
+    'wdintel-web/scripts/**/*.ts' \
+    'wdintel-web/scripts/**/*.tsx' \
+    'wdintel-web/scripts/**/*.html' \
+    'wdintel-web/scripts/**/*.css' \
+    'wdintel-web/scripts/**/*.json' \
+    'wdintel-web/scripts/**/*.mjs' \
+    'wdintel-web/scripts/**/*.cjs' \
+    'wdintel-web/tests/**/*.js' \
+    'wdintel-web/tests/**/*.jsx' \
+    'wdintel-web/tests/**/*.ts' \
+    'wdintel-web/tests/**/*.tsx' \
+    'wdintel-web/tests/**/*.html' \
+    'wdintel-web/tests/**/*.css' \
+    'wdintel-web/tests/**/*.json' \
+    'wdintel-web/tests/**/*.mjs' \
+    'wdintel-web/tests/**/*.cjs' \
+    'wdintel-web/src/**/*.js' \
+    'wdintel-web/src/**/*.jsx' \
+    'wdintel-web/src/**/*.ts' \
+    'wdintel-web/src/**/*.tsx' \
+    'wdintel-web/src/**/*.html' \
+    'wdintel-web/src/**/*.css' \
+    'wdintel-web/src/**/*.json' \
+    'wdintel-web/src/**/*.mjs' \
+    'wdintel-web/src/**/*.cjs' || true
+)"
 
-just --unstable --fmt >/dev/null
-git add justfile
+if [ -n "$staged_frontend_files" ]; then
+  if [ ! -x wdintel-web/node_modules/.bin/pretty-quick ]; then
+    echo "Frontend formatter dependencies are missing. Run: cd wdintel-web && npm install" >&2
+    exit 1
+  fi
+
+  cd wdintel-web
+  npm run format:staged
+fi
 
 exit 0

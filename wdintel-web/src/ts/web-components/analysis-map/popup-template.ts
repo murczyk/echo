@@ -36,12 +36,16 @@ function renderMarkedText(nodes: ContentNode[]): string {
 
       if ('CNHighlightC' in node) {
         const text = node.CNHighlightC.text.trim();
-        return text === '' ? '' : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
+        return text === ''
+          ? ''
+          : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
       }
 
       if ('CNCallsignC' in node) {
         const text = node.CNCallsignC.text.trim();
-        return text === '' ? '' : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
+        return text === ''
+          ? ''
+          : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
       }
 
       if ('CNSignalC' in node) {
@@ -84,7 +88,9 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
   const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
   const escapedDisplay = escapeHtml(unitDisplay);
   const escapedAttr = escapeHtml(unitValue);
-  const isUnitSelected = selectedUnits.some((selectedUnit) => normalizeUnknownUnitFilterValue(selectedUnit) === unitValue);
+  const isUnitSelected = selectedUnits.some(
+    (selectedUnit) => normalizeUnknownUnitFilterValue(selectedUnit) === unitValue,
+  );
   const unitBlock = `
             <div>
               <span style="font-weight: 700; line-height: 22px;">Підрозділ:</span> 
@@ -101,7 +107,7 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${escapeHtml(message_[1].freq)}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${escapeHtml(String(message_[1].coords))}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
-            ${(message_[1].date && message_[1].time) ? `${escapeHtml(message_[1].date)} ${escapeHtml(message_[1].time)}<br>` : ''}
+            ${message_[1].date && message_[1].time ? `${escapeHtml(message_[1].date)} ${escapeHtml(message_[1].time)}<br>` : ''}
             ${renderMessageText(message_[1])}
             ${unitBlock}
             <div class="divider"></div>

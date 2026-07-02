@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { HttpRequestError } from '../../services/api/client';
-import { NETWORK_STATUS_ACTIVE, NETWORK_STATUS_INACTIVE } from '../rer-network-details-neo/network-status';
+import {
+  NETWORK_STATUS_ACTIVE,
+  NETWORK_STATUS_INACTIVE,
+} from '../rer-network-details-neo/network-status';
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 
 const apiMock = vi.hoisted(() => ({
@@ -122,7 +125,8 @@ vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
   isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined }) =>
     row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем'),
-  isCancelledReportHistoryError: (value: string | null | undefined) => value?.includes('Скасовано користувачем') ?? false,
+  isCancelledReportHistoryError: (value: string | null | undefined) =>
+    value?.includes('Скасовано користувачем') ?? false,
   parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
@@ -806,7 +810,10 @@ describe('useRerNetworksNeoPage', () => {
   });
 
   it('replays a filter change after bootstrap completes', async () => {
-    const firstLoad = deferred<{ list: Network[]; statusCounts: { active: number; inactive: number; archived: number } }>();
+    const firstLoad = deferred<{
+      list: Network[];
+      statusCounts: { active: number; inactive: number; archived: number };
+    }>();
     apiMock.listNetworks.mockImplementationOnce(() => firstLoad.promise);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
 
@@ -918,14 +925,13 @@ describe('useRerNetworksNeoPage', () => {
         progress: 45,
         errorLog: null,
       });
-    bgtaskMock.fetchBgtaskStatusAndLogs
-      .mockResolvedValueOnce({
-        running: false,
-        loglines: ['backend step'],
-        finishedWithError: null,
-        finishedWithErrorCode: null,
-        progress: 100,
-      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValueOnce({
+      running: false,
+      loglines: ['backend step'],
+      finishedWithError: null,
+      finishedWithErrorCode: null,
+      progress: 100,
+    });
 
     await act(async () => {
       latest?.setEtalonkaReport((current) => ({
@@ -988,7 +994,10 @@ describe('useRerNetworksNeoPage', () => {
     expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(2, 456);
     expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 77, 0);
     expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
-    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx');
+    expect(downloadBlobMock).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx',
+    );
   });
 
   it('shows the cancelled message when the dialog etalonka report is cancelled', async () => {
@@ -1035,7 +1044,7 @@ describe('useRerNetworksNeoPage', () => {
         details: '',
         progress: 0,
         errorLog: null,
-    });
+      });
     bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
     apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
 
@@ -1129,26 +1138,29 @@ describe('useRerNetworksNeoPage', () => {
     await renderHook();
     await flushEffects();
 
-    expect(apiMock.listNetworks).toHaveBeenCalledWith({
-      filterFreq: null,
-      filterUnit: null,
-      filterUnitArmy: null,
-      filterUnitDivision: null,
-      filterUnitRegiment: null,
-      filterUnitBattalion: null,
-      filterText: null,
-      filterName: null,
-      filterLocation: null,
-      showOnlyFurtherInverstigation: null,
-      showInactive: true,
-      showOnlyDeleted: false,
-      statusFilter: null,
-      aorIds: null,
-      ids: null,
-      limit: 100,
-      offset: 0,
-      sortBy: ['NameAsc'],
-    }, expect.any(Object));
+    expect(apiMock.listNetworks).toHaveBeenCalledWith(
+      {
+        filterFreq: null,
+        filterUnit: null,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
+        filterText: null,
+        filterName: null,
+        filterLocation: null,
+        showOnlyFurtherInverstigation: null,
+        showInactive: true,
+        showOnlyDeleted: false,
+        statusFilter: null,
+        aorIds: null,
+        ids: null,
+        limit: 100,
+        offset: 0,
+        sortBy: ['NameAsc'],
+      },
+      expect.any(Object),
+    );
     expect(latest?.statusCounts).toEqual({ active: 7, inactive: 1, archived: 1 });
   });
 

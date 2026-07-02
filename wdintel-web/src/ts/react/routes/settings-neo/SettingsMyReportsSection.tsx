@@ -16,19 +16,34 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type MRT_ColumnDef, type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
+import {
+  type MRT_ColumnDef,
+  type MRT_ColumnFiltersState,
+  type MRT_SortingState,
+} from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
 import { formatErrorMessage } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
-import { cancelReportHistory, downloadReportHistory, isCancelledReportHistory, listReportHistory, retryReportHistory, type ReportHistoryBatchRsp } from '../../services/api/report-history';
+import {
+  cancelReportHistory,
+  downloadReportHistory,
+  isCancelledReportHistory,
+  listReportHistory,
+  retryReportHistory,
+  type ReportHistoryBatchRsp,
+} from '../../services/api/report-history';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { SettingsNeoTable } from './SettingsNeoTable';
 import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import {
+  MrtRowActionButton,
+  MrtRowActions,
+  mrtRowActionsColumnSize,
+} from '../../components/MrtRowActionButton';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
@@ -345,7 +360,10 @@ function ReportHistoryRowActions({
   onCancel: (row: ReportHistoryRow) => void;
 }) {
   const isCancelled = isCancelledReportHistory(row);
-  const hasActions = (row.status === 'done' && row.hasFile) || (row.status === 'failed' && !isCancelled) || canCancelReport(row);
+  const hasActions =
+    (row.status === 'done' && row.hasFile) ||
+    (row.status === 'failed' && !isCancelled) ||
+    canCancelReport(row);
   if (!hasActions) {
     return null;
   }
@@ -353,13 +371,28 @@ function ReportHistoryRowActions({
   return (
     <MrtRowActions forceMenu>
       {row.status === 'done' && row.hasFile ? (
-        <MrtRowActionButton label="Завантажити" icon={<DownloadIcon fontSize="small" />} onClick={() => onDownload(row)} />
+        <MrtRowActionButton
+          label="Завантажити"
+          icon={<DownloadIcon fontSize="small" />}
+          onClick={() => onDownload(row)}
+        />
       ) : null}
       {row.status === 'failed' && !isCancelled ? (
-        <MrtRowActionButton label="Повторити" icon={<ReplayIcon fontSize="small" />} tone="warning" onClick={() => onRetry(row)} />
+        <MrtRowActionButton
+          label="Повторити"
+          icon={<ReplayIcon fontSize="small" />}
+          tone="warning"
+          onClick={() => onRetry(row)}
+        />
       ) : null}
       {canCancelReport(row) ? (
-        <MrtRowActionButton label="Скасувати" icon={<CancelOutlinedIcon fontSize="small" />} tone="danger" opensModal onClick={() => onCancel(row)} />
+        <MrtRowActionButton
+          label="Скасувати"
+          icon={<CancelOutlinedIcon fontSize="small" />}
+          tone="danger"
+          opensModal
+          onClick={() => onCancel(row)}
+        />
       ) : null}
     </MrtRowActions>
   );
@@ -407,42 +440,45 @@ export function ReportHistoryTableSection({
   const [nextOffset, setNextOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadRows = useCallback(async (signal?: AbortSignal, append = false, offset = 0) => {
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoadState((current) => (current === 'success' ? current : 'loading'));
-    }
-    setError(null);
-    try {
-      if (loadReportHistoryBatch) {
-        const rsp = await loadReportHistoryBatch(
-          { ...queryState, offset, limit: REPORT_HISTORY_BATCH_SIZE },
-          signal ? { signal } : undefined,
-        );
-        setRows((current) => (append ? [...current, ...rsp.rows] : rsp.rows));
-        setTotalRows(rsp.total);
-        setHasMoreRows(rsp.hasMore);
-        setNextOffset(rsp.nextOffset);
+  const loadRows = useCallback(
+    async (signal?: AbortSignal, append = false, offset = 0) => {
+      if (append) {
+        setLoadingMore(true);
       } else {
-        const nextRows = await loadReportHistory(signal ? { signal } : undefined);
-        setRows(nextRows);
-        setTotalRows(nextRows.length);
-        setHasMoreRows(false);
-        setNextOffset(nextRows.length);
+        setLoadState((current) => (current === 'success' ? current : 'loading'));
       }
-      setLoadState('success');
-    } catch (loadError) {
-      if (signal?.aborted) return;
-      if (!append) {
-        setRows([]);
-        setLoadState('error');
+      setError(null);
+      try {
+        if (loadReportHistoryBatch) {
+          const rsp = await loadReportHistoryBatch(
+            { ...queryState, offset, limit: REPORT_HISTORY_BATCH_SIZE },
+            signal ? { signal } : undefined,
+          );
+          setRows((current) => (append ? [...current, ...rsp.rows] : rsp.rows));
+          setTotalRows(rsp.total);
+          setHasMoreRows(rsp.hasMore);
+          setNextOffset(rsp.nextOffset);
+        } else {
+          const nextRows = await loadReportHistory(signal ? { signal } : undefined);
+          setRows(nextRows);
+          setTotalRows(nextRows.length);
+          setHasMoreRows(false);
+          setNextOffset(nextRows.length);
+        }
+        setLoadState('success');
+      } catch (loadError) {
+        if (signal?.aborted) return;
+        if (!append) {
+          setRows([]);
+          setLoadState('error');
+        }
+        setError(formatErrorMessage(loadError));
+      } finally {
+        setLoadingMore(false);
       }
-      setError(formatErrorMessage(loadError));
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loadReportHistory, loadReportHistoryBatch, queryState]);
+    },
+    [loadReportHistory, loadReportHistoryBatch, queryState],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -498,7 +534,9 @@ export function ReportHistoryTableSection({
   const contentStackSpacing = fullHeight && compactFullHeight ? 1.5 : 2;
 
   const handleQueryStateChange = useCallback((nextQueryState: ReportHistoryQueryState) => {
-    setQueryState((current) => (JSON.stringify(current) === JSON.stringify(nextQueryState) ? current : nextQueryState));
+    setQueryState((current) =>
+      JSON.stringify(current) === JSON.stringify(nextQueryState) ? current : nextQueryState,
+    );
   }, []);
 
   const handleLoadMore = useCallback(() => {
@@ -553,181 +591,183 @@ export function ReportHistoryTableSection({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(
-    () => {
-      const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
-        {
-          id: 'actions',
-          header: 'Дії',
-          size: mrtRowActionsColumnSize(1),
-          minSize: mrtRowActionsColumnSize(1),
-          maxSize: mrtRowActionsColumnSize(1),
-          enableSorting: false,
-          enableColumnActions: false,
-          enableColumnFilter: false,
-          enableColumnOrdering: false,
-          enableResizing: false,
-          enableHiding: false,
-          muiTableHeadCellProps: {
-            sx: {
-              ...CUSTOM_CELL_STYLES,
+  const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(() => {
+    const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
+      {
+        id: 'actions',
+        header: 'Дії',
+        size: mrtRowActionsColumnSize(1),
+        minSize: mrtRowActionsColumnSize(1),
+        maxSize: mrtRowActionsColumnSize(1),
+        enableSorting: false,
+        enableColumnActions: false,
+        enableColumnFilter: false,
+        enableColumnOrdering: false,
+        enableResizing: false,
+        enableHiding: false,
+        muiTableHeadCellProps: {
+          sx: {
+            ...CUSTOM_CELL_STYLES,
+            justifyContent: 'center',
+            display: 'flex',
+            flexDirection: 'row',
+            padding: '10px!important',
+            minHeight: '56px',
+            backgroundColor: 'var(--bs-body-bg)',
+            '& .Mui-TableHeadCell-Content': {
+              width: '100%',
+              minHeight: '28px',
               justifyContent: 'center',
-              display: 'flex',
-              flexDirection: 'row',
-              padding: '10px!important',
-              minHeight: '56px',
-              backgroundColor: 'var(--bs-body-bg)',
-              '& .Mui-TableHeadCell-Content': {
-                width: '100%',
-                minHeight: '28px',
-                justifyContent: 'center',
-              },
-              '& .Mui-TableHeadCell-Content-Labels': {
-                flex: 1,
-                justifyContent: 'center',
-              },
-              '& .Mui-TableHeadCell-Content-Wrapper': {
-                width: '100%',
-                textAlign: 'center',
-              },
-              '& .Mui-TableHeadCell-ResizeHandle-Wrapper': {
-                display: 'none',
-              },
             },
-          },
-          muiTableBodyCellProps: {
-            sx: {
-              ...CUSTOM_CELL_STYLES,
+            '& .Mui-TableHeadCell-Content-Labels': {
+              flex: 1,
               justifyContent: 'center',
-              display: 'flex',
-              padding: '10px!important',
+            },
+            '& .Mui-TableHeadCell-Content-Wrapper': {
+              width: '100%',
+              textAlign: 'center',
+            },
+            '& .Mui-TableHeadCell-ResizeHandle-Wrapper': {
+              display: 'none',
             },
           },
-          Cell: ({ row }) => (
-            <ReportHistoryRowActions
-              row={row.original}
-              onDownload={(report) => void handleDownload(report)}
-              onRetry={(report) => void handleRetry(report)}
-              onCancel={(report) => void handleCancel(report)}
-            />
-          ),
         },
-        {
-          id: 'reportKind',
-          accessorFn: (row) => formatReportKind(row.reportKind),
-          header: 'Вид',
-          Cell: ({ row }) => formatReportKind(row.original.reportKind),
-        },
-        {
-          accessorKey: 'reportPeriod',
-          header: 'Період',
-          enableSorting: false,
-          enableColumnFilter: false,
-          Cell: ({ row }) => row.original.reportPeriod ?? '',
-        },
-        {
-          accessorKey: 'details',
-          header: 'Деталі',
-          enableSorting: false,
-          enableColumnFilter: false,
-          Cell: ({ row }) =>
-            row.original.details ? (
-              <Tooltip title={row.original.details}>
-                <Typography component="span" variant="body2">
-                  {row.original.details}
-                </Typography>
-              </Tooltip>
-            ) : null,
-        },
-      ];
-
-      if (includeAuthor) {
-        nextColumns.push(
-          {
-            accessorKey: 'requestedBy',
-            header: 'Автор',
-            Cell: ({ row }) => row.original.requestedBy,
+        muiTableBodyCellProps: {
+          sx: {
+            ...CUSTOM_CELL_STYLES,
+            justifyContent: 'center',
+            display: 'flex',
+            padding: '10px!important',
           },
-          {
-            id: 'errorLog',
-            accessorFn: (row) => (row.errorLog && row.errorLog.length > 0 ? 'Переглянути' : ''),
-            header: 'Помилки',
-            enableSorting: false,
-            enableColumnFilter: false,
-            Cell: ({ row }) => {
-              if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
-              return (
-                <Button size="small" variant="outlined" onClick={() => setErrorLogRow(row.original)}>
-                  Переглянути
-                </Button>
-              );
-            },
-          },
-        );
-      }
+        },
+        Cell: ({ row }) => (
+          <ReportHistoryRowActions
+            row={row.original}
+            onDownload={(report) => void handleDownload(report)}
+            onRetry={(report) => void handleRetry(report)}
+            onCancel={(report) => void handleCancel(report)}
+          />
+        ),
+      },
+      {
+        id: 'reportKind',
+        accessorFn: (row) => formatReportKind(row.reportKind),
+        header: 'Вид',
+        Cell: ({ row }) => formatReportKind(row.original.reportKind),
+      },
+      {
+        accessorKey: 'reportPeriod',
+        header: 'Період',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) => row.original.reportPeriod ?? '',
+      },
+      {
+        accessorKey: 'details',
+        header: 'Деталі',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) =>
+          row.original.details ? (
+            <Tooltip title={row.original.details}>
+              <Typography component="span" variant="body2">
+                {row.original.details}
+              </Typography>
+            </Tooltip>
+          ) : null,
+      },
+    ];
 
+    if (includeAuthor) {
       nextColumns.push(
         {
-          accessorKey: 'createdAt',
-          header: 'Створено',
-          Cell: ({ row }) => formatReportDate(row.original.createdAt),
+          accessorKey: 'requestedBy',
+          header: 'Автор',
+          Cell: ({ row }) => row.original.requestedBy,
         },
         {
-          id: 'status',
-          accessorFn: (row) => formatReportStatus(row),
-          header: 'Статус',
+          id: 'errorLog',
+          accessorFn: (row) => (row.errorLog && row.errorLog.length > 0 ? 'Переглянути' : ''),
+          header: 'Помилки',
+          enableSorting: false,
+          enableColumnFilter: false,
           Cell: ({ row }) => {
-            const chip = (
-              <Chip
-                size="small"
-                color={statusColor(row.original.status)}
-                label={formatReportStatus(row.original)}
-                variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
-              />
+            if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
+            return (
+              <Button size="small" variant="outlined" onClick={() => setErrorLogRow(row.original)}>
+                Переглянути
+              </Button>
             );
-            if (!includeAuthor || row.original.status !== 'failed' || isCancelledReportHistory(row.original) || !row.original.lastError) {
-              return chip;
-            }
-            return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
           },
         },
-        {
-          accessorKey: 'plannedForTs',
-          header: 'План',
-          enableSorting: false,
-          enableColumnFilter: false,
-          Cell: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
-        },
-        {
-          accessorKey: 'startedAt',
-          header: 'Почато',
-          enableSorting: false,
-          enableColumnFilter: false,
-          Cell: ({ row }) => formatReportDateOrDash(row.original.startedAt),
-        },
-        {
-          accessorKey: 'queuePosition',
-          header: 'Черга',
-          enableSorting: false,
-          enableColumnFilter: false,
-          Cell: ({ row }) => formatReportId(row.original.queuePosition),
-        },
-        {
-          accessorKey: 'bgtaskId',
-          header: 'ID задачі',
-          Cell: ({ row }) => formatReportId(row.original.bgtaskId),
-        },
-        {
-          accessorKey: 'completedAt',
-          header: 'Завершено',
-          Cell: ({ row }) => formatReportDate(row.original.completedAt),
-        },
       );
+    }
 
-      return nextColumns;
-    },
-    [handleCancel, handleDownload, handleRetry, includeAuthor],
-  );
+    nextColumns.push(
+      {
+        accessorKey: 'createdAt',
+        header: 'Створено',
+        Cell: ({ row }) => formatReportDate(row.original.createdAt),
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => formatReportStatus(row),
+        header: 'Статус',
+        Cell: ({ row }) => {
+          const chip = (
+            <Chip
+              size="small"
+              color={statusColor(row.original.status)}
+              label={formatReportStatus(row.original)}
+              variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
+            />
+          );
+          if (
+            !includeAuthor ||
+            row.original.status !== 'failed' ||
+            isCancelledReportHistory(row.original) ||
+            !row.original.lastError
+          ) {
+            return chip;
+          }
+          return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
+        },
+      },
+      {
+        accessorKey: 'plannedForTs',
+        header: 'План',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
+      },
+      {
+        accessorKey: 'startedAt',
+        header: 'Почато',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) => formatReportDateOrDash(row.original.startedAt),
+      },
+      {
+        accessorKey: 'queuePosition',
+        header: 'Черга',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) => formatReportId(row.original.queuePosition),
+      },
+      {
+        accessorKey: 'bgtaskId',
+        header: 'ID задачі',
+        Cell: ({ row }) => formatReportId(row.original.bgtaskId),
+      },
+      {
+        accessorKey: 'completedAt',
+        header: 'Завершено',
+        Cell: ({ row }) => formatReportDate(row.original.completedAt),
+      },
+    );
+
+    return nextColumns;
+  }, [handleCancel, handleDownload, handleRetry, includeAuthor]);
 
   return (
     <Box
@@ -742,14 +782,27 @@ export function ReportHistoryTableSection({
           ...(fullHeight ? REPORTS_FULL_HEIGHT_CONTENT_SX : {}),
         }}
       >
-        <Stack spacing={contentStackSpacing} useFlexGap={fullHeight} sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}>
+        <Stack
+          spacing={contentStackSpacing}
+          useFlexGap={fullHeight}
+          sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
+        >
           <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={2}>
             <Stack direction="row" alignItems="baseline" gap={1}>
-              <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}>
+              <Typography
+                component="h1"
+                variant="h5"
+                sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
+              >
                 {title}
               </Typography>
               {showReportCount && loadState === 'success' ? (
-                <Typography component="span" variant="subtitle1" color="text.secondary" sx={{ fontWeight: 600 }}>
+                <Typography
+                  component="span"
+                  variant="subtitle1"
+                  color="text.secondary"
+                  sx={{ fontWeight: 600 }}
+                >
                   {totalRows === null ? rows.length : `${rows.length}/${totalRows}`}
                 </Typography>
               ) : null}
@@ -759,9 +812,15 @@ export function ReportHistoryTableSection({
 
           <TableStateProvider
             tableId={tableId}
-            defaultColumnOrder={includeAuthor ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER : DEFAULT_REPORTS_COLUMN_ORDER}
+            defaultColumnOrder={
+              includeAuthor
+                ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER
+                : DEFAULT_REPORTS_COLUMN_ORDER
+            }
             defaultColumnVisibility={
-              includeAuthor ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY : DEFAULT_REPORTS_COLUMNS_VISIBILITY
+              includeAuthor
+                ? DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY
+                : DEFAULT_REPORTS_COLUMNS_VISIBILITY
             }
             defaultEnableColumnOrdering={false}
             defaultSorting={DEFAULT_REPORTS_SORTING}
@@ -772,7 +831,11 @@ export function ReportHistoryTableSection({
                   <InternalTableActions filtersHidden fullScreenEnabled>
                     <Tooltip title="Оновити">
                       <span>
-                        <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
+                        <IconButton
+                          size="small"
+                          disabled={loadState === 'loading' || loadingMore}
+                          onClick={() => void loadRows()}
+                        >
                           <RefreshIcon fontSize="small" />
                         </IconButton>
                       </span>
@@ -816,7 +879,11 @@ export function ReportHistoryTableSection({
                                     flexShrink: 0,
                                   }}
                                 >
-                                  <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
+                                  <Button
+                                    variant="outlined"
+                                    disabled={loadingMore || loadState === 'loading'}
+                                    onClick={handleLoadMore}
+                                  >
                                     {loadingMore ? 'Завантаження...' : loadMoreLabel}
                                   </Button>
                                 </Box>
@@ -835,7 +902,11 @@ export function ReportHistoryTableSection({
                   <InternalTableActions filtersHidden fullScreenEnabled>
                     <Tooltip title="Оновити">
                       <span>
-                        <IconButton size="small" disabled={loadState === 'loading' || loadingMore} onClick={() => void loadRows()}>
+                        <IconButton
+                          size="small"
+                          disabled={loadState === 'loading' || loadingMore}
+                          onClick={() => void loadRows()}
+                        >
                           <RefreshIcon fontSize="small" />
                         </IconButton>
                       </span>
@@ -845,7 +916,9 @@ export function ReportHistoryTableSection({
                 <Box
                   sx={{
                     ...REPORTS_TABLE_WRAPPER_SX,
-                    ...(loadState === 'loading' && !fullHeight ? REPORTS_LOADING_TABLE_WRAPPER_SX : {}),
+                    ...(loadState === 'loading' && !fullHeight
+                      ? REPORTS_LOADING_TABLE_WRAPPER_SX
+                      : {}),
                     ...(fullHeight ? REPORTS_FULL_HEIGHT_TABLE_WRAPPER_SX : {}),
                   }}
                 >
@@ -866,7 +939,11 @@ export function ReportHistoryTableSection({
                 </Box>
                 {loadReportHistoryBatch && hasMoreRows ? (
                   <Stack direction="row" justifyContent="center">
-                    <Button variant="outlined" disabled={loadingMore || loadState === 'loading'} onClick={handleLoadMore}>
+                    <Button
+                      variant="outlined"
+                      disabled={loadingMore || loadState === 'loading'}
+                      onClick={handleLoadMore}
+                    >
                       {loadingMore ? 'Завантаження...' : loadMoreLabel}
                     </Button>
                   </Stack>
@@ -881,13 +958,22 @@ export function ReportHistoryTableSection({
         onClose={() => setCancelRow(null)}
         onConfirm={() => void confirmCancelInFlightRow()}
         title="Скасування звіту"
-        description={cancelRow?.status === 'in_progress' ? REPORT_CANCEL_RUNNING_WARNING : 'Звіт буде скасовано і прибрано з черги.'}
+        description={
+          cancelRow?.status === 'in_progress'
+            ? REPORT_CANCEL_RUNNING_WARNING
+            : 'Звіт буде скасовано і прибрано з черги.'
+        }
         cancelLabel="СКАСУВАТИ"
         confirmLabel="СКАСУВАТИ ЗВІТ"
         maxWidth="xs"
         fullWidth
       />
-      <Dialog open={errorLogRow !== null} onClose={() => setErrorLogRow(null)} fullWidth maxWidth="md">
+      <Dialog
+        open={errorLogRow !== null}
+        onClose={() => setErrorLogRow(null)}
+        fullWidth
+        maxWidth="md"
+      >
         <DialogTitle>Помилки</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>

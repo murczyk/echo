@@ -10,10 +10,24 @@ import type { HoverPopoverState } from './NetworkHoverPopovers';
 import { NetworkHoverPopovers } from './NetworkHoverPopovers';
 
 vi.mock('@mui/material', () => ({
-  Box: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => <div {...props}>{children}</div>,
-  Paper: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => <div {...props}>{children}</div>,
-  Popper: ({ children, open, ...props }: { children?: ReactNode; open?: boolean; [key: string]: unknown }) => (open ? <div {...props}>{children}</div> : null),
-  Stack: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => <div {...props}>{children}</div>,
+  Box: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
+    <div {...props}>{children}</div>
+  ),
+  Paper: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
+    <div {...props}>{children}</div>
+  ),
+  Popper: ({
+    children,
+    open,
+    ...props
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    [key: string]: unknown;
+  }) => (open ? <div {...props}>{children}</div> : null),
+  Stack: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
+    <div {...props}>{children}</div>
+  ),
 }));
 
 vi.mock('../../../components/CompactPowerChip', () => ({
@@ -28,7 +42,15 @@ function buildRow() {
         freq: '145.125',
         kind: 'DMR',
         encryptionKeys: [
-          { id: 11, description: 'AES', key: 'k1', keyHash: null, modulationId: null, sigintNetworkId: null, sigintNetworkFreqIds: [] },
+          {
+            id: 11,
+            description: 'AES',
+            key: 'k1',
+            keyHash: null,
+            modulationId: null,
+            sigintNetworkId: null,
+            sigintNetworkFreqIds: [],
+          },
         ],
       },
     ],
@@ -38,7 +60,15 @@ function buildRow() {
         freq: '433.700',
         kind: 'FM',
         encryptionKeys: [
-          { id: 12, description: 'SECRET', key: 'k2', keyHash: null, modulationId: null, sigintNetworkId: null, sigintNetworkFreqIds: [] },
+          {
+            id: 12,
+            description: 'SECRET',
+            key: 'k2',
+            keyHash: null,
+            modulationId: null,
+            sigintNetworkId: null,
+            sigintNetworkFreqIds: [],
+          },
         ],
       },
     ],

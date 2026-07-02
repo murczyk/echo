@@ -34,7 +34,9 @@ function haveSameMembers(left: string[], right: string[]) {
     return false;
   }
 
-  return left.every((value) => right.includes(value)) && right.every((value) => left.includes(value));
+  return (
+    left.every((value) => right.includes(value)) && right.every((value) => left.includes(value))
+  );
 }
 
 export function normalizeColumnOrder(
@@ -68,9 +70,7 @@ function getCurrentSearchParamsObject(): SearchParams {
   return Object.fromEntries(Array.from(new URLSearchParams(window.location.search).entries()));
 }
 
-function parseColumnFiltersFromSearchParams(
-  searchParams: URLSearchParams,
-): MRT_ColumnFiltersState {
+function parseColumnFiltersFromSearchParams(searchParams: URLSearchParams): MRT_ColumnFiltersState {
   const columnFiltersFromParams = searchParams.get('columnFilters');
   if (!columnFiltersFromParams) return [];
 
@@ -109,7 +109,10 @@ function getFallbackDate(defaultDate?: Dayjs): Dayjs {
   return defaultDate || dayjs().startOf('D');
 }
 
-function parseDateFromSearchParams(searchParams: URLSearchParams, defaultDate?: Dayjs): Dayjs | null {
+function parseDateFromSearchParams(
+  searchParams: URLSearchParams,
+  defaultDate?: Dayjs,
+): Dayjs | null {
   const dateFromParams = searchParams.get('date');
   if (dateFromParams) {
     const parsedDate = dayjs(dateFromParams);
@@ -174,9 +177,15 @@ type TableStateContextValue = {
   density: MRT_DensityState;
   setDensity: (value: MRT_DensityState) => void;
   columnFilters: MRT_ColumnFiltersState;
-  onColumnFiltersChange: (value: Updater<MRT_ColumnFiltersState>, updatedSearchParams?: SearchParams) => SearchParams;
+  onColumnFiltersChange: (
+    value: Updater<MRT_ColumnFiltersState>,
+    updatedSearchParams?: SearchParams,
+  ) => SearchParams;
   sorting: MRT_SortingState;
-  onSortingChange: (value: Updater<MRT_SortingState>, updatedSearchParams?: SearchParams) => SearchParams;
+  onSortingChange: (
+    value: Updater<MRT_SortingState>,
+    updatedSearchParams?: SearchParams,
+  ) => SearchParams;
   tableId: string;
   columnOrder: MRT_ColumnOrderState;
   columnOrderTouched: boolean;
@@ -239,7 +248,9 @@ type TableStateProviderProps = {
 };
 
 function useSearchParamsState(): [URLSearchParams, (value: SearchParams) => void] {
-  const [searchParams, setSearchParams] = useState(() => new URLSearchParams(window.location.search));
+  const [searchParams, setSearchParams] = useState(
+    () => new URLSearchParams(window.location.search),
+  );
 
   useEffect(() => {
     function onPopState() {
@@ -281,18 +292,28 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []),
   );
   const [density, setDensity] = useState<MRT_DensityState>('compact');
-  const [globalFilter, setGlobalFilter] = useState(() => parseGlobalFilterFromSearchParams(searchParams));
-  const [columnSizing, setColumnSizing] = useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());
-  const [enableColumnOrdering, setEnableColumnOrdering] = useState<boolean>(() => getInitialEnableColumnOrdering());
-  const [enableColumnResizing, setEnableColumnResizing] = useState<boolean>(() => getInitialEnableColumnResizing());
-
-  const [defaultColumnVisibility, setDefaultColumnVisibility] = useState<{ [key: string]: boolean }>(
-    () => props.defaultColumnVisibility,
+  const [globalFilter, setGlobalFilter] = useState(() =>
+    parseGlobalFilterFromSearchParams(searchParams),
   );
+  const [columnSizing, setColumnSizing] = useState<MRT_ColumnSizingState>(() =>
+    getInitialColumnSizing(),
+  );
+  const [enableColumnOrdering, setEnableColumnOrdering] = useState<boolean>(() =>
+    getInitialEnableColumnOrdering(),
+  );
+  const [enableColumnResizing, setEnableColumnResizing] = useState<boolean>(() =>
+    getInitialEnableColumnResizing(),
+  );
+
+  const [defaultColumnVisibility, setDefaultColumnVisibility] = useState<{
+    [key: string]: boolean;
+  }>(() => props.defaultColumnVisibility);
   const [columnVisibility, setColumnVisibility] = useState<{ [key: string]: boolean }>(() =>
     getInitialColumnsVisibility(),
   );
-  const [columnOrder, setColumnOrder] = useState<MRT_ColumnOrderState>(() => getInitialColumnOrder());
+  const [columnOrder, setColumnOrder] = useState<MRT_ColumnOrderState>(() =>
+    getInitialColumnOrder(),
+  );
   const columnSizingPersistedOnceRef = useRef(false);
 
   const columnOrderTouched = !strArraysEqual(
@@ -327,9 +348,15 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       try {
         const currentColumnOrder: string[] = JSON.parse(columnOrderFromStorage);
 
-        const normalizedColumnOrder = normalizeColumnOrder(currentColumnOrder, props.defaultColumnOrder);
+        const normalizedColumnOrder = normalizeColumnOrder(
+          currentColumnOrder,
+          props.defaultColumnOrder,
+        );
         if (!strArraysEqual(currentColumnOrder, normalizedColumnOrder)) {
-          localStorage.setItem(`columnOrder-${props.tableId}`, JSON.stringify(normalizedColumnOrder));
+          localStorage.setItem(
+            `columnOrder-${props.tableId}`,
+            JSON.stringify(normalizedColumnOrder),
+          );
         }
 
         return normalizedColumnOrder;
@@ -414,7 +441,8 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
   }
 
   function onChangeGlobalFilter(updaterOrValue: Updater<string>): SearchParams {
-    const nextFilter = typeof updaterOrValue === 'function' ? updaterOrValue(globalFilter) : updaterOrValue;
+    const nextFilter =
+      typeof updaterOrValue === 'function' ? updaterOrValue(globalFilter) : updaterOrValue;
     const newSearchParams = getCurrentSearchParamsObject();
 
     if (nextFilter) {
@@ -483,11 +511,17 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
         .filter((key) => newColumnVisibilityValue[key] === false);
 
       if (additionalVisibleColumnKeys.length > 0) {
-        localStorage.setItem(`visibleColumns-${props.tableId}`, JSON.stringify(additionalVisibleColumnKeys));
+        localStorage.setItem(
+          `visibleColumns-${props.tableId}`,
+          JSON.stringify(additionalVisibleColumnKeys),
+        );
       } else localStorage.removeItem(`visibleColumns-${props.tableId}`);
 
       if (defaultHiddenColumnKeys.length > 0) {
-        localStorage.setItem(`hiddenColumns-${props.tableId}`, JSON.stringify(defaultHiddenColumnKeys));
+        localStorage.setItem(
+          `hiddenColumns-${props.tableId}`,
+          JSON.stringify(defaultHiddenColumnKeys),
+        );
       } else localStorage.removeItem(`hiddenColumns-${props.tableId}`);
     }
 
@@ -538,7 +572,10 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     return newSearchParams;
   }
 
-  function onSortingChange(updaterOrValue: Updater<MRT_SortingState>, updatedSearchParams?: SearchParams): SearchParams {
+  function onSortingChange(
+    updaterOrValue: Updater<MRT_SortingState>,
+    updatedSearchParams?: SearchParams,
+  ): SearchParams {
     let newSorting;
 
     if (typeof updaterOrValue === 'function') {
@@ -600,7 +637,9 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
 
   const isDateEqualToDefault = !!props.defaultDate
     ? date?.isSame(props.defaultDate, 'date')
-    : (date ? dayjs().isSame(date, 'date') : false);
+    : date
+      ? dayjs().isSame(date, 'date')
+      : false;
   const dateForRequest = isDateEqualToDefault ? undefined : date?.format('YYYY-MM-DD');
 
   function onTableInitialized(table: MRT_TableInstance<any>) {
@@ -653,7 +692,15 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     if (!areSortingStatesEqual(sorting, nextSorting)) {
       setSorting(nextSorting);
     }
-  }, [columnFilters, date, globalFilter, props.defaultDate, props.defaultSorting, searchParams, sorting]);
+  }, [
+    columnFilters,
+    date,
+    globalFilter,
+    props.defaultDate,
+    props.defaultSorting,
+    searchParams,
+    sorting,
+  ]);
 
   return (
     <TableStateContext.Provider

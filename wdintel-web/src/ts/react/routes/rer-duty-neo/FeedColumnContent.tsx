@@ -7,7 +7,11 @@ import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './FeedColumn';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
-import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../shared/message-card/message-card.utils';
+import {
+  resolveMessageCardEtalonDisplayModel,
+  buildCopyTextWithNetworkAndNote,
+  buildCopyTextWithNetworkName,
+} from '../shared/message-card/message-card.utils';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 
@@ -127,7 +131,9 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
       const startDataIndex = range.startIndex - firstItemIndex;
       const endDataIndex = range.endIndex - firstItemIndex;
       const nearTop =
-        len <= LOAD_OLDER_BUFFER_ITEMS ? len > 0 && startDataIndex <= 0 : startDataIndex < LOAD_OLDER_BUFFER_ITEMS;
+        len <= LOAD_OLDER_BUFFER_ITEMS
+          ? len > 0 && startDataIndex <= 0
+          : startDataIndex < LOAD_OLDER_BUFFER_ITEMS;
       if (nearTop) {
         tryLoadOlder();
       } else if (startDataIndex > LOAD_OLDER_RESET_MARGIN) {
@@ -149,7 +155,14 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
         if (ids.length > 0) onVisibleMessageIds(ids, { atBottom: false });
       }
     },
-    [feed.items, feed.items.length, firstItemIndex, onNearBottomChange, onVisibleMessageIds, tryLoadOlder],
+    [
+      feed.items,
+      feed.items.length,
+      firstItemIndex,
+      onNearBottomChange,
+      onVisibleMessageIds,
+      tryLoadOlder,
+    ],
   );
 
   if (feed.loading && feed.items.length === 0) {
@@ -226,7 +239,11 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
                 <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
               </Box>
             ) : feed.hasReachedStart ? (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1.5 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ textAlign: 'center', py: 1.5 }}
+              >
                 Немає старіших повідомлень
               </Typography>
             ) : null,
@@ -270,10 +287,15 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
               onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
               onCopyTextWithNetwork={
-                etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
+                etalonDisplayModel.primaryKind === 'network' &&
+                etalonDisplayModel.copyEtalonValue != null
                   ? () =>
                       onMessageCopy(
-                        buildCopyTextWithNetworkName(msg.text || '', etalonDisplayModel.copyEtalonValue, msg.noHeadersBody),
+                        buildCopyTextWithNetworkName(
+                          msg.text || '',
+                          etalonDisplayModel.copyEtalonValue,
+                          msg.noHeadersBody,
+                        ),
                         `text-network-${id}`,
                       )
                   : undefined
@@ -303,7 +325,8 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               onCopyLocation={
                 etalonDisplayModel.copyLocationValue == null
                   ? undefined
-                  : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
+                  : () =>
+                      onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
               }
               onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feed.id, freq)}
               onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
@@ -328,7 +351,14 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
           }}
         >
           {!loadingNewer && isPresent(arrowResultMessage) && (
-            <PowerChip size="small" label={arrowResultMessage} interactive={false} unselectedOpacity={1} color="default" sx={{ fontWeight: 500 }} />
+            <PowerChip
+              size="small"
+              label={arrowResultMessage}
+              interactive={false}
+              unselectedOpacity={1}
+              color="default"
+              sx={{ fontWeight: 500 }}
+            />
           )}
           <Box sx={{ position: 'relative', display: 'inline-flex' }}>
             <Fab
@@ -347,29 +377,38 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
                   boxShadow: 'none',
                 },
               }}
-              aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
+              aria-label={
+                isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
+              }
               onClick={onArrowClick}
               disabled={loadingNewer}
             >
-              {loadingNewer ? <CircularProgress size={20} sx={{ color: 'primary.main' }} /> : <ArrowDownwardIcon sx={{ fontSize: 20 }} />}
+              {loadingNewer ? (
+                <CircularProgress size={20} sx={{ color: 'primary.main' }} />
+              ) : (
+                <ArrowDownwardIcon sx={{ fontSize: 20 }} />
+              )}
             </Fab>
-            {!loadingNewer && unreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
-              <PowerChip
-                size="small"
-                label={unreadCount}
-                selected
-                interactive={false}
-                unselectedOpacity={1}
-                sx={{
-                  position: 'absolute',
-                  top: -6,
-                  right: -6,
-                  fontWeight: 600,
-                  zIndex: 2,
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
+            {!loadingNewer &&
+              unreadCount > 0 &&
+              !isWatchMode &&
+              isNullOrUndefined(arrowResultMessage) && (
+                <PowerChip
+                  size="small"
+                  label={unreadCount}
+                  selected
+                  interactive={false}
+                  unselectedOpacity={1}
+                  sx={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -6,
+                    fontWeight: 600,
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
           </Box>
         </Box>
       )}

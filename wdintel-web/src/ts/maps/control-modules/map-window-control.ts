@@ -10,7 +10,7 @@ type AnalysisMapWindowControlElement = HTMLElement & {
 
 export function createMapWindowControl(
   toggleFullscreen: () => void,
-  initialFullscreen = false
+  initialFullscreen = false,
 ): MapWindowControl {
   const MapWindowControlClass = L.Control.extend({
     _isFullscreen: initialFullscreen,
@@ -22,7 +22,7 @@ export function createMapWindowControl(
       this._container = L.DomUtil.create('div', 'leaflet-control analysis-map-window-control-host');
 
       const windowControlElement = document.createElement(
-        'analysis-map-window-control'
+        'analysis-map-window-control',
       ) as AnalysisMapWindowControlElement;
       this._windowControlElement = windowControlElement;
       windowControlElement.setFullscreen?.(this._isFullscreen);

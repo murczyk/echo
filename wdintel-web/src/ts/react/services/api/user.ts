@@ -39,8 +39,9 @@ function normalizeUser(raw: UserLike | null | undefined): User {
     goiFullAccessForOrganism:
       raw?.goiFullAccessForOrganism ?? raw?.goi_full_access_for_organism ?? false,
     goiHost: raw?.goiHost ?? raw?.goi_host ?? null,
-    goiIntegrations:
-      (raw?.goiIntegrations ?? raw?.goi_integrations ?? []) as User['goiIntegrations'],
+    goiIntegrations: (raw?.goiIntegrations ??
+      raw?.goi_integrations ??
+      []) as User['goiIntegrations'],
     lastReleaseSeen: raw?.lastReleaseSeen ?? raw?.last_release_seen ?? null,
   };
 }

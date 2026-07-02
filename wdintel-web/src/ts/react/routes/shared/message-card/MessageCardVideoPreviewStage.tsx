@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  useState,
-  useRef,
-  useEffect,
-  type SyntheticEvent,
-} from 'react';
+import { forwardRef, useState, useRef, useEffect, type SyntheticEvent } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -56,8 +50,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
 
   useEffect(() => {
     return () => {
-      if (clickActionTimer.current)
-        window.clearTimeout(clickActionTimer.current);
+      if (clickActionTimer.current) window.clearTimeout(clickActionTimer.current);
     };
   }, []);
 
@@ -162,9 +155,7 @@ export const MessageCardVideoPreviewStage = forwardRef<
               boxShadow: 3,
               opacity: showIcon ? 1 : 0,
               transform: showIcon ? 'scale(1)' : 'scale(1.3)',
-              transition: showIcon
-                ? 'none'
-                : 'opacity 0.4s ease-out, transform 0.4s ease-out',
+              transition: showIcon ? 'none' : 'opacity 0.4s ease-out, transform 0.4s ease-out',
             }}
           >
             {clickAction === 'play' ? (

@@ -7,19 +7,20 @@ import { buildNetworkFrequencyPopupGroups } from '../helpers';
 import { getLocationParts } from './NetworkCells';
 
 export const FREQUENCY_HOVER_POPPER_PLACEMENT = 'top-start';
-export const FREQUENCY_HOVER_POPPER_MODIFIERS: Array<{ name: string; options?: Record<string, unknown> }> = [
+export const FREQUENCY_HOVER_POPPER_MODIFIERS: Array<{
+  name: string;
+  options?: Record<string, unknown>;
+}> = [
   { name: 'offset', options: { offset: [0, 8] } },
   { name: 'flip', options: { fallbackPlacements: ['bottom-start', 'top-end', 'bottom-end'] } },
   { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
 ];
 
-export type HoverPopoverState =
-  | {
-      kind: 'freq' | 'location';
-      anchorEl: HTMLElement;
-      row: NetworkRowView;
-    }
-  | null;
+export type HoverPopoverState = {
+  kind: 'freq' | 'location';
+  anchorEl: HTMLElement;
+  row: NetworkRowView;
+} | null;
 
 type HoverDetailsMenuProps = {
   anchorEl: HTMLElement | null;
@@ -76,19 +77,38 @@ function HoverDetailsMenu({
   );
 }
 
-function FrequencyGroupDetails({ group }: { group: ReturnType<typeof buildNetworkFrequencyPopupGroups>[number] }) {
+function FrequencyGroupDetails({
+  group,
+}: {
+  group: ReturnType<typeof buildNetworkFrequencyPopupGroups>[number];
+}) {
   if (group.frequencies.length === 0) {
     return null;
   }
 
   return (
     <Stack spacing={0.75}>
-      <Box sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+      <Box
+        sx={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'text.secondary',
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+        }}
+      >
         {group.title} ({group.frequencies.length})
       </Box>
       <Stack spacing={0.75}>
         {group.frequencies.map((freq) => (
-          <Stack key={freq.id} direction="row" spacing={1} alignItems="center" useFlexGap sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
+          <Stack
+            key={freq.id}
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            useFlexGap
+            sx={{ minWidth: 0, flexWrap: 'nowrap' }}
+          >
             <Box
               title={freq.freq}
               sx={{
@@ -117,7 +137,12 @@ type Props = {
   onPointerLeave: () => void;
 };
 
-export function NetworkHoverPopovers({ hoverPopover, onClose, onPointerEnter, onPointerLeave }: Props) {
+export function NetworkHoverPopovers({
+  hoverPopover,
+  onClose,
+  onPointerEnter,
+  onPointerLeave,
+}: Props) {
   if (hoverPopover?.kind === 'freq') {
     return (
       <HoverDetailsMenu

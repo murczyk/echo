@@ -109,7 +109,9 @@ export function getInitialCreateForm(user: User | null, myScope: MyScope | null)
   const available = getAvailableAccessTypes(user, myScope);
   const defaultOrganismIds = myScope?.organism ? [myScope.organism.id] : [];
   const defaultAccessType =
-    defaultOrganismIds.length > 0 && available.includes('organisms') ? 'organisms' : (available[0] ?? 'logins');
+    defaultOrganismIds.length > 0 && available.includes('organisms')
+      ? 'organisms'
+      : (available[0] ?? 'logins');
 
   if (isAdmin(user)) {
     return {
@@ -128,7 +130,7 @@ export function getInitialCreateForm(user: User | null, myScope: MyScope | null)
     accessType: defaultAccessType,
     logins: available.includes('logins') && user?.name ? [user.name] : [],
     organismIds: available.includes('organisms') ? defaultOrganismIds : [],
-    aorIds: available.includes('aor') ? myScope?.aorIds ?? [] : [],
+    aorIds: available.includes('aor') ? (myScope?.aorIds ?? []) : [],
   };
 }
 
@@ -224,7 +226,9 @@ export function getAccessSummary(
       const names = palitra.accessOrganismIds
         .map((id) => organisms.find((organism) => organism.id === id)?.name)
         .filter((name): name is string => Boolean(name));
-      return names.length > 0 ? 'Підрозділи: ' + names.join(', ') : 'Підрозділи: ' + palitra.accessOrganismIds.join(', ');
+      return names.length > 0
+        ? 'Підрозділи: ' + names.join(', ')
+        : 'Підрозділи: ' + palitra.accessOrganismIds.join(', ');
     }
 
     const name = myScope?.organism?.name;
@@ -236,7 +240,9 @@ export function getAccessSummary(
       const names = palitra.accessAorId
         .map((id) => aors.find((aor) => aor.id === id)?.name)
         .filter((name): name is string => Boolean(name));
-      return names.length > 0 ? 'Смуги: ' + names.join(', ') : 'Смуги: ' + palitra.accessAorId.join(', ');
+      return names.length > 0
+        ? 'Смуги: ' + names.join(', ')
+        : 'Смуги: ' + palitra.accessAorId.join(', ');
     }
 
     const allowed = new Set(myScope?.aorIds ?? []);
@@ -272,7 +278,7 @@ export function applyRestrictedAccess(
 
       return {
         ...form,
-        logins: filteredLogins.length > 0 ? filteredLogins : (fallbackLogin ? [fallbackLogin] : []),
+        logins: filteredLogins.length > 0 ? filteredLogins : fallbackLogin ? [fallbackLogin] : [],
       };
     }
 

@@ -11,13 +11,23 @@ const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Dialog: ({ children, open, disableRestoreFocus }: { children?: ReactNode; open?: boolean; disableRestoreFocus?: boolean }) => {
+  Dialog: ({
+    children,
+    open,
+    disableRestoreFocus,
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    disableRestoreFocus?: boolean;
+  }) => {
     if (open) dialogProps.push({ disableRestoreFocus });
     return open ? <div role="dialog">{children}</div> : null;
   },
   DialogContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  useTheme: () => ({ palette: { divider: '#000', text: { secondary: '#666' }, background: { default: '#fff' } } }),
+  useTheme: () => ({
+    palette: { divider: '#000', text: { secondary: '#666' }, background: { default: '#fff' } },
+  }),
 }));
 
 vi.mock('./MessageCardImagePreviewActions', () => ({
@@ -26,7 +36,9 @@ vi.mock('./MessageCardImagePreviewActions', () => ({
 }));
 
 vi.mock('./MessageCardImagePreviewStage', () => ({
-  MessageCardImagePreviewStage: forwardRef<HTMLDivElement, { children?: ReactNode }>((_props, _ref) => <div />),
+  MessageCardImagePreviewStage: forwardRef<HTMLDivElement, { children?: ReactNode }>(
+    (_props, _ref) => <div />,
+  ),
 }));
 
 vi.mock('./MessageCardImagePreviewInfoPopover', () => ({

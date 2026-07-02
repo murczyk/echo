@@ -8,7 +8,10 @@ import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
 
-const UNITS_EXACT_MATCH_OPTIONS: ReadonlyArray<{ value: UnitsExactMatchSelectValue; label: string }> = [
+const UNITS_EXACT_MATCH_OPTIONS: ReadonlyArray<{
+  value: UnitsExactMatchSelectValue;
+  label: string;
+}> = [
   { value: 'not-exact', label: 'Неточний збіг' },
   { value: 'exact', label: 'Точний збіг' },
 ];
@@ -220,7 +223,9 @@ export function FeedFilterPanelView({
                 labelId="units-exact-match-only-label"
                 value={unitsExactMatchSelectValue(units.unitsExactMatchOnly)}
                 label="Збіг з еталонкою"
-                renderValue={(value) => unitsExactMatchSelectLabel(value as UnitsExactMatchSelectValue)}
+                renderValue={(value) =>
+                  unitsExactMatchSelectLabel(value as UnitsExactMatchSelectValue)
+                }
                 onChange={(e) => {
                   const value = e.target.value as UnitsExactMatchSelectValue;
                   units.onUnitsExactMatchOnlyChange(value === 'exact');

@@ -125,7 +125,9 @@ describe('useAnalysisSavedFilters', () => {
     await rerenderHook(['100.0000', '100.0030'], queryState);
     await flushEffects();
 
-    expect(latest?.loadedSavedFilter).toEqual(expect.objectContaining({ id: 1, name: 'Matched filter' }));
+    expect(latest?.loadedSavedFilter).toEqual(
+      expect.objectContaining({ id: 1, name: 'Matched filter' }),
+    );
     expect(latest?.savedFilterName).toBe('Matched filter');
   });
 
@@ -139,7 +141,9 @@ describe('useAnalysisSavedFilters', () => {
     });
     await flushEffects();
 
-    expect(latest?.loadedSavedFilter).toEqual(expect.objectContaining({ id: 1, name: 'Matched filter' }));
+    expect(latest?.loadedSavedFilter).toEqual(
+      expect.objectContaining({ id: 1, name: 'Matched filter' }),
+    );
 
     await act(async () => {
       latest?.applySavedFilter(null);

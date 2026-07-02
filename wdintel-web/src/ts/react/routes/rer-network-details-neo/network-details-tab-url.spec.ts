@@ -13,7 +13,9 @@ import {
 
 describe('network-details tab url mapping', () => {
   it('maps public tab names to internal tabs', () => {
-    expect(resolveRequestedNetworkDetailsTab('direction-finding', true, true)).toBe('direction-finding');
+    expect(resolveRequestedNetworkDetailsTab('direction-finding', true, true)).toBe(
+      'direction-finding',
+    );
     expect(resolveRequestedNetworkDetailsTab('pelengation', true, true)).toBe('direction-finding');
     expect(resolveRequestedNetworkDetailsTab('justifications', true, true)).toBe('descriptions');
     expect(resolveRequestedNetworkDetailsTab('connections-graph', true, true)).toBe('relations');
@@ -21,7 +23,9 @@ describe('network-details tab url mapping', () => {
 
   it('falls back when a gated tab is unavailable', () => {
     expect(resolveRequestedNetworkDetailsTab('activity', false, true)).toBe('descriptions');
-    expect(resolveRequestedNetworkDetailsTab('connections-graph', true, false)).toBe('descriptions');
+    expect(resolveRequestedNetworkDetailsTab('connections-graph', true, false)).toBe(
+      'descriptions',
+    );
   });
 
   it('maps internal tabs to public query values', () => {
@@ -50,9 +54,13 @@ describe('network-details tab url mapping', () => {
   it('updates the current url in replace and push modes', () => {
     window.history.replaceState({}, '', '/rer-networks/42?foo=bar');
     updateCurrentNetworkDetailsTabUrl('relations', 'replace');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?foo=bar&tab=connections-graph');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?foo=bar&tab=connections-graph',
+    );
 
     updateCurrentNetworkDetailsTabUrl('callsigns', 'push');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?foo=bar&tab=callsigns');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?foo=bar&tab=callsigns',
+    );
   });
 });

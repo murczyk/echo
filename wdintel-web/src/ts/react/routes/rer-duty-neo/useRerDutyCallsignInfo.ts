@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
 import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 
@@ -9,7 +8,10 @@ function normalizeDutyCallsignText(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
-function mergeDutyCallsignTextField(existing: string | null | undefined, incoming: string | null | undefined): string {
+function mergeDutyCallsignTextField(
+  existing: string | null | undefined,
+  incoming: string | null | undefined,
+): string {
   const existingValue = normalizeDutyCallsignText(existing);
   const incomingValue = normalizeDutyCallsignText(incoming);
   const existingTrimmed = existingValue.trim();
@@ -19,7 +21,10 @@ function mergeDutyCallsignTextField(existing: string | null | undefined, incomin
   return incomingTrimmed.length > existingTrimmed.length ? incomingValue : existingValue;
 }
 
-export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
+export function mergeDutyCallsignInfoEntry(
+  current: CallsignInfoRes | undefined,
+  incoming: CallsignInfoRes,
+): CallsignInfoRes {
   if (isNullOrUndefined(current)) return incoming;
 
   const rowsById = new Map<number, CallsignInfoRes['res'][number]>();
@@ -39,7 +44,9 @@ export function mergeDutyCallsignInfoEntry(current: CallsignInfoRes | undefined,
       comment: mergeDutyCallsignTextField(existing.comment, row.comment),
       unit1: mergeDutyCallsignTextField(existing.unit1, row.unit1),
       unit2: mergeDutyCallsignTextField(existing.unit2, row.unit2),
-      networkIdsReportedIn: Array.from(new Set([...(existing.networkIdsReportedIn ?? []), ...(row.networkIdsReportedIn ?? [])])),
+      networkIdsReportedIn: Array.from(
+        new Set([...(existing.networkIdsReportedIn ?? []), ...(row.networkIdsReportedIn ?? [])]),
+      ),
     });
   });
 
@@ -122,14 +129,22 @@ export function updateDutyInboxCallsignInfoMapByFeedId(
 }
 
 export function useRerDutyCallsignInfo() {
-  const [inboxCallsignInfoMapByFeedId, setInboxCallsignInfoMapByFeedId] = useState<Record<string, Record<string, CallsignInfoRes>>>(
-    {},
-  );
-  const [resolvedCallsignInfoMap, setResolvedCallsignInfoMap] = useState<Record<string, CallsignInfoRes>>({});
+  const [inboxCallsignInfoMapByFeedId, setInboxCallsignInfoMapByFeedId] = useState<
+    Record<string, Record<string, CallsignInfoRes>>
+  >({});
+  const [resolvedCallsignInfoMap, setResolvedCallsignInfoMap] = useState<
+    Record<string, CallsignInfoRes>
+  >({});
 
   const mergeInboxCallsigns = useCallback(
-    (feedId: string, callsigns: CallsignInfoRes[] | null | undefined, options?: { replace?: boolean }) => {
-      setInboxCallsignInfoMapByFeedId((prev) => updateDutyInboxCallsignInfoMapByFeedId(prev, feedId, callsigns, options));
+    (
+      feedId: string,
+      callsigns: CallsignInfoRes[] | null | undefined,
+      options?: { replace?: boolean },
+    ) => {
+      setInboxCallsignInfoMapByFeedId((prev) =>
+        updateDutyInboxCallsignInfoMapByFeedId(prev, feedId, callsigns, options),
+      );
     },
     [],
   );

@@ -13,11 +13,15 @@ const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
 vi.mock('@mui/material', () => {
   const passthrough =
     (tag: string) =>
-    ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <div {...props}>{children}</div>;
+    ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <div {...props}>{children}</div>
+    );
 
   return {
     Box: passthrough('div'),
-    Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <button {...props}>{children}</button>,
+    Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <button {...props}>{children}</button>
+    ),
     Dialog: ({
       children,
       open,
@@ -46,9 +50,18 @@ vi.mock('@mui/material', () => {
     },
     DialogActions: passthrough('div'),
     DialogContent: passthrough('div'),
-    IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <button {...props}>{children}</button>,
-    Popover: ({ children, open }: { children?: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
-    Slider: ({ value, onChange }: { value?: number; onChange?: (event: unknown, value: number | number[]) => void }) => (
+    IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <button {...props}>{children}</button>
+    ),
+    Popover: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+      open ? <div>{children}</div> : null,
+    Slider: ({
+      value,
+      onChange,
+    }: {
+      value?: number;
+      onChange?: (event: unknown, value: number | number[]) => void;
+    }) => (
       <input
         type="range"
         value={value ?? 0}
@@ -105,21 +118,27 @@ describe('MessageCardDocumentPreviewDialog', () => {
 
     expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(true);
 
-    const fullscreenButton = document.body.querySelector('button[aria-label="Повноекранний режим"]');
+    const fullscreenButton = document.body.querySelector(
+      'button[aria-label="Повноекранний режим"]',
+    );
     expect(fullscreenButton).not.toBeNull();
 
     await act(async () => {
       fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).not.toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).not.toBeNull();
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
 
     await act(async () => {

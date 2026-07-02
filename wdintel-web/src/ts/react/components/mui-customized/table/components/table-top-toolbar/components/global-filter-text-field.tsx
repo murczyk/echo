@@ -15,7 +15,12 @@ type GlobalFilterTextFieldProps = {
 
 export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (props.disabled || !props.globalFilter || event.key !== 'Escape' || event.currentTarget.readOnly) {
+    if (
+      props.disabled ||
+      !props.globalFilter ||
+      event.key !== 'Escape' ||
+      event.currentTarget.readOnly
+    ) {
       return;
     }
 
@@ -37,12 +42,13 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
             color: 'text.secondary',
             opacity: 1,
           },
-          '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
-            WebkitTextFillColor: 'var(--bs-body-color)',
-            WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
-            transition: 'background-color 9999s ease-out 0s',
-            caretColor: 'var(--bs-body-color)',
-          },
+          '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus':
+            {
+              WebkitTextFillColor: 'var(--bs-body-color)',
+              WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+              transition: 'background-color 9999s ease-out 0s',
+              caretColor: 'var(--bs-body-color)',
+            },
           '& .MuiOutlinedInput-notchedOutline': {
             borderColor: 'var(--bs-border-color)',
           },
@@ -83,7 +89,11 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
                 aria-label="clear-filter"
                 onClick={() => props.setGlobalFilter('')}
               >
-                {props.globalFilter ? <ClearIcon className="!w-[18px] !h-[18px]" /> : <div className="!w-[18px] !h-[18px]" />}
+                {props.globalFilter ? (
+                  <ClearIcon className="!w-[18px] !h-[18px]" />
+                ) : (
+                  <div className="!w-[18px] !h-[18px]" />
+                )}
               </PowerIconButton>
             </InputAdornment>
           ),

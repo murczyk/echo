@@ -14,16 +14,19 @@ function formatText(value: string | null | undefined): string {
 }
 
 function renderEmptyFolderCell() {
-  return <Box component='span' sx={{ display: 'block', minHeight: 20 }} />;
+  return <Box component="span" sx={{ display: 'block', minHeight: 20 }} />;
 }
 
-function renderFolderNameCell(row: FolderTableRowView, onToggleFolderExpanded: (path: string) => void) {
+function renderFolderNameCell(
+  row: FolderTableRowView,
+  onToggleFolderExpanded: (path: string) => void,
+) {
   const leftPadding = row.depth * 3 + 1;
 
   return (
     <Box
-      component='button'
-      type='button'
+      component="button"
+      type="button"
       onClick={() => onToggleFolderExpanded(row.folderPath)}
       sx={{
         width: '100%',
@@ -41,18 +44,18 @@ function renderFolderNameCell(row: FolderTableRowView, onToggleFolderExpanded: (
         font: 'inherit',
       }}
     >
-      <FolderOutlinedIcon fontSize='small' color='action' />
-      <Typography variant='body2' fontWeight={700} noWrap>
+      <FolderOutlinedIcon fontSize="small" color="action" />
+      <Typography variant="body2" fontWeight={700} noWrap>
         {formatText(row.name)}
       </Typography>
       <PowerChip
         label={'Палітр: ' + String(row.totalCount)}
-        size='small'
+        size="small"
         interactive={false}
         unselectedOpacity={1}
-        unselectedBackgroundColor='action.selected'
-        unselectedTextColor='text.primary'
-        unselectedBorderColor='transparent'
+        unselectedBackgroundColor="action.selected"
+        unselectedTextColor="text.primary"
+        unselectedBorderColor="transparent"
       />
     </Box>
   );
@@ -66,19 +69,26 @@ function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string
   }
 
   return (
-    <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap' useFlexGap sx={{ pl: leftPadding }}>
-      <Typography variant='body2' fontWeight={600}>
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+      sx={{ pl: leftPadding }}
+    >
+      <Typography variant="body2" fontWeight={600}>
         {formatText(row.name)}
       </Typography>
       {row.palitra.isArchived ? (
         <PowerChip
-          label='Архів'
-          size='small'
+          label="Архів"
+          size="small"
           interactive={false}
           selected
-          backgroundColor='warning.light'
-          selectedBorderColor='warning.main'
-          selectedTextColor='warning.contrastText'
+          backgroundColor="warning.light"
+          selectedBorderColor="warning.main"
+          selectedTextColor="warning.contrastText"
           sx={{ '& .MuiChip-label': { px: 1 } }}
         />
       ) : null}
@@ -142,7 +152,7 @@ export function buildPalitraTableColumns(
         ) : (
           <PowerChip
             label={formatText(row.original.colorHex)}
-            size='small'
+            size="small"
             interactive={false}
             selected
             backgroundColor={row.original.colorHex || 'transparent'}
@@ -161,7 +171,12 @@ export function buildPalitraTableColumns(
         row.original.kind === 'folder' ? (
           renderEmptyFolderCell()
         ) : (
-          <Typography variant='body2' sx={{ maxWidth: 280 }} noWrap title={formatText(row.original.sourceFileName)}>
+          <Typography
+            variant="body2"
+            sx={{ maxWidth: 280 }}
+            noWrap
+            title={formatText(row.original.sourceFileName)}
+          >
             {formatText(row.original.sourceFileName)}
           </Typography>
         ),
@@ -173,7 +188,10 @@ export function buildPalitraTableColumns(
       size: 170,
       enableColumnFilter: false,
       enableSorting: false,
-      Cell: ({ row }) => (row.original.kind === 'folder' ? renderEmptyFolderCell() : formatDateTime24(row.original.lastUploadedAtTs)),
+      Cell: ({ row }) =>
+        row.original.kind === 'folder'
+          ? renderEmptyFolderCell()
+          : formatDateTime24(row.original.lastUploadedAtTs),
     },
     {
       header: 'Автор',
@@ -181,7 +199,8 @@ export function buildPalitraTableColumns(
       id: 'author',
       size: 180,
       enableSorting: false,
-      Cell: ({ row }) => (row.original.kind === 'folder' ? renderEmptyFolderCell() : formatText(row.original.author)),
+      Cell: ({ row }) =>
+        row.original.kind === 'folder' ? renderEmptyFolderCell() : formatText(row.original.author),
     },
     {
       header: 'Доступ',
@@ -193,7 +212,7 @@ export function buildPalitraTableColumns(
         row.original.kind === 'folder' ? (
           renderEmptyFolderCell()
         ) : (
-          <Typography variant='body2' sx={{ maxWidth: 360 }} title={row.original.accessSummary}>
+          <Typography variant="body2" sx={{ maxWidth: 360 }} title={row.original.accessSummary}>
             {row.original.accessSummary}
           </Typography>
         ),

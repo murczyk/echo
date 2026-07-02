@@ -2,7 +2,11 @@ import { Box, Stack, Tooltip } from '@mui/material';
 import type { PointerEvent } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
-import { buildNetworkFrequencyDisplayGroups, getActivityBarHeight, type NetworkRowView } from '../helpers';
+import {
+  buildNetworkFrequencyDisplayGroups,
+  getActivityBarHeight,
+  type NetworkRowView,
+} from '../helpers';
 
 export function getLocationParts(location: string): string[] {
   return location
@@ -31,7 +35,12 @@ function RowLabel({ text }: { text: string }) {
 export function ActivityBars({ bars }: { bars: Array<{ value: number; title: string }> }) {
   const maxValue = bars.reduce((max, bar) => Math.max(max, bar.value), 0);
   return (
-    <Stack direction="row" spacing={0.35} alignItems="flex-end" sx={{ height: 36, overflow: 'hidden' }}>
+    <Stack
+      direction="row"
+      spacing={0.35}
+      alignItems="flex-end"
+      sx={{ height: 36, overflow: 'hidden' }}
+    >
       {bars.map((bar) => (
         <Tooltip key={bar.title} title={`${bar.title} - ${bar.value}`}>
           <Box
@@ -52,7 +61,12 @@ export function ActivityBars({ bars }: { bars: Array<{ value: number; title: str
 
 export function NetworkCell({ network }: { network: NetworkRowView }) {
   return (
-    <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="flex-start"
+      sx={{ minWidth: 0, flexWrap: 'nowrap' }}
+    >
       <Tooltip title={network.statusLabel}>
         <Box
           sx={{
@@ -103,8 +117,14 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
 export function AorCell({ labels }: { labels: string[] }) {
   return (
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      {labels.length > 0 ? labels.slice(0, 3).map((label) => <PowerChip key={label} label={label} interactive={false} />) : '—'}
-      {labels.length > 3 ? <Box sx={{ color: 'text.secondary' }}>{`+${labels.length - 3}`}</Box> : null}
+      {labels.length > 0
+        ? labels
+            .slice(0, 3)
+            .map((label) => <PowerChip key={label} label={label} interactive={false} />)
+        : '—'}
+      {labels.length > 3 ? (
+        <Box sx={{ color: 'text.secondary' }}>{`+${labels.length - 3}`}</Box>
+      ) : null}
     </Stack>
   );
 }
@@ -137,7 +157,14 @@ export function FrequencyCell({
         const visibleFrequencies = group.frequencies.slice(0, 2);
 
         return visibleFrequencies.length > 0 ? (
-          <Stack key={group.title} direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+          <Stack
+            key={group.title}
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            useFlexGap
+            sx={{ flexWrap: 'wrap', minWidth: 0 }}
+          >
             {visibleFrequencies.map((freq) => (
               <Box
                 key={freq.id}
@@ -149,7 +176,9 @@ export function FrequencyCell({
                 {freq.freq}
               </Box>
             ))}
-            {group.hiddenCount > 0 ? <Box sx={{ color: 'text.secondary' }}>{`+${group.hiddenCount}`}</Box> : null}
+            {group.hiddenCount > 0 ? (
+              <Box sx={{ color: 'text.secondary' }}>{`+${group.hiddenCount}`}</Box>
+            ) : null}
           </Stack>
         ) : null;
       })}
@@ -176,13 +205,21 @@ export function LocationCell({
       data-network-hover-anchor={hoverable ? 'true' : undefined}
       {...(hoverable
         ? {
-            onPointerEnter: (event: PointerEvent<HTMLElement>) => onPointerEnterAnchor(event.currentTarget, row),
+            onPointerEnter: (event: PointerEvent<HTMLElement>) =>
+              onPointerEnterAnchor(event.currentTarget, row),
             onPointerLeave: onPointerLeaveAnchor,
           }
         : {})}
     >
       {parts.slice(0, 2).map((item, index) => (
-        <Stack key={item} direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ minWidth: 0, maxWidth: '100%' }}>
+        <Stack
+          key={item}
+          direction="row"
+          spacing={0.75}
+          alignItems="center"
+          useFlexGap
+          sx={{ minWidth: 0, maxWidth: '100%' }}
+        >
           <Box
             title={item}
             sx={{
@@ -199,7 +236,9 @@ export function LocationCell({
             {item}
           </Box>
           {hoverable && index === 0 ? (
-            <Box sx={{ color: 'text.secondary', flexShrink: 0, lineHeight: 1.2 }}>{`+${parts.length - 2}`}</Box>
+            <Box
+              sx={{ color: 'text.secondary', flexShrink: 0, lineHeight: 1.2 }}
+            >{`+${parts.length - 2}`}</Box>
           ) : null}
         </Stack>
       ))}
@@ -207,7 +246,15 @@ export function LocationCell({
   );
 }
 
-export function LastActivityCell({ label, detail, tooltip }: { label: string; detail: string; tooltip: string }) {
+export function LastActivityCell({
+  label,
+  detail,
+  tooltip,
+}: {
+  label: string;
+  detail: string;
+  tooltip: string;
+}) {
   return (
     <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tooltip}</span>}>
       <Stack spacing={0.25} sx={{ cursor: 'default' }}>

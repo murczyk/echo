@@ -59,12 +59,20 @@ function toDeleteReqBody(req: DeleteSigintKeySharePolicyReq): DeleteSigintKeySha
 }
 
 export async function listKeySharePolicies(): Promise<SigintKeySharePolicy[]> {
-  const data = await postJson<SigintKeySharePolicyLike[]>('/api/sigint/key-share-policy/list', null);
+  const data = await postJson<SigintKeySharePolicyLike[]>(
+    '/api/sigint/key-share-policy/list',
+    null,
+  );
   return (data || []).map(normalizePolicy);
 }
 
-export async function createKeySharePolicy(req: CreateSigintKeySharePolicyReq): Promise<SigintKeySharePolicy> {
-  const data = await postJson<SigintKeySharePolicyLike>('/api/sigint/key-share-policy/create', toCreateReqBody(req));
+export async function createKeySharePolicy(
+  req: CreateSigintKeySharePolicyReq,
+): Promise<SigintKeySharePolicy> {
+  const data = await postJson<SigintKeySharePolicyLike>(
+    '/api/sigint/key-share-policy/create',
+    toCreateReqBody(req),
+  );
   return normalizePolicy(data || {});
 }
 

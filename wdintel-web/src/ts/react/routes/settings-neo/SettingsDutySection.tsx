@@ -1,10 +1,4 @@
-import {
-  Box,
-  FormControlLabel,
-  Stack,
-  Switch,
-  Typography,
-} from '@mui/material';
+import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -39,7 +33,12 @@ export function SettingsDutySection({
   onDisableAutoScrollChange,
 }: SettingsDutySectionProps) {
   return (
-    <Box id="settings-neo-panel-duty" role="tabpanel" aria-labelledby="settings-neo-tab-duty" sx={{ p: 3 }}>
+    <Box
+      id="settings-neo-panel-duty"
+      role="tabpanel"
+      aria-labelledby="settings-neo-tab-duty"
+      sx={{ p: 3 }}
+    >
       <Stack spacing={3} sx={{ maxWidth: 960 }}>
         <Typography
           component="h2"
@@ -83,8 +82,9 @@ export function SettingsDutySection({
                       Автоматична прокрутка стрічок Оперативного
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                      Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим зазором.
-                      Якщо прокрутити вгору, вона зупиняється і відновлюється після повернення вниз.
+                      Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим
+                      зазором. Якщо прокрутити вгору, вона зупиняється і відновлюється після
+                      повернення вниз.
                     </Typography>
                   </Stack>
                 }

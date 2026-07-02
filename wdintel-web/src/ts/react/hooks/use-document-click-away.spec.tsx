@@ -8,13 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDocumentClickAway } from './use-document-click-away';
 
-function TestComponent({
-  enabled,
-  onClickAway,
-}: {
-  enabled: boolean;
-  onClickAway: () => void;
-}) {
+function TestComponent({ enabled, onClickAway }: { enabled: boolean; onClickAway: () => void }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useDocumentClickAway({
@@ -35,9 +29,7 @@ function TestComponent({
         </button>
       </div>
       <div className="MuiPopover-root">
-        <button type="button">
-          Popover action
-        </button>
+        <button type="button">Popover action</button>
       </div>
       <button type="button" data-testid="outside-button">
         Outside
@@ -75,7 +67,9 @@ describe('useDocumentClickAway', () => {
     expect(modalButton).not.toBeNull();
 
     await act(async () => {
-      modalButton?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      modalButton?.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(onClickAway).not.toHaveBeenCalled();
@@ -92,7 +86,9 @@ describe('useDocumentClickAway', () => {
     expect(outsideButton).not.toBeNull();
 
     await act(async () => {
-      outsideButton?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      outsideButton?.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(onClickAway).toHaveBeenCalledTimes(1);

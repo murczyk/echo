@@ -28,7 +28,10 @@ import type { NetworkPoint } from '../../../../../Bindings';
 import { APP_DATETIME_INPUT_MIN } from '../../../utils/misc';
 import { NetworkDatePickerField } from './NetworkDatePickerField';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { filterPelengationPoints, getPelengationFrequencies } from './NetworkDetailsPelengationMap.shared';
+import {
+  filterPelengationPoints,
+  getPelengationFrequencies,
+} from './NetworkDetailsPelengationMap.shared';
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
 import { NetworkDetailsPelengationMap } from './NetworkDetailsPelengationMap';
@@ -116,7 +119,14 @@ function PelengationToolbar({
 }: PelengationToolbarProps) {
   return (
     <>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={2}
+        useFlexGap
+        sx={{ flexWrap: 'wrap' }}
+      >
         <Typography id={headingId} component="h2" variant="h6">
           Пеленгація
         </Typography>
@@ -125,8 +135,21 @@ function PelengationToolbar({
         </Typography>
       </Stack>
 
-      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0, flex: 1 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={2}
+        useFlexGap
+        sx={{ flexWrap: 'wrap' }}
+      >
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.5}
+          useFlexGap
+          sx={{ flexWrap: 'wrap', minWidth: 0, flex: 1 }}
+        >
           <TextField
             size="small"
             value={pelengSearch}
@@ -153,15 +176,21 @@ function PelengationToolbar({
                   <SearchOutlinedIcon fontSize="small" />
                 </InputAdornment>
               ),
-              endAdornment: searchText !== '' ? (
-                <InputAdornment position="end">
-                  <Tooltip title="Очистити пошук">
-                    <IconButton aria-label="Очистити пошук" size="small" onClick={() => onPelengSearchChange('')} sx={{ p: 0.25 }}>
-                      <ClearOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ) : undefined,
+              endAdornment:
+                searchText !== '' ? (
+                  <InputAdornment position="end">
+                    <Tooltip title="Очистити пошук">
+                      <IconButton
+                        aria-label="Очистити пошук"
+                        size="small"
+                        onClick={() => onPelengSearchChange('')}
+                        sx={{ p: 0.25 }}
+                      >
+                        <ClearOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ) : undefined,
             }}
           />
           <NetworkDatePickerField
@@ -184,7 +213,12 @@ function PelengationToolbar({
           />
           <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
             <FormControlLabel
-              control={<Switch checked={pelengShowLabels} onChange={(_, checked) => onPelengShowLabelsChange(checked)} />}
+              control={
+                <Switch
+                  checked={pelengShowLabels}
+                  onChange={(_, checked) => onPelengShowLabelsChange(checked)}
+                />
+              }
               label="Підписи"
               sx={{ m: 0, flexShrink: 0 }}
             />
@@ -194,14 +228,28 @@ function PelengationToolbar({
               variant="outlined"
               onClick={(event) => onFilterAnchorChange(event.currentTarget)}
               startIcon={<TuneOutlinedIcon />}
-              sx={{ borderRadius: 2, px: 1.6, py: 0.8, minWidth: 0, height: 40, textTransform: 'none', fontWeight: 700 }}
+              sx={{
+                borderRadius: 2,
+                px: 1.6,
+                py: 0.8,
+                minWidth: 0,
+                height: 40,
+                textTransform: 'none',
+                fontWeight: 700,
+              }}
             >
               Частоти
             </Button>
           </Stack>
         </Stack>
 
-        <Stack direction="row" alignItems="center" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', flexShrink: 0 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          useFlexGap
+          sx={{ flexWrap: 'wrap', flexShrink: 0 }}
+        >
           <Button
             type="button"
             variant={pelengSatelliteEnabled ? 'contained' : 'outlined'}
@@ -216,11 +264,19 @@ function PelengationToolbar({
               textTransform: 'none',
               fontWeight: 700,
               backgroundColor: pelengSatelliteEnabled ? theme.palette.primary.main : 'transparent',
-              color: pelengSatelliteEnabled ? theme.palette.primary.contrastText : theme.palette.text.secondary,
-              borderColor: pelengSatelliteEnabled ? theme.palette.primary.main : theme.palette.divider,
+              color: pelengSatelliteEnabled
+                ? theme.palette.primary.contrastText
+                : theme.palette.text.secondary,
+              borderColor: pelengSatelliteEnabled
+                ? theme.palette.primary.main
+                : theme.palette.divider,
               '&:hover': {
-                backgroundColor: pelengSatelliteEnabled ? theme.palette.primary.dark : theme.palette.action.hover,
-                borderColor: pelengSatelliteEnabled ? theme.palette.primary.dark : theme.palette.text.primary,
+                backgroundColor: pelengSatelliteEnabled
+                  ? theme.palette.primary.dark
+                  : theme.palette.action.hover,
+                borderColor: pelengSatelliteEnabled
+                  ? theme.palette.primary.dark
+                  : theme.palette.text.primary,
               },
             })}
           >
@@ -240,11 +296,19 @@ function PelengationToolbar({
               textTransform: 'none',
               fontWeight: 700,
               backgroundColor: pelengHeatmapEnabled ? theme.palette.primary.main : 'transparent',
-              color: pelengHeatmapEnabled ? theme.palette.primary.contrastText : theme.palette.text.secondary,
-              borderColor: pelengHeatmapEnabled ? theme.palette.primary.main : theme.palette.divider,
+              color: pelengHeatmapEnabled
+                ? theme.palette.primary.contrastText
+                : theme.palette.text.secondary,
+              borderColor: pelengHeatmapEnabled
+                ? theme.palette.primary.main
+                : theme.palette.divider,
               '&:hover': {
-                backgroundColor: pelengHeatmapEnabled ? theme.palette.primary.dark : theme.palette.action.hover,
-                borderColor: pelengHeatmapEnabled ? theme.palette.primary.dark : theme.palette.text.primary,
+                backgroundColor: pelengHeatmapEnabled
+                  ? theme.palette.primary.dark
+                  : theme.palette.action.hover,
+                borderColor: pelengHeatmapEnabled
+                  ? theme.palette.primary.dark
+                  : theme.palette.text.primary,
               },
             })}
           >
@@ -320,10 +384,22 @@ function PelengationToolbar({
 
 function PelengationShell({ children, toolbar }: { children: ReactNode; toolbar: ReactNode }) {
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
+    <Box
+      sx={{
+        minHeight: 0,
+        minWidth: 0,
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+      }}
+    >
       <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
         {toolbar}
-        <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, display: 'flex' }}>{children}</Box>
+        <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, display: 'flex' }}>
+          {children}
+        </Box>
       </Stack>
     </Box>
   );
@@ -366,7 +442,10 @@ export function NetworkDetailsPelengationPanel({
     return allFreqs.filter((freq) => freq.toLocaleUpperCase('uk-UA').includes(normalizedSearch));
   }, [allFreqs, searchText]);
   const visibleFreqs = useMemo(() => getPelengationFrequencies(filteredPoints), [filteredPoints]);
-  const summaryLabel = useMemo(() => `${filteredPoints.length} точок · ${visibleFreqs.length} частот`, [filteredPoints.length, visibleFreqs.length]);
+  const summaryLabel = useMemo(
+    () => `${filteredPoints.length} точок · ${visibleFreqs.length} частот`,
+    [filteredPoints.length, visibleFreqs.length],
+  );
   const pelengHasVisiblePoints = filteredPoints.length > 0;
   const pelengHasLoadedData = pelengPointsLoaded && !pelengPointsLoading;
   const pelengDateMin = useMemo(() => dayjs(APP_DATETIME_INPUT_MIN).startOf('day'), []);
@@ -382,8 +461,21 @@ export function NetworkDetailsPelengationPanel({
 
   if (pelengPointsError) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}>
+      <Box
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
+      >
+        <Stack
+          spacing={2}
+          sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}
+        >
           <Typography id={headingId} component="h2" variant="h6">
             Пеленгація
           </Typography>

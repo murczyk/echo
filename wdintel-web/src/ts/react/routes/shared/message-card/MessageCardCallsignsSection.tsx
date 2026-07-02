@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
-import { CircularProgress, IconButton, Stack, TextField, Tooltip, Typography, Chip } from '@mui/material';
+import {
+  CircularProgress,
+  IconButton,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+  Chip,
+} from '@mui/material';
 
 import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
@@ -21,7 +29,9 @@ function uniqueNormalizedCallsigns(values: string[]): string[] {
 
 function buildSuggestedCallsigns(msg: InboxMessage): string[] {
   const current = new Set(uniqueNormalizedCallsigns(msg.callsigns ?? []));
-  return uniqueNormalizedCallsigns(msg.callsignsAlg2 ?? []).filter((callsign) => callsign.length <= 12 && !current.has(callsign));
+  return uniqueNormalizedCallsigns(msg.callsignsAlg2 ?? []).filter(
+    (callsign) => callsign.length <= 12 && !current.has(callsign),
+  );
 }
 
 export function MessageCardCallsignsSection({
@@ -35,8 +45,14 @@ export function MessageCardCallsignsSection({
 }) {
   const [callsignDraft, setCallsignDraft] = useState('');
   const [addingCallsign, setAddingCallsign] = useState(false);
-  const currentCallsigns = useMemo(() => uniqueNormalizedCallsigns(msg.callsigns ?? []), [msg.callsigns]);
-  const analysisVisibleCallsigns = useMemo(() => (callsignInfoMap ? currentCallsigns : currentCallsigns), [callsignInfoMap, currentCallsigns]);
+  const currentCallsigns = useMemo(
+    () => uniqueNormalizedCallsigns(msg.callsigns ?? []),
+    [msg.callsigns],
+  );
+  const analysisVisibleCallsigns = useMemo(
+    () => (callsignInfoMap ? currentCallsigns : currentCallsigns),
+    [callsignInfoMap, currentCallsigns],
+  );
   const proposedCallsigns = useMemo(() => buildSuggestedCallsigns(msg), [msg]);
   const messageResetKey = msg.messageUid ?? `${msg.timestamp ?? ''}-${msg.text ?? ''}`;
 
@@ -63,7 +79,14 @@ export function MessageCardCallsignsSection({
 
   return (
     <Stack spacing={0.75} sx={{ minWidth: 0 }}>
-      <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
+      <Stack
+        direction="row"
+        spacing={0.75}
+        useFlexGap
+        flexWrap="wrap"
+        alignItems="center"
+        sx={{ minWidth: 0 }}
+      >
         {analysisVisibleCallsigns.length > 0
           ? analysisVisibleCallsigns.map((callsign) => (
               <PowerChip
@@ -110,7 +133,11 @@ export function MessageCardCallsignsSection({
               size="small"
               sx={{ width: 30, height: 30, flexShrink: 0, ml: 0.25 }}
             >
-              {addingCallsign ? <CircularProgress size={16} thickness={5} color="inherit" /> : <AddIcon fontSize="small" />}
+              {addingCallsign ? (
+                <CircularProgress size={16} thickness={5} color="inherit" />
+              ) : (
+                <AddIcon fontSize="small" />
+              )}
             </IconButton>
           </span>
         </Tooltip>
@@ -123,7 +150,12 @@ export function MessageCardCallsignsSection({
           </Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
             {proposedCallsigns.map((callsign) => (
-              <Chip key={callsign} label={callsign} onClick={() => void actions.onAddSuggestedCallsign(callsign)} variant="filled" />
+              <Chip
+                key={callsign}
+                label={callsign}
+                onClick={() => void actions.onAddSuggestedCallsign(callsign)}
+                variant="filled"
+              />
             ))}
           </Stack>
         </Stack>

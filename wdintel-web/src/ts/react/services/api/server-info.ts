@@ -27,7 +27,8 @@ function normalizeServerInfo(raw: ServerInfoLike | null | undefined): ServerInfo
     featureDelta: raw?.featureDelta ?? raw?.feature_delta ?? false,
     featureAnalysisMap: raw?.featureAnalysisMap ?? raw?.feature_analysis_map ?? false,
     featureStrictNetworks: raw?.featureStrictNetworks ?? raw?.feature_strict_networks ?? false,
-    featureMyAdminGroupsEdit: raw?.featureMyAdminGroupsEdit ?? raw?.feature_my_admin_groups_edit ?? false,
+    featureMyAdminGroupsEdit:
+      raw?.featureMyAdminGroupsEdit ?? raw?.feature_my_admin_groups_edit ?? false,
     version: raw?.version ?? '',
   };
 }

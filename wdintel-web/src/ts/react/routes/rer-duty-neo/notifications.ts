@@ -52,7 +52,10 @@ export function getStoredDutyNotificationSettingsForFeed(feedId: string): DutyNo
   return { soundEnabled: false, browserEnabled: false };
 }
 
-export function setStoredDutyNotificationSettingsForFeed(feedId: string, value: DutyNotificationSettings): void {
+export function setStoredDutyNotificationSettingsForFeed(
+  feedId: string,
+  value: DutyNotificationSettings,
+): void {
   if (typeof window === 'undefined') return;
   try {
     const next = { ...readDutyNotificationSettingsByFeed(), [feedId]: value };
@@ -68,7 +71,9 @@ export function getBrowserNotificationPermission(): NotificationPermission | 'un
   return Notification.permission;
 }
 
-export async function requestBrowserNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+export async function requestBrowserNotificationPermission(): Promise<
+  NotificationPermission | 'unsupported'
+> {
   if (typeof window === 'undefined') return 'unsupported';
   if (!('Notification' in window)) return 'unsupported';
   if (Notification.permission !== 'default') return Notification.permission;
@@ -179,7 +184,14 @@ function playDutyNotificationChimeOnContext(ctx: AudioContext): void {
   const d2 = DUTY_NOTIF_CHIME_SECOND_MS / 1000;
   const t2 = t0 + DUTY_NOTIF_CHIME_GAP_MS / 1000;
   scheduleSoftSineTone(ctx, master, t0, d1, DUTY_NOTIF_CHIME_FIRST_HZ, DUTY_NOTIF_CHIME_PEAK_FIRST);
-  scheduleSoftSineTone(ctx, master, t2, d2, DUTY_NOTIF_CHIME_SECOND_HZ, DUTY_NOTIF_CHIME_PEAK_SECOND);
+  scheduleSoftSineTone(
+    ctx,
+    master,
+    t2,
+    d2,
+    DUTY_NOTIF_CHIME_SECOND_HZ,
+    DUTY_NOTIF_CHIME_PEAK_SECOND,
+  );
 }
 
 export function playNotificationSound(): void {
@@ -219,7 +231,9 @@ function stripDutyNeoDocumentTitleCountPrefix(title: string): string {
 function applyDutyNeoDocumentTitle(): void {
   if (typeof document === 'undefined' || isNullOrUndefined(dutyNeoDocumentTitleBase)) return;
   document.title =
-    dutyNeoDocumentTitleCount > 0 ? `(${dutyNeoDocumentTitleCount}) ${dutyNeoDocumentTitleBase}` : dutyNeoDocumentTitleBase;
+    dutyNeoDocumentTitleCount > 0
+      ? `(${dutyNeoDocumentTitleCount}) ${dutyNeoDocumentTitleBase}`
+      : dutyNeoDocumentTitleBase;
 }
 
 /**

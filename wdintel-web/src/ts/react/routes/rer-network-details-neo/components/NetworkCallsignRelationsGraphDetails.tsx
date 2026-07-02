@@ -1,6 +1,16 @@
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
-import { Box, Button, Chip, CircularProgress, Divider, IconButton, Paper, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Divider,
+  IconButton,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 
@@ -78,7 +88,8 @@ export function NetworkCallsignRelationsGraphDetails({
             p: 1.5,
             position: 'relative',
             pr: selectedEdge || selectedNode ? 4.5 : 1.5,
-            borderBottom: selectedEdge || selectedNode ? `1px solid ${graphTheme.overlayBorder}` : 'none',
+            borderBottom:
+              selectedEdge || selectedNode ? `1px solid ${graphTheme.overlayBorder}` : 'none',
             flexShrink: 0,
           }}
         >
@@ -93,13 +104,20 @@ export function NetworkCallsignRelationsGraphDetails({
                   variant="text"
                   startIcon={<ArrowBackOutlinedIcon fontSize="small" />}
                   onClick={onBackToNode}
-                  sx={{ alignSelf: 'flex-start', minWidth: 0, px: 0, py: 0.25, textTransform: 'none' }}
+                  sx={{
+                    alignSelf: 'flex-start',
+                    minWidth: 0,
+                    px: 0,
+                    py: 0.25,
+                    textTransform: 'none',
+                  }}
                 >
                   До списку {drilldownNode.label}
                 </Button>
               ) : null}
               <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                {selectedEdge.visibleWeight} перехоплень у {selectedEdge.visibleByFreq.length} частотах
+                {selectedEdge.visibleWeight} перехоплень у {selectedEdge.visibleByFreq.length}{' '}
+                частотах
               </Typography>
             </Stack>
           ) : selectedNode ? (
@@ -108,7 +126,8 @@ export function NetworkCallsignRelationsGraphDetails({
                 {selectedNode.label}
               </Typography>
               <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                {selectedNode.position ?? 'Позиція не вказана'} · {selectedNode.unitName ?? 'Підрозділ не вказаний'}
+                {selectedNode.position ?? 'Позиція не вказана'} ·{' '}
+                {selectedNode.unitName ?? 'Підрозділ не вказаний'}
               </Typography>
             </Stack>
           ) : (
@@ -150,13 +169,18 @@ export function NetworkCallsignRelationsGraphDetails({
           ) : null}
         </Box>
 
-        {(selectedEdge || selectedNode) ? (
+        {selectedEdge || selectedNode ? (
           <Box sx={{ p: 1.5, overflow: 'auto', minHeight: 0, flex: 1 }}>
             {selectedEdge ? (
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                   {selectedEdge.visibleByFreq.map((item) => (
-                    <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: graphTheme.surfaceBg }} />
+                    <Chip
+                      key={item.freq}
+                      size="small"
+                      label={`${item.freq} · ${item.weight}`}
+                      sx={{ bgcolor: graphTheme.surfaceBg }}
+                    />
                   ))}
                 </Stack>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
@@ -169,7 +193,9 @@ export function NetworkCallsignRelationsGraphDetails({
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                   <Chip size="small" label={`Активність: ${selectedNode.activityCount}`} />
                   <Chip size="small" label={`Зв'язків: ${selectedNode.relationCount}`} />
-                  {selectedNode.knownCallsignId ? <Chip size="small" label={`ID: ${selectedNode.knownCallsignId}`} /> : null}
+                  {selectedNode.knownCallsignId ? (
+                    <Chip size="small" label={`ID: ${selectedNode.knownCallsignId}`} />
+                  ) : null}
                 </Stack>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Stack spacing={0.75}>
@@ -190,7 +216,10 @@ export function NetworkCallsignRelationsGraphDetails({
                           sx={{
                             p: 1,
                             bgcolor: graphTheme.surfaceBg,
-                            borderColor: selectedEdgeId === edge.id ? theme.palette.primary.main : graphTheme.surfaceBorder,
+                            borderColor:
+                              selectedEdgeId === edge.id
+                                ? theme.palette.primary.main
+                                : graphTheme.surfaceBorder,
                             cursor: 'pointer',
                           }}
                           onClick={() => onOpenNodeEdgeId(edge.id)}
@@ -200,13 +229,26 @@ export function NetworkCallsignRelationsGraphDetails({
                               <Typography variant="body2" sx={{ fontWeight: 700 }}>
                                 {partner}
                               </Typography>
-                              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ color: graphTheme.overlayTextSecondary }}
+                              >
                                 {edge.visibleWeight}
                               </Typography>
                             </Stack>
-                            <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                            <Stack
+                              direction="row"
+                              spacing={0.5}
+                              useFlexGap
+                              sx={{ flexWrap: 'wrap' }}
+                            >
                               {edge.visibleByFreq.slice(0, 3).map((item) => (
-                                <Chip key={item.freq} size="small" label={`${item.freq} · ${item.weight}`} sx={{ bgcolor: graphTheme.surfaceBg }} />
+                                <Chip
+                                  key={item.freq}
+                                  size="small"
+                                  label={`${item.freq} · ${item.weight}`}
+                                  sx={{ bgcolor: graphTheme.surfaceBg }}
+                                />
                               ))}
                             </Stack>
                           </Stack>
@@ -218,7 +260,7 @@ export function NetworkCallsignRelationsGraphDetails({
               </Stack>
             ) : null}
 
-            {(selectedEdge || selectedNode) ? (
+            {selectedEdge || selectedNode ? (
               <Stack spacing={1.5} sx={{ mt: 1.5 }}>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Stack spacing={0.75}>
@@ -253,19 +295,45 @@ export function NetworkCallsignRelationsGraphDetails({
                           }}
                         >
                           <Stack spacing={0.75}>
-                            <Stack direction="row" justifyContent="space-between" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                            <Stack
+                              direction="row"
+                              justifyContent="space-between"
+                              spacing={1}
+                              useFlexGap
+                              sx={{ flexWrap: 'wrap' }}
+                            >
                               <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                {message.timestamp ? dayjs(message.timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm') : 'Час невідомий'}
+                                {message.timestamp
+                                  ? dayjs(message.timestamp)
+                                      .tz(APP_TIME_ZONE)
+                                      .format('DD.MM.YYYY HH:mm')
+                                  : 'Час невідомий'}
                               </Typography>
-                              {message.freq ? <Chip size="small" label={message.freq} sx={{ bgcolor: graphTheme.surfaceBg }} /> : null}
+                              {message.freq ? (
+                                <Chip
+                                  size="small"
+                                  label={message.freq}
+                                  sx={{ bgcolor: graphTheme.surfaceBg }}
+                                />
+                              ) : null}
                             </Stack>
                             <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
                               {message.text}
                             </Typography>
                             {message.callsigns.length > 0 ? (
-                              <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                              <Stack
+                                direction="row"
+                                spacing={0.5}
+                                useFlexGap
+                                sx={{ flexWrap: 'wrap' }}
+                              >
                                 {message.callsigns.map((callsign) => (
-                                  <Chip key={`${message.id}-${callsign}`} size="small" label={callsign} sx={{ bgcolor: graphTheme.surfaceBg }} />
+                                  <Chip
+                                    key={`${message.id}-${callsign}`}
+                                    size="small"
+                                    label={callsign}
+                                    sx={{ bgcolor: graphTheme.surfaceBg }}
+                                  />
                                 ))}
                               </Stack>
                             ) : null}

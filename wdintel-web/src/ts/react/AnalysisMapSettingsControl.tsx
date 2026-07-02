@@ -72,10 +72,7 @@ function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps)
               }}
               size="small"
             />
-            <Box
-              className="palitra-title-button map-settings-item-label"
-              title="Підписи пеленгів"
-            >
+            <Box className="palitra-title-button map-settings-item-label" title="Підписи пеленгів">
               <Typography className="palitra-name map-settings-label">Підписи пеленгів</Typography>
             </Box>
           </Box>

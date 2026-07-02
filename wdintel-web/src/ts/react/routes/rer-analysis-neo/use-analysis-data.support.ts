@@ -21,7 +21,11 @@ export function mergeNetworksById(existing: Network[], loaded: Network[]): Netwo
   return Array.from(merged.values());
 }
 
-export function shouldSkipNewCallsignsLoad(loadedKey: string | null, pendingKey: string | null, requestKey: string): boolean {
+export function shouldSkipNewCallsignsLoad(
+  loadedKey: string | null,
+  pendingKey: string | null,
+  requestKey: string,
+): boolean {
   return loadedKey === requestKey || pendingKey === requestKey;
 }
 
@@ -46,7 +50,11 @@ export function invalidateNewCallsignsLoadState({
   newCallsignsPendingKeyRef,
 }: Pick<
   UseLoadNewCallsignsParams,
-  'setNewCallsigns' | 'setNewCallsignsLoading' | 'newCallsignsRequestRef' | 'newCallsignsLoadedKeyRef' | 'newCallsignsPendingKeyRef'
+  | 'setNewCallsigns'
+  | 'setNewCallsignsLoading'
+  | 'newCallsignsRequestRef'
+  | 'newCallsignsLoadedKeyRef'
+  | 'newCallsignsPendingKeyRef'
 >) {
   setNewCallsigns(emptyNewCallsigns);
   setNewCallsignsLoading(false);
@@ -81,7 +89,13 @@ export function useLoadNewCallsigns({
     }
 
     const requestKey = JSON.stringify(analysisReq);
-    if (shouldSkipNewCallsignsLoad(newCallsignsLoadedKeyRef.current, newCallsignsPendingKeyRef.current, requestKey)) {
+    if (
+      shouldSkipNewCallsignsLoad(
+        newCallsignsLoadedKeyRef.current,
+        newCallsignsPendingKeyRef.current,
+        requestKey,
+      )
+    ) {
       return;
     }
 
@@ -96,12 +110,19 @@ export function useLoadNewCallsigns({
     onError('');
 
     try {
-      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq, { signal: abortController.signal });
+      const newCallsignsRsp = await fetchAnalysisNewCallsigns(analysisReq, {
+        signal: abortController.signal,
+      });
       if (requestId !== newCallsignsRequestRef.current || abortController.signal.aborted) return;
       setNewCallsigns(newCallsignsRsp);
       newCallsignsLoadedKeyRef.current = requestKey;
     } catch (loadError) {
-      if (requestId !== newCallsignsRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
+      if (
+        requestId !== newCallsignsRequestRef.current ||
+        abortController.signal.aborted ||
+        isAbortError(loadError)
+      )
+        return;
       if (!onUnauthorized(loadError)) {
         onError(toErrorMessage(loadError));
       }
@@ -148,9 +169,9 @@ export function useLoadMissingNetworksForMessages({
   return useCallback(
     async (messageItems: Array<[number, InboxMessage]>) => {
       const existingNetworkIds = new Set(networksRef.current.map((network) => network.id));
-      const missingNetworkIds = Array.from(new Set(messageItems.flatMap(([, message]) => message.networkIds ?? []))).filter(
-        (networkId) => !existingNetworkIds.has(networkId),
-      );
+      const missingNetworkIds = Array.from(
+        new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
+      ).filter((networkId) => !existingNetworkIds.has(networkId));
       if (missingNetworkIds.length === 0) return;
 
       try {

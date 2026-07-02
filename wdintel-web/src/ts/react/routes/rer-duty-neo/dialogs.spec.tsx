@@ -15,7 +15,15 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Dialog: ({ children, open, disableRestoreFocus }: { children?: ReactNode; open?: boolean; disableRestoreFocus?: boolean }) => {
+  Dialog: ({
+    children,
+    open,
+    disableRestoreFocus,
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    disableRestoreFocus?: boolean;
+  }) => {
     if (open) dialogProps.push({ disableRestoreFocus });
     return open ? <div role="dialog">{children}</div> : null;
   },

@@ -12,7 +12,11 @@ type CreatePointsMarkersGroupOptions = {
     latlng: Leaflet.LatLng,
     originalEvent?: MouseEvent | PointerEvent | Event,
   ) => void;
-  onClusterClick: (messageIds: number[], latlng: Leaflet.LatLng | null, cluster: Leaflet.Layer) => void;
+  onClusterClick: (
+    messageIds: number[],
+    latlng: Leaflet.LatLng | null,
+    cluster: Leaflet.Layer,
+  ) => void;
 };
 
 export function replacePointsLayer(params: {
@@ -27,7 +31,15 @@ export function replacePointsLayer(params: {
     markersGroup: Leaflet.MarkerClusterGroup;
   };
 }): { markersGroup: Leaflet.MarkerClusterGroup; boundedAlready: boolean } {
-  const { map, markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, points, boundedAlready, buildMarkersGroup } = params;
+  const {
+    map,
+    markersGroup,
+    pelengsLayerGroup,
+    pelengLabelsLayerGroup,
+    points,
+    boundedAlready,
+    buildMarkersGroup,
+  } = params;
   cleanupMarkersGroup(markersGroup, pelengsLayerGroup, pelengLabelsLayerGroup, map);
 
   const nextBoundedAlready = fitBoundsOnInitialLowZoom(map, points, boundedAlready);
@@ -73,13 +85,17 @@ export function createPointsMarkersGroup({
   const bounds = L.latLngBounds(points);
 
   points.forEach((point) => {
-    const circle = new DataCircleMarker([point.lat, point.lng], { messageId: point.message_id, freq: point.freq }, {
-      color: '#000',
-      fillColor: '#ED1C23',
-      fillOpacity: 1,
-      radius: 4,
-      weight: 1,
-    });
+    const circle = new DataCircleMarker(
+      [point.lat, point.lng],
+      { messageId: point.message_id, freq: point.freq },
+      {
+        color: '#000',
+        fillColor: '#ED1C23',
+        fillOpacity: 1,
+        radius: 4,
+        weight: 1,
+      },
+    );
 
     circle.on('click', () => {
       onPointClick(point, circle);
@@ -94,10 +110,13 @@ export function createPointsMarkersGroup({
         event.originalEvent,
       );
     });
-    circle.on('contextmenu', (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
-      event.originalEvent?.preventDefault();
-      event.originalEvent?.stopPropagation();
-    });
+    circle.on(
+      'contextmenu',
+      (event: Leaflet.LeafletMouseEvent & { originalEvent?: MouseEvent }) => {
+        event.originalEvent?.preventDefault();
+        event.originalEvent?.stopPropagation();
+      },
+    );
     circle.on('popupopen', () => {
       circle.setStyle({ fillColor: '#fff', color: '#000' });
     });

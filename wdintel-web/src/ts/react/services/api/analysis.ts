@@ -74,8 +74,14 @@ type PostStatsRsp = { posts: AnalysisStatsPost[] };
 type FreqStatsRsp = { freqs: AnalysisStatsFreq[] };
 type CallsignStatsRsp = { callsigns: AnalysisStatsCallsign[] };
 type TagStatsRsp = { tags: AnalysisStatsTag[] };
-type NetworkStatsRsp = { networks: AnalysisStatsNetwork[]; networkNames: Array<{ id: number; name: string }> };
-type AreaOfResponsibilityStatsRsp = { aors: AnalysisStatsAor[]; aorNames: AreaOfResponsibilityEntry[] };
+type NetworkStatsRsp = {
+  networks: AnalysisStatsNetwork[];
+  networkNames: Array<{ id: number; name: string }>;
+};
+type AreaOfResponsibilityStatsRsp = {
+  aors: AnalysisStatsAor[];
+  aorNames: AreaOfResponsibilityEntry[];
+};
 type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
@@ -171,7 +177,11 @@ function reportPreviewReqBody(req: ReportPreviewReq): JsonValue {
   return body as JsonValue;
 }
 
-async function postAnalysisStats<T>(url: string, req: AnalysisStatsReq, options?: RequestOptions): Promise<T> {
+async function postAnalysisStats<T>(
+  url: string,
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<T> {
   const raw = await postJson<unknown>(url, analysisStatsReqBody(req) as JsonValue, options);
   return transformSnakeToCamel<T>(raw);
 }
@@ -198,68 +208,124 @@ export async function deleteAnalysisSavedFilter(id: number): Promise<void> {
   await postVoid('/api/rer/analysis/saved-filter-delete', id);
 }
 
-export async function fetchAnalysisCount(req: AnalysisStatsReq, options?: RequestOptions): Promise<CountStatsRsp> {
+export async function fetchAnalysisCount(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<CountStatsRsp> {
   return postAnalysisStats<CountStatsRsp>('/api/rer/analysis/stats/count', req, options);
 }
 
-export async function fetchAnalysisGroups(req: AnalysisStatsReq, options?: RequestOptions): Promise<GroupStatsRsp> {
+export async function fetchAnalysisGroups(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<GroupStatsRsp> {
   return postAnalysisStats<GroupStatsRsp>('/api/rer/analysis/stats/groups', req, options);
 }
 
-export async function fetchAnalysisSenders(req: AnalysisStatsReq, options?: RequestOptions): Promise<SenderStatsRsp> {
+export async function fetchAnalysisSenders(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<SenderStatsRsp> {
   return postAnalysisStats<SenderStatsRsp>('/api/rer/analysis/stats/senders', req, options);
 }
 
-export async function fetchAnalysisFreqs(req: AnalysisStatsReq, options?: RequestOptions): Promise<FreqStatsRsp> {
+export async function fetchAnalysisFreqs(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<FreqStatsRsp> {
   return postAnalysisStats<FreqStatsRsp>('/api/rer/analysis/stats/freqs', req, options);
 }
 
-export async function fetchAnalysisPosts(req: AnalysisStatsReq, options?: RequestOptions): Promise<PostStatsRsp> {
+export async function fetchAnalysisPosts(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<PostStatsRsp> {
   return postAnalysisStats<PostStatsRsp>('/api/rer/analysis/stats/posts', req, options);
 }
 
-export async function fetchAnalysisCallsigns(req: AnalysisStatsReq, options?: RequestOptions): Promise<CallsignStatsRsp> {
+export async function fetchAnalysisCallsigns(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<CallsignStatsRsp> {
   return postAnalysisStats<CallsignStatsRsp>('/api/rer/analysis/stats/callsigns', req, options);
 }
 
-export async function fetchAnalysisUnits(req: AnalysisStatsReq, options?: RequestOptions): Promise<UnitStatsRsp> {
+export async function fetchAnalysisUnits(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<UnitStatsRsp> {
   return postAnalysisStats<UnitStatsRsp>('/api/rer/analysis/stats/units', req, options);
 }
 
-export async function fetchAnalysisLocations(req: AnalysisStatsReq, options?: RequestOptions): Promise<LocationStatsRsp> {
+export async function fetchAnalysisLocations(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<LocationStatsRsp> {
   return postAnalysisStats<LocationStatsRsp>('/api/rer/analysis/stats/locations', req, options);
 }
 
-export async function fetchAnalysisTags(req: AnalysisStatsReq, options?: RequestOptions): Promise<TagStatsRsp> {
+export async function fetchAnalysisTags(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<TagStatsRsp> {
   return postAnalysisStats<TagStatsRsp>('/api/rer/analysis/stats/tags', req, options);
 }
 
-export async function fetchAnalysisNetworks(req: AnalysisStatsReq, options?: RequestOptions): Promise<NetworkStatsRsp> {
+export async function fetchAnalysisNetworks(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<NetworkStatsRsp> {
   return postAnalysisStats<NetworkStatsRsp>('/api/rer/analysis/stats/networks', req, options);
 }
 
-export async function fetchAnalysisAors(req: AnalysisStatsReq, options?: RequestOptions): Promise<AreaOfResponsibilityStatsRsp> {
-  return postAnalysisStats<AreaOfResponsibilityStatsRsp>('/api/rer/analysis/stats/aors', req, options);
+export async function fetchAnalysisAors(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<AreaOfResponsibilityStatsRsp> {
+  return postAnalysisStats<AreaOfResponsibilityStatsRsp>(
+    '/api/rer/analysis/stats/aors',
+    req,
+    options,
+  );
 }
 
-export async function fetchAnalysisMetadata(req: AnalysisStatsReq, options?: RequestOptions): Promise<MetadataStatsRsp> {
+export async function fetchAnalysisMetadata(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<MetadataStatsRsp> {
   return postAnalysisStats<MetadataStatsRsp>('/api/rer/analysis/stats/metadata', req, options);
 }
 
-export async function fetchAnalysisSummaryTable(req: AnalysisStatsReq, options?: RequestOptions): Promise<SummaryTableFreq> {
+export async function fetchAnalysisSummaryTable(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<SummaryTableFreq> {
   return postAnalysisStats<SummaryTableFreq>('/api/rer/analysis/summary-table-freq', req, options);
 }
 
-export async function fetchAnalysisNewCallsigns(req: AnalysisStatsReq, options?: RequestOptions): Promise<NewCallsignsRes> {
+export async function fetchAnalysisNewCallsigns(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<NewCallsignsRes> {
   return postAnalysisStats<NewCallsignsRes>('/api/rer/analysis/new-callsigns', req, options);
 }
 
-export async function fetchAnalysisCorrelatedFreqs(req: AnalysisStatsReq, options?: RequestOptions): Promise<CorrelatedFreqsRsp> {
+export async function fetchAnalysisCorrelatedFreqs(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<CorrelatedFreqsRsp> {
   return postAnalysisStats<CorrelatedFreqsRsp>('/api/rer/analysis/correlated-freqs', req, options);
 }
 
-export async function fetchAnalysisCallsignGraph(req: CallsignsGraphReq, options?: RequestOptions): Promise<NetJsonGraphAndMeta> {
-  const raw = await postJson<unknown>('/api/rer/analysis/callsigns-graph', transformCamelToSnake(req), options);
+export async function fetchAnalysisCallsignGraph(
+  req: CallsignsGraphReq,
+  options?: RequestOptions,
+): Promise<NetJsonGraphAndMeta> {
+  const raw = await postJson<unknown>(
+    '/api/rer/analysis/callsigns-graph',
+    transformCamelToSnake(req),
+    options,
+  );
   return transformSnakeToCamel<NetJsonGraphAndMeta>(raw);
 }
 
@@ -276,22 +342,41 @@ export async function fetchAnalysisMapPoints(
   },
   options?: RequestOptions,
 ): Promise<MapPointsRsp> {
-  const raw = await postJson<unknown>('/api/rer-importer/get-inbox-map', transformCamelToSnake(req), options);
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/get-inbox-map',
+    transformCamelToSnake(req),
+    options,
+  );
   return transformSnakeToCamel<MapPointsRsp>(raw);
 }
 
-export async function fetchMessagesByIds(messageIds: number[]): Promise<Array<[number, InboxMessage]>> {
-  const raw = await postJson<unknown>('/api/rer-importer/messages-by-id', transformCamelToSnake({ messageIds }));
+export async function fetchMessagesByIds(
+  messageIds: number[],
+): Promise<Array<[number, InboxMessage]>> {
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/messages-by-id',
+    transformCamelToSnake({ messageIds }),
+  );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
 export async function fetchMessageComments(req: BatchMessageCommentsReq): Promise<MessageComments> {
-  const raw = await postJson<unknown>('/api/rer/message/comments-batch', transformCamelToSnake(req));
+  const raw = await postJson<unknown>(
+    '/api/rer/message/comments-batch',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<MessageComments>(raw);
 }
 
-export async function fetchAnalysisCallsignInfos(callsigns: string[], options?: RequestOptions): Promise<CallsignInfoRes[]> {
-  const raw = await postJson<unknown>('/api/rer/callsign-info-batch', transformCamelToSnake({ callsigns }), options);
+export async function fetchAnalysisCallsignInfos(
+  callsigns: string[],
+  options?: RequestOptions,
+): Promise<CallsignInfoRes[]> {
+  const raw = await postJson<unknown>(
+    '/api/rer/callsign-info-batch',
+    transformCamelToSnake({ callsigns }),
+    options,
+  );
   return transformSnakeToCamel<CallsignInfoBatchRaw>(raw) ?? [];
 }
 
@@ -326,7 +411,10 @@ export async function launchAnalysisReportTask(req: ReportPreviewReq): Promise<n
   return postJson<number>('/api/rer/report-docx-task-launch', reportPreviewReqBody(req));
 }
 
-export async function fetchAnalysisReportTaskStatus(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
+export async function fetchAnalysisReportTaskStatus(
+  taskId: number,
+  skip: number,
+): Promise<BgtaskStatusAndLogsRsp> {
   return fetchReportHistoryTaskStatus(taskId, skip);
 }
 
@@ -348,7 +436,10 @@ export async function downloadAnalysisSummaryTableXlsx(req: AnalysisStatsReq): P
 }
 
 export async function launchAnalysisSummaryTableTask(req: AnalysisStatsReq): Promise<number> {
-  return postJson<number>('/api/rer/analysis/summary-table-task-launch', analysisStatsReqBody(req) as JsonValue);
+  return postJson<number>(
+    '/api/rer/analysis/summary-table-task-launch',
+    analysisStatsReqBody(req) as JsonValue,
+  );
 }
 
 export async function downloadAnalysisKmz(req: AnalysisStatsReq): Promise<Blob> {
@@ -356,7 +447,10 @@ export async function downloadAnalysisKmz(req: AnalysisStatsReq): Promise<Blob> 
 }
 
 export async function launchAnalysisKmzTask(req: AnalysisStatsReq): Promise<number> {
-  return postJson<number>('/api/rer/analysis/kmz-task-launch', analysisStatsReqBody(req) as JsonValue);
+  return postJson<number>(
+    '/api/rer/analysis/kmz-task-launch',
+    analysisStatsReqBody(req) as JsonValue,
+  );
 }
 
 export async function downloadAnalysisGeojson(req: AnalysisStatsReq): Promise<Blob> {
@@ -364,7 +458,10 @@ export async function downloadAnalysisGeojson(req: AnalysisStatsReq): Promise<Bl
 }
 
 export async function launchAnalysisGeojsonTask(req: AnalysisStatsReq): Promise<number> {
-  return postJson<number>('/api/rer/analysis/geojson-task-launch', analysisStatsReqBody(req) as JsonValue);
+  return postJson<number>(
+    '/api/rer/analysis/geojson-task-launch',
+    analysisStatsReqBody(req) as JsonValue,
+  );
 }
 
 export async function fetchUnitsByIds(req: ListUnitsByIdReq): Promise<ListUnitsByIdRsp> {
@@ -372,7 +469,10 @@ export async function fetchUnitsByIds(req: ListUnitsByIdReq): Promise<ListUnitsB
   return transformSnakeToCamel<ListUnitsByIdRsp>(raw);
 }
 
-export async function fetchNetworksByIds(ids: number[], options?: RequestOptions): Promise<Network[]> {
+export async function fetchNetworksByIds(
+  ids: number[],
+  options?: RequestOptions,
+): Promise<Network[]> {
   const raw = await postJson<unknown>('/api/sigint/network-info-batch-id', ids, options);
   return transformSnakeToCamel<Network[]>(raw) ?? [];
 }

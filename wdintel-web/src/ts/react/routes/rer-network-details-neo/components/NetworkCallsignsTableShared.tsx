@@ -17,7 +17,12 @@ export const NETWORK_STATUS_FILTER_LABELS: Record<NetworkCallsignStatusFilter, s
   Unknown: 'Невідомо',
 };
 
-export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = ['All', 'Developing', 'Catalog', 'Unknown'];
+export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = [
+  'All',
+  'Developing',
+  'Catalog',
+  'Unknown',
+];
 
 export const NETWORK_COLUMNS_VISIBILITY = {
   callsign: true,
@@ -79,11 +84,12 @@ export function CountChipLabel({
   totalCount?: number | null;
   selected?: boolean;
 }) {
-  const countLabel = count === null
-    ? NO_DATA_LABEL
-    : totalCount === null || totalCount === undefined
-      ? formatCountLabel(count)
-      : `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
+  const countLabel =
+    count === null
+      ? NO_DATA_LABEL
+      : totalCount === null || totalCount === undefined
+        ? formatCountLabel(count)
+        : `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
   return (
     <Stack direction="row" spacing={0.4} alignItems="center" sx={{ lineHeight: 1 }}>
       <Box component="span" sx={{ lineHeight: 1 }}>

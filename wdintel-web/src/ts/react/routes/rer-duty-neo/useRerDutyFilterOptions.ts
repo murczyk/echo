@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry, Tag } from '../../../../Bindings';
+import type {
+  SavedFilterDuty,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+} from '../../../../Bindings';
 import {
   getGroupInfosBatch,
   getLatestFrequencies,
@@ -20,7 +25,9 @@ export function useRerDutyFilterOptions() {
   const [groupsList, setGroupsList] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>([]);
-  const [selectedSavedIdByFeedId, setSelectedSavedIdByFeedId] = useState<Record<string, number | null>>({});
+  const [selectedSavedIdByFeedId, setSelectedSavedIdByFeedId] = useState<
+    Record<string, number | null>
+  >({});
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
@@ -43,13 +50,14 @@ export function useRerDutyFilterOptions() {
   }, []);
 
   const loadFilterOptions = useCallback(async () => {
-    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] = await Promise.allSettled([
-      getLatestSenders(),
-      getLatestFrequencies(),
-      getPostsList(),
-      getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
-      getTagsMapForDisplay(),
-    ]);
+    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] =
+      await Promise.allSettled([
+        getLatestSenders(),
+        getLatestFrequencies(),
+        getPostsList(),
+        getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        getTagsMapForDisplay(),
+      ]);
     if (sendersResult.status === 'fulfilled') setProfiles(sendersResult.value.data ?? {});
     else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
     if (freqsResult.status === 'fulfilled') setFreqs(freqsResult.value);

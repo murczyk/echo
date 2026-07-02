@@ -30,12 +30,16 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
         }}
       >
         <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
-          <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ minHeight: 40, alignItems: 'center' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            sx={{ minHeight: 40, alignItems: 'center' }}
+          >
             <Skeleton variant="rounded" width={180} height={32} />
             <Skeleton variant="rounded" width={108} height={32} />
             <Skeleton variant="rounded" width={160} height={32} />
           </Stack>
-
         </Stack>
         <Box
           sx={{

@@ -109,10 +109,16 @@ export function AnalysisGroupsActivityCard({
         <ToggleButton value="year">{periodLabel('year')}</ToggleButton>
       </ToggleButtonGroup>
       <CompactText component="div" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        {selectedFreq ? `Частота для графіка: ${selectedFreq}` : 'Для графіка потрібно обрати одну частоту.'}
+        {selectedFreq
+          ? `Частота для графіка: ${selectedFreq}`
+          : 'Для графіка потрібно обрати одну частоту.'}
       </CompactText>
       {chartStatus === 'ready' ? (
-        createElement('dashboard-chart', { ref: hostRef, role: 'img', 'aria-label': 'Графік активності по датах' })
+        createElement('dashboard-chart', {
+          ref: hostRef,
+          role: 'img',
+          'aria-label': 'Графік активності по датах',
+        })
       ) : chartStatus === 'needs-freq' ? (
         <CompactText color="text.secondary">
           Оберіть частоту вище, щоб завантажити графік активності по датах.

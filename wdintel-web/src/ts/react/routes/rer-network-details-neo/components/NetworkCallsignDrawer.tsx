@@ -17,14 +17,20 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { SearchableOptionAutocomplete } from '../../../components/SearchableOptionAutocomplete';
-import { getFrequencyFormatError, type NetworkOption } from '../use-rer-network-details-neo-page.shared';
+import {
+  getFrequencyFormatError,
+  type NetworkOption,
+} from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignSourceChip, sortNetworkCallsignSources } from './NetworkCallsignSourceUi';
 import {
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
   isNetworkCallsignSourceRequired,
 } from '../network-callsigns.forms';
-import type { NetworkCallsignDrawerForm, NetworkCallsignDrawerMode } from '../network-callsigns.types';
+import type {
+  NetworkCallsignDrawerForm,
+  NetworkCallsignDrawerMode,
+} from '../network-callsigns.types';
 import { NetworkCallsignSourceId } from '../network-callsigns.types';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NEO_AUTOCOMPLETE_SLOT_PROPS } from './dropdownProps';
@@ -99,7 +105,8 @@ function MarkerModeControl({
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 2,
-        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+        backgroundColor:
+          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
         gap: 0.75,
@@ -125,19 +132,36 @@ function MarkerModeControl({
               fontSize: '0.9rem',
               fontWeight: 600,
               textAlign: 'left',
-              color: selected ? (option.value === 'none' ? theme.palette.text.primary : option.contrastText) : theme.palette.text.secondary,
-              bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : 'transparent',
-              boxShadow: selected ? `inset 0 0 0 1px ${option.value === 'none' ? theme.palette.divider : option.accentColor}` : 'none',
+              color: selected
+                ? option.value === 'none'
+                  ? theme.palette.text.primary
+                  : option.contrastText
+                : theme.palette.text.secondary,
+              bgcolor: selected
+                ? option.value === 'none'
+                  ? theme.palette.action.selected
+                  : option.accentColor
+                : 'transparent',
+              boxShadow: selected
+                ? `inset 0 0 0 1px ${option.value === 'none' ? theme.palette.divider : option.accentColor}`
+                : 'none',
               transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
                 duration: theme.transitions.duration.shortest,
               }),
               '&:hover': {
-                bgcolor: selected ? (option.value === 'none' ? theme.palette.action.selected : option.accentColor) : theme.palette.action.hover,
+                bgcolor: selected
+                  ? option.value === 'none'
+                    ? theme.palette.action.selected
+                    : option.accentColor
+                  : theme.palette.action.hover,
               },
             })}
           >
             {option.icon}
-            <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
+            <Typography
+              variant="body2"
+              sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}
+            >
               {option.label}
             </Typography>
           </ButtonBase>
@@ -165,7 +189,8 @@ function CallsignStatusControl({
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 2,
-        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+        backgroundColor:
+          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
         display: 'grid',
         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 0.75,
@@ -186,7 +211,9 @@ function CallsignStatusControl({
           gap: 0.75,
           fontSize: '0.9rem',
           fontWeight: 600,
-          color: developingSelected ? theme.palette.warning.contrastText : theme.palette.text.secondary,
+          color: developingSelected
+            ? theme.palette.warning.contrastText
+            : theme.palette.text.secondary,
           bgcolor: developingSelected ? theme.palette.warning.main : 'transparent',
           boxShadow: developingSelected ? `inset 0 0 0 1px ${theme.palette.warning.dark}` : 'none',
           transition: theme.transitions.create(['background-color', 'box-shadow', 'color'], {
@@ -197,7 +224,14 @@ function CallsignStatusControl({
           },
         })}
       >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: developingSelected ? 'common.white' : 'text.disabled' }} />
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: developingSelected ? 'common.white' : 'text.disabled',
+          }}
+        />
         <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
           В дорозвідці
         </Typography>
@@ -227,7 +261,14 @@ function CallsignStatusControl({
           },
         })}
       >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: catalogSelected ? 'common.white' : 'text.disabled' }} />
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: catalogSelected ? 'common.white' : 'text.disabled',
+          }}
+        />
         <Typography variant="body2" sx={{ fontWeight: 700, color: 'inherit', fontSize: '0.9rem' }}>
           Каталог
         </Typography>
@@ -254,16 +295,19 @@ export function NetworkCallsignDrawer({
   const isRoSource = sourceId === NetworkCallsignSourceId.RO;
   const [radioFreqTouched, setRadioFreqTouched] = useState(false);
   const [sourceTouched, setSourceTouched] = useState(false);
-  const radioFreqValidationError = isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
+  const radioFreqValidationError =
+    isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
   const radioFreqError = radioFreqTouched ? radioFreqValidationError : null;
   const sourceRequired = form ? isNetworkCallsignSourceRequired(form) : false;
-  const sourceValidationError = sourceRequired && sourceId === null ? 'Джерело є обовʼязковим' : null;
-  const showSourceValidationError = sourceValidationError !== null && (sourceTouched || error === sourceValidationError);
+  const sourceValidationError =
+    sourceRequired && sourceId === null ? 'Джерело є обовʼязковим' : null;
+  const showSourceValidationError =
+    sourceValidationError !== null && (sourceTouched || error === sourceValidationError);
   const canSave = Boolean(
-    form
-      && normalizeCallsignDisplay(form.callsign) !== ''
-      && (!sourceRequired || sourceId !== null)
-      && (!isRoSource || radioFreqValidationError === null),
+    form &&
+    normalizeCallsignDisplay(form.callsign) !== '' &&
+    (!sourceRequired || sourceId !== null) &&
+    (!isRoSource || radioFreqValidationError === null),
   );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
   const unitOptions = [{ id: 0, label: 'Не вказано' }, ...units];
@@ -313,7 +357,9 @@ export function NetworkCallsignDrawer({
               <TextField
                 label="Позивний *"
                 value={form.callsign}
-                onChange={(event) => onChange({ ...form, callsign: normalizeCallsignDisplay(event.target.value) })}
+                onChange={(event) =>
+                  onChange({ ...form, callsign: normalizeCallsignDisplay(event.target.value) })
+                }
                 disabled={saving}
                 fullWidth
                 size="small"
@@ -327,7 +373,9 @@ export function NetworkCallsignDrawer({
                 <MarkerModeControl
                   disabled={saving}
                   markerMode={getNetworkCallsignMarkerMode(form)}
-                  onChange={(markerMode) => updateForm(form, getNetworkCallsignMarkerState(markerMode), onChange)}
+                  onChange={(markerMode) =>
+                    updateForm(form, getNetworkCallsignMarkerState(markerMode), onChange)
+                  }
                 />
               </Stack>
 
@@ -338,13 +386,15 @@ export function NetworkCallsignDrawer({
                 <CallsignStatusControl
                   developing={form.developing}
                   disabled={saving}
-                  onChange={(nextDeveloping) => updateForm(
-                    form,
-                    {
-                      developing: nextDeveloping,
-                    },
-                    onChange,
-                  )}
+                  onChange={(nextDeveloping) =>
+                    updateForm(
+                      form,
+                      {
+                        developing: nextDeveloping,
+                      },
+                      onChange,
+                    )
+                  }
                 />
               </Stack>
 
@@ -361,7 +411,11 @@ export function NetworkCallsignDrawer({
                       disabled={saving}
                       onClick={() => {
                         setSourceTouched(true);
-                        updateForm(form, { sourceId: sourceId === source.id ? null : source.id }, onChange);
+                        updateForm(
+                          form,
+                          { sourceId: sourceId === source.id ? null : source.id },
+                          onChange,
+                        );
                       }}
                     />
                   ))}
@@ -387,7 +441,9 @@ export function NetworkCallsignDrawer({
                   label="Підрозділ"
                   options={unitOptions}
                   valueId={selectedUnitId}
-                  onValueIdChange={(unitId) => updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange)}
+                  onValueIdChange={(unitId) =>
+                    updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange)
+                  }
                   getOptionLabel={(unit) => unit.label}
                   disabled={saving}
                   placeholder="Оберіть підрозділ"
@@ -407,7 +463,9 @@ export function NetworkCallsignDrawer({
                 >
                   <Checkbox
                     checked={form.unitDeveloping}
-                    onChange={(event) => updateForm(form, { unitDeveloping: event.target.checked }, onChange)}
+                    onChange={(event) =>
+                      updateForm(form, { unitDeveloping: event.target.checked }, onChange)
+                    }
                     disabled={saving}
                   />
                   <Typography variant="body1">В дорозвідці</Typography>
@@ -441,7 +499,9 @@ export function NetworkCallsignDrawer({
                   <TextField
                     label="Частота *"
                     value={form.radioFreq}
-                    onChange={(event) => updateForm(form, { radioFreq: event.target.value }, onChange)}
+                    onChange={(event) =>
+                      updateForm(form, { radioFreq: event.target.value }, onChange)
+                    }
                     onBlur={() => setRadioFreqTouched(true)}
                     disabled={saving}
                     fullWidth
@@ -460,7 +520,16 @@ export function NetworkCallsignDrawer({
         </Stack>
       </Box>
 
-      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+      <Box
+        sx={{
+          p: 2.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 2,
+        }}
+      >
         <Button onClick={onClose} disabled={saving}>
           Скасувати
         </Button>

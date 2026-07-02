@@ -20,7 +20,9 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../services/api/analysis', async () => {
-  const actual = await vi.importActual<typeof import('../../services/api/analysis')>('../../services/api/analysis');
+  const actual = await vi.importActual<typeof import('../../services/api/analysis')>(
+    '../../services/api/analysis',
+  );
   return {
     ...actual,
     fetchAnalysisCallsignGraph: apiMocks.fetchAnalysisCallsignGraph,
@@ -128,7 +130,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadSummaryData();
     });
-    const firstSignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const firstSignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
@@ -140,7 +143,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadSummaryData();
     });
-    const secondSignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[1]?.[1]?.signal as AbortSignal | undefined;
+    const secondSignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[1]?.[1]?.signal as
+      AbortSignal | undefined;
 
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
@@ -210,8 +214,16 @@ describe('useAnalysisSidebarData', () => {
     });
 
     expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
-    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(1, ['alpha'], expect.any(Object));
-    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['alpha'], expect.any(Object));
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(
+      1,
+      ['alpha'],
+      expect.any(Object),
+    );
+    expect(apiMocks.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(
+      2,
+      ['alpha'],
+      expect.any(Object),
+    );
 
     secondCallsignInfos.resolve([{ callsign: 'alpha', res: [] }]);
     firstCallsignInfos.resolve([{ callsign: 'alpha', res: [] }]);
@@ -237,7 +249,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadSummaryData();
     });
-    const summarySignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const summarySignal = apiMocks.fetchAnalysisSummaryTable.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(summarySignal).toBeDefined();
 
     act(() => {
@@ -259,7 +272,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const firstSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const firstSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
@@ -267,7 +281,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const secondSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[1]?.[1]?.signal as AbortSignal | undefined;
+    const secondSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[1]?.[1]?.signal as
+      AbortSignal | undefined;
 
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
@@ -292,7 +307,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadCorrelatedFreqs();
     });
-    const correlatedSignal = apiMocks.fetchAnalysisCorrelatedFreqs.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const correlatedSignal = apiMocks.fetchAnalysisCorrelatedFreqs.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(correlatedSignal).toBeDefined();
 
     act(() => {
@@ -337,7 +353,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const graphSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const graphSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(graphSignal).toBeDefined();
 
     act(() => {
@@ -368,7 +385,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const firstSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const firstSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
@@ -376,7 +394,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const secondSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[1]?.[1]?.signal as AbortSignal | undefined;
+    const secondSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[1]?.[1]?.signal as
+      AbortSignal | undefined;
 
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
@@ -409,7 +428,8 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const sidebarSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    const sidebarSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as
+      AbortSignal | undefined;
     expect(sidebarSignal).toBeDefined();
 
     act(() => {

@@ -20,7 +20,10 @@ vi.mock('@mui/material', () => ({
   }) => (
     <div>
       {props.renderInput({})}
-      <button type="button" onClick={() => props.onChange?.(new Event('change'), props.options[0] ?? null)}>
+      <button
+        type="button"
+        onClick={() => props.onChange?.(new Event('change'), props.options[0] ?? null)}
+      >
         select-first
       </button>
       <button type="button" onClick={() => props.onChange?.(new Event('change'), null)}>
@@ -29,9 +32,14 @@ vi.mock('@mui/material', () => ({
       <div data-testid="selected-filter">{props.value?.name ?? ''}</div>
     </div>
   ),
-  Box: ({ children, component: Component = 'div', ...props }: { children: ReactNode; component?: string }) => (
-    <Component {...props}>{children}</Component>
-  ),
+  Box: ({
+    children,
+    component: Component = 'div',
+    ...props
+  }: {
+    children: ReactNode;
+    component?: string;
+  }) => <Component {...props}>{children}</Component>,
   Button: (props: {
     children: ReactNode;
     disabled?: boolean;
@@ -43,16 +51,28 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   Chip: ({ label }: { label: string }) => <span>{label}</span>,
-  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div>{children}</div> : null,
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  IconButton: (props: { children: ReactNode; disabled?: boolean; onClick?: (event: unknown) => void; 'aria-label'?: string }) => (
-    <button type="button" aria-label={props['aria-label']} disabled={props.disabled} onClick={props.onClick}>
+  IconButton: (props: {
+    children: ReactNode;
+    disabled?: boolean;
+    onClick?: (event: unknown) => void;
+    'aria-label'?: string;
+  }) => (
+    <button
+      type="button"
+      aria-label={props['aria-label']}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
       {props.children}
     </button>
   ),
-  Menu: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
+  Menu: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div>{children}</div> : null,
   MenuItem: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
     <button type="button" disabled={props.disabled} onClick={props.onClick}>
       {props.children}
@@ -60,7 +80,11 @@ vi.mock('@mui/material', () => ({
   ),
   Paper: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TextField: (props: { label?: string; value?: string; onChange?: (event: { target: { value: string } }) => void }) => (
+  TextField: (props: {
+    label?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+  }) => (
     <label>
       <span>{props.label}</span>
       <input
@@ -114,7 +138,9 @@ async function renderComponent(
 }
 
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
+  const button = Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(label),
+  );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
@@ -128,10 +154,13 @@ function getButtonByAriaLabel(container: HTMLElement, ariaLabel: string): HTMLBu
 }
 
 function getInput(container: HTMLElement, labelText: string): HTMLInputElement {
-  const label = Array.from(container.querySelectorAll('label')).find((item) => item.textContent?.includes(labelText));
+  const label = Array.from(container.querySelectorAll('label')).find((item) =>
+    item.textContent?.includes(labelText),
+  );
   if (!label) throw new Error(`Label not found: ${labelText}`);
   const input = label.querySelector('input');
-  if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found for label: ${labelText}`);
+  if (!(input instanceof HTMLInputElement))
+    throw new Error(`Input not found for label: ${labelText}`);
   return input;
 }
 
@@ -173,10 +202,14 @@ describe('SavedFiltersControl', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Збережені фільтри');
-    expect(view.container.querySelector('[data-testid="selected-filter"]')?.textContent).toBe('Base filter');
+    expect(view.container.querySelector('[data-testid="selected-filter"]')?.textContent).toBe(
+      'Base filter',
+    );
     await click(getButton(view.container, 'select-first'));
 
-    expect(onApplySavedFilter).toHaveBeenCalledWith(expect.objectContaining({ id: 2, name: 'Alt filter' }));
+    expect(onApplySavedFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2, name: 'Alt filter' }),
+    );
   });
 
   it('shows an empty state message when there are no saved filters', async () => {
@@ -287,7 +320,9 @@ describe('SavedFiltersControl', () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
 
-    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(false);
+    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(
+      false,
+    );
     await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
     expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(false);
   });

@@ -117,7 +117,12 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function clampPan(point: Point, stageWidth: number, stageHeight: number, zoom: number): Point {
+export function clampPan(
+  point: Point,
+  stageWidth: number,
+  stageHeight: number,
+  zoom: number,
+): Point {
   const scale = zoom / 100;
   const maxX = Math.max(0, (stageWidth * (scale - 1)) / 2);
   const maxY = Math.max(0, (stageHeight * (scale - 1)) / 2);

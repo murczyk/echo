@@ -35,9 +35,9 @@ describe('organism-keyword-sets helpers', () => {
 
   it('suggestNewKeywordSetName picks first free numbered name', () => {
     expect(suggestNewKeywordSetName([])).toBe(ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX);
-    expect(suggestNewKeywordSetName([mkSet({ id: 2, name: ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX })])).toBe(
-      `${ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX} 2`,
-    );
+    expect(
+      suggestNewKeywordSetName([mkSet({ id: 2, name: ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX })]),
+    ).toBe(`${ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX} 2`);
     expect(
       suggestNewKeywordSetName([
         mkSet({ id: 2, name: ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX }),

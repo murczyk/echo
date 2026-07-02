@@ -2,7 +2,9 @@ import { unzipSync } from 'fflate';
 
 export function extractWorkbookSheetNames(buffer: ArrayBuffer): string[] {
   try {
-    const files = unzipSync(new Uint8Array(buffer), { filter: (file) => file.name === 'xl/workbook.xml' });
+    const files = unzipSync(new Uint8Array(buffer), {
+      filter: (file) => file.name === 'xl/workbook.xml',
+    });
     const workbookXml = files['xl/workbook.xml'];
     if (workbookXml == null) return [];
 
@@ -63,5 +65,8 @@ function decodeNumericEntity(entity: string): string {
 }
 
 function isLikelyWorkbookXml(workbookText: string): boolean {
-  return /<workbook\b[\s\S]*<\/workbook>/i.test(workbookText) && /<sheets\b[\s\S]*<\/sheets>/i.test(workbookText);
+  return (
+    /<workbook\b[\s\S]*<\/workbook>/i.test(workbookText) &&
+    /<sheets\b[\s\S]*<\/sheets>/i.test(workbookText)
+  );
 }

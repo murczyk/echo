@@ -49,6 +49,8 @@ describe('use-rer-network-details-neo-page.forms', () => {
     const includeFrequency = shouldIncludeNetworkCreateFrequency(form, true);
 
     expect(includeFrequency).toBe(true);
-    expect(getNetworkUpsertValidationError(form, { includeFrequency })?.activeFrom).toBe('Потрібно вказати дату початку');
+    expect(getNetworkUpsertValidationError(form, { includeFrequency })?.activeFrom).toBe(
+      'Потрібно вказати дату початку',
+    );
   });
 });

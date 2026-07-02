@@ -12,9 +12,7 @@ export async function listApiIntegrations(): Promise<ApiIntegration[]> {
   return transformSnakeToCamel<ListApiIntegrationsRsp>(raw).items;
 }
 
-export async function upsertApiIntegration(
-  req: UpsertApiIntegrationReq,
-): Promise<ApiIntegration> {
+export async function upsertApiIntegration(req: UpsertApiIntegrationReq): Promise<ApiIntegration> {
   const raw = await postJson<unknown>(
     '/api/admin/api-integrations/upsert',
     transformCamelToSnake(req),
@@ -27,8 +25,5 @@ export async function deleteApiIntegration(id: number): Promise<void> {
 }
 
 export async function testConnection(req: TestIggyConnectionReq): Promise<void> {
-  await postVoid(
-    '/api/admin/api-integrations/iggy/test-connection',
-    transformCamelToSnake(req),
-  );
+  await postVoid('/api/admin/api-integrations/iggy/test-connection', transformCamelToSnake(req));
 }

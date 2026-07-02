@@ -1,8 +1,4 @@
-import {
-  GoiKnowledge,
-  ListGoiKnowledgeReq,
-  ListGoiKnowledgeRsp,
-} from '../../../../Bindings';
+import { GoiKnowledge, ListGoiKnowledgeReq, ListGoiKnowledgeRsp } from '../../../../Bindings';
 
 import { postJson } from './client';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -64,9 +60,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeOptionalNumber(
-  value: number | string | null | undefined,
-): number | null {
+function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
   if (isNullOrUndefined(value)) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -88,37 +82,23 @@ function normalizeGoiKnowledge(raw: GoiKnowledgeLike | null | undefined): GoiKno
     integrationId: normalizeNumber(raw?.integrationId ?? raw?.integration_id),
     serverLabel: normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
     ownerOrganismName:
-      normalizeOptionalString(
-        raw?.ownerOrganismName ?? raw?.owner_organism_name,
-      ) ?? '',
-    sourceKnowledgeId: normalizeNumber(
-      raw?.sourceKnowledgeId ?? raw?.source_knowledge_id,
-    ),
-    sourceCreatedAtMs: normalizeNumber(
-      raw?.sourceCreatedAtMs ?? raw?.source_created_at_ms,
-    ),
+      normalizeOptionalString(raw?.ownerOrganismName ?? raw?.owner_organism_name) ?? '',
+    sourceKnowledgeId: normalizeNumber(raw?.sourceKnowledgeId ?? raw?.source_knowledge_id),
+    sourceCreatedAtMs: normalizeNumber(raw?.sourceCreatedAtMs ?? raw?.source_created_at_ms),
     createdAtMs: normalizeNumber(raw?.createdAtMs ?? raw?.created_at_ms),
     deleted: raw?.deleted ?? false,
     name: normalizeOptionalString(raw?.name),
     key: normalizeOptionalString(raw?.key),
-    knowledgeType: normalizeOptionalString(
-      raw?.knowledgeType ?? raw?.knowledge_type,
-    ),
+    knowledgeType: normalizeOptionalString(raw?.knowledgeType ?? raw?.knowledge_type),
     author: normalizeOptionalString(raw?.author),
     note: normalizeOptionalString(raw?.note),
-    sourceDateRaw: normalizeOptionalString(
-      raw?.sourceDateRaw ?? raw?.source_date_raw,
-    ),
-    sourceDateMs: normalizeOptionalNumber(
-      raw?.sourceDateMs ?? raw?.source_date_ms,
-    ),
+    sourceDateRaw: normalizeOptionalString(raw?.sourceDateRaw ?? raw?.source_date_raw),
+    sourceDateMs: normalizeOptionalNumber(raw?.sourceDateMs ?? raw?.source_date_ms),
     formation: normalizeOptionalString(raw?.formation),
   };
 }
 
-function toListGoiKnowledgeReqBody(
-  req: ListGoiKnowledgeReq,
-): ListGoiKnowledgeReqBody {
+function toListGoiKnowledgeReqBody(req: ListGoiKnowledgeReq): ListGoiKnowledgeReqBody {
   const normalizeOptionalText = (value: string | null | undefined) => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();

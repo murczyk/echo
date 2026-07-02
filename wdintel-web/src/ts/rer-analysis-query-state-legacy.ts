@@ -33,7 +33,12 @@ const LEGACY_QUERY_STATE_FIELDS: LegacyKeyMapEntry[] = [
   { key: 'postsSelected', legacyKey: 'posts_selected', defaultValue: [], type: 'string[]' },
   { key: 'networksSelected', legacyKey: 'networks_selected', defaultValue: [], type: 'string[]' },
   { key: 'withoutNetwork', legacyKey: 'without_network', defaultValue: false, type: 'boolean' },
-  { key: 'orWithExtendedForm', legacyKey: 'or_with_extended_form', defaultValue: false, type: 'boolean' },
+  {
+    key: 'orWithExtendedForm',
+    legacyKey: 'or_with_extended_form',
+    defaultValue: false,
+    type: 'boolean',
+  },
   { key: 'orBookmarked', legacyKey: 'or_bookmarked', defaultValue: false, type: 'boolean' },
   { key: 'orImportant', legacyKey: 'or_important', defaultValue: false, type: 'boolean' },
   { key: 'orWithCoords', legacyKey: 'or_with_coords', defaultValue: false, type: 'boolean' },
@@ -43,15 +48,45 @@ const LEGACY_QUERY_STATE_FIELDS: LegacyKeyMapEntry[] = [
   { key: 'metadataSender', legacyKey: 'metadata_sender', defaultValue: [], type: 'string[]' },
   { key: 'metadataReceiver', legacyKey: 'metadata_receiver', defaultValue: [], type: 'string[]' },
   { key: 'metadataHash', legacyKey: 'metadata_hash', defaultValue: [], type: 'string[]' },
-  { key: 'onlyWithMetadata', legacyKey: 'only_with_metadata', defaultValue: false, type: 'boolean' },
+  {
+    key: 'onlyWithMetadata',
+    legacyKey: 'only_with_metadata',
+    defaultValue: false,
+    type: 'boolean',
+  },
   { key: 'withoutMetadata', legacyKey: 'without_metadata', defaultValue: false, type: 'boolean' },
   { key: 'tags', defaultValue: [], type: 'number[]' },
-  { key: 'includePelengLocations', legacyKey: 'include_peleng_locations', defaultValue: true, type: 'boolean' },
-  { key: 'unitsExactMatchOnly', legacyKey: 'units_exact_match_only', defaultValue: null, type: 'boolean?' },
+  {
+    key: 'includePelengLocations',
+    legacyKey: 'include_peleng_locations',
+    defaultValue: true,
+    type: 'boolean',
+  },
+  {
+    key: 'unitsExactMatchOnly',
+    legacyKey: 'units_exact_match_only',
+    defaultValue: null,
+    type: 'boolean?',
+  },
   { key: 'adjacentFreqsRange', legacyKey: 'adjacent_freqs_range', defaultValue: 0, type: 'number' },
-  { key: 'withoutModelTags', legacyKey: 'without_model_tags', defaultValue: false, type: 'boolean' },
-  { key: 'filterTagsOption', legacyKey: 'filter_tags_option', defaultValue: 'OneOfTags', type: 'string' },
-  { key: 'reportTagsOnlyThisUnit', legacyKey: 'report_tags_only_this_unit', defaultValue: false, type: 'boolean' },
+  {
+    key: 'withoutModelTags',
+    legacyKey: 'without_model_tags',
+    defaultValue: false,
+    type: 'boolean',
+  },
+  {
+    key: 'filterTagsOption',
+    legacyKey: 'filter_tags_option',
+    defaultValue: 'OneOfTags',
+    type: 'string',
+  },
+  {
+    key: 'reportTagsOnlyThisUnit',
+    legacyKey: 'report_tags_only_this_unit',
+    defaultValue: false,
+    type: 'boolean',
+  },
 ];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -92,7 +127,9 @@ function composeLegacyDateTime(dateStr: unknown, timeStr: unknown): string | und
   return `${dateStr}T${timeStr}`;
 }
 
-function splitDateTimeStr(dateTimeStr: string | undefined): { dateStr: string; timeStr: string } | null {
+function splitDateTimeStr(
+  dateTimeStr: string | undefined,
+): { dateStr: string; timeStr: string } | null {
   if (typeof dateTimeStr !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) {
     return null;
   }
@@ -125,7 +162,9 @@ function getLegacyFieldValue(state: Record<string, unknown>, field: LegacyKeyMap
   return undefined;
 }
 
-export function parseRawRerAnalysisLegacyState(stateParam: string | null): RerAnalysisLegacyState | null {
+export function parseRawRerAnalysisLegacyState(
+  stateParam: string | null,
+): RerAnalysisLegacyState | null {
   if (!stateParam) {
     return null;
   }
@@ -144,7 +183,9 @@ export function parseRawRerAnalysisLegacyState(stateParam: string | null): RerAn
   }
 }
 
-export function parseRerAnalysisLegacyState(stateParam: string | null): RerAnalysisQueryState | null {
+export function parseRerAnalysisLegacyState(
+  stateParam: string | null,
+): RerAnalysisQueryState | null {
   const rawState = parseRawRerAnalysisLegacyState(stateParam);
   if (rawState == null) {
     return null;
@@ -159,7 +200,10 @@ export function parseRerAnalysisLegacyState(stateParam: string | null): RerAnaly
 
   // Legacy storage still stores split datetime fields; Neo intentionally does not.
   if (canonicalState.fromDateTimeStr == null) {
-    const fromDateTimeStr = composeLegacyDateTime(canonicalState.dateFromStr, canonicalState.timeFromStr);
+    const fromDateTimeStr = composeLegacyDateTime(
+      canonicalState.dateFromStr,
+      canonicalState.timeFromStr,
+    );
     if (fromDateTimeStr != null) {
       canonicalState.fromDateTimeStr = fromDateTimeStr;
     }
@@ -188,8 +232,12 @@ export function toLegacyRerAnalysisQueryState(state: unknown): RerAnalysisLegacy
   const normalized = normalizeRerAnalysisQueryState(state) ?? {};
   const legacyState: RerAnalysisLegacyState = {};
 
-  const fromDateTime = splitDateTimeStr(typeof normalized.fromDateTimeStr === 'string' ? normalized.fromDateTimeStr : undefined);
-  const toDateTime = splitDateTimeStr(typeof normalized.toDateTimeStr === 'string' ? normalized.toDateTimeStr : undefined);
+  const fromDateTime = splitDateTimeStr(
+    typeof normalized.fromDateTimeStr === 'string' ? normalized.fromDateTimeStr : undefined,
+  );
+  const toDateTime = splitDateTimeStr(
+    typeof normalized.toDateTimeStr === 'string' ? normalized.toDateTimeStr : undefined,
+  );
 
   for (const field of LEGACY_QUERY_STATE_FIELDS) {
     const legacyKey = field.legacyKey ?? field.key;

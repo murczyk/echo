@@ -11,7 +11,15 @@ import { CallsignsTable, getCallsignsTableContainerOverflowY } from './Callsigns
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, onClick, disabled }: { children?: ReactNode; onClick?: () => void; disabled?: boolean }) => (
+  Button: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
@@ -23,7 +31,9 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('material-react-table', () => ({
-  MaterialReactTable: ({ table }: { table: any }) => <div data-testid="table">{table.renderRowActions?.({ row: { original: table.data[0] } })}</div>,
+  MaterialReactTable: ({ table }: { table: any }) => (
+    <div data-testid="table">{table.renderRowActions?.({ row: { original: table.data[0] } })}</div>
+  ),
   useMaterialReactTable: (options: any) => ({
     ...options,
     getState: () => ({ isFullScreen: false }),
@@ -32,8 +42,19 @@ vi.mock('material-react-table', () => ({
 
 vi.mock('../../../components/MrtRowActionButton', () => ({
   MrtRowActions: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  MrtRowActionButton: (props: { label: string; onClick: () => void; disabled?: boolean; opensModal?: boolean }) => (
-    <button type="button" aria-label={props.label} data-opens-modal={props.opensModal ? 'true' : 'false'} disabled={props.disabled} onClick={props.onClick}>
+  MrtRowActionButton: (props: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    opensModal?: boolean;
+  }) => (
+    <button
+      type="button"
+      aria-label={props.label}
+      data-opens-modal={props.opensModal ? 'true' : 'false'}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
       {props.label}
     </button>
   ),
@@ -107,7 +128,13 @@ function renderTable(rows: CallsignRowView[]) {
         loadingMore={false}
         showLoadMore={false}
         hasActiveFilters={false}
-        textFilters={{ filterCallsign: '', filterPosition: '', filterFullName: '', filterComment: '', filterUnit: '' }}
+        textFilters={{
+          filterCallsign: '',
+          filterPosition: '',
+          filterFullName: '',
+          filterComment: '',
+          filterUnit: '',
+        }}
         inFlightDeleteId={null}
         bulkDeleteInFlight={false}
         selectedCallsignIds={[]}
@@ -136,22 +163,32 @@ describe('CallsignsTable', () => {
   it('marks edit and delete row actions as modal actions', () => {
     const { container, root } = renderTable([buildRow()]);
 
-    expect(container.querySelector('[data-opens-modal="true"][aria-label="Редагувати"]')).toBeTruthy();
-    expect(container.querySelector('[data-opens-modal="true"][aria-label="Видалити"]')).toBeTruthy();
+    expect(
+      container.querySelector('[data-opens-modal="true"][aria-label="Редагувати"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-opens-modal="true"][aria-label="Видалити"]'),
+    ).toBeTruthy();
 
     root.unmount();
     container.remove();
   });
 
   it('hides vertical container overflow when loaded content fits', () => {
-    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: false, showTableOverlay: false })).toBe('hidden');
+    expect(
+      getCallsignsTableContainerOverflowY({ hasVerticalOverflow: false, showTableOverlay: false }),
+    ).toBe('hidden');
   });
 
   it('keeps vertical container scrolling when loaded content overflows', () => {
-    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: false })).toBe('auto');
+    expect(
+      getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: false }),
+    ).toBe('auto');
   });
 
   it('hides vertical container overflow while the table overlay is shown', () => {
-    expect(getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: true })).toBe('hidden');
+    expect(
+      getCallsignsTableContainerOverflowY({ hasVerticalOverflow: true, showTableOverlay: true }),
+    ).toBe('hidden');
   });
 });

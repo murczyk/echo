@@ -2,7 +2,12 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
-import { emptyFilter, filtersEqual, generateMessageFeedId, VIRTUOSO_FIRST_ITEM_INDEX_INITIAL } from './utils';
+import {
+  emptyFilter,
+  filtersEqual,
+  generateMessageFeedId,
+  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+} from './utils';
 import type { MessageFeedState } from './utils';
 
 const MAX_MESSAGE_FEEDS = 4;
@@ -14,33 +19,36 @@ export function useRerDutyFeedCrud(
   markFeedReloadRequested: (feedId: string) => void,
   onFeedRemoved?: (feedId: string) => void,
 ) {
-  const applyFilter = useCallback((feedId: string, f: RerDutyFeedFilterState) => {
-    setMessageFeeds((prev) => {
-      const w = prev.find((w) => w.id === feedId);
-      if (!w) return prev;
-      if (filtersEqual(w.filter, f)) {
-        persistStateToUrl(prev);
-        return prev;
-      }
-      markFeedReloadRequested(feedId);
-      const next = prev.map((w) =>
-        w.id === feedId
-          ? {
-              ...w,
-              filter: f,
-              loading: true,
-              loadingOlder: false,
-              hasReachedStart: false,
-              adjacentFreqsRange: w.adjacentFreqsRange,
-              highlightSignalsEnabled: w.highlightSignalsEnabled,
-              onlyMyUnitTagsEnabled: w.onlyMyUnitTagsEnabled,
-            }
-          : w,
-      );
-      persistStateToUrl(next);
-      return next;
-    });
-  }, [markFeedReloadRequested, persistStateToUrl, setMessageFeeds]);
+  const applyFilter = useCallback(
+    (feedId: string, f: RerDutyFeedFilterState) => {
+      setMessageFeeds((prev) => {
+        const w = prev.find((w) => w.id === feedId);
+        if (!w) return prev;
+        if (filtersEqual(w.filter, f)) {
+          persistStateToUrl(prev);
+          return prev;
+        }
+        markFeedReloadRequested(feedId);
+        const next = prev.map((w) =>
+          w.id === feedId
+            ? {
+                ...w,
+                filter: f,
+                loading: true,
+                loadingOlder: false,
+                hasReachedStart: false,
+                adjacentFreqsRange: w.adjacentFreqsRange,
+                highlightSignalsEnabled: w.highlightSignalsEnabled,
+                onlyMyUnitTagsEnabled: w.onlyMyUnitTagsEnabled,
+              }
+            : w,
+        );
+        persistStateToUrl(next);
+        return next;
+      });
+    },
+    [markFeedReloadRequested, persistStateToUrl, setMessageFeeds],
+  );
 
   const toggleGroup = useCallback(
     (feedId: string, key: string) => {

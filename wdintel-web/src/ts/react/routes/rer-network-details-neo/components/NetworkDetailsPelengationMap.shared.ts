@@ -21,7 +21,11 @@ export function getPelengationFrequencies(points: NetworkPoint[]): string[] {
   ]);
 }
 
-export function filterPelengationPoints(points: NetworkPoint[], search: string, enabledFreqs: string[]): NetworkPoint[] {
+export function filterPelengationPoints(
+  points: NetworkPoint[],
+  search: string,
+  enabledFreqs: string[],
+): NetworkPoint[] {
   const normalizedSearch = search.trim().toLocaleUpperCase('uk-UA');
   const enabledFreqSet = new Set(enabledFreqs.map(normalizePelengationFrequency));
 
@@ -112,7 +116,10 @@ export function buildPelengationLabelGroups(
 export function getPelengationHeatmapRadius(zoom: number): number {
   const normalizedZoom = Math.max(2, Math.min(19, zoom));
   const radius = 100 - (normalizedZoom - 2) * 2;
-  return Math.max(PELENG_HEATMAP_MIN_RADIUS, Math.min(PELENG_HEATMAP_MAX_RADIUS, Math.round(radius)));
+  return Math.max(
+    PELENG_HEATMAP_MIN_RADIUS,
+    Math.min(PELENG_HEATMAP_MAX_RADIUS, Math.round(radius)),
+  );
 }
 
 export function getPelengationHeatmapAlpha(pointCount: number): number {

@@ -57,7 +57,9 @@ export function ConfirmDangerDialog({
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         {description ? <DialogContentText>{description}</DialogContentText> : null}
-        {children ? <div className={description ? 'mt-3 space-y-3' : 'space-y-3'}>{children}</div> : null}
+        {children ? (
+          <div className={description ? 'mt-3 space-y-3' : 'space-y-3'}>{children}</div>
+        ) : null}
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
         <Button onClick={onClose} disabled={blocked}>

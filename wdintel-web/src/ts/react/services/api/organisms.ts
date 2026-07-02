@@ -18,8 +18,7 @@ export const GOI_INTEGRATION_TYPE_SIMPLE = 'simple';
 export const GOI_INTEGRATION_TYPE_FULL = 'full';
 
 export type GoiIntegrationType =
-  | typeof GOI_INTEGRATION_TYPE_SIMPLE
-  | typeof GOI_INTEGRATION_TYPE_FULL;
+  typeof GOI_INTEGRATION_TYPE_SIMPLE | typeof GOI_INTEGRATION_TYPE_FULL;
 
 type OrganismLike = {
   id?: number | string;
@@ -216,7 +215,9 @@ function toRemoveGroupReqBody(req: RemoveGroupFromOrganismReq): RemoveGroupFromO
   };
 }
 
-function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): UpdateOrganismGoiSettingsReqBody {
+function toUpdateOrganismGoiSettingsReqBody(
+  req: UpdateOrganismGoiSettingsReq,
+): UpdateOrganismGoiSettingsReqBody {
   return {
     organism_id: req.organismId,
     integration_type: req.integrationType,
@@ -231,7 +232,9 @@ function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): 
   };
 }
 
-function toSetupOrganismGoiWorkerReqBody(req: SetupOrganismGoiWorkerReq): SetupOrganismGoiWorkerReqBody {
+function toSetupOrganismGoiWorkerReqBody(
+  req: SetupOrganismGoiWorkerReq,
+): SetupOrganismGoiWorkerReqBody {
   return {
     organism_id: req.organismId,
     ssh_host: req.sshHost.trim(),
@@ -243,7 +246,9 @@ function toSetupOrganismGoiWorkerReqBody(req: SetupOrganismGoiWorkerReq): SetupO
   };
 }
 
-function toCheckOrganismGoiConnectionReqBody(req: CheckOrganismGoiConnectionReq): CheckOrganismGoiConnectionReqBody {
+function toCheckOrganismGoiConnectionReqBody(
+  req: CheckOrganismGoiConnectionReq,
+): CheckOrganismGoiConnectionReqBody {
   return {
     ssh_host: req.sshHost,
     ssh_user: req.sshUser,
@@ -323,7 +328,9 @@ function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoi
   };
 }
 
-function normalizeGoiIntegrationType(value: GoiIntegrationType | string | null | undefined): GoiIntegrationType {
+function normalizeGoiIntegrationType(
+  value: GoiIntegrationType | string | null | undefined,
+): GoiIntegrationType {
   return value === GOI_INTEGRATION_TYPE_SIMPLE
     ? GOI_INTEGRATION_TYPE_SIMPLE
     : GOI_INTEGRATION_TYPE_FULL;
@@ -380,12 +387,20 @@ export async function listAvailableGroupsBatch(
 }
 
 export async function computeAvailableGroups(req: UpdateOrganismReq): Promise<SignalGroupFull[]> {
-  const data = await postJson<SignalGroupFullLike[]>('/api/organism/compute-available-groups', toUpdateOrganismReqBody(req));
+  const data = await postJson<SignalGroupFullLike[]>(
+    '/api/organism/compute-available-groups',
+    toUpdateOrganismReqBody(req),
+  );
   return (data || []).map(normalizeSignalGroup);
 }
 
-export async function computeAvailableGroupsForNew(req: CreateOrganismReq): Promise<SignalGroupFull[]> {
-  const data = await postJson<SignalGroupFullLike[]>('/api/organism/compute-available-groups-for-new', toCreateOrganismReqBody(req));
+export async function computeAvailableGroupsForNew(
+  req: CreateOrganismReq,
+): Promise<SignalGroupFull[]> {
+  const data = await postJson<SignalGroupFullLike[]>(
+    '/api/organism/compute-available-groups-for-new',
+    toCreateOrganismReqBody(req),
+  );
   return (data || []).map(normalizeSignalGroup);
 }
 
@@ -410,7 +425,9 @@ export async function getOrganismGoiSettings(organismId: number): Promise<Organi
   return normalizeOrganismGoiSettings(data || {});
 }
 
-export async function updateOrganismGoiSettings(req: UpdateOrganismGoiSettingsReq): Promise<OrganismGoiSettings> {
+export async function updateOrganismGoiSettings(
+  req: UpdateOrganismGoiSettingsReq,
+): Promise<OrganismGoiSettings> {
   const data = await postJson<OrganismGoiSettingsLike>(
     '/api/organism/goi-settings/update',
     toUpdateOrganismGoiSettingsReqBody(req),
@@ -418,7 +435,9 @@ export async function updateOrganismGoiSettings(req: UpdateOrganismGoiSettingsRe
   return normalizeOrganismGoiSettings(data || {});
 }
 
-export async function setupOrganismGoiWorker(req: SetupOrganismGoiWorkerReq): Promise<OrganismGoiSettings> {
+export async function setupOrganismGoiWorker(
+  req: SetupOrganismGoiWorkerReq,
+): Promise<OrganismGoiSettings> {
   const data = await postJson<OrganismGoiSettingsLike>(
     '/api/organism/goi-settings/setup-worker',
     toSetupOrganismGoiWorkerReqBody(req),
@@ -441,11 +460,12 @@ export async function checkOrganismGoiConnection(
     };
   }
   const parsedOk = typeof data.ok === 'boolean' ? data.ok : null;
-  const error = (data && typeof data.error === 'string' && data.error.trim().length > 0)
-    ? data.error.trim()
-    : null;
+  const error =
+    data && typeof data.error === 'string' && data.error.trim().length > 0
+      ? data.error.trim()
+      : null;
   return {
-    ok: parsedOk ?? (error === null),
+    ok: parsedOk ?? error === null,
     listedEntries: data?.listedEntries ?? data?.listed_entries ?? [],
     error,
   };

@@ -22,7 +22,10 @@ export function formatNetworkCallsignDatetime(value: number | null): string {
   return value === null ? NO_DATA_LABEL : formatDateTime24(value);
 }
 
-export function filterNetworkCallsignRows(rows: NetworkCallsignRowView[], query: string): NetworkCallsignRowView[] {
+export function filterNetworkCallsignRows(
+  rows: NetworkCallsignRowView[],
+  query: string,
+): NetworkCallsignRowView[] {
   if (normalizeSearchNeedle(query) === '') return rows;
   return rows.filter((row) =>
     isSearchMatch(

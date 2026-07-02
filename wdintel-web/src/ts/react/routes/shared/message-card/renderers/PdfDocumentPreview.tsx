@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Box,
-  CircularProgress,
-  Stack,
-  Typography,
-  useTheme,
-} from '@mui/material';
+import { Box, CircularProgress, Stack, Typography, useTheme } from '@mui/material';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -92,9 +86,7 @@ export function PdfDocumentPreview({
       } catch (loadError) {
         if (disposed || abortController.signal.aborted) return;
         setError(
-          formatPdfPreviewErrorMessage(
-            loadError instanceof Error ? loadError.message : null,
-          ),
+          formatPdfPreviewErrorMessage(loadError instanceof Error ? loadError.message : null),
         );
       }
     };
@@ -111,8 +103,7 @@ export function PdfDocumentPreview({
   }, [href, sizeBytes]);
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
-  const isPreviewLimited =
-    pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
+  const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
 
   return (
     <Box
@@ -155,11 +146,7 @@ export function PdfDocumentPreview({
           loading={null}
           onLoadSuccess={({ numPages }) => setPageCount(numPages)}
           onLoadError={(loadError) =>
-            setError(
-              loadError instanceof Error
-                ? loadError.message
-                : 'Не вдалося відкрити PDF',
-            )
+            setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF')
           }
           renderMode="canvas"
           options={PDF_DOCUMENT_OPTIONS}
@@ -194,13 +181,7 @@ export function PdfDocumentPreview({
   );
 }
 
-function LazyPdfPage({
-  pageNumber,
-  scale,
-}: {
-  pageNumber: number;
-  scale: number;
-}) {
+function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number }) {
   const pageShellRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 

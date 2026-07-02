@@ -29,11 +29,13 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
-  const showLoadingSkeletons = !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
+  const showLoadingSkeletons =
+    !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
   const leftPanelVisible = isMobileLayout || page.leftPanelOpen;
   const rightPanelVisible = isMobileLayout || page.rightPanelOpen;
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
-  const centerTab = page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
+  const centerTab =
+    page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
 
   return (
@@ -72,7 +74,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           position: 'relative',
           overflow: 'hidden',
         }}
-        aria-busy={page.messagesLoading || page.filtersLoading || page.summaryLoading || page.newCallsignsLoading}
+        aria-busy={
+          page.messagesLoading ||
+          page.filtersLoading ||
+          page.summaryLoading ||
+          page.newCallsignsLoading
+        }
       >
         <Box
           sx={{
@@ -112,7 +119,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               mapTabId={mapTabId}
             />
           )}
-          {!showLoadingSkeletons ? <AnalysisRightPanel page={page} rightPanelVisible={rightPanelVisible} /> : null}
+          {!showLoadingSkeletons ? (
+            <AnalysisRightPanel page={page} rightPanelVisible={rightPanelVisible} />
+          ) : null}
         </Box>
       </Box>
 

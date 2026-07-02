@@ -60,9 +60,7 @@ function LeftPanelActiveIcon(props: SvgIconProps) {
           INNER_Y + INNER_SIZE
         }H${INNER_X + INNER_RX}A${INNER_RX} ${INNER_RX} 0 0 1 ${INNER_X} ${
           INNER_Y + INNER_SIZE - INNER_RX
-        }V${INNER_Y + INNER_RX}A${INNER_RX} ${INNER_RX} 0 0 1 ${
-          INNER_X + INNER_RX
-        } ${INNER_Y}Z`}
+        }V${INNER_Y + INNER_RX}A${INNER_RX} ${INNER_RX} 0 0 1 ${INNER_X + INNER_RX} ${INNER_Y}Z`}
         fill="currentColor"
       />
     </SvgIcon>

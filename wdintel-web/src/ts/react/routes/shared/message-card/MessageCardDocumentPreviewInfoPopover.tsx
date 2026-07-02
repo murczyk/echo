@@ -21,8 +21,7 @@ export function MessageCardDocumentPreviewInfoPopover({
   fileSize: string | number | null | undefined;
 }) {
   const theme = useTheme();
-  const normalizedFileSize =
-    typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
+  const normalizedFileSize = typeof fileSize === 'string' ? fileSize : formatSizeBytes(fileSize);
 
   return (
     <Popover
@@ -58,9 +57,7 @@ export function MessageCardDocumentPreviewInfoPopover({
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Тип
           </Typography>
-          <Typography variant="body2">
-            {document.contentType?.trim() || '—'}
-          </Typography>
+          <Typography variant="body2">{document.contentType?.trim() || '—'}</Typography>
         </Box>
         <Box>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>

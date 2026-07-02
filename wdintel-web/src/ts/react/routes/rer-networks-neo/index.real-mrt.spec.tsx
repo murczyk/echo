@@ -14,7 +14,16 @@ const tableStateMock = vi.hoisted(() => ({
   globalFilter: '',
   columnFilters: [],
   sorting: [],
-  columnOrder: ['mrt-row-numbers', 'mrt-row-actions', 'network', 'aors', 'freqs', 'location', 'activity', 'lastActivity'],
+  columnOrder: [
+    'mrt-row-numbers',
+    'mrt-row-actions',
+    'network',
+    'aors',
+    'freqs',
+    'location',
+    'activity',
+    'lastActivity',
+  ],
   columnSizing: {},
   columnVisibility: {},
   enableColumnOrdering: true,
@@ -33,7 +42,10 @@ const pageMock = vi.hoisted(() => ({
 }));
 
 vi.mock('../../components/mui-customized/table/table-state-provider', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../components/mui-customized/table/table-state-provider')>();
+  const actual =
+    await importOriginal<
+      typeof import('../../components/mui-customized/table/table-state-provider')
+    >();
   return {
     ...actual,
     useTableStateContext: () => tableStateMock,

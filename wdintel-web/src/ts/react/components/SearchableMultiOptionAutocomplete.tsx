@@ -48,7 +48,10 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
   slotProps,
 }: Props<T>) {
   const selectedOptions = useMemo(
-    () => valueIds.map((valueId) => options.find((option) => option.id === valueId)).filter((option): option is T => option !== undefined),
+    () =>
+      valueIds
+        .map((valueId) => options.find((option) => option.id === valueId))
+        .filter((option): option is T => option !== undefined),
     [options, valueIds],
   );
   const filterOptions = useMemo(() => createRankedFilterOptions(getOptionLabel), [getOptionLabel]);

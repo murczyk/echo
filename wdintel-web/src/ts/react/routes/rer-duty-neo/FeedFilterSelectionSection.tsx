@@ -168,7 +168,9 @@ export function FeedFilterSelectionSection<T>({
             </li>
           )}
           renderInput={(params) => <TextField {...params} placeholder={placeholder} />}
-          className={autocompleteClassName ?? 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1'}
+          className={
+            autocompleteClassName ?? 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1'
+          }
         />
       </Box>
     </Box>

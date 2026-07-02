@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
 
 vi.mock('./NetworkDatePickerField', () => ({
-  NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
+  NetworkDatePickerField: ({ label }: { label: string }) => (
+    <div data-testid={`date-picker-${label}`} />
+  ),
 }));
 
 import { NetworkCallsignRelationsPanel } from './NetworkCallsignRelationsPanel';
@@ -143,7 +145,10 @@ function createSparseRelationsWithDisabledDefaultFreq(): NetworkCallsignRelation
 
 type PanelProps = Parameters<typeof NetworkCallsignRelationsPanel>[0];
 
-function renderPanel(relations?: NetworkCallsignRelationsRsp | null, overrides: Partial<PanelProps> = {}) {
+function renderPanel(
+  relations?: NetworkCallsignRelationsRsp | null,
+  overrides: Partial<PanelProps> = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -317,7 +322,9 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    const clearButton = view.container.querySelector<HTMLButtonElement>('[data-testid="clear-empty-filters"]');
+    const clearButton = view.container.querySelector<HTMLButtonElement>(
+      '[data-testid="clear-empty-filters"]',
+    );
     expect(clearButton).not.toBeNull();
 
     act(() => {
@@ -326,7 +333,9 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     expect(view.props.onSearchChange).toHaveBeenCalledWith('');
     expect(view.props.onEnabledFreqsChange).toHaveBeenCalledWith(['652.111']);
-    expect(view.props.onMinIntensityChange).toHaveBeenCalledWith(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
+    expect(view.props.onMinIntensityChange).toHaveBeenCalledWith(
+      NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+    );
   });
 
   it('hides the empty-state clear action when empty data has no active graph filters', () => {
@@ -354,8 +363,8 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
     rendered.push(view);
 
-    const closeButton = [...view.container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-      button.getAttribute('aria-label')?.startsWith('Закрити деталі зв'),
+    const closeButton = [...view.container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.getAttribute('aria-label')?.startsWith('Закрити деталі зв'),
     );
     expect(closeButton).not.toBeNull();
 
@@ -382,8 +391,8 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain('Завантажуємо граф зв\'язків');
-    expect(view.container.textContent).toContain('Граф зв\'язків');
+    expect(view.container.textContent).toContain("Завантажуємо граф зв'язків");
+    expect(view.container.textContent).toContain("Граф зв'язків");
   });
 
   it('shows a no-data card before relations arrive', () => {
@@ -403,8 +412,14 @@ describe('NetworkCallsignRelationsPanel', () => {
     });
 
     expect(view.container.textContent).toContain('Немає графових даних');
-    expect(view.container.textContent).toContain("Граф будується після першого зв'язку між позивними");
-    expect([...view.container.querySelectorAll('button')].some((button) => button.textContent?.includes('Оновити'))).toBe(true);
+    expect(view.container.textContent).toContain(
+      "Граф будується після першого зв'язку між позивними",
+    );
+    expect(
+      [...view.container.querySelectorAll('button')].some((button) =>
+        button.textContent?.includes('Оновити'),
+      ),
+    ).toBe(true);
   });
 
   it('keeps the graph shell available when a successful response has no edges', () => {
@@ -450,10 +465,7 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     act(() => {
       view.root.render(
-        <NetworkCallsignRelationsPanel
-          {...(view.props as any)}
-          relationsLoading={true}
-        />,
+        <NetworkCallsignRelationsPanel {...(view.props as any)} relationsLoading={true} />,
       );
     });
 
@@ -471,7 +483,9 @@ describe('NetworkCallsignRelationsPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain("Забагато зв'язків для відображення");
-    expect(view.container.textContent).toContain('Збільшіть інтенсивність, звузьте період або вимкніть частоти.');
+    expect(view.container.textContent).toContain(
+      'Збільшіть інтенсивність, звузьте період або вимкніть частоти.',
+    );
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="date-picker-Від"]')).not.toBeNull();

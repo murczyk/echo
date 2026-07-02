@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage } from '../../../../Bindings';
-import { buildMessageDraftMap, enqueueMessageSave, prepareQueuedMessageUpdate } from './use-analysis-message-editor';
+import {
+  buildMessageDraftMap,
+  enqueueMessageSave,
+  prepareQueuedMessageUpdate,
+} from './use-analysis-message-editor';
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -50,17 +54,29 @@ describe('prepareQueuedMessageUpdate', () => {
     const message = { callsigns: ['A'], callsignsAlg2: [] } as InboxMessage;
     const draftMap = buildMessageDraftMap([[5, message]]);
 
-    const first = prepareQueuedMessageUpdate(draftMap, [[5, message]], 5, (current) => ({
-      ...current,
-      callsigns: [],
-    } as InboxMessage));
+    const first = prepareQueuedMessageUpdate(
+      draftMap,
+      [[5, message]],
+      5,
+      (current) =>
+        ({
+          ...current,
+          callsigns: [],
+        }) as InboxMessage,
+    );
     expect(first.currentMessage?.callsigns).toEqual(['A']);
     expect(first.nextMessage?.callsigns).toEqual([]);
 
-    const second = prepareQueuedMessageUpdate(draftMap, [[5, message]], 5, (current) => ({
-      ...current,
-      callsigns: [...(current.callsigns ?? []), 'B'],
-    } as InboxMessage));
+    const second = prepareQueuedMessageUpdate(
+      draftMap,
+      [[5, message]],
+      5,
+      (current) =>
+        ({
+          ...current,
+          callsigns: [...(current.callsigns ?? []), 'B'],
+        }) as InboxMessage,
+    );
     expect(second.currentMessage?.callsigns).toEqual([]);
     expect(second.nextMessage?.callsigns).toEqual(['B']);
   });

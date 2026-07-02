@@ -60,7 +60,10 @@ type Props = {
   unitMaskVisible?: boolean;
 };
 
-type UpsertField = keyof Pick<NetworkUpsertValidationError, 'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'>;
+type UpsertField = keyof Pick<
+  NetworkUpsertValidationError,
+  'name' | 'location' | 'aorIds' | 'freq' | 'activeFrom'
+>;
 
 function buildSelectedOptions(options: LookupOption[], selectedIds: number[]): LookupOption[] {
   const optionsById = new Map(options.map((option) => [option.id, option]));
@@ -128,9 +131,10 @@ function NetworkEditDrawerComponent({
   unitMaskVisible = false,
 }: Props) {
   const titleId = 'network-edit-drawer-title';
-  const includeFrequency = form !== null && mode === 'create'
-    ? shouldIncludeNetworkCreateFrequency(form, frequencyOptional)
-    : false;
+  const includeFrequency =
+    form !== null && mode === 'create'
+      ? shouldIncludeNetworkCreateFrequency(form, frequencyOptional)
+      : false;
   const validation = getNetworkUpsertValidationError(form, { includeFrequency });
   const formBlocked = saving || referenceLoading;
   const canSave = form !== null && !formBlocked && validation === null;
@@ -148,8 +152,14 @@ function NetworkEditDrawerComponent({
     setTechnicalExpanded(false);
   }, [mode, open]);
 
-  const selectedAors = useMemo(() => (form ? buildSelectedOptions(aorOptions, form.aorIds) : []), [aorOptions, form]);
-  const selectedPosts = useMemo(() => (form ? buildSelectedOptions(postOptions, form.postIds) : []), [form, postOptions]);
+  const selectedAors = useMemo(
+    () => (form ? buildSelectedOptions(aorOptions, form.aorIds) : []),
+    [aorOptions, form],
+  );
+  const selectedPosts = useMemo(
+    () => (form ? buildSelectedOptions(postOptions, form.postIds) : []),
+    [form, postOptions],
+  );
   const selectedEncryption = useMemo(() => {
     if (!form || form.encryptionId === null) {
       return null;
@@ -167,10 +177,11 @@ function NetworkEditDrawerComponent({
     setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
   };
 
-  const handleAutocompleteChange = (key: 'aorIds' | 'postIds') => (_event: SyntheticEvent, next: LookupOption[]) => {
-    if (!form) return;
-    onChange({ ...form, [key]: next.map((option) => option.id) });
-  };
+  const handleAutocompleteChange =
+    (key: 'aorIds' | 'postIds') => (_event: SyntheticEvent, next: LookupOption[]) => {
+      if (!form) return;
+      onChange({ ...form, [key]: next.map((option) => option.id) });
+    };
 
   const handleUnitMaskChange = (_event: SyntheticEvent, next: string[]) => {
     if (!form) return;
@@ -209,7 +220,8 @@ function NetworkEditDrawerComponent({
 
     // Drop dead/missing unit ids before saving.
     const filteredUnitIds = form.unitIds.filter((id) => unitOptions.some((o) => o.id === id));
-    const filteredForm = filteredUnitIds.length !== form.unitIds.length ? { ...form, unitIds: filteredUnitIds } : form;
+    const filteredForm =
+      filteredUnitIds.length !== form.unitIds.length ? { ...form, unitIds: filteredUnitIds } : form;
 
     onSave(filteredForm);
   };
@@ -247,7 +259,9 @@ function NetworkEditDrawerComponent({
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-          {referenceLoading ? <PowerAlert severity="info">{REFERENCE_LOADING_TEXT}</PowerAlert> : null}
+          {referenceLoading ? (
+            <PowerAlert severity="info">{REFERENCE_LOADING_TEXT}</PowerAlert>
+          ) : null}
 
           {form ? (
             <>
@@ -379,14 +393,17 @@ function NetworkEditDrawerComponent({
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          label={(
-                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                          label={
+                            <Box
+                              component="span"
+                              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                            >
                               Маска підрозділу
                               <Tooltip title={UNIT_MASK_TOOLTIP} arrow>
                                 <InfoOutlinedIcon color="action" fontSize="small" />
                               </Tooltip>
                             </Box>
-                          )}
+                          }
                           size="small"
                         />
                       )}
@@ -394,13 +411,15 @@ function NetworkEditDrawerComponent({
                   ) : null}
 
                   <FormControlLabel
-                    control={(
+                    control={
                       <Checkbox
                         checked={form.doNotArchive}
-                        onChange={(event) => onChange({ ...form, doNotArchive: event.target.checked })}
+                        onChange={(event) =>
+                          onChange({ ...form, doNotArchive: event.target.checked })
+                        }
                         disabled={formBlocked}
                       />
-                    )}
+                    }
                     label="Не архівувати автоматично"
                   />
 
@@ -453,7 +472,9 @@ function NetworkEditDrawerComponent({
 
               {mode === 'create' ? (
                 <>
-                  <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.75 }}>
+                  <Box
+                    sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.75 }}
+                  >
                     <Stack spacing={2}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                         {frequencyOptional ? 'Перша частота' : 'Перша частота *'}
@@ -503,11 +524,7 @@ function NetworkEditDrawerComponent({
                           filterOptions={networkEditLookupFilterOptions}
                           slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
                           renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              label="Шифрування"
-                              size="small"
-                            />
+                            <TextField {...params} label="Шифрування" size="small" />
                           )}
                         />
                       )}
@@ -515,7 +532,9 @@ function NetworkEditDrawerComponent({
                       <NetworkFreqActivityPeriodControl
                         activeFrom={form.activeFrom}
                         activeTo={form.activeTo}
-                        onActiveFromChange={(nextValue) => onChange({ ...form, activeFrom: nextValue })}
+                        onActiveFromChange={(nextValue) =>
+                          onChange({ ...form, activeFrom: nextValue })
+                        }
                         onActiveToChange={(nextValue) => onChange({ ...form, activeTo: nextValue })}
                         disabled={formBlocked}
                         required={!frequencyOptional}

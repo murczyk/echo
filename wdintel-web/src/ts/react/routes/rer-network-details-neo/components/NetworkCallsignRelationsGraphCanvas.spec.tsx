@@ -118,8 +118,12 @@ describe('NetworkCallsignRelationsGraphCanvas', () => {
 
     const markerBadges = view.container.querySelectorAll('g[role="img"]');
     expect(markerBadges).toHaveLength(2);
-    expect(markerBadges[0]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x - 15} ${alphaPosition!.y})`);
-    expect(markerBadges[1]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x + 15} ${alphaPosition!.y})`);
+    expect(markerBadges[0]?.getAttribute('transform')).toBe(
+      `translate(${alphaPosition!.x - 15} ${alphaPosition!.y})`,
+    );
+    expect(markerBadges[1]?.getAttribute('transform')).toBe(
+      `translate(${alphaPosition!.x + 15} ${alphaPosition!.y})`,
+    );
     expect(markerBadges[0]?.querySelector('circle')?.getAttribute('r')).toBe('12');
     expect(markerBadges[1]?.querySelector('circle')?.getAttribute('r')).toBe('12');
     expect(markerBadges[0]?.querySelector('svg')?.getAttribute('width')).toBe('16');

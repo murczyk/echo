@@ -4,7 +4,6 @@ import { fetchUserInfo } from '../../services/api/user';
 import { toErrorMessage } from './use-analysis-data.shared';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type LoadMessageCommentsParams = {
@@ -36,7 +35,8 @@ export function filterOtherMessageComments(
     if (normalizeLogin(currentUser?.name ?? '') === commentLogin) return false;
 
     const commentUser = users[commentLogin] ?? null;
-    if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId)) return false;
+    if (isNullOrUndefined(currentUser?.organismId) || isNullOrUndefined(commentUser?.organismId))
+      return false;
     return currentUser.organismId !== commentUser.organismId;
   });
 }
@@ -50,7 +50,11 @@ export async function loadMissingMessageCommentsForMessages(
     new Set(
       messages
         .map(([messageId]) => messageId)
-        .filter((messageId) => Number.isInteger(messageId) && (forceReload || isNullOrUndefined(params.messageComments[messageId]))),
+        .filter(
+          (messageId) =>
+            Number.isInteger(messageId) &&
+            (forceReload || isNullOrUndefined(params.messageComments[messageId])),
+        ),
     ),
   );
 
@@ -82,7 +86,12 @@ export async function loadMissingMessageCommentsForMessages(
         (commentsRsp.data ?? [])
           .flatMap((entry) => entry.comments ?? [])
           .map((comment) => normalizeLogin(comment.login))
-          .filter((login) => login !== '' && normalizeLogin(params.authUserName ?? '') !== login && normalizeLogin(params.currentUser?.name ?? '') !== login)
+          .filter(
+            (login) =>
+              login !== '' &&
+              normalizeLogin(params.authUserName ?? '') !== login &&
+              normalizeLogin(params.currentUser?.name ?? '') !== login,
+          )
           .filter((login) => !(login in params.users)),
       ),
     );

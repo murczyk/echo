@@ -106,7 +106,10 @@ export function useAnalysisDataStateUtils(params: Params) {
   const patchMessages = useCallback(
     (updater: (messageId: number, message: InboxMessage) => InboxMessage) => {
       const updateItems = (items: Array<[number, InboxMessage]>) =>
-        items.map(([messageId, message]) => [messageId, updater(messageId, message)] as [number, InboxMessage]);
+        items.map(
+          ([messageId, message]) =>
+            [messageId, updater(messageId, message)] as [number, InboxMessage],
+        );
 
       setMessages((current) => updateItems(current));
       setMapOpenMessages((current) => updateItems(current));

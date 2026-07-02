@@ -7,28 +7,36 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import dayjs from 'dayjs';
 
-const datePickerMock = vi.fn((props: {
-  value?: unknown;
-  onChange: (value: unknown, context: { validationError: unknown }) => void;
-  desktopModeMediaQuery: string;
-  onOpen?: () => void;
-  onClose?: () => void;
-  onAccept?: (value: unknown, context: { validationError: unknown }) => void;
-  onSelectedSectionsChange?: (value: unknown) => void;
-  slotProps?: { actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void } };
-  slots?: { actionBar?: unknown };
-}) => null);
-const dateTimePickerMock = vi.fn((props: {
-  value?: unknown;
-  onChange: (value: unknown, context: { validationError: unknown }) => void;
-  desktopModeMediaQuery: string;
-  onOpen?: () => void;
-  onClose?: () => void;
-  onAccept?: (value: unknown, context: { validationError: unknown }) => void;
-  onSelectedSectionsChange?: (value: unknown) => void;
-  slotProps?: { actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void } };
-  slots?: { actionBar?: unknown };
-}) => null);
+const datePickerMock = vi.fn(
+  (props: {
+    value?: unknown;
+    onChange: (value: unknown, context: { validationError: unknown }) => void;
+    desktopModeMediaQuery: string;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onAccept?: (value: unknown, context: { validationError: unknown }) => void;
+    onSelectedSectionsChange?: (value: unknown) => void;
+    slotProps?: {
+      actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void };
+    };
+    slots?: { actionBar?: unknown };
+  }) => null,
+);
+const dateTimePickerMock = vi.fn(
+  (props: {
+    value?: unknown;
+    onChange: (value: unknown, context: { validationError: unknown }) => void;
+    desktopModeMediaQuery: string;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onAccept?: (value: unknown, context: { validationError: unknown }) => void;
+    onSelectedSectionsChange?: (value: unknown) => void;
+    slotProps?: {
+      actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void };
+    };
+    slots?: { actionBar?: unknown };
+  }) => null,
+);
 const localizationProviderMock = vi.fn(({ children }: { children: ReactNode }) => children);
 vi.mock('@mui/x-date-pickers/hooks/usePickersTranslations', () => ({
   usePickersTranslations: () => ({
@@ -48,7 +56,9 @@ vi.mock('@mui/x-date-pickers/DatePicker', () => ({
     onClose?: () => void;
     onAccept?: (value: unknown, context: { validationError: unknown }) => void;
     onSelectedSectionsChange?: (value: unknown) => void;
-    slotProps?: { actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void } };
+    slotProps?: {
+      actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void };
+    };
     slots?: { actionBar?: unknown };
   }) => datePickerMock(props),
 }));
@@ -62,13 +72,18 @@ vi.mock('@mui/x-date-pickers/DateTimePicker', () => ({
     onClose?: () => void;
     onAccept?: (value: unknown, context: { validationError: unknown }) => void;
     onSelectedSectionsChange?: (value: unknown) => void;
-    slotProps?: { actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void } };
+    slotProps?: {
+      actionBar?: { actions?: string[]; powerActions?: string[]; onRequestClose?: () => void };
+    };
     slots?: { actionBar?: unknown };
   }) => dateTimePickerMock(props),
 }));
 
 vi.mock('@mui/x-date-pickers/LocalizationProvider', () => ({
-  LocalizationProvider: (props: { children: ReactNode; localeText?: { cancelButtonLabel?: string } }) => localizationProviderMock(props),
+  LocalizationProvider: (props: {
+    children: ReactNode;
+    localeText?: { cancelButtonLabel?: string };
+  }) => localizationProviderMock(props),
 }));
 
 vi.mock('@mui/x-date-pickers/AdapterDayjs', () => ({
@@ -114,7 +129,15 @@ describe('PowerDateTimePicker', () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<PowerPickerActionBar className="MuiPickersLayout-actionBar" powerActions={['close', 'accept']} onAccept={() => {}} onClear={() => {}} onSetToday={() => {}} />);
+      root.render(
+        <PowerPickerActionBar
+          className="MuiPickersLayout-actionBar"
+          powerActions={['close', 'accept']}
+          onAccept={() => {}}
+          onClear={() => {}}
+          onSetToday={() => {}}
+        />,
+      );
     });
 
     const actionBar = container.querySelector('.MuiPickersLayout-actionBar');
@@ -154,7 +177,9 @@ describe('PowerDateTimePicker', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect((datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe('2026-05-02');
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-02');
 
     act(() => {
       vi.advanceTimersByTime(249);
@@ -202,7 +227,9 @@ describe('PowerDateTimePicker', () => {
 
     const updatedOpenPickerProps = datePickerMock.mock.calls.at(-1)?.[0];
     expect(updatedOpenPickerProps).toBeDefined();
-    expect((updatedOpenPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe('2026-05-02');
+    expect((updatedOpenPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe(
+      '2026-05-02',
+    );
 
     act(() => {
       updatedOpenPickerProps?.onAccept?.(dayjs('2026-05-02'), { validationError: null });
@@ -223,7 +250,9 @@ describe('PowerDateTimePicker', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />);
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
     });
 
     const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
@@ -234,21 +263,27 @@ describe('PowerDateTimePicker', () => {
     });
 
     const openPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
-    expect((openPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe('2026-05-01T10:00');
+    expect((openPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
 
     act(() => {
       openPickerProps?.onChange(dayjs('2026-05-02T11:30'), { validationError: null });
     });
 
     const draftPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
-    expect((draftPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe('2026-05-02T11:30');
+    expect((draftPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-02T11:30',
+    );
 
     act(() => {
       draftPickerProps?.onClose?.();
     });
 
     const closedPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
-    expect((closedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe('2026-05-01T10:00');
+    expect((closedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
 
     expect(onChange).not.toHaveBeenCalled();
 
@@ -286,7 +321,14 @@ describe('PowerDateTimePicker', () => {
     const emptyOnChange = vi.fn();
 
     act(() => {
-      emptyRoot.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={emptyOnChange} allowEmpty label="Дата" />);
+      emptyRoot.render(
+        <PowerDatePicker
+          value={dayjs('2026-05-01')}
+          onChange={emptyOnChange}
+          allowEmpty
+          label="Дата"
+        />,
+      );
     });
 
     const emptyPickerProps = datePickerMock.mock.calls.at(-1)?.[0];
@@ -311,7 +353,9 @@ describe('PowerDateTimePicker', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />);
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
     });
 
     const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
@@ -331,7 +375,11 @@ describe('PowerDateTimePicker', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect((dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe('2026-05-02T11:30');
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-02T11:30');
 
     act(() => {
       vi.advanceTimersByTime(249);
@@ -357,7 +405,9 @@ describe('PowerDateTimePicker', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />);
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
     });
 
     const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
@@ -403,7 +453,12 @@ describe('PowerDateTimePicker', () => {
 
     act(() => {
       root.render(
-        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} manualInputDebounceMs={250} label="Час" />,
+        <PowerDateTimePicker
+          value={dayjs('2026-05-01T10:00')}
+          onChange={onChange}
+          manualInputDebounceMs={250}
+          label="Час"
+        />,
       );
     });
 
@@ -441,7 +496,9 @@ describe('PowerDateTimePicker', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />);
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
     });
 
     const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
@@ -495,7 +552,9 @@ describe('PowerDateTimePicker', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />);
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
     });
 
     const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];

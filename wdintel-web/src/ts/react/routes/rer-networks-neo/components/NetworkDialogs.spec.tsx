@@ -14,13 +14,22 @@ const reportDialogProps: Array<Record<string, unknown>> = [];
 const confirmDialogProps: Array<Record<string, unknown>> = [];
 
 vi.mock('@mui/material', () => ({
-  MenuItem: ({ children, onClick, disabled }: { children?: ReactNode; onClick?: () => void; disabled?: boolean }) => (
+  MenuItem: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
   ),
   Paper: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Popper: ({ children, open }: { children?: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
+  Popper: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+    open ? <div>{children}</div> : null,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -175,7 +184,9 @@ describe('NetworkDialogs', () => {
     });
 
     expect(reportDialogProps.at(-1)?.disableRestoreFocus).toBe(true);
-    expect(editDrawerProps.find((props) => props.mode === 'create')?.disableRestoreFocus).toBeUndefined();
+    expect(
+      editDrawerProps.find((props) => props.mode === 'create')?.disableRestoreFocus,
+    ).toBeUndefined();
     expect(editDrawerProps.find((props) => props.mode === 'edit')?.disableRestoreFocus).toBe(true);
     expect(confirmDialogProps.at(-1)?.disableRestoreFocus).toBe(true);
 

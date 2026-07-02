@@ -1,7 +1,12 @@
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { Palitra } from '../../../../Bindings';
-import { archivePalitraFolder, assignPalitraFolder, deletePalitraFolder, renamePalitraFolder } from '../../services/api/palitra';
+import {
+  archivePalitraFolder,
+  assignPalitraFolder,
+  deletePalitraFolder,
+  renamePalitraFolder,
+} from '../../services/api/palitra';
 import {
   buildAssignFolderPreview,
   buildFolderSubtreePreview,
@@ -10,7 +15,13 @@ import {
   normalizeFolderPathForUi,
   validateFolderPath,
 } from './helpers';
-import type { FolderActionDialogState, FolderActionPreview, FolderTreeNode, PalitraRowView, UiStatus } from './types';
+import type {
+  FolderActionDialogState,
+  FolderActionPreview,
+  FolderTreeNode,
+  PalitraRowView,
+  UiStatus,
+} from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
@@ -49,14 +60,22 @@ type Props = {
   setExpandedFolderPaths: SetState<string[]>;
   setSelectedPalitraIds: SetState<number[]>;
   setPalitraFolderLocally: (palitraIds: number[], nextFolderPath: string) => void;
-  renameFolderLocally: (palitraIds: number[], fromFolderPath: string, nextFolderPath: string) => void;
+  renameFolderLocally: (
+    palitraIds: number[],
+    fromFolderPath: string,
+    nextFolderPath: string,
+  ) => void;
   archiveFolderLocally: (palitraIds: number[]) => void;
   deleteFolderLocally: (palitraIds: number[]) => void;
   buildFolderActionStatus: (state: FolderActionDialogState, changedIds: number[]) => UiStatus;
 };
 
 export function createPalitraFolderActionHandlers(props: Props) {
-  function openAssignFolderDialog(targetPalitraIds: number[], emptySelectionMessage: string, blockedSelectionMessage: string) {
+  function openAssignFolderDialog(
+    targetPalitraIds: number[],
+    emptySelectionMessage: string,
+    blockedSelectionMessage: string,
+  ) {
     const requestedIdSet = new Set(targetPalitraIds);
     const requestedRowsSnapshot = props.palitraRows.filter((row) => requestedIdSet.has(row.id));
     const preview = buildAssignFolderPreview(requestedRowsSnapshot, targetPalitraIds, '');
@@ -71,7 +90,9 @@ export function createPalitraFolderActionHandlers(props: Props) {
     }
 
     const requestedPreviewIdSet = new Set(preview.requestedIds);
-    const targetPalitraNames = requestedRowsSnapshot.filter((row) => requestedPreviewIdSet.has(row.id)).map((row) => row.name);
+    const targetPalitraNames = requestedRowsSnapshot
+      .filter((row) => requestedPreviewIdSet.has(row.id))
+      .map((row) => row.name);
 
     props.setFolderDialogState(
       buildFolderDialogState({
@@ -86,7 +107,13 @@ export function createPalitraFolderActionHandlers(props: Props) {
   }
 
   function requestAssignFolder() {
-    if (props.folderActionsBlocked || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
+    if (
+      props.folderActionsBlocked ||
+      props.bulkDeleteInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null
+    )
+      return;
 
     openAssignFolderDialog(
       props.selectedPalitraIds,
@@ -96,9 +123,19 @@ export function createPalitraFolderActionHandlers(props: Props) {
   }
 
   function requestAssignFolderForPalitra(palitra: Palitra) {
-    if (props.folderActionsBlocked || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
+    if (
+      props.folderActionsBlocked ||
+      props.bulkDeleteInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null
+    )
+      return;
 
-    openAssignFolderDialog([palitra.id], 'Не вдалося знайти палітру для переміщення.', 'Цю палітру зараз не можна перемістити.');
+    openAssignFolderDialog(
+      [palitra.id],
+      'Не вдалося знайти палітру для переміщення.',
+      'Цю палітру зараз не можна перемістити.',
+    );
   }
 
   function openFolderSubtreeDialog(
@@ -106,7 +143,13 @@ export function createPalitraFolderActionHandlers(props: Props) {
     kind: Exclude<FolderActionDialogState['kind'], 'assign'>,
     emptyMessage: string,
   ) {
-    if (props.folderActionsBlocked || props.bulkDeleteInFlight || props.inFlightArchiveId !== null || props.inFlightDeleteId !== null) return;
+    if (
+      props.folderActionsBlocked ||
+      props.bulkDeleteInFlight ||
+      props.inFlightArchiveId !== null ||
+      props.inFlightDeleteId !== null
+    )
+      return;
     const node = getFolderNodeByPath(props.folderTree, path);
     if (!node) return;
 
@@ -148,7 +191,11 @@ export function createPalitraFolderActionHandlers(props: Props) {
       if (!prev) return prev;
       if (prev.kind === 'assign') {
         const assignRows = prev.assignRequestedRows ?? props.palitraRows;
-        const preview = buildAssignFolderPreview(assignRows, prev.preview.requestedIds, nextFolderPath);
+        const preview = buildAssignFolderPreview(
+          assignRows,
+          prev.preview.requestedIds,
+          nextFolderPath,
+        );
         return {
           ...prev,
           nextFolderPath,
@@ -165,7 +212,9 @@ export function createPalitraFolderActionHandlers(props: Props) {
   }
 
   function toggleFolderExpanded(path: string) {
-    props.setExpandedFolderPaths((prev) => (prev.includes(path) ? prev.filter((item) => item !== path) : [...prev, path]));
+    props.setExpandedFolderPaths((prev) =>
+      prev.includes(path) ? prev.filter((item) => item !== path) : [...prev, path],
+    );
   }
 
   async function handleAssignFolderConfirm(state: FolderActionDialogState) {
@@ -271,7 +320,10 @@ export function createPalitraFolderActionHandlers(props: Props) {
           break;
       }
     } catch (folderError) {
-      props.setStatus({ kind: 'error', text: 'Не вдалося виконати операцію з папкою: ' + formatErrorMessage(folderError) });
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося виконати операцію з папкою: ' + formatErrorMessage(folderError),
+      });
     } finally {
       props.setFolderActionInFlight(false);
     }

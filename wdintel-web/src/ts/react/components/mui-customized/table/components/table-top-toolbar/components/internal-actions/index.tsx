@@ -41,7 +41,9 @@ export function InternalTableActions<T extends MRT_RowData>(props: IntrernalTabl
           disabled={props.filtersDisabled || tableControlsDisabled}
         />
       )}
-      {props.fullScreenEnabled && table ? <MRT_ToggleFullScreenButton table={table} disabled={props.fullScreenDisabled} /> : null}
+      {props.fullScreenEnabled && table ? (
+        <MRT_ToggleFullScreenButton table={table} disabled={props.fullScreenDisabled} />
+      ) : null}
       <ColumnsVisibilityButton
         disabled={props.columnsVisibilityDisabled || tableControlsDisabled}
         rowNumberAppearanceControl={props.rowNumberAppearanceControl}

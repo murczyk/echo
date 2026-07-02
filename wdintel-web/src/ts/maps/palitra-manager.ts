@@ -4,7 +4,12 @@ import { PalitraCacheManager } from './palitra-cache-manager';
 import { PalitrasControl, PalitrasLoadState } from './controls';
 import { PalitraPointClusterRenderer } from './palitra-point-cluster-renderer';
 import { PalitraPointsController } from './palitra-points-controller';
-import { Palitra, PalitraDetails, PalitraManagerCallbacks, PalitraManagerOptions } from './palitra-types';
+import {
+  Palitra,
+  PalitraDetails,
+  PalitraManagerCallbacks,
+  PalitraManagerOptions,
+} from './palitra-types';
 import { createPalitraGeometryLayer } from './utils/palitra-map-geometry';
 
 export class PalitraManager {
@@ -32,7 +37,10 @@ export class PalitraManager {
   ) {
     this.cacheManager = new PalitraCacheManager(options.cacheTtlMs, options.maxCachedTiles);
     this.layerGroup = L.layerGroup().addTo(map);
-    this.pointClustersRenderer = new PalitraPointClusterRenderer(map, callbacks.onOverlayContextMenu);
+    this.pointClustersRenderer = new PalitraPointClusterRenderer(
+      map,
+      callbacks.onOverlayContextMenu,
+    );
     this.pointsController = new PalitraPointsController(
       map,
       options,
@@ -139,7 +147,8 @@ export class PalitraManager {
 
     this.layerGroup.clearLayers();
     const visiblePalitras = this.palitras.filter(
-      (palitraDetails) => this.visibleIds.includes(palitraDetails.palitra.id) && palitraDetails.palitra.geometry,
+      (palitraDetails) =>
+        this.visibleIds.includes(palitraDetails.palitra.id) && palitraDetails.palitra.geometry,
     );
 
     const geometryLayers: L.Layer[] = [];

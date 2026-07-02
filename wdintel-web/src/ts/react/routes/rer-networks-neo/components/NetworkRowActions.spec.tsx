@@ -41,7 +41,12 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
     opensModal?: boolean;
     onClick?: () => void;
   }) => (
-    <button type="button" data-label={label} data-opens-modal={opensModal === true ? 'true' : 'false'} onClick={onClick}>
+    <button
+      type="button"
+      data-label={label}
+      data-opens-modal={opensModal === true ? 'true' : 'false'}
+      onClick={onClick}
+    >
       {label}
     </button>
   ),
@@ -99,8 +104,18 @@ describe('NetworkRowActions', () => {
     });
 
     const buttons = Array.from(container.querySelectorAll('button'));
-    expect(buttons.map((button) => button.getAttribute('data-label'))).toEqual(['Еталонний опис', 'Пеленгація', 'Редагувати', 'Видалити']);
-    expect(buttons.map((button) => button.getAttribute('data-opens-modal'))).toEqual(['true', 'false', 'true', 'true']);
+    expect(buttons.map((button) => button.getAttribute('data-label'))).toEqual([
+      'Еталонний опис',
+      'Пеленгація',
+      'Редагувати',
+      'Видалити',
+    ]);
+    expect(buttons.map((button) => button.getAttribute('data-opens-modal'))).toEqual([
+      'true',
+      'false',
+      'true',
+      'true',
+    ]);
 
     root.unmount();
     container.remove();
@@ -128,14 +143,20 @@ describe('NetworkRowActions', () => {
       );
     });
 
-    const directionButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Пеленгація');
+    const directionButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Пеленгація',
+    );
     expect(directionButton).toBeDefined();
 
     act(() => {
       directionButton?.click();
     });
 
-    expect(openSpy).toHaveBeenCalledWith('/rer-networks/7?tab=direction-finding', '_blank', 'noreferrer');
+    expect(openSpy).toHaveBeenCalledWith(
+      '/rer-networks/7?tab=direction-finding',
+      '_blank',
+      'noreferrer',
+    );
 
     openSpy.mockRestore();
     root.unmount();
