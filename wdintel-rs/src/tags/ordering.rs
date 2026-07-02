@@ -35,7 +35,11 @@ pub async fn collect_tags_list(
         .await
         .c(h!())?;
     regular_tags.append(&mut extra_tags);
-    regular_tags.sort_by_key(|tag| tag.owner_organism_id.is_none());
+    let (mut organism_tags, mut global_tags): (Vec<_>, Vec<_>) = regular_tags
+        .into_iter()
+        .partition(|tag| tag.owner_organism_id.is_some());
+    organism_tags.append(&mut global_tags);
+    let regular_tags = organism_tags;
 
     let keywords = regular_tags
         .load_many(tag_keyword::Entity, db)
