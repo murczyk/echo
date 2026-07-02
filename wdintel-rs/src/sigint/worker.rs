@@ -30,8 +30,9 @@ where
         .await
         .c(h!())?;
         if message.external_id.is_some() {
+            let trace_message_uid = duplicate_trace_message_uid(message.id);
             let mut message = message.into_active_model();
-            message.message_uid = Set(original.message_uid.clone());
+            message.message_uid = Set(Some(trace_message_uid));
             message.update(dbx).await.c(h!())?;
         } else {
             signal_message::Entity::delete_many()
@@ -65,6 +66,10 @@ where
         message,
         is_duplicate: false,
     })
+}
+
+fn duplicate_trace_message_uid(message_id: i64) -> String {
+    format!("duplicate-trace-{message_id}")
 }
 
 /// Shared logic between signal and buran api integration
@@ -156,7 +161,11 @@ mod tests {
             .unwrap();
         assert!(trace.deleted);
         assert_eq!(trace.external_id, staged.external_id);
-        assert_eq!(trace.message_uid, original.message_uid);
+        assert_eq!(
+            trace.message_uid.as_deref(),
+            Some(duplicate_trace_message_uid(staged.id).as_str())
+        );
+        assert_ne!(trace.message_uid, original.message_uid);
         txn.rollback().await.unwrap();
     }
 }

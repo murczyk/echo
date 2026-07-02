@@ -1007,6 +1007,7 @@ async fn upsert_submit_signal_message(
                     signal_message::Relation::DatasourceGroup.def(),
                 )
                 .filter(signal_message::Column::MessageUid.eq(message_uid))
+                .filter(signal_message::Column::Deleted.eq(false))
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource_id),
                 )
