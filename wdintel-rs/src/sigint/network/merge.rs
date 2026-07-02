@@ -215,9 +215,12 @@ pub async fn merge_two_network_freqs(
         .c(h!())?;
 
     if !freq_from.deleted {
+        let cutoff = freq_to.active_from.max(freq_from.active_from);
+        let final_active_to = freq_from.active_to.unwrap_or(cutoff);
         let mut freq_from_record: sigint_network_freq::ActiveModel =
             freq_from.into();
         freq_from_record.deleted = Set(true);
+        freq_from_record.active_to = Set(Some(final_active_to));
         freq_from_record.update(txn).await.context(h!())?;
     }
 
@@ -381,6 +384,10 @@ async fn reassign_freqs(
     }
     let update_res = update_remaining_freqs
         .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
+        .col_expr(
+            sigint_network_freq::Column::ActiveTo,
+            Expr::cust("COALESCE(sigint_network_freq.active_to, NOW())"),
+        )
         .exec(txn)
         .await
         .context(h!())?;
