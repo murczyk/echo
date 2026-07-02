@@ -34,6 +34,7 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub default_neo_analysis: bool,
+    pub autofix_echoim_missing_messages: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

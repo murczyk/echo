@@ -15,7 +15,7 @@ use actix_web::{post, web::Json};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
+    DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -69,6 +69,8 @@ fn map_system_settings_item(
         short_url_enabled: settings.short_url_enabled,
         support_non_rer_interceptions: settings.support_non_rer_interceptions,
         default_neo_analysis: settings.default_neo_analysis,
+        autofix_echoim_missing_messages: settings
+            .autofix_echoim_missing_messages,
         peleng_bounds_enabled: settings.peleng_bounds_enabled,
         peleng_bounds_top_left_lat: settings.peleng_bounds_top_left_lat,
         peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
@@ -121,6 +123,18 @@ where
     settings.echo_im_sync_since = Set(next_sync_since);
     settings.update(dbx).await.c(h!())?;
     Ok(())
+}
+
+pub async fn autofix_echoim_missing_messages_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.autofix_echoim_missing_messages)
+        .unwrap_or(false))
 }
 
 pub async fn get_rer_analysis_units_exact_match_only_default<C>(
@@ -258,6 +272,42 @@ fn validate_peleng_bounds(
     Ok(())
 }
 
+fn system_settings_active_model(
+    login: &str,
+    req: &CreateSystemSettingsReq,
+    echo_im_sync_since: chrono::NaiveDateTime,
+) -> system_settings::ActiveModel {
+    system_settings::ActiveModel {
+        id: sea_orm::ActiveValue::NotSet,
+        rer_analysis_units_exact_match_only_default: Set(
+            req.rer_analysis_units_exact_match_only_default
+        ),
+        rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
+        rer_duty_insert_historical_interceptions: Set(
+            req.rer_duty_insert_historical_interceptions
+        ),
+        rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
+        rer_duty_test_limit: Set(req.rer_duty_test_limit),
+        rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
+        created_at: sea_orm::ActiveValue::NotSet,
+        updated_at: sea_orm::ActiveValue::NotSet,
+        echo_im_sync_since: Set(echo_im_sync_since),
+        updated_by: Set(Some(login.to_string())),
+        deleted: Set(false),
+        short_url_enabled: Set(req.short_url_enabled),
+        support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
+        default_neo_analysis: Set(req.default_neo_analysis),
+        autofix_echoim_missing_messages: Set(
+            req.autofix_echoim_missing_messages
+        ),
+        peleng_bounds_enabled: Set(req.peleng_bounds_enabled),
+        peleng_bounds_top_left_lat: Set(req.peleng_bounds_top_left_lat),
+        peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
+        peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
+        peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
+    }
+}
+
 fn now_utc() -> chrono::NaiveDateTime {
     Utc::now().naive_utc()
 }
@@ -286,6 +336,50 @@ where
     Ok(())
 }
 
+async fn create_system_settings_for_login(
+    dbx: &DatabaseConnection,
+    login: &str,
+    req: &CreateSystemSettingsReq,
+) -> Result<system_settings::Model, AppError> {
+    validate_peleng_bounds(req)?;
+    let txn = dbx.begin().await.c(h!())?;
+    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
+    deactivate_active_settings(&txn, login).await.c(h!())?;
+    let created = system_settings_active_model(login, req, echo_im_sync_since)
+        .insert(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    Ok(created)
+}
+
+async fn activate_system_settings_for_login(
+    dbx: &DatabaseConnection,
+    login: &str,
+    id: i64,
+) -> Result<system_settings::Model, AppError> {
+    let txn = dbx.begin().await.c(h!())?;
+    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
+    deactivate_active_settings(&txn, login).await.c(h!())?;
+
+    let settings = system_settings::Entity::find_by_id(id)
+        .one(&txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut settings: system_settings::ActiveModel = settings.into();
+    settings.deleted = Set(false);
+    settings.updated_by = Set(Some(login.to_string()));
+    settings.updated_at = Set(now_utc());
+    settings.echo_im_sync_since = Set(echo_im_sync_since);
+    let settings = settings.update(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    Ok(settings)
+}
+
 #[post("/api/system-settings/current")]
 pub async fn current_system_settings(
     user: Identity,
@@ -308,6 +402,8 @@ pub async fn current_system_settings(
             support_non_rer_interceptions: settings
                 .support_non_rer_interceptions,
             default_neo_analysis: settings.default_neo_analysis,
+            autofix_echoim_missing_messages: settings
+                .autofix_echoim_missing_messages,
             peleng_bounds_enabled: settings.peleng_bounds_enabled,
             peleng_bounds_top_left_lat: settings.peleng_bounds_top_left_lat,
             peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
@@ -327,6 +423,7 @@ pub async fn current_system_settings(
             short_url_enabled: false,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
+            autofix_echoim_missing_messages: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -370,40 +467,8 @@ pub async fn create_system_settings(
         .await
         .c(h!())?;
 
-    validate_peleng_bounds(&req)?;
-    let txn = env.dbx.begin().await.c(h!())?;
-    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
-    deactivate_active_settings(&txn, &login).await.c(h!())?;
-    let created = system_settings::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        rer_analysis_units_exact_match_only_default: Set(
-            req.rer_analysis_units_exact_match_only_default
-        ),
-        rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
-        rer_duty_insert_historical_interceptions: Set(
-            req.rer_duty_insert_historical_interceptions
-        ),
-        rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
-        rer_duty_test_limit: Set(req.rer_duty_test_limit),
-        rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
-        created_at: sea_orm::ActiveValue::NotSet,
-        updated_at: sea_orm::ActiveValue::NotSet,
-        echo_im_sync_since: Set(echo_im_sync_since),
-        updated_by: Set(Some(login)),
-        deleted: Set(false),
-        short_url_enabled: Set(req.short_url_enabled),
-        support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
-        default_neo_analysis: Set(req.default_neo_analysis),
-        peleng_bounds_enabled: Set(req.peleng_bounds_enabled),
-        peleng_bounds_top_left_lat: Set(req.peleng_bounds_top_left_lat),
-        peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
-        peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
-        peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
-    }
-    .insert(&txn)
-    .await
-    .c(h!())?;
-    txn.commit().await.c(h!())?;
+    let created =
+        create_system_settings_for_login(&env.dbx, &login, &req).await?;
 
     Ok(Json(map_system_settings_item(created)?))
 }
@@ -419,23 +484,158 @@ pub async fn activate_system_settings(
         .await
         .c(h!())?;
 
-    let txn = env.dbx.begin().await.c(h!())?;
-    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
-    deactivate_active_settings(&txn, &login).await.c(h!())?;
-
-    let settings = system_settings::Entity::find_by_id(req.id)
-        .one(&txn)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let mut settings: system_settings::ActiveModel = settings.into();
-    settings.deleted = Set(false);
-    settings.updated_by = Set(Some(login));
-    settings.updated_at = Set(now_utc());
-    settings.echo_im_sync_since = Set(echo_im_sync_since);
-    let settings = settings.update(&txn).await.c(h!())?;
-    txn.commit().await.c(h!())?;
+    let settings =
+        activate_system_settings_for_login(&env.dbx, &login, req.id).await?;
 
     Ok(Json(map_system_settings_item(settings)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use sea_orm::*;
+    use serial_test::serial;
+
+    static TEST_LOCK: tokio::sync::Mutex<()> =
+        tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    #[serial]
+    async fn echo_im_sync_cursor_advances_only_forward() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        system_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let cursor = old_ts();
+        insert_settings(&env.dbx, cursor, false).await;
+
+        advance_echo_im_sync_since(
+            &env.dbx,
+            cursor - chrono::TimeDelta::minutes(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(get_echo_im_sync_since(&env.dbx).await.unwrap(), cursor);
+
+        let next_cursor = cursor + chrono::TimeDelta::minutes(1);
+        advance_echo_im_sync_since(&env.dbx, next_cursor)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_echo_im_sync_since(&env.dbx).await.unwrap(),
+            next_cursor
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_and_activate_settings_preserve_active_echo_im_sync_cursor()
+    {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        system_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let active_cursor = old_ts();
+        let stale_cursor = active_cursor - chrono::TimeDelta::hours(1);
+        insert_settings(&env.dbx, active_cursor, false).await;
+        let inactive = insert_settings(&env.dbx, stale_cursor, true).await;
+
+        let created = create_system_settings_for_login(
+            &env.dbx,
+            "Tester",
+            &settings_req(false),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.echo_im_sync_since, active_cursor);
+
+        advance_echo_im_sync_since(
+            &env.dbx,
+            active_cursor + chrono::TimeDelta::minutes(5),
+        )
+        .await
+        .unwrap();
+        let current_cursor = get_echo_im_sync_since(&env.dbx).await.unwrap();
+        let activated =
+            activate_system_settings_for_login(&env.dbx, "Tester", inactive.id)
+                .await
+                .unwrap();
+
+        assert_eq!(activated.echo_im_sync_since, current_cursor);
+        assert_eq!(
+            get_active_system_settings(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            inactive.id
+        );
+    }
+
+    fn old_ts() -> chrono::NaiveDateTime {
+        chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
+            Utc::now().timestamp_micros(),
+        )
+        .unwrap()
+        .naive_utc()
+            - chrono::TimeDelta::hours(2)
+    }
+
+    fn settings_req(short_url_enabled: bool) -> CreateSystemSettingsReq {
+        CreateSystemSettingsReq {
+            rer_analysis_units_exact_match_only_default: true,
+            rer_duty_test_enabled: false,
+            rer_duty_insert_historical_interceptions: false,
+            rer_duty_test_since_ms: 0,
+            rer_duty_test_limit: 1,
+            rer_duty_poll_interval_sec: 1,
+            short_url_enabled,
+            support_non_rer_interceptions: false,
+            default_neo_analysis: false,
+            autofix_echoim_missing_messages: false,
+            peleng_bounds_enabled: false,
+            peleng_bounds_top_left_lat: None,
+            peleng_bounds_top_left_lng: None,
+            peleng_bounds_bottom_right_lat: None,
+            peleng_bounds_bottom_right_lng: None,
+        }
+    }
+
+    async fn insert_settings(
+        dbx: &DatabaseConnection,
+        echo_im_sync_since: chrono::NaiveDateTime,
+        deleted: bool,
+    ) -> system_settings::Model {
+        system_settings::ActiveModel {
+            id: NotSet,
+            rer_analysis_units_exact_match_only_default: Set(true),
+            created_at: Set(Utc::now().naive_utc()),
+            updated_at: Set(Utc::now().naive_utc()),
+            echo_im_sync_since: Set(echo_im_sync_since),
+            updated_by: Set(None),
+            deleted: Set(deleted),
+            rer_duty_test_enabled: Set(false),
+            rer_duty_test_since_ms: Set(0),
+            rer_duty_test_limit: Set(1),
+            rer_duty_poll_interval_sec: Set(1),
+            rer_duty_insert_historical_interceptions: Set(false),
+            short_url_enabled: Set(false),
+            support_non_rer_interceptions: Set(false),
+            peleng_bounds_enabled: Set(false),
+            peleng_bounds_top_left_lat: Set(None),
+            peleng_bounds_top_left_lng: Set(None),
+            peleng_bounds_bottom_right_lat: Set(None),
+            peleng_bounds_bottom_right_lng: Set(None),
+            default_neo_analysis: Set(false),
+            autofix_echoim_missing_messages: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
 }

@@ -8096,6 +8096,7 @@ type alias SystemSettingsCurrentRsp =
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
+    , autofixEchoimMissingMessages : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8117,6 +8118,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
+        , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8140,6 +8142,7 @@ type alias SystemSettingsItem =
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
+    , autofixEchoimMissingMessages : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8165,6 +8168,7 @@ systemSettingsItemEncoder struct =
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
+        , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8195,6 +8199,7 @@ type alias CreateSystemSettingsReq =
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
+    , autofixEchoimMissingMessages : Bool
     , pelengBoundsEnabled : Bool
     , pelengBoundsTopLeftLat : Maybe (Float)
     , pelengBoundsTopLeftLng : Maybe (Float)
@@ -8215,6 +8220,7 @@ createSystemSettingsReqEncoder struct =
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
+        , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
         , ( "peleng_bounds_enabled", (Json.Encode.bool) struct.pelengBoundsEnabled )
         , ( "peleng_bounds_top_left_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLat )
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
@@ -8230,6 +8236,58 @@ type alias ActivateSystemSettingsReq =
 
 activateSystemSettingsReqEncoder : ActivateSystemSettingsReq -> Json.Encode.Value
 activateSystemSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
+type alias EchoMissingMessageRow =
+    { id : Int
+    , messageId : Int
+    , body : String
+    , createdAt : String
+    , isResolved : Bool
+    , resolvedAt : Maybe (String)
+    , scheduledBy : Maybe (String)
+    , status : String
+    , error : Maybe (String)
+    }
+
+
+echoMissingMessageRowEncoder : EchoMissingMessageRow -> Json.Encode.Value
+echoMissingMessageRowEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "body", (Json.Encode.string) struct.body )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "is_resolved", (Json.Encode.bool) struct.isResolved )
+        , ( "resolved_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.resolvedAt )
+        , ( "scheduled_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.scheduledBy )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        ]
+
+
+type alias EchoMissingMessageListRsp =
+    { items : List (EchoMissingMessageRow)
+    }
+
+
+echoMissingMessageListRspEncoder : EchoMissingMessageListRsp -> Json.Encode.Value
+echoMissingMessageListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (echoMissingMessageRowEncoder)) struct.items )
+        ]
+
+
+type alias EchoMissingMessageResolveReq =
+    { id : Int
+    }
+
+
+echoMissingMessageResolveReqEncoder : EchoMissingMessageResolveReq -> Json.Encode.Value
+echoMissingMessageResolveReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         ]
@@ -13596,6 +13654,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13620,6 +13679,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13645,6 +13705,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
@@ -13655,6 +13716,32 @@ createSystemSettingsReqDecoder =
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
 activateSystemSettingsReqDecoder =
     Json.Decode.succeed ActivateSystemSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+echoMissingMessageRowDecoder : Json.Decode.Decoder EchoMissingMessageRow
+echoMissingMessageRowDecoder =
+    Json.Decode.succeed EchoMissingMessageRow
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_resolved" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "resolved_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scheduled_by" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+
+
+echoMissingMessageListRspDecoder : Json.Decode.Decoder EchoMissingMessageListRsp
+echoMissingMessageListRspDecoder =
+    Json.Decode.succeed EchoMissingMessageListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (echoMissingMessageRowDecoder))))
+
+
+echoMissingMessageResolveReqDecoder : Json.Decode.Decoder EchoMissingMessageResolveReq
+echoMissingMessageResolveReqDecoder =
+    Json.Decode.succeed EchoMissingMessageResolveReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
 
 

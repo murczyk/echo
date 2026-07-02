@@ -27,6 +27,7 @@ pub mod echo_group;
 pub mod echo_inbox_message;
 pub mod echo_inbox_message_changed;
 pub mod echo_message_reaction_queue;
+pub mod echo_missing_message;
 pub mod echo_outbox_message;
 pub mod echo_outbox_message_attachment;
 pub mod echo_outbox_message_attachment_patch;

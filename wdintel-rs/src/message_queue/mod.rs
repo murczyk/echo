@@ -132,7 +132,7 @@ pub async fn process_signal_message_queue_item_with_options(
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
     if !attachments.is_empty() {
-        // Recovery intentionally fails the whole message when media fails; media may carry critical context.
+        // Recovery wraps this error in a rollback because media may carry critical context.
         let upload_inputs: Vec<MediaUploadInput> =
             attachments.clone().into_iter().map(Into::into).collect();
         crate::messenger::media::store_media_attachments(

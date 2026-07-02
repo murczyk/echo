@@ -183,6 +183,14 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        signal_message_queue_attachment::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        signal_message_queue::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_inbox_item::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -253,6 +261,10 @@ pub mod tests {
             .await
             .context(h!())?;
         report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        system_settings::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

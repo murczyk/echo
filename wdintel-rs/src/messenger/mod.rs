@@ -24,6 +24,7 @@ pub mod group;
 pub mod id;
 pub mod media;
 pub mod media_wave;
+pub mod missing_message;
 pub(crate) mod oneoff;
 pub mod ops;
 #[cfg(test)]

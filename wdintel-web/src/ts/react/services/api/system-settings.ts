@@ -15,6 +15,7 @@ type SystemSettingsItemRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
+  autofix_echoim_missing_messages?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -33,6 +34,7 @@ type SystemSettingsCurrentRspRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
+  autofix_echoim_missing_messages?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -54,6 +56,7 @@ type CreateSystemSettingsReqRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
+  autofix_echoim_missing_messages: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -80,6 +83,7 @@ export type SystemSettingsItem = {
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -98,6 +102,7 @@ export type SystemSettingsCurrent = {
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -115,6 +120,7 @@ export type CreateSystemSettingsInput = {
   rerDutyShortUrl: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  autofixEchoimMissingMessages: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -138,6 +144,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
+    autofixEchoimMissingMessages:
+      raw.autofix_echoim_missing_messages ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -158,6 +166,8 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
+    autofixEchoimMissingMessages:
+      raw.autofix_echoim_missing_messages ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -184,6 +194,7 @@ export async function createSystemSettings(
     short_url_enabled: input.rerDutyShortUrl,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
     default_neo_analysis: input.defaultNeoAnalysis,
+    autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,
