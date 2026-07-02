@@ -16,6 +16,30 @@ impl ParsedComments {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct MarkerComment {
+    text: String,
+    start: usize,
+    end: usize,
+    has_inline_rest: bool,
+}
+
+impl MarkerComment {
+    fn strip_candidates(&self, lines: &[&str]) -> Vec<String> {
+        let mut candidates = vec![self.text.clone()];
+        if self.has_inline_rest && self.end > self.start + 1 {
+            if let Some(continuation) =
+                join_block(&lines[self.start + 1..self.end])
+            {
+                candidates.push(continuation);
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
+        candidates
+    }
+}
+
 lazy_static! {
     static ref COMMENT_MARKER: Regex = Regex::new(
         r"^(?:Коментар|Коментарій|Комментарий|Комментар|Comment)\s*[:\-—]\s*(?P<rest>.*)$"
@@ -92,33 +116,51 @@ fn join_block(lines: &[&str]) -> Option<String> {
 pub fn parse_comments(body: &str) -> ParsedComments {
     let lines: Vec<&str> = body.lines().collect();
 
-    let marker_bottom = scan_marker_comment(&lines);
+    let marker_comment = scan_marker_comment(&lines);
 
     let anchor = lines.iter().position(|l| is_datetime_header_line(l));
 
-    let top = anchor.and_then(|a| parse_top(&lines[..a]));
+    let top =
+        anchor.and_then(|a| parse_top(&lines[..a], marker_comment.as_ref()));
+    let marker_bottom =
+        marker_comment.as_ref().map(|comment| comment.text.clone());
     let bottom = marker_bottom
         .or_else(|| anchor.and_then(|a| parse_tail_comment(&lines[a..])));
 
     ParsedComments { top, bottom }
 }
 
-fn scan_marker_comment(lines: &[&str]) -> Option<String> {
+pub(crate) fn marker_comment_strip_candidates(body: &str) -> Vec<String> {
+    let lines: Vec<&str> = body.lines().collect();
+    scan_marker_comment(&lines)
+        .map(|comment| comment.strip_candidates(&lines))
+        .unwrap_or_default()
+}
+
+fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
     for (i, line) in lines.iter().enumerate() {
         if let Some(caps) = COMMENT_MARKER.captures(line.trim()) {
             let mut block: Vec<&str> = Vec::new();
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
+            let has_inline_rest = !rest.trim().is_empty();
             if !rest.trim().is_empty() {
                 block.push(rest);
             }
-            for l in &lines[i + 1..] {
+            let mut end = i + 1;
+            for (offset, l) in lines[i + 1..].iter().enumerate() {
                 if is_marker_comment_boundary(l) {
                     break;
                 }
                 block.push(l);
+                end = i + 2 + offset;
             }
-            if let Some(c) = join_block(&block) {
-                return Some(c);
+            if let Some(text) = join_block(&block) {
+                return Some(MarkerComment {
+                    text,
+                    start: i,
+                    end,
+                    has_inline_rest,
+                });
             }
         }
     }
@@ -133,9 +175,21 @@ fn is_marker_comment_boundary(line: &str) -> bool {
         || is_dialog_line(line)
 }
 
-fn parse_top(pre: &[&str]) -> Option<String> {
-    let kept: Vec<&str> =
-        pre.iter().filter(|l| !is_header_line(l)).copied().collect();
+fn parse_top(
+    pre: &[&str],
+    marker_comment: Option<&MarkerComment>,
+) -> Option<String> {
+    let kept: Vec<&str> = pre
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| {
+            !is_header_line(l)
+                && !marker_comment
+                    .map(|comment| *i >= comment.start && *i < comment.end)
+                    .unwrap_or(false)
+        })
+        .map(|(_, l)| *l)
+        .collect();
     join_block(&kept)
 }
 
@@ -252,6 +306,14 @@ mod tests {
     fn bottom_marker_multiline() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: перший рядок\nдругий рядок";
         let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
+    }
+
+    #[test]
+    fn marker_before_datetime_multiline_is_not_partial_top_comment() {
+        let body = "Коментар: перший рядок\nдругий рядок\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
         assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
     }
 

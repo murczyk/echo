@@ -698,12 +698,27 @@ fn parsed_report_comments(
         .map(|comment| normalize_report_comment_text(comment))
         .filter(|comment| !comment.is_empty())
         .collect();
-    [parsed.top, parsed.bottom]
-        .into_iter()
-        .flatten()
-        .map(|comment| normalize_report_comment_text(&comment))
-        .filter(|comment| comments.contains(comment))
-        .collect()
+    let marker_candidates: HashSet<String> =
+        crate::sigint::parser::marker_comment_strip_candidates(body)
+            .into_iter()
+            .map(|comment| normalize_report_comment_text(&comment))
+            .filter(|comment| !comment.is_empty())
+            .collect();
+    let mut out = Vec::new();
+    for comment in [parsed.top, parsed.bottom].into_iter().flatten() {
+        let comment = normalize_report_comment_text(&comment);
+        if !comments.contains(&comment) {
+            continue;
+        }
+        if marker_candidates.contains(&comment) {
+            out.extend(marker_candidates.iter().cloned());
+        } else {
+            out.push(comment);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 fn strip_comment_blocks(body: &str, comments: &[String]) -> String {
@@ -2090,6 +2105,22 @@ mod tests {
 
         assert!(!body.contains("верхній коментар"));
         assert!(!body.contains("нижній коментар"));
+        assert!(body.contains("— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_multiline_marker_comment_continuation() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: перший рядок\nдругий рядок",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["перший рядок\nдругий рядок".to_string()],
+        )
+        .unwrap();
+
+        assert!(!body.contains("другий рядок"));
         assert!(body.contains("— репліка"));
     }
 
