@@ -8,11 +8,12 @@ interface ImportMeta {
 }
 
 interface Window {
-  navigation: any;
   netjson_graphs: any;
 }
 
 declare var NetJSONGraph: any;
+
+declare module '*.css';
 
 declare module 'mammoth' {
   export type ConvertToHtmlResult = {

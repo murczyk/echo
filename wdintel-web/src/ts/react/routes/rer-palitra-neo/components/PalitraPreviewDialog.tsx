@@ -1,318 +1,25 @@
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
 
-import type { Palitra as ReadPalitra, PalitraGeometryDetails as ReadGeometry, PalitraReadV2 } from '../../../../../Bindings';
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Typography } from '@mui/material';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
+import { createMapWindowControl, type MapWindowControl } from '../../../../maps/control-modules';
 import { PalitraCacheManager } from '../../../../maps/palitra-cache-manager';
 import { PalitraPointClusterRenderer } from '../../../../maps/palitra-point-cluster-renderer';
 import { PalitraPointsController } from '../../../../maps/palitra-points-controller';
-import { createMapWindowControl, type MapWindowControl } from '../../../../maps/control-modules';
-import type {
-  Coords,
-  Geometry,
-  Palitra as MapPalitra,
-  PalitraDetails,
-  PalitraManagerCallbacks,
-  PalitraManagerOptions,
-  PalitraPoint,
-} from '../../../../maps/palitra-types';
+import type { PalitraDetails } from '../../../../maps/palitra-types';
 import '../../../analysis-map-window-control-element';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
+import { addPreviewGeometryLayers, fitGeometryLayers } from './PalitraPreviewDialog.layers';
+import { toPreviewPalitras, hasRenderableGeometry } from './PalitraPreviewDialog.data';
+import { createPreviewPointStack, destroyPreviewPointStack } from './PalitraPreviewDialog.points';
+import { getPreviewShellSx } from './PalitraPreviewDialog.styles';
+import { DEFAULT_PREVIEW_CENTER, DEFAULT_PREVIEW_ZOOM, NOOP_CALLBACKS, PREVIEW_MAX_ZOOM, PREVIEW_POINT_OPTIONS } from './PalitraPreviewDialog.types';
+import type { PalitraPreviewDialogProps } from './PalitraPreviewDialog.types';
 
-type Props = {
-  open: boolean;
-  palitra: ReadPalitra | null;
-  preview: PalitraReadV2 | null;
-  loading: boolean;
-  error?: string | null;
-  onClose: () => void;
-};
-
-const DEFAULT_PREVIEW_CENTER: [number, number] = [49, 32];
-const DEFAULT_PREVIEW_ZOOM = 6;
-const PREVIEW_MAX_ZOOM = 17;
-const PREVIEW_POINT_OPTIONS: PalitraManagerOptions = {
-  minZoomForPoints: 15,
-  requestDelayMs: 200,
-  cacheTtlMs: 5 * 60 * 1000,
-  maxCachedTiles: 100,
-};
-
-const NOOP_CALLBACKS: PalitraManagerCallbacks = {
-  onVisibilityToggle: () => undefined,
-  onSearchResultsCountChanged: () => undefined,
-  onSearchLoadingChanged: () => undefined,
-};
-
-function normalizeNumber(value: number | string | null | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return 0;
-}
-
-function normalizeCoords(raw: { lat: number | string; lng: number | string } | null | undefined): Coords | null {
-  if (!raw) {
-    return null;
-  }
-
-  const lat = normalizeNumber(raw.lat);
-  const lng = normalizeNumber(raw.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null;
-  }
-
-  return { lat, lng };
-}
-
-function normalizeGeometry(raw: ReadGeometry['geometry'] | null | undefined): Geometry | null {
-  if (!raw) {
-    return null;
-  }
-
-  return {
-    center: normalizeCoords(raw.center),
-    perimeter_linear_ring: (raw.perimeterLinearRing ?? [])
-      .map((coords) => normalizeCoords(coords))
-      .filter((coords): coords is Coords => coords !== null),
-    line_strings: (raw.lineStrings ?? []).map((lineString) =>
-      lineString
-        .map((coords) => normalizeCoords(coords))
-        .filter((coords): coords is Coords => coords !== null),
-    ),
-  };
-}
-
-function hasRenderableGeometry(geometry: Geometry | null | undefined): boolean {
-  if (!geometry) {
-    return false;
-  }
-
-  const perimeter = geometry.perimeter_linear_ring;
-  if (Array.isArray(perimeter) && perimeter.length >= 3) {
-    return true;
-  }
-
-  const lineStrings = geometry.line_strings;
-  if (Array.isArray(lineStrings) && lineStrings.some((lineString) => Array.isArray(lineString) && lineString.length >= 2)) {
-    return true;
-  }
-
-  return Boolean(geometry.center);
-}
-
-function toPreviewPalitras(preview: PalitraReadV2 | null): PalitraDetails[] {
-  if (!preview) {
-    return [];
-  }
-
-  const basePalitra = preview.palitra;
-  const geometries = preview.geometries.length > 0
-    ? preview.geometries
-    : basePalitra.geometry
-      ? [{
-          id: basePalitra.id,
-          colorHex: basePalitra.colorHex,
-          sourceFileName: basePalitra.sourceFileName,
-          lastUploadedAtTs: basePalitra.lastUploadedAtTs,
-          geometry: basePalitra.geometry,
-          points: [],
-        }]
-      : [];
-
-  return geometries
-    .map((geometry) => {
-      const normalizedGeometry = normalizeGeometry(geometry.geometry);
-      if (!normalizedGeometry) {
-        return null;
-      }
-
-      const palitra: MapPalitra = {
-        id: normalizeNumber(geometry.id),
-        api_palitra_id: normalizeNumber(basePalitra.id),
-        name: basePalitra.name,
-        folder: basePalitra.folder,
-        color_hex: geometry.colorHex ?? basePalitra.colorHex ?? '#00bcd4',
-        geometry: normalizedGeometry,
-        source_file_name: geometry.sourceFileName ?? basePalitra.sourceFileName ?? undefined,
-      };
-
-      return {
-        palitra,
-        points: [] as PalitraPoint[],
-      };
-    })
-    .filter((entry): entry is PalitraDetails => entry !== null);
-}
-
-function createPolygonLayer(palitraDetails: PalitraDetails) {
-  const perimeter = palitraDetails.palitra.geometry?.perimeter_linear_ring;
-  if (!Array.isArray(perimeter) || perimeter.length < 3) {
-    return null;
-  }
-
-  return L.polygon(perimeter.map((coords) => [coords.lat, coords.lng] as [number, number]), {
-    interactive: false,
-    color: palitraDetails.palitra.color_hex,
-    weight: 2,
-    fillColor: palitraDetails.palitra.color_hex,
-    fillOpacity: 0.14,
-    lineJoin: 'round',
-    lineCap: 'round',
-  });
-}
-
-function createPolylineLayers(palitraDetails: PalitraDetails) {
-  const lineStrings = palitraDetails.palitra.geometry?.line_strings;
-  if (!Array.isArray(lineStrings) || lineStrings.length === 0) {
-    return [];
-  }
-
-  return lineStrings
-    .filter((lineString) => Array.isArray(lineString) && lineString.length >= 2)
-    .map((lineString) =>
-      L.polyline(lineString.map((coords) => [coords.lat, coords.lng] as [number, number]), {
-        interactive: false,
-        color: palitraDetails.palitra.color_hex,
-        weight: 2,
-        opacity: 0.9,
-        lineJoin: 'round',
-        lineCap: 'round',
-      }),
-    );
-}
-
-function createCenterLayer(palitraDetails: PalitraDetails) {
-  const center = palitraDetails.palitra.geometry?.center;
-  if (!center) {
-    return null;
-  }
-
-  return L.circleMarker([center.lat, center.lng], {
-    interactive: false,
-    radius: 4,
-    color: palitraDetails.palitra.color_hex,
-    weight: 1,
-    fillColor: palitraDetails.palitra.color_hex,
-    fillOpacity: 1,
-  });
-}
-
-function fitGeometryLayers(map: L.Map, layerGroup: L.FeatureGroup) {
-  const bounds = layerGroup.getBounds();
-  if (!bounds.isValid()) {
-    map.setView(DEFAULT_PREVIEW_CENTER, DEFAULT_PREVIEW_ZOOM, { animate: false });
-    return;
-  }
-
-  if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
-    map.setView(bounds.getCenter(), PREVIEW_MAX_ZOOM, { animate: false });
-    return;
-  }
-
-  map.fitBounds(bounds.pad(0.14), {
-    animate: false,
-    maxZoom: PREVIEW_MAX_ZOOM,
-  });
-}
-
-function getPreviewShellSx() {
-  return {
-    position: 'relative',
-    width: '100%',
-    height: 'min(72vh, 760px)',
-    minHeight: { xs: 360, sm: 480 },
-    overflow: 'hidden',
-    border: '1px solid',
-    borderColor: 'divider',
-    borderRadius: 2,
-    bgcolor: 'background.paper',
-    '& .leaflet-container': {
-      background: 'transparent',
-    },
-  };
-}
-
-function createPreviewPointStack(
-  map: L.Map,
-  palitras: PalitraDetails[],
-  listenersRef: MutableRefObject<{ onViewportChanged: (() => void) | null }>,
-  stateRef: MutableRefObject<PalitraDetails[]>,
-  cacheManagerRef: MutableRefObject<PalitraCacheManager | null>,
-  pointClustersRendererRef: MutableRefObject<PalitraPointClusterRenderer | null>,
-  pointsControllerRef: MutableRefObject<PalitraPointsController | null>,
-): void {
-  const cacheManager = new PalitraCacheManager(PREVIEW_POINT_OPTIONS.cacheTtlMs, PREVIEW_POINT_OPTIONS.maxCachedTiles);
-  const pointClustersRenderer = new PalitraPointClusterRenderer(map);
-  const pointsController = new PalitraPointsController(
-    map,
-    PREVIEW_POINT_OPTIONS,
-    NOOP_CALLBACKS,
-    cacheManager,
-    pointClustersRenderer,
-    {
-      getPalitras: () => stateRef.current,
-      getEnabled: () => true,
-    },
-    {
-      getBufferedBounds: () => map.getBounds().pad(0.1),
-    },
-    {
-      apiPalitraId: (palitra) => palitra.api_palitra_id ?? palitra.id,
-    },
-  );
-
-  const onViewportChanged = () => {
-    pointsController.onViewportChanged();
-  };
-
-  stateRef.current = palitras;
-  listenersRef.current.onViewportChanged = onViewportChanged;
-  map.on('zoomend', onViewportChanged);
-  map.on('moveend', onViewportChanged);
-
-  cacheManagerRef.current = cacheManager;
-  pointClustersRendererRef.current = pointClustersRenderer;
-  pointsControllerRef.current = pointsController;
-
-  pointsController.onPalitrasChanged();
-  pointsController.onViewportChanged();
-}
-
-function destroyPreviewPointStack(
-  map: L.Map | null,
-  listenersRef: MutableRefObject<{ onViewportChanged: (() => void) | null }>,
-  cacheManagerRef: MutableRefObject<PalitraCacheManager | null>,
-  pointClustersRendererRef: MutableRefObject<PalitraPointClusterRenderer | null>,
-  pointsControllerRef: MutableRefObject<PalitraPointsController | null>,
-  stateRef: MutableRefObject<PalitraDetails[]>,
-): void {
-  if (map && listenersRef.current.onViewportChanged) {
-    map.off('zoomend', listenersRef.current.onViewportChanged);
-    map.off('moveend', listenersRef.current.onViewportChanged);
-  }
-
-  listenersRef.current.onViewportChanged = null;
-  pointsControllerRef.current?.destroy();
-  pointsControllerRef.current = null;
-  pointClustersRendererRef.current?.clear();
-  pointClustersRendererRef.current = null;
-  cacheManagerRef.current?.clear();
-  cacheManagerRef.current = null;
-  stateRef.current = [];
-}
-
-export function PalitraPreviewDialog({ open, palitra, preview, loading, error, onClose }: Props) {
+export function PalitraPreviewDialog({ open, palitra, preview, loading, error, onClose }: PalitraPreviewDialogProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.FeatureGroup | null>(null);
@@ -332,7 +39,9 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
   const hasRenderablePreviewGeometryRef = useRef(hasRenderablePreviewGeometry);
   const previewRenderReadyRef = useRef(previewRenderReady);
   const hasPreviewError = Boolean(error);
-  const showPreviewLoading = !hasPreviewError && (loading || !preview || !mapReady || !previewRenderReady);
+  const showPreviewLoading =
+    !hasPreviewError &&
+    (loading || !preview || !mapReady || (hasRenderablePreviewGeometry && !previewRenderReady));
 
   useEffect(() => {
     hasRenderablePreviewGeometryRef.current = hasRenderablePreviewGeometry;
@@ -423,7 +132,13 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       }
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
-      destroyPreviewPointStack(mapRef.current, listenersRef, cacheManagerRef, pointClustersRendererRef, pointsControllerRef, previewPalitrasRef);
+      destroyPreviewPointStack(mapRef.current, {
+        listenersRef,
+        stateRef: previewPalitrasRef,
+        cacheManagerRef,
+        pointClustersRendererRef,
+        pointsControllerRef,
+      });
       if (mapRef.current && mapWindowControlRef.current) {
         mapRef.current.removeControl(mapWindowControlRef.current);
       }
@@ -443,7 +158,13 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       return;
     }
 
-    destroyPreviewPointStack(map, listenersRef, cacheManagerRef, pointClustersRendererRef, pointsControllerRef, previewPalitrasRef);
+    destroyPreviewPointStack(map, {
+      listenersRef,
+      stateRef: previewPalitrasRef,
+      cacheManagerRef,
+      pointClustersRendererRef,
+      pointsControllerRef,
+    });
     layerGroup.clearLayers();
 
     if (!hasRenderablePreviewGeometry) {
@@ -451,24 +172,22 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       return;
     }
 
-    previewPalitras.forEach((palitraDetails) => {
-      const polygon = createPolygonLayer(palitraDetails);
-      if (polygon) {
-        layerGroup.addLayer(polygon);
-      }
-
-      for (const line of createPolylineLayers(palitraDetails)) {
-        layerGroup.addLayer(line);
-      }
-
-      const center = createCenterLayer(palitraDetails);
-      if (center) {
-        layerGroup.addLayer(center);
-      }
-    });
+    addPreviewGeometryLayers(layerGroup, previewPalitras);
 
     fitGeometryLayers(map, layerGroup);
-    createPreviewPointStack(map, previewPalitras, listenersRef, previewPalitrasRef, cacheManagerRef, pointClustersRendererRef, pointsControllerRef);
+    createPreviewPointStack(
+      map,
+      previewPalitras,
+      PREVIEW_POINT_OPTIONS,
+      NOOP_CALLBACKS,
+      {
+        listenersRef,
+        stateRef: previewPalitrasRef,
+        cacheManagerRef,
+        pointClustersRendererRef,
+        pointsControllerRef,
+      },
+    );
     previewRenderReadyRef.current = true;
     setPreviewRenderReady(true);
   }, [open, mapReady, mapVisible, previewPalitras, hasRenderablePreviewGeometry]);
@@ -480,7 +199,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
   }, [open]);
 
   return (
-      <Dialog
+    <Dialog
       open={open}
       onClose={onClose}
       fullWidth
@@ -529,10 +248,10 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
                 bgcolor: 'background.paper',
                 zIndex: 1000,
               }}
-              >
-                <CircularProgress />
-              </Box>
-            ) : null}
+            >
+              <CircularProgress />
+            </Box>
+          ) : null}
           {hasPreviewError ? (
             <Box
               sx={{
