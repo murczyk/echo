@@ -16,6 +16,7 @@ import {
   normalizeQueryState,
   queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
+  parseNewestFirstFromWindow,
 } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisPageViewModel, AnalysisQueryState } from './types';
@@ -51,7 +52,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [error, setError] = useState<string | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isStackedFiltersLayout);
   const leftPanelTouchedRef = useRef(false);
-  const [newestFirst, setNewestFirst] = useState(true);
+  const [newestFirst, setNewestFirst] = useState(parseNewestFirstFromWindow);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
   const [centerTabPending, startCenterTabTransition] = useTransition();
@@ -210,8 +211,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   useEffect(() => {
     if (!systemSettingsLoaded) return;
-    pushQueryStateToUrl(queryState);
-  }, [queryState, systemSettingsLoaded]);
+    pushQueryStateToUrl(queryState, newestFirst);
+  }, [queryState, systemSettingsLoaded, newestFirst]);
 
   const toggleUnitFromMap = useCallback((unitName: string | null) => {
     if (unitName === null) return;
@@ -235,8 +236,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setQueryState(nextState);
     setLastResetState(nextState);
     setError(null);
-    pushQueryStateToUrl(nextState);
-  }, [data, savedFilters]);
+    pushQueryStateToUrl(nextState, newestFirst);
+  }, [data, savedFilters, newestFirst]);
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
