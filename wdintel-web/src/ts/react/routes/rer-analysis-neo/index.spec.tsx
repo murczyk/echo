@@ -18,6 +18,8 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  Chip: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
+  CircularProgress: () => <div data-testid="circular-progress" />,
   FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
     <div>
       {control}
@@ -315,8 +317,7 @@ describe('RerAnalysisNeoPage', () => {
       root.render(<RerAnalysisNeoPage />);
     });
 
-    expect(container.textContent).toContain('Всього: —');
-    expect(container.textContent).toContain('Обрано: —');
+    expect(container.textContent).toContain('— з —');
 
     await act(async () => {
       root.unmount();

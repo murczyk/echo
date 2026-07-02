@@ -50,7 +50,13 @@ export function AnalysisCenterPanel({
         position: 'relative',
       }}
     >
-      <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: centerTab === 'messages' ? 0.25 : 0 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0 }}
+      >
         <Tabs
           value={centerTab}
           onChange={(_event, value) => page.setCenterTab(value)}
@@ -58,7 +64,8 @@ export function AnalysisCenterPanel({
           scrollButtons={isMobileLayout ? false : 'auto'}
           sx={{
             minHeight: 0,
-            width: '100%',
+            flex: 1,
+            minWidth: 0,
             ml: 0,
             '& .MuiTabs-flexContainer': { gap: 1 },
             '& .MuiTab-root': { minHeight: 40, px: 1, py: 0.5, whiteSpace: 'nowrap' },
@@ -109,51 +116,18 @@ export function AnalysisCenterPanel({
           })}
         </Tabs>
         {centerTab === 'messages' ? (
-          <Stack
-            direction="row"
-            spacing={0.75}
-            flexWrap={{ xs: 'wrap', sm: 'nowrap' }}
-            alignItems="center"
-            justifyContent="space-between"
-            role="status"
-            aria-live="polite"
-            aria-label="Поточна статистика вибірки"
-            sx={{ width: '100%', minWidth: 0 }}
-          >
-            <FormControlLabel
-              control={<Switch checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
-              label="спочатку нові"
-              sx={{
-                mr: 0,
-                flexShrink: 0,
-                whiteSpace: 'nowrap',
-                '& .MuiFormControlLabel-label': { fontSize: { xs: 12.5, sm: 13 }, fontWeight: 500, lineHeight: 1.2 },
-              }}
-            />
-            <Stack
-              direction="row"
-              spacing={0.75}
-              flexWrap="nowrap"
-              justifyContent="flex-end"
-              sx={{ ml: 'auto', minWidth: 0, flexShrink: 0, width: 'auto' }}
-            >
-              <PowerChip
-                label={`Всього: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countOverall ?? 0)}`}
-                color="default"
-                size="small"
-                fontSize="0.875rem"
-                labelPaddingX={0.75}
-              />
-              <PowerChip
-                label={`Обрано: ${page.countsLoading ? NO_DATA_LABEL : (page.counts?.countSelected ?? 0)}`}
-                color="primary"
-                selected
-                size="small"
-                fontSize="0.875rem"
-                labelPaddingX={0.75}
-              />
-            </Stack>
-          </Stack>
+          <FormControlLabel
+            control={<Switch size="small" checked={page.newestFirst} onChange={(_event, value) => page.setNewestFirst(value)} />}
+            label="спочатку нові"
+            sx={{
+              height: 40,
+              mt: -0.25, // slight nudge to align baselines visually
+              mr: 0,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+              '& .MuiFormControlLabel-label': { fontSize: { xs: 12.5, sm: 13 }, fontWeight: 500, lineHeight: 1.2 },
+            }}
+          />
         ) : null}
       </Stack>
 
