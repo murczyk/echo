@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
                 where sm.external_id = eim.id
                     and sm.datasource_group_id = dg.id
                     and sm.echo_inbox_message_id is null
-                    and sm.body = eim.body
+                    and replace(sm.body, E'\r\n', E'\n') = replace(eim.body, E'\r\n', E'\n')
                     and (sm.timestamp is null
                         or eim.timestamp is null
                         or sm.timestamp = eim.timestamp);
@@ -48,6 +48,11 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
                 drop index if exists signal_message_echo_inbox_message_id_idx;
+
+                update signal_message
+                set external_id = echo_inbox_message_id
+                where external_id is null
+                    and echo_inbox_message_id is not null;
 
                 alter table signal_message
                     drop column if exists echo_inbox_message_id;
