@@ -33,8 +33,6 @@ pub struct EchoImSyncRecoveryDeps<'a> {
 struct RecoveryMaps {
     existing_signal_ids: HashSet<i64>,
     queue_items: BTreeMap<i64, signal_message_queue::Model>,
-    queue_attachments:
-        HashMap<i64, Vec<signal_message_queue_attachment::Model>>,
     groups: BTreeMap<i32, echo_group::Model>,
     senders: BTreeMap<i32, echo_sender::Model>,
     attachments: HashMap<i32, Vec<echo_attachment::Model>>,
@@ -204,29 +202,12 @@ async fn load_recovery_maps(
             .await
             .c(h!())?
     };
-    let queue_item_ids =
-        queue_items_vec.iter().map(|item| item.id).collect_vec();
     let mut queue_items = BTreeMap::new();
     for queue_item in queue_items_vec {
         queue_items
             .entry(queue_item.internal_id)
             .or_insert(queue_item);
     }
-
-    let queue_attachments = if queue_item_ids.is_empty() {
-        HashMap::new()
-    } else {
-        signal_message_queue_attachment::Entity::find()
-            .filter(
-                signal_message_queue_attachment::Column::MessageId
-                    .is_in(queue_item_ids),
-            )
-            .all(dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .into_group_map_by(|attachment| attachment.message_id)
-    };
 
     let group_ids = inbox_messages
         .iter()
@@ -277,7 +258,6 @@ async fn load_recovery_maps(
     Ok(RecoveryMaps {
         existing_signal_ids,
         queue_items,
-        queue_attachments,
         groups,
         senders,
         attachments,
@@ -309,6 +289,10 @@ async fn process_candidates(
             });
         let inbox_id = i64::from(inbox_message.id);
         if maps.existing_signal_ids.contains(&inbox_id) {
+            continue;
+        }
+        if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
+            log_queued_inbox(inbox_message, queue_item);
             continue;
         }
         result.missing_count += 1;
@@ -427,6 +411,17 @@ async fn process_missing_message_recovery(
             .c(h!())?;
         return Ok(());
     }
+    if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
+        log_queued_inbox(inbox_message, queue_item);
+        mark_missing_message_error(
+            dbx,
+            missing_message,
+            queued_inbox_error(queue_item),
+        )
+        .await
+        .c(h!())?;
+        return Ok(());
+    }
 
     if let Some(reason) = skipped_inbox_reason(inbox_message) {
         log_skipped_inbox(inbox_message, datasource_id, reason);
@@ -440,20 +435,15 @@ async fn process_missing_message_recovery(
         return Ok(());
     }
 
-    let recovery = if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
-        recover_queue_item(dbx, redis, deps, inbox_message, queue_item, maps)
-            .await
-    } else {
-        recover_inbox_message(
-            dbx,
-            redis,
-            deps,
-            datasources,
-            inbox_message,
-            maps,
-        )
-        .await
-    };
+    let recovery = recover_inbox_message(
+        dbx,
+        redis,
+        deps,
+        datasources,
+        inbox_message,
+        maps,
+    )
+    .await;
 
     match recovery {
         Ok(message_uid) => {
@@ -519,6 +509,28 @@ fn log_skipped_inbox(
     );
 }
 
+fn log_queued_inbox(
+    message: &echo_inbox_message::Model,
+    queue_item: &signal_message_queue::Model,
+) {
+    info!(
+        "skipping echo_im inbox message during recovery because normal queue processing is pending: inbox_id={} queue_item_id={} datasource_id={} account_id={} created_at={} queue_created_at={}",
+        message.id,
+        queue_item.id,
+        queue_item.datasource_id,
+        message.account_id,
+        message.created_at,
+        queue_item.created_at,
+    );
+}
+
+fn queued_inbox_error(queue_item: &signal_message_queue::Model) -> String {
+    format!(
+        "signal_message_queue item still exists: id={}; normal queue worker owns processing",
+        queue_item.id
+    )
+}
+
 fn log_recovered_inbox(
     message: &echo_inbox_message::Model,
     datasource_id: Option<i64>,
@@ -553,48 +565,6 @@ fn log_recovery_error(
         message.timestamp,
         err,
     );
-}
-
-async fn recover_queue_item(
-    dbx: &DatabaseConnection,
-    redis: &mut ConnectionManager,
-    deps: &EchoImSyncRecoveryDeps<'_>,
-    inbox_message: &echo_inbox_message::Model,
-    queue_item: &signal_message_queue::Model,
-    maps: &RecoveryMaps,
-) -> anyhow::Result<String> {
-    let group_id = queue_item.group_id.clone().c(h!())?;
-    let message = Message {
-        body: queue_item.body.clone(),
-        group_id,
-        sender: queue_item.sender_id.clone(),
-        timestamp: queue_item.timestamp,
-        datasource_id: queue_item.datasource_id,
-        inbox_message_id: Some(queue_item.internal_id),
-    };
-    let attachments = maps
-        .queue_attachments
-        .get(&queue_item.id)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|attachment| MessageAttachmentF1 {
-            path: attachment.path,
-            name: attachment.name,
-        })
-        .collect_vec();
-
-    process_recovery_message(
-        dbx,
-        redis,
-        deps,
-        inbox_message,
-        message,
-        attachments,
-        queue_item.created_at,
-        Some(queue_item.id),
-    )
-    .await
 }
 
 async fn recover_inbox_message(
@@ -640,7 +610,6 @@ async fn recover_inbox_message(
         message,
         attachments,
         inbox_message.created_at,
-        None,
     )
     .await
 }
@@ -653,7 +622,6 @@ async fn process_recovery_message(
     message: Message,
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
-    queue_item_id: Option<i64>,
 ) -> anyhow::Result<String> {
     let txn = dbx.begin().await.c(h!())?;
     let result = process_recovery_message_in_txn(
@@ -664,7 +632,6 @@ async fn process_recovery_message(
         message,
         attachments,
         created_at,
-        queue_item_id,
     )
     .await;
 
@@ -701,7 +668,6 @@ async fn process_recovery_message_in_txn(
     message: Message,
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
-    queue_item_id: Option<i64>,
 ) -> anyhow::Result<(String, Vec<i64>)> {
     let mut changed_inbox_item_ids = vec![];
     let message_uid = process_signal_message_queue_item_with_options(
@@ -723,9 +689,6 @@ async fn process_recovery_message_in_txn(
     .c(h!())?;
 
     mark_inbox_seen(txn, inbox_message).await.c(h!())?;
-    if let Some(queue_item_id) = queue_item_id {
-        delete_queue_item(txn, queue_item_id).await.c(h!())?;
-    }
 
     Ok((message_uid, changed_inbox_item_ids))
 }
@@ -741,25 +704,6 @@ async fn mark_inbox_seen(
         inbox_message.clone().into();
     inbox_message.seen = Set(true);
     inbox_message.update(txn).await.c(h!())?;
-    Ok(())
-}
-
-async fn delete_queue_item(
-    txn: &DatabaseTransaction,
-    queue_item_id: i64,
-) -> anyhow::Result<()> {
-    signal_message_queue_attachment::Entity::delete_many()
-        .filter(
-            signal_message_queue_attachment::Column::MessageId
-                .eq(queue_item_id),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-    signal_message_queue::Entity::delete_by_id(queue_item_id)
-        .exec(txn)
-        .await
-        .c(h!())?;
     Ok(())
 }
 
@@ -1002,8 +946,6 @@ mod tests {
             base,
         )
         .await;
-        mk_queue_attachment(&env.dbx, queue_item.id, "/tmp/map-attachment")
-            .await;
         mk_echo_attachment(&env.dbx, account.id, queue_inbox.id, "/tmp/echo")
             .await;
         let mut queue_inbox = queue_inbox.into_active_model();
@@ -1022,7 +964,6 @@ mod tests {
             maps.queue_items.get(&queue_item.internal_id).unwrap().id,
             queue_item.id
         );
-        assert_eq!(maps.queue_attachments[&queue_item.id].len(), 1);
         assert_eq!(maps.groups[&group.id].group_id, "map-group");
         assert_eq!(maps.senders[&sender.id].uuid, sender.uuid);
         assert_eq!(maps.attachments[&queue_inbox_id].len(), 1);
@@ -1201,7 +1142,7 @@ mod tests {
 
         let missing_count = run_recovery(&env).await;
 
-        assert_eq!(missing_count, 4);
+        assert_eq!(missing_count, 3);
         assert_eq!(
             crate::system_settings::get_echo_im_sync_since(&env.dbx)
                 .await
@@ -1251,14 +1192,13 @@ mod tests {
         assert_eq!(signal_message.created_at, inbox.created_at);
         assert_eq!(signal_message.timestamp, inbox.timestamp);
         assert_eq!(signal_message.body, Some(inbox.body.clone()));
-        assert_eq!(
+        assert!(
             echo_inbox_message::Entity::find_by_id(inbox.id)
                 .one(&env.dbx)
                 .await
                 .unwrap()
                 .unwrap()
-                .seen,
-            true
+                .seen
         );
         let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
             .await
@@ -1401,7 +1341,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn queue_backfill_preserves_created_at_and_deletes_queue_row() {
+    async fn recovery_skips_queued_inbox_messages() {
         let _guard = TEST_LOCK.lock().await;
         let env = recovery_env().await;
         let (account, datasource) =
@@ -1430,99 +1370,7 @@ mod tests {
 
         let missing_count = run_recovery(&env).await;
 
-        assert_eq!(missing_count, 1);
-        let signal_message = signal_message_by_external_id(&env.dbx, inbox.id)
-            .await
-            .unwrap();
-        assert_eq!(signal_message.created_at, queue_created_at);
-        assert_eq!(signal_message.body, Some(queue_item.body));
-        assert!(signal_message_queue::Entity::find_by_id(queue_item.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_none());
-        assert_eq!(
-            signal_message_queue_attachment::Entity::find()
-                .filter(
-                    signal_message_queue_attachment::Column::MessageId
-                        .eq(queue_item.id)
-                )
-                .count(&env.dbx)
-                .await
-                .unwrap(),
-            0
-        );
-        assert!(
-            echo_inbox_message::Entity::find_by_id(inbox.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .seen
-        );
-        let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
-            .await
-            .unwrap();
-        assert!(missing_message.is_resolved);
-        assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn media_failure_rolls_back_signal_and_keeps_queue_row() {
-        let _guard = TEST_LOCK.lock().await;
-        let env = recovery_env().await;
-        let (account, datasource) =
-            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
-        let group = mk_echo_group(&env.dbx, account.id, "media-group").await;
-        let cursor = old_ts();
-        insert_system_settings_with_autofix(&env.dbx, cursor, false, true)
-            .await;
-        let inbox = mk_inbox_message(
-            &env.dbx,
-            account.id,
-            Some(group.id),
-            cursor + chrono::TimeDelta::minutes(1),
-        )
-        .await;
-        let queue_item = mk_queue_item(
-            &env.dbx,
-            datasource.id,
-            i64::from(inbox.id),
-            "media-group",
-            cursor + chrono::TimeDelta::minutes(2),
-        )
-        .await;
-        mk_queue_attachment(
-            &env.dbx,
-            queue_item.id,
-            &format!("/tmp/missing-{}", Uuid::new_v4()),
-        )
-        .await;
-        let mut config = env.config.clone();
-        config.s3_config = Some(crate::config::S3Config {
-            s3_access_key_id: "test".to_string(),
-            s3_secret_access_key: "test".to_string(),
-            s3_endpoint: "http://127.0.0.1:1".to_string(),
-            s3_region: "test".to_string(),
-            s3_bucket: "test".to_string(),
-            strongbox_key: "test".to_string(),
-        });
-        let s3 = None;
-        let deps = EchoImSyncRecoveryDeps {
-            config: &config,
-            settlements: env.settlements.clone(),
-            rq: &env.rq,
-            s3: &s3,
-        };
-        let mut redis = env.redis.clone();
-
-        let missing_count =
-            run_echo_im_sync_recovery_once(&env.dbx, &mut redis, &deps)
-                .await
-                .unwrap();
-
-        assert_eq!(missing_count, 1);
+        assert_eq!(missing_count, 0);
         assert!(signal_message_by_external_id(&env.dbx, inbox.id)
             .await
             .is_none());
@@ -1550,17 +1398,83 @@ mod tests {
                 .unwrap()
                 .seen
         );
+        assert!(missing_message_by_message_id(&env.dbx, inbox.id)
+            .await
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scheduled_queued_message_is_not_recovered_in_parallel() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group = mk_echo_group(&env.dbx, account.id, "queued-group").await;
+        let cursor = old_ts();
+        insert_system_settings_with_autofix(&env.dbx, cursor, false, true)
+            .await;
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let queue_item = mk_queue_item(
+            &env.dbx,
+            datasource.id,
+            i64::from(inbox.id),
+            "queued-group",
+            cursor + chrono::TimeDelta::minutes(2),
+        )
+        .await;
+        let missing_message =
+            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
+                .await
+                .unwrap();
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        assert!(signal_message_by_external_id(&env.dbx, inbox.id)
+            .await
+            .is_none());
+        assert!(signal_message_queue::Entity::find_by_id(queue_item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
         assert_eq!(
-            crate::system_settings::get_echo_im_sync_since(&env.dbx)
+            signal_message_queue_attachment::Entity::find()
+                .filter(
+                    signal_message_queue_attachment::Column::MessageId
+                        .eq(queue_item.id)
+                )
+                .count(&env.dbx)
                 .await
                 .unwrap(),
-            inbox.created_at
+            0
         );
-        let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
-            .await
-            .unwrap();
+        assert!(
+            !echo_inbox_message::Entity::find_by_id(inbox.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .seen
+        );
+        let missing_message =
+            echo_missing_message::Entity::find_by_id(missing_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Error);
-        assert!(missing_message.error.is_some());
+        assert!(missing_message
+            .error
+            .unwrap()
+            .contains("normal queue worker owns processing"));
     }
 
     async fn recovery_env() -> Arc<Env> {
