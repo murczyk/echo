@@ -4,8 +4,9 @@ use crate::config::{
     PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS,
     PALITRA_CONVERSION_JOB_STATUS_PENDING, PALITRA_CONVERSION_STATUS_ERROR,
     PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
-    PALITRA_DIRECT_PARSE_EXTENSIONS, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
-    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    PALITRA_DIRECT_PARSE_EXTENSIONS, PALITRA_GOI_REMOTE_STATUS_PRESENT,
+    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
+    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -30,7 +31,7 @@ use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::prelude::Expr;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use tempfile::tempdir;
@@ -61,10 +62,12 @@ struct ConnectedGoiTarget {
 
 #[derive(Clone, PartialEq, Eq)]
 struct GoiMoveTask {
+    palitra_id: i64,
     source_file_names: Vec<String>,
     target_file_name: String,
     target_folder: Option<String>,
     source_folder_hint: Option<String>,
+    tracked_source_relative_path: Option<String>,
 }
 
 struct CreatePalitraMultipartPayload {
@@ -2379,6 +2382,12 @@ where
             Some(&source_file_name),
         );
         let target_file_name = source_file_names.first().cloned().c(h!())?;
+        let tracked_relative_paths_by_integration =
+            read_tracked_goi_palitra_relative_paths_by_integration(
+                dbx, palitra.id,
+            )
+            .await
+            .c(h!())?;
         let goi_targets =
             collect_connected_goi_targets(dbx, organism_ids.as_slice())
                 .await
@@ -2391,33 +2400,38 @@ where
                 target.req.ssh_port,
                 target.req.path
             );
-            let task = GoiMoveTask {
-                source_file_names: source_file_names.clone(),
-                target_file_name: target_file_name.clone(),
-                target_folder: target_folder.clone(),
-                source_folder_hint: source_folder_hint
-                    .as_deref()
-                    .map(str::trim)
-                    .map(|folder| folder.trim_matches('/').to_string()),
-            };
+            let tracked_relative_paths = tracked_relative_paths_by_integration
+                .get(&target.integration_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let tasks = goi_move_tasks_for_target(
+                palitra.id,
+                source_file_names.as_slice(),
+                &target_file_name,
+                target_folder.clone(),
+                source_folder_hint.as_deref(),
+                tracked_relative_paths,
+            );
             let task_list = &mut tasks_by_target
                 .entry(target_key)
                 .or_insert_with(|| (target, Vec::new()))
                 .1;
-            match task_list.iter().find(|existing| {
-                existing.target_file_name == task.target_file_name
-            }) {
-                None => task_list.push(task),
-                Some(existing) if existing == &task => {}
-                Some(existing) => {
-                    warn!(
-                        "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
-                        task.target_file_name,
-                        existing.target_folder,
-                        existing.source_folder_hint,
-                        task.target_folder,
-                        task.source_folder_hint
-                    );
+            for task in tasks {
+                match task_list.iter().find(|existing| {
+                    existing.target_file_name == task.target_file_name
+                }) {
+                    None => task_list.push(task),
+                    Some(existing) if existing == &task => {}
+                    Some(existing) => {
+                        warn!(
+                            "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
+                            task.target_file_name,
+                            existing.target_folder,
+                            existing.source_folder_hint,
+                            task.target_folder,
+                            task.source_folder_hint
+                        );
+                    }
                 }
             }
         }
@@ -2427,8 +2441,7 @@ where
     for (_, (target, tasks)) in tasks_by_target {
         if target.disable_goi_to_echo_palitra_sync {
             if let Err(err) =
-                move_palitra_files_to_goi_target(target.req.clone(), tasks)
-                    .await
+                move_palitra_files_to_goi_target(dbx, &target, tasks).await
             {
                 errors.push(format!(
                     "{}:{} {err:#}",
@@ -2457,6 +2470,8 @@ where
             lock.refresh().await.c(h!())?;
 
             for task in tasks {
+                let tracking_update = goi_move_task_tracking_update(&task);
+                let palitra_id = task.palitra_id;
                 crate::organism::goi::goi_move_file_to_folder_with_entries(
                     target.req.clone(),
                     task.source_file_names,
@@ -2467,6 +2482,19 @@ where
                 )
                 .await
                 .c(h!())?;
+                if let Some((source_relative_path, target_relative_path)) =
+                    tracking_update
+                {
+                    update_tracked_goi_move_path(
+                        dbx,
+                        target.integration_id,
+                        palitra_id,
+                        &source_relative_path,
+                        &target_relative_path,
+                    )
+                    .await
+                    .c(h!())?;
+                }
                 lock.refresh().await.c(h!())?;
             }
             Ok::<(), anyhow::Error>(())
@@ -2490,17 +2518,20 @@ where
 }
 
 async fn move_palitra_files_to_goi_target(
-    target: CheckOrganismGoiConnectionReq,
+    dbx: &impl ConnectionTrait,
+    target: &ConnectedGoiTarget,
     tasks: Vec<GoiMoveTask>,
 ) -> anyhow::Result<()> {
     let mut entries =
-        crate::organism::goi::goi_list_relative_files(target.clone())
+        crate::organism::goi::goi_list_relative_files(target.req.clone())
             .await
             .c(h!())?;
 
     for task in tasks {
+        let tracking_update = goi_move_task_tracking_update(&task);
+        let palitra_id = task.palitra_id;
         crate::organism::goi::goi_move_file_to_folder_with_entries(
-            target.clone(),
+            target.req.clone(),
             task.source_file_names,
             task.target_file_name,
             task.target_folder,
@@ -2509,8 +2540,203 @@ async fn move_palitra_files_to_goi_target(
         )
         .await
         .c(h!())?;
+        if let Some((source_relative_path, target_relative_path)) =
+            tracking_update
+        {
+            update_tracked_goi_move_path(
+                dbx,
+                target.integration_id,
+                palitra_id,
+                &source_relative_path,
+                &target_relative_path,
+            )
+            .await
+            .c(h!())?;
+        }
     }
     Ok(())
+}
+
+fn goi_move_tasks_for_target(
+    palitra_id: i64,
+    source_file_names: &[String],
+    target_file_name: &str,
+    target_folder: Option<String>,
+    source_folder_hint: Option<&str>,
+    tracked_relative_paths: &[String],
+) -> Vec<GoiMoveTask> {
+    let mut tracked_tasks = Vec::new();
+    let mut used_tracked_paths = BTreeSet::new();
+    for tracked_relative_path in tracked_relative_paths {
+        let Some((source_folder_hint, file_name, tracked_relative_path)) =
+            split_goi_relative_path(tracked_relative_path)
+        else {
+            continue;
+        };
+        if !used_tracked_paths.insert(tracked_relative_path.clone()) {
+            continue;
+        }
+        tracked_tasks.push(GoiMoveTask {
+            palitra_id,
+            source_file_names: vec![file_name.clone()],
+            target_file_name: file_name,
+            target_folder: target_folder.clone(),
+            source_folder_hint: Some(source_folder_hint),
+            tracked_source_relative_path: Some(tracked_relative_path),
+        });
+    }
+    if !tracked_tasks.is_empty() {
+        return tracked_tasks;
+    }
+    vec![GoiMoveTask {
+        palitra_id,
+        source_file_names: source_file_names.to_vec(),
+        target_file_name: target_file_name.to_string(),
+        target_folder,
+        source_folder_hint: normalize_goi_source_folder_hint(
+            source_folder_hint,
+        ),
+        tracked_source_relative_path: None,
+    }]
+}
+
+fn goi_move_task_tracking_update(
+    task: &GoiMoveTask,
+) -> Option<(String, String)> {
+    let source_relative_path = task.tracked_source_relative_path.clone()?;
+    let target_relative_path = compose_goi_relative_path(
+        task.target_folder.as_deref(),
+        &task.target_file_name,
+    );
+    Some((source_relative_path, target_relative_path))
+}
+
+async fn update_tracked_goi_move_path(
+    dbx: &impl ConnectionTrait,
+    goi_integration_id: i64,
+    palitra_id: i64,
+    source_relative_path: &str,
+    target_relative_path: &str,
+) -> anyhow::Result<()> {
+    if source_relative_path == target_relative_path {
+        return Ok(());
+    }
+    goi_palitra_sync::Entity::delete_many()
+        .filter(
+            goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
+        )
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::RemoteRelativePath
+                .eq(target_relative_path.to_string()),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+
+    let now = Utc::now().fixed_offset();
+    goi_palitra_sync::Entity::update_many()
+        .filter(
+            goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
+        )
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::RemoteRelativePath
+                .eq(source_relative_path.to_string()),
+        )
+        .col_expr(
+            goi_palitra_sync::Column::RemoteRelativePath,
+            Expr::value(target_relative_path.to_string()),
+        )
+        .col_expr(
+            goi_palitra_sync::Column::RemoteStatus,
+            Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+        )
+        .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn read_tracked_goi_palitra_relative_paths_by_integration<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<BTreeMap<i64, Vec<String>>>
+where
+    C: ConnectionTrait + 'a,
+{
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut paths_by_integration = BTreeMap::<i64, BTreeSet<String>>::new();
+    for row in rows {
+        let Some(path) =
+            normalize_goi_remote_relative_path(&row.remote_relative_path)
+        else {
+            continue;
+        };
+        paths_by_integration
+            .entry(row.goi_integration_id)
+            .or_default()
+            .insert(path);
+    }
+    Ok(paths_by_integration
+        .into_iter()
+        .map(|(integration_id, paths)| {
+            (integration_id, paths.into_iter().collect_vec())
+        })
+        .collect())
+}
+
+fn split_goi_relative_path(path: &str) -> Option<(String, String, String)> {
+    let path = normalize_goi_remote_relative_path(path)?;
+    if let Some((folder, file_name)) = path.rsplit_once('/') {
+        let file_name = file_name.trim();
+        if file_name.is_empty() {
+            return None;
+        }
+        return Some((
+            folder.trim_matches('/').to_string(),
+            file_name.to_string(),
+            path,
+        ));
+    }
+    Some((String::new(), path.clone(), path))
+}
+
+fn normalize_goi_remote_relative_path(path: &str) -> Option<String> {
+    let path = path.trim().trim_start_matches("./").trim_matches('/');
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn normalize_goi_source_folder_hint(
+    source_folder_hint: Option<&str>,
+) -> Option<String> {
+    source_folder_hint
+        .map(str::trim)
+        .map(|folder| folder.trim_matches('/').to_string())
+}
+
+fn compose_goi_relative_path(
+    target_folder: Option<&str>,
+    file_name: &str,
+) -> String {
+    let file_name = file_name.trim().trim_start_matches('/');
+    match target_folder
+        .map(str::trim)
+        .map(|folder| folder.trim_matches('/'))
+        .filter(|folder| !folder.is_empty())
+    {
+        Some(folder) => format!("{folder}/{file_name}"),
+        None => file_name.to_string(),
+    }
 }
 
 async fn collect_connected_goi_targets<'a, C>(
@@ -2986,5 +3212,58 @@ mod tests {
                 "palitra_000418.kmz".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn goi_move_task_preserves_tracked_original_file_path() {
+        let generated_file_names =
+            palitra_goi_remote_file_names(418, Some("foo"), Some("foo.kmz"));
+        let tracked_paths = vec!["sector/foo.gpx".to_string()];
+
+        let tasks = goi_move_tasks_for_target(
+            418,
+            generated_file_names.as_slice(),
+            generated_file_names.first().unwrap(),
+            Some("new-sector".to_string()),
+            Some("sector"),
+            tracked_paths.as_slice(),
+        );
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.source_file_names, vec!["foo.gpx".to_string()]);
+        assert_eq!(task.target_file_name, "foo.gpx");
+        assert_eq!(task.target_folder.as_deref(), Some("new-sector"));
+        assert_eq!(task.source_folder_hint.as_deref(), Some("sector"));
+        assert_eq!(
+            goi_move_task_tracking_update(task),
+            Some((
+                "sector/foo.gpx".to_string(),
+                "new-sector/foo.gpx".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn goi_move_task_uses_generated_names_without_tracked_path() {
+        let generated_file_names =
+            palitra_goi_remote_file_names(418, Some("foo"), Some("foo.kmz"));
+
+        let tasks = goi_move_tasks_for_target(
+            418,
+            generated_file_names.as_slice(),
+            generated_file_names.first().unwrap(),
+            Some("new-sector".to_string()),
+            Some("sector"),
+            &[],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.source_file_names, generated_file_names);
+        assert_eq!(task.target_file_name, "foo.kmz");
+        assert_eq!(task.target_folder.as_deref(), Some("new-sector"));
+        assert_eq!(task.source_folder_hint.as_deref(), Some("sector"));
+        assert_eq!(goi_move_task_tracking_update(task), None);
     }
 }
