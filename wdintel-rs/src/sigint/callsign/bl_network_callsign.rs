@@ -881,6 +881,7 @@ where
 
     let subquery = sigint_inbox_item_network::Entity::find()
         .select_only()
+        .column(sigint_inbox_item::Column::Id)
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::Datetime)
         .expr_as(expr_jsonb_callsigns, "callsign")
@@ -925,7 +926,7 @@ where
     let query = sea_query::Query::select()
         .from_subquery(subquery, "messages")
         .column("callsign")
-        .expr_as(Expr::cust("COUNT(*)"), "message_count")
+        .expr_as(Expr::cust("COUNT(DISTINCT id)"), "message_count")
         .expr_as(Expr::cust("MAX(datetime)"), "last_datetime")
         .expr_as(Expr::cust("ARRAY_AGG(DISTINCT freq)"), "freqs")
         .and_where(Expr::column("callsign").eq(PgFunc::any(expr_callsigns)))
