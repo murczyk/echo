@@ -14,6 +14,7 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub echo_im_sync_since: DateTime,
+    pub echo_im_sync_since_inbox_message_id: i32,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub deleted: bool,

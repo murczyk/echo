@@ -12,6 +12,9 @@ impl MigrationTrait for Migration {
                 alter table system_settings
                     add column if not exists autofix_echoim_missing_messages boolean not null default false;
 
+                alter table system_settings
+                    add column if not exists echo_im_sync_since_inbox_message_id integer not null default 0;
+
                 do $$
                 begin
                     if not exists (
@@ -62,6 +65,9 @@ impl MigrationTrait for Migration {
                 drop index if exists echo_missing_message_message_id_uidx;
                 drop table if exists echo_missing_message;
                 drop type if exists echo_missing_message_status;
+
+                alter table system_settings
+                    drop column if exists echo_im_sync_since_inbox_message_id;
 
                 alter table system_settings
                     drop column if exists autofix_echoim_missing_messages;

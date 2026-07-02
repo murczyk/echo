@@ -18,7 +18,7 @@ use crate::types::*;
 use echo_im::types::MessageAttachmentF1;
 use redis::aio::ConnectionManager;
 use sea_orm::{
-    ActiveEnum, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
+    ActiveEnum, ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
     DatabaseConnection, DatabaseTransaction, EntityTrait, QueryFilter,
     QueryOrder, QuerySelect, TransactionTrait,
 };
@@ -42,7 +42,7 @@ struct RecoveryMaps {
 
 struct ProcessCandidatesResult {
     missing_count: usize,
-    max_processed_created_at: Option<NaiveDateTime>,
+    max_processed_cursor: Option<crate::system_settings::EchoImSyncCursor>,
 }
 
 pub async fn run_echo_im_sync_recovery_once(
@@ -61,7 +61,7 @@ pub async fn run_echo_im_sync_recovery_once(
             .await
             .c(h!())?;
 
-    let sync_since = crate::system_settings::get_echo_im_sync_since(dbx)
+    let sync_cursor = crate::system_settings::get_echo_im_sync_cursor(dbx)
         .await
         .c(h!())?;
     let autofix_enabled =
@@ -70,13 +70,13 @@ pub async fn run_echo_im_sync_recovery_once(
             .c(h!())?;
     let cutoff = Utc::now().naive_utc()
         - chrono::TimeDelta::minutes(ECHO_IM_SYNC_RECOVERY_LAG_MINUTES);
-    if cutoff <= sync_since {
+    if cutoff < sync_cursor.created_at {
         return Ok(scheduled_count);
     }
 
     let account_ids = datasources.keys().cloned().collect_vec();
     let inbox_messages =
-        load_candidate_inbox_messages(dbx, &account_ids, sync_since, cutoff)
+        load_candidate_inbox_messages(dbx, &account_ids, sync_cursor, cutoff)
             .await
             .c(h!())?;
     if inbox_messages.is_empty() {
@@ -96,8 +96,8 @@ pub async fn run_echo_im_sync_recovery_once(
     .await
     .c(h!())?;
 
-    if let Some(max_created_at) = result.max_processed_created_at {
-        crate::system_settings::advance_echo_im_sync_since(dbx, max_created_at)
+    if let Some(max_cursor) = result.max_processed_cursor {
+        crate::system_settings::advance_echo_im_sync_cursor(dbx, max_cursor)
             .await
             .c(h!())?;
     }
@@ -129,14 +129,31 @@ async fn active_linked_datasources_by_account(
 async fn load_candidate_inbox_messages(
     dbx: &DatabaseConnection,
     account_ids: &[i32],
-    sync_since: NaiveDateTime,
+    sync_cursor: crate::system_settings::EchoImSyncCursor,
     cutoff: NaiveDateTime,
 ) -> anyhow::Result<Vec<echo_inbox_message::Model>> {
     echo_inbox_message::Entity::find()
         .filter(
             echo_inbox_message::Column::AccountId.is_in(account_ids.to_vec()),
         )
-        .filter(echo_inbox_message::Column::CreatedAt.gt(sync_since))
+        .filter(
+            Condition::any()
+                .add(
+                    echo_inbox_message::Column::CreatedAt
+                        .gt(sync_cursor.created_at),
+                )
+                .add(
+                    Condition::all()
+                        .add(
+                            echo_inbox_message::Column::CreatedAt
+                                .eq(sync_cursor.created_at),
+                        )
+                        .add(
+                            echo_inbox_message::Column::Id
+                                .gt(sync_cursor.inbox_message_id),
+                        ),
+                ),
+        )
         .filter(echo_inbox_message::Column::CreatedAt.lte(cutoff))
         .order_by_asc(echo_inbox_message::Column::CreatedAt)
         .order_by_asc(echo_inbox_message::Column::Id)
@@ -278,14 +295,18 @@ async fn process_candidates(
 ) -> anyhow::Result<ProcessCandidatesResult> {
     let mut result = ProcessCandidatesResult {
         missing_count: 0,
-        max_processed_created_at: None,
+        max_processed_cursor: None,
     };
     for inbox_message in inbox_messages {
         if result.missing_count >= ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize {
             break;
         }
 
-        result.max_processed_created_at = Some(inbox_message.created_at);
+        result.max_processed_cursor =
+            Some(crate::system_settings::EchoImSyncCursor {
+                created_at: inbox_message.created_at,
+                inbox_message_id: inbox_message.id,
+            });
         let inbox_id = i64::from(inbox_message.id);
         if maps.existing_signal_ids.contains(&inbox_id) {
             continue;
@@ -936,7 +957,10 @@ mod tests {
         let candidates = load_candidate_inbox_messages(
             &env.dbx,
             &[account.id],
-            cursor,
+            crate::system_settings::EchoImSyncCursor {
+                created_at: cursor,
+                inbox_message_id: 0,
+            },
             cutoff,
         )
         .await
@@ -1050,6 +1074,67 @@ mod tests {
                 .await
                 .unwrap(),
             last_missing_created_at
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn recovery_cursor_uses_inbox_id_tiebreaker_for_same_created_at() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, _datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group = mk_echo_group(&env.dbx, account.id, "same-ts-group").await;
+        let cursor = old_ts();
+        let shared_created_at = cursor + chrono::TimeDelta::minutes(1);
+        insert_system_settings(&env.dbx, cursor, false).await;
+        let mut inbox_ids = vec![];
+
+        for _ in 0..(ECHO_IM_SYNC_RECOVERY_BATCH_SIZE + 1) {
+            let inbox = mk_inbox_message(
+                &env.dbx,
+                account.id,
+                Some(group.id),
+                shared_created_at,
+            )
+            .await;
+            inbox_ids.push(inbox.id);
+        }
+
+        let first_count = run_recovery(&env).await;
+        let cursor_after_first =
+            crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
+                .await
+                .unwrap();
+
+        assert_eq!(first_count, ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize);
+        assert_eq!(cursor_after_first.created_at, shared_created_at);
+        assert_eq!(
+            cursor_after_first.inbox_message_id,
+            inbox_ids[ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize - 1]
+        );
+
+        let second_count = run_recovery(&env).await;
+        let cursor_after_second =
+            crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
+                .await
+                .unwrap();
+
+        assert_eq!(second_count, 1);
+        assert_eq!(cursor_after_second.created_at, shared_created_at);
+        assert_eq!(
+            cursor_after_second.inbox_message_id,
+            *inbox_ids.last().unwrap()
+        );
+        assert_eq!(
+            echo_missing_message::Entity::find()
+                .filter(
+                    echo_missing_message::Column::MessageId.is_in(inbox_ids)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            ECHO_IM_SYNC_RECOVERY_BATCH_SIZE + 1
         );
     }
 
@@ -1810,6 +1895,7 @@ mod tests {
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
             echo_im_sync_since: Set(echo_im_sync_since),
+            echo_im_sync_since_inbox_message_id: Set(0),
             updated_by: Set(None),
             deleted: Set(deleted),
             rer_duty_test_enabled: Set(false),

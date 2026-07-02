@@ -26,6 +26,12 @@ pub struct PelengBounds {
     max_lng: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EchoImSyncCursor {
+    pub created_at: chrono::NaiveDateTime,
+    pub inbox_message_id: i32,
+}
+
 impl PelengBounds {
     fn from_corners(
         top_left_lat: f64,
@@ -99,11 +105,26 @@ pub async fn get_echo_im_sync_since<C>(
 where
     C: ConnectionTrait,
 {
+    Ok(get_echo_im_sync_cursor(dbx).await?.created_at)
+}
+
+pub async fn get_echo_im_sync_cursor<C>(
+    dbx: &C,
+) -> Result<EchoImSyncCursor, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(get_active_system_settings(dbx)
         .await
         .c(h!())?
-        .map(|settings| settings.echo_im_sync_since)
-        .unwrap_or_else(now_utc))
+        .map(|settings| EchoImSyncCursor {
+            created_at: settings.echo_im_sync_since,
+            inbox_message_id: settings.echo_im_sync_since_inbox_message_id,
+        })
+        .unwrap_or_else(|| EchoImSyncCursor {
+            created_at: now_utc(),
+            inbox_message_id: 0,
+        }))
 }
 
 pub async fn advance_echo_im_sync_since<C>(
@@ -113,16 +134,45 @@ pub async fn advance_echo_im_sync_since<C>(
 where
     C: ConnectionTrait,
 {
+    advance_echo_im_sync_cursor(
+        dbx,
+        EchoImSyncCursor {
+            created_at: next_sync_since,
+            inbox_message_id: 0,
+        },
+    )
+    .await
+}
+
+pub async fn advance_echo_im_sync_cursor<C>(
+    dbx: &C,
+    next_cursor: EchoImSyncCursor,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let Some(settings) = get_active_system_settings(dbx).await.c(h!())? else {
         return Ok(());
     };
-    if next_sync_since <= settings.echo_im_sync_since {
+    let current_cursor = EchoImSyncCursor {
+        created_at: settings.echo_im_sync_since,
+        inbox_message_id: settings.echo_im_sync_since_inbox_message_id,
+    };
+    if cursor_lte(next_cursor, current_cursor) {
         return Ok(());
     }
     let mut settings: system_settings::ActiveModel = settings.into();
-    settings.echo_im_sync_since = Set(next_sync_since);
+    settings.echo_im_sync_since = Set(next_cursor.created_at);
+    settings.echo_im_sync_since_inbox_message_id =
+        Set(next_cursor.inbox_message_id);
     settings.update(dbx).await.c(h!())?;
     Ok(())
+}
+
+fn cursor_lte(left: EchoImSyncCursor, right: EchoImSyncCursor) -> bool {
+    left.created_at < right.created_at
+        || (left.created_at == right.created_at
+            && left.inbox_message_id <= right.inbox_message_id)
 }
 
 pub async fn autofix_echoim_missing_messages_enabled<C>(
@@ -275,7 +325,7 @@ fn validate_peleng_bounds(
 fn system_settings_active_model(
     login: &str,
     req: &CreateSystemSettingsReq,
-    echo_im_sync_since: chrono::NaiveDateTime,
+    echo_im_sync_cursor: EchoImSyncCursor,
 ) -> system_settings::ActiveModel {
     system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
@@ -291,7 +341,10 @@ fn system_settings_active_model(
         rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: sea_orm::ActiveValue::NotSet,
-        echo_im_sync_since: Set(echo_im_sync_since),
+        echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
+        echo_im_sync_since_inbox_message_id: Set(
+            echo_im_sync_cursor.inbox_message_id
+        ),
         updated_by: Set(Some(login.to_string())),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
@@ -343,9 +396,9 @@ async fn create_system_settings_for_login(
 ) -> Result<system_settings::Model, AppError> {
     validate_peleng_bounds(req)?;
     let txn = dbx.begin().await.c(h!())?;
-    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
+    let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created = system_settings_active_model(login, req, echo_im_sync_since)
+    let created = system_settings_active_model(login, req, echo_im_sync_cursor)
         .insert(&txn)
         .await
         .c(h!())?;
@@ -360,7 +413,7 @@ async fn activate_system_settings_for_login(
     id: i64,
 ) -> Result<system_settings::Model, AppError> {
     let txn = dbx.begin().await.c(h!())?;
-    let echo_im_sync_since = get_echo_im_sync_since(&txn).await.c(h!())?;
+    let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, login).await.c(h!())?;
 
     let settings = system_settings::Entity::find_by_id(id)
@@ -373,7 +426,9 @@ async fn activate_system_settings_for_login(
     settings.deleted = Set(false);
     settings.updated_by = Set(Some(login.to_string()));
     settings.updated_at = Set(now_utc());
-    settings.echo_im_sync_since = Set(echo_im_sync_since);
+    settings.echo_im_sync_since = Set(echo_im_sync_cursor.created_at);
+    settings.echo_im_sync_since_inbox_message_id =
+        Set(echo_im_sync_cursor.inbox_message_id);
     let settings = settings.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
 
@@ -509,18 +564,45 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
-        let cursor = old_ts();
-        insert_settings(&env.dbx, cursor, false).await;
+        let created_at = old_ts();
+        let cursor = EchoImSyncCursor {
+            created_at,
+            inbox_message_id: 10,
+        };
+        insert_settings_with_cursor(&env.dbx, cursor, false).await;
 
         advance_echo_im_sync_since(
             &env.dbx,
-            cursor - chrono::TimeDelta::minutes(1),
+            created_at - chrono::TimeDelta::minutes(1),
         )
         .await
         .unwrap();
-        assert_eq!(get_echo_im_sync_since(&env.dbx).await.unwrap(), cursor);
+        assert_eq!(get_echo_im_sync_cursor(&env.dbx).await.unwrap(), cursor);
 
-        let next_cursor = cursor + chrono::TimeDelta::minutes(1);
+        advance_echo_im_sync_cursor(
+            &env.dbx,
+            EchoImSyncCursor {
+                created_at,
+                inbox_message_id: 9,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(get_echo_im_sync_cursor(&env.dbx).await.unwrap(), cursor);
+
+        let same_created_at_next_id = EchoImSyncCursor {
+            created_at,
+            inbox_message_id: 11,
+        };
+        advance_echo_im_sync_cursor(&env.dbx, same_created_at_next_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_echo_im_sync_cursor(&env.dbx).await.unwrap(),
+            same_created_at_next_id
+        );
+
+        let next_cursor = created_at + chrono::TimeDelta::minutes(1);
         advance_echo_im_sync_since(&env.dbx, next_cursor)
             .await
             .unwrap();
@@ -541,8 +623,17 @@ mod tests {
             .await
             .unwrap();
         let active_cursor = old_ts();
+        let active_cursor_id = 42;
         let stale_cursor = active_cursor - chrono::TimeDelta::hours(1);
-        insert_settings(&env.dbx, active_cursor, false).await;
+        insert_settings_with_cursor(
+            &env.dbx,
+            EchoImSyncCursor {
+                created_at: active_cursor,
+                inbox_message_id: active_cursor_id,
+            },
+            false,
+        )
+        .await;
         let inactive = insert_settings(&env.dbx, stale_cursor, true).await;
 
         let created = create_system_settings_for_login(
@@ -553,20 +644,31 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(created.echo_im_sync_since, active_cursor);
+        assert_eq!(
+            created.echo_im_sync_since_inbox_message_id,
+            active_cursor_id
+        );
 
-        advance_echo_im_sync_since(
+        advance_echo_im_sync_cursor(
             &env.dbx,
-            active_cursor + chrono::TimeDelta::minutes(5),
+            EchoImSyncCursor {
+                created_at: active_cursor + chrono::TimeDelta::minutes(5),
+                inbox_message_id: 77,
+            },
         )
         .await
         .unwrap();
-        let current_cursor = get_echo_im_sync_since(&env.dbx).await.unwrap();
+        let current_cursor = get_echo_im_sync_cursor(&env.dbx).await.unwrap();
         let activated =
             activate_system_settings_for_login(&env.dbx, "Tester", inactive.id)
                 .await
                 .unwrap();
 
-        assert_eq!(activated.echo_im_sync_since, current_cursor);
+        assert_eq!(activated.echo_im_sync_since, current_cursor.created_at);
+        assert_eq!(
+            activated.echo_im_sync_since_inbox_message_id,
+            current_cursor.inbox_message_id
+        );
         assert_eq!(
             get_active_system_settings(&env.dbx)
                 .await
@@ -611,12 +713,31 @@ mod tests {
         echo_im_sync_since: chrono::NaiveDateTime,
         deleted: bool,
     ) -> system_settings::Model {
+        insert_settings_with_cursor(
+            dbx,
+            EchoImSyncCursor {
+                created_at: echo_im_sync_since,
+                inbox_message_id: 0,
+            },
+            deleted,
+        )
+        .await
+    }
+
+    async fn insert_settings_with_cursor(
+        dbx: &DatabaseConnection,
+        echo_im_sync_cursor: EchoImSyncCursor,
+        deleted: bool,
+    ) -> system_settings::Model {
         system_settings::ActiveModel {
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
-            echo_im_sync_since: Set(echo_im_sync_since),
+            echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
+            echo_im_sync_since_inbox_message_id: Set(
+                echo_im_sync_cursor.inbox_message_id
+            ),
             updated_by: Set(None),
             deleted: Set(deleted),
             rer_duty_test_enabled: Set(false),
