@@ -83,7 +83,10 @@ export function normalizeLocationDisplayValue(value: string | null | undefined):
 
 export function resolveMessageCardRenderedNetworks(
   networkIds: number[] | null | undefined,
-  options: Pick<ResolveEtalonBindingDisplayValueOptions, 'networkDisplayMap' | 'networkMap' | 'networks'> = {},
+  options: Pick<
+    ResolveEtalonBindingDisplayValueOptions,
+    'networkDisplayMap' | 'networkMap' | 'networks'
+  > = {},
 ): MessageCardRenderedNetwork[] {
   const networkMap = buildNetworkMap(options);
   const renderedNetworks = uniqueNetworkIds(networkIds)
@@ -97,9 +100,14 @@ export function resolveMessageCardRenderedNetworks(
         badge: networkNeedsInvestigationBadge(network),
       };
     })
-    .filter((network): network is MessageCardRenderedNetwork => network != null && normalizeLabel(network.label) !== '');
+    .filter(
+      (network): network is MessageCardRenderedNetwork =>
+        network != null && normalizeLabel(network.label) !== '',
+    );
 
-  return renderedNetworks.filter((item, index, all) => index === all.findIndex((other) => other.networkId === item.networkId));
+  return renderedNetworks.filter(
+    (item, index, all) => index === all.findIndex((other) => other.networkId === item.networkId),
+  );
 }
 
 export function buildMessageCardNavigationMenuItems(
@@ -130,9 +138,14 @@ export function resolveEtalonBindingDisplayValue(
   const networkMap = buildNetworkMap(options);
   const labels = networkIds
     .map((networkId) => {
-      const label = normalizeLabel(options.networkDisplayMap?.[networkId] ?? networkMap[networkId]?.name ?? null);
+      const label = normalizeLabel(
+        options.networkDisplayMap?.[networkId] ?? networkMap[networkId]?.name ?? null,
+      );
       if (label === '') return null;
-      return options.networkDisplayMap?.[networkId] ?? (networkMap[networkId] ? `р/м ${networkMap[networkId].name}` : null);
+      return (
+        options.networkDisplayMap?.[networkId] ??
+        (networkMap[networkId] ? `р/м ${networkMap[networkId].name}` : null)
+      );
     })
     .filter((label): label is string => normalizeLabel(label) !== '');
 
@@ -172,7 +185,8 @@ const MESSAGE_DATETIME_ISO_UNDERSCORE_REGEXP = /^\d{4}-\d{2}-\d{2}_\d{1,2}:\d{2}
 const LEGACY_HEADER_FREQUENCY_REGEXP = /\s*F=\d{1,4}[.,]?\d*\(МГц\)/i;
 const STANDALONE_FREQUENCY_LINE_REGEXP = /^\d{1,4}[.,]\d+$/;
 const COORDS_METADATA_LINE_REGEXP = /^\d{2}\.\d{5,7}\s*,\s*\d{2}\.\d{5,7}$/;
-const EMBEDDED_FREQUENCY_REGEXP = /\s*(?:F=)?\d{1,4}[.,]?\d*(?:\s*\(МГц\)|\s*МГц|\s*MHz|\s*\(MHz\))\s*/gi;
+const EMBEDDED_FREQUENCY_REGEXP =
+  /\s*(?:F=)?\d{1,4}[.,]?\d*(?:\s*\(МГц\)|\s*МГц|\s*MHz|\s*\(MHz\))\s*/gi;
 
 function isMessageDateTimeLine(line: string): boolean {
   const trimmed = line.trim();
@@ -194,7 +208,10 @@ function isStandaloneFrequencyLine(line: string): boolean {
 }
 
 function stripEmbeddedFrequencyFromLine(line: string): string {
-  return line.replace(EMBEDDED_FREQUENCY_REGEXP, ' ').replace(/\s{2,}/g, ' ').trimEnd();
+  return line
+    .replace(EMBEDDED_FREQUENCY_REGEXP, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trimEnd();
 }
 
 function normalizeHeaderLineWithEmbeddedFrequency(line: string, datetimePart: string): string {
@@ -205,7 +222,9 @@ function normalizeHeaderLineWithEmbeddedFrequency(line: string, datetimePart: st
     .replace(EMBEDDED_FREQUENCY_REGEXP, ' ')
     .trim();
   const normalized = rest === '' ? datetimePart : `${datetimePart} ${rest}`;
-  return line.startsWith(' ') || line.startsWith('\t') ? line.replace(trimmed, normalized) : normalized;
+  return line.startsWith(' ') || line.startsWith('\t')
+    ? line.replace(trimmed, normalized)
+    : normalized;
 }
 
 function normalizeMetadataLineForCopy(line: string): string {
@@ -296,7 +315,10 @@ function findNetworkReplacementLineIndex(lines: string[], datetimeIndex: number)
   return replaceIndex;
 }
 
-function buildCopyTextWithNetworkFromNoHeadersBody(networkName: string, noHeadersBody: NoHeadersBody): string {
+function buildCopyTextWithNetworkFromNoHeadersBody(
+  networkName: string,
+  noHeadersBody: NoHeadersBody,
+): string {
   const body = normalizeLabel(noHeadersBody.body);
   if (body === '') return networkName;
   return `${networkName}\n\n${body}`;

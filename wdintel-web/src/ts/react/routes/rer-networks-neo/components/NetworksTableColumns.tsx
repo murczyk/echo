@@ -4,9 +4,19 @@ import { useMemo } from 'react';
 
 import { getSharedFilterTextFieldProps } from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
-import { AorCell, ActivityBars, FrequencyCell, LastActivityCell, LocationCell, NetworkCell } from './NetworkCells';
+import {
+  AorCell,
+  ActivityBars,
+  FrequencyCell,
+  LastActivityCell,
+  LocationCell,
+  NetworkCell,
+} from './NetworkCells';
 
-function formatAorActiveFilterValue(value: unknown, aorOptions: Array<{ id: number; name: string }>): string {
+function formatAorActiveFilterValue(
+  value: unknown,
+  aorOptions: Array<{ id: number; name: string }>,
+): string {
   if (!Array.isArray(value)) {
     return 'Порожньо';
   }
@@ -64,11 +74,13 @@ export function useNetworksTableColumns({
       {
         id: 'aors',
         header: 'Смуги',
-        accessorFn: (row) => (row.network.aorIds.length === 0 ? [NO_AOR_FILTER_VALUE] : row.network.aorIds.map(String)),
+        accessorFn: (row) =>
+          row.network.aorIds.length === 0 ? [NO_AOR_FILTER_VALUE] : row.network.aorIds.map(String),
         enableColumnFilter: true,
         enableSorting: true,
         meta: {
-          activeFilterValueFormatter: (value: unknown) => formatAorActiveFilterValue(value, aorOptions),
+          activeFilterValueFormatter: (value: unknown) =>
+            formatAorActiveFilterValue(value, aorOptions),
         },
         Cell: ({ row }) => <AorCell labels={row.original.aorLabels} />,
         filterVariant: 'multi-select',
@@ -109,11 +121,17 @@ export function useNetworksTableColumns({
       {
         id: 'freqs',
         header: 'Частоти',
-        accessorFn: (row) => row.activeFrequencies.map((freq) => freq.freq).join(' ') + row.inactiveFrequencies.map((freq) => freq.freq).join(' '),
+        accessorFn: (row) =>
+          row.activeFrequencies.map((freq) => freq.freq).join(' ') +
+          row.inactiveFrequencies.map((freq) => freq.freq).join(' '),
         enableColumnFilter: true,
         enableSorting: true,
         Cell: ({ row }) => (
-          <FrequencyCell row={row.original} onPointerEnterAnchor={onFrequencyHoverEnter} onPointerLeaveAnchor={onFrequencyHoverLeave} />
+          <FrequencyCell
+            row={row.original}
+            onPointerEnterAnchor={onFrequencyHoverEnter}
+            onPointerLeaveAnchor={onFrequencyHoverLeave}
+          />
         ),
       },
       {
@@ -122,7 +140,13 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.location,
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => <LocationCell row={row.original} onPointerEnterAnchor={onLocationHoverEnter} onPointerLeaveAnchor={onLocationHoverLeave} />,
+        Cell: ({ row }) => (
+          <LocationCell
+            row={row.original}
+            onPointerEnterAnchor={onLocationHoverEnter}
+            onPointerLeaveAnchor={onLocationHoverLeave}
+          />
+        ),
       },
       {
         id: 'activity',
@@ -132,7 +156,11 @@ export function useNetworksTableColumns({
         enableSorting: false,
         Cell: ({ row }) => (
           <Box>
-            {row.original.activityBars.some((bar) => bar.value > 0) ? <ActivityBars bars={row.original.activityBars} /> : <Box sx={{ color: 'text.secondary' }}>Не активна останні 10 днів</Box>}
+            {row.original.activityBars.some((bar) => bar.value > 0) ? (
+              <ActivityBars bars={row.original.activityBars} />
+            ) : (
+              <Box sx={{ color: 'text.secondary' }}>Не активна останні 10 днів</Box>
+            )}
           </Box>
         ),
       },
@@ -142,9 +170,22 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.lastActivityLabel,
         enableColumnFilter: false,
         enableSorting: true,
-        Cell: ({ row }) => <LastActivityCell label={row.original.lastActivityLabel} detail={row.original.lastActivityDetail} tooltip={row.original.lastActivityTooltip} />,
+        Cell: ({ row }) => (
+          <LastActivityCell
+            label={row.original.lastActivityLabel}
+            detail={row.original.lastActivityDetail}
+            tooltip={row.original.lastActivityTooltip}
+          />
+        ),
       },
     ],
-    [aorFilterOptions, aorOptions, onFrequencyHoverEnter, onFrequencyHoverLeave, onLocationHoverEnter, onLocationHoverLeave],
+    [
+      aorFilterOptions,
+      aorOptions,
+      onFrequencyHoverEnter,
+      onFrequencyHoverLeave,
+      onLocationHoverEnter,
+      onLocationHoverLeave,
+    ],
   );
 }

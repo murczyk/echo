@@ -72,7 +72,9 @@ export type UseAnalysisDataResult = {
   loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
-  invalidateFilterSectionLoadsForPatch: (patch?: Partial<import('./types').AnalysisQueryState>) => void;
+  invalidateFilterSectionLoadsForPatch: (
+    patch?: Partial<import('./types').AnalysisQueryState>,
+  ) => void;
   getReloadFilterSections: () => AnalysisFilterSectionId[] | null;
   toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
@@ -92,7 +94,10 @@ export type UseAnalysisDataResult = {
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
-  onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
+  onUpdateLocalMessage: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => void;
   onDeleteMessage: (messageId: number) => Promise<void>;
   onSaveMessageComment: (messageId: number, comment: string | null) => Promise<void>;
   onCancelBotTagAction: () => void;

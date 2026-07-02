@@ -1,9 +1,30 @@
 import EditIcon from '@mui/icons-material/Edit';
-import { Autocomplete, Box, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Tooltip } from '@mui/material';
+import {
+  Autocomplete,
+  Box,
+  Checkbox,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  MenuItem,
+  Stack,
+  TextField,
+  Tooltip,
+} from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
-import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
+import {
+  CreateLoginReq,
+  DeactivationReasonType,
+  Login,
+  Organism,
+  SigintZone,
+  UpdateLoginReq,
+} from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -22,7 +43,10 @@ import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
@@ -420,7 +444,9 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
           return (
             <div className="flex flex-col items-center text-center leading-tight">
               <span className={status.colorClass}>{status.label}</span>
-              {status.detail ? <span className="text-xs text-muted-foreground">{status.detail}</span> : null}
+              {status.detail ? (
+                <span className="text-xs text-muted-foreground">{status.detail}</span>
+              ) : null}
             </div>
           );
         },
@@ -459,15 +485,19 @@ function AddUserDialog(props: {
   const organismsLoading = lookups.organismsStatus === 'loading';
   const canSubmit = zonesReady && organismsReady && !isSubmitting;
 
-  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
-    id: zoneId,
-    label: zone.name || `ID ${zoneId}`,
-  }));
+  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
+    ([zoneId, zone]) => ({
+      id: zoneId,
+      label: zone.name || `ID ${zoneId}`,
+    }),
+  );
 
-  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map((organism) => ({
-    id: organism.id,
-    label: organism.name || `ID ${organism.id}`,
-  }));
+  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map(
+    (organism) => ({
+      id: organism.id,
+      label: organism.name || `ID ${organism.id}`,
+    }),
+  );
 
   useEffect(() => {
     if (lookups.zones.length === 0) return;
@@ -622,7 +652,9 @@ function AddUserDialog(props: {
             disabled={isSubmitting}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
-            renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'add-zone')}
+            renderOption={(props, option) =>
+              renderLookupAutocompleteOption(props, option, 'add-zone')
+            }
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -647,7 +679,9 @@ function AddUserDialog(props: {
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionLabel={(option) => option.label}
             className="md:col-span-2"
-            renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'add-organism')}
+            renderOption={(props, option) =>
+              renderLookupAutocompleteOption(props, option, 'add-organism')
+            }
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -696,15 +730,19 @@ function EditUserDialog(props: {
     !isSubmitting &&
     Boolean(form);
 
-  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(([zoneId, zone]) => ({
-    id: zoneId,
-    label: zone.name || `ID ${zoneId}`,
-  }));
+  const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
+    ([zoneId, zone]) => ({
+      id: zoneId,
+      label: zone.name || `ID ${zoneId}`,
+    }),
+  );
 
-  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map((organism) => ({
-    id: organism.id,
-    label: organism.name || `ID ${organism.id}`,
-  }));
+  const organismAutocompleteOptions: LookupAutocompleteOption[] = lookups.organisms.map(
+    (organism) => ({
+      id: organism.id,
+      label: organism.name || `ID ${organism.id}`,
+    }),
+  );
 
   useEffect(() => {
     if (!open || !login) {
@@ -778,7 +816,13 @@ function EditUserDialog(props: {
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth disableRestoreFocus={disableRestoreFocus}>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="lg"
+      fullWidth
+      disableRestoreFocus={disableRestoreFocus}
+    >
       <DialogTitle>Редагувати користувача</DialogTitle>
       <DialogContent className="space-y-4">
         {lookups.zonesError ? (
@@ -817,7 +861,9 @@ function EditUserDialog(props: {
               label="Ролі"
               value={form.roles}
               onChange={(event) => {
-                setForm((prev) => (prev ? { ...prev, roles: asStringArray(event.target.value) } : prev));
+                setForm((prev) =>
+                  prev ? { ...prev, roles: asStringArray(event.target.value) } : prev,
+                );
                 setErrors((prev) => ({ ...prev, roles: undefined }));
               }}
               fullWidth
@@ -851,7 +897,9 @@ function EditUserDialog(props: {
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
-              renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'edit-zone')}
+              renderOption={(props, option) =>
+                renderLookupAutocompleteOption(props, option, 'edit-zone')
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -876,7 +924,9 @@ function EditUserDialog(props: {
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
-              renderOption={(props, option) => renderLookupAutocompleteOption(props, option, 'edit-organism')}
+              renderOption={(props, option) =>
+                renderLookupAutocompleteOption(props, option, 'edit-organism')
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -942,7 +992,8 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
   const tableStateContext = useTableStateContext();
   const columns = useUsersColumns();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -1079,7 +1130,10 @@ function AdminUsersNeoPageBody() {
     setOrganismsError(null);
     try {
       const organismList = await listOrganisms({ sortBy: null });
-      debugLog('loadOrganisms:success', { count: organismList.length, sample: organismList.slice(0, 3) });
+      debugLog('loadOrganisms:success', {
+        count: organismList.length,
+        sample: organismList.slice(0, 3),
+      });
       setOrganisms(organismList);
       setOrganismsStatus('success');
     } catch (err) {
@@ -1111,60 +1165,69 @@ function AdminUsersNeoPageBody() {
         errorMessage={error || 'Помилка завантаження'}
         loadingContent={
           <div className="flex w-full min-w-0 flex-1 min-h-0">
-            <UsersTable
-              data={logins}
-              loading
-              onEdit={(login) => setEditingLogin(login)}
-            />
+            <UsersTable data={logins} loading onEdit={(login) => setEditingLogin(login)} />
           </div>
         }
       >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
-          <UsersTable
-            data={logins}
-            loading={false}
-            onEdit={(login) => setEditingLogin(login)}
-          />
+          <UsersTable data={logins} loading={false} onEdit={(login) => setEditingLogin(login)} />
         </div>
       </TableContentState>
     );
   };
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <TablePageToolbar
-        title="Користувачі"
-        withGlobalTextFilter
-        hideGlobalTextFilter={status !== 'success'}
-        internalActionsDisabled={status !== 'success'}
-        actions={
-          <div className="flex gap-3">
-            <PowerButton variant="contained" onClick={() => setCreateOpen(true)}>
-              Додати користувача
-            </PowerButton>
-          </div>
-        }
-      />
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        <TablePageToolbar
+          title="Користувачі"
+          withGlobalTextFilter
+          hideGlobalTextFilter={status !== 'success'}
+          internalActionsDisabled={status !== 'success'}
+          actions={
+            <div className="flex gap-3">
+              <PowerButton variant="contained" onClick={() => setCreateOpen(true)}>
+                Додати користувача
+              </PowerButton>
+            </div>
+          }
+        />
 
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderTable()}
+        </Box>
 
-      <AddUserDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
-        lookups={lookups}
-      />
-      <EditUserDialog
-        open={Boolean(editingLogin)}
-        login={editingLogin}
-        onClose={() => setEditingLogin(null)}
-        onUserUpdated={(login) =>
-          setLogins((prev) => prev.map((item) => (item.login === login.login ? login : item)))
-        }
-        lookups={lookups}
-        disableRestoreFocus
-      />
+        <AddUserDialog
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
+          lookups={lookups}
+        />
+        <EditUserDialog
+          open={Boolean(editingLogin)}
+          login={editingLogin}
+          onClose={() => setEditingLogin(null)}
+          onUserUpdated={(login) =>
+            setLogins((prev) => prev.map((item) => (item.login === login.login ? login : item)))
+          }
+          lookups={lookups}
+          disableRestoreFocus
+        />
       </Stack>
     </Box>
   );

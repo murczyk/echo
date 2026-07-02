@@ -31,7 +31,10 @@ function MobileActionsBar(props: MobileActionsBarProps) {
     <div className="block sm:hidden w-full mb-3">
       <div className="flex flex-wrap items-center gap-2">
         {props.header}
-        <PowerButton variant="contained" onClick={props.onToggleMobileActions || onToggleMobileActions}>
+        <PowerButton
+          variant="contained"
+          onClick={props.onToggleMobileActions || onToggleMobileActions}
+        >
           {showMobileActions ? 'Приховати' : 'Показати'} дії
         </PowerButton>
       </div>
@@ -51,7 +54,11 @@ type DesktopActionsBarProps = {
 };
 
 function DesktopActionsBar(props: DesktopActionsBarProps) {
-  return <div className="mb-3 hidden sm:flex flex-wrap items-center justify-between gap-2">{props.children}</div>;
+  return (
+    <div className="mb-3 hidden sm:flex flex-wrap items-center justify-between gap-2">
+      {props.children}
+    </div>
+  );
 }
 
 type TableTopToolbarProps = {
@@ -80,21 +87,19 @@ type TableTopToolbarProps = {
 export function TableTopToolbar(props: TableTopToolbarProps) {
   const tableStateContext = useTableStateContext();
 
-  const internalTableActions =
-    props.internalTableActionsPlaceholder ||
-    (
-      <InternalTableActions
-        table={tableStateContext.tableInstance}
-        filtersHidden={props.filtersHidden}
-        colOrderHidden={props.colOrderHidden}
-        columnsVisibilityDisabled={props.columnsVisibilityDisabled}
-        colOrderDisabled={props.colOrderDisabled}
-        filtersDisabled={props.filtersDisabled}
-        rowNumberAppearanceControl={props.rowNumberAppearanceControl}
-      >
-        {props.additionalInternalActions}
-      </InternalTableActions>
-    );
+  const internalTableActions = props.internalTableActionsPlaceholder || (
+    <InternalTableActions
+      table={tableStateContext.tableInstance}
+      filtersHidden={props.filtersHidden}
+      colOrderHidden={props.colOrderHidden}
+      columnsVisibilityDisabled={props.columnsVisibilityDisabled}
+      colOrderDisabled={props.colOrderDisabled}
+      filtersDisabled={props.filtersDisabled}
+      rowNumberAppearanceControl={props.rowNumberAppearanceControl}
+    >
+      {props.additionalInternalActions}
+    </InternalTableActions>
+  );
 
   return (
     <>

@@ -12,10 +12,13 @@ function normalizeRadioFreq(value: string | null | undefined) {
   return normalized === '' ? '—' : normalized;
 }
 
-function sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds: number[], primarySourceId: number | null | undefined): number[] {
-  const uniqueIds = Array.from(new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
-    (left, right) => left - right,
-  );
+function sanitizeCallsignAdditionalSourceIds(
+  callsignAdditionalSourceIds: number[],
+  primarySourceId: number | null | undefined,
+): number[] {
+  const uniqueIds = Array.from(
+    new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0)),
+  ).sort((left, right) => left - right);
   if (isNullOrUndefined(primarySourceId)) return uniqueIds;
   return uniqueIds.filter((sourceId) => sourceId !== primarySourceId);
 }
@@ -35,7 +38,10 @@ function compareUnitNames(left: Callsign, right: Callsign, unitsById: Map<number
   return compareStrings(left.callsign, right.callsign);
 }
 
-export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsById: Map<number, Unit>): UnitStatView[] {
+export function mergeUnitStatsWithUnits(
+  unitStats: CallsignUnitStatRow[],
+  unitsById: Map<number, Unit>,
+): UnitStatView[] {
   return unitStats
     .map((stat) => {
       const unit = unitsById.get(stat.unitId);
@@ -56,18 +62,28 @@ export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsB
     .sort((a, b) => b.count - a.count || a.unitName.localeCompare(b.unitName, 'uk'));
 }
 
-export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit>, sourcesById: Map<number, Source>): BuildRowsResult {
+export function buildRowViews(
+  callsigns: Callsign[],
+  unitsById: Map<number, Unit>,
+  sourcesById: Map<number, Source>,
+): BuildRowsResult {
   const rows: CallsignRowView[] = callsigns.map((callsign) => {
-    const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(callsign.callsignAdditionalSources, callsign.sourceId);
-    const callsignAdditionalSourceNames = callsignAdditionalSourceIds
-      .map((sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`);
+    const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(
+      callsign.callsignAdditionalSources,
+      callsign.sourceId,
+    );
+    const callsignAdditionalSourceNames = callsignAdditionalSourceIds.map(
+      (sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`,
+    );
 
     return {
       ...callsign,
       callsignAdditionalSourceIds,
       callsignAdditionalSourceNames,
       unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-      sourceName: isNullOrUndefined(callsign.sourceId) ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
+      sourceName: isNullOrUndefined(callsign.sourceId)
+        ? '—'
+        : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
     };
   });
 
@@ -87,7 +103,18 @@ export function createSourcesById(sources: Source[]): Map<number, Source> {
 
 export function sortRowsClientSide(
   callsigns: Callsign[],
-  sort: { column: 'callsign' | 'position' | 'fullName' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt'; direction: 'asc' | 'desc' },
+  sort: {
+    column:
+      | 'callsign'
+      | 'position'
+      | 'fullName'
+      | 'comment'
+      | 'unit'
+      | 'sourceName'
+      | 'radioFreq'
+      | 'createdAt';
+    direction: 'asc' | 'desc';
+  },
   unitsById: Map<number, Unit>,
   sourcesById: Map<number, Source>,
 ): Callsign[] {
@@ -105,11 +132,18 @@ export function sortRowsClientSide(
       result = compareStrings(left.comment, right.comment);
     } else if (sort.column === 'sourceName') {
       result = compareStrings(
-        isNullOrUndefined(left.sourceId) ? '—' : (sourcesById.get(left.sourceId)?.name ?? `#${left.sourceId}`),
-        isNullOrUndefined(right.sourceId) ? '—' : (sourcesById.get(right.sourceId)?.name ?? `#${right.sourceId}`),
+        isNullOrUndefined(left.sourceId)
+          ? '—'
+          : (sourcesById.get(left.sourceId)?.name ?? `#${left.sourceId}`),
+        isNullOrUndefined(right.sourceId)
+          ? '—'
+          : (sourcesById.get(right.sourceId)?.name ?? `#${right.sourceId}`),
       );
     } else if (sort.column === 'radioFreq') {
-      result = compareStrings(normalizeRadioFreq(left.radioFreq), normalizeRadioFreq(right.radioFreq));
+      result = compareStrings(
+        normalizeRadioFreq(left.radioFreq),
+        normalizeRadioFreq(right.radioFreq),
+      );
     } else if (sort.column === 'createdAt') {
       result = left.createdAt - right.createdAt;
     } else {

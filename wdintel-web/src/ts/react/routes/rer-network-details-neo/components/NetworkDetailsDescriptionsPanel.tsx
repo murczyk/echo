@@ -2,7 +2,19 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Box,
+  Button,
+  Divider,
+  IconButton,
+  Skeleton,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { alpha } from '@mui/material/styles';
 
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
@@ -96,8 +108,10 @@ function DescriptionItem({
 }) {
   const descriptionTypeLabel = getDescriptionTypeLabel(description.descrType);
   const collapsedTopic = getCollapsedDescriptionTopic(description);
-  const collapsedFallbackLines = collapsedTopic === '' ? getCollapsedDescriptionFallbackLines(description) : [];
-  const collapsedFallbackOverflow = collapsedTopic === '' && hasCollapsedDescriptionOverflow(description);
+  const collapsedFallbackLines =
+    collapsedTopic === '' ? getCollapsedDescriptionFallbackLines(description) : [];
+  const collapsedFallbackOverflow =
+    collapsedTopic === '' && hasCollapsedDescriptionOverflow(description);
 
   return (
     <Accordion
@@ -127,7 +141,12 @@ function DescriptionItem({
           },
         }}
       >
-        <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ width: '100%', minWidth: 0 }}>
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="flex-start"
+          sx={{ width: '100%', minWidth: 0 }}
+        >
           <Box sx={{ minWidth: 0, flex: 1, pr: 2.5 }}>
             {collapsedTopic !== '' ? (
               <Typography
@@ -148,32 +167,27 @@ function DescriptionItem({
             ) : collapsedFallbackLines.length > 0 ? (
               <Stack spacing={0.25} sx={{ minWidth: 0 }}>
                 {collapsedFallbackLines.map((line, index) => (
-                  <Typography
-                    key={`${index}:${line}`}
-                    variant="body2"
-                    sx={collapsedFallbackTextSx}
-                  >
+                  <Typography key={`${index}:${line}`} variant="body2" sx={collapsedFallbackTextSx}>
                     {line}
                   </Typography>
                 ))}
                 {collapsedFallbackOverflow ? (
-                  <Typography
-                    variant="body2"
-                    sx={collapsedFallbackTextSx}
-                  >
+                  <Typography variant="body2" sx={collapsedFallbackTextSx}>
                     {ELLIPSIS}
                   </Typography>
                 ) : null}
               </Stack>
             ) : (
-              <Typography
-                variant="body2"
-                sx={collapsedFallbackTextSx}
-              >
+              <Typography variant="body2" sx={collapsedFallbackTextSx}>
                 Без теми
               </Typography>
             )}
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              useFlexGap
+              sx={{ flexWrap: 'wrap', mt: 0.75, alignItems: 'center', minWidth: 0 }}
+            >
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 {description.login}
               </Typography>
@@ -181,7 +195,11 @@ function DescriptionItem({
                 •
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                {new Date(description.createdAt).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                {new Date(description.createdAt).toLocaleDateString('uk-UA', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                })}
               </Typography>
               {frequencyLabel ? (
                 <>
@@ -210,7 +228,10 @@ function DescriptionItem({
           <Stack spacing={1.5}>
             <Divider
               sx={(theme) => ({
-                borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.06),
+                borderColor: alpha(
+                  theme.palette.text.primary,
+                  theme.palette.mode === 'dark' ? 0.08 : 0.06,
+                ),
                 borderBottomWidth: 1,
                 opacity: 1,
               })}
@@ -221,12 +242,21 @@ function DescriptionItem({
             {canManage ? (
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
                 <Tooltip title="Редагувати" arrow>
-                  <IconButton aria-label={`Редагувати ${descriptionTypeLabel}`} onClick={onEdit} size="small">
+                  <IconButton
+                    aria-label={`Редагувати ${descriptionTypeLabel}`}
+                    onClick={onEdit}
+                    size="small"
+                  >
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Видалити" arrow>
-                  <IconButton aria-label={`Видалити ${descriptionTypeLabel}`} onClick={onDelete} size="small" color="error">
+                  <IconButton
+                    aria-label={`Видалити ${descriptionTypeLabel}`}
+                    onClick={onDelete}
+                    size="small"
+                    color="error"
+                  >
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -282,7 +312,8 @@ function DescriptionsList({
             const frequencyLabel =
               description.networkFrequencyId === null
                 ? null
-                : network?.freqs.find((freq) => freq.id === description.networkFrequencyId)?.freq ?? `#${description.networkFrequencyId}`;
+                : (network?.freqs.find((freq) => freq.id === description.networkFrequencyId)
+                    ?.freq ?? `#${description.networkFrequencyId}`);
 
             return (
               <DescriptionItem
@@ -336,7 +367,15 @@ export function NetworkDetailsDescriptionsPanel({
   return (
     <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', flex: 1 }}>
       <Box sx={{ p: 2, minHeight: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            mb: 2,
+          }}
+        >
           <Typography variant="h6">{sectionTitle}</Typography>
           {canManageDescriptions ? (
             loading ? (

@@ -21,7 +21,9 @@ function matchesTokenSequence(labelTokens: string[], searchTokens: string[]): bo
 
     for (let index = nextIndex; index < labelTokens.length; index += 1) {
       const labelToken = labelTokens[index];
-      const tokenMatches = isNumericToken(token) ? labelToken === token : labelToken.includes(token);
+      const tokenMatches = isNumericToken(token)
+        ? labelToken === token
+        : labelToken.includes(token);
 
       if (tokenMatches) {
         matchedIndex = index;
@@ -36,7 +38,11 @@ function matchesTokenSequence(labelTokens: string[], searchTokens: string[]): bo
   return true;
 }
 
-function getSearchRank(normalizedLabel: string, normalizedInput: string, searchTokens: string[]): number | null {
+function getSearchRank(
+  normalizedLabel: string,
+  normalizedInput: string,
+  searchTokens: string[],
+): number | null {
   if (normalizedLabel === normalizedInput) return 0;
   if (normalizedLabel.startsWith(normalizedInput)) return 1;
   if (normalizedLabel.includes(normalizedInput)) return 2;
@@ -45,10 +51,7 @@ function getSearchRank(normalizedLabel: string, normalizedInput: string, searchT
   return null;
 }
 
-export function createRankedFilterOptions<T>(
-  getOptionLabel: (option: T) => string,
-  limit = 20,
-) {
+export function createRankedFilterOptions<T>(getOptionLabel: (option: T) => string, limit = 20) {
   return (options: T[], state: { inputValue: string }): T[] => {
     const normalizedInput = normalizeSearchValue(state.inputValue);
     if (normalizedInput === '') return options.slice(0, limit);
@@ -90,8 +93,10 @@ export function findExactSearchMatch<T>(
   const normalizedInput = normalizeSearchValue(inputValue);
   if (normalizedInput === '') return null;
 
-  return options.find((option) => {
-    const normalizedLabel = normalizeSearchValue(getOptionLabel(option));
-    return normalizedLabel === normalizedInput;
-  }) ?? null;
+  return (
+    options.find((option) => {
+      const normalizedLabel = normalizeSearchValue(getOptionLabel(option));
+      return normalizedLabel === normalizedInput;
+    }) ?? null
+  );
 }

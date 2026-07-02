@@ -7,7 +7,11 @@ export type Wgs84Coords = {
   lng: number;
 };
 
-export function getCoordinateText(format: CoordFormat, coords: Wgs84Coords, mgrsCoords?: string | null): string {
+export function getCoordinateText(
+  format: CoordFormat,
+  coords: Wgs84Coords,
+  mgrsCoords?: string | null,
+): string {
   if (format === 'wgs') {
     return formatWgs84(coords);
   }

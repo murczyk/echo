@@ -14,7 +14,12 @@ vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit' | 'reset'; startIcon?: ReactNode }) => (
+  Button: (props: {
+    children: ReactNode;
+    onClick?: () => void;
+    type?: 'button' | 'submit' | 'reset';
+    startIcon?: ReactNode;
+  }) => (
     <button type={props.type ?? 'button'} onClick={props.onClick}>
       {props.startIcon}
       {props.children}
@@ -39,7 +44,11 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     <div data-testid={`message-card-${props.id}`}>
       <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
-      <span data-testid={`comments-${props.id}`}>{(props.messageComments ?? []).map((comment) => `${comment.login}:${comment.comment}`).join('|')}</span>
+      <span data-testid={`comments-${props.id}`}>
+        {(props.messageComments ?? [])
+          .map((comment) => `${comment.login}:${comment.comment}`)
+          .join('|')}
+      </span>
       <button type="button" onClick={props.onComment}>
         comment-{props.id}
       </button>
@@ -61,7 +70,10 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
       ) : null}
       {props.analysisCallsignActions != null ? <span>analysis-callsigns</span> : null}
       {props.analysisCallsignActions != null ? (
-        <button type="button" onClick={() => props.analysisCallsignActions?.onRemoveCallsign('ALPHA')}>
+        <button
+          type="button"
+          onClick={() => props.analysisCallsignActions?.onRemoveCallsign('ALPHA')}
+        >
           remove-callsign
         </button>
       ) : null}
@@ -70,16 +82,25 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
 }));
 
 vi.mock('../../rer-duty-neo/dialogs', () => ({
-  CommentDialog: (props: { open: boolean; messagePreview?: { text?: string | null; freq?: string | null; groupMasterKey?: string | null; groupName?: string | null; sender?: string | null; senderName?: string | null } | null; onSave: () => void; onClose: () => void }) =>
+  CommentDialog: (props: {
+    open: boolean;
+    messagePreview?: {
+      text?: string | null;
+      freq?: string | null;
+      groupMasterKey?: string | null;
+      groupName?: string | null;
+      sender?: string | null;
+      senderName?: string | null;
+    } | null;
+    onSave: () => void;
+    onClose: () => void;
+  }) =>
     props.open ? (
       <div data-testid="comment-dialog">
         <div data-testid="comment-preview">
-          {props.messagePreview?.freq ?? ''}
-          {' '}
-          {props.messagePreview?.groupName ?? props.messagePreview?.groupMasterKey ?? ''}
-          {' '}
-          {props.messagePreview?.senderName ?? props.messagePreview?.sender ?? ''}
-          {' '}
+          {props.messagePreview?.freq ?? ''}{' '}
+          {props.messagePreview?.groupName ?? props.messagePreview?.groupMasterKey ?? ''}{' '}
+          {props.messagePreview?.senderName ?? props.messagePreview?.sender ?? ''}{' '}
           {props.messagePreview?.text ?? ''}
         </div>
         <button type="button" onClick={props.onSave}>
@@ -138,11 +159,23 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
-function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPane>> = {}): ComponentProps<typeof AnalysisMessagesPane> {
+function buildProps(
+  overrides: Partial<ComponentProps<typeof AnalysisMessagesPane>> = {},
+): ComponentProps<typeof AnalysisMessagesPane> {
   return {
     authUserName: 'tester',
     copiedFeedbackId: null,
-    currentUser: { name: 'tester', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+    currentUser: {
+      name: 'tester',
+      roles: [],
+      sigintZoneId: null,
+      organismId: 1,
+      deltaLogin: null,
+      goiConfiguredForOrganism: false,
+      goiFullAccessForOrganism: false,
+      goiHost: null,
+      goiIntegrations: [],
+    },
     groupInfos: {},
     loading: false,
     paginationLoading: false,
@@ -172,7 +205,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisMessagesPan
   };
 }
 
-async function renderComponent(props: ComponentProps<typeof AnalysisMessagesPane>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof AnalysisMessagesPane>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -183,7 +218,9 @@ async function renderComponent(props: ComponentProps<typeof AnalysisMessagesPane
 }
 
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
+  const button = Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(label),
+  );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
@@ -263,7 +300,9 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="tags-layout-7"]')?.textContent).toBe('hidden');
+    expect(view.container.querySelector('[data-testid="tags-layout-7"]')?.textContent).toBe(
+      'hidden',
+    );
   });
 
   it('passes the formatted sender label through to analysis message cards', async () => {
@@ -312,12 +351,24 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     await click(getButton(view.container, 'comment-7'));
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('100.000');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('Група 1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).not.toContain('group-1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('BBC SPORT');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).not.toContain('sender-1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain('hello');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
+      '100.000',
+    );
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
+      'Група 1',
+    );
+    expect(
+      view.container.querySelector('[data-testid="comment-preview"]')?.textContent,
+    ).not.toContain('group-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
+      'BBC SPORT',
+    );
+    expect(
+      view.container.querySelector('[data-testid="comment-preview"]')?.textContent,
+    ).not.toContain('sender-1');
+    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
+      'hello',
+    );
     await click(getButton(view.container, 'save-comment'));
 
     expect(onSaveMessageComment).toHaveBeenCalledWith(7, 'saved comment');
@@ -335,16 +386,42 @@ describe('AnalysisMessagesPane', () => {
           ],
         },
         users: {
-          'external-login': { name: 'external-login', roles: [], sigintZoneId: null, organismId: 2, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
-          'peer-login': { name: 'peer-login', roles: [], sigintZoneId: null, organismId: 1, deltaLogin: null, goiConfiguredForOrganism: false, goiFullAccessForOrganism: false, goiHost: null, goiIntegrations: [] },
+          'external-login': {
+            name: 'external-login',
+            roles: [],
+            sigintZoneId: null,
+            organismId: 2,
+            deltaLogin: null,
+            goiConfiguredForOrganism: false,
+            goiFullAccessForOrganism: false,
+            goiHost: null,
+            goiIntegrations: [],
+          },
+          'peer-login': {
+            name: 'peer-login',
+            roles: [],
+            sigintZoneId: null,
+            organismId: 1,
+            deltaLogin: null,
+            goiConfiguredForOrganism: false,
+            goiFullAccessForOrganism: false,
+            goiHost: null,
+            goiIntegrations: [],
+          },
         },
       }),
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain('external-login:other-organism comment');
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('peer-login:same-organism comment');
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain('hidden self comment');
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
+      'external-login:other-organism comment',
+    );
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
+      'peer-login:same-organism comment',
+    );
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
+      'hidden self comment',
+    );
   });
 
   it('wires delete confirmation into the page callback', async () => {
@@ -415,11 +492,13 @@ describe('AnalysisMessagesPane', () => {
   });
 
   it('normalizes callsigns when removing them through the analysis card', async () => {
-    const onSaveMessageUpdate = vi.fn(async (_messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
-      const updated = updater(buildMessage({ callsigns: ['Alpha'] }));
-      expect(updated.callsigns).toEqual([]);
-      return true;
-    });
+    const onSaveMessageUpdate = vi.fn(
+      async (_messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
+        const updated = updater(buildMessage({ callsigns: ['Alpha'] }));
+        expect(updated.callsigns).toEqual([]);
+        return true;
+      },
+    );
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage({ callsigns: ['Alpha'] })]],

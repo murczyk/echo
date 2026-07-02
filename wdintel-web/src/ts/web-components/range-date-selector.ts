@@ -1,4 +1,4 @@
-import { daysCountText } from "../maps/utils/language-utils";
+import { daysCountText } from '../maps/utils/language-utils';
 
 const styles = `
 <style>
@@ -114,12 +114,12 @@ const styles = `
 </style>
 
 
-`
+`;
 
 class DateRangeSelector extends HTMLElement {
   private currentStartDate: Date;
   private currentEndDate: Date;
-  private daysJumpOption = [1, 3, 7, 30]
+  private daysJumpOption = [1, 3, 7, 30];
   private currentJumpIndex = 0;
   private selectedJumpValue = 1;
   private isLoading = false;
@@ -127,14 +127,13 @@ class DateRangeSelector extends HTMLElement {
   private onMoveBackward = () => this.moveRange(-1);
   private onMoveForward = () => this.moveRange(1);
 
-  static observedAttributes = ["dates", "loading"];
+  static observedAttributes = ['dates', 'loading'];
 
   constructor() {
     super();
 
-    this.attachShadow({ mode: "open" })
+    this.attachShadow({ mode: 'open' });
     this.render();
-
   }
 
   connectedCallback() {
@@ -165,9 +164,9 @@ class DateRangeSelector extends HTMLElement {
   }
 
   private initializeDates(initialValue: string) {
-    const { startDate, endDate } = JSON.parse(initialValue)
-    this.currentStartDate = new Date(+startDate)
-    this.currentEndDate = new Date(+endDate)
+    const { startDate, endDate } = JSON.parse(initialValue);
+    this.currentStartDate = new Date(+startDate);
+    this.currentEndDate = new Date(+endDate);
 
     this.updateDisplay();
   }
@@ -194,10 +193,12 @@ class DateRangeSelector extends HTMLElement {
     if (this.isLoading) {
       return;
     }
-    this.currentStartDate.setDate(this.currentStartDate.getDate() + direction * this.selectedJumpValue);
+    this.currentStartDate.setDate(
+      this.currentStartDate.getDate() + direction * this.selectedJumpValue,
+    );
     this.currentEndDate.setDate(this.currentEndDate.getDate() + direction * this.selectedJumpValue);
     this.updateDisplay();
-    this.emitDateChangeEvent()
+    this.emitDateChangeEvent();
   }
 
   private setRangeDays(event: MouseEvent) {
@@ -214,7 +215,6 @@ class DateRangeSelector extends HTMLElement {
     this.applySelectedRangeLength();
     this.updateDisplay();
     this.emitDateChangeEvent();
-
   }
 
   private applySelectedRangeLength() {
@@ -225,7 +225,11 @@ class DateRangeSelector extends HTMLElement {
   }
 
   private updateDisplay() {
-    const options: Intl.DateTimeFormatOptions = { year: '2-digit', month: '2-digit', day: '2-digit' };
+    const options: Intl.DateTimeFormatOptions = {
+      year: '2-digit',
+      month: '2-digit',
+      day: '2-digit',
+    };
     const startDisplay = this.currentStartDate.toLocaleDateString('uk', options);
     const endDisplay = this.currentEndDate.toLocaleDateString('uk', options);
     this.shadowRoot!.getElementById('dateDisplay')!.textContent = `${startDisplay} - ${endDisplay}`;
@@ -236,10 +240,10 @@ class DateRangeSelector extends HTMLElement {
     const event = new CustomEvent('date-range-changed', {
       detail: {
         startDate: this.currentStartDate.getTime(), // Get start date in POSIX format
-        endDate: this.currentEndDate.getTime()      // Get end date in POSIX format
+        endDate: this.currentEndDate.getTime(), // Get end date in POSIX format
       },
       bubbles: true,
-      composed: true
+      composed: true,
     });
     this.dispatchEvent(event); // Dispatch the event
   }

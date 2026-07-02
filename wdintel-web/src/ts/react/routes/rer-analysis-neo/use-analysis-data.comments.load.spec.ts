@@ -71,7 +71,9 @@ function buildMessage(): InboxMessage {
 
 describe('loadMissingMessageCommentsForMessages', () => {
   it('caches failed user lookups as null so repeated loads do not retry the same login', async () => {
-    fetchMessageComments.mockResolvedValue({ data: [{ messageId: 42, comments: [buildComment({ login: 'missing-login' })] }] });
+    fetchMessageComments.mockResolvedValue({
+      data: [{ messageId: 42, comments: [buildComment({ login: 'missing-login' })] }],
+    });
     fetchUserInfo.mockRejectedValue(new Error('missing'));
 
     const setUsers = vi.fn();
@@ -110,7 +112,9 @@ describe('loadMissingMessageCommentsForMessages', () => {
   });
 
   it('does not surface stale per-login lookup failures after the request version changes', async () => {
-    fetchMessageComments.mockResolvedValue({ data: [{ messageId: 42, comments: [buildComment({ login: 'stale-login' })] }] });
+    fetchMessageComments.mockResolvedValue({
+      data: [{ messageId: 42, comments: [buildComment({ login: 'stale-login' })] }],
+    });
     fetchUserInfo.mockRejectedValue(new Error('stale'));
 
     const setUsers = vi.fn();

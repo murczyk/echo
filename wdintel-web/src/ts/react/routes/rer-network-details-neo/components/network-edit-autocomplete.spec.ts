@@ -3,7 +3,10 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { networkEditLookupFilterOptions, type NetworkEditLookupOption } from './network-edit-autocomplete';
+import {
+  networkEditLookupFilterOptions,
+  type NetworkEditLookupOption,
+} from './network-edit-autocomplete';
 
 function option(id: number, label: string): NetworkEditLookupOption {
   return { id, label };
@@ -39,7 +42,9 @@ describe('network edit autocomplete helpers', () => {
   });
 
   it('limits the result set to twenty options', () => {
-    const options = Array.from({ length: 24 }, (_unused, index) => option(index + 1, `144 мсд ${index + 1}`));
+    const options = Array.from({ length: 24 }, (_unused, index) =>
+      option(index + 1, `144 мсд ${index + 1}`),
+    );
 
     const result = networkEditLookupFilterOptions(options, { inputValue: '144 мсд' });
 

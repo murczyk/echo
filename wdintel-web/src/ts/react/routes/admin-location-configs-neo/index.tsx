@@ -1,4 +1,19 @@
-import { Card, CardContent, Checkbox, FormControl, ListItemText, MenuItem, Select, SelectChangeEvent, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import {
+  Card,
+  CardContent,
+  Checkbox,
+  FormControl,
+  ListItemText,
+  MenuItem,
+  Select,
+  SelectChangeEvent,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import { PageLoadingState } from '../../components/PageLoadingState';
@@ -55,7 +70,7 @@ export function AdminLocationConfigsNeoPage() {
           editedConfigs: item.selectedConfigs || [],
           isSaving: false,
           saveError: null,
-        }))
+        })),
       );
       setLoadStatus('success');
     } catch (error) {
@@ -79,8 +94,8 @@ export function AdminLocationConfigsNeoPage() {
               editedConfigs: selected,
               saveError: null,
             }
-          : row
-      )
+          : row,
+      ),
     );
   }
 
@@ -93,8 +108,8 @@ export function AdminLocationConfigsNeoPage() {
               isSaving: true,
               saveError: null,
             }
-          : entry
-      )
+          : entry,
+      ),
     );
 
     try {
@@ -109,8 +124,8 @@ export function AdminLocationConfigsNeoPage() {
                 isSaving: false,
                 saveError: null,
               }
-            : entry
-        )
+            : entry,
+        ),
       );
     } catch (error) {
       const saveError = formatErrorMessage(error);
@@ -122,8 +137,8 @@ export function AdminLocationConfigsNeoPage() {
                 isSaving: false,
                 saveError,
               }
-            : entry
-        )
+            : entry,
+        ),
       );
     }
   }
@@ -137,19 +152,21 @@ export function AdminLocationConfigsNeoPage() {
           </Typography>
 
           <Typography color="text.secondary">
-            Оберіть один або кілька регіональних JSON-файлів, у яких ECHO шукатиме населені пункти для кожної смуги відповідальності. Порожній вибір використовує набір сервера за замовчуванням.
+            Оберіть один або кілька регіональних JSON-файлів, у яких ECHO шукатиме населені пункти
+            для кожної смуги відповідальності. Порожній вибір використовує набір сервера за
+            замовчуванням.
           </Typography>
 
-          {loadStatus === 'loading' ? (
-            <PageLoadingState />
-          ) : null}
+          {loadStatus === 'loading' ? <PageLoadingState /> : null}
 
           {loadStatus === 'error' ? (
             <PowerAlert severity="error">{loadError || 'Помилка завантаження'}</PowerAlert>
           ) : null}
 
           {loadStatus === 'success' && availableConfigs.length === 0 ? (
-            <PowerAlert severity="warning">У каталозі settlements_json немає доступних регіональних файлів.</PowerAlert>
+            <PowerAlert severity="warning">
+              У каталозі settlements_json немає доступних регіональних файлів.
+            </PowerAlert>
           ) : null}
 
           {loadStatus === 'success' && availableConfigs.length > 0 ? (
@@ -171,7 +188,7 @@ export function AdminLocationConfigsNeoPage() {
                 {rows.map((row) => {
                   const isChanged = !areEqualStringArrays(
                     row.selectedConfigs || [],
-                    row.editedConfigs || []
+                    row.editedConfigs || [],
                   );
                   return (
                     <TableRow key={row.aorId}>

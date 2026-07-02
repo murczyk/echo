@@ -82,7 +82,9 @@ function normalizeFrequencyLabel(value: string): string {
 }
 
 function collectUniqueLabels(values: string[]): string | null {
-  const uniqueValues = [...new Set(values.map((value) => normalizeText(value)).filter((value) => value !== ''))];
+  const uniqueValues = [
+    ...new Set(values.map((value) => normalizeText(value)).filter((value) => value !== '')),
+  ];
   if (uniqueValues.length === 0) return null;
   if (uniqueValues.length === 1) return uniqueValues[0];
   return uniqueValues.join(', ');
@@ -99,18 +101,22 @@ function encryptionLabelFromCandidate(candidate: string): string | null {
   const normalized = candidate.toUpperCase();
 
   if (normalized.includes('ARC40')) return 'ARC40';
-  if (normalized.includes('AES256') || normalized.includes('AES-256') || normalized.includes('AES 256')) return 'AES256';
+  if (
+    normalized.includes('AES256') ||
+    normalized.includes('AES-256') ||
+    normalized.includes('AES 256')
+  )
+    return 'AES256';
 
   return null;
 }
-
 
 export function encryptionLabelFromKey(
   key: EncryptionKeyData,
   encryptionsById: Map<number, string>,
 ): string | null {
   const candidates = [
-    key.encryptionId ? encryptionsById.get(key.encryptionId) ?? null : null,
+    key.encryptionId ? (encryptionsById.get(key.encryptionId) ?? null) : null,
     key.description,
     key.key,
     key.keyHash,
@@ -133,7 +139,9 @@ export function encryptionLabelFromKeys(
 ): string {
   const labels = keys
     .map((key) =>
-      typeof key === 'string' ? encryptionLabelFromCandidate(key) : encryptionLabelFromKey(key, encryptionsById),
+      typeof key === 'string'
+        ? encryptionLabelFromCandidate(key)
+        : encryptionLabelFromKey(key, encryptionsById),
     )
     .filter((label): label is string => label !== null);
 
@@ -210,7 +218,9 @@ function sortNetworkFreqsByFrequencyOrder(freqs: NetworkFreqsRes[]): NetworkFreq
 
 const TABLE_SORT_COLUMNS = new Set(['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount']);
 const UK_COLLATOR = new Intl.Collator('uk', { sensitivity: 'base', numeric: true });
-export const DEFAULT_NETWORK_FREQ_SORTING: NetworkFreqTableSortingItem[] = [{ id: 'displayFreq', desc: false }];
+export const DEFAULT_NETWORK_FREQ_SORTING: NetworkFreqTableSortingItem[] = [
+  { id: 'displayFreq', desc: false },
+];
 
 function getRowIsActive(row: NetworkFreqTableRow): boolean {
   return row.kind === 'group' ? row.isActive : row.freq.isActive;
@@ -255,11 +265,17 @@ function compareNullableNumber(left: number | null, right: number | null): numbe
   return left - right;
 }
 
-function getPrimarySortingItem(sorting: NetworkFreqTableSortingItem[]): NetworkFreqTableSortingItem {
+function getPrimarySortingItem(
+  sorting: NetworkFreqTableSortingItem[],
+): NetworkFreqTableSortingItem {
   return sorting.find((item) => TABLE_SORT_COLUMNS.has(item.id)) ?? DEFAULT_NETWORK_FREQ_SORTING[0];
 }
 
-function compareRowsBySortingItem(left: NetworkFreqTableRow, right: NetworkFreqTableRow, sorting: NetworkFreqTableSortingItem): number {
+function compareRowsBySortingItem(
+  left: NetworkFreqTableRow,
+  right: NetworkFreqTableRow,
+  sorting: NetworkFreqTableSortingItem,
+): number {
   let result = 0;
 
   switch (sorting.id) {
@@ -363,7 +379,9 @@ export function sortNetworkFreqRowsByTableOrder(
 ): NetworkFreqTableRow[] {
   const segments = buildNetworkFreqRowSegments(rows);
 
-  segments.sort((left, right) => compareNetworkFreqTableRows(left.row, right.row, sorting, statusFilterValue));
+  segments.sort((left, right) =>
+    compareNetworkFreqTableRows(left.row, right.row, sorting, statusFilterValue),
+  );
 
   return flattenNetworkFreqRowSegments(segments);
 }
@@ -377,10 +395,15 @@ function buildGroupRow(
   encryptionsById: Map<number, string>,
   callsignsById: Map<number, string[]>,
 ): NetworkFreqGroupRow {
-    const firstFreq = freqs[0] ?? null;
-    const typeLabels = freqs.map((freq) => freq.modulation || 'Не визначено');
+  const firstFreq = freqs[0] ?? null;
+  const typeLabels = freqs.map((freq) => freq.modulation || 'Не визначено');
   const encryptionLabels = freqs.map((freq) =>
-    encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
+    encryptionLabelFromKeys(
+      freq.encryptionKeys ?? [],
+      encryptionsById,
+      freq.encryptionId,
+      freq.encryption,
+    ),
   );
   const counts = freqs.map((freq) => freq.messageCount);
   const lastDatetime = freqs.reduce<number | null>((current, freq) => {
@@ -398,7 +421,10 @@ function buildGroupRow(
     typeLabel: collectUniqueLabels(typeLabels) ?? 'Змішано',
     encryptionLabel: collectUniqueLabels(encryptionLabels) ?? 'Змішано',
     messageCount: counts.reduce((sum, value) => sum + value, 0),
-    callsignLabel: joinCallsignsByFreqIds(freqs.map((freq) => freq.networkFreqId), callsignsById),
+    callsignLabel: joinCallsignsByFreqIds(
+      freqs.map((freq) => freq.networkFreqId),
+      callsignsById,
+    ),
     lastDatetime,
     isActive: freqs.every((freq) => freq.isActive),
     sortFreqUnits: firstFreq ? parseNetworkFreqUnits(firstFreq.freq) : null,
@@ -419,7 +445,12 @@ function buildFreqRow(
     freq,
     displayFreq: normalizeFrequencyLabel(freq.freq),
     typeLabel: freq.modulation || 'Не визначено',
-    encryptionLabel: encryptionLabelFromKeys(freq.encryptionKeys ?? [], encryptionsById, freq.encryptionId, freq.encryption),
+    encryptionLabel: encryptionLabelFromKeys(
+      freq.encryptionKeys ?? [],
+      encryptionsById,
+      freq.encryptionId,
+      freq.encryption,
+    ),
     callsignLabel: joinCallsignsByFreqIds([freq.networkFreqId], callsignsById),
     sortFreqUnits: parseNetworkFreqUnits(freq.freq),
     sortNetworkFreqId: freq.networkFreqId,
@@ -450,7 +481,11 @@ export function buildNetworkFreqRows(
     while (cursor < sortedFreqs.length) {
       const nextFreq = sortedFreqs[cursor];
       const nextUnits = parseNetworkFreqUnits(nextFreq.freq);
-      if (nextUnits === null || nextUnits - startUnits > GROUP_SPREAD_UNITS || nextFreq.isActive !== startFreq.isActive) {
+      if (
+        nextUnits === null ||
+        nextUnits - startUnits > GROUP_SPREAD_UNITS ||
+        nextFreq.isActive !== startFreq.isActive
+      ) {
         break;
       }
       cluster.push(nextFreq);

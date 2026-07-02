@@ -58,7 +58,13 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
     <Box className={`palitras-control layer-switch-control ${isCollapsed ? 'collapsed' : ''}`}>
       <Box className="palitras-control-header">
         {isCollapsed ? (
-          <Badge color="error" variant="dot" invisible={!showLayersBadge} overlap="circular" className="layer-switch-toggle-badge">
+          <Badge
+            color="error"
+            variant="dot"
+            invisible={!showLayersBadge}
+            overlap="circular"
+            className="layer-switch-toggle-badge"
+          >
             <IconButton
               className="palitras-palette-icon layer-switch-toggle-icon"
               onClick={toggleCollapsed}
@@ -90,7 +96,9 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
           <LayerRow
             checked={props.features.palitrasEnabled}
             label="Палітри"
-            onClick={() => props.onFeatureToggle('palitrasEnabled', !props.features.palitrasEnabled)}
+            onClick={() =>
+              props.onFeatureToggle('palitrasEnabled', !props.features.palitrasEnabled)
+            }
             type="checkbox"
           />
           <LayerRow

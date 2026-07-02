@@ -11,7 +11,8 @@ type ReadXlsxFileWithRuntimeSheetsOption = (
   },
 ) => Promise<Array<{ sheet: string; data: unknown[][] }>>;
 
-const readXlsxFileWithRuntimeSheetsOption = readXlsxFile as unknown as ReadXlsxFileWithRuntimeSheetsOption;
+const readXlsxFileWithRuntimeSheetsOption =
+  readXlsxFile as unknown as ReadXlsxFileWithRuntimeSheetsOption;
 
 // `read-excel-file` does not support row-range parsing, so the file-size cap
 // plus worker isolation are the primary DoS mitigations for previewing.
@@ -34,9 +35,7 @@ export type XlsxPreviewResult = {
 };
 
 export type XlsxPreviewErrorCode =
-  | 'XLSX_FILE_TOO_LARGE'
-  | 'XLSX_MALFORMED_WORKBOOK'
-  | 'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE';
+  'XLSX_FILE_TOO_LARGE' | 'XLSX_MALFORMED_WORKBOOK' | 'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE';
 
 export class XlsxPreviewError extends Error {
   constructor(
@@ -61,13 +60,14 @@ export function formatXlsxPreviewErrorMessage(error: string | null): string {
   }
 }
 
-export function previewXlsxRows(rawRows: unknown[][]): Pick<
-  XlsxPreviewSheet,
-  'rows' | 'rowCount' | 'columnCount' | 'truncated'
-> {
+export function previewXlsxRows(
+  rawRows: unknown[][],
+): Pick<XlsxPreviewSheet, 'rows' | 'rowCount' | 'columnCount' | 'truncated'> {
   const rowCount = rawRows.length;
   const rawColumnCount = rawRows.reduce((max, row) => Math.max(max, row.length), 0);
-  const rows = rawRows.slice(0, MAX_XLSX_ROWS).map((row) => row.slice(0, MAX_XLSX_COLUMNS).map(normalizeCellValue));
+  const rows = rawRows
+    .slice(0, MAX_XLSX_ROWS)
+    .map((row) => row.slice(0, MAX_XLSX_COLUMNS).map(normalizeCellValue));
 
   return {
     rows,
@@ -113,20 +113,36 @@ async function buildXlsxPreviewFromWorkbook(
         sourceSheetCount = availableSheetCount;
         try {
           workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, {
-            sheets: Array.from({ length: Math.min(availableSheetCount, MAX_XLSX_SHEETS) }, (_, index) => index + 1),
+            sheets: Array.from(
+              { length: Math.min(availableSheetCount, MAX_XLSX_SHEETS) },
+              (_, index) => index + 1,
+            ),
           });
         } catch (retryError) {
-          throw new XlsxPreviewError(classifyXlsxError(retryError), messageFromError(retryError, 'Не вдалося відкрити XLSX'));
+          throw new XlsxPreviewError(
+            classifyXlsxError(retryError),
+            messageFromError(retryError, 'Не вдалося відкрити XLSX'),
+          );
         }
       } else {
-        throw new XlsxPreviewError(classifyXlsxError(error), messageFromError(error, 'Не вдалося відкрити XLSX'));
+        throw new XlsxPreviewError(
+          classifyXlsxError(error),
+          messageFromError(error, 'Не вдалося відкрити XLSX'),
+        );
       }
     } else {
-      throw new XlsxPreviewError(classifyXlsxError(error), messageFromError(error, 'Не вдалося відкрити XLSX'));
+      throw new XlsxPreviewError(
+        classifyXlsxError(error),
+        messageFromError(error, 'Не вдалося відкрити XLSX'),
+      );
     }
   }
 
-  if (sheetNames.length === 0 && workbookSheets.length === MAX_XLSX_SHEETS && sourceSheetCount == null) {
+  if (
+    sheetNames.length === 0 &&
+    workbookSheets.length === MAX_XLSX_SHEETS &&
+    sourceSheetCount == null
+  ) {
     try {
       await readXlsxFileWithRuntimeSheetsOption(buffer, { sheets: [MAX_XLSX_SHEETS + 1] });
       sourceSheetCount = MAX_XLSX_SHEETS + 1;
@@ -138,7 +154,10 @@ async function buildXlsxPreviewFromWorkbook(
   const sheets = workbookSheets.map((currentSheet, index) => {
     const preview = previewXlsxRows(currentSheet.data);
     return {
-      name: sheetNames.length > 0 ? currentSheet.sheet ?? sheetNames[index] ?? `Sheet ${index + 1}` : `Sheet ${index + 1}`,
+      name:
+        sheetNames.length > 0
+          ? (currentSheet.sheet ?? sheetNames[index] ?? `Sheet ${index + 1}`)
+          : `Sheet ${index + 1}`,
       rows: preview.rows,
       rowCount: preview.rowCount,
       columnCount: preview.columnCount,
@@ -147,7 +166,10 @@ async function buildXlsxPreviewFromWorkbook(
   });
 
   if (sheets.length === 0) {
-    throw new XlsxPreviewError('XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE', 'XLSX workbook structure is unsupported');
+    throw new XlsxPreviewError(
+      'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE',
+      'XLSX workbook structure is unsupported',
+    );
   }
 
   const previewLimitedBySheetCap = sourceSheetCount != null && sourceSheetCount > MAX_XLSX_SHEETS;
@@ -171,7 +193,10 @@ function normalizeCellValue(value: unknown): string {
 function classifyXlsxError(error: unknown): XlsxPreviewErrorCode {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
 
-  if (message.includes('invalid zip data') || (message.includes('zip') && message.includes('invalid'))) {
+  if (
+    message.includes('invalid zip data') ||
+    (message.includes('zip') && message.includes('invalid'))
+  ) {
     return 'XLSX_MALFORMED_WORKBOOK';
   }
 

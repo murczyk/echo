@@ -58,7 +58,10 @@ function splitLines(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-function buildKeywordRequest(form: KeywordFormState): { errors: Record<string, string>; req: TagKeywordAddReq | null } {
+function buildKeywordRequest(form: KeywordFormState): {
+  errors: Record<string, string>;
+  req: TagKeywordAddReq | null;
+} {
   const errors: Record<string, string> = {};
   const keyword = form.keyword.trim();
   if (!keyword) {
@@ -178,7 +181,12 @@ function FormHeader(props: { title: string; subtitle?: string | null; onBack: ()
   return <FormPageHeader title={props.title} subtitle={props.subtitle} onBack={props.onBack} />;
 }
 
-function FormActions(props: { saving: boolean; isNew: boolean; onSave: () => void; onBack: () => void }) {
+function FormActions(props: {
+  saving: boolean;
+  isNew: boolean;
+  onSave: () => void;
+  onBack: () => void;
+}) {
   return (
     <div className="flex gap-3">
       <PowerButton variant="outlined" onClick={props.onBack} disabled={props.saving}>
@@ -207,7 +215,10 @@ function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps
   const [tagId, setTagId] = useState<number | null>(null);
   const [keywordId, setKeywordId] = useState<number | null>(null);
 
-  const resolvedTagId = useMemo(() => parseId(props.tagId) ?? parseId(getQueryParam('tagId')), [props.tagId]);
+  const resolvedTagId = useMemo(
+    () => parseId(props.tagId) ?? parseId(getQueryParam('tagId')),
+    [props.tagId],
+  );
   const resolvedKeywordId = useMemo(
     () => parseId(props.keywordId) ?? parseId(getQueryParam('keywordId')),
     [props.keywordId],
@@ -289,7 +300,10 @@ function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps
       }
       navigateWithinSpa(getBackToPath(effectiveTagId));
     } catch (err) {
-      setActionStatus({ kind: 'error', message: `Не вдалося зберегти ключове слово: ${formatErrorMessage(err)}` });
+      setActionStatus({
+        kind: 'error',
+        message: `Не вдалося зберегти ключове слово: ${formatErrorMessage(err)}`,
+      });
     } finally {
       setSaving(false);
     }

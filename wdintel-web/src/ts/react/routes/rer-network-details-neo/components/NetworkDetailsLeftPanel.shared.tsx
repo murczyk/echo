@@ -3,7 +3,10 @@ import type { ReactNode } from 'react';
 
 import type { Network } from '../../../../../Bindings';
 import { NO_DATA_LABEL, formatUtcDateOnly } from '../../../utils/misc';
-import { formatAorSummaryText, normalizeLookupName } from '../use-rer-network-details-neo-page.shared';
+import {
+  formatAorSummaryText,
+  normalizeLookupName,
+} from '../use-rer-network-details-neo-page.shared';
 
 export type Placement = 'left' | 'top';
 
@@ -34,7 +37,11 @@ export function formatUnitLabel(unitCount: number): string {
   return unitCount === 1 ? 'Підрозділ' : 'Підрозділи';
 }
 
-export function formatActivityLabel(network: Network | null, statusTone: 'success' | 'warning', statusLabel: string): string | null {
+export function formatActivityLabel(
+  network: Network | null,
+  statusTone: 'success' | 'warning',
+  statusLabel: string,
+): string | null {
   if (!network) {
     return null;
   }
@@ -84,7 +91,10 @@ export function buildMainFields({
       label: formatUnitLabel(unitNames.length),
       value:
         unitNames.length > 0 ? (
-          <Typography variant="body2" sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+          <Typography
+            variant="body2"
+            sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+          >
             {unitNames.join(', ')}
           </Typography>
         ) : (
@@ -103,7 +113,12 @@ export function buildMainFields({
       label: 'Смуги',
       value:
         aorVisible.length > 0 ? (
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ flexWrap: 'wrap', alignItems: 'center' }}
+          >
             {aorVisible.map((item) => (
               <Chip key={item.id} size="small" label={item.label} />
             ))}
@@ -133,8 +148,17 @@ export function buildMainFields({
             {formatUtcDateOnly(network.activeFrom)} — досі
           </Typography>
         ) : (
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-            <Chip size="small" color={statusTone === 'success' ? 'success' : 'warning'} label={statusLabel} />
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ flexWrap: 'wrap', alignItems: 'center' }}
+          >
+            <Chip
+              size="small"
+              color={statusTone === 'success' ? 'success' : 'warning'}
+              label={statusLabel}
+            />
           </Stack>
         ),
     },
@@ -153,19 +177,56 @@ export function buildOperationalFields({
   postItems: Array<{ id: number; label: string }>;
 }): FieldConfig[] {
   return [
-    { key: 'purpose', label: 'Призначення', value: <Typography variant="body2">{normalizeLookupName(network?.purpose)}</Typography> },
-    { key: 'range', label: 'Діапазон', value: <Typography variant="body2">{rangeLabel}</Typography> },
-    { key: 'transfer', label: 'Тип передачі', value: <Typography variant="body2">{transferTypeLabel}</Typography> },
-    { key: 'mode', label: 'Режим', value: <Typography variant="body2">{normalizeLookupName(network?.operationMode)}</Typography> },
-    { key: 'type', label: 'Характер', value: <Typography variant="body2">{normalizeLookupName(network?.operationType)}</Typography> },
-    { key: 'period', label: 'Період функціонування', value: <Typography variant="body2">{normalizeLookupName(network?.operationPeriod)}</Typography> },
-    { key: 'autoArchive', label: 'Автоархівування', value: <Typography variant="body2">{network?.doNotArchive ? 'Вимкнено' : 'Дозволено'}</Typography> },
+    {
+      key: 'purpose',
+      label: 'Призначення',
+      value: <Typography variant="body2">{normalizeLookupName(network?.purpose)}</Typography>,
+    },
+    {
+      key: 'range',
+      label: 'Діапазон',
+      value: <Typography variant="body2">{rangeLabel}</Typography>,
+    },
+    {
+      key: 'transfer',
+      label: 'Тип передачі',
+      value: <Typography variant="body2">{transferTypeLabel}</Typography>,
+    },
+    {
+      key: 'mode',
+      label: 'Режим',
+      value: <Typography variant="body2">{normalizeLookupName(network?.operationMode)}</Typography>,
+    },
+    {
+      key: 'type',
+      label: 'Характер',
+      value: <Typography variant="body2">{normalizeLookupName(network?.operationType)}</Typography>,
+    },
+    {
+      key: 'period',
+      label: 'Період функціонування',
+      value: (
+        <Typography variant="body2">{normalizeLookupName(network?.operationPeriod)}</Typography>
+      ),
+    },
+    {
+      key: 'autoArchive',
+      label: 'Автоархівування',
+      value: (
+        <Typography variant="body2">{network?.doNotArchive ? 'Вимкнено' : 'Дозволено'}</Typography>
+      ),
+    },
     {
       key: 'posts',
       label: 'Пости',
       value:
         postItems.length > 0 ? (
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ flexWrap: 'wrap', alignItems: 'center' }}
+          >
             {postItems.map((item) => (
               <Chip key={item.id} size="small" label={item.label} />
             ))}
@@ -179,23 +240,34 @@ export function buildOperationalFields({
     {
       key: 'radio',
       label: 'Радіостанція',
-      value:
-        network?.radioStation?.trim() ? (
-          <Typography variant="body2">{normalizeLookupName(network.radioStation)}</Typography>
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            {NO_DATA_LABEL}
-          </Typography>
-        ),
+      value: network?.radioStation?.trim() ? (
+        <Typography variant="body2">{normalizeLookupName(network.radioStation)}</Typography>
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          {NO_DATA_LABEL}
+        </Typography>
+      ),
     },
   ];
 }
 
 export function buildAdditionalFields({ network }: { network: Network | null }): FieldConfig[] {
   return [
-    { key: 'created', label: 'Створено', value: <Typography variant="body2">{formatUtcDateOnly(network?.createdAt)}</Typography> },
-    { key: 'updated', label: 'Оновлено', value: <Typography variant="body2">{formatUtcDateOnly(network?.lastUpdatedAt)}</Typography> },
-    { key: 'operator', label: 'Оператор', value: <Typography variant="body2">{normalizeLookupName(network?.lastUpdatedBy)}</Typography> },
+    {
+      key: 'created',
+      label: 'Створено',
+      value: <Typography variant="body2">{formatUtcDateOnly(network?.createdAt)}</Typography>,
+    },
+    {
+      key: 'updated',
+      label: 'Оновлено',
+      value: <Typography variant="body2">{formatUtcDateOnly(network?.lastUpdatedAt)}</Typography>,
+    },
+    {
+      key: 'operator',
+      label: 'Оператор',
+      value: <Typography variant="body2">{normalizeLookupName(network?.lastUpdatedBy)}</Typography>,
+    },
   ];
 }
 
@@ -209,7 +281,12 @@ function buildMainSummaryValues(snapshot: MainInfoSnapshot): string[] {
   ].filter(isVisibleCopyValue);
 }
 
-function buildOperationalSummaryValues(network: Network | null, rangeLabel: string, transferTypeLabel: string, postItems: Array<{ id: number; label: string }>): string[] {
+function buildOperationalSummaryValues(
+  network: Network | null,
+  rangeLabel: string,
+  transferTypeLabel: string,
+  postItems: Array<{ id: number; label: string }>,
+): string[] {
   return [
     normalizeLookupName(network?.purpose),
     rangeLabel,
@@ -263,8 +340,18 @@ export function buildCollapsedTopSummaryItems({
   const activityValue = snapshot.activityLabel ?? NO_DATA_LABEL;
   const activityTone: SummaryItem['tone'] = statusTone === 'success' ? 'success' : 'default';
   return [
-    { key: 'location', label: 'Район функціонування', value: normalizeLookupName(snapshot.location), minWidth: 0 },
-    { key: 'aor', label: 'Смуги', value: formatAorSummaryText(snapshot.aorLabels, snapshot.aorCollapsedCount), minWidth: 0 },
+    {
+      key: 'location',
+      label: 'Район функціонування',
+      value: normalizeLookupName(snapshot.location),
+      minWidth: 0,
+    },
+    {
+      key: 'aor',
+      label: 'Смуги',
+      value: formatAorSummaryText(snapshot.aorLabels, snapshot.aorCollapsedCount),
+      minWidth: 0,
+    },
     {
       key: 'callsigns',
       label: 'Склад кореспондентів',
@@ -272,8 +359,18 @@ export function buildCollapsedTopSummaryItems({
       minWidth: 0,
     },
     { key: 'activity', label: 'Активність', value: activityValue, tone: activityTone, minWidth: 0 },
-    { key: 'created', label: 'Створено', value: formatUtcDateOnly(network?.createdAt), minWidth: 0 },
-    { key: 'operator', label: 'Оператор', value: normalizeLookupName(network?.lastUpdatedBy), minWidth: 0 },
+    {
+      key: 'created',
+      label: 'Створено',
+      value: formatUtcDateOnly(network?.createdAt),
+      minWidth: 0,
+    },
+    {
+      key: 'operator',
+      label: 'Оператор',
+      value: normalizeLookupName(network?.lastUpdatedBy),
+      minWidth: 0,
+    },
   ].filter((item) => isVisibleCopyValue(item.value) || item.key === 'callsigns');
 }
 
@@ -314,7 +411,12 @@ export function TopSummaryRow({ items }: { items: SummaryItem[] }) {
       {items.map((item) => {
         const label = item.label ?? COLLAPSED_SUMMARY_LABELS[item.key];
         const showLabel = label !== null;
-        const isHighPriority = item.key === 'unit' || item.key === 'location' || item.key === 'aor' || item.key === 'callsigns' || item.key === 'activity';
+        const isHighPriority =
+          item.key === 'unit' ||
+          item.key === 'location' ||
+          item.key === 'aor' ||
+          item.key === 'callsigns' ||
+          item.key === 'activity';
         const tokenSx = {
           display: 'inline-flex',
           alignItems: 'baseline',

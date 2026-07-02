@@ -17,7 +17,10 @@ import { RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR, toUpperCaseCallsign } from '../hel
 import { getUnitDisplayLabel } from '../../../utils/unit-search';
 import type { CallsignDraftRow, CallsignEditForm } from '../types';
 
-type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'fullName' | 'comment' | 'developing' | 'radioFreq'> & {
+type CommonFormValue = Pick<
+  CallsignDraftRow,
+  'callsign' | 'position' | 'fullName' | 'comment' | 'developing' | 'radioFreq'
+> & {
   unitId?: number;
   sourceId?: number | null;
 };
@@ -70,9 +73,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
     }
   };
 
-  const handleConfirmationSourcesChange = (
-    rawValue: string | readonly (string | number)[],
-  ) => {
+  const handleConfirmationSourcesChange = (rawValue: string | readonly (string | number)[]) => {
     if (!onCallsignAdditionalSourceIdsChange) return;
     onCallsignAdditionalSourceIdsChange(
       typeof rawValue === 'string' ? rawValue.split(',').map(Number) : rawValue.map(Number),
@@ -81,7 +82,8 @@ export function CallsignFormFields<T extends CommonFormValue>({
 
   const renderConfirmationSourcesValue = (selected: readonly (string | number)[]) => {
     const names = selected.map(
-      (sourceId) => sources.find((source) => source.id === Number(sourceId))?.name ?? `#${sourceId}`,
+      (sourceId) =>
+        sources.find((source) => source.id === Number(sourceId))?.name ?? `#${sourceId}`,
     );
     return names.length > 0 ? names.join(', ') : 'Оберіть підтвердження';
   };
@@ -89,7 +91,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
   return (
     <Stack spacing={spacing}>
       {controlsFirst && includeUnitSelect ? (
-        <Stack direction={{ xs: "column", md: "row" }} spacing={spacing}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={spacing}>
           <SearchableOptionAutocomplete
             label="Підрозділ"
             options={units}
@@ -104,12 +106,12 @@ export function CallsignFormFields<T extends CommonFormValue>({
             clearable={false}
           />
           {includeSourceSelect ? (
-            <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
+            <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
               <InputLabel id={sourceLabelId}>Основне джерело</InputLabel>
               <Select
                 labelId={sourceLabelId}
                 label="Основне джерело"
-                value={value.sourceId ?? ""}
+                value={value.sourceId ?? ''}
                 onChange={(event) => handleSourceChange(event.target.value)}
               >
                 <MenuItem value="">
@@ -126,10 +128,10 @@ export function CallsignFormFields<T extends CommonFormValue>({
         </Stack>
       ) : null}
       {controlsFirst && includeConfirmationSources ? (
-        <FormControl fullWidth size={compact ? "small" : "medium"} disabled={disabled}>
-          <InputLabel id={sourceLabelId + "-confirm"}>Підтвердження</InputLabel>
+        <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
+          <InputLabel id={sourceLabelId + '-confirm'}>Підтвердження</InputLabel>
           <Select
-            labelId={sourceLabelId + "-confirm"}
+            labelId={sourceLabelId + '-confirm'}
             label="Підтвердження"
             multiple
             value={callsignAdditionalSourceIds}
@@ -150,7 +152,9 @@ export function CallsignFormFields<T extends CommonFormValue>({
         <TextField
           label="Позивний"
           value={value.callsign}
-          onChange={(event) => onChange({ ...value, callsign: toUpperCaseCallsign(event.target.value) })}
+          onChange={(event) =>
+            onChange({ ...value, callsign: toUpperCaseCallsign(event.target.value) })
+          }
           disabled={disabled}
           fullWidth
           size={compact ? 'small' : 'medium'}
@@ -187,7 +191,11 @@ export function CallsignFormFields<T extends CommonFormValue>({
         size={compact ? 'small' : 'medium'}
       />
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={spacing} alignItems={{ md: 'center' }}>
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        spacing={spacing}
+        alignItems={{ md: 'center' }}
+      >
         <FormControl fullWidth size={compact ? 'small' : 'medium'}>
           <TextField
             label="Частота"

@@ -24,10 +24,7 @@ import {
 } from './use-rer-network-details-neo-page.shared';
 import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
-import {
-  parseDateInputExclusiveEndInTimeZone,
-  parseDateInputInTimeZone,
-} from '../../utils/misc';
+import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
 import {
   getPublicNetworkDetailsTab,
@@ -41,13 +38,17 @@ function buildOptions<T extends { id: number; name: string }>(items: T[]): Netwo
 }
 
 export function useRerNetworkDetailsNeoPage(networkId: number) {
-  const initialRequestedTab = typeof window === 'undefined' ? null : readRequestedNetworkDetailsTab(window.location.search);
-  const [requestedNetworkDetailsTab, setRequestedNetworkDetailsTab] = useState<string | null>(initialRequestedTab);
+  const initialRequestedTab =
+    typeof window === 'undefined' ? null : readRequestedNetworkDetailsTab(window.location.search);
+  const [requestedNetworkDetailsTab, setRequestedNetworkDetailsTab] = useState<string | null>(
+    initialRequestedTab,
+  );
   const [state, setState] = useState<NetworkDetailsNeoPageState>(() => ({
     ...EMPTY_STATE,
-    activeNetworkDetailsTab: initialRequestedTab === null
-      ? EMPTY_STATE.activeNetworkDetailsTab
-      : resolveRequestedNetworkDetailsTab(initialRequestedTab, true, true),
+    activeNetworkDetailsTab:
+      initialRequestedTab === null
+        ? EMPTY_STATE.activeNetworkDetailsTab
+        : resolveRequestedNetworkDetailsTab(initialRequestedTab, true, true),
   }));
   const pageReloadGeneration = useRef(0);
   const frequencyReloadGeneration = useRef(0);
@@ -60,7 +61,8 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints } =
+    useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -69,28 +71,56 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   const canDelete = useMemo(() => canDeleteNetwork(state.currentUser), [state.currentUser]);
   const canEdit = useMemo(() => canEditNetwork(state.currentUser), [state.currentUser]);
-  const canManageDescriptionActions = useMemo(() => canManageDescriptions(state.currentUser), [state.currentUser]);
-  const canDeleteCatalogCallsignAction = useMemo(() => canDeleteCatalogCallsign(state.currentUser), [state.currentUser]);
-  const canManageCallsignActions = useMemo(() => canManageNetworkCallsignActions(state.currentUser), [state.currentUser]);
-  const canViewActivityTab = useMemo(() => canViewNetworkActivityTab(state.currentUser), [state.currentUser]);
-  const canViewRelationsTab = useMemo(() => canViewNetworkRelationsTab(state.currentUser), [state.currentUser]);
+  const canManageDescriptionActions = useMemo(
+    () => canManageDescriptions(state.currentUser),
+    [state.currentUser],
+  );
+  const canDeleteCatalogCallsignAction = useMemo(
+    () => canDeleteCatalogCallsign(state.currentUser),
+    [state.currentUser],
+  );
+  const canManageCallsignActions = useMemo(
+    () => canManageNetworkCallsignActions(state.currentUser),
+    [state.currentUser],
+  );
+  const canViewActivityTab = useMemo(
+    () => canViewNetworkActivityTab(state.currentUser),
+    [state.currentUser],
+  );
+  const canViewRelationsTab = useMemo(
+    () => canViewNetworkRelationsTab(state.currentUser),
+    [state.currentUser],
+  );
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
-  const isAdmin = useMemo(() => (state.currentUser?.roles ?? []).includes('Admin'), [state.currentUser?.roles]);
+  const isAdmin = useMemo(
+    () => (state.currentUser?.roles ?? []).includes('Admin'),
+    [state.currentUser?.roles],
+  );
   const networkIdValue = state.network?.id ?? null;
 
-  const aorOptions = useMemo(() => buildOptions(sortNetworkAorsForDisplay(state.aors)), [state.aors]);
+  const aorOptions = useMemo(
+    () => buildOptions(sortNetworkAorsForDisplay(state.aors)),
+    [state.aors],
+  );
   const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
   const unitOptions = useMemo(() => buildOptions(selectableUnits), [selectableUnits]);
-  const postOptions = useMemo(() => buildOptions(state.posts.filter((post) => post.name.trim() !== '')), [state.posts]);
+  const postOptions = useMemo(
+    () => buildOptions(state.posts.filter((post) => post.name.trim() !== '')),
+    [state.posts],
+  );
 
   const confirmationDescriptions = useMemo(() => {
     const descriptions = state.network?.descriptions ?? [];
-    return sortDescriptionsByCreatedAtDesc(descriptions.filter((description) => description.descrType === 'Confirmation'));
+    return sortDescriptionsByCreatedAtDesc(
+      descriptions.filter((description) => description.descrType === 'Confirmation'),
+    );
   }, [state.network?.descriptions]);
 
   const signDescriptions = useMemo(() => {
     const descriptions = state.network?.descriptions ?? [];
-    return sortDescriptionsByCreatedAtDesc(descriptions.filter((description) => description.descrType === 'Sign'));
+    return sortDescriptionsByCreatedAtDesc(
+      descriptions.filter((description) => description.descrType === 'Sign'),
+    );
   }, [state.network?.descriptions]);
 
   const unitNames = useMemo(() => {
@@ -118,112 +148,187 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     loadCallsigns,
   });
 
-  const setRelationsSearch = useCallback((relationsSearch: string) => {
-    setState((current) => ({ ...current, relationsSearch }));
-  }, [setState]);
+  const setRelationsSearch = useCallback(
+    (relationsSearch: string) => {
+      setState((current) => ({ ...current, relationsSearch }));
+    },
+    [setState],
+  );
 
-  const setRelationsEnabledFreqs = useCallback((relationsEnabledFreqs: string[]) => {
-    setState((current) => ({ ...current, relationsEnabledFreqs: [...relationsEnabledFreqs] }));
-  }, [setState]);
+  const setRelationsEnabledFreqs = useCallback(
+    (relationsEnabledFreqs: string[]) => {
+      setState((current) => ({ ...current, relationsEnabledFreqs: [...relationsEnabledFreqs] }));
+    },
+    [setState],
+  );
 
-  const setRelationsMinIntensity = useCallback((relationsMinIntensity: number) => {
-    setState((current) => ({ ...current, relationsMinIntensity }));
-  }, [setState]);
+  const setRelationsMinIntensity = useCallback(
+    (relationsMinIntensity: number) => {
+      setState((current) => ({ ...current, relationsMinIntensity }));
+    },
+    [setState],
+  );
 
-  const setRelationsShowLabels = useCallback((relationsShowLabels: boolean) => {
-    setState((current) => ({ ...current, relationsShowLabels }));
-  }, [setState]);
+  const setRelationsShowLabels = useCallback(
+    (relationsShowLabels: boolean) => {
+      setState((current) => ({ ...current, relationsShowLabels }));
+    },
+    [setState],
+  );
 
-  const setRelationsSelectedNodeId = useCallback((relationsSelectedNodeId: string | null) => {
-    setState((current) => ({ ...current, relationsSelectedNodeId, relationsSelectedEdgeId: null }));
-  }, [setState]);
-
-  const setRelationsSelectedEdgeId = useCallback((relationsSelectedEdgeId: string | null) => {
-    setState((current) => ({ ...current, relationsSelectedEdgeId, relationsSelectedNodeId: null }));
-  }, [setState]);
-
-  const setRelationsSince = useCallback((relationsSince: string) => {
-    setState((current) => {
-      const next = normalizeNetworkRelationsSinceChange(current.relationsSince, current.relationsTill, relationsSince);
-      return {
+  const setRelationsSelectedNodeId = useCallback(
+    (relationsSelectedNodeId: string | null) => {
+      setState((current) => ({
         ...current,
-        ...next,
-        relationsLoaded: false,
-        relationsError: null,
-      };
-    });
-  }, [setState]);
+        relationsSelectedNodeId,
+        relationsSelectedEdgeId: null,
+      }));
+    },
+    [setState],
+  );
 
-  const setRelationsTill = useCallback((relationsTill: string) => {
-    setState((current) => {
-      const next = normalizeNetworkRelationsTillChange(current.relationsSince, current.relationsTill, relationsTill);
-      return {
+  const setRelationsSelectedEdgeId = useCallback(
+    (relationsSelectedEdgeId: string | null) => {
+      setState((current) => ({
         ...current,
-        ...next,
-        relationsLoaded: false,
-        relationsError: null,
-      };
-    });
-  }, [setState]);
+        relationsSelectedEdgeId,
+        relationsSelectedNodeId: null,
+      }));
+    },
+    [setState],
+  );
 
-  const setPelengSince = useCallback((pelengSince: string) => {
-    setState((current) => {
-      const next = normalizeNetworkPelengSinceChange(current.pelengSince, current.pelengTill, pelengSince);
-      return {
-        ...current,
-        ...next,
-        pelengPointsLoaded: false,
-        pelengPointsError: null,
-      };
-    });
-  }, [setState]);
+  const setRelationsSince = useCallback(
+    (relationsSince: string) => {
+      setState((current) => {
+        const next = normalizeNetworkRelationsSinceChange(
+          current.relationsSince,
+          current.relationsTill,
+          relationsSince,
+        );
+        return {
+          ...current,
+          ...next,
+          relationsLoaded: false,
+          relationsError: null,
+        };
+      });
+    },
+    [setState],
+  );
 
-  const setPelengTill = useCallback((pelengTill: string) => {
-    setState((current) => {
-      const next = normalizeNetworkPelengTillChange(current.pelengSince, current.pelengTill, pelengTill);
-      return {
-        ...current,
-        ...next,
-        pelengPointsLoaded: false,
-        pelengPointsError: null,
-      };
-    });
-  }, [setState]);
+  const setRelationsTill = useCallback(
+    (relationsTill: string) => {
+      setState((current) => {
+        const next = normalizeNetworkRelationsTillChange(
+          current.relationsSince,
+          current.relationsTill,
+          relationsTill,
+        );
+        return {
+          ...current,
+          ...next,
+          relationsLoaded: false,
+          relationsError: null,
+        };
+      });
+    },
+    [setState],
+  );
 
-  const setPelengSearch = useCallback((pelengSearch: string) => {
-    setState((current) => ({ ...current, pelengSearch }));
-  }, [setState]);
+  const setPelengSince = useCallback(
+    (pelengSince: string) => {
+      setState((current) => {
+        const next = normalizeNetworkPelengSinceChange(
+          current.pelengSince,
+          current.pelengTill,
+          pelengSince,
+        );
+        return {
+          ...current,
+          ...next,
+          pelengPointsLoaded: false,
+          pelengPointsError: null,
+        };
+      });
+    },
+    [setState],
+  );
 
-  const setPelengEnabledFreqs = useCallback((pelengEnabledFreqs: string[]) => {
-    setState((current) => ({ ...current, pelengEnabledFreqs: [...pelengEnabledFreqs] }));
-  }, [setState]);
+  const setPelengTill = useCallback(
+    (pelengTill: string) => {
+      setState((current) => {
+        const next = normalizeNetworkPelengTillChange(
+          current.pelengSince,
+          current.pelengTill,
+          pelengTill,
+        );
+        return {
+          ...current,
+          ...next,
+          pelengPointsLoaded: false,
+          pelengPointsError: null,
+        };
+      });
+    },
+    [setState],
+  );
 
-  const setPelengShowLabels = useCallback((pelengShowLabels: boolean) => {
-    setState((current) => ({ ...current, pelengShowLabels }));
-  }, [setState]);
+  const setPelengSearch = useCallback(
+    (pelengSearch: string) => {
+      setState((current) => ({ ...current, pelengSearch }));
+    },
+    [setState],
+  );
 
-  const setPelengSatelliteEnabled = useCallback((pelengSatelliteEnabled: boolean) => {
-    setState((current) => ({ ...current, pelengSatelliteEnabled }));
-  }, [setState]);
+  const setPelengEnabledFreqs = useCallback(
+    (pelengEnabledFreqs: string[]) => {
+      setState((current) => ({ ...current, pelengEnabledFreqs: [...pelengEnabledFreqs] }));
+    },
+    [setState],
+  );
 
-  const setPelengHeatmapEnabled = useCallback((pelengHeatmapEnabled: boolean) => {
-    setState((current) => ({ ...current, pelengHeatmapEnabled }));
-  }, [setState]);
+  const setPelengShowLabels = useCallback(
+    (pelengShowLabels: boolean) => {
+      setState((current) => ({ ...current, pelengShowLabels }));
+    },
+    [setState],
+  );
 
-  const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
-    setState((current) => {
-      if (current.activeNetworkDetailsTab === activeNetworkDetailsTab && current.callsignSectionMode === 'network') {
-        return current;
-      }
-      return {
-        ...current,
-        activeNetworkDetailsTab,
-        callsignSectionMode: 'network',
-      };
-    });
-    setRequestedNetworkDetailsTab(getPublicNetworkDetailsTab(activeNetworkDetailsTab));
-    updateCurrentNetworkDetailsTabUrl(activeNetworkDetailsTab, 'push');
-  }, [setState]);
+  const setPelengSatelliteEnabled = useCallback(
+    (pelengSatelliteEnabled: boolean) => {
+      setState((current) => ({ ...current, pelengSatelliteEnabled }));
+    },
+    [setState],
+  );
+
+  const setPelengHeatmapEnabled = useCallback(
+    (pelengHeatmapEnabled: boolean) => {
+      setState((current) => ({ ...current, pelengHeatmapEnabled }));
+    },
+    [setState],
+  );
+
+  const setActiveNetworkDetailsTab = useCallback(
+    (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
+      setState((current) => {
+        if (
+          current.activeNetworkDetailsTab === activeNetworkDetailsTab &&
+          current.callsignSectionMode === 'network'
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          activeNetworkDetailsTab,
+          callsignSectionMode: 'network',
+        };
+      });
+      setRequestedNetworkDetailsTab(getPublicNetworkDetailsTab(activeNetworkDetailsTab));
+      updateCurrentNetworkDetailsTabUrl(activeNetworkDetailsTab, 'push');
+    },
+    [setState],
+  );
 
   const relationsDateRangeValid = useMemo(() => {
     const since = parseDateInputInTimeZone(state.relationsSince);
@@ -232,8 +337,14 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     return since <= till;
   }, [state.relationsSince, state.relationsTill]);
 
-  const pelengSinceMs = useMemo(() => parseDateInputInTimeZone(state.pelengSince), [state.pelengSince]);
-  const pelengTillMs = useMemo(() => parseDateInputExclusiveEndInTimeZone(state.pelengTill), [state.pelengTill]);
+  const pelengSinceMs = useMemo(
+    () => parseDateInputInTimeZone(state.pelengSince),
+    [state.pelengSince],
+  );
+  const pelengTillMs = useMemo(
+    () => parseDateInputExclusiveEndInTimeZone(state.pelengTill),
+    [state.pelengTill],
+  );
   const pelengDateRangeValid = useMemo(() => {
     if (pelengSinceMs === null || pelengTillMs === null) return false;
     return pelengSinceMs <= pelengTillMs;
@@ -244,14 +355,28 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.activeNetworkDetailsTab !== 'frequencies') return;
     if (state.freqsLoaded || state.freqsLoading || state.freqsError !== null) return;
     void actions.loadFrequencies(networkIdValue);
-  }, [actions.loadFrequencies, networkIdValue, state.activeNetworkDetailsTab, state.freqsError, state.freqsLoaded, state.freqsLoading]);
+  }, [
+    actions.loadFrequencies,
+    networkIdValue,
+    state.activeNetworkDetailsTab,
+    state.freqsError,
+    state.freqsLoaded,
+    state.freqsLoading,
+  ]);
 
   useEffect(() => {
     if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'callsigns') return;
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
     void loadCallsigns(networkIdValue);
-  }, [loadCallsigns, networkIdValue, state.activeNetworkDetailsTab, state.callsignsError, state.callsignsLoaded, state.callsignsLoading]);
+  }, [
+    loadCallsigns,
+    networkIdValue,
+    state.activeNetworkDetailsTab,
+    state.callsignsError,
+    state.callsignsLoaded,
+    state.callsignsLoading,
+  ]);
 
   useEffect(() => {
     if (networkIdValue === null) return;
@@ -263,11 +388,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     const since = parseDateInputInTimeZone(state.relationsSince);
     const till = parseDateInputExclusiveEndInTimeZone(state.relationsTill);
     if (since === null || till === null) return;
-    void loadRelations(
-      networkIdValue,
-      since,
-      till,
-    );
+    void loadRelations(networkIdValue, since, till);
   }, [
     loadRelations,
     state.activeNetworkDetailsTab,
@@ -288,7 +409,12 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (state.activeNetworkDetailsTab !== 'activity') return;
     if (!state.currentUserLoaded) return;
     if (!canViewActivityTab) return;
-    if (state.networkActivityLoaded || state.networkActivityLoading || state.networkActivityError !== null) return;
+    if (
+      state.networkActivityLoaded ||
+      state.networkActivityLoading ||
+      state.networkActivityError !== null
+    )
+      return;
     void loadNetworkActivity(networkIdValue);
   }, [
     canViewActivityTab,
@@ -309,7 +435,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       state.pelengPointsRequestedFrom === pelengSinceMs &&
       state.pelengPointsRequestedTo === pelengTillMs;
 
-    if (pelengWindowMatched && (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)) return;
+    if (
+      pelengWindowMatched &&
+      (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)
+    )
+      return;
     if (!pelengDateRangeValid) return;
     void loadPelengPoints(networkIdValue, pelengSinceMs ?? 0, pelengTillMs);
   }, [
@@ -365,7 +495,11 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       canResolveGatedTabs ? canViewRelationsTab : true,
     );
 
-    setState((current) => (current.activeNetworkDetailsTab === nextTab ? current : { ...current, activeNetworkDetailsTab: nextTab }));
+    setState((current) =>
+      current.activeNetworkDetailsTab === nextTab
+        ? current
+        : { ...current, activeNetworkDetailsTab: nextTab },
+    );
 
     if (typeof window === 'undefined') return;
     const canonicalTab = getPublicNetworkDetailsTab(nextTab);

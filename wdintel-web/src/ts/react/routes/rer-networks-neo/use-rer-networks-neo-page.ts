@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
-import type { AreaOfResponsibility, EncryptionRec, ListNetworksReq, Network, Unit } from '../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  EncryptionRec,
+  ListNetworksReq,
+  Network,
+  Unit,
+} from '../../../../Bindings';
 import {
   buildNetworkRowView,
   createDefaultNetworksFilterState,
@@ -11,11 +17,19 @@ import {
   sortNetworkAorsForDisplay,
   type NetworksFilterState,
 } from './helpers';
-import type { NetworksQuerySnapshot, UiMessage, ActivityByNetworkId } from './use-rer-networks-neo-page.types';
+import type {
+  NetworksQuerySnapshot,
+  UiMessage,
+  ActivityByNetworkId,
+} from './use-rer-networks-neo-page.types';
 import { createRerNetworksNeoLoadActions } from './use-rer-networks-neo-page.load';
 import { createRerNetworksNeoReportActions } from './use-rer-networks-neo-page.reports';
 import { createRerNetworksNeoMutationActions } from './use-rer-networks-neo-page.mutations';
-import { formatErrorMessage, getNetworkPermissionsFromRoles, isSameSidebarUnitFilter } from './use-rer-networks-neo-page.shared';
+import {
+  formatErrorMessage,
+  getNetworkPermissionsFromRoles,
+  isSameSidebarUnitFilter,
+} from './use-rer-networks-neo-page.shared';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
@@ -29,7 +43,10 @@ import { redirectToLogin } from '../../auth-redirect';
 
 export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
   const tableStateContext = useTableStateContext();
-  const shellPermissions = useMemo(() => getNetworkPermissionsFromRoles(authUserRoles), [authUserRoles]);
+  const shellPermissions = useMemo(
+    () => getNetworkPermissionsFromRoles(authUserRoles),
+    [authUserRoles],
+  );
   const columnFilters = useMemo(
     () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
     [tableStateContext.columnFilters],
@@ -45,11 +62,18 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
-  const [filters, setFilters] = useState<NetworksFilterState>(() => createDefaultNetworksFilterState());
+  const [filters, setFilters] = useState<NetworksFilterState>(() =>
+    createDefaultNetworksFilterState(),
+  );
   const [status, setStatus] = useState<UiMessage>(null);
-  const [statusCounts, setStatusCounts] = useState<{ active: number; inactive: number; archived: number } | null>(null);
+  const [statusCounts, setStatusCounts] = useState<{
+    active: number;
+    inactive: number;
+    archived: number;
+  } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = useState<SelectedSidebarUnitFilter | null>(null);
+  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
+    useState<SelectedSidebarUnitFilter | null>(null);
   const [bootstrapLoaded, setBootstrapLoaded] = useState(false);
   const [reportsMenuAnchorEl, setReportsMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [rowMenuAnchorEl, setRowMenuAnchorEl] = useState<HTMLElement | null>(null);
@@ -57,7 +81,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [downloadInFlight, setDownloadInFlight] = useState<'etalonka' | 'goi' | null>(null);
   const [reportTargetNetworkIds, setReportTargetNetworkIds] = useState<number[] | null>(null);
   const [reportTargetRequest, setReportTargetRequest] = useState<ListNetworksReq | null>(null);
-  const [etalonkaReport, setEtalonkaReport] = useState<NetworkEtalonkaReportState>(() => createDefaultNetworkEtalonkaReportState());
+  const [etalonkaReport, setEtalonkaReport] = useState<NetworkEtalonkaReportState>(() =>
+    createDefaultNetworkEtalonkaReportState(),
+  );
   const [editDialog, setEditDialog] = useState<NetworkUpsertForm | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -76,7 +102,9 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const networksLengthRef = useRef(0);
   const latestQuerySnapshotRef = useRef<NetworksQuerySnapshot | null>(null);
   const lastExecutedFullQueryKeyRef = useRef<string | null>(null);
-  const selectedSidebarUnitFilterRef = useRef<SelectedSidebarUnitFilter | null>(selectedSidebarUnitFilter);
+  const selectedSidebarUnitFilterRef = useRef<SelectedSidebarUnitFilter | null>(
+    selectedSidebarUnitFilter,
+  );
   const tableStateContextRef = useRef({
     globalFilter: tableStateContext.globalFilter,
     columnFilters: tableStateContext.columnFilters,
@@ -111,9 +139,16 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
 
   const unitsById = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
   const aorsById = useMemo(() => new Map(aors.map((aor) => [aor.id, aor])), [aors]);
-  const unitStatsView = useMemo(() => mergeNetworkUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
+  const unitStatsView = useMemo(
+    () => mergeNetworkUnitStatsWithUnits(unitStats, unitsById),
+    [unitStats, unitsById],
+  );
   const unitOptions = useMemo(
-    () => buildSelectableUnitOptions(units).map((unit) => ({ id: unit.id, label: getUnitDisplayLabel(unit) })),
+    () =>
+      buildSelectableUnitOptions(units).map((unit) => ({
+        id: unit.id,
+        label: getUnitDisplayLabel(unit),
+      })),
     [units],
   );
   const postOptions = useMemo(
@@ -126,7 +161,10 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     [posts],
   );
   const rows = useMemo(
-    () => networks.map((network) => buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId)),
+    () =>
+      networks.map((network) =>
+        buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId),
+      ),
     [activityByNetworkId, aorsById, networks, unitsById],
   );
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
@@ -153,7 +191,13 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         selectedSidebarUnitFilter,
       }),
     }),
-    [columnFilters, filters, selectedSidebarUnitFilter, tableStateContext.globalFilter, tableStateContext.sorting],
+    [
+      columnFilters,
+      filters,
+      selectedSidebarUnitFilter,
+      tableStateContext.globalFilter,
+      tableStateContext.sorting,
+    ],
   );
   const immediateQueryKey = useMemo(
     () =>
@@ -165,7 +209,14 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         showOnlyInvestigating: filters.showOnlyInvestigating,
         selectedSidebarUnitFilter,
       }),
-    [columnFilters, filters.showOnlyInvestigating, filters.status, filters.unitText, selectedSidebarUnitFilter, tableStateContext.sorting],
+    [
+      columnFilters,
+      filters.showOnlyInvestigating,
+      filters.status,
+      filters.unitText,
+      selectedSidebarUnitFilter,
+      tableStateContext.sorting,
+    ],
   );
 
   useEffect(() => {

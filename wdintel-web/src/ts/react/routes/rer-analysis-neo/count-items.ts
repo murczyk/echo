@@ -6,13 +6,12 @@ export function sortAndTakeTopAnalysisCountItems(items: AnalysisCountItem[]): An
 
   return [
     ...summaryItems,
-    ...detailItems
-      .sort((left, right) => {
-        if (right.count !== left.count) {
-          return right.count - left.count;
-        }
+    ...detailItems.sort((left, right) => {
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
 
-        return left.key.localeCompare(right.key, 'uk');
-      }),
+      return left.key.localeCompare(right.key, 'uk');
+    }),
   ];
 }

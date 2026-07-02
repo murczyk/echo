@@ -62,8 +62,21 @@ export function NetworkCallsignRelationsPanel({
 
   if (relationsError) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}>
+      <Box
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
+      >
+        <Stack
+          spacing={2}
+          sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}
+        >
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
           </Typography>
@@ -80,7 +93,17 @@ export function NetworkCallsignRelationsPanel({
 
   if (!relationsLoaded && relations === null) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <Box
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
+      >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків
@@ -93,7 +116,17 @@ export function NetworkCallsignRelationsPanel({
 
   if (!relations) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <Box
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
+      >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
             Граф зв'язків

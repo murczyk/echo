@@ -16,13 +16,7 @@ vi.mock('@mui/icons-material/FilterAlt', () => ({
 }));
 
 vi.mock('@mui/material', () => ({
-  Badge: ({
-    children,
-    invisible,
-  }: {
-    children: ReactNode;
-    invisible?: boolean;
-  }) => (
+  Badge: ({ children, invisible }: { children: ReactNode; invisible?: boolean }) => (
     <div data-testid="badge" data-invisible={String(Boolean(invisible))}>
       {children}
     </div>
@@ -86,13 +80,8 @@ vi.mock('../../../../../../../PowerIconButton', () => ({
 }));
 
 vi.mock('../../../../../../../PowerMenu', () => ({
-  PowerMenu: ({
-    children,
-    open,
-  }: {
-    children: ReactNode;
-    open: boolean;
-  }) => (open ? <div data-testid="power-menu">{children}</div> : null),
+  PowerMenu: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div data-testid="power-menu">{children}</div> : null,
 }));
 
 import { ActiveFiltersButton } from './active-filters-button';
@@ -161,7 +150,9 @@ describe('ActiveFiltersButton', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="badge"]')?.getAttribute('data-invisible')).toBe('false');
+    expect(
+      view.container.querySelector('[data-testid="badge"]')?.getAttribute('data-invisible'),
+    ).toBe('false');
     expect(view.container.textContent).toContain('filter-icon');
   });
 
@@ -173,7 +164,9 @@ describe('ActiveFiltersButton', () => {
     rendered.push(view);
 
     await click(view.container.querySelector('#active-filters-button') as HTMLElement);
-    await click(view.container.querySelector('button[aria-label="Очистити фільтр Позивний"]') as HTMLElement);
+    await click(
+      view.container.querySelector('button[aria-label="Очистити фільтр Позивний"]') as HTMLElement,
+    );
 
     const updater = table.setColumnFilters.mock.calls[0]?.[0];
     expect(typeof updater).toBe('function');

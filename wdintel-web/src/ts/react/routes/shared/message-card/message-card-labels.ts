@@ -20,10 +20,15 @@ type MessageCardDisplayLabelsOptions = {
   profiles: Record<string, SignalProfileEntry | null>;
 };
 
-function buildSenderName(sender: string | null | undefined, profiles: Record<string, SignalProfileEntry | null>): string | null {
+function buildSenderName(
+  sender: string | null | undefined,
+  profiles: Record<string, SignalProfileEntry | null>,
+): string | null {
   if (sender == null || sender.trim() === '') return null;
   const profile = profiles[sender];
-  const parts = [profile?.givenName, profile?.familyName].filter((part): part is string => Boolean(part && part.trim() !== ''));
+  const parts = [profile?.givenName, profile?.familyName].filter((part): part is string =>
+    Boolean(part && part.trim() !== ''),
+  );
   return parts.length > 0 ? parts.join(' ') : sender;
 }
 
@@ -31,7 +36,9 @@ export function buildMessageCardDisplayLabels(
   msg: Pick<InboxMessage, 'text' | 'freq' | 'groupMasterKey' | 'sender'>,
   options: MessageCardDisplayLabelsOptions,
 ): MessageCardDisplayLabels {
-  const groupName = msg.groupMasterKey ? options.groupInfos[msg.groupMasterKey]?.name ?? msg.groupMasterKey : null;
+  const groupName = msg.groupMasterKey
+    ? (options.groupInfos[msg.groupMasterKey]?.name ?? msg.groupMasterKey)
+    : null;
   const senderName = buildSenderName(msg.sender, options.profiles);
 
   return {

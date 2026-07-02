@@ -163,7 +163,9 @@ describe('rer-analysis-neo helpers', () => {
     const changedState = createQueryState({ groupsSelected: ['Bravo'] });
 
     expect(queryStateMatchesSavedFilter(changedState, savedFilter)).toBe(false);
-    expect(queryStateComparisonKey(changedState)).not.toBe(queryStateComparisonKey(createQueryState()));
+    expect(queryStateComparisonKey(changedState)).not.toBe(
+      queryStateComparisonKey(createQueryState()),
+    );
   });
 
   it('includes onlyWithMedia in the ui comparison key and dirty state while ignoring it for saved filters', () => {
@@ -201,17 +203,17 @@ describe('rer-analysis-neo helpers', () => {
   });
 
   it('preserves selected callsign casing for case-sensitive backend filtering', () => {
-    expect(normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo'] })).callsignsSelected).toEqual([
-      'alpha',
-      'Bravo',
-    ]);
+    expect(
+      normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo'] }))
+        .callsignsSelected,
+    ).toEqual(['alpha', 'Bravo']);
   });
 
   it('normalizes legacy unit aliases in query state normalization', () => {
-    expect(normalizeQueryState(createQueryState({ unitsSelected: ['Не визначено', 'Unit A', ''] })).unitsSelected).toEqual([
-      '',
-      'Unit A',
-    ]);
+    expect(
+      normalizeQueryState(createQueryState({ unitsSelected: ['Не визначено', 'Unit A', ''] }))
+        .unitsSelected,
+    ).toEqual(['', 'Unit A']);
   });
 
   it('preserves standalone without-coords and with-coords flags through normalization and request building', () => {
@@ -247,7 +249,10 @@ describe('rer-analysis-neo helpers', () => {
   });
 
   it('derives default analysis dates from today to tomorrow in the app timezone', () => {
-    const state = createInitialQueryState(emptyQueryState(), new Date(Date.UTC(2026, 0, 15, 22, 30, 0)));
+    const state = createInitialQueryState(
+      emptyQueryState(),
+      new Date(Date.UTC(2026, 0, 15, 22, 30, 0)),
+    );
 
     expect(state.fromDateTimeStr).toBe('2026-01-16T00:00');
     expect(state.toDateTimeStr).toBe('2026-01-17T00:00');

@@ -64,7 +64,10 @@ export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]
   return keys1.every((key) => obj1[key] === obj2[key]);
 }
 
-export function formatDate(value: number | null | undefined, timeFormat?: Intl.DateTimeFormatOptions): string {
+export function formatDate(
+  value: number | null | undefined,
+  timeFormat?: Intl.DateTimeFormatOptions,
+): string {
   if (isNullOrUndefined(value)) return NO_DATA_LABEL;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return NO_DATA_LABEL;
@@ -113,15 +116,24 @@ export function formatLocalTimeInputValue(date: Date): string {
   return `${hours}:${minutes}`;
 }
 
-export function formatDateInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+export function formatDateInputValueInTimeZone(
+  date: Date,
+  timeZone: string = APP_TIME_ZONE,
+): string {
   return dayjs(date).tz(timeZone).format('YYYY-MM-DD');
 }
 
-export function formatTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+export function formatTimeInputValueInTimeZone(
+  date: Date,
+  timeZone: string = APP_TIME_ZONE,
+): string {
   return dayjs(date).tz(timeZone).format('HH:mm');
 }
 
-export function formatDateTimeInputValueInTimeZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+export function formatDateTimeInputValueInTimeZone(
+  date: Date,
+  timeZone: string = APP_TIME_ZONE,
+): string {
   return dayjs(date).tz(timeZone).format('YYYY-MM-DDTHH:mm');
 }
 
@@ -142,7 +154,9 @@ export function isValidDateInput(dateStr: string): boolean {
   if (!Number.isInteger(month) || month < 1 || month > 12) return false;
   if (!Number.isInteger(day) || day < 1 || day > 31) return false;
   const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
 }
 
 export function isValidTimeInput(timeStr: string): boolean {
@@ -155,20 +169,30 @@ export function isValidTimeInput(timeStr: string): boolean {
   return true;
 }
 
-export function combineDateTimeToMs(dateStr: string, timeStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+export function combineDateTimeToMs(
+  dateStr: string,
+  timeStr: string,
+  timeZone: string = APP_TIME_ZONE,
+): number | null {
   if (!isValidDateInput(dateStr) || !isValidTimeInput(timeStr)) return null;
   const parsed = dayjs.tz(`${dateStr}T${timeStr}:00`, timeZone);
   const millis = parsed.valueOf();
   return Number.isFinite(millis) ? millis : null;
 }
 
-export function combineDateTimeInputToMs(dateTimeStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+export function combineDateTimeInputToMs(
+  dateTimeStr: string,
+  timeZone: string = APP_TIME_ZONE,
+): number | null {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateTimeStr)) return null;
   const [dateStr, timeStr] = dateTimeStr.split('T');
   return combineDateTimeToMs(dateStr, timeStr, timeZone);
 }
 
-export function parseDateInputInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+export function parseDateInputInTimeZone(
+  dateStr: string,
+  timeZone: string = APP_TIME_ZONE,
+): number | null {
   const trimmed = dateStr.trim();
   if (trimmed === '') return null;
 
@@ -176,7 +200,10 @@ export function parseDateInputInTimeZone(dateStr: string, timeZone: string = APP
   return parsed.isValid() ? parsed.startOf('day').valueOf() : null;
 }
 
-export function parseDateInputExclusiveEndInTimeZone(dateStr: string, timeZone: string = APP_TIME_ZONE): number | null {
+export function parseDateInputExclusiveEndInTimeZone(
+  dateStr: string,
+  timeZone: string = APP_TIME_ZONE,
+): number | null {
   const since = parseDateInputInTimeZone(dateStr, timeZone);
   return since === null ? null : since + 24 * 60 * 60 * 1000;
 }

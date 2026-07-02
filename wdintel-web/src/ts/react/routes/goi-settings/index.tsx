@@ -157,9 +157,7 @@ function AdditionalFunctionRow(props: AdditionalFunctionRowProps) {
           {props.description}
         </Typography>
       </Stack>
-      <Box sx={{ justifySelf: { xs: 'stretch', md: 'end' } }}>
-        {props.children}
-      </Box>
+      <Box sx={{ justifySelf: { xs: 'stretch', md: 'end' } }}>{props.children}</Box>
     </Box>
   );
 }
@@ -194,8 +192,7 @@ function ServiceTableRow(props: ServiceTableRowProps) {
   const url = props.url;
   const unlinkService = props.unlinkService;
   const pending =
-    props.pendingKey === props.restartPendingKey ||
-    props.pendingKey === props.unlinkPendingKey;
+    props.pendingKey === props.restartPendingKey || props.pendingKey === props.unlinkPendingKey;
 
   return (
     <TableRow>
@@ -284,11 +281,7 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
           <PowerButton
             variant="outlined"
             startIcon={
-              downloading ? (
-                <CircularProgress size={16} />
-              ) : (
-                <DownloadIcon fontSize="small" />
-              )
+              downloading ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />
             }
             disabled={props.disabled}
             onClick={() => props.onDownloadPalettes(props.integration.id)}
@@ -639,7 +632,9 @@ export function GoiSettingsPage() {
       {loading ? <PowerAlert severity="info">Завантажую інтеграції ГОІ...</PowerAlert> : null}
       {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
       {!loading && !loadError && !isAdmin && integrations.length === 0 ? (
-        <PowerAlert severity="info">Для поточного користувача немає доступних інтеграцій ГОІ.</PowerAlert>
+        <PowerAlert severity="info">
+          Для поточного користувача немає доступних інтеграцій ГОІ.
+        </PowerAlert>
       ) : null}
 
       {integrations.map((integration) => (

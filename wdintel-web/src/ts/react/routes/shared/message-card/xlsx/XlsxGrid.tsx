@@ -13,17 +13,9 @@ import { Box, Typography, useTheme } from '@mui/material';
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
 
 import type { XlsxGridRange } from './xlsx-grid-utils';
-import {
-  columnLabel,
-  isCellInRange,
-  normalizeXlsxRange,
-} from './xlsx-grid-utils';
+import { columnLabel, isCellInRange, normalizeXlsxRange } from './xlsx-grid-utils';
 import { copyXlsxSelection } from './copy-xlsx-selection';
-import {
-  MAX_XLSX_COLUMNS,
-  MAX_XLSX_ROWS,
-  MAX_XLSX_SHEETS,
-} from './xlsx-preview-utils';
+import { MAX_XLSX_COLUMNS, MAX_XLSX_ROWS, MAX_XLSX_SHEETS } from './xlsx-preview-utils';
 
 export function XlsxGrid({
   rows,
@@ -55,8 +47,7 @@ export function XlsxGrid({
   const paddingX = Math.max(6, Math.round(8 * scale));
   const paddingY = Math.max(3, Math.round(4 * scale));
   const rowHeaderWidth = Math.max(44, Math.round(52 * scale));
-  const getColumnWidth = (columnIndex: number) =>
-    columnWidths[columnIndex] ?? cellWidth;
+  const getColumnWidth = (columnIndex: number) => columnWidths[columnIndex] ?? cellWidth;
 
   const theme = useTheme();
 
@@ -69,8 +60,7 @@ export function XlsxGrid({
     if (root == null) return;
 
     const onKeyDown = async (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'c')
-        return;
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'c') return;
       if (selection == null) return;
       event.preventDefault();
       await navigator.clipboard.writeText(copyXlsxSelection(rows, selection));
@@ -95,10 +85,7 @@ export function XlsxGrid({
     setSelection(nextSelection);
   };
 
-  const startColumnResize = (
-    event: ReactPointerEvent<HTMLSpanElement>,
-    columnIndex: number,
-  ) => {
+  const startColumnResize = (event: ReactPointerEvent<HTMLSpanElement>, columnIndex: number) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -218,9 +205,7 @@ export function XlsxGrid({
               >
                 {columnLabel(columnIndex)}
                 <span
-                  onPointerDown={(event) =>
-                    startColumnResize(event, columnIndex)
-                  }
+                  onPointerDown={(event) => startColumnResize(event, columnIndex)}
                   title="Змінити ширину колонки"
                   style={{
                     position: 'absolute',
@@ -261,27 +246,15 @@ export function XlsxGrid({
               return (
                 <td
                   key={`cell-${rowIndex}-${columnIndex}`}
-                  onMouseDown={(
-                    event: ReactMouseEvent<HTMLTableCellElement>,
-                  ) => {
+                  onMouseDown={(event: ReactMouseEvent<HTMLTableCellElement>) => {
                     event.preventDefault();
                     rootRef.current?.focus();
                     setDragAnchor({ row: rowIndex, column: columnIndex });
-                    updateSelection(
-                      rowIndex,
-                      columnIndex,
-                      rowIndex,
-                      columnIndex,
-                    );
+                    updateSelection(rowIndex, columnIndex, rowIndex, columnIndex);
                   }}
                   onMouseEnter={() => {
                     if (dragAnchor == null) return;
-                    updateSelection(
-                      dragAnchor.row,
-                      dragAnchor.column,
-                      rowIndex,
-                      columnIndex,
-                    );
+                    updateSelection(dragAnchor.row, dragAnchor.column, rowIndex, columnIndex);
                   }}
                   onMouseUp={() => {
                     setDragAnchor(null);
@@ -320,31 +293,17 @@ export function XlsxGrid({
 function forwardRefElement(elementType: keyof HTMLElementTagNameMap) {
   return forwardRef<
     HTMLElement,
-    { children?: ReactNode; style?: React.CSSProperties } & Record<
-      string,
-      unknown
-    >
+    { children?: ReactNode; style?: React.CSSProperties } & Record<string, unknown>
   >(function VirtuosoElement({ style, children, ...props }, ref) {
-    return createElement(
-      elementType,
-      { ref, style, ...props },
-      children as ReactNode,
-    );
+    return createElement(elementType, { ref, style, ...props }, children as ReactNode);
   });
 }
 
 function forwardRefSection(sectionType: 'thead' | 'tbody') {
   return forwardRef<
     HTMLTableSectionElement,
-    { children?: ReactNode; style?: React.CSSProperties } & Record<
-      string,
-      unknown
-    >
+    { children?: ReactNode; style?: React.CSSProperties } & Record<string, unknown>
   >(function VirtuosoSection({ style, children, ...props }, ref) {
-    return createElement(
-      sectionType,
-      { ref, style, ...props },
-      children as ReactNode,
-    );
+    return createElement(sectionType, { ref, style, ...props }, children as ReactNode);
   });
 }

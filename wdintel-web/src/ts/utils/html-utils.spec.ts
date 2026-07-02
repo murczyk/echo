@@ -19,6 +19,8 @@ describe('escapeHtml', () => {
   });
 
   it('does not double-escape already escaped entities', () => {
-    expect(escapeHtml('&amp; &lt; &gt; &quot; &#39;')).toBe('&amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;#39;');
+    expect(escapeHtml('&amp; &lt; &gt; &quot; &#39;')).toBe(
+      '&amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;#39;',
+    );
   });
 });

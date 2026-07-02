@@ -17,13 +17,12 @@ export function parseSearchTerm(token: string): SearchTerm {
   const lower = token.toLowerCase();
   const hasPrefixStar = lower.startsWith('*');
   const hasSuffixStar = lower.endsWith('*');
-  const trimmed = lower
-    .replace(/^\*+/, '')
-    .replace(/\*+$/, '')
-    .trim();
+  const trimmed = lower.replace(/^\*+/, '').replace(/\*+$/, '').trim();
 
   if (hasPrefixStar && hasSuffixStar) {
-    return trimmed.length > 0 ? { kind: 'contains', value: trimmed } : { kind: 'exact', value: lower };
+    return trimmed.length > 0
+      ? { kind: 'contains', value: trimmed }
+      : { kind: 'exact', value: lower };
   }
   if (hasPrefixStar && trimmed.length > 0) {
     return { kind: 'suffix', value: trimmed };
@@ -38,7 +37,10 @@ export function parseSearchTerm(token: string): SearchTerm {
  * Parse full query into search terms (split by comma, then parse each token).
  */
 export function parseSearchQuery(query: string): SearchTerm[] {
-  const tokens = query.split(',').map((s) => s.trim()).filter(Boolean);
+  const tokens = query
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   return tokens.map(parseSearchTerm);
 }
 

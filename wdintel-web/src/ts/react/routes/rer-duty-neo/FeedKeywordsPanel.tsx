@@ -25,12 +25,18 @@ import {
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { OrganismKeywordSetDto, RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
+import type {
+  OrganismKeywordSetDto,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+} from '../../../../Bindings';
 import { CompactText } from '../../components/CompactTypography';
 import { KeywordFormsEditor } from '../../components/KeywordFormsEditor';
 import { PowerAlert } from '../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
-import { keywordSetDisplayName, resolveKeywordSetId } from '../../services/api/organism-keyword-sets';
+import {
+  keywordSetDisplayName,
+  resolveKeywordSetId,
+} from '../../services/api/organism-keyword-sets';
 import { isPresent } from '../../utils/misc';
 import { DeleteConfirmDialog } from './dialogs';
 import { useOrganismKeywordSetsEditor } from './useOrganismKeywordSetsEditor';
@@ -79,7 +85,8 @@ export function FeedKeywordsPanel({
     [keywordSets, filter.highlightKeywordSetId],
   );
   const highlightSet = useMemo(
-    () => (resolvedSetId != null ? (keywordSets.find((s) => s.id === resolvedSetId) ?? null) : null),
+    () =>
+      resolvedSetId != null ? (keywordSets.find((s) => s.id === resolvedSetId) ?? null) : null,
     [keywordSets, resolvedSetId],
   );
 
@@ -163,7 +170,10 @@ export function FeedKeywordsPanel({
   };
 
   const sortedSets = useMemo(
-    () => [...keywordSets].sort((a, b) => keywordSetDisplayName(a).localeCompare(keywordSetDisplayName(b))),
+    () =>
+      [...keywordSets].sort((a, b) =>
+        keywordSetDisplayName(a).localeCompare(keywordSetDisplayName(b)),
+      ),
     [keywordSets],
   );
   const highlightOptions = useMemo<HighlightOption[]>(() => [null, ...sortedSets], [sortedSets]);
@@ -240,7 +250,15 @@ export function FeedKeywordsPanel({
         }}
       >
         <Stack spacing={1} sx={{ minHeight: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              minWidth: 0,
+            }}
+          >
             <Box
               component="span"
               sx={{
@@ -304,7 +322,9 @@ export function FeedKeywordsPanel({
               if (!option) {
                 return (
                   <li {...optionProps} key="no-highlight">
-                    <HighlightOffOutlinedIcon sx={{ fontSize: 20, mr: 1, color: 'text.secondary' }} />
+                    <HighlightOffOutlinedIcon
+                      sx={{ fontSize: 20, mr: 1, color: 'text.secondary' }}
+                    />
                     Без підсвітки
                   </li>
                 );
@@ -411,7 +431,9 @@ export function FeedKeywordsPanel({
                 <Button
                   {...panelPrimaryButtonProps}
                   type="submit"
-                  disabled={saving || trimmedRenameName === '' || trimmedRenameName === selectedName}
+                  disabled={
+                    saving || trimmedRenameName === '' || trimmedRenameName === selectedName
+                  }
                 >
                   Перейменувати
                 </Button>
@@ -444,7 +466,9 @@ export function FeedKeywordsPanel({
           {editExpanded && canManageSet ? (
             <Stack spacing={1.25} sx={{ pt: 0.25 }}>
               {!canEdit ? (
-                <CompactText color="text.secondary">Редагування цього набору недоступне</CompactText>
+                <CompactText color="text.secondary">
+                  Редагування цього набору недоступне
+                </CompactText>
               ) : (
                 <>
                   <KeywordFormsEditor
@@ -456,11 +480,25 @@ export function FeedKeywordsPanel({
                     disabled={saving}
                     tagsMaxHeight={KEYWORD_WORDS_MAX_HEIGHT}
                   />
-                  <Stack direction="row" spacing={0.75} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-                    <Button {...panelCancelButtonProps} onClick={handleDiscard} disabled={!canDiscard}>
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    justifyContent="flex-end"
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
+                    <Button
+                      {...panelCancelButtonProps}
+                      onClick={handleDiscard}
+                      disabled={!canDiscard}
+                    >
                       Скасувати
                     </Button>
-                    <Button {...panelPrimaryButtonProps} onClick={() => void handleSave()} disabled={!canUpdate}>
+                    <Button
+                      {...panelPrimaryButtonProps}
+                      onClick={() => void handleSave()}
+                      disabled={!canUpdate}
+                    >
                       Зберегти
                     </Button>
                   </Stack>

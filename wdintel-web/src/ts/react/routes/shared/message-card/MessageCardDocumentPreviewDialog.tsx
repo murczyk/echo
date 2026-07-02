@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Box,
-  Dialog,
-  DialogContent,
-  Typography,
-  useTheme,
-} from '@mui/material';
+import { Box, Dialog, DialogContent, Typography, useTheme } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
@@ -16,10 +10,7 @@ import {
   normalizePreviewIndex,
   shouldIgnoreArrowNavigation,
 } from './document-preview-utils';
-import {
-  deriveDocumentDownloadName,
-  deriveDocumentFileName,
-} from './message-card-document-utils';
+import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
 import {
   MessageCardDocumentPreviewActions,
   MessageCardDocumentPreviewControls,
@@ -50,15 +41,10 @@ export function MessageCardDocumentPreviewDialog({
   const theme = useTheme();
   const documentCount = documents.length;
   const hasCarousel = documentCount > 1;
-  const resolvedIndex = normalizePreviewIndex(
-    currentIndex ?? initialIndex,
-    documentCount,
-  );
+  const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, documentCount);
   const currentDocument = documents[resolvedIndex] ?? null;
   const [zoom, setZoom] = useState(100);
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
-    null,
-  );
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
@@ -118,9 +104,7 @@ export function MessageCardDocumentPreviewDialog({
   }, [documentCount, hasCarousel, onIndexChange, open, resolvedIndex]);
 
   const setPreviewZoom = (nextZoom: number) => {
-    setZoom(
-      clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX),
-    );
+    setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));
   };
 
   const handleInfoClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -228,15 +212,9 @@ export function MessageCardDocumentPreviewDialog({
           resolvedIndex={resolvedIndex}
           documentCount={documentCount}
           onGoToPrevious={() =>
-            onIndexChange(
-              normalizePreviewIndex(resolvedIndex - 1, documentCount),
-            )
+            onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount))
           }
-          onGoToNext={() =>
-            onIndexChange(
-              normalizePreviewIndex(resolvedIndex + 1, documentCount),
-            )
-          }
+          onGoToNext={() => onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount))}
           onInfoClick={handleInfoClick}
           onClose={closeDialog}
         />

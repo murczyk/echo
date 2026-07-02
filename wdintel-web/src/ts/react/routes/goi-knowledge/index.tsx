@@ -2,9 +2,7 @@ import { Box, Stack } from '@mui/material';
 
 import { TableContentState } from '../../components/TableContentState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
-import {
-  TableStateProvider,
-} from '../../components/mui-customized/table/table-state-provider';
+import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
   DEFAULT_GOI_KNOWLEDGE_COLUMN_ORDER,
   DEFAULT_GOI_KNOWLEDGE_COLUMN_VISIBILITY,
@@ -42,7 +40,9 @@ function GoiKnowledgePageBody() {
           internalActionsDisabled={page.status !== 'success' && page.rows.length === 0}
         />
 
-        {page.notice ? <PowerAlert severity={page.notice.kind}>{page.notice.text}</PowerAlert> : null}
+        {page.notice ? (
+          <PowerAlert severity={page.notice.kind}>{page.notice.text}</PowerAlert>
+        ) : null}
 
         <Box
           sx={{

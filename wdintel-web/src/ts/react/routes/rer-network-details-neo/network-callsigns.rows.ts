@@ -7,7 +7,9 @@ import {
 } from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 
-export function getNetworkCallsignStatus(networkCallsign: Pick<NetworkCallsign, 'active' | 'developing' | 'knownCallsignId'>): NetworkCallsignStatus {
+export function getNetworkCallsignStatus(
+  networkCallsign: Pick<NetworkCallsign, 'active' | 'developing' | 'knownCallsignId'>,
+): NetworkCallsignStatus {
   if (networkCallsign.developing) return 'developing';
   if (networkCallsign.knownCallsignId !== null) return 'catalog';
   if (networkCallsign.active) return 'catalog';
@@ -37,7 +39,11 @@ export function buildNetworkCallsignRowViews(
       lastDatetime: networkCallsign.lastDatetime ?? null,
       messageCount: networkCallsign.messageCount,
       comment: networkCallsign.comment?.trim() ?? '',
-      sourceName: networkCallsign.sourceId === null ? NO_DATA_LABEL : sourcesById.get(networkCallsign.sourceId)?.name?.trim() || `#${networkCallsign.sourceId}`,
+      sourceName:
+        networkCallsign.sourceId === null
+          ? NO_DATA_LABEL
+          : sourcesById.get(networkCallsign.sourceId)?.name?.trim() ||
+            `#${networkCallsign.sourceId}`,
       knownCallsignId: networkCallsign.knownCallsignId ?? null,
       active: networkCallsign.active,
       developing: networkCallsign.developing,
@@ -51,7 +57,9 @@ export function buildNetworkCallsignRowViews(
   });
 }
 
-export function countNetworkCallsignStatusRows(rows: NetworkCallsignRowView[]): NetworkCallsignStatusCounts {
+export function countNetworkCallsignStatusRows(
+  rows: NetworkCallsignRowView[],
+): NetworkCallsignStatusCounts {
   return rows.reduce<NetworkCallsignStatusCounts>(
     (accumulator, row) => {
       accumulator.all += 1;

@@ -1,8 +1,8 @@
-import { ThemeProvider } from "@mui/material/styles";
-import { createRoot, Root } from "react-dom/client";
+import { ThemeProvider } from '@mui/material/styles';
+import { createRoot, Root } from 'react-dom/client';
 
-import { SettingsNeoPage } from "./routes/settings-neo";
-import { useNeoMuiTheme } from "./mui-theme";
+import { SettingsNeoPage } from './routes/settings-neo';
+import { useNeoMuiTheme } from './mui-theme';
 
 type SettingsNeoRootProps = {
   section: string;
@@ -22,14 +22,14 @@ class SettingsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ["data-settings-section"];
+    return ['data-settings-section'];
   }
 
   connectedCallback() {
     if (!this.root) {
-      this.style.display = "block";
-      this.style.width = "100%";
-      this.style.height = "100%";
+      this.style.display = 'block';
+      this.style.width = '100%';
+      this.style.height = '100%';
       this.root = createRoot(this);
     }
 
@@ -47,11 +47,11 @@ class SettingsNeoElement extends HTMLElement {
 
   private renderRoot() {
     if (!this.root) return;
-    const section = this.getAttribute("data-settings-section") ?? "my-groups";
+    const section = this.getAttribute('data-settings-section') ?? 'my-groups';
     this.root.render(<SettingsNeoRoot section={section} />);
   }
 }
 
-if (!customElements.get("settings-neo")) {
-  customElements.define("settings-neo", SettingsNeoElement);
+if (!customElements.get('settings-neo')) {
+  customElements.define('settings-neo', SettingsNeoElement);
 }

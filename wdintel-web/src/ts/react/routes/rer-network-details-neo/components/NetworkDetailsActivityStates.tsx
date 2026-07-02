@@ -21,7 +21,13 @@ export function NetworkDetailsActivityEmptyState() {
   );
 }
 
-export function NetworkDetailsActivityErrorState({ error, onReload }: { error: string; onReload: () => void }) {
+export function NetworkDetailsActivityErrorState({
+  error,
+  onReload,
+}: {
+  error: string;
+  onReload: () => void;
+}) {
   return (
     <Stack spacing={2} sx={{ alignItems: 'center' }}>
       <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>

@@ -59,7 +59,10 @@ export type AnalysisAorEntry = {
 };
 
 export type AnalysisGroupsActivityPeriod = 'selected' | 'month' | 'quarter' | 'year';
-export type AnalysisQueryState = Omit<RerAnalysisQueryState, 'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'> & {
+export type AnalysisQueryState = Omit<
+  RerAnalysisQueryState,
+  'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'
+> & {
   fromDateTimeStr: string;
   toDateTimeStr: string;
   filterTagsOption: TagFilterOption;
@@ -121,7 +124,9 @@ export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCe
 }
 
 export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
-  return analysisMapInSidebar ? ['map', 'stats', 'callsigns', 'newCallsigns'] : ['stats', 'callsigns', 'newCallsigns'];
+  return analysisMapInSidebar
+    ? ['map', 'stats', 'callsigns', 'newCallsigns']
+    : ['stats', 'callsigns', 'newCallsigns'];
 }
 
 export type AnalysisPageState = {
@@ -227,7 +232,10 @@ export type AnalysisPageActions = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
+  onUpdateLocalMessage: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => void;
   closeReport: () => void;
   downloadGeojson: () => void;
   downloadKmz: () => void;
@@ -255,7 +263,10 @@ export type AnalysisPageActions = {
   updateExisting: () => void;
   updateQueryState: (patch: Partial<AnalysisQueryState>) => void;
   saveEditor: (message: InboxMessage) => void;
-  saveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
+  saveMessageUpdate: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => Promise<boolean>;
   repeatReportTaskRun: (id: number) => Promise<void>;
   setReportProgressExpanded: (expanded: boolean) => void;
   toggleReportTaskRunLogs: (id: number, expanded: boolean) => void;

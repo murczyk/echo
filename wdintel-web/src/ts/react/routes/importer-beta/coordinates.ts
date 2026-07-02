@@ -139,7 +139,10 @@ function parseUskRegexMatches(matches: RegExpMatchArray[]): ImporterCoordinate[]
 }
 
 function parseMgrsMatches(input: string): ImporterCoordinate[] {
-  const matches = toMatches(input, /(\d\d[A-Z] ?[A-Z][A-Z] ?\d\d\d\d\d? ?\d? ?\d? ?\d? ?\d\d\d\d\d? ?\d? ?\d? ?\d?)/g);
+  const matches = toMatches(
+    input,
+    /(\d\d[A-Z] ?[A-Z][A-Z] ?\d\d\d\d\d? ?\d? ?\d? ?\d? ?\d\d\d\d\d? ?\d? ?\d? ?\d?)/g,
+  );
   return matches.flatMap((match) => {
     const value = (match[1] ?? '').replaceAll(' ', '');
     return value ? [{ kind: 'mgrs', value } satisfies ImporterCoordinate] : [];
@@ -198,23 +201,39 @@ function extractCoordinates1AndLeftover(input: string): [ImporterCoordinate[], s
   const latLngCoords = parseLatLngMatches(latLngMatches);
   const s2 = removeMatches(s, latLngMatches);
 
-  const dmsMatches = toMatches(s2, /[^\d](\d+°\d+'\d+\.?\d?\d?\d?\d?\d?\d?)[^\d]*(\d+°\d+'\d+\.?\d?\d?\d?\d?\d?\d?)/g);
+  const dmsMatches = toMatches(
+    s2,
+    /[^\d](\d+°\d+'\d+\.?\d?\d?\d?\d?\d?\d?)[^\d]*(\d+°\d+'\d+\.?\d?\d?\d?\d?\d?\d?)/g,
+  );
   const dmsCoords = parseDmsMatches(dmsMatches);
   const s3 = removeMatches(s2, dmsMatches);
 
   const latLng2Matches = toMatches(s3, /[^\d]([2-5]\d[.,]\d\d\d+)[^\d]*?([2-5]\d[.,]\d\d\d+)/g);
   const latLng2Coords = parseLatLngMatches(latLng2Matches);
 
-  const uskMatches = toMatches(s3, /[^\d]([4-6][0-9][-‐–— ]?[0-9][0-9][0-9][0-9][0-9])\D+?([4-7][0-9][-‐–— ]?[0-9][0-9][0-9][0-9][0-9])/g);
+  const uskMatches = toMatches(
+    s3,
+    /[^\d]([4-6][0-9][-‐–— ]?[0-9][0-9][0-9][0-9][0-9])\D+?([4-7][0-9][-‐–— ]?[0-9][0-9][0-9][0-9][0-9])/g,
+  );
   const uskCoords = parseUskRegexMatches(uskMatches);
 
   const mgrsCoords = parseMgrsMatches(normalizeMgrsInput(s));
-  return [uniqueCoordinates([...latLngCoords, ...dmsCoords, ...uskCoords, ...latLng2Coords, ...mgrsCoords]), s3];
+  return [
+    uniqueCoordinates([
+      ...latLngCoords,
+      ...dmsCoords,
+      ...uskCoords,
+      ...latLng2Coords,
+      ...mgrsCoords,
+    ]),
+    s3,
+  ];
 }
 
 function coordKey(coord: ImporterCoordinate): string {
   if (coord.kind === 'wgs84') return `wgs84:${coord.lat}:${coord.lng}`;
-  if (coord.kind === 'dms') return `dms:${coord.lat.deg}:${coord.lat.min}:${coord.lat.sec}:${coord.lng.deg}:${coord.lng.min}:${coord.lng.sec}`;
+  if (coord.kind === 'dms')
+    return `dms:${coord.lat.deg}:${coord.lat.min}:${coord.lat.sec}:${coord.lng.deg}:${coord.lng.min}:${coord.lng.sec}`;
   if (coord.kind === 'usk2000') return `usk2000:${coord.x}:${coord.y}`;
   return `mgrs:${coord.value}`;
 }
@@ -253,7 +272,7 @@ export function coordinateToLatLng(coord: ImporterCoordinate, converted?: LatLng
       ? { lat: coord.lat, lng: coord.lng }
       : coord.kind === 'dms'
         ? { lat: dmsToLatLng(coord.lat), lng: dmsToLatLng(coord.lng) }
-        : converted ?? null;
+        : (converted ?? null);
 
   return isFiniteLatLng(latLng) ? latLng : null;
 }

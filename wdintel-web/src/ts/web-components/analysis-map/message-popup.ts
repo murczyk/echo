@@ -41,10 +41,14 @@ export function openMessagesPopup({
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;
   const clickedPointOnMap =
-    !preferClickedLatLng && clickedPoint && clickedPoint.getElement() !== null ? clickedPoint : null;
+    !preferClickedLatLng && clickedPoint && clickedPoint.getElement() !== null
+      ? clickedPoint
+      : null;
   const restoredPoint =
     clickedPointOnMap ??
-    (!preferClickedLatLng && !isCluster && clickedMessageId !== undefined ? findPointMarkerByMessageId(clickedMessageId) : null);
+    (!preferClickedLatLng && !isCluster && clickedMessageId !== undefined
+      ? findPointMarkerByMessageId(clickedMessageId)
+      : null);
   const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
   const popupOptions = { offset: L.point(1, 3) };
 

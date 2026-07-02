@@ -11,7 +11,9 @@ export function readRerNetworkDetailsPreferredView(): RerNetworkDetailsPreferred
   return storedValue === 'classic' ? 'classic' : 'neo';
 }
 
-export function saveRerNetworkDetailsPreferredView(preferredView: RerNetworkDetailsPreferredView): void {
+export function saveRerNetworkDetailsPreferredView(
+  preferredView: RerNetworkDetailsPreferredView,
+): void {
   if (typeof window === 'undefined' || typeof window.localStorage?.setItem !== 'function') {
     return;
   }

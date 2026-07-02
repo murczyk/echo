@@ -26,7 +26,9 @@ export function useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns 
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
-  const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>({});
+  const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>(
+    {},
+  );
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
   const networksRef = useRef(networks);
   const currentUserRef = useRef(currentUser);

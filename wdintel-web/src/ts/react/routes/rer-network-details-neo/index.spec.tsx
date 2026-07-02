@@ -15,7 +15,15 @@ const useRerNetworkDetailsNeoPageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, onClick, href }: { children: ReactNode; onClick?: () => void; href?: string }) =>
+  Button: ({
+    children,
+    onClick,
+    href,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    href?: string;
+  }) =>
     href ? (
       <a href={href} onClick={onClick as any}>
         {children}
@@ -25,12 +33,21 @@ vi.mock('@mui/material', () => ({
         {children}
       </button>
     ),
-  IconButton: ({ children, onClick, disabled }: { children: ReactNode; onClick?: (event: MouseEvent) => void; disabled?: boolean }) => (
+  IconButton: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: ReactNode;
+    onClick?: (event: MouseEvent) => void;
+    disabled?: boolean;
+  }) => (
     <button type="button" onClick={onClick as any} disabled={disabled}>
       {children}
     </button>
   ),
-  Menu: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
+  Menu: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <div>{children}</div> : null,
   MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={onClick}>
       {children}
@@ -125,7 +142,9 @@ vi.mock('./components/NetworkEditDrawer', () => ({ NetworkEditDrawer: () => null
 vi.mock('./components/NetworkCallsignDrawer', () => ({ NetworkCallsignDrawer: () => null }));
 vi.mock('./components/NetworkFreqCreateDrawer', () => ({ NetworkFreqCreateDrawer: () => null }));
 vi.mock('./components/NetworkFreqEditDrawer', () => ({ NetworkFreqEditDrawer: () => null }));
-vi.mock('./components/NetworkEtalonkaReportDialog', () => ({ NetworkEtalonkaReportDialog: () => null }));
+vi.mock('./components/NetworkEtalonkaReportDialog', () => ({
+  NetworkEtalonkaReportDialog: () => null,
+}));
 
 vi.mock('@mui/icons-material/ContentCopyOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Delete', () => ({ default: () => <span /> }));
@@ -379,7 +398,9 @@ describe('RerNetworkDetailsNeoPage', () => {
     const view = await renderPage();
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement')).toBe('left');
+    expect(
+      view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement'),
+    ).toBe('left');
     const toggleButton = view.container.querySelector('button[aria-label="Згорнути ліву панель"]');
     expect(toggleButton?.hasAttribute('disabled')).toBe(false);
     expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('neo');
@@ -391,8 +412,12 @@ describe('RerNetworkDetailsNeoPage', () => {
     const view = await renderPage();
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement')).toBe('top');
-    const toggleButton = view.container.querySelector('button[aria-label="Панель відображається зверху"]');
+    expect(
+      view.container.querySelector('[data-testid="left-panel"]')?.getAttribute('data-placement'),
+    ).toBe('top');
+    const toggleButton = view.container.querySelector(
+      'button[aria-label="Панель відображається зверху"]',
+    );
     expect(toggleButton?.hasAttribute('disabled')).toBe(true);
   });
 
@@ -447,5 +472,4 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(listLink?.textContent).toBe('До списку мереж');
     expect(listLink?.getAttribute('href')).toBe('/rer-networks-neo');
   });
-
 });

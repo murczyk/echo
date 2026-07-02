@@ -12,7 +12,9 @@ vi.mock('../../../services/api/networks', () => ({
 }));
 
 vi.mock('./NetworkDatePickerField', () => ({
-  NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
+  NetworkDatePickerField: ({ label }: { label: string }) => (
+    <div data-testid={`date-picker-${label}`} />
+  ),
 }));
 
 import { getNetworkCallsignRelationMessages } from '../../../services/api/networks';
@@ -71,8 +73,24 @@ function renderGraph(relationsSelectedNodeId: string | null = null) {
   document.body.appendChild(container);
   const root = createRoot(container);
   const deferred = (() => {
-    let resolve!: (value: { messages: Array<{ id: number; timestamp: number | null; freq: string | null; text: string; callsigns: string[] }> }) => void;
-    const promise = new Promise<{ messages: Array<{ id: number; timestamp: number | null; freq: string | null; text: string; callsigns: string[] }> }>((resolvePromise) => {
+    let resolve!: (value: {
+      messages: Array<{
+        id: number;
+        timestamp: number | null;
+        freq: string | null;
+        text: string;
+        callsigns: string[];
+      }>;
+    }) => void;
+    const promise = new Promise<{
+      messages: Array<{
+        id: number;
+        timestamp: number | null;
+        freq: string | null;
+        text: string;
+        callsigns: string[];
+      }>;
+    }>((resolvePromise) => {
       resolve = resolvePromise;
     });
     return { promise, resolve };
@@ -166,14 +184,18 @@ describe('NetworkCallsignRelationsGraph', () => {
     expect(view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).toBeNull();
     expect(document.body.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).not.toBeNull();
 
-    const intensityButton = document.body.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    const intensityButton = document.body.querySelector(
+      'button[aria-label="Налаштувати інтенсивність: 1"]',
+    );
     expect(intensityButton).not.toBeNull();
 
     await act(async () => {
       intensityButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    const intensityButtonAfterOpen = document.body.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    const intensityButtonAfterOpen = document.body.querySelector(
+      'button[aria-label="Налаштувати інтенсивність: 1"]',
+    );
     const intensityPopoverId = intensityButtonAfterOpen?.getAttribute('aria-controls');
     expect(intensityPopoverId).not.toBeNull();
 
@@ -197,14 +219,18 @@ describe('NetworkCallsignRelationsGraph', () => {
     });
 
     expect(document.body.classList.contains('small-map-fullscreen-open')).toBe(false);
-    expect(view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]'),
+    ).not.toBeNull();
   });
 
   it('opens the intensity settings from the overlay and keeps the frequency filter separate', async () => {
     const view = renderGraph();
     rendered.push(view);
 
-    const intensityButton = view.container.querySelector('button[aria-label="Налаштувати інтенсивність: 1"]');
+    const intensityButton = view.container.querySelector(
+      'button[aria-label="Налаштувати інтенсивність: 1"]',
+    );
     expect(intensityButton).not.toBeNull();
 
     await act(async () => {
@@ -230,7 +256,8 @@ describe('NetworkCallsignRelationsGraph', () => {
     const view = renderGraph();
     rendered.push(view);
 
-    const getNormalSvg = () => view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
+    const getNormalSvg = () =>
+      view.container.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
     const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 });
 
     const initialViewBox = getNormalSvg()?.getAttribute('viewBox');
@@ -250,12 +277,15 @@ describe('NetworkCallsignRelationsGraph', () => {
       fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    const getFullscreenSvg = () => document.body.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
+    const getFullscreenSvg = () =>
+      document.body.querySelector('svg[aria-label="Граф зв\'язків позивних"]');
     const fullscreenInitialViewBox = getFullscreenSvg()?.getAttribute('viewBox');
     expect(fullscreenInitialViewBox).not.toBeNull();
 
     await act(async () => {
-      getFullscreenSvg()?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }));
+      getFullscreenSvg()?.dispatchEvent(
+        new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }),
+      );
     });
 
     const fullscreenZoomedViewBox = getFullscreenSvg()?.getAttribute('viewBox');
@@ -270,7 +300,9 @@ describe('NetworkCallsignRelationsGraph', () => {
     const restoredViewBox = restoredSvg?.getAttribute('viewBox');
 
     await act(async () => {
-      restoredSvg?.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }));
+      restoredSvg?.dispatchEvent(
+        new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }),
+      );
     });
 
     expect(restoredSvg?.getAttribute('viewBox')).not.toBe(restoredViewBox);

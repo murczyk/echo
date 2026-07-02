@@ -15,7 +15,10 @@ import {
 import { isUnauthorizedError } from '../../services/api/client';
 import { redirectToLogin } from '../../auth-redirect';
 import { downloadBlob } from '../../utils/download-blob';
-import { formatErrorMessage, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import {
+  formatErrorMessage,
+  type NetworkDetailsNeoPageState,
+} from './use-rer-network-details-neo-page.shared';
 import { ReportCancelledError } from './report-cancelled-error';
 import {
   buildEtalonkaNetworkBatchReq,
@@ -115,7 +118,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
       }));
 
       try {
-        const taskId = await launchNetworkEtalonkaBatchReportTask(buildEtalonkaNetworkBatchReq(network.id, report));
+        const taskId = await launchNetworkEtalonkaBatchReportTask(
+          buildEtalonkaNetworkBatchReq(network.id, report),
+        );
         let serverLogSkip = 0;
         let logs: string[] = [];
 
@@ -164,7 +169,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
             logs,
             error: rsp.finishedWithError,
             finishedAt: rsp.running ? null : new Date().toISOString(),
-            progressExpanded: rsp.running ? current.progressExpanded : current.progressExpanded || rsp.finishedWithError != null,
+            progressExpanded: rsp.running
+              ? current.progressExpanded
+              : current.progressExpanded || rsp.finishedWithError != null,
             downloadFileName: fileName,
             startedAtMs: parseUtcDateTime(row.startedAt)?.getTime() ?? null,
           }));
@@ -172,7 +179,10 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           if (!rsp.running) {
             if (rsp.finishedWithError) {
               const latestRow = await fetchReportHistoryStatus(taskId);
-              if (isCancelledReportHistory(latestRow) || isCancelledReportHistoryError(rsp.finishedWithError)) {
+              if (
+                isCancelledReportHistory(latestRow) ||
+                isCancelledReportHistoryError(rsp.finishedWithError)
+              ) {
                 applyCancelledReport(setState, latestRow, logs, fileName);
                 throw new ReportCancelledError();
               }
@@ -195,7 +205,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           finishedAt: new Date().toISOString(),
           progressExpanded: current.progressExpanded,
           downloadFileName: fileName,
-          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt
+            ? (parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs)
+            : current.startedAtMs,
         }));
       } catch (error) {
         if (error instanceof ReportCancelledError) {
@@ -206,7 +218,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
           running: false,
           progressExpanded: true,
           error: formatErrorMessage(error),
-          startedAtMs: current.historyRow?.startedAt ? parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs : current.startedAtMs,
+          startedAtMs: current.historyRow?.startedAt
+            ? (parseUtcDateTime(current.historyRow.startedAt)?.getTime() ?? current.startedAtMs)
+            : current.startedAtMs,
         }));
         if (isUnauthorizedError(error)) {
           redirectToLogin();
@@ -230,78 +244,112 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
   }, [setState]);
 
   const closeEtalonkaReportDialog = useCallback(() => {
-    setState((current) => ({ ...current, menuAnchorEl: null, etalonkaReport: { ...current.etalonkaReport, dialogOpen: false, error: null } }));
-  }, [setState]);
-
-  const setEtalonkaReportProgressExpanded = useCallback((progressExpanded: boolean) => {
-    updateReportState(setState, (current) => ({
+    setState((current) => ({
       ...current,
-      progressExpanded,
+      menuAnchorEl: null,
+      etalonkaReport: { ...current.etalonkaReport, dialogOpen: false, error: null },
     }));
   }, [setState]);
 
-  const setEtalonkaReportType = useCallback((reportType: NetworkEtalonkaReportType) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      reportType,
-    }));
-  }, [setState]);
+  const setEtalonkaReportProgressExpanded = useCallback(
+    (progressExpanded: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        progressExpanded,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportActiveFreqsOnly = useCallback((activeFreqsOnly: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      activeFreqsOnly,
-    }));
-  }, [setState]);
+  const setEtalonkaReportType = useCallback(
+    (reportType: NetworkEtalonkaReportType) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        reportType,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportIncludeSigintSigns = useCallback((includeSigintSigns: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      includeSigintSigns,
-    }));
-  }, [setState]);
+  const setEtalonkaReportActiveFreqsOnly = useCallback(
+    (activeFreqsOnly: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        activeFreqsOnly,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportIncludeConfirmation = useCallback((includeConfirmation: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      includeConfirmation,
-    }));
-  }, [setState]);
+  const setEtalonkaReportIncludeSigintSigns = useCallback(
+    (includeSigintSigns: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeSigintSigns,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportIncludeHeadingsAndFreqs = useCallback((includeHeadingsAndFreqs: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      includeHeadingsAndFreqs,
-    }));
-  }, [setState]);
+  const setEtalonkaReportIncludeConfirmation = useCallback(
+    (includeConfirmation: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeConfirmation,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportIncludeUnitCallsigns = useCallback((includeUnitCallsigns: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      includeUnitCallsigns,
-    }));
-  }, [setState]);
+  const setEtalonkaReportIncludeHeadingsAndFreqs = useCallback(
+    (includeHeadingsAndFreqs: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeHeadingsAndFreqs,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportIncludePelengsMap = useCallback((includePelengsMap: boolean) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      includePelengsMap,
-    }));
-  }, [setState]);
+  const setEtalonkaReportIncludeUnitCallsigns = useCallback(
+    (includeUnitCallsigns: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeUnitCallsigns,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportFromDateTimeStr = useCallback((fromDateTimeStr: string) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      fromDateTimeStr,
-    }));
-  }, [setState]);
+  const setEtalonkaReportIncludePelengsMap = useCallback(
+    (includePelengsMap: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includePelengsMap,
+      }));
+    },
+    [setState],
+  );
 
-  const setEtalonkaReportToDateTimeStr = useCallback((toDateTimeStr: string) => {
-    updateReportState(setState, (current) => ({
-      ...current,
-      toDateTimeStr,
-    }));
-  }, [setState]);
+  const setEtalonkaReportFromDateTimeStr = useCallback(
+    (fromDateTimeStr: string) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        fromDateTimeStr,
+      }));
+    },
+    [setState],
+  );
+
+  const setEtalonkaReportToDateTimeStr = useCallback(
+    (toDateTimeStr: string) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        toDateTimeStr,
+      }));
+    },
+    [setState],
+  );
 
   const downloadEtalonkaReport = useCallback(async () => {
     const network = state.network;

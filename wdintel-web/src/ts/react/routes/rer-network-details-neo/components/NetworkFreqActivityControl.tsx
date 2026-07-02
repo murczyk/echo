@@ -34,7 +34,12 @@ export function NetworkFreqActivityControl({ activeTo, onChange, disabled = fals
       />
 
       {!isActiveStill ? (
-        <NetworkFreqDatePickerField label="Активна по" value={activeTo} onChange={onChange} disabled={disabled} />
+        <NetworkFreqDatePickerField
+          label="Активна по"
+          value={activeTo}
+          onChange={onChange}
+          disabled={disabled}
+        />
       ) : null}
     </Stack>
   );

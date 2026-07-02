@@ -1,6 +1,15 @@
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
-import { Backdrop, Box, ButtonBase, CircularProgress, Fab, IconButton, Skeleton, Tooltip } from '@mui/material';
+import {
+  Backdrop,
+  Box,
+  ButtonBase,
+  CircularProgress,
+  Fab,
+  IconButton,
+  Skeleton,
+  Tooltip,
+} from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
@@ -75,10 +84,15 @@ function DutyNeoInitialLoadingSkeletonFeedColumn({ messageCount }: { messageCoun
             gap: 1.25,
             pb: messageIndex + 1 === messageCount ? 0 : 2,
             mb: messageIndex + 1 === messageCount ? 0 : 2,
-            borderBottom: messageIndex + 1 === messageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
+            borderBottom:
+              messageIndex + 1 === messageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
           }}
         >
-          <Skeleton variant="rounded" height={28} width={`${72 - Math.min(messageIndex * 6, 18)}%`} />
+          <Skeleton
+            variant="rounded"
+            height={28}
+            width={`${72 - Math.min(messageIndex * 6, 18)}%`}
+          />
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             <Skeleton variant="rounded" height={24} width={72 - messageIndex * 2} />
             <Skeleton variant="rounded" height={24} width={92 - messageIndex * 3} />
@@ -94,7 +108,13 @@ function DutyNeoInitialLoadingSkeletonFeedColumn({ messageCount }: { messageCoun
   );
 }
 
-function DutyNeoInitialLoadingSkeleton({ feedCount, narrow }: { feedCount: number; narrow: boolean }) {
+function DutyNeoInitialLoadingSkeleton({
+  feedCount,
+  narrow,
+}: {
+  feedCount: number;
+  narrow: boolean;
+}) {
   const skeletonFeedCount = narrow ? 1 : Math.max(1, feedCount);
   const skeletonMaxWidth = dutyFeedColumnMaxWidth(skeletonFeedCount, narrow);
   const skeletonMessageCount = narrow ? 4 : 5;
@@ -118,11 +138,16 @@ function DutyNeoInitialLoadingSkeleton({ feedCount, narrow }: { feedCount: numbe
             gap: 2,
             height: '100%',
             gridTemplateColumns:
-              skeletonFeedCount <= 1 ? 'minmax(0, 1fr)' : `repeat(${skeletonFeedCount}, minmax(0, 1fr))`,
+              skeletonFeedCount <= 1
+                ? 'minmax(0, 1fr)'
+                : `repeat(${skeletonFeedCount}, minmax(0, 1fr))`,
           }}
         >
           {Array.from({ length: skeletonFeedCount }).map((_, index) => (
-            <DutyNeoInitialLoadingSkeletonFeedColumn key={index} messageCount={skeletonMessageCount} />
+            <DutyNeoInitialLoadingSkeletonFeedColumn
+              key={index}
+              messageCount={skeletonMessageCount}
+            />
           ))}
         </Box>
       </Box>
@@ -155,7 +180,9 @@ export function RerDutyNeoWorkspace({
   onSelectFeed,
   showLoadingBackdrop,
 }: RerDutyNeoWorkspaceProps) {
-  const activeFeedIndex = isPresent(activeFeedId) ? messageFeeds.findIndex((feed) => feed.id === activeFeedId) : -1;
+  const activeFeedIndex = isPresent(activeFeedId)
+    ? messageFeeds.findIndex((feed) => feed.id === activeFeedId)
+    : -1;
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
   const compactFeedTabs = messageFeeds.length >= DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS;
   const showMobileTabClose = narrowScreen && messageFeeds.length > 1 && onRemoveActiveFeed != null;
@@ -344,7 +371,9 @@ export function RerDutyNeoWorkspace({
                     justifyContent: messageFeeds.length <= 1 ? 'center' : 'stretch',
                     gap: messageFeeds.length <= 1 ? 1 : 2,
                     gridTemplateColumns:
-                      messageFeeds.length <= 1 ? undefined : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
+                      messageFeeds.length <= 1
+                        ? undefined
+                        : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
                   {messageFeeds.map((feed) => {

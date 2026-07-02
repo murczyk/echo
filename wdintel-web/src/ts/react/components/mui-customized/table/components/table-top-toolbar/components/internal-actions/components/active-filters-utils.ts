@@ -2,7 +2,6 @@ import type { MRT_RowData, MRT_TableInstance } from 'material-react-table';
 import type { MRT_ColumnFiltersState } from 'material-react-table';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../../../../../../../utils/misc';
 
-
 export type ActiveFilterDescriptor = {
   id: string;
   label: string;
@@ -91,7 +90,8 @@ function shouldSkipActiveFilter<TData extends MRT_RowData>(
   value: unknown,
 ): boolean {
   const column = table.getColumn(filterId);
-  const defaultValue = (column?.columnDef.meta as ActiveFilterMeta | undefined)?.activeFilterDefaultValue;
+  const defaultValue = (column?.columnDef.meta as ActiveFilterMeta | undefined)
+    ?.activeFilterDefaultValue;
 
   if (typeof defaultValue === 'undefined') {
     return false;
@@ -106,7 +106,8 @@ function resolveActiveFilterValuePreview<TData extends MRT_RowData>(
   value: unknown,
 ): string {
   const column = table?.getColumn(filterId);
-  const formatter = (column?.columnDef.meta as ActiveFilterMeta | undefined)?.activeFilterValueFormatter;
+  const formatter = (column?.columnDef.meta as ActiveFilterMeta | undefined)
+    ?.activeFilterValueFormatter;
   if (typeof formatter === 'function') {
     return formatter(value);
   }
@@ -129,7 +130,9 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
     }));
 
     const hasGlobalFilter =
-      typeof globalFilter === 'string' ? globalFilter.trim() !== '' : isPresent(globalFilter) && globalFilter !== '';
+      typeof globalFilter === 'string'
+        ? globalFilter.trim() !== ''
+        : isPresent(globalFilter) && globalFilter !== '';
 
     if (hasGlobalFilter) {
       activeFilters.push({
@@ -155,7 +158,9 @@ export function getActiveTableFilters<TData extends MRT_RowData>(
     }));
 
   const hasGlobalFilter =
-    typeof globalFilter === 'string' ? globalFilter.trim() !== '' : isPresent(globalFilter) && globalFilter !== '';
+    typeof globalFilter === 'string'
+      ? globalFilter.trim() !== ''
+      : isPresent(globalFilter) && globalFilter !== '';
 
   if (hasGlobalFilter) {
     activeFilters.push({

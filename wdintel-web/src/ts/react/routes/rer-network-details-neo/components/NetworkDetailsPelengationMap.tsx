@@ -84,8 +84,18 @@ function getMapControlSx(theme: Theme) {
   };
 }
 
-export function NetworkDetailsPelengationMap({ pelengPoints, showLabels, satelliteEnabled, heatmapEnabled }: Props) {
-  const { mapContainerRef, isFullscreen, toggleFullscreen } = useNetworkDetailsPelengationMap(pelengPoints, showLabels, satelliteEnabled, heatmapEnabled);
+export function NetworkDetailsPelengationMap({
+  pelengPoints,
+  showLabels,
+  satelliteEnabled,
+  heatmapEnabled,
+}: Props) {
+  const { mapContainerRef, isFullscreen, toggleFullscreen } = useNetworkDetailsPelengationMap(
+    pelengPoints,
+    showLabels,
+    satelliteEnabled,
+    heatmapEnabled,
+  );
 
   const mapPanel = (
     <Box component="section" sx={getMapShellSx(isFullscreen)}>
@@ -119,16 +129,31 @@ export function NetworkDetailsPelengationMap({ pelengPoints, showLabels, satelli
         onClick={toggleFullscreen}
         sx={getMapControlSx}
       >
-        <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
+        <Box
+          component="i"
+          className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'}
+          aria-hidden="true"
+        />
       </IconButton>
     </Box>
   );
 
-  const fullscreenMapPanel = isFullscreen && typeof document !== 'undefined' ? createPortal(mapPanel, document.body) : null;
+  const fullscreenMapPanel =
+    isFullscreen && typeof document !== 'undefined' ? createPortal(mapPanel, document.body) : null;
 
   return (
     <>
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <Box
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
+      >
         <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, display: 'flex' }}>
           {isFullscreen ? null : mapPanel}
         </Box>

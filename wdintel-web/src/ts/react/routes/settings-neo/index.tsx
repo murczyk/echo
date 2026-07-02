@@ -41,7 +41,9 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
-  return parseSettingsSection(new URLSearchParams(window.location.search).get(SETTINGS_SECTION_QUERY_PARAM));
+  return parseSettingsSection(
+    new URLSearchParams(window.location.search).get(SETTINGS_SECTION_QUERY_PARAM),
+  );
 }
 
 function buildSettingsSectionUrl(section: SettingsSection): string {
@@ -53,7 +55,10 @@ function buildSettingsSectionUrl(section: SettingsSection): string {
 
 function renderMyReportsTabLabel() {
   return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}>
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}
+    >
       <span>Мої звіти</span>
       <Box
         component="span"
@@ -87,7 +92,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
   const dutySettings = useDutySettings();
   const globalSettings = useGlobalSetting();
-  const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
+    'idle',
+  );
   const [myGroups, setMyGroups] = useState<MyAdminSignalGroup[]>([]);
   const [myGroupsError, setMyGroupsError] = useState<string | null>(null);
 
@@ -104,7 +111,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       if (signal?.aborted) return;
       setMyGroups([]);
       setMyGroupsStatus('error');
-      setMyGroupsError(`Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`);
+      setMyGroupsError(
+        `Помилка завантаження груп: ${error instanceof Error ? error.message : 'невідома помилка'}`,
+      );
     }
   }, []);
 
@@ -148,7 +157,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
         <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
         <Card
           variant="outlined"
-          sx={{ borderRadius: 0, boxShadow: 'none', overflow: 'hidden', backgroundColor: 'background.paper' }}
+          sx={{
+            borderRadius: 0,
+            boxShadow: 'none',
+            overflow: 'hidden',
+            backgroundColor: 'background.paper',
+          }}
         >
           <Tabs
             value={settingsSection}
@@ -237,7 +251,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             >
               <Box sx={{ p: 3 }}>
                 <Stack spacing={3} sx={{ maxWidth: 960 }}>
-                  <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
+                  <Typography
+                    component="h2"
+                    variant="h6"
+                    sx={{ fontWeight: 700, lineHeight: 1.25 }}
+                  >
                     Аналіз
                   </Typography>
                   <SettingsSharedTagsLayoutCard
@@ -262,7 +280,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     }}
                   >
                     <Stack spacing={1.5}>
-                      <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+                      <Typography
+                        variant="overline"
+                        sx={{ color: 'text.secondary', letterSpacing: 0.8 }}
+                      >
                         Мапа
                       </Typography>
                       <FormControlLabel
@@ -291,7 +312,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                             <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
                               Мапа в бічній панелі
                             </Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: 'text.secondary', lineHeight: 1.6 }}
+                            >
                               Дозволяє одночасно переглядати мапу та повідомлення.
                             </Typography>
                           </Stack>
@@ -307,7 +331,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           {settingsSection === 'myReports' ? (
             <SettingsMyReportsSection active={settingsSection === 'myReports'} />
           ) : null}
-
         </Card>
       </Stack>
     </Box>

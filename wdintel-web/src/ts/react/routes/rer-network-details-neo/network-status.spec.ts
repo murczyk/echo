@@ -1,22 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
-import { getRestoreNetworkOnEditValue, NETWORK_STATUS_ACTIVE, NETWORK_STATUS_INACTIVE } from './network-status';
+import {
+  getRestoreNetworkOnEditValue,
+  NETWORK_STATUS_ACTIVE,
+  NETWORK_STATUS_INACTIVE,
+} from './network-status';
 
 describe('getRestoreNetworkOnEditValue', () => {
   it('returns true for deleted active networks with an active window', () => {
-    expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_ACTIVE)).toBe(true);
+    expect(
+      getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_ACTIVE),
+    ).toBe(true);
   });
 
   it('returns true for deleted active networks without an active window', () => {
-    expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: null }, NETWORK_STATUS_ACTIVE)).toBe(true);
+    expect(
+      getRestoreNetworkOnEditValue({ deleted: true, activeTo: null }, NETWORK_STATUS_ACTIVE),
+    ).toBe(true);
   });
 
   it('returns true for inactive status when the row is deleted', () => {
-    expect(getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_INACTIVE)).toBe(true);
+    expect(
+      getRestoreNetworkOnEditValue({ deleted: true, activeTo: 1 }, NETWORK_STATUS_INACTIVE),
+    ).toBe(true);
   });
 
   it('returns null for non-deleted networks', () => {
-    expect(getRestoreNetworkOnEditValue({ deleted: false, activeTo: 1 }, NETWORK_STATUS_ACTIVE)).toBeNull();
+    expect(
+      getRestoreNetworkOnEditValue({ deleted: false, activeTo: 1 }, NETWORK_STATUS_ACTIVE),
+    ).toBeNull();
   });
 
   it('returns null for missing networks', () => {

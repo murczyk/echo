@@ -40,7 +40,9 @@ function buildDeleteDescriptionMessage(
 }
 
 export function NetworkDetailsNeoPageDialogs({ page }: Props) {
-  const deleteDescriptionTitle = buildDeleteDescriptionTitle(page.deleteDescriptionTarget?.descrType ?? 'Confirmation');
+  const deleteDescriptionTitle = buildDeleteDescriptionTitle(
+    page.deleteDescriptionTarget?.descrType ?? 'Confirmation',
+  );
   const deleteDescriptionMessage = buildDeleteDescriptionMessage(page.deleteDescriptionTarget);
 
   return (
@@ -65,7 +67,9 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         submitting={page.deleteDescriptionSubmitting}
         disabled={!page.canManageDescriptionActions || page.deleteDescriptionTarget === null}
       >
-        {page.deleteDescriptionError ? <PowerAlert severity="error">{page.deleteDescriptionError}</PowerAlert> : null}
+        {page.deleteDescriptionError ? (
+          <PowerAlert severity="error">{page.deleteDescriptionError}</PowerAlert>
+        ) : null}
       </ConfirmDangerDialog>
 
       <ConfirmDangerDialog
@@ -78,10 +82,10 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         submitting={page.callsignDeleteSubmitting}
         disabled={!page.canManageCallsignActions || page.callsignDeleteTarget === null}
       >
-        {page.callsignDeleteTarget
-          && page.callsignDeleteTarget.status !== 'developing'
-          && page.callsignDeleteTarget.knownCallsignId !== null
-          && page.canDeleteCatalogCallsign ? (
+        {page.callsignDeleteTarget &&
+        page.callsignDeleteTarget.status !== 'developing' &&
+        page.callsignDeleteTarget.knownCallsignId !== null &&
+        page.canDeleteCatalogCallsign ? (
           <FormControlLabel
             control={
               <Checkbox
@@ -92,7 +96,9 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
             label="Видалити також з каталогу"
           />
         ) : null}
-        {page.callsignDeleteError ? <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert> : null}
+        {page.callsignDeleteError ? (
+          <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert>
+        ) : null}
       </ConfirmDangerDialog>
 
       <NetworkDescriptionDrawer
@@ -176,7 +182,9 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         disabled={!page.canEdit || page.freqDeleteTarget === null}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       >
-        {page.freqDeleteError ? <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert> : null}
+        {page.freqDeleteError ? (
+          <PowerAlert severity="error">{page.freqDeleteError}</PowerAlert>
+        ) : null}
       </ConfirmDangerDialog>
 
       <NetworkEtalonkaReportDialog

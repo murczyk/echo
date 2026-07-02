@@ -39,7 +39,9 @@ describe('rer-duty utils', () => {
     const base = { freq: '100.0' } as InboxMessage;
     expect(etalonFallbackWhenNoNetworks({ ...base, unit: '  1-й танк  ' })).toBe('1-й танк');
     expect(etalonFallbackWhenNoNetworks({ ...base, unit: null })).toBe('Не встановлена');
-    expect(etalonFallbackWhenNoNetworks({ ...base, unit: 'x' }, { featureStrictNetworks: true })).toBe('Не встановлена');
+    expect(
+      etalonFallbackWhenNoNetworks({ ...base, unit: 'x' }, { featureStrictNetworks: true }),
+    ).toBe('Не встановлена');
     expect(etalonFallbackWhenNoNetworks({ freq: null, unit: 'unit' } as InboxMessage)).toBe(null);
   });
 
@@ -64,7 +66,12 @@ describe('rer-duty utils', () => {
     const feeds = [
       {
         id: 'mf-1',
-        filter: { ...emptyFilter(), freqsSelected: ['100.1'], groupsDenied: ['group-a'], freqsDenied: ['200.1'] },
+        filter: {
+          ...emptyFilter(),
+          freqsSelected: ['100.1'],
+          groupsDenied: ['group-a'],
+          freqsDenied: ['200.1'],
+        },
         items: [],
         loading: false,
         loadingOlder: false,
@@ -81,12 +88,22 @@ describe('rer-duty utils', () => {
     const shortState = toShortQueryState(feeds);
     const restored = toRerDutyStateFromShort(shortState);
     expect(restored.messageFeeds).toEqual([
-      ['mf-1', { ...emptyFilter(), freqsSelected: ['100.1'], groupsDenied: ['group-a'], freqsDenied: ['200.1'] }],
+      [
+        'mf-1',
+        {
+          ...emptyFilter(),
+          freqsSelected: ['100.1'],
+          groupsDenied: ['group-a'],
+          freqsDenied: ['200.1'],
+        },
+      ],
     ]);
   });
 
   it('keeps default feeds when short waterfalls are empty or invalid', () => {
-    expect(toRerDutyStateFromShort({ waterfalls: [] }).messageFeeds).toEqual([['mf-0', emptyFilter()]]);
+    expect(toRerDutyStateFromShort({ waterfalls: [] }).messageFeeds).toEqual([
+      ['mf-0', emptyFilter()],
+    ]);
     expect(toRerDutyStateFromShort({ waterfalls: [null as any] }).messageFeeds).toHaveLength(1);
   });
 
@@ -233,9 +250,12 @@ describe('rer-duty utils', () => {
   it('distinguishes null and empty arrays when comparing filters', () => {
     expect(filtersEqual(emptyFilter(), emptyFilter())).toBe(true);
     expect(filtersEqual(emptyFilter(), { ...emptyFilter(), groupsSelected: [] })).toBe(false);
-    expect(filtersEqual({ ...emptyFilter(), freqsSelected: ['100.1'] }, { ...emptyFilter(), freqsSelected: ['100.1'] })).toBe(
-      true,
-    );
+    expect(
+      filtersEqual(
+        { ...emptyFilter(), freqsSelected: ['100.1'] },
+        { ...emptyFilter(), freqsSelected: ['100.1'] },
+      ),
+    ).toBe(true);
   });
 
   it('compares keyword highlight by set id in filtersEqual', () => {
@@ -247,10 +267,7 @@ describe('rer-duty utils', () => {
       ),
     ).toBe(true);
     expect(
-      filtersEqual(
-        { ...base, highlightKeywordSetId: 1 },
-        { ...base, highlightKeywordSetId: 2 },
-      ),
+      filtersEqual({ ...base, highlightKeywordSetId: 1 }, { ...base, highlightKeywordSetId: 2 }),
     ).toBe(false);
   });
 
@@ -394,7 +411,9 @@ describe('rer-duty utils', () => {
   });
 
   it('expands adjacent frequencies without repeating already selected ones', () => {
-    expect(findAllAdjacentFreqs(['100.000', '100.001', '100.004', '101.000'], ['100.000'], 0.002)).toEqual(['100.001']);
+    expect(
+      findAllAdjacentFreqs(['100.000', '100.001', '100.004', '101.000'], ['100.000'], 0.002),
+    ).toEqual(['100.001']);
     expect(findAllAdjacentFreqs(['100.000', '100.001'], ['100.000'], 0)).toEqual([]);
   });
 
@@ -420,14 +439,14 @@ describe('rer-duty utils', () => {
 
   it('parses and writes query state in the url', () => {
     const state = {
-      messageFeeds: [
-        ['mf-1', { groups_selected: ['legacy-group'], last_viewed_message_id: 42 }],
-      ],
+      messageFeeds: [['mf-1', { groups_selected: ['legacy-group'], last_viewed_message_id: 42 }]],
     };
 
     window.history.replaceState({}, '', `/?state=${encodeURIComponent(JSON.stringify(state))}`);
     expect(parseStateFromUrl()).toEqual({
-      messageFeeds: [['mf-1', { ...emptyFilter(), groupsSelected: ['legacy-group'], lastViewedMessageId: 42 }]],
+      messageFeeds: [
+        ['mf-1', { ...emptyFilter(), groupsSelected: ['legacy-group'], lastViewedMessageId: 42 }],
+      ],
     });
 
     pushStateToUrl({ messageFeeds: [['mf-2', { ...emptyFilter(), sendersSelected: ['sender'] }]] });
@@ -499,7 +518,11 @@ describe('rer-duty utils', () => {
         [
           {
             id: 'mf-1',
-            filter: { ...emptyFilter(), sendersSelected: ['selected-only'], deniedSenders: ['denied-only'] },
+            filter: {
+              ...emptyFilter(),
+              sendersSelected: ['selected-only'],
+              deniedSenders: ['denied-only'],
+            },
             items: [
               [1, { sender: 'feed-only' } as InboxMessage],
               [2, { sender: ' known ' } as InboxMessage],
@@ -530,9 +553,9 @@ describe('rer-duty utils', () => {
       id: 'mf-1',
       filter: emptyFilter(),
       items: [
-        [1, { } as InboxMessage],
-        [2, { } as InboxMessage],
-        [3, { } as InboxMessage],
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+        [3, {} as InboxMessage],
       ],
       loading: false,
       loadingOlder: false,
@@ -547,6 +570,8 @@ describe('rer-duty utils', () => {
     };
 
     expect(feedUnreadDisplayCount(feed)).toBe(2);
-    expect(feedsUnreadDisplayTotal([feed, { ...feed, readIds: new Set<number>([1, 2, 3]) }])).toBe(2);
+    expect(feedsUnreadDisplayTotal([feed, { ...feed, readIds: new Set<number>([1, 2, 3]) }])).toBe(
+      2,
+    );
   });
 });

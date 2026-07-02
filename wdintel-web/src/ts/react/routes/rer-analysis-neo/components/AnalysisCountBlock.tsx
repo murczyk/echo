@@ -2,7 +2,6 @@ import { Box, Button, CircularProgress, List, ListItem, Paper, Skeleton } from '
 import { useEffect, useId, useState } from 'react';
 import { isNullOrUndefined } from '../../../utils/misc';
 
-
 import type { AnalysisCountItem } from '../types';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 
@@ -14,12 +13,19 @@ type Props = {
   itemActionLabel?: string;
 };
 
-export function AnalysisCountBlock({ title, items, loading = false, onItemAction, itemActionLabel }: Props) {
+export function AnalysisCountBlock({
+  title,
+  items,
+  loading = false,
+  onItemAction,
+  itemActionLabel,
+}: Props) {
   const headingId = useId().replace(/:/g, '-');
   const [expanded, setExpanded] = useState(false);
   const summaryItem = items.find((item) => item.key.trim().length === 0) ?? null;
   const detailItems = items.filter((item) => item.key.trim().length > 0);
-  const showLoadingSkeletons = loading && detailItems.length === 0 && isNullOrUndefined(summaryItem);
+  const showLoadingSkeletons =
+    loading && detailItems.length === 0 && isNullOrUndefined(summaryItem);
   const hasHiddenItems = detailItems.length > 12;
   const visibleItems = expanded || !hasHiddenItems ? detailItems : detailItems.slice(0, 12);
   const hiddenItemsCount = detailItems.length - visibleItems.length;
@@ -32,16 +38,23 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1.5, flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 1.5,
+          flexWrap: 'wrap',
+        }}
+      >
         <CompactTitle id={headingId} component="h2">
           {title}
         </CompactTitle>
         {loading && !showLoadingSkeletons ? (
           <CircularProgress size={16} />
         ) : summaryItem ? (
-          <CompactText color="text.secondary">
-            {`Повідомлень: ${summaryItem.count}`}
-          </CompactText>
+          <CompactText color="text.secondary">{`Повідомлень: ${summaryItem.count}`}</CompactText>
         ) : null}
       </Box>
       <List
@@ -55,7 +68,11 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
       >
         {showLoadingSkeletons ? (
           Array.from({ length: 4 }).map((_, index) => (
-            <ListItem key={`loading-${index}`} disablePadding sx={{ py: 0.5, minWidth: 0, alignItems: 'flex-start' }}>
+            <ListItem
+              key={`loading-${index}`}
+              disablePadding
+              sx={{ py: 0.5, minWidth: 0, alignItems: 'flex-start' }}
+            >
               <Box sx={{ width: '100%' }}>
                 <Skeleton variant="text" width={index % 2 === 0 ? '58%' : '72%'} height={34} />
                 <Skeleton variant="text" width={120} height={26} />
@@ -64,11 +81,7 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
           ))
         ) : visibleItems.length === 0 ? (
           <ListItem disablePadding>
-            {summaryItem ? null : (
-              <CompactText color="text.secondary">
-                Немає даних
-              </CompactText>
-            )}
+            {summaryItem ? null : <CompactText color="text.secondary">Немає даних</CompactText>}
           </ListItem>
         ) : (
           visibleItems.map((item, index) => {
@@ -90,12 +103,14 @@ export function AnalysisCountBlock({ title, items, loading = false, onItemAction
                   <CompactText component="div" sx={{ fontWeight: 500 }}>
                     {item.key}
                   </CompactText>
-                  <CompactText color="text.secondary">
-                    {`Повідомлень: ${item.count}`}
-                  </CompactText>
+                  <CompactText color="text.secondary">{`Повідомлень: ${item.count}`}</CompactText>
                 </Box>
                 {hasAction ? (
-                  <Button size="small" onClick={() => onItemAction(item.key)} sx={{ minWidth: 'auto', px: 1, alignSelf: 'center', justifySelf: 'end' }}>
+                  <Button
+                    size="small"
+                    onClick={() => onItemAction(item.key)}
+                    sx={{ minWidth: 'auto', px: 1, alignSelf: 'center', justifySelf: 'end' }}
+                  >
                     {itemActionLabel}
                   </Button>
                 ) : null}

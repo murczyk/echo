@@ -1,5 +1,13 @@
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  IconButton,
+  InputAdornment,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { NetworkCallsign, Source } from '../../../../../Bindings';
@@ -37,7 +45,11 @@ function scrollToSection(sectionId: string) {
   document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function formatSectionCount(count: number | null, totalCount: number | null, searchActive: boolean): string {
+function formatSectionCount(
+  count: number | null,
+  totalCount: number | null,
+  searchActive: boolean,
+): string {
   if (count === null || totalCount === null) return NO_DATA_LABEL;
   if (!searchActive) return formatCountLabel(count);
   return `${formatCountLabel(count)}/${formatCountLabel(totalCount)}`;
@@ -169,16 +181,35 @@ export function NetworkDetailsCallsignsPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const { firstTableRef, firstTableHeight } = useMeasuredFirstTableHeight(sectionMode);
   const networkRows = useMemo(
-    () => buildNetworkCallsignRowViews(networkCallsigns, new Map(sources.map((source) => [source.id, source] as const))),
+    () =>
+      buildNetworkCallsignRowViews(
+        networkCallsigns,
+        new Map(sources.map((source) => [source.id, source] as const)),
+      ),
     [networkCallsigns, sources],
   );
-  const catalogRows = useMemo(() => flattenCatalogCallsignRows(catalogCallsignGroups), [catalogCallsignGroups]);
+  const catalogRows = useMemo(
+    () => flattenCatalogCallsignRows(catalogCallsignGroups),
+    [catalogCallsignGroups],
+  );
   const normalizedSearchQuery = normalizeCallsignDisplay(searchQuery);
   const searchActive = normalizedSearchQuery !== '';
-  const filteredNetworkRows = useMemo(() => filterNetworkCallsignRows(networkRows, searchQuery), [networkRows, searchQuery]);
-  const filteredCatalogGroups = useMemo(() => filterCatalogCallsignGroups(catalogCallsignGroups, searchQuery), [catalogCallsignGroups, searchQuery]);
-  const filteredCatalogRows = useMemo(() => flattenCatalogCallsignRows(filteredCatalogGroups), [filteredCatalogGroups]);
-  const filteredInterceptedRows = useMemo(() => filterInterceptedCallsigns(unknownInterceptedCallsigns, searchQuery), [searchQuery, unknownInterceptedCallsigns]);
+  const filteredNetworkRows = useMemo(
+    () => filterNetworkCallsignRows(networkRows, searchQuery),
+    [networkRows, searchQuery],
+  );
+  const filteredCatalogGroups = useMemo(
+    () => filterCatalogCallsignGroups(catalogCallsignGroups, searchQuery),
+    [catalogCallsignGroups, searchQuery],
+  );
+  const filteredCatalogRows = useMemo(
+    () => flattenCatalogCallsignRows(filteredCatalogGroups),
+    [filteredCatalogGroups],
+  );
+  const filteredInterceptedRows = useMemo(
+    () => filterInterceptedCallsigns(unknownInterceptedCallsigns, searchQuery),
+    [searchQuery, unknownInterceptedCallsigns],
+  );
   const sectionCounts = {
     network: {
       filtered: filteredNetworkRows.length,
@@ -195,7 +226,8 @@ export function NetworkDetailsCallsignsPanel({
   } as const;
   const networkLoadingActive = networkCallsignsLoading && networkCallsigns.length === 0;
   const catalogLoadingActive = catalogCallsignsLoading && catalogCallsignGroups.length === 0;
-  const interceptedLoadingActive = interceptedCallsignsLoading && unknownInterceptedCallsigns.length === 0;
+  const interceptedLoadingActive =
+    interceptedCallsignsLoading && unknownInterceptedCallsigns.length === 0;
 
   const handleNavigateToSection = (nextSection: NetworkCallsignSectionMode) => {
     onSectionModeChange(nextSection);
@@ -206,8 +238,22 @@ export function NetworkDetailsCallsignsPanel({
 
   return (
     <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
-        <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0, flex: '0 1 auto' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1.5,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          useFlexGap
+          sx={{ flexWrap: 'wrap', minWidth: 0, flex: '0 1 auto' }}
+        >
           <TextField
             label="Пошук"
             value={searchQuery}
@@ -221,22 +267,29 @@ export function NetworkDetailsCallsignsPanel({
               clearSearch();
             }}
             InputProps={{
-              endAdornment: searchQuery !== '' ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    size="small"
-                    aria-label="Очистити пошук"
-                    onClick={clearSearch}
-                    edge="end"
-                  >
-                    <CloseRoundedIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ) : null,
+              endAdornment:
+                searchQuery !== '' ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      aria-label="Очистити пошук"
+                      onClick={clearSearch}
+                      edge="end"
+                    >
+                      <CloseRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
             }}
             sx={{ width: { xs: '100%', sm: 320, md: 360 }, flex: '0 0 auto' }}
           />
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            useFlexGap
+            sx={{ flexWrap: 'wrap', minWidth: 0 }}
+          >
             <PowerChip
               label="Позивні мережі"
               selected={sectionMode === 'network'}
@@ -276,7 +329,9 @@ export function NetworkDetailsCallsignsPanel({
           <Button
             variant="contained"
             onClick={onOpenCreateDrawer}
-            disabled={networkCallsignsLoading || catalogCallsignsLoading || interceptedCallsignsLoading}
+            disabled={
+              networkCallsignsLoading || catalogCallsignsLoading || interceptedCallsignsLoading
+            }
           >
             Додати
           </Button>
@@ -294,11 +349,27 @@ export function NetworkDetailsCallsignsPanel({
 
       <Stack spacing={2.5} sx={{ minHeight: 0, width: '100%' }}>
         <Stack id={SECTION_IDS.network} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
-          <Box ref={firstTableRef} sx={{ height: firstTableHeight ?? 'auto', minHeight: 0, maxHeight: 'calc(100dvh - 16px)', display: 'flex' }}>
+          <Box
+            ref={firstTableRef}
+            sx={{
+              height: firstTableHeight ?? 'auto',
+              minHeight: 0,
+              maxHeight: 'calc(100dvh - 16px)',
+              display: 'flex',
+            }}
+          >
             <NetworkCallsignsNetworkTable
               title="Позивні мережі"
               rows={filteredNetworkRows}
-              countLabel={networkLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.network.filtered, sectionCounts.network.total, searchActive)}
+              countLabel={
+                networkLoadingActive
+                  ? NO_DATA_LABEL
+                  : formatSectionCount(
+                      sectionCounts.network.filtered,
+                      sectionCounts.network.total,
+                      searchActive,
+                    )
+              }
               loading={networkCallsignsLoading}
               loadingError={networkCallsignsError}
               canManage={canManage}
@@ -315,10 +386,25 @@ export function NetworkDetailsCallsignsPanel({
         </Stack>
 
         <Stack id={SECTION_IDS.catalog} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
-          <Box sx={{ height: CATALOG_SECTION_TABLE_HEIGHT, minHeight: 420, maxHeight: 720, display: 'flex' }}>
+          <Box
+            sx={{
+              height: CATALOG_SECTION_TABLE_HEIGHT,
+              minHeight: 420,
+              maxHeight: 720,
+              display: 'flex',
+            }}
+          >
             <NetworkCallsignsCatalogTable
               title="Співпадіння з каталогом"
-              countLabel={catalogLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.catalog.filtered, sectionCounts.catalog.total, searchActive)}
+              countLabel={
+                catalogLoadingActive
+                  ? NO_DATA_LABEL
+                  : formatSectionCount(
+                      sectionCounts.catalog.filtered,
+                      sectionCounts.catalog.total,
+                      searchActive,
+                    )
+              }
               rows={filteredCatalogRows}
               loading={catalogCallsignsLoading}
               loadingError={catalogCallsignsError}
@@ -331,11 +417,22 @@ export function NetworkDetailsCallsignsPanel({
         </Stack>
 
         <Stack id={SECTION_IDS.intercepted} spacing={1.5} sx={{ scrollMarginTop: 16 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 2, flexWrap: 'wrap' }}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ gap: 2, flexWrap: 'wrap' }}
+          >
             <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
               <Typography variant="h6">Присутні в перехопленнях</Typography>
               <Typography variant="body2" color="text.secondary">
-                {interceptedLoadingActive ? NO_DATA_LABEL : formatSectionCount(sectionCounts.intercepted.filtered, sectionCounts.intercepted.total, searchActive)}
+                {interceptedLoadingActive
+                  ? NO_DATA_LABEL
+                  : formatSectionCount(
+                      sectionCounts.intercepted.filtered,
+                      sectionCounts.intercepted.total,
+                      searchActive,
+                    )}
               </Typography>
             </Stack>
           </Stack>

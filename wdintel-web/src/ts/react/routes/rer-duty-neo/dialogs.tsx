@@ -1,6 +1,19 @@
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import type { ReactNode } from 'react';
-import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
+import {
+  STANDARD_DIALOG_ACTIONS_SX,
+  STANDARD_DIALOG_FORM_STACK_SX,
+} from '../../components/dialogStyles';
 import { ELLIPSIS } from '../../utils/misc';
 import { blurActiveElement } from '../../utils/focus';
 
@@ -31,7 +44,12 @@ export function DeleteConfirmDialog({
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>{content}</DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button size={actionSize} variant={cancelVariant} onClick={onClose} disabled={confirmDisabled}>
+        <Button
+          size={actionSize}
+          variant={cancelVariant}
+          onClick={onClose}
+          disabled={confirmDisabled}
+        >
           Скасувати
         </Button>
         <Button
@@ -69,7 +87,11 @@ export type CommentDialogMessagePreview = {
 function renderCommentPreview(message: CommentDialogMessagePreview | null | undefined) {
   if (!message) return null;
 
-  const title = [message.freq, message.groupName ?? message.groupMasterKey, message.senderName ?? message.sender]
+  const title = [
+    message.freq,
+    message.groupName ?? message.groupMasterKey,
+    message.senderName ?? message.sender,
+  ]
     .filter(Boolean)
     .join(' • ');
   const text = (message.text ?? '').trim();
@@ -88,12 +110,24 @@ function renderCommentPreview(message: CommentDialogMessagePreview | null | unde
     >
       <Stack spacing={0.5} sx={{ minWidth: 0 }}>
         {title !== '' ? (
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: 0.2 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ fontWeight: 600, letterSpacing: 0.2 }}
+          >
             {title}
           </Typography>
         ) : null}
         {text !== '' ? (
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 180, overflow: 'auto' }}>
+          <Typography
+            variant="body2"
+            sx={{
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              maxHeight: 180,
+              overflow: 'auto',
+            }}
+          >
             {text}
           </Typography>
         ) : null}
@@ -102,7 +136,14 @@ function renderCommentPreview(message: CommentDialogMessagePreview | null | unde
   );
 }
 
-export function CommentDialog({ open, messagePreview, commentText, onCommentTextChange, onClose, onSave }: CommentDialogProps) {
+export function CommentDialog({
+  open,
+  messagePreview,
+  commentText,
+  onCommentTextChange,
+  onClose,
+  onSave,
+}: CommentDialogProps) {
   return (
     <Dialog
       open={open}

@@ -12,7 +12,7 @@ function normalizeText(value: string | null | undefined): string | null {
 
 function collectValues(
   metadata: InboxMessageMetadata[],
-  selector: (metadata: InboxMessageMetadata) => string | null | undefined
+  selector: (metadata: InboxMessageMetadata) => string | null | undefined,
 ): string[] {
   const values: string[] = [];
   for (const item of metadata) {
@@ -24,7 +24,9 @@ function collectValues(
 }
 
 function joinParts(parts: string[]): string | null {
-  const values = parts.map((part) => normalizeText(part)).filter((part): part is string => part != null);
+  const values = parts
+    .map((part) => normalizeText(part))
+    .filter((part): part is string => part != null);
   return values.length > 0 ? values.join(' / ') : null;
 }
 

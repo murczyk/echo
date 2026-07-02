@@ -16,7 +16,10 @@ import {
   FULL_WIDTH_TABLE_PAPER_SX,
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
-import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../components/mui-customized/table/get-default-table-options';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
@@ -80,7 +83,8 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
 }: SettingsNeoTableProps<TData>) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
   const baseHeadCellProps = (CUSTOM_STYLES.muiTableHeadCellProps ?? {}) as { sx?: object };
 
   const table = useMaterialReactTable({
@@ -203,7 +207,12 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
       columnFilters: tableStateContext.columnFilters as Array<{ id: string; value: unknown }>,
       sorting: tableStateContext.sorting as Array<{ id: string; desc: boolean }>,
     });
-  }, [onQueryStateChange, tableStateContext.columnFilters, tableStateContext.globalFilter, tableStateContext.sorting]);
+  }, [
+    onQueryStateChange,
+    tableStateContext.columnFilters,
+    tableStateContext.globalFilter,
+    tableStateContext.sorting,
+  ]);
 
   return <MaterialReactTable table={table} />;
 }

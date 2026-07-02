@@ -29,9 +29,7 @@ export function DocxDocumentPreview({
   sizeBytes?: number | null;
 }) {
   const theme = useTheme();
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
-  );
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [html, setHtml] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -67,15 +65,11 @@ export function DocxDocumentPreview({
         if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
-        const result = await runWorkerTask<
-          { buffer: ArrayBuffer },
-          DocxPreviewResult
-        >(
+        const result = await runWorkerTask<{ buffer: ArrayBuffer }, DocxPreviewResult>(
           () =>
-            new Worker(
-              new URL('../docx/docx-preview.worker.ts', import.meta.url),
-              { type: 'module' },
-            ),
+            new Worker(new URL('../docx/docx-preview.worker.ts', import.meta.url), {
+              type: 'module',
+            }),
           { buffer },
           abortController.signal,
           [buffer],
@@ -86,11 +80,7 @@ export function DocxDocumentPreview({
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
-        setError(
-          formatDocxPreviewErrorMessage(
-            error instanceof Error ? error.message : null,
-          ),
-        );
+        setError(formatDocxPreviewErrorMessage(error instanceof Error ? error.message : null));
         setStatus('error');
       }
     };

@@ -57,7 +57,11 @@ export function AnalysisStatsPane({
   return (
     <Stack spacing={0}>
       {selectedFreq ? null : (
-        <Paper variant="outlined" component="section" sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Paper
+          variant="outlined"
+          component="section"
+          sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}
+        >
           <Stack spacing={1.5}>
             <PowerAlert severity="info">
               Оберіть частоту, щоб завантажити суміжні частоти та активність по датах.
@@ -65,7 +69,12 @@ export function AnalysisStatsPane({
             {suggestedFreqs.length > 0 ? (
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 {suggestedFreqs.map((freq) => (
-                  <Button key={freq} variant="outlined" size="small" onClick={() => onSelectFreq(freq)}>
+                  <Button
+                    key={freq}
+                    variant="outlined"
+                    size="small"
+                    onClick={() => onSelectFreq(freq)}
+                  >
                     {freq}
                   </Button>
                 ))}
@@ -79,10 +88,20 @@ export function AnalysisStatsPane({
         </Paper>
       )}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCorrelatedFreqsCard correlatedFreqs={correlatedFreqs} loading={correlatedFreqsLoading} selectedFreq={selectedFreq} />
+        <AnalysisCorrelatedFreqsCard
+          correlatedFreqs={correlatedFreqs}
+          loading={correlatedFreqsLoading}
+          selectedFreq={selectedFreq}
+        />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Частоти" items={topFreqs} loading={rightSidebarLoading} onItemAction={onSelectFreq} itemActionLabel="У фільтр" />
+        <AnalysisCountBlock
+          title="Частоти"
+          items={topFreqs}
+          loading={rightSidebarLoading}
+          onItemAction={onSelectFreq}
+          itemActionLabel="У фільтр"
+        />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock title="Підрозділи" items={topUnits} loading={rightSidebarLoading} />

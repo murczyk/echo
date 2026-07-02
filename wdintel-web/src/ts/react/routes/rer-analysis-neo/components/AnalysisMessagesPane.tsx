@@ -16,7 +16,11 @@ import type {
 import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
-import { resolveMessageCardEtalonDisplayModel, buildCopyTextWithNetworkAndNote, buildCopyTextWithNetworkName } from '../../shared/message-card/message-card.utils';
+import {
+  resolveMessageCardEtalonDisplayModel,
+  buildCopyTextWithNetworkAndNote,
+  buildCopyTextWithNetworkName,
+} from '../../shared/message-card/message-card.utils';
 import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
 import { blurActiveElement } from '../../../utils/focus';
@@ -32,7 +36,9 @@ type BotTagAction = {
 
 export function getAnalysisMessagesScrollSx(theme: Theme) {
   const thumbColor =
-    theme.palette.mode === 'light' ? alpha(theme.palette.text.primary, 0.28) : 'rgba(255, 255, 255, 0.38)';
+    theme.palette.mode === 'light'
+      ? alpha(theme.palette.text.primary, 0.28)
+      : 'rgba(255, 255, 255, 0.38)';
 
   return {
     height: '100%',
@@ -80,7 +86,10 @@ type Props = {
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
   onSaveEditor: (message: InboxMessage) => void;
-  onSaveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
+  onSaveMessageUpdate: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => Promise<boolean>;
   onSaveMessageComment: (messageId: number, comment: string | null) => void;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
@@ -113,7 +122,10 @@ type AnalysisMessageCardItemProps = {
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
-  onSaveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
+  onSaveMessageUpdate: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => Promise<boolean>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
@@ -181,7 +193,12 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       groupName={labels.groupName}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
-      messageComments={filterOtherMessageComments(authUserName, currentUser, users, messageComments)}
+      messageComments={filterOtherMessageComments(
+        authUserName,
+        currentUser,
+        users,
+        messageComments,
+      )}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
       tagsLoading={tagsLoading}
@@ -206,7 +223,11 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
           ? () => {
               void copyMessageValue(
-                buildCopyTextWithNetworkName(message.text, etalonDisplayModel.copyEtalonValue, message.noHeadersBody),
+                buildCopyTextWithNetworkName(
+                  message.text,
+                  etalonDisplayModel.copyEtalonValue,
+                  message.noHeadersBody,
+                ),
               ).then(() => {
                 onCopyFeedback(`text-network-${id}`);
               });
@@ -263,21 +284,25 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
           return saveCallsignPatch((current) => {
             const currentCallsigns = current.callsigns ?? [];
             const nextCallsign = normalizeCallsign(callsign);
-            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign)) return current;
+            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign))
+              return current;
             return { ...current, callsigns: [...currentCallsigns, nextCallsign] };
           });
         },
         onRemoveCallsign: async (callsign) => {
           return saveCallsignPatch((current) => ({
             ...current,
-            callsigns: (current.callsigns ?? []).filter((item) => normalizeCallsign(item) !== normalizeCallsign(callsign)),
+            callsigns: (current.callsigns ?? []).filter(
+              (item) => normalizeCallsign(item) !== normalizeCallsign(callsign),
+            ),
           }));
         },
         onAddSuggestedCallsign: async (callsign) => {
           return saveCallsignPatch((current) => {
             const currentCallsigns = current.callsigns ?? [];
             const nextCallsign = normalizeCallsign(callsign);
-            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign)) return current;
+            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign))
+              return current;
             return { ...current, callsigns: [...currentCallsigns, nextCallsign] };
           });
         },
@@ -324,7 +349,10 @@ function AnalysisMessagesPaneComponent({
   unitsMap,
 }: Props) {
   const [commentDraft, setCommentDraft] = useState('');
-  const [commentMessage, setCommentMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [commentMessage, setCommentMessage] = useState<{
+    id: number;
+    message: InboxMessage;
+  } | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
@@ -357,11 +385,14 @@ function AnalysisMessagesPaneComponent({
     }, 1000);
   }, []);
 
-  const handleCommentOpen = useCallback((messageId: number, nextMessage: InboxMessage) => {
-    blurActiveElement();
-    setCommentMessage({ id: messageId, message: nextMessage });
-    setCommentDraft(nextMessage.extendedForm ?? '');
-  }, [blurActiveElement]);
+  const handleCommentOpen = useCallback(
+    (messageId: number, nextMessage: InboxMessage) => {
+      blurActiveElement();
+      setCommentMessage({ id: messageId, message: nextMessage });
+      setCommentDraft(nextMessage.extendedForm ?? '');
+    },
+    [blurActiveElement],
+  );
 
   const handleDeleteOpen = useCallback(
     (messageId: number) => {
@@ -391,9 +422,7 @@ function AnalysisMessagesPaneComponent({
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
-      <Box
-        sx={getAnalysisMessagesScrollSx}
-      >
+      <Box sx={getAnalysisMessagesScrollSx}>
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
           {messages.map(([id, message]) => (
             <AnalysisMessageCardItem
@@ -443,11 +472,18 @@ function AnalysisMessagesPaneComponent({
       {loading ? (
         <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
       ) : null}
-      {paginationLoading ? <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} /> : null}
+      {paginationLoading ? (
+        <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} />
+      ) : null}
 
       <CommentDialog
         open={isPresent(commentMessage)}
-        messagePreview={commentMessage ? buildMessageCardDisplayLabels(commentMessage.message, { groupInfos, profiles }).commentPreview : null}
+        messagePreview={
+          commentMessage
+            ? buildMessageCardDisplayLabels(commentMessage.message, { groupInfos, profiles })
+                .commentPreview
+            : null
+        }
         commentText={commentDraft}
         onCommentTextChange={setCommentDraft}
         onClose={() => setCommentMessage(null)}

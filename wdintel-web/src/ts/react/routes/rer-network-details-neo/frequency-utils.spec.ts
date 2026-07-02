@@ -49,9 +49,27 @@ describe('frequency utils', () => {
     ]);
     const rows = buildNetworkFreqRows(
       [
-        createFreq({ networkFreqId: 10, freq: '652.1111', messageCount: 2, callsigns: ['Alpha'], modulation: 'NFM' }),
-        createFreq({ networkFreqId: 11, freq: '652.1200', messageCount: 3, callsigns: ['Bravo'], modulation: 'NFM' }),
-        createFreq({ networkFreqId: 12, freq: '652.1500', messageCount: 4, callsigns: ['Charlie'], modulation: 'DMR' }),
+        createFreq({
+          networkFreqId: 10,
+          freq: '652.1111',
+          messageCount: 2,
+          callsigns: ['Alpha'],
+          modulation: 'NFM',
+        }),
+        createFreq({
+          networkFreqId: 11,
+          freq: '652.1200',
+          messageCount: 3,
+          callsigns: ['Bravo'],
+          modulation: 'NFM',
+        }),
+        createFreq({
+          networkFreqId: 12,
+          freq: '652.1500',
+          messageCount: 4,
+          callsigns: ['Charlie'],
+          modulation: 'DMR',
+        }),
       ],
       new Map(),
       callsignsById,
@@ -113,7 +131,11 @@ describe('frequency utils', () => {
       [],
     );
 
-    const sortedRows = sortNetworkFreqRowsByTableOrder(rows, [{ id: 'displayFreq', desc: false }], 'Усі');
+    const sortedRows = sortNetworkFreqRowsByTableOrder(
+      rows,
+      [{ id: 'displayFreq', desc: false }],
+      'Усі',
+    );
 
     expect(sortedRows.map((row) => row.id)).toEqual(['freq-10', 'freq-20']);
   });
@@ -130,9 +152,18 @@ describe('frequency utils', () => {
       ['freq-group:10-11'],
     );
 
-    const sortedRows = sortNetworkFreqRowsByTableOrder(rows, [{ id: 'messageCount', desc: false }], 'Усі');
+    const sortedRows = sortNetworkFreqRowsByTableOrder(
+      rows,
+      [{ id: 'messageCount', desc: false }],
+      'Усі',
+    );
 
-    expect(sortedRows.map((row) => row.id)).toEqual(['freq-20', 'freq-group:10-11', 'freq-10', 'freq-11']);
+    expect(sortedRows.map((row) => row.id)).toEqual([
+      'freq-20',
+      'freq-group:10-11',
+      'freq-10',
+      'freq-11',
+    ]);
   });
 
   it('preserves DMRe as a distinct frequency type label', () => {
@@ -187,17 +218,13 @@ describe('frequency utils', () => {
   });
 
   it('derives encryption label from encryption table when keys are absent', () => {
-    expect(
-      encryptionLabelFromKeys([], new Map([[2, 'ARC40']]), 2, null),
-    ).toBe('ARC40');
-    expect(
-      encryptionLabelFromKeys([], new Map([[3, 'AES256']]), 3, null),
-    ).toBe('AES256');
-    expect(
-      encryptionLabelFromKeys([], new Map([[4, 'TYT (16 bit)']]), 4, null),
-    ).toBe('TYT (16 bit)');
-    expect(
-      encryptionLabelFromKeys([], new Map([[5, 'TYT (128 bit)']]), 5, null),
-    ).toBe('TYT (128 bit)');
+    expect(encryptionLabelFromKeys([], new Map([[2, 'ARC40']]), 2, null)).toBe('ARC40');
+    expect(encryptionLabelFromKeys([], new Map([[3, 'AES256']]), 3, null)).toBe('AES256');
+    expect(encryptionLabelFromKeys([], new Map([[4, 'TYT (16 bit)']]), 4, null)).toBe(
+      'TYT (16 bit)',
+    );
+    expect(encryptionLabelFromKeys([], new Map([[5, 'TYT (128 bit)']]), 5, null)).toBe(
+      'TYT (128 bit)',
+    );
   });
 });

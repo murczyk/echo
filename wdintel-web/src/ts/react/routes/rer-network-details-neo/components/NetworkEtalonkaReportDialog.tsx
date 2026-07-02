@@ -31,9 +31,12 @@ import type { BgtaskProgressStage } from '../../../services/api/bgtask';
 import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
 import { parseUtcDateTime } from '../../../services/api/report-history';
 import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../../../utils/misc';
-import { type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from '../use-rer-network-details-neo-page.etalonka-report';
+import {
+  type NetworkEtalonkaReportState,
+  type NetworkEtalonkaReportType,
+} from '../use-rer-network-details-neo-page.etalonka-report';
 
-const REPORT_HISTORY_URL = "/settings-neo?section=my-reports";
+const REPORT_HISTORY_URL = '/settings-neo?section=my-reports';
 
 type Props = {
   report: NetworkEtalonkaReportState;
@@ -170,10 +173,25 @@ function ReportCheckboxRow({
       }
       label={
         infoTitle ? (
-          <Stack component="span" direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+          <Stack
+            component="span"
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            sx={{ minWidth: 0 }}
+          >
             <Box component="span">{label}</Box>
             <Tooltip arrow title={infoTitle}>
-              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: disabled ? 'text.disabled' : 'text.secondary', lineHeight: 0, cursor: 'default' }}>
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  color: disabled ? 'text.disabled' : 'text.secondary',
+                  lineHeight: 0,
+                  cursor: 'default',
+                }}
+              >
                 <InfoOutlinedIcon sx={{ fontSize: 16 }} />
               </Box>
             </Tooltip>
@@ -210,8 +228,12 @@ export function NetworkEtalonkaReportDialog({
   const hasBgtask = historyRow?.bgtaskId != null;
   const isQueued = report.running && !hasBgtask;
   const dateTimeDisabled = report.running || !isExtended;
-  const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.fromDateTimeStr));
-  const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() => parseDateTime(report.toDateTimeStr));
+  const [fromDateTimeDraft, setFromDateTimeDraft] = useState<Dayjs | null>(() =>
+    parseDateTime(report.fromDateTimeStr),
+  );
+  const [toDateTimeDraft, setToDateTimeDraft] = useState<Dayjs | null>(() =>
+    parseDateTime(report.toDateTimeStr),
+  );
   const progressStages = parseBgtaskProgressStages(report.logs);
   const latestProgressStage = getLatestProgressStage(progressStages);
   const visibleLogLines = report.logs.filter((line) => !/^\[\d+\/\d+\]/.test(line));
@@ -221,8 +243,13 @@ export function NetworkEtalonkaReportDialog({
   const queuedForTime = formatDurationSinceIso(historyRow?.createdAt);
   const startedAtLabel = formatDateTimeLabel(historyRow?.startedAt ?? null);
   const plannedForLabel = formatDateTimeLabel(historyRow?.plannedForTs ?? null);
-  const showLongRunningHint = report.running && hasBgtask && report.startedAtMs !== null && Date.now() - report.startedAtMs >= 30_000;
-  const showQueueWarning = isQueued && createdAtMs !== null && Date.now() - createdAtMs >= 5 * 60 * 1000;
+  const showLongRunningHint =
+    report.running &&
+    hasBgtask &&
+    report.startedAtMs !== null &&
+    Date.now() - report.startedAtMs >= 30_000;
+  const showQueueWarning =
+    isQueued && createdAtMs !== null && Date.now() - createdAtMs >= 5 * 60 * 1000;
   const progressVariant = hasBgtask && !report.error && !isQueued ? 'determinate' : 'indeterminate';
   const progressLabel = report.error
     ? 'Помилка'
@@ -231,7 +258,8 @@ export function NetworkEtalonkaReportDialog({
       : report.running
         ? 'Формування'
         : 'Готово';
-  const progressStageLabel = isQueued || !hasBgtask ? 'Очікує запуску' : latestProgressStage?.text ?? 'Підготовка';
+  const progressStageLabel =
+    isQueued || !hasBgtask ? 'Очікує запуску' : (latestProgressStage?.text ?? 'Підготовка');
   const progressSummaryLabel = isQueued
     ? historyRow?.blockedByReportId != null
       ? `Очікує завершення звіту #${historyRow.blockedByReportId} · ${queuedForTime ?? '—'}`
@@ -258,7 +286,10 @@ export function NetworkEtalonkaReportDialog({
   };
 
   const hasProgress = report.taskId !== null || report.running || report.logs.length > 0;
-  const progressPercent = Math.max(1, Math.min(100, Math.round((report.curr / Math.max(1, report.overall)) * 100)));
+  const progressPercent = Math.max(
+    1,
+    Math.min(100, Math.round((report.curr / Math.max(1, report.overall)) * 100)),
+  );
 
   return (
     <Dialog
@@ -289,19 +320,47 @@ export function NetworkEtalonkaReportDialog({
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {description}
         </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-          Переглядайте свої звіти в <Box component="a" href={REPORT_HISTORY_URL} sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Налаштування &gt; Мої звіти</Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          Переглядайте свої звіти в{' '}
+          <Box
+            component="a"
+            href={REPORT_HISTORY_URL}
+            sx={{
+              color: 'primary.main',
+              textDecoration: 'none',
+              '&:hover': { textDecoration: 'underline' },
+            }}
+          >
+            Налаштування &gt; Мої звіти
+          </Box>
         </Typography>
       </DialogTitle>
 
       <DialogContent dividers sx={{ px: 3, pt: 1.75, pb: 2.5 }}>
         <Stack spacing={2}>
-          {launchWarningText ? <PowerAlert severity="warning">{launchWarningText}</PowerAlert> : null}
+          {launchWarningText ? (
+            <PowerAlert severity="warning">{launchWarningText}</PowerAlert>
+          ) : null}
           {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
 
-          <RadioGroup row value={report.reportType} onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)} sx={{ gap: 2 }}>
-            <FormControlLabel value="AccordingToTheForm" control={<Radio />} label="Згідно форми" disabled={report.running} />
-            <FormControlLabel value="ExtendedReport" control={<Radio />} label="Розширений" disabled={report.running} />
+          <RadioGroup
+            row
+            value={report.reportType}
+            onChange={(_event, value) => onTypeChange(value as NetworkEtalonkaReportType)}
+            sx={{ gap: 2 }}
+          >
+            <FormControlLabel
+              value="AccordingToTheForm"
+              control={<Radio />}
+              label="Згідно форми"
+              disabled={report.running}
+            />
+            <FormControlLabel
+              value="ExtendedReport"
+              control={<Radio />}
+              label="Розширений"
+              disabled={report.running}
+            />
           </RadioGroup>
 
           <Box
@@ -339,7 +398,13 @@ export function NetworkEtalonkaReportDialog({
               <Stack spacing={1.25}>
                 {isExtended ? (
                   <Stack spacing={2}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                        gap: 1.5,
+                      }}
+                    >
                       <PowerDateTimePicker
                         label="Від"
                         value={fromDateTimeDraft}
@@ -403,7 +468,8 @@ export function NetworkEtalonkaReportDialog({
                 ) : (
                   <Stack spacing={1.25}>
                     <Typography variant="body2" color="text.secondary">
-                      Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному звіті
+                      Дата, позивні підрозділів та карта пеленгів доступні тільки в розширеному
+                      звіті
                     </Typography>
 
                     <Stack spacing={0.75}>
@@ -424,7 +490,12 @@ export function NetworkEtalonkaReportDialog({
           {hasProgress ? (
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, borderColor: 'divider' }}>
               <Stack spacing={1.5}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  spacing={2}
+                >
                   <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                     {progressLabel}
                   </Typography>
@@ -434,14 +505,26 @@ export function NetworkEtalonkaReportDialog({
                   variant={progressVariant}
                   color={report.error ? 'error' : report.running ? 'primary' : 'success'}
                   value={progressVariant === 'determinate' ? progressPercent : undefined}
-                  sx={report.running && progressVariant === 'determinate' ? { '& .MuiLinearProgress-bar': { transition: 'none' } } : undefined}
+                  sx={
+                    report.running && progressVariant === 'determinate'
+                      ? { '& .MuiLinearProgress-bar': { transition: 'none' } }
+                      : undefined
+                  }
                 />
 
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  spacing={2}
+                >
                   <Typography variant="body2" color="text.secondary">
                     {progressSummaryLabel}
                   </Typography>
-                  <Button size="small" onClick={() => onSetProgressExpanded(!report.progressExpanded)}>
+                  <Button
+                    size="small"
+                    onClick={() => onSetProgressExpanded(!report.progressExpanded)}
+                  >
                     {report.progressExpanded ? 'Сховати деталі' : 'Показати деталі'}
                   </Button>
                 </Stack>
@@ -451,7 +534,11 @@ export function NetworkEtalonkaReportDialog({
                     <Box
                       sx={{
                         display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                        gridTemplateColumns: {
+                          xs: '1fr',
+                          sm: 'repeat(2, minmax(0, 1fr))',
+                          md: 'repeat(3, minmax(0, 1fr))',
+                        },
                         gap: 1,
                         p: 1.5,
                         borderRadius: 2,
@@ -543,13 +630,22 @@ export function NetworkEtalonkaReportDialog({
                     </Box>
 
                     {hasProgressDetails ? (
-                      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
+                      <Paper
+                        variant="outlined"
+                        sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}
+                      >
                         <Stack spacing={0.75}>
                           {progressStages.map((stage) => {
-                            const stageDone = !report.running && !report.error ? true : report.curr > stage.index;
+                            const stageDone =
+                              !report.running && !report.error ? true : report.curr > stage.index;
                             const stageCurrent = report.running && report.curr === stage.index;
                             return (
-                              <Stack key={`${report.taskRunId}-${stage.index}`} direction="row" spacing={1} alignItems="center">
+                              <Stack
+                                key={`${report.taskRunId}-${stage.index}`}
+                                direction="row"
+                                spacing={1}
+                                alignItems="center"
+                              >
                                 {stageDone ? (
                                   <CheckCircleIcon color="success" fontSize="small" />
                                 ) : stageCurrent ? (
@@ -561,7 +657,10 @@ export function NetworkEtalonkaReportDialog({
                                     ○
                                   </Typography>
                                 )}
-                                <Typography variant="caption" color={stageCurrent ? 'primary.main' : 'text.secondary'}>
+                                <Typography
+                                  variant="caption"
+                                  color={stageCurrent ? 'primary.main' : 'text.secondary'}
+                                >
                                   [{stage.index}/{stage.overall}] {stage.text}
                                 </Typography>
                               </Stack>
@@ -586,7 +685,8 @@ export function NetworkEtalonkaReportDialog({
                 ) : null}
                 {showLongRunningHint ? (
                   <PowerAlert severity="info">
-                    Формування може тривати кілька хвилин. Звіт можна переглянути та завантажити пізніше в Налаштування &gt; Мої звіти.
+                    Формування може тривати кілька хвилин. Звіт можна переглянути та завантажити
+                    пізніше в Налаштування &gt; Мої звіти.
                   </PowerAlert>
                 ) : null}
               </Stack>
@@ -604,7 +704,11 @@ export function NetworkEtalonkaReportDialog({
           flexWrap: 'wrap',
         }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ flex: '1 1 320px', minWidth: 0 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ flex: '1 1 320px', minWidth: 0 }}
+        >
           {description}
         </Typography>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
@@ -613,7 +717,9 @@ export function NetworkEtalonkaReportDialog({
             onClick={onDownload}
             disabled={report.running}
             variant="contained"
-            startIcon={report.running ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />}
+            startIcon={
+              report.running ? <CircularProgress color="inherit" size={16} /> : <DownloadIcon />
+            }
           >
             {isQueued ? 'Очікує запуску' : report.running ? 'Формування...' : 'Завантажити'}
           </Button>

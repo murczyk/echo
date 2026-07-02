@@ -42,9 +42,10 @@ function ExpandableInlineListCell<T>({
   const hiddenCount = Math.max(items.length - maxVisible, 0);
   const hasOverflow = items.length > maxVisible;
   const fadeWidth = collapseFadeWidth ?? '4rem';
-  const maskImage = hasOverflow && !expanded
-    ? `linear-gradient(to right, #000 0, #000 calc(100% - ${fadeWidth}), transparent 100%)`
-    : 'none';
+  const maskImage =
+    hasOverflow && !expanded
+      ? `linear-gradient(to right, #000 0, #000 calc(100% - ${fadeWidth}), transparent 100%)`
+      : 'none';
   const content = (
     <Box
       sx={{
@@ -71,7 +72,7 @@ function ExpandableInlineListCell<T>({
           WebkitMaskImage: maskImage,
           maskImage,
         }}
-        >
+      >
         {visibleItems.map((item, index) => renderItem(item, index))}
       </Box>
       {hasOverflow ? (
@@ -95,7 +96,7 @@ function ExpandableInlineListCell<T>({
             aria-label={expanded ? expandedLabel : `Показати ще ${hiddenCount}`}
             sx={{
               minWidth: 0,
-              width: expanded ? 'auto' : collapsedButtonWidth ?? 'auto',
+              width: expanded ? 'auto' : (collapsedButtonWidth ?? 'auto'),
               px: 0.5,
               py: 0,
               flexShrink: 0,
@@ -196,17 +197,23 @@ function ExpandableTextListCell({
   return tooltipTitle ? <Tooltip title={tooltipTitle}>{content}</Tooltip> : content;
 }
 
-export function CompactListCell({ items, maxVisible = 2 }: { items: string[]; maxVisible?: number }) {
+export function CompactListCell({
+  items,
+  maxVisible = 2,
+}: {
+  items: string[];
+  maxVisible?: number;
+}) {
   return (
-    <ExpandableTextListCell
-      items={items}
-      maxVisible={maxVisible}
-      tooltipTitle={items.join(', ')}
-    />
+    <ExpandableTextListCell items={items} maxVisible={maxVisible} tooltipTitle={items.join(', ')} />
   );
 }
 
-export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTableRowView['callsignChips'] }) {
+export function CallsignChipsCell({
+  callsigns,
+}: {
+  callsigns: AnalysisSummaryTableRowView['callsignChips'];
+}) {
   return (
     <ExpandableInlineListCell
       items={callsigns}
@@ -215,7 +222,11 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
       collapseFadeWidth="6rem"
       renderItem={(entry, index) => {
         const hintIcon =
-          entry.iconClass === 'info-circle-fill' ? <InfoIcon fontSize="inherit" /> : entry.iconClass === 'info-circle' ? <InfoOutlinedIcon fontSize="inherit" /> : null;
+          entry.iconClass === 'info-circle-fill' ? (
+            <InfoIcon fontSize="inherit" />
+          ) : entry.iconClass === 'info-circle' ? (
+            <InfoOutlinedIcon fontSize="inherit" />
+          ) : null;
         const chip = (
           <PowerChip
             label={
@@ -233,7 +244,11 @@ export function CallsignChipsCell({ callsigns }: { callsigns: AnalysisSummaryTab
         );
 
         return (
-          <Tooltip key={`${entry.callsign}-${index}`} title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+          <Tooltip
+            key={`${entry.callsign}-${index}`}
+            title={entry.tooltip ?? entry.callsign.toUpperCase()}
+            placement="top"
+          >
             <span>{chip}</span>
           </Tooltip>
         );

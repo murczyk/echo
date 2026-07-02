@@ -39,7 +39,13 @@ function TopPanelSkeleton() {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Skeleton variant="text" width="32%" height={30} />
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+            gap: 2,
+          }}
+        >
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
             <Skeleton variant="text" width="42%" height={28} />
             <Skeleton variant="rounded" height={24} />
@@ -66,4 +72,3 @@ function TopPanelSkeleton() {
 export function NetworkDetailsLeftPanelSkeleton({ placement }: { placement: Placement }) {
   return placement === 'top' ? <TopPanelSkeleton /> : <LeftPanelSkeleton />;
 }
-

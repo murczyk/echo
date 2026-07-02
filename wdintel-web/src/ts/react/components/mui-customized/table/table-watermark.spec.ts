@@ -23,9 +23,9 @@ describe('syncTableWatermarks', () => {
 
     syncTableWatermarks();
 
-    const watermarks = Array.from(document.querySelectorAll<HTMLElement>('[data-table-watermark]')).map((element) =>
-      element.getAttribute('data-table-watermark'),
-    );
+    const watermarks = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-table-watermark]'),
+    ).map((element) => element.getAttribute('data-table-watermark'));
 
     expect(watermarks).toEqual(['', 'First User', 'Second User']);
   });

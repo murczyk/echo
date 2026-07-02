@@ -36,5 +36,8 @@ function getIconSearch(): Promise<IconSearch> {
 export async function proposeImporterIcons(text: string): Promise<string[]> {
   if (text.trim() === '') return [];
   const search = await getIconSearch();
-  return search.search(text).map((item) => item.icon).slice(0, 8);
+  return search
+    .search(text)
+    .map((item) => item.icon)
+    .slice(0, 8);
 }

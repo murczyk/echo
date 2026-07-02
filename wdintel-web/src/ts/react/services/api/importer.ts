@@ -1,4 +1,9 @@
-import type { DownloadKmzReq, RowInfo, UploadPdfRes, UploadScreenshotRes } from '../../../../Bindings';
+import type {
+  DownloadKmzReq,
+  RowInfo,
+  UploadPdfRes,
+  UploadScreenshotRes,
+} from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { HttpRequestError, postBytes } from './client';
 
@@ -54,7 +59,9 @@ function normalizeRowInfo(row: RowInfoBody): RowInfo {
   };
 }
 
-function normalizeUploadScreenshotRes(raw: UploadScreenshotResRaw | undefined): UploadScreenshotRes {
+function normalizeUploadScreenshotRes(
+  raw: UploadScreenshotResRaw | undefined,
+): UploadScreenshotRes {
   return {
     imageUrl: raw?.imageUrl ?? raw?.image_url ?? '',
   };
@@ -87,7 +94,10 @@ async function requestMultipart<T>(
     if (response.status === 401) {
       emitUnauthorizedEvent();
     }
-    throw new HttpRequestError(response.status, formatErrorMessage(response.status, await response.text()));
+    throw new HttpRequestError(
+      response.status,
+      formatErrorMessage(response.status, await response.text()),
+    );
   }
 
   if (response.status === 204) return normalize(undefined);
@@ -113,7 +123,12 @@ export async function uploadImporterScreenshot(image: File | Blob): Promise<Uplo
   } else {
     formData.append('image', image, 'image.png');
   }
-  return requestMultipart('PUT', '/api/terminal/upload-screenshot', formData, normalizeUploadScreenshotRes);
+  return requestMultipart(
+    'PUT',
+    '/api/terminal/upload-screenshot',
+    formData,
+    normalizeUploadScreenshotRes,
+  );
 }
 
 export async function uploadImporterPdf(file: File): Promise<UploadPdfRes> {

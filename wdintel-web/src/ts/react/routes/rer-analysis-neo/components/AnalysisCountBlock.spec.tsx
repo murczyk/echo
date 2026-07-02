@@ -50,7 +50,9 @@ async function click(element: HTMLElement): Promise<void> {
 }
 
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label));
+  const button = Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(label),
+  );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }

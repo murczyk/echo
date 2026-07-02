@@ -5,12 +5,10 @@ import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-let latestAutocompleteProps:
-  | {
-      onChange?: (_event: unknown, nextOption: { id: number } | null) => void;
-      onInputChange?: (_event: unknown, nextValue: string, reason: string) => void;
-    }
-  | null = null;
+let latestAutocompleteProps: {
+  onChange?: (_event: unknown, nextOption: { id: number } | null) => void;
+  onInputChange?: (_event: unknown, nextValue: string, reason: string) => void;
+} | null = null;
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({
@@ -27,8 +25,20 @@ vi.mock('@mui/material', () => ({
       {renderInput ? renderInput({} as never) : null}
     </div>
   ),
-  TextField: ({ label, helperText, onBlur }: { label?: ReactNode; helperText?: ReactNode; onBlur?: () => void }) => (
-    <input aria-label={String(label)} data-helper={helperText ? String(helperText) : ''} onBlur={onBlur} />
+  TextField: ({
+    label,
+    helperText,
+    onBlur,
+  }: {
+    label?: ReactNode;
+    helperText?: ReactNode;
+    onBlur?: () => void;
+  }) => (
+    <input
+      aria-label={String(label)}
+      data-helper={helperText ? String(helperText) : ''}
+      onBlur={onBlur}
+    />
   ),
 }));
 

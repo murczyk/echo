@@ -72,7 +72,16 @@ function toMapPalitras(palitras: PalitraReadV2[]): unknown[] {
 export function buildMapAttrs(params: {
   dateRange: { startDate: number; endDate: number };
   isLoading: boolean;
-  points: Array<{ messageId: number; messageUid: string | null; id: number; lat: number; lng: number; mgrsCoords: string; sk42Coords: string; freq: string | null }>;
+  points: Array<{
+    messageId: number;
+    messageUid: string | null;
+    id: number;
+    lat: number;
+    lng: number;
+    mgrsCoords: string;
+    sk42Coords: string;
+    freq: string | null;
+  }>;
   messages: Array<[number, InboxMessage]>;
   networkUnits: NetworkUnit[];
   selectedUnits: string[];

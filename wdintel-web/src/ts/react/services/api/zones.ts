@@ -323,7 +323,9 @@ function normalizeSignalGroupStats(raw: SignalGroupStatsLike | null | undefined)
   };
 }
 
-function normalizeSignalGroupStatsTimelineRsp(raw: SignalGroupStatsTimelineRspLike): SignalGroupStatsTimelineRsp {
+function normalizeSignalGroupStatsTimelineRsp(
+  raw: SignalGroupStatsTimelineRspLike,
+): SignalGroupStatsTimelineRsp {
   return {
     data: (raw.data ?? []).map((entry) => ({
       masterKey: entry.masterKey ?? entry.master_key ?? '',
@@ -351,7 +353,7 @@ function normalizeInterseptionKind(raw: {
 }): InterseptionKind {
   const interseptionKind = raw.interseptionKind ?? raw.interseption_kind;
   if (interseptionKind === 'rer' || interseptionKind === 'other') return interseptionKind;
-  return raw.isRer ?? raw.is_rer ?? true ? 'rer' : 'other';
+  return (raw.isRer ?? raw.is_rer ?? true) ? 'rer' : 'other';
 }
 
 function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry {
@@ -360,10 +362,12 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    disableNetworkAssignment:
+      raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
-    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    areasOfResponsibility:
+      (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }
 
@@ -373,13 +377,15 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    disableNetworkAssignment:
+      raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     groupAdminData: normalizeGroupAdminData(raw.groupAdminData ?? raw.group_admin_data),
-    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    areasOfResponsibility:
+      (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }
 
@@ -389,12 +395,14 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
     interseptionKind: normalizeInterseptionKind(raw),
-    disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    disableNetworkAssignment:
+      raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
     adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
-    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    areasOfResponsibility:
+      (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }
 
@@ -456,7 +464,9 @@ function toZoneDatasourceGroupsReqBody(req: ZoneDatasourceGroupsReq): ZoneDataso
   };
 }
 
-function toZoneDatasourceGroupAddReqBody(req: ZoneDatasourceGroupAddReq): ZoneDatasourceGroupAddReqBody {
+function toZoneDatasourceGroupAddReqBody(
+  req: ZoneDatasourceGroupAddReq,
+): ZoneDatasourceGroupAddReqBody {
   return {
     zone_id: req.zoneId,
     datasource_id: req.datasourceId,
@@ -470,7 +480,9 @@ function toZoneDatasourceGroupAddReqBody(req: ZoneDatasourceGroupAddReq): ZoneDa
   };
 }
 
-function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): ZoneDatasourceGroupUpdateReqBody {
+function toZoneDatasourceGroupUpdateReqBody(
+  req: ZoneDatasourceGroupUpdateReq,
+): ZoneDatasourceGroupUpdateReqBody {
   return {
     id: req.id,
     is_secret: req.isSecret,
@@ -485,7 +497,9 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
   };
 }
 
-function toMyAdminSignalGroupUpdateReqBody(req: MyAdminSignalGroupUpdateReq): MyAdminSignalGroupUpdateReqBody {
+function toMyAdminSignalGroupUpdateReqBody(
+  req: MyAdminSignalGroupUpdateReq,
+): MyAdminSignalGroupUpdateReqBody {
   return {
     master_key: req.masterKey,
     is_secret: req.isSecret,
@@ -511,7 +525,9 @@ function toBatchSignalGroupReqBody(req: BatchSignalGroupReq): BatchSignalGroupRe
   };
 }
 
-function toSignalGroupStatsTimelineReqBody(req: SignalGroupStatsTimelineReq): SignalGroupStatsTimelineReqBody {
+function toSignalGroupStatsTimelineReqBody(
+  req: SignalGroupStatsTimelineReq,
+): SignalGroupStatsTimelineReqBody {
   return {
     master_keys: req.masterKeys,
     period_hours: req.periodHours ?? null,
@@ -528,18 +544,24 @@ function normalizeSignalGroupsRsp(raw: SignalGroupsRspLike): SignalGroupEntry[] 
   return (raw.data ?? []).map(normalizeSignalGroupEntry);
 }
 
-function normalizeZoneDatasourceGroupList(raw: ZoneDatasourceGroupListRspLike): ZoneDatasourceGroup[] {
+function normalizeZoneDatasourceGroupList(
+  raw: ZoneDatasourceGroupListRspLike,
+): ZoneDatasourceGroup[] {
   const list = raw.zoneDatasourceGroups ?? raw.zone_datasource_groups ?? [];
   return (list ?? []).map(normalizeZoneDatasourceGroup);
 }
 
-function normalizeZoneDatasourceGroupAddRsp(raw: ZoneDatasourceGroupAddRspLike): ZoneDatasourceGroupAddRsp {
+function normalizeZoneDatasourceGroupAddRsp(
+  raw: ZoneDatasourceGroupAddRspLike,
+): ZoneDatasourceGroupAddRsp {
   return {
     zoneId: raw.zoneId ?? raw.zone_id ?? 0,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? 0,
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
     groupName: raw.groupName ?? raw.group_name ?? null,
-    zoneDatasourceGroup: normalizeZoneDatasourceGroup(raw.zoneDatasourceGroup ?? raw.zone_datasource_group ?? {}),
+    zoneDatasourceGroup: normalizeZoneDatasourceGroup(
+      raw.zoneDatasourceGroup ?? raw.zone_datasource_group ?? {},
+    ),
   };
 }
 
@@ -560,10 +582,12 @@ function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignal
     datasourceName: raw.datasourceName ?? raw.datasource_name ?? null,
     datasourceKind: raw.datasourceKind ?? raw.datasource_kind ?? null,
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
-    disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    disableNetworkAssignment:
+      raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: (raw.allowedUsers ?? raw.allowed_users ?? []).map(normalizeSignalGroupLogin),
     adminLogins: (raw.adminLogins ?? raw.admin_logins ?? []).map(normalizeSignalGroupLogin),
-    areasOfResponsibility: (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    areasOfResponsibility:
+      (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
   };
 }
 
@@ -585,7 +609,9 @@ export async function listZoneDatasources(zoneId: number): Promise<number[]> {
   return postJson<number[]>('/api/sigint/zones/zone-datasources', zoneId);
 }
 
-export async function listZoneDatasourceGroups(req: ZoneDatasourceGroupsReq): Promise<ZoneDatasourceGroup[]> {
+export async function listZoneDatasourceGroups(
+  req: ZoneDatasourceGroupsReq,
+): Promise<ZoneDatasourceGroup[]> {
   const data = await postJson<ZoneDatasourceGroupListRspLike>(
     '/api/sigint/zones/zone-datasource-groups',
     toZoneDatasourceGroupsReqBody(req),
@@ -593,7 +619,9 @@ export async function listZoneDatasourceGroups(req: ZoneDatasourceGroupsReq): Pr
   return normalizeZoneDatasourceGroupList(data ?? {});
 }
 
-export async function updateZoneDatasourceGroup(req: ZoneDatasourceGroupUpdateReq): Promise<ZoneDatasourceGroup> {
+export async function updateZoneDatasourceGroup(
+  req: ZoneDatasourceGroupUpdateReq,
+): Promise<ZoneDatasourceGroup> {
   const data = await postJson<ZoneDatasourceGroupLike>(
     '/api/sigint/zones/zone-datasource-group-update',
     toZoneDatasourceGroupUpdateReqBody(req),
@@ -601,7 +629,9 @@ export async function updateZoneDatasourceGroup(req: ZoneDatasourceGroupUpdateRe
   return normalizeZoneDatasourceGroup(data ?? {});
 }
 
-export async function addZoneDatasourceGroup(req: ZoneDatasourceGroupAddReq): Promise<ZoneDatasourceGroupAddRsp> {
+export async function addZoneDatasourceGroup(
+  req: ZoneDatasourceGroupAddReq,
+): Promise<ZoneDatasourceGroupAddRsp> {
   const data = await postJson<ZoneDatasourceGroupAddRspLike>(
     '/api/sigint/zones/zone-datasource-group-add',
     toZoneDatasourceGroupAddReqBody(req),
@@ -626,24 +656,32 @@ export async function updateMyAdminGroup(req: MyAdminSignalGroupUpdateReq): Prom
   await postVoid('/api/sigint/zones/my-admin-group-update', toMyAdminSignalGroupUpdateReqBody(req));
 }
 
-export async function fetchMyAdminGroupEditReference(masterKey: string): Promise<MyAdminSignalGroupEditReferenceRsp> {
+export async function fetchMyAdminGroupEditReference(
+  masterKey: string,
+): Promise<MyAdminSignalGroupEditReferenceRsp> {
   const data = await postJson<MyAdminSignalGroupEditReferenceRspLike>(
     '/api/sigint/zones/my-admin-group-edit-reference',
     toMyAdminSignalGroupEditReferenceReqBody({ masterKey }),
   );
   return {
     logins: data?.logins ?? [],
-    areasOfResponsibility: (data?.areasOfResponsibility ?? data?.areas_of_responsibility ?? []).map(normalizeAor),
+    areasOfResponsibility: (data?.areasOfResponsibility ?? data?.areas_of_responsibility ?? []).map(
+      normalizeAor,
+    ),
   };
 }
 
 export async function listOrphanSignalGroups(): Promise<OrphanSignalGroupEntry[]> {
-  const data = await postJson<OrphanSignalGroupEntryLike[]>('/api/rer-importer/orphan-signal-groups');
+  const data = await postJson<OrphanSignalGroupEntryLike[]>(
+    '/api/rer-importer/orphan-signal-groups',
+  );
   return (data || []).map(normalizeOrphanSignalGroupEntry);
 }
 
 export async function listArchivedSignalGroups(): Promise<OrphanSignalGroupEntry[]> {
-  const data = await postJson<OrphanSignalGroupEntryLike[]>('/api/rer-importer/archived-signal-groups');
+  const data = await postJson<OrphanSignalGroupEntryLike[]>(
+    '/api/rer-importer/archived-signal-groups',
+  );
   return (data || []).map(normalizeOrphanSignalGroupEntry);
 }
 
@@ -661,7 +699,10 @@ export async function fetchSignalGroupInfoBatch(keys: string[]): Promise<SignalG
     groups: keys.map((masterKey) => ({ masterKey })),
     skipGroupStats: null,
   };
-  const data = await postJson<SignalGroupsRspLike>('/api/rer-importer/signal-group-batch', toBatchSignalGroupReqBody(req));
+  const data = await postJson<SignalGroupsRspLike>(
+    '/api/rer-importer/signal-group-batch',
+    toBatchSignalGroupReqBody(req),
+  );
   return normalizeSignalGroupsRsp(data ?? {});
 }
 

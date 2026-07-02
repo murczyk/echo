@@ -1,6 +1,14 @@
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { Box, IconButton, MenuItem, Select, SelectChangeEvent, ThemeProvider, Typography } from '@mui/material';
+import {
+  Box,
+  IconButton,
+  MenuItem,
+  Select,
+  SelectChangeEvent,
+  ThemeProvider,
+  Typography,
+} from '@mui/material';
 import { useCallback, useMemo, useState } from 'react';
 
 import { copyTextToClipboard } from '../copy-to-clipboard';
@@ -27,11 +35,14 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
     void copyTextToClipboard(value);
   }, [value]);
 
-  const handleFormatChange = useCallback((event: SelectChangeEvent<CoordFormat>) => {
-    const nextFormat = event.target.value as CoordFormat;
-    setFormat(nextFormat);
-    void copyTextToClipboard(getCoordinateText(nextFormat, { lat, lng }, mgrsCoords));
-  }, [lat, lng, mgrsCoords]);
+  const handleFormatChange = useCallback(
+    (event: SelectChangeEvent<CoordFormat>) => {
+      const nextFormat = event.target.value as CoordFormat;
+      setFormat(nextFormat);
+      void copyTextToClipboard(getCoordinateText(nextFormat, { lat, lng }, mgrsCoords));
+    },
+    [lat, lng, mgrsCoords],
+  );
 
   return (
     <Box
@@ -58,7 +69,15 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
         backdropFilter: 'blur(8px)',
       }}
     >
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 28px', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'auto 28px',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1,
+        }}
+      >
         <Select<CoordFormat>
           value={format}
           onChange={handleFormatChange}
@@ -141,7 +160,14 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
         </IconButton>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 28px', alignItems: 'center', gap: 1.25 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) 28px',
+          alignItems: 'center',
+          gap: 1.25,
+        }}
+      >
         <Typography
           sx={{
             fontSize: 15,

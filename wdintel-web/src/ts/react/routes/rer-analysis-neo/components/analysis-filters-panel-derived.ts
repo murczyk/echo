@@ -7,7 +7,10 @@ import {
 import { isPresent } from '../../../utils/misc';
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
-type Params = Pick<AnalysisFiltersPanelPage, 'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'>;
+type Params = Pick<
+  AnalysisFiltersPanelPage,
+  'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'
+>;
 
 export type AnalysisFiltersPanelDerivedData = {
   groupOptions: AnalysisFilterOption[];
@@ -37,7 +40,10 @@ export type AnalysisFiltersPanelDerivedData = {
   metadataOptionsCount: number;
 };
 
-function buildMergedGroupOptions(groupOptions: AnalysisFilterOption[], groupInfos: Record<string, { name: string }>): AnalysisFilterOption[] {
+function buildMergedGroupOptions(
+  groupOptions: AnalysisFilterOption[],
+  groupInfos: Record<string, { name: string }>,
+): AnalysisFilterOption[] {
   const groupedByLabel = new Map<
     string,
     {
@@ -49,7 +55,9 @@ function buildMergedGroupOptions(groupOptions: AnalysisFilterOption[], groupInfo
   >();
 
   groupOptions.forEach((option) => {
-    const label = normalizeFilterLabel(groupInfos[option.value]?.name ?? option.label ?? option.value);
+    const label = normalizeFilterLabel(
+      groupInfos[option.value]?.name ?? option.label ?? option.value,
+    );
     const values = option.values ?? [option.value];
     const existingOption = groupedByLabel.get(label);
     if (existingOption != null) {
@@ -69,7 +77,10 @@ function buildMergedGroupOptions(groupOptions: AnalysisFilterOption[], groupInfo
   return sortFilterOptionsByLabel(Array.from(groupedByLabel.values()));
 }
 
-function countMergedSelectedGroupOptions(groupOptions: AnalysisFilterOption[], selectedGroups: string[]): number {
+function countMergedSelectedGroupOptions(
+  groupOptions: AnalysisFilterOption[],
+  selectedGroups: string[],
+): number {
   const selectedGroupKeys = new Set(selectedGroups);
   const matchedSelectedKeys = new Set<string>();
   const visibleCount = groupOptions.reduce((count, option) => {
@@ -81,7 +92,13 @@ function countMergedSelectedGroupOptions(groupOptions: AnalysisFilterOption[], s
   return visibleCount + selectedGroups.filter((key) => !matchedSelectedKeys.has(key)).length;
 }
 
-export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, options, queryState, tagsMap }: Params): AnalysisFiltersPanelDerivedData {
+export function buildAnalysisFiltersPanelDerivedData({
+  aorEntries,
+  groupInfos,
+  options,
+  queryState,
+  tagsMap,
+}: Params): AnalysisFiltersPanelDerivedData {
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
   const callsignsOptions = options.callsigns.reduce<AnalysisFilterOption[]>((acc, option) => {
@@ -116,7 +133,9 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
   const tagOptions = sortFilterOptionsByLabel(
     options.tags.map((option) => ({
       ...option,
-      label: normalizeFilterLabel(tagsMap[Number(option.value)]?.label ?? option.label ?? option.value),
+      label: normalizeFilterLabel(
+        tagsMap[Number(option.value)]?.label ?? option.label ?? option.value,
+      ),
     })),
   );
 
@@ -209,8 +228,14 @@ export function buildAnalysisFiltersPanelDerivedData({ aorEntries, groupInfos, o
     postsSelectedCount: queryState.postsSelected.length,
     networksSelectedCount: queryState.networksSelected.length,
     metadataSelectedCount:
-      queryState.metadataCc.length + queryState.metadataSender.length + queryState.metadataReceiver.length + queryState.metadataHash.length,
+      queryState.metadataCc.length +
+      queryState.metadataSender.length +
+      queryState.metadataReceiver.length +
+      queryState.metadataHash.length,
     metadataOptionsCount:
-      options.metadataCcs.length + options.metadataSenders.length + options.metadataReceivers.length + options.metadataHashes.length,
+      options.metadataCcs.length +
+      options.metadataSenders.length +
+      options.metadataReceivers.length +
+      options.metadataHashes.length,
   };
 }

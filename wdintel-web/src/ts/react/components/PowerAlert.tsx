@@ -2,13 +2,14 @@ import * as React from 'react';
 import Alert, { type AlertProps } from '@mui/material/Alert';
 import { isNullOrUndefined } from '../utils/misc';
 
-
 type PowerAlertProps = AlertProps & {
   autoHideDuration?: number | null;
   dismissible?: boolean;
 };
 
-const defaultAutoHideDurationMsBySeverity: Partial<Record<NonNullable<AlertProps['severity']>, number | null>> = {
+const defaultAutoHideDurationMsBySeverity: Partial<
+  Record<NonNullable<AlertProps['severity']>, number | null>
+> = {
   success: 6000,
   error: 8000,
   info: null,
@@ -17,7 +18,7 @@ const defaultAutoHideDurationMsBySeverity: Partial<Record<NonNullable<AlertProps
 function defaultAutoHideDurationForSeverity(severity: AlertProps['severity']): number | null {
   const key = severity ?? 'success';
   return key in defaultAutoHideDurationMsBySeverity
-    ? defaultAutoHideDurationMsBySeverity[key] ?? null
+    ? (defaultAutoHideDurationMsBySeverity[key] ?? null)
     : 6000;
 }
 
@@ -31,7 +32,9 @@ export function PowerAlert(props: PowerAlertProps) {
   }, [children, severity]);
 
   const resolvedAutoHideDuration =
-    autoHideDuration === undefined ? defaultAutoHideDurationForSeverity(severity) : autoHideDuration;
+    autoHideDuration === undefined
+      ? defaultAutoHideDurationForSeverity(severity)
+      : autoHideDuration;
 
   const handleClose = React.useCallback(
     (event?: React.SyntheticEvent) => {
@@ -62,18 +65,15 @@ export function PowerAlert(props: PowerAlertProps) {
     return null;
   }
 
-  const alertOnClose = isDismissible || (severity !== 'info' && onClose)
-    ? (event: React.SyntheticEvent) => {
-        handleClose(event);
-      }
-    : undefined;
+  const alertOnClose =
+    isDismissible || (severity !== 'info' && onClose)
+      ? (event: React.SyntheticEvent) => {
+          handleClose(event);
+        }
+      : undefined;
 
   return (
-    <Alert
-      {...rest}
-      severity={severity}
-      onClose={alertOnClose}
-    >
+    <Alert {...rest} severity={severity} onClose={alertOnClose}>
       {children}
     </Alert>
   );

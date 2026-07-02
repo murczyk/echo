@@ -169,10 +169,10 @@ function buildProps(): FeedColumnProps {
       actions: {
         onLoadOlder: vi.fn(),
         onRemoveColumn: vi.fn(),
-          onMessageBookmark: vi.fn(),
-          onMessageImportant: vi.fn(),
-          onMessageAddFrequencyToFilter: vi.fn(),
-          onMessageCopy: vi.fn(),
+        onMessageBookmark: vi.fn(),
+        onMessageImportant: vi.fn(),
+        onMessageAddFrequencyToFilter: vi.fn(),
+        onMessageCopy: vi.fn(),
         onMessageComment: vi.fn(),
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
@@ -210,13 +210,17 @@ describe('FeedColumn', () => {
     expect(filtersButton).not.toBeNull();
 
     await act(async () => {
-      filtersButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).not.toBeNull();
 
     await act(async () => {
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      document.body.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
@@ -233,13 +237,17 @@ describe('FeedColumn', () => {
     expect(filtersButton).not.toBeNull();
 
     await act(async () => {
-      filtersButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).not.toBeNull();
 
     await act(async () => {
-      filtersButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
@@ -256,13 +264,17 @@ describe('FeedColumn', () => {
     expect(notificationsButton).not.toBeNull();
 
     await act(async () => {
-      notificationsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      notificationsButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).not.toBeNull();
 
     await act(async () => {
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      document.body.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
@@ -305,13 +317,17 @@ describe('FeedColumn', () => {
     expect(notificationsButton).not.toBeNull();
 
     await act(async () => {
-      notificationsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      notificationsButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).not.toBeNull();
 
     await act(async () => {
-      notificationsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      notificationsButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
@@ -332,13 +348,17 @@ describe('FeedColumn', () => {
     expect(keywordsButton).not.toBeNull();
 
     await act(async () => {
-      filtersButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="feed-keywords-panel"]')).toBeNull();
 
     await act(async () => {
-      keywordsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      keywordsButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
     expect(container.querySelector('[data-testid="feed-keywords-panel"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
@@ -366,8 +386,12 @@ describe('FeedColumn', () => {
     expect(filtersButtons).toHaveLength(2);
 
     await act(async () => {
-      filtersButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-      filtersButtons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      filtersButtons[0]?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
+      filtersButtons[1]?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, view: window }),
+      );
     });
 
     expect(containerEl.querySelectorAll('[data-testid="feed-filter-panel"]')).toHaveLength(2);

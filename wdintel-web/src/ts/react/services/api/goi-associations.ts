@@ -69,9 +69,7 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeOptionalNumber(
-  value: number | string | null | undefined,
-): number | null {
+function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
   if (isNullOrUndefined(value)) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -83,9 +81,7 @@ function normalizeOptionalNumber(
 
 function normalizeStringArray(value: string[] | null | undefined): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item).trim())
-    .filter((item) => item.length > 0);
+  return value.map((item) => String(item).trim()).filter((item) => item.length > 0);
 }
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
@@ -100,43 +96,27 @@ function normalizeGoiAssociation(raw: GoiAssociationLike | null | undefined): Go
     integrationId: normalizeNumber(raw?.integrationId ?? raw?.integration_id),
     serverLabel: normalizeOptionalString(raw?.serverLabel ?? raw?.server_label) ?? '',
     ownerOrganismName:
-      normalizeOptionalString(
-        raw?.ownerOrganismName ?? raw?.owner_organism_name,
-      ) ?? '',
-    sourceAssociationId: normalizeNumber(
-      raw?.sourceAssociationId ?? raw?.source_association_id,
-    ),
-    sourceCreatedAtMs: normalizeNumber(
-      raw?.sourceCreatedAtMs ?? raw?.source_created_at_ms,
-    ),
+      normalizeOptionalString(raw?.ownerOrganismName ?? raw?.owner_organism_name) ?? '',
+    sourceAssociationId: normalizeNumber(raw?.sourceAssociationId ?? raw?.source_association_id),
+    sourceCreatedAtMs: normalizeNumber(raw?.sourceCreatedAtMs ?? raw?.source_created_at_ms),
     createdAtMs: normalizeNumber(raw?.createdAtMs ?? raw?.created_at_ms),
     deleted: raw?.deleted ?? false,
-    associationType: normalizeOptionalString(
-      raw?.associationType ?? raw?.association_type,
-    ),
+    associationType: normalizeOptionalString(raw?.associationType ?? raw?.association_type),
     frequency: normalizeOptionalString(raw?.frequency),
     coordinates: normalizeOptionalString(raw?.coordinates),
     note: normalizeOptionalString(raw?.note),
     category: normalizeOptionalString(raw?.category),
     callSigns: normalizeStringArray(raw?.callSigns ?? raw?.call_signs),
     formation: normalizeOptionalString(raw?.formation),
-    associationCount: normalizeOptionalNumber(
-      raw?.associationCount ?? raw?.association_count,
-    ),
+    associationCount: normalizeOptionalNumber(raw?.associationCount ?? raw?.association_count),
     sidc: normalizeOptionalString(raw?.sidc),
     author: normalizeOptionalString(raw?.author),
-    sourceDateRaw: normalizeOptionalString(
-      raw?.sourceDateRaw ?? raw?.source_date_raw,
-    ),
-    sourceDateMs: normalizeOptionalNumber(
-      raw?.sourceDateMs ?? raw?.source_date_ms,
-    ),
+    sourceDateRaw: normalizeOptionalString(raw?.sourceDateRaw ?? raw?.source_date_raw),
+    sourceDateMs: normalizeOptionalNumber(raw?.sourceDateMs ?? raw?.source_date_ms),
   };
 }
 
-function toListGoiAssociationsReqBody(
-  req: ListGoiAssociationsReq,
-): ListGoiAssociationsReqBody {
+function toListGoiAssociationsReqBody(req: ListGoiAssociationsReq): ListGoiAssociationsReqBody {
   const normalizeOptionalText = (value: string | null | undefined) => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();

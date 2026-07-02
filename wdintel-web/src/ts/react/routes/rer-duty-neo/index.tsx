@@ -3,7 +3,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../utils/misc';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
-import { setDutyNeoDocumentTitleUnreadCount, startDutyNeoDocumentTitleTracking } from './notifications';
+import {
+  setDutyNeoDocumentTitleUnreadCount,
+  startDutyNeoDocumentTitleTracking,
+} from './notifications';
 import {
   DEFAULT_DUTY_TAGS_LAYOUT,
   feedUnreadDisplayCount,
@@ -34,7 +37,9 @@ function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   return '100%';
 }
 
-export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
+export function RerDutyNeoPage({
+  authUserName: authUserNameProp = null,
+}: RerDutyNeoPageProps = {}) {
   const theme = useTheme();
   const narrowScreen = useMediaQuery(theme.breakpoints.down(1024));
   const authUserName = authUserNameProp ?? null;
@@ -105,51 +110,62 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         postsList,
         unitsList: Object.values(unitsMap),
       },
-        toggles: {
-          adjacentFreqsRange: feed.adjacentFreqsRange,
-          highlightSignalsEnabled: feed.highlightSignalsEnabled,
-          onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
-          unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
-          reloadFreqsLoading,
-        },
+      toggles: {
+        adjacentFreqsRange: feed.adjacentFreqsRange,
+        highlightSignalsEnabled: feed.highlightSignalsEnabled,
+        onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
+        unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
+        reloadFreqsLoading,
+      },
       savedFilters: {
         savedFilters,
         selectedSavedId: selectedSavedIdByFeedId[feed.id] ?? null,
         saveFilterName: saveFilterNameByFeedId[feed.id] ?? '',
       },
       actions: {
-        onGroupsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, groupsSelected: v.length ? v : null }),
+        onGroupsChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, groupsSelected: v.length ? v : null }),
         onDeniedGroupsChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, groupsDenied: v.length ? v : null }),
         onSendersChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, sendersSelected: v.length ? v : null }),
         onDeniedSendersChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, deniedSenders: v.length ? v : null }),
-        onFreqsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, freqsSelected: v.length ? v : null }),
+        onFreqsChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, freqsSelected: v.length ? v : null }),
         onFreqsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, freqsDenied: v.length ? v : null }),
-        onPostsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
+        onPostsChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
         onPostsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
-        onUnitsChange: (v: string[]) => applyFilter(feed.id, { ...feed.filter, unitsSelected: v.length ? v : null }),
+        onUnitsChange: (v: string[]) =>
+          applyFilter(feed.id, { ...feed.filter, unitsSelected: v.length ? v : null }),
         onUnitsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, unitsDenied: v.length ? v : null }),
         onUnitsExactMatchOnlyChange: (v: boolean) =>
           applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
         onAdjacentFreqsRangeChange: (v: number) =>
-          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f))),
+          setMessageFeeds((prev) =>
+            prev.map((f) => (f.id === feed.id ? { ...f, adjacentFreqsRange: v } : f)),
+          ),
         onHighlightSignalsChange: (v: boolean) => {
-          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, highlightSignalsEnabled: v } : f)));
+          setMessageFeeds((prev) =>
+            prev.map((f) => (f.id === feed.id ? { ...f, highlightSignalsEnabled: v } : f)),
+          );
           loadFeedInitialMessages(feed.id, { highlightSignalsEnabled: v });
         },
         onOnlyMyUnitTagsChange: (v: boolean) => {
-          setMessageFeeds((prev) => prev.map((f) => (f.id === feed.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)));
+          setMessageFeeds((prev) =>
+            prev.map((f) => (f.id === feed.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)),
+          );
           loadFeedInitialMessages(feed.id, { onlyMyUnitTagsEnabled: v });
         },
         onReloadFreqs: reloadLatestFrequencies,
         onSavedFilterSelect: (id) =>
           setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: id === '' ? null : id })),
-        onSaveFilterNameChange: (value) => setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: value })),
+        onSaveFilterNameChange: (value) =>
+          setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: value })),
         onSaveFilter: handleSaveFilter,
         onUpdateSelectedSavedFilter: handleUpdateSelectedSavedFilter,
         onRenameSelectedSavedFilter: handleRenameSelectedSavedFilter,
@@ -175,16 +191,19 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       tagsLayout,
       tagsMap,
     },
-      actions: {
-        onLoadOlder: () => loadFeedOlderMessages(feed.id),
-        onRemoveColumn: () => removeMessageFeed(feed.id),
-        onMessageBookmark: (msgId, currentlyBookmarked) => handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
-        onMessageImportant: (msgId, currentlyImportant) => handleMessageImportant(feed.id, msgId, currentlyImportant),
-        onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feed.id, freq),
-        onMessageCopy: handleMessageCopy,
-        onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feed.id, currentComment),
-        onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) =>
-          applyFilter(feed.id, excludeMessageEntityFromFilters(feed.filter, entity, value)),
+    actions: {
+      onLoadOlder: () => loadFeedOlderMessages(feed.id),
+      onRemoveColumn: () => removeMessageFeed(feed.id),
+      onMessageBookmark: (msgId, currentlyBookmarked) =>
+        handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
+      onMessageImportant: (msgId, currentlyImportant) =>
+        handleMessageImportant(feed.id, msgId, currentlyImportant),
+      onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feed.id, freq),
+      onMessageCopy: handleMessageCopy,
+      onMessageComment: (msgId, currentComment) =>
+        openCommentDialog(msgId, feed.id, currentComment),
+      onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) =>
+        applyFilter(feed.id, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feed.id, msgId, tagId),
       onScrollToTop: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
       onReachedBottom: () => {
@@ -287,7 +306,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
 
   useEffect(() => {
-    if (!hasCompletedInitialLoad && messageFeeds.length > 0 && messageFeeds.every((feed) => !feed.loading)) {
+    if (
+      !hasCompletedInitialLoad &&
+      messageFeeds.length > 0 &&
+      messageFeeds.every((feed) => !feed.loading)
+    ) {
       setHasCompletedInitialLoad(true);
     }
   }, [hasCompletedInitialLoad, messageFeeds]);
@@ -310,7 +333,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   }, [messageFeeds]);
 
   const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
-  const anyFeedInitialLoading = messageFeeds.some((feed) => feed.loading && feed.items.length === 0);
+  const anyFeedInitialLoading = messageFeeds.some(
+    (feed) => feed.loading && feed.items.length === 0,
+  );
   const anyFeedReloading = messageFeeds.some((feed) => feed.loading && feed.items.length > 0);
   const isInitialLoading = !hasCompletedInitialLoad && anyFeedInitialLoading;
   const showLoadingBackdrop = hasCompletedInitialLoad && anyFeedReloading;
@@ -324,7 +349,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       className="flex flex-col w-full min-h-0"
       sx={{
         zoom: narrowScreen ? DUTY_MOBILE_ROOT_ZOOM : 1,
-        height: narrowScreen ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})` : DUTY_VIEWPORT_HEIGHT,
+        height: narrowScreen
+          ? `calc((${DUTY_VIEWPORT_HEIGHT}) / ${DUTY_MOBILE_ROOT_ZOOM})`
+          : DUTY_VIEWPORT_HEIGHT,
         '@supports (height: 100dvh)': {
           height: narrowScreen
             ? `calc((${DUTY_VIEWPORT_HEIGHT_DVH}) / ${DUTY_MOBILE_ROOT_ZOOM})`

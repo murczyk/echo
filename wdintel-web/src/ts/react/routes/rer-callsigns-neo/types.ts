@@ -9,7 +9,15 @@ import type {
   User,
 } from '../../../../Bindings';
 
-export type SortColumn = 'callsign' | 'position' | 'fullName' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt';
+export type SortColumn =
+  | 'callsign'
+  | 'position'
+  | 'fullName'
+  | 'comment'
+  | 'unit'
+  | 'sourceName'
+  | 'radioFreq'
+  | 'createdAt';
 export type SortDirection = 'asc' | 'desc';
 
 export type CallsignsSortState = {
@@ -89,10 +97,7 @@ export type CallsignEditForm = {
   active: boolean;
 };
 
-export type UiStatus =
-  | { kind: 'error'; text: string }
-  | { kind: 'success'; text: string }
-  | null;
+export type UiStatus = { kind: 'error'; text: string } | { kind: 'success'; text: string } | null;
 
 export type CallsignRowView = Callsign & {
   unitName: string;

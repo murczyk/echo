@@ -65,33 +65,46 @@ export function useRerCallsignsNeoPageAddActions({
     setAddDuplicateHintsImmediate(false);
   }, [setAddDuplicateHintsImmediate, setAddRows]);
 
-  const onRemoveRow = useCallback((index: number) => {
-    setAddValidationError(null);
-    setAddDuplicateHintsImmediate(false);
-    setAddRows((prev) => {
-      if (prev.length <= 1) {
-        setAddDuplicateHintsEnabled(false);
-        return prev;
-      }
-      const nextRows = prev.filter((_, rowIndex) => rowIndex !== index);
-      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
-      return nextRows;
-    });
-  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
+  const onRemoveRow = useCallback(
+    (index: number) => {
+      setAddValidationError(null);
+      setAddDuplicateHintsImmediate(false);
+      setAddRows((prev) => {
+        if (prev.length <= 1) {
+          setAddDuplicateHintsEnabled(false);
+          return prev;
+        }
+        const nextRows = prev.filter((_, rowIndex) => rowIndex !== index);
+        setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
+        return nextRows;
+      });
+    },
+    [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError],
+  );
 
   const onClearRows = useCallback(() => {
     setAddRows([createEmptyDraftRow()]);
     setAddValidationError(null);
     setAddDuplicateHintsEnabled(false);
     setAddDuplicateHintsImmediate(false);
-  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
+  }, [
+    setAddDuplicateHintsEnabled,
+    setAddDuplicateHintsImmediate,
+    setAddRows,
+    setAddValidationError,
+  ]);
 
   const onOpenAddDrawer = useCallback(() => {
     if (!permissions.canEdit) return;
     setAddDrawerOpen(true);
     setAddValidationError(null);
     setAddCallsignAdditionalSourceIds([]);
-  }, [permissions.canEdit, setAddCallsignAdditionalSourceIds, setAddDrawerOpen, setAddValidationError]);
+  }, [
+    permissions.canEdit,
+    setAddCallsignAdditionalSourceIds,
+    setAddDrawerOpen,
+    setAddValidationError,
+  ]);
 
   const resetAddDrawerState = useCallback(() => {
     setAddRows([createEmptyDraftRow()]);
@@ -101,7 +114,16 @@ export function useRerCallsignsNeoPageAddActions({
     setAddValidationError(null);
     setAddDuplicateHintsEnabled(false);
     setAddDuplicateHintsImmediate(false);
-  }, [setAddCallsignAdditionalSourceIds, setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddSourceId, setAddUnitId, setAddValidationError, sources]);
+  }, [
+    setAddCallsignAdditionalSourceIds,
+    setAddDuplicateHintsEnabled,
+    setAddDuplicateHintsImmediate,
+    setAddRows,
+    setAddSourceId,
+    setAddUnitId,
+    setAddValidationError,
+    sources,
+  ]);
 
   const onCloseAddDrawer = useCallback(() => {
     if (addSubmitting) return;
@@ -109,41 +131,47 @@ export function useRerCallsignsNeoPageAddActions({
     setAddDrawerOpen(false);
   }, [addSubmitting, resetAddDrawerState, setAddDrawerOpen]);
 
-  const onRowChange = useCallback((index: number, next: CallsignDraftRow) => {
-    setAddValidationError(null);
-    setAddDuplicateHintsImmediate(false);
-    setAddRows((prev) => {
-      const nextRows = prev.map((row, rowIndex) => (rowIndex === index ? next : row));
-      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
-      return nextRows;
-    });
-  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
-
-  const onApplyPastedRows = useCallback((value: string) => {
-    if (!value.includes('\t') && !value.includes('\n')) {
+  const onRowChange = useCallback(
+    (index: number, next: CallsignDraftRow) => {
       setAddValidationError(null);
-      return;
-    }
-    const parsed = parseTabDelimitedInput(value);
-    if (parsed.error) {
-      setAddRows([createEmptyDraftRow()]);
-      setAddDuplicateHintsEnabled(false);
       setAddDuplicateHintsImmediate(false);
-      setAddValidationError(parsed.error);
-      return;
-    }
-    if (parsed.rows.length === 0) {
-      setAddRows([createEmptyDraftRow()]);
-      setAddDuplicateHintsEnabled(false);
-      setAddDuplicateHintsImmediate(false);
-      setAddValidationError(QUICK_PASTE_TSV_FORMAT_ERROR);
-      return;
-    }
-    setAddRows(parsed.rows);
-    setAddValidationError(null);
-    setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(parsed.rows));
-    setAddDuplicateHintsImmediate(true);
-  }, [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError]);
+      setAddRows((prev) => {
+        const nextRows = prev.map((row, rowIndex) => (rowIndex === index ? next : row));
+        setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(nextRows));
+        return nextRows;
+      });
+    },
+    [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError],
+  );
+
+  const onApplyPastedRows = useCallback(
+    (value: string) => {
+      if (!value.includes('\t') && !value.includes('\n')) {
+        setAddValidationError(null);
+        return;
+      }
+      const parsed = parseTabDelimitedInput(value);
+      if (parsed.error) {
+        setAddRows([createEmptyDraftRow()]);
+        setAddDuplicateHintsEnabled(false);
+        setAddDuplicateHintsImmediate(false);
+        setAddValidationError(parsed.error);
+        return;
+      }
+      if (parsed.rows.length === 0) {
+        setAddRows([createEmptyDraftRow()]);
+        setAddDuplicateHintsEnabled(false);
+        setAddDuplicateHintsImmediate(false);
+        setAddValidationError(QUICK_PASTE_TSV_FORMAT_ERROR);
+        return;
+      }
+      setAddRows(parsed.rows);
+      setAddValidationError(null);
+      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(parsed.rows));
+      setAddDuplicateHintsImmediate(true);
+    },
+    [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError],
+  );
 
   const onSubmitAdd = useCallback(async () => {
     if (!permissions.canEdit) return;
@@ -181,7 +209,9 @@ export function useRerCallsignsNeoPageAddActions({
 
       for (const row of nonEmptyRows) {
         try {
-          const item = await createCallsign(makeCreatePayload(row, addUnitId, addSourceId, addCallsignAdditionalSourceIds));
+          const item = await createCallsign(
+            makeCreatePayload(row, addUnitId, addSourceId, addCallsignAdditionalSourceIds),
+          );
           created.push(normalizeCallsign(item));
         } catch (error) {
           failed.push({ row, error: formatErrorMessage(error) });
@@ -211,7 +241,10 @@ export function useRerCallsignsNeoPageAddActions({
           : `Не вдалося додати ${failed.length} позивних. Перша помилка: ${failed[0]?.error ?? 'Невідома помилка'}`,
       );
       if (created.length > 0) {
-        setStatus({ kind: 'error', text: `Додано: ${created.length}, не вдалося: ${failed.length}` });
+        setStatus({
+          kind: 'error',
+          text: `Додано: ${created.length}, не вдалося: ${failed.length}`,
+        });
       }
     } finally {
       setAddSubmitting(false);

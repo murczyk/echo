@@ -39,7 +39,9 @@ function getDrawerTitle(mode: Props['mode'], descrType: NetworkDescrType): strin
     return 'Редагувати опис';
   }
 
-  return descrType === 'Sign' ? 'Створити розвідувальні ознаки' : "Створити обґрунтування прив'язки";
+  return descrType === 'Sign'
+    ? 'Створити розвідувальні ознаки'
+    : "Створити обґрунтування прив'язки";
 }
 
 function getDescriptionLabel(): string {
@@ -69,7 +71,7 @@ function NetworkDescriptionDrawerComponent({
   onClose,
   onChange,
   onSave,
-  }: Props) {
+}: Props) {
   const titleId = 'network-description-drawer-title';
   const formBlocked = saving;
   const saveDisabled = saving || form.description.trim() === '';
@@ -124,7 +126,9 @@ function NetworkDescriptionDrawerComponent({
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
           <FormControl fullWidth size="small" disabled={formBlocked}>
-            <InputLabel id="network-description-freq-label">Частота (необов&apos;язково)</InputLabel>
+            <InputLabel id="network-description-freq-label">
+              Частота (необов&apos;язково)
+            </InputLabel>
             <Select
               labelId="network-description-freq-label"
               label="Частота (необов'язково)"
@@ -178,7 +182,13 @@ function NetworkDescriptionDrawerComponent({
           Скасувати
         </Button>
         <Button onClick={onSave} variant="contained" disabled={saveDisabled}>
-          {saving ? <CircularProgress size={16} color="inherit" /> : mode === 'create' ? 'Створити' : 'Зберегти'}
+          {saving ? (
+            <CircularProgress size={16} color="inherit" />
+          ) : mode === 'create' ? (
+            'Створити'
+          ) : (
+            'Зберегти'
+          )}
         </Button>
       </Box>
     </Drawer>

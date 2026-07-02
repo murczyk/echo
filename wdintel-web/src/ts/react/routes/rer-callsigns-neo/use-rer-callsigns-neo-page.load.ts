@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Callsign, CallsignUnitStatRow, Source, Unit, User } from '../../../../Bindings';
-import { getCallsignUnitStats, listCallsigns, listSources, fetchCallsignsBootstrapData } from '../../services/api/callsigns';
-import { buildListCallsignsReq, formatErrorMessage, getDefaultPageSize, isAbortError } from './helpers-core';
+import {
+  getCallsignUnitStats,
+  listCallsigns,
+  listSources,
+  fetchCallsignsBootstrapData,
+} from '../../services/api/callsigns';
+import {
+  buildListCallsignsReq,
+  formatErrorMessage,
+  getDefaultPageSize,
+  isAbortError,
+} from './helpers-core';
 import { getReloadPageSize, normalizeCallsigns } from './use-rer-callsigns-neo-page.shared';
-import type { CallsignsFilterState, CallsignsSortState, SelectedSidebarUnitFilter, UiStatus } from './types';
+import type {
+  CallsignsFilterState,
+  CallsignsSortState,
+  SelectedSidebarUnitFilter,
+  UiStatus,
+} from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
@@ -75,7 +90,9 @@ export function useRerCallsignsNeoPageLoad({
     }) => {
       const seq = ++listRequestSeqRef.current;
       if (!append) {
-        const limit = preserveLoadedCount ? getReloadPageSize(callsignsLengthRef.current) : getDefaultPageSize();
+        const limit = preserveLoadedCount
+          ? getReloadPageSize(callsignsLengthRef.current)
+          : getDefaultPageSize();
         setLoadingMore(false);
         clearListRequest();
         const controller = new AbortController();
@@ -88,7 +105,10 @@ export function useRerCallsignsNeoPageLoad({
               filters,
               sort,
               query: { afterId, limit },
-              sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+              sidebarUnitHierarchyFilter:
+                selectedSidebarUnitFilter?.kind === 'group'
+                  ? selectedSidebarUnitFilter.hierarchy
+                  : null,
             }),
             controller.signal,
           );
@@ -97,7 +117,10 @@ export function useRerCallsignsNeoPageLoad({
           setShowLoadMore(rsp.showLoadMore);
         } catch (error) {
           if (isAbortError(error)) return;
-          setStatus({ kind: 'error', text: `Помилка завантаження позивних: ${formatErrorMessage(error)}` });
+          setStatus({
+            kind: 'error',
+            text: `Помилка завантаження позивних: ${formatErrorMessage(error)}`,
+          });
         } finally {
           if (listRequestSeqRef.current === seq) {
             setLoading(false);
@@ -115,7 +138,10 @@ export function useRerCallsignsNeoPageLoad({
             filters,
             sort,
             query: { afterId, limit: getDefaultPageSize() },
-            sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+            sidebarUnitHierarchyFilter:
+              selectedSidebarUnitFilter?.kind === 'group'
+                ? selectedSidebarUnitFilter.hierarchy
+                : null,
           }),
         );
         if (listRequestSeqRef.current !== seq) return;
@@ -127,7 +153,10 @@ export function useRerCallsignsNeoPageLoad({
         });
         setShowLoadMore(rsp.showLoadMore);
       } catch (error) {
-        setStatus({ kind: 'error', text: `Помилка завантаження позивних: ${formatErrorMessage(error)}` });
+        setStatus({
+          kind: 'error',
+          text: `Помилка завантаження позивних: ${formatErrorMessage(error)}`,
+        });
       } finally {
         if (listRequestSeqRef.current === seq) {
           setLoadingMore(false);
@@ -155,9 +184,12 @@ export function useRerCallsignsNeoPageLoad({
       const [freshSources, freshStats] = await Promise.all([listSources(), getCallsignUnitStats()]);
       setSources(freshSources);
       setUnitStats(freshStats);
-      setAddSourceId((prev) => (prev === null ? freshSources[0]?.id ?? null : prev));
+      setAddSourceId((prev) => (prev === null ? (freshSources[0]?.id ?? null) : prev));
     } catch (error) {
-      setStatus({ kind: 'error', text: `Помилка оновлення довідників: ${formatErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        text: `Помилка оновлення довідників: ${formatErrorMessage(error)}`,
+      });
     }
   }, [setAddSourceId, setSources, setStatus, setUnitStats]);
 
@@ -174,7 +206,10 @@ export function useRerCallsignsNeoPageLoad({
             filters,
             sort,
             query: { afterId: null, limit: getDefaultPageSize() },
-            sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
+            sidebarUnitHierarchyFilter:
+              selectedSidebarUnitFilter?.kind === 'group'
+                ? selectedSidebarUnitFilter.hierarchy
+                : null,
           }),
         );
 
@@ -190,7 +225,10 @@ export function useRerCallsignsNeoPageLoad({
         initializedRef.current = true;
       } catch (error) {
         if (cancelled || bootstrapRequestSeqRef.current !== generation) return;
-        setStatus({ kind: 'error', text: `Помилка завантаження позивних: ${formatErrorMessage(error)}` });
+        setStatus({
+          kind: 'error',
+          text: `Помилка завантаження позивних: ${formatErrorMessage(error)}`,
+        });
       } finally {
         if (!cancelled && bootstrapRequestSeqRef.current === generation) {
           setLoading(false);

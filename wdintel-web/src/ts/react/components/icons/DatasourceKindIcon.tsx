@@ -14,11 +14,7 @@ const KIND_ICON_TITLE: Record<string, string> = {
   echo_operator: 'ЕХО',
 };
 
-export function DatasourceKindIcon({
-  kind,
-  titleAccess,
-  ...props
-}: DatasourceKindIconProps) {
+export function DatasourceKindIcon({ kind, titleAccess, ...props }: DatasourceKindIconProps) {
   const normalizedKind = kind?.toLowerCase();
   const iconTitle = normalizedKind ? KIND_ICON_TITLE[normalizedKind] : null;
 

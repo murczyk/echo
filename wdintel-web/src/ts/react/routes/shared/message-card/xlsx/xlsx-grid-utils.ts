@@ -16,7 +16,12 @@ export function normalizeXlsxRange(range: XlsxGridRange): XlsxGridRange {
 
 export function isCellInRange(row: number, column: number, range: XlsxGridRange | null): boolean {
   if (range == null) return false;
-  return row >= range.startRow && row <= range.endRow && column >= range.startColumn && column <= range.endColumn;
+  return (
+    row >= range.startRow &&
+    row <= range.endRow &&
+    column >= range.startColumn &&
+    column <= range.endColumn
+  );
 }
 
 export function columnLabel(index: number): string {
@@ -29,4 +34,3 @@ export function columnLabel(index: number): string {
   }
   return label;
 }
-

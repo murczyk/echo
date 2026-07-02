@@ -60,7 +60,11 @@ export function initializeAnalysisMapControls({
   const switchTimeControl = createTimeswitchControl(daterange, isDateRangeInteractionLocked);
   const searchControl = createSearchControl();
   const mapWindowControl = createMapWindowControl(onToggleFullscreen, isFullscreen);
-  const layerSwitchControl = createLayerSwitchControl(tileLayers, featureToggleState, onFeatureToggle);
+  const layerSwitchControl = createLayerSwitchControl(
+    tileLayers,
+    featureToggleState,
+    onFeatureToggle,
+  );
   const mapSettingsControl = createMapSettingsControl(
     pelengLabelsPermanent,
     onPelengLabelsPermanentChange,

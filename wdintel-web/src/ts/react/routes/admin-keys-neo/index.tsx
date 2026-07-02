@@ -1,5 +1,17 @@
 import DeleteIcon from '@mui/icons-material/Delete';
-import { Autocomplete, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import {
+  Autocomplete,
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -22,7 +34,10 @@ import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { listOrganisms } from '../../services/api/organisms';
 import {
   createKeySharePolicy,
@@ -51,7 +66,14 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   createdAt: true,
 };
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'mrt-row-actions', 'grantFrom', 'grantTo', 'author', 'createdAt'];
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'grantFrom',
+  'grantTo',
+  'author',
+  'createdAt',
+];
 
 const defaultMRTOptions = getDefaultMRTOptions<SigintKeySharePolicy>();
 
@@ -88,7 +110,9 @@ function buildKeyPolicyLoadingRows(): SigintKeySharePolicy[] {
   }));
 }
 
-function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<SigintKeySharePolicy>[] {
+function usePolicyColumns(
+  organismNames: Map<number, string>,
+): MRT_ColumnDef<SigintKeySharePolicy>[] {
   return useMemo(
     () => [
       {
@@ -183,13 +207,13 @@ function KeyPoliciesTable(props: {
     enableRowActions: !props.loading,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-    <MrtRowActionButton
-      label="Видалити"
-      onClick={() => props.onDelete(row.original)}
-      icon={<DeleteIcon fontSize="small" />}
-      tone="danger"
-      opensModal
-    />
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(row.original)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+        opensModal
+      />
     ),
     defaultColumn: {
       size: 200,
@@ -202,7 +226,8 @@ function KeyPoliciesTable(props: {
         size: mrtRowActionsColumnSize(1),
       },
     },
-    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading: props.loading, layout: 'workspace' }),
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading: props.loading, layout: 'workspace' }),
     muiTableContainerProps: ({ table }) =>
       getDefaultMrtContainerProps({
         loading: props.loading,
@@ -238,7 +263,10 @@ function AdminKeysNeoPageBody() {
 
   const [deleteState, setDeleteState] = useState<DeleteState>(null);
 
-  const organismNames = useMemo(() => new Map(organisms.map((organism) => [organism.id, organism.name])), [organisms]);
+  const organismNames = useMemo(
+    () => new Map(organisms.map((organism) => [organism.id, organism.name])),
+    [organisms],
+  );
 
   const organismOptions = useMemo(() => organisms, [organisms]);
 
@@ -308,7 +336,10 @@ function AdminKeysNeoPageBody() {
     setCreateError(null);
 
     try {
-      const created = await createKeySharePolicy({ grantFrom: createFrom.id, grantTo: createTo.id });
+      const created = await createKeySharePolicy({
+        grantFrom: createFrom.id,
+        grantTo: createTo.id,
+      });
       setPolicies((prev) => [created, ...prev]);
       setCreateOpen(false);
     } catch (err) {
@@ -360,122 +391,141 @@ function AdminKeysNeoPageBody() {
   };
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      {organismsStatus === 'error' ? (
-        <PowerAlert severity="error" onClose={() => setOrganismsError(null)}>
-          {organismsError || 'Помилка завантаження організацій'}
-        </PowerAlert>
-      ) : null}
-
-      <TablePageToolbar
-        title="Політики доступу до ключів"
-        titleInfo={
-          <Box sx={{ maxWidth: 360 }}>
-            Додайте нову політику, щоби користувачі організму-отримувача бачили всі ключі шифрування, створені
-            користувачами організму-власника.
-            <br />
-            <br />
-            Політика надає односторонній доступ лише до ключів, якими володіє організм. Для доступу до ключів,
-            переданих власнику іншими організмами, створіть окремі політики.
-          </Box>
-        }
-        withGlobalTextFilter
-        hideGlobalTextFilter={status !== 'success'}
-        internalActionsDisabled={status !== 'success'}
-        actions={
-          <div className="flex gap-3">
-            <PowerButton variant="contained" onClick={openCreateDialog}>
-              Додати політику
-            </PowerButton>
-          </div>
-        }
-      />
-
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
-
-      <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Додати політику доступу</DialogTitle>
-        <DialogContent className="space-y-3">
-          {createError ? <PowerAlert severity="error">{createError}</PowerAlert> : null}
-          <Autocomplete
-            options={organismOptions}
-            getOptionLabel={(option) => option.name}
-            value={createFrom}
-            onChange={(_, value) => {
-              setCreateFrom(value);
-              setCreateErrors((prev) => ({ ...prev, grantFrom: undefined }));
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Власник ключів шифрування"
-                error={Boolean(createErrors.grantFrom)}
-                helperText={createErrors.grantFrom}
-              />
-            )}
-            renderOption={(props, option) => {
-              const { key: _unusedKey, ...optionProps } = props;
-              return (
-                <Box component="li" {...optionProps} key={option.id}>
-                  {option.name}
-                </Box>
-              );
-            }}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-          />
-          <Autocomplete
-            options={organismOptions}
-            getOptionLabel={(option) => option.name}
-            value={createTo}
-            onChange={(_, value) => {
-              setCreateTo(value);
-              setCreateErrors((prev) => ({ ...prev, grantTo: undefined }));
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Отримувач прав на перегляд ключів"
-                error={Boolean(createErrors.grantTo)}
-                helperText={createErrors.grantTo}
-              />
-            )}
-            renderOption={(props, option) => {
-              const { key: _unusedKey, ...optionProps } = props;
-              return (
-                <Box component="li" {...optionProps} key={option.id}>
-                  {option.name}
-                </Box>
-              );
-            }}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-          />
-        </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-          <PowerButton onClick={closeCreateDialog} disabled={createSaving}>
-            Скасувати
-          </PowerButton>
-          <PowerButton variant="contained" onClick={handleCreate} disabled={createSaving}>
-            Зберегти
-          </PowerButton>
-        </DialogActions>
-      </Dialog>
-
-      <ConfirmDangerDialog
-        open={Boolean(deleteState)}
-        onClose={() => setDeleteState(null)}
-        onConfirm={handleDelete}
-        submitting={Boolean(deleteState?.isDeleting)}
-        disabled={!deleteState}
-        disableRestoreFocus
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
       >
-          {deleteState?.error ? <PowerAlert severity="error">{deleteState.error}</PowerAlert> : null}
+        {organismsStatus === 'error' ? (
+          <PowerAlert severity="error" onClose={() => setOrganismsError(null)}>
+            {organismsError || 'Помилка завантаження організацій'}
+          </PowerAlert>
+        ) : null}
+
+        <TablePageToolbar
+          title="Політики доступу до ключів"
+          titleInfo={
+            <Box sx={{ maxWidth: 360 }}>
+              Додайте нову політику, щоби користувачі організму-отримувача бачили всі ключі
+              шифрування, створені користувачами організму-власника.
+              <br />
+              <br />
+              Політика надає односторонній доступ лише до ключів, якими володіє організм. Для
+              доступу до ключів, переданих власнику іншими організмами, створіть окремі політики.
+            </Box>
+          }
+          withGlobalTextFilter
+          hideGlobalTextFilter={status !== 'success'}
+          internalActionsDisabled={status !== 'success'}
+          actions={
+            <div className="flex gap-3">
+              <PowerButton variant="contained" onClick={openCreateDialog}>
+                Додати політику
+              </PowerButton>
+            </div>
+          }
+        />
+
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderTable()}
+        </Box>
+
+        <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>Додати політику доступу</DialogTitle>
+          <DialogContent className="space-y-3">
+            {createError ? <PowerAlert severity="error">{createError}</PowerAlert> : null}
+            <Autocomplete
+              options={organismOptions}
+              getOptionLabel={(option) => option.name}
+              value={createFrom}
+              onChange={(_, value) => {
+                setCreateFrom(value);
+                setCreateErrors((prev) => ({ ...prev, grantFrom: undefined }));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Власник ключів шифрування"
+                  error={Boolean(createErrors.grantFrom)}
+                  helperText={createErrors.grantFrom}
+                />
+              )}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <Box component="li" {...optionProps} key={option.id}>
+                    {option.name}
+                  </Box>
+                );
+              }}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+            />
+            <Autocomplete
+              options={organismOptions}
+              getOptionLabel={(option) => option.name}
+              value={createTo}
+              onChange={(_, value) => {
+                setCreateTo(value);
+                setCreateErrors((prev) => ({ ...prev, grantTo: undefined }));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Отримувач прав на перегляд ключів"
+                  error={Boolean(createErrors.grantTo)}
+                  helperText={createErrors.grantTo}
+                />
+              )}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <Box component="li" {...optionProps} key={option.id}>
+                    {option.name}
+                  </Box>
+                );
+              }}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+            />
+          </DialogContent>
+          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <PowerButton onClick={closeCreateDialog} disabled={createSaving}>
+              Скасувати
+            </PowerButton>
+            <PowerButton variant="contained" onClick={handleCreate} disabled={createSaving}>
+              Зберегти
+            </PowerButton>
+          </DialogActions>
+        </Dialog>
+
+        <ConfirmDangerDialog
+          open={Boolean(deleteState)}
+          onClose={() => setDeleteState(null)}
+          onConfirm={handleDelete}
+          submitting={Boolean(deleteState?.isDeleting)}
+          disabled={!deleteState}
+          disableRestoreFocus
+        >
+          {deleteState?.error ? (
+            <PowerAlert severity="error">{deleteState.error}</PowerAlert>
+          ) : null}
           <Typography variant="body2" className="text-muted-foreground">
             {deleteState
               ? `Видалити політику для ${getOrganismLabel(deleteState.policy.grantFrom, organismNames)} → ${getOrganismLabel(deleteState.policy.grantTo, organismNames)}?`
               : ''}
           </Typography>
-      </ConfirmDangerDialog>
+        </ConfirmDangerDialog>
       </Stack>
     </Box>
   );

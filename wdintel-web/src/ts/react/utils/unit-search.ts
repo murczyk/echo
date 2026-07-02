@@ -1,5 +1,9 @@
 import type { Unit } from '../../../Bindings';
-import { createRankedFilterOptions, findExactSearchMatch, normalizeSearchValue } from './search-filter';
+import {
+  createRankedFilterOptions,
+  findExactSearchMatch,
+  normalizeSearchValue,
+} from './search-filter';
 
 export const UNIT_FILTER_UNSET_ID = 0;
 const UNIT_FILTER_UNSET_NAME = 'Не визначено';

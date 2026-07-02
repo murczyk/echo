@@ -2,8 +2,17 @@ import type { SavedFilter } from '../../../../Bindings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
-import { deleteAnalysisSavedFilter, listAnalysisSavedFilters, renameAnalysisSavedFilter, upsertAnalysisSavedFilter } from '../../services/api/analysis';
-import { buildAnalysisReq, queryStateFromSavedFilter, queryStateMatchesSavedFilter } from './helpers';
+import {
+  deleteAnalysisSavedFilter,
+  listAnalysisSavedFilters,
+  renameAnalysisSavedFilter,
+  upsertAnalysisSavedFilter,
+} from '../../services/api/analysis';
+import {
+  buildAnalysisReq,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from './helpers';
 import type { AnalysisQueryState } from './types';
 
 type Props = {
@@ -115,53 +124,59 @@ export function useAnalysisSavedFilters({
     [queryState, setQueryState],
   );
 
-  const saveAsNew = useCallback(async (name: string) => {
-    const req = buildAnalysisReq(queryState, allFrequencies);
-    const nextName = name.trim();
-    if (isNullOrUndefined(req) || nextName === '') return false;
-    setSaveInFlight(true);
-    onError('');
-    try {
-      const next = await upsertAnalysisSavedFilter({ name: nextName, req });
-      setSavedFilters(next);
-      const saved = next.find((item) => item.name === nextName) ?? null;
-      setLoadedSavedFilterId(saved?.id ?? null);
-      setSavedFilterName(nextName);
-      hasSyncedLoadedSavedFilterRef.current = true;
-      return true;
-    } catch (saveError) {
-      if (!onUnauthorized(saveError)) {
-        onError(toErrorMessage(saveError));
+  const saveAsNew = useCallback(
+    async (name: string) => {
+      const req = buildAnalysisReq(queryState, allFrequencies);
+      const nextName = name.trim();
+      if (isNullOrUndefined(req) || nextName === '') return false;
+      setSaveInFlight(true);
+      onError('');
+      try {
+        const next = await upsertAnalysisSavedFilter({ name: nextName, req });
+        setSavedFilters(next);
+        const saved = next.find((item) => item.name === nextName) ?? null;
+        setLoadedSavedFilterId(saved?.id ?? null);
+        setSavedFilterName(nextName);
+        hasSyncedLoadedSavedFilterRef.current = true;
+        return true;
+      } catch (saveError) {
+        if (!onUnauthorized(saveError)) {
+          onError(toErrorMessage(saveError));
+        }
+        return false;
+      } finally {
+        setSaveInFlight(false);
       }
-      return false;
-    } finally {
-      setSaveInFlight(false);
-    }
-  }, [allFrequencies, onError, onUnauthorized, queryState]);
+    },
+    [allFrequencies, onError, onUnauthorized, queryState],
+  );
 
-  const renameExisting = useCallback(async (name: string) => {
-    if (!loadedSavedFilter) return false;
-    const nextName = name.trim();
-    if (nextName === '' || nextName === loadedSavedFilter.name) return false;
-    setSaveInFlight(true);
-    onError('');
-    try {
-      await renameAnalysisSavedFilter({ id: loadedSavedFilter.id, name: nextName });
-      const next = await loadSavedFilters();
-      setSavedFilters(next);
-      setLoadedSavedFilterId(loadedSavedFilter.id);
-      setSavedFilterName(nextName);
-      hasSyncedLoadedSavedFilterRef.current = true;
-      return true;
-    } catch (renameError) {
-      if (!onUnauthorized(renameError)) {
-        onError(toErrorMessage(renameError));
+  const renameExisting = useCallback(
+    async (name: string) => {
+      if (!loadedSavedFilter) return false;
+      const nextName = name.trim();
+      if (nextName === '' || nextName === loadedSavedFilter.name) return false;
+      setSaveInFlight(true);
+      onError('');
+      try {
+        await renameAnalysisSavedFilter({ id: loadedSavedFilter.id, name: nextName });
+        const next = await loadSavedFilters();
+        setSavedFilters(next);
+        setLoadedSavedFilterId(loadedSavedFilter.id);
+        setSavedFilterName(nextName);
+        hasSyncedLoadedSavedFilterRef.current = true;
+        return true;
+      } catch (renameError) {
+        if (!onUnauthorized(renameError)) {
+          onError(toErrorMessage(renameError));
+        }
+        return false;
+      } finally {
+        setSaveInFlight(false);
       }
-      return false;
-    } finally {
-      setSaveInFlight(false);
-    }
-  }, [loadSavedFilters, loadedSavedFilter, onError, onUnauthorized]);
+    },
+    [loadSavedFilters, loadedSavedFilter, onError, onUnauthorized],
+  );
 
   const updateExisting = useCallback(async () => {
     if (!loadedSavedFilter) return;

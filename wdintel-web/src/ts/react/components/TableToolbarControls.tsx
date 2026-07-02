@@ -19,9 +19,13 @@ export function TableToolbarControls(props: Props) {
   const tableStateContext = useTableStateContext();
   const desktopBreakpoint = props.desktopBreakpoint ?? 'lg';
   const leadingDesktopBreakpoint = props.leadingDesktopBreakpoint ?? desktopBreakpoint;
-  const hasLeadingControls = Boolean((props.withGlobalTextFilter && !props.hideGlobalTextFilter) || props.filter);
+  const hasLeadingControls = Boolean(
+    (props.withGlobalTextFilter && !props.hideGlobalTextFilter) || props.filter,
+  );
   const hasTrailingActions = Boolean(
-    props.trailingActionsBeforeInternal || props.trailingActions || props.trailingActionsAfterInternal,
+    props.trailingActionsBeforeInternal ||
+    props.trailingActions ||
+    props.trailingActionsAfterInternal,
   );
 
   if (!hasLeadingControls && !hasTrailingActions) {
@@ -82,7 +86,7 @@ export function TableToolbarControls(props: Props) {
               {props.trailingActionsBeforeInternal}
             </Stack>
           ) : null}
-          {(props.trailingActions || props.trailingActionsAfterInternal) ? (
+          {props.trailingActions || props.trailingActionsAfterInternal ? (
             <Stack
               direction="row"
               spacing={1.5}

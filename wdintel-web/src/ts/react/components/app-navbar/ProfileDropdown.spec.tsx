@@ -55,28 +55,28 @@ describe('ProfileDropdown', () => {
   it('toggles dropdown on click', () => {
     const setOpenDropdown = vi.fn();
     const { container } = renderComponent({ ...defaultProps, setOpenDropdown });
-    
+
     const button = container.querySelector('button');
     act(() => {
       button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    
+
     expect(setOpenDropdown).toHaveBeenCalledWith('profile');
   });
 
   it('closes dropdown if already open', () => {
     const setOpenDropdown = vi.fn();
-    const { container } = renderComponent({ 
-      ...defaultProps, 
+    const { container } = renderComponent({
+      ...defaultProps,
       openDropdown: 'profile',
-      setOpenDropdown 
+      setOpenDropdown,
     });
-    
+
     const button = container.querySelector('button');
     act(() => {
       button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    
+
     expect(setOpenDropdown).toHaveBeenCalledWith(null);
   });
 
@@ -88,16 +88,18 @@ describe('ProfileDropdown', () => {
       openDropdown: 'profile',
       shared: { themeMode: 'light' },
       onThemeChange,
-      closeDropdowns
+      closeDropdowns,
     });
-    
-    const themeBtn = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Темна тема'));
+
+    const themeBtn = Array.from(container.querySelectorAll('a')).find((a) =>
+      a.textContent?.includes('Темна тема'),
+    );
     expect(themeBtn).not.toBeUndefined();
-    
+
     act(() => {
       themeBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     });
-    
+
     expect(onThemeChange).toHaveBeenCalledWith('dark');
     expect(closeDropdowns).toHaveBeenCalled();
   });
@@ -109,15 +111,17 @@ describe('ProfileDropdown', () => {
       ...defaultProps,
       openDropdown: 'profile',
       onLogout,
-      closeDropdowns
+      closeDropdowns,
     });
-    
-    const logoutBtn = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Вийти'));
-    
+
+    const logoutBtn = Array.from(container.querySelectorAll('a')).find((a) =>
+      a.textContent?.includes('Вийти'),
+    );
+
     act(() => {
       logoutBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     });
-    
+
     expect(onLogout).toHaveBeenCalled();
     expect(closeDropdowns).toHaveBeenCalled();
   });
@@ -128,16 +132,18 @@ describe('ProfileDropdown', () => {
       ...defaultProps,
       openDropdown: 'profile',
       isBasic: true,
-      handleInternalLinkClick
+      handleInternalLinkClick,
     });
-    
-    const settingsBtn = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Налаштування'));
+
+    const settingsBtn = Array.from(container.querySelectorAll('a')).find((a) =>
+      a.textContent?.includes('Налаштування'),
+    );
     expect(settingsBtn).not.toBeUndefined();
-    
+
     act(() => {
       settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     });
-    
+
     expect(handleInternalLinkClick).toHaveBeenCalled();
   });
 
@@ -147,8 +153,10 @@ describe('ProfileDropdown', () => {
       openDropdown: 'profile',
       isBasic: false,
     });
-    
-    const settingsBtn = Array.from(container.querySelectorAll('a')).find(a => a.textContent?.includes('Налаштування'));
+
+    const settingsBtn = Array.from(container.querySelectorAll('a')).find((a) =>
+      a.textContent?.includes('Налаштування'),
+    );
     expect(settingsBtn).toBeUndefined();
   });
 });

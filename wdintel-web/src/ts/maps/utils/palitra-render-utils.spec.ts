@@ -58,12 +58,7 @@ describe('cullSearchResultsToViewport', () => {
     const data: SearchResultChunk[] = [
       {
         palitra_id: 1,
-        points: [
-          point(0, 0),
-          point(1, 1),
-          point(2, 2),
-          point(4, 4),
-        ],
+        points: [point(0, 0), point(1, 1), point(2, 2), point(4, 4)],
       },
     ];
     const out = cullSearchResultsToViewport(data, bounds);
@@ -76,17 +71,13 @@ describe('cullSearchResultsToViewport', () => {
   });
 
   it('keeps all points when all inside bounds', () => {
-    const data: SearchResultChunk[] = [
-      { palitra_id: 1, points: [point(1, 1), point(2, 2)] },
-    ];
+    const data: SearchResultChunk[] = [{ palitra_id: 1, points: [point(1, 1), point(2, 2)] }];
     const out = cullSearchResultsToViewport(data, bounds);
     expect(out[0].points).toHaveLength(2);
   });
 
   it('returns empty points list for a palitra when none in bounds', () => {
-    const data: SearchResultChunk[] = [
-      { palitra_id: 1, points: [point(0, 0), point(5, 5)] },
-    ];
+    const data: SearchResultChunk[] = [{ palitra_id: 1, points: [point(0, 0), point(5, 5)] }];
     const out = cullSearchResultsToViewport(data, bounds);
     expect(out[0].points).toHaveLength(0);
   });

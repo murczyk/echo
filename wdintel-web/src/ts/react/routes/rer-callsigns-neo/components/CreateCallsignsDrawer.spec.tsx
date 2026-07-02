@@ -26,16 +26,22 @@ vi.mock('@mui/material', () => ({
         aria-label="unit-search"
         disabled={disabled}
         value={inputValue ?? ''}
-        onChange={(event) => onInputChange?.(event, (event.target as HTMLInputElement).value, 'input')}
+        onChange={(event) =>
+          onInputChange?.(event, (event.target as HTMLInputElement).value, 'input')
+        }
       />
       {renderInput ? renderInput({} as never) : null}
     </div>
   ),
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Button: ({ children, disabled }: { children?: ReactNode; disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>{children}</button>
+    <button type="button" disabled={disabled}>
+      {children}
+    </button>
   ),
-  Checkbox: ({ checked }: { checked?: boolean }) => <input type="checkbox" checked={checked} readOnly />,
+  Checkbox: ({ checked }: { checked?: boolean }) => (
+    <input type="checkbox" checked={checked} readOnly />
+  ),
   Divider: () => <hr />,
   Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FormControl: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -49,7 +55,13 @@ vi.mock('@mui/material', () => ({
   IconButton: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
   InputLabel: ({ children }: { children?: ReactNode }) => <label>{children}</label>,
   MenuItem: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Select: ({ children, renderValue }: { children?: ReactNode; renderValue?: (value: readonly (string | number)[]) => ReactNode }) => (
+  Select: ({
+    children,
+    renderValue,
+  }: {
+    children?: ReactNode;
+    renderValue?: (value: readonly (string | number)[]) => ReactNode;
+  }) => (
     <div>
       {renderValue ? renderValue([]) : null}
       {children}
@@ -98,11 +110,15 @@ vi.mock('@mui/material', () => ({
 import { CreateCallsignsDrawer } from './CreateCallsignsDrawer';
 import type { CallsignDraftRow, CallsignDuplicateHintGroup } from '../types';
 import type { Source, Unit } from '../../../../../Bindings';
-import { buildDuplicateHintGroups, normalizeDuplicateLookupValue, parseTabDelimitedInput, UNIT_SELECTION_REQUIRED_ERROR } from '../helpers';
+import {
+  buildDuplicateHintGroups,
+  normalizeDuplicateLookupValue,
+  parseTabDelimitedInput,
+  UNIT_SELECTION_REQUIRED_ERROR,
+} from '../helpers';
 
 let latestAutocompleteInputChange:
-  | ((_event: unknown, value: string, reason: string) => void)
-  | null = null;
+  ((_event: unknown, value: string, reason: string) => void) | null = null;
 
 type Rendered = {
   container: HTMLDivElement;
@@ -202,7 +218,12 @@ function renderQuickPasteHarness(): Rendered {
         }))
         .filter((row) => row.callsignInput.length >= 2 || row.fullNameInput.length >= 2);
 
-      return buildDuplicateHintGroups(duplicateHintInputs, loadedCallsigns, 1, new Map(units.map((unit) => [unit.id, unit])));
+      return buildDuplicateHintGroups(
+        duplicateHintInputs,
+        loadedCallsigns,
+        1,
+        new Map(units.map((unit) => [unit.id, unit])),
+      );
     }, [rows]);
 
     return (
@@ -225,10 +246,34 @@ function renderQuickPasteHarness(): Rendered {
         onRowChange={(_, next) => setRows([next])}
         onAppendRow={() => {}}
         onRemoveRow={() => {}}
-        onClearRows={() => setRows([{ callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' }])}
+        onClearRows={() =>
+          setRows([
+            {
+              callsign: '',
+              position: '',
+              fullName: '',
+              comment: '',
+              developing: false,
+              radioFreq: '',
+            },
+          ])
+        }
         onApplyPastedRows={(value) => {
           const parsed = parseTabDelimitedInput(value);
-          setRows(parsed.rows.length > 0 ? parsed.rows : [{ callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' }]);
+          setRows(
+            parsed.rows.length > 0
+              ? parsed.rows
+              : [
+                  {
+                    callsign: '',
+                    position: '',
+                    fullName: '',
+                    comment: '',
+                    developing: false,
+                    radioFreq: '',
+                  },
+                ],
+          );
         }}
         onSubmit={() => {}}
       />
@@ -253,20 +298,48 @@ describe('CreateCallsignsDrawer', () => {
       {
         rowIndex: 0,
         matches: [
-          { id: 10, callsign: 'ЛЕСНОЙ', position: 'Командир', fullName: '', comment: '', unitName: '11 АК' },
-          { id: 11, callsign: 'ЛЕСНИК', position: 'Оператор', fullName: '', comment: '', unitName: '11 АК' },
+          {
+            id: 10,
+            callsign: 'ЛЕСНОЙ',
+            position: 'Командир',
+            fullName: '',
+            comment: '',
+            unitName: '11 АК',
+          },
+          {
+            id: 11,
+            callsign: 'ЛЕСНИК',
+            position: 'Оператор',
+            fullName: '',
+            comment: '',
+            unitName: '11 АК',
+          },
         ],
       },
       {
         rowIndex: 1,
         matches: [
-          { id: 12, callsign: 'БАРС-4', position: 'Командир', fullName: '', comment: '', unitName: '11 АК' },
+          {
+            id: 12,
+            callsign: 'БАРС-4',
+            position: 'Командир',
+            fullName: '',
+            comment: '',
+            unitName: '11 АК',
+          },
         ],
       },
       {
         rowIndex: 2,
         matches: [
-          { id: 13, callsign: 'ВОЛК-1', position: 'Командир', fullName: '', comment: '', unitName: '11 АК' },
+          {
+            id: 13,
+            callsign: 'ВОЛК-1',
+            position: 'Командир',
+            fullName: '',
+            comment: '',
+            unitName: '11 АК',
+          },
         ],
       },
     ]);
@@ -283,7 +356,9 @@ describe('CreateCallsignsDrawer', () => {
     const view = renderComponent([], null);
     rendered.push(view);
 
-    const input = view.container.querySelector('input[aria-label="unit-search"]') as HTMLInputElement;
+    const input = view.container.querySelector(
+      'input[aria-label="unit-search"]',
+    ) as HTMLInputElement;
     expect(input).toBeTruthy();
 
     act(() => {

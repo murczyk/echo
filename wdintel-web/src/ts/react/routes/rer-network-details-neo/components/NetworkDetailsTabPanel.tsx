@@ -1,7 +1,13 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import type { ComponentProps } from 'react';
-import type { EncryptionRec, Network, NetworkDescrType, NetworkFreqsRes, NetworkPoint } from '../../../../../Bindings';
+import type {
+  EncryptionRec,
+  Network,
+  NetworkDescrType,
+  NetworkFreqsRes,
+  NetworkPoint,
+} from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
 import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
 import { NetworkDetailsActivityPanel } from './NetworkDetailsActivityPanel';
@@ -245,13 +251,44 @@ export function NetworkDetailsTabPanel({
             />
           </Box>
         ) : activeNetworkDetailsTab === 'callsigns' ? (
-          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }}>
-            <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
+          <Box
+            sx={{
+              p: 2,
+              minHeight: 0,
+              minWidth: 0,
+              flex: 1,
+              display: 'flex',
+              height: '100%',
+              flexDirection: 'column',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              boxSizing: 'border-box',
+            }}
+          >
+            <Box
+              sx={{
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                width: '100%',
+                boxSizing: 'border-box',
+              }}
+            >
               <NetworkDetailsCallsignsPanel {...callsignPanelProps} />
             </Box>
           </Box>
         ) : activeNetworkDetailsTab === 'relations' && canViewRelationsTab ? (
-          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              p: 2,
+              minHeight: 0,
+              minWidth: 0,
+              flex: 1,
+              display: 'flex',
+              height: '100%',
+              flexDirection: 'column',
+            }}
+          >
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkCallsignRelationsPanel
                 networkId={network?.id ?? null}
@@ -280,7 +317,17 @@ export function NetworkDetailsTabPanel({
             </Box>
           </Box>
         ) : activeNetworkDetailsTab === 'activity' && canViewActivityTab ? (
-          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              p: 2,
+              minHeight: 0,
+              minWidth: 0,
+              flex: 1,
+              display: 'flex',
+              height: '100%',
+              flexDirection: 'column',
+            }}
+          >
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsActivityPanel
                 networkActivity={networkActivity}
@@ -292,7 +339,17 @@ export function NetworkDetailsTabPanel({
             </Box>
           </Box>
         ) : activeNetworkDetailsTab === 'direction-finding' ? (
-          <Box sx={{ p: 2, minHeight: 0, minWidth: 0, flex: 1, display: 'flex', height: '100%', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              p: 2,
+              minHeight: 0,
+              minWidth: 0,
+              flex: 1,
+              display: 'flex',
+              height: '100%',
+              flexDirection: 'column',
+            }}
+          >
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsPelengationPanel
                 pelengPoints={pelengPoints}

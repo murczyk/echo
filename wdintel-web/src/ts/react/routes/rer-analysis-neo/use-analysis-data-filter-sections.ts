@@ -1,4 +1,10 @@
-import type { Network, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+import type {
+  Network,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -20,7 +26,18 @@ import type {
   AnalysisQueryState,
 } from './types';
 
-const OPTION_FILTER_SECTIONS: AnalysisFilterSectionId[] = ['tags', 'aors', 'groups', 'senders', 'callsigns', 'units', 'locations', 'posts', 'networks', 'metadata'];
+const OPTION_FILTER_SECTIONS: AnalysisFilterSectionId[] = [
+  'tags',
+  'aors',
+  'groups',
+  'senders',
+  'callsigns',
+  'units',
+  'locations',
+  'posts',
+  'networks',
+  'metadata',
+];
 const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'fromDateTimeStr',
   'toDateTimeStr',
@@ -41,7 +58,10 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'withoutNetwork',
 ];
 
-const SECTION_QUERY_FIELDS: Array<{ field: keyof AnalysisQueryState; section: AnalysisFilterSectionId }> = [
+const SECTION_QUERY_FIELDS: Array<{
+  field: keyof AnalysisQueryState;
+  section: AnalysisFilterSectionId;
+}> = [
   { field: 'tags', section: 'tags' },
   { field: 'aorsSelected', section: 'aors' },
   { field: 'groupsSelected', section: 'groups' },
@@ -97,7 +117,9 @@ const EMPTY_SECTION_LOAD_STATES: Record<AnalysisFilterSectionId, AnalysisFilterS
   metadata: 'idle',
 };
 
-export function filterSectionsToInvalidateForPatch(patch: Partial<AnalysisQueryState>): AnalysisFilterSectionId[] {
+export function filterSectionsToInvalidateForPatch(
+  patch: Partial<AnalysisQueryState>,
+): AnalysisFilterSectionId[] {
   if (Object.keys(patch).length === 0) {
     return [...OPTION_FILTER_SECTIONS];
   }
@@ -153,22 +175,35 @@ export function useAnalysisFilterSections({
 }: Params) {
   const filterSectionLoadVersionRef = useRef(0);
   const nextFilterSectionLoadIdRef = useRef(0);
-  const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>({} as Record<AnalysisFilterSectionId, string>);
+  const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>(
+    {} as Record<AnalysisFilterSectionId, string>,
+  );
   const inFlightFilterSectionLoadIdsRef = useRef(new Map<AnalysisFilterSectionId, number>());
   const reloadFilterSectionsRef = useRef<Set<AnalysisFilterSectionId>>(new Set());
   const hasTargetedFilterSectionInvalidationRef = useRef(false);
-  const [filterSectionLoadStates, setFilterSectionLoadStates] = useState<Record<AnalysisFilterSectionId, AnalysisFilterSectionLoadState>>(
-    EMPTY_SECTION_LOAD_STATES,
+  const [filterSectionLoadStates, setFilterSectionLoadStates] =
+    useState<Record<AnalysisFilterSectionId, AnalysisFilterSectionLoadState>>(
+      EMPTY_SECTION_LOAD_STATES,
+    );
+
+  const setSectionLoadState = useCallback(
+    (section: AnalysisFilterSectionId, loadState: AnalysisFilterSectionLoadState) => {
+      setFilterSectionLoadStates((current) =>
+        current[section] === loadState ? current : { ...current, [section]: loadState },
+      );
+    },
+    [],
   );
 
-  const setSectionLoadState = useCallback((section: AnalysisFilterSectionId, loadState: AnalysisFilterSectionLoadState) => {
-    setFilterSectionLoadStates((current) => (current[section] === loadState ? current : { ...current, [section]: loadState }));
-  }, []);
-
-  const hasLoadedSection = useCallback((section: AnalysisFilterSectionId) => section in loadedFilterSectionKeyRef.current, []);
+  const hasLoadedSection = useCallback(
+    (section: AnalysisFilterSectionId) => section in loadedFilterSectionKeyRef.current,
+    [],
+  );
 
   const isSectionLoading = useCallback(
-    (section: AnalysisFilterSectionId) => filterSectionLoadStates[section] === 'loading' || inFlightFilterSectionLoadIdsRef.current.has(section),
+    (section: AnalysisFilterSectionId) =>
+      filterSectionLoadStates[section] === 'loading' ||
+      inFlightFilterSectionLoadIdsRef.current.has(section),
     [filterSectionLoadStates],
   );
 
@@ -204,7 +239,9 @@ export function useAnalysisFilterSections({
       const sectionsToInvalidate = filterSectionsToInvalidateForPatch(patch);
       if (sectionsToInvalidate.length === 0) return;
 
-      const sectionsToReload = sectionsToInvalidate.filter((section) => hasLoadedSection(section) || isSectionLoading(section));
+      const sectionsToReload = sectionsToInvalidate.filter(
+        (section) => hasLoadedSection(section) || isSectionLoading(section),
+      );
       if (sectionsToReload.length === 0) {
         return;
       }
@@ -234,7 +271,10 @@ export function useAnalysisFilterSections({
   );
 
   const getReloadFilterSections = useCallback(
-    () => (hasTargetedFilterSectionInvalidationRef.current ? Array.from(reloadFilterSectionsRef.current) : null),
+    () =>
+      hasTargetedFilterSectionInvalidationRef.current
+        ? Array.from(reloadFilterSectionsRef.current)
+        : null,
     [],
   );
 
@@ -309,7 +349,9 @@ export function useAnalysisFilterSections({
       networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>,
       signal?: AbortSignal,
     ) => {
-      const targetedInvalidationVersion = hasTargetedFilterSectionInvalidationRef.current ? filterSectionLoadVersionRef.current : null;
+      const targetedInvalidationVersion = hasTargetedFilterSectionInvalidationRef.current
+        ? filterSectionLoadVersionRef.current
+        : null;
       const sections = buildFilterSectionsToLoad(
         plan.mode === 'initial'
           ? {
@@ -321,7 +363,10 @@ export function useAnalysisFilterSections({
           : plan,
       );
       if (sections.length === 0) {
-        if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+        if (
+          targetedInvalidationVersion === filterSectionLoadVersionRef.current &&
+          reloadFilterSectionsRef.current.size === 0
+        ) {
           hasTargetedFilterSectionInvalidationRef.current = false;
           reloadFilterSectionsRef.current.clear();
         }
@@ -368,7 +413,10 @@ export function useAnalysisFilterSections({
         }),
       );
 
-      if (targetedInvalidationVersion === filterSectionLoadVersionRef.current && reloadFilterSectionsRef.current.size === 0) {
+      if (
+        targetedInvalidationVersion === filterSectionLoadVersionRef.current &&
+        reloadFilterSectionsRef.current.size === 0
+      ) {
         hasTargetedFilterSectionInvalidationRef.current = false;
         reloadFilterSectionsRef.current.clear();
       }
@@ -393,10 +441,14 @@ export function useAnalysisFilterSections({
 
   return {
     filterSectionLoadStates,
-    isFilterSectionLoading: (section: AnalysisFilterSectionId) => filterSectionLoadStates[section] === 'loading',
+    isFilterSectionLoading: (section: AnalysisFilterSectionId) =>
+      filterSectionLoadStates[section] === 'loading',
     isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) =>
-      optionCount === 0 && (filterSectionLoadStates[section] === 'loading' || filterSectionLoadStates[section] === 'stale'),
-    isFilterSectionStale: (section: AnalysisFilterSectionId) => filterSectionLoadStates[section] === 'stale',
+      optionCount === 0 &&
+      (filterSectionLoadStates[section] === 'loading' ||
+        filterSectionLoadStates[section] === 'stale'),
+    isFilterSectionStale: (section: AnalysisFilterSectionId) =>
+      filterSectionLoadStates[section] === 'stale',
     getLoadedFilterSections,
     getReloadFilterSections,
     invalidateFilterSectionLoads,

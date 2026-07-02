@@ -14,12 +14,18 @@ export function formatErrorMessage(error: unknown): string {
   }
 }
 
-export function normalizeLookupName(value: string | null | undefined, fallback: string = NO_DATA_LABEL): string {
+export function normalizeLookupName(
+  value: string | null | undefined,
+  fallback: string = NO_DATA_LABEL,
+): string {
   const trimmed = value?.trim() ?? '';
   return trimmed === '' ? fallback : trimmed;
 }
 
-export function formatClassicNetworkHeaderName(networkName: string | null | undefined, unitNames: string[]): string {
+export function formatClassicNetworkHeaderName(
+  networkName: string | null | undefined,
+  unitNames: string[],
+): string {
   const name = networkName?.trim() ?? '';
   const units = unitNames.map((unitName) => unitName.trim()).filter((unitName) => unitName !== '');
 
@@ -81,25 +87,39 @@ export function isValidFrequencyFormat(freq: string): boolean {
   if (parts.length !== 2) return false;
 
   const [wholePart, decimalPart] = parts;
-  return wholePart.length === 3 && decimalPart.length === 4 && /^\d{3}$/.test(wholePart) && /^\d{4}$/.test(decimalPart);
+  return (
+    wholePart.length === 3 &&
+    decimalPart.length === 4 &&
+    /^\d{3}$/.test(wholePart) &&
+    /^\d{4}$/.test(decimalPart)
+  );
 }
 
 export function getFrequencyFormatError(freq: string): string | null {
   const trimmed = freq.trim();
-  if (trimmed === '') return 'Це поле обов\'язкове';
+  if (trimmed === '') return "Це поле обов'язкове";
   if (!isValidFrequencyFormat(trimmed)) return FREQUENCY_FORMAT_ERROR;
   return null;
 }
 
 export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
-  const modulations = [...new Set(freqs.map((freq) => displayNetworkType(freq.modulation)).filter((m) => m !== NO_DATA_LABEL))];
+  const modulations = [
+    ...new Set(
+      freqs.map((freq) => displayNetworkType(freq.modulation)).filter((m) => m !== NO_DATA_LABEL),
+    ),
+  ];
   return modulations.length === 0 ? NO_DATA_LABEL : modulations.join(', ');
 }
 
-export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, encryptionsById: Map<number, string>): string {
+export function formatTransferTypeLabel(
+  freqs: Array<Network['freqs'][number]>,
+  encryptionsById: Map<number, string>,
+): string {
   const labels = freqs
     .map((freq) => freq.encryptionId)
-    .filter((encryptionId): encryptionId is number => encryptionId !== null && encryptionId !== undefined)
+    .filter(
+      (encryptionId): encryptionId is number => encryptionId !== null && encryptionId !== undefined,
+    )
     .map((encryptionId) => encryptionsById.get(encryptionId) ?? `#${encryptionId}`)
     .filter((label) => label.trim() !== '');
 
@@ -107,7 +127,9 @@ export function formatTransferTypeLabel(freqs: Array<Network['freqs'][number]>, 
   return uniqueLabels.length === 0 ? NO_DATA_LABEL : uniqueLabels.join(', ');
 }
 
-export function buildLookupMap<T extends { id: number; name: string }>(items: T[]): Map<number, string> {
+export function buildLookupMap<T extends { id: number; name: string }>(
+  items: T[],
+): Map<number, string> {
   return new Map(items.map((item) => [item.id, item.name]));
 }
 
@@ -123,17 +145,23 @@ export function canEditNetwork(user: User | null): boolean {
 
 export function canManageDescriptions(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
+  return (
+    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
+  );
 }
 
 export function canManageNetworkCallsignActions(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
+  return (
+    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
+  );
 }
 
 export function canDeleteCatalogCallsign(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || (roles.has('CallsignsEditor') && (roles.has('Rer') || roles.has('Full')));
+  return (
+    roles.has('Admin') || (roles.has('CallsignsEditor') && (roles.has('Rer') || roles.has('Full')))
+  );
 }
 
 export function canViewNetworkActivityTab(user: User | null): boolean {
@@ -143,13 +171,17 @@ export function canViewNetworkActivityTab(user: User | null): boolean {
 
 export function canViewNetworkRelationsTab(user: User | null): boolean {
   const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin')
-    || roles.has('Full')
-    || roles.has('Rer')
-    || roles.has('Api')
-    || roles.has('ApiAgent');
+  return (
+    roles.has('Admin') ||
+    roles.has('Full') ||
+    roles.has('Rer') ||
+    roles.has('Api') ||
+    roles.has('ApiAgent')
+  );
 }
 
 function canManageNetworkActions(roles: Set<string>): boolean {
-  return roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')));
+  return (
+    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
+  );
 }

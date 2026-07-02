@@ -5,10 +5,21 @@ import { act, createElement, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes, Source } from '../../../../Bindings';
+import type {
+  KnownCallsignShortRes,
+  NetworkCallsign,
+  NetworkCallsignRes,
+  Source,
+} from '../../../../Bindings';
 import { NO_DATA_LABEL } from '../../utils/misc';
-import { EMPTY_STATE, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.types';
-import { derivePelengEnabledFreqs, useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
+import {
+  EMPTY_STATE,
+  type NetworkDetailsNeoPageState,
+} from './use-rer-network-details-neo-page.types';
+import {
+  derivePelengEnabledFreqs,
+  useRerNetworkDetailsNeoPageLoad,
+} from './use-rer-network-details-neo-page.load';
 
 const callsignsApiMock = vi.hoisted(() => ({
   listNetworkCallsigns: vi.fn(),
@@ -66,7 +77,9 @@ const rendered: Root[] = [];
 let latestState: NetworkDetailsNeoPageState | null = null;
 let latestLoadCallsigns: ((networkId: number) => Promise<void>) | null = null;
 
-function createKnownCallsign(overrides: Partial<KnownCallsignShortRes> = {}): KnownCallsignShortRes {
+function createKnownCallsign(
+  overrides: Partial<KnownCallsignShortRes> = {},
+): KnownCallsignShortRes {
   return {
     id: 20,
     callsign: 'Барс-4',
@@ -168,19 +181,14 @@ function installDefaultApiMocks() {
 describe('use-rer-network-details-neo-page.load', () => {
   it('keeps blank frequencies enabled after load', () => {
     expect(
-      derivePelengEnabledFreqs([], [
-        { freq: '   ' },
-        { freq: '146.5000' },
-        { freq: '146.5000' },
-      ]),
+      derivePelengEnabledFreqs([], [{ freq: '   ' }, { freq: '146.5000' }, { freq: '146.5000' }]),
     ).toEqual(['146.5000', NO_DATA_LABEL]);
   });
 
   it('falls back to all loaded peleng frequencies when nothing stays enabled', () => {
-    expect(derivePelengEnabledFreqs(['149.0000'], [{ freq: '   ' }, { freq: '146.5000' }])).toEqual([
-      '146.5000',
-      NO_DATA_LABEL,
-    ]);
+    expect(derivePelengEnabledFreqs(['149.0000'], [{ freq: '   ' }, { freq: '146.5000' }])).toEqual(
+      ['146.5000', NO_DATA_LABEL],
+    );
   });
 
   it('lets catalog resolve while intercepted is still loading', async () => {
@@ -456,7 +464,9 @@ describe('use-rer-network-details-neo-page.load', () => {
 
     expect(latestState?.networkCallsignGroups.map((group) => group.callsign)).toEqual(['ГІЄНА-4']);
     expect(latestState?.catalogCallsignGroups).toEqual([]);
-    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual(['ГІЄНА-4']);
+    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual([
+      'ГІЄНА-4',
+    ]);
   });
 
   it('clears stale intercepted rows when intercepted reload returns no rows', async () => {
@@ -503,7 +513,9 @@ describe('use-rer-network-details-neo-page.load', () => {
         return Promise.resolve({ callsigns: [] });
       }
       return Promise.resolve({
-        callsigns: [createCallsignGroup({ callsign: 'БАРС-4', knownCallsigns: [createKnownCallsign()] })],
+        callsigns: [
+          createCallsignGroup({ callsign: 'БАРС-4', knownCallsigns: [createKnownCallsign()] }),
+        ],
       });
     });
     callsignsApiMock.getNetworkCallsignsActivity.mockReturnValue(activityDeferred.promise);
@@ -536,9 +548,7 @@ describe('use-rer-network-details-neo-page.load', () => {
     callsignsApiMock.listNetworkCallsigns.mockReturnValue(networkCallsignsDeferred.promise);
     callsignsApiMock.listSources.mockReturnValue(sourcesDeferred.promise);
     callsignsApiMock.getNetworkCallsigns.mockImplementation((req: { section?: string | null }) => {
-      return req.section === 'Catalog'
-        ? catalogDeferred.promise
-        : interceptedDeferred.promise;
+      return req.section === 'Catalog' ? catalogDeferred.promise : interceptedDeferred.promise;
     });
     callsignsApiMock.getNetworkCallsignsActivity.mockRejectedValue(new Error('activity failed'));
 
@@ -624,7 +634,9 @@ describe('use-rer-network-details-neo-page.load', () => {
 
     expect(latestState?.callsignsError).toContain('activity failed');
     expect(latestState?.catalogCallsignGroups.map((group) => group.callsign)).toEqual(['БАРС-4']);
-    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual(['СОКІЛ-1']);
+    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual([
+      'СОКІЛ-1',
+    ]);
   });
 
   it('keeps same callsign catalog and intercepted groups separate during load', async () => {
@@ -674,7 +686,9 @@ describe('use-rer-network-details-neo-page.load', () => {
 
     expect(latestState?.networkCallsignGroups).toHaveLength(2);
     expect(latestState?.catalogCallsignGroups.map((group) => group.callsign)).toEqual(['СОКІЛ-1']);
-    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual(['СОКІЛ-1']);
+    expect(latestState?.unknownInterceptedCallsigns.map((group) => group.callsign)).toEqual([
+      'СОКІЛ-1',
+    ]);
     expect(callsignsApiMock.getNetworkCallsignsActivity).toHaveBeenCalledTimes(1);
     expect(callsignsApiMock.getNetworkCallsignsActivity).toHaveBeenCalledWith({
       networkId: 42,

@@ -2,7 +2,13 @@ import { type Dispatch, type MutableRefObject, type SetStateAction } from 'react
 
 import type { ListNetworksReq, Network } from '../../../../Bindings';
 import { isUnauthorizedError } from '../../services/api/client';
-import { createNetwork, deleteNetwork, updateNetwork, updateNetworkPosts, updateNetworkUnits } from '../../services/api/networks';
+import {
+  createNetwork,
+  deleteNetwork,
+  updateNetwork,
+  updateNetworkPosts,
+  updateNetworkUnits,
+} from '../../services/api/networks';
 import type { NetworkEtalonkaReportState } from '../rer-network-details-neo/use-rer-network-details-neo-page.etalonka-report';
 import { getRestoreNetworkOnEditValue } from '../rer-network-details-neo/network-status';
 import {
@@ -31,7 +37,10 @@ type MutationArgs = {
   deleteDialogNetwork: Network | null;
   editSubmitting: boolean;
   createSubmitting: boolean;
-  loadNetworks: (snapshot: NetworksQuerySnapshot, options?: { includeLookups?: boolean; append?: boolean; force?: boolean }) => Promise<void>;
+  loadNetworks: (
+    snapshot: NetworksQuerySnapshot,
+    options?: { includeLookups?: boolean; append?: boolean; force?: boolean },
+  ) => Promise<void>;
   refreshStatusCounts: () => Promise<void>;
   setStatus: Dispatch<SetStateAction<UiMessage>>;
   setEditDialog: Dispatch<SetStateAction<NetworkUpsertForm | null>>;
@@ -43,7 +52,9 @@ type MutationArgs = {
   setDeleteDialogNetwork: Dispatch<SetStateAction<Network | null>>;
   setDeleteSubmitting: Dispatch<SetStateAction<boolean>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
-  setActivityByNetworkId: Dispatch<SetStateAction<Map<number, Record<string, Record<string, number>>>>>;
+  setActivityByNetworkId: Dispatch<
+    SetStateAction<Map<number, Record<string, Record<string, number>>>>
+  >;
 };
 
 export function createRerNetworksNeoMutationActions(args: MutationArgs) {
@@ -91,9 +102,16 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     const editDialog = formArg ?? args.editDialog;
     if (!editDialog || editDialog.id === null) return;
 
-    const validationError = getNetworkUpsertValidationError(editDialog, { includeFrequency: false });
+    const validationError = getNetworkUpsertValidationError(editDialog, {
+      includeFrequency: false,
+    });
     if (validationError !== null) {
-      args.setEditError(validationError.name ?? validationError.location ?? validationError.aorIds ?? 'Перевірте форму');
+      args.setEditError(
+        validationError.name ??
+          validationError.location ??
+          validationError.aorIds ??
+          'Перевірте форму',
+      );
       return;
     }
 
@@ -110,11 +128,16 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
         location: editDialog.location.trim(),
         radioStation: editDialog.radioStation.trim() === '' ? null : editDialog.radioStation.trim(),
         purpose: editDialog.purpose.trim() === '' ? null : editDialog.purpose.trim(),
-        operationMode: editDialog.operationMode.trim() === '' ? null : editDialog.operationMode.trim(),
-        operationType: editDialog.operationType.trim() === '' ? null : editDialog.operationType.trim(),
-        operationPeriod: editDialog.operationPeriod.trim() === '' ? null : editDialog.operationPeriod.trim(),
+        operationMode:
+          editDialog.operationMode.trim() === '' ? null : editDialog.operationMode.trim(),
+        operationType:
+          editDialog.operationType.trim() === '' ? null : editDialog.operationType.trim(),
+        operationPeriod:
+          editDialog.operationPeriod.trim() === '' ? null : editDialog.operationPeriod.trim(),
         doNotArchive: editDialog.doNotArchive,
-        unitMask: args.supportNonRerInterceptions ? normalizeNetworkUnitMask(editDialog.unitMask) : null,
+        unitMask: args.supportNonRerInterceptions
+          ? normalizeNetworkUnitMask(editDialog.unitMask)
+          : null,
         descriptions: null,
         status: editDialog.status,
       });
@@ -146,9 +169,18 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
       args.createDialog,
       args.supportNonRerInterceptions,
     );
-    const validationError = getNetworkUpsertValidationError(args.createDialog, { includeFrequency });
+    const validationError = getNetworkUpsertValidationError(args.createDialog, {
+      includeFrequency,
+    });
     if (validationError !== null) {
-      args.setCreateError(validationError.name ?? validationError.location ?? validationError.aorIds ?? validationError.freq ?? validationError.activeFrom ?? 'Перевірте форму');
+      args.setCreateError(
+        validationError.name ??
+          validationError.location ??
+          validationError.aorIds ??
+          validationError.freq ??
+          validationError.activeFrom ??
+          'Перевірте форму',
+      );
       return;
     }
 
@@ -156,7 +188,9 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     args.setCreateError(null);
 
     try {
-      const network = await createNetwork(toCreateNetworkReq(args.createDialog, { includeFrequency }));
+      const network = await createNetwork(
+        toCreateNetworkReq(args.createDialog, { includeFrequency }),
+      );
       args.setCreateDialog(null);
       args.setStatus({ kind: 'success', text: 'Мережу створено.' });
       window.location.assign(`/rer-networks-neo/${network.id}`);
@@ -196,7 +230,10 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
         redirectToLogin();
         return;
       }
-      args.setStatus({ kind: 'error', text: `Помилка видалення мережі: ${formatErrorMessage(error)}` });
+      args.setStatus({
+        kind: 'error',
+        text: `Помилка видалення мережі: ${formatErrorMessage(error)}`,
+      });
     } finally {
       args.setDeleteSubmitting(false);
     }

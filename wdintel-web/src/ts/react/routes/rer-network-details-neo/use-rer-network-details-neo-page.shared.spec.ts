@@ -16,10 +16,7 @@ import {
   canViewNetworkActivityTab,
   canViewNetworkRelationsTab,
 } from './use-rer-network-details-neo-page.shared';
-import {
-  parseDateInputExclusiveEndInTimeZone,
-  parseDateInputInTimeZone,
-} from '../../utils/misc';
+import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -30,7 +27,9 @@ describe('use-rer-network-details-neo-page.shared date parsing', () => {
   });
 
   it('parses exclusive end dates as next-day UTC midnight', () => {
-    expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(Date.parse('2026-05-21T00:00:00Z'));
+    expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(
+      Date.parse('2026-05-21T00:00:00Z'),
+    );
   });
 
   it('parses relations dates in the app timezone', () => {

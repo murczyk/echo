@@ -5,10 +5,7 @@ interface TableOfContentsProps {
   onJump: (id: string) => void;
 }
 
-export function TableOfContents({
-  sections,
-  onJump,
-}: TableOfContentsProps) {
+export function TableOfContents({ sections, onJump }: TableOfContentsProps) {
   const headed = sections.filter((s) => s.heading !== null);
   if (headed.length === 0) return null;
 

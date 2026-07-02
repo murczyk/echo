@@ -8,11 +8,7 @@ interface ReleasesSidebarProps {
   onSelect: (releaseId: string) => void;
 }
 
-export function ReleasesSidebar({
-  releases,
-  selectedReleaseId,
-  onSelect,
-}: ReleasesSidebarProps) {
+export function ReleasesSidebar({ releases, selectedReleaseId, onSelect }: ReleasesSidebarProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const releaseRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -37,7 +33,6 @@ export function ReleasesSidebar({
 
   return (
     <aside className="lg:sticky lg:top-20 self-start h-fit rounded border border-[var(--color-border)] bg-[var(--color-card)] p-3">
-
       <button
         type="button"
         className="mb-2 flex w-full items-center justify-between text-left text-sm font-semibold lg:hidden"

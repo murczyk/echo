@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { NetworkCallsignRelationNode, NetworkCallsignRelationsRsp } from '../../../../Bindings';
+import type {
+  NetworkCallsignRelationNode,
+  NetworkCallsignRelationsRsp,
+} from '../../../../Bindings';
 import {
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
@@ -9,7 +12,10 @@ import {
   NETWORK_RELATIONS_RENDER_LIMITS,
 } from './network-relations';
 
-function relationNode(overrides: Partial<NetworkCallsignRelationNode> & Pick<NetworkCallsignRelationNode, 'id' | 'label'>): NetworkCallsignRelationNode {
+function relationNode(
+  overrides: Partial<NetworkCallsignRelationNode> &
+    Pick<NetworkCallsignRelationNode, 'id' | 'label'>,
+): NetworkCallsignRelationNode {
   return {
     weight: 1,
     relationCount: 1,
@@ -110,7 +116,17 @@ describe('network relations helpers', () => {
         ],
       },
       '',
-      ['652.111', '852.111', '445.500', '741.250', '159.7400', '159.7350', '159.7380', '159.7375', '159.7430'],
+      [
+        '652.111',
+        '852.111',
+        '445.500',
+        '741.250',
+        '159.7400',
+        '159.7350',
+        '159.7380',
+        '159.7375',
+        '159.7430',
+      ],
       1,
     );
 
@@ -121,7 +137,12 @@ describe('network relations helpers', () => {
   });
 
   it('keeps search matches highlighted while preserving visible neighbors', () => {
-    const graph = buildNetworkCallsignRelationsGraphView(createGraph(), 'brav', ['652.111', '852.111'], 1);
+    const graph = buildNetworkCallsignRelationsGraphView(
+      createGraph(),
+      'brav',
+      ['652.111', '852.111'],
+      1,
+    );
 
     const bravo = graph.nodes.find((node) => node.id === 'BRAVO');
     expect(bravo?.matchedSearch).toBe(true);
@@ -191,9 +212,33 @@ describe('network relations helpers', () => {
   it('limits edges by visible weight deterministically', () => {
     const edges = limitGraphEdgesByWeight(
       [
-        { id: 'BRAVO__CHARLIE', source: 'BRAVO', target: 'CHARLIE', weight: 1, visibleWeight: 3, visibleByFreq: [], byFreq: [] },
-        { id: 'ALPHA__DELTA', source: 'ALPHA', target: 'DELTA', weight: 1, visibleWeight: 7, visibleByFreq: [], byFreq: [] },
-        { id: 'ALPHA__BRAVO', source: 'ALPHA', target: 'BRAVO', weight: 1, visibleWeight: 7, visibleByFreq: [], byFreq: [] },
+        {
+          id: 'BRAVO__CHARLIE',
+          source: 'BRAVO',
+          target: 'CHARLIE',
+          weight: 1,
+          visibleWeight: 3,
+          visibleByFreq: [],
+          byFreq: [],
+        },
+        {
+          id: 'ALPHA__DELTA',
+          source: 'ALPHA',
+          target: 'DELTA',
+          weight: 1,
+          visibleWeight: 7,
+          visibleByFreq: [],
+          byFreq: [],
+        },
+        {
+          id: 'ALPHA__BRAVO',
+          source: 'ALPHA',
+          target: 'BRAVO',
+          weight: 1,
+          visibleWeight: 7,
+          visibleByFreq: [],
+          byFreq: [],
+        },
       ] as any,
       2,
     );
@@ -242,11 +287,15 @@ describe('network relations helpers', () => {
       1,
     );
 
-    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), {
-      maxRenderNodes: 4,
-      maxRenderEdges: 2,
-      softLimitMultiplier: 2,
-    });
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(
+      graph,
+      graph.nodes.filter((node) => node.visible),
+      {
+        maxRenderNodes: 4,
+        maxRenderEdges: 2,
+        softLimitMultiplier: 2,
+      },
+    );
 
     expect(renderView.warning).toBe(false);
     expect(renderView.edges.map((edge) => edge.id)).toEqual(['ALPHA__BRAVO', 'BRAVO__CHARLIE']);
@@ -254,12 +303,21 @@ describe('network relations helpers', () => {
   });
 
   it('warns when the trimmed graph still exceeds the node cap', () => {
-    const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', ['652.111', '852.111'], 1);
-    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), {
-      maxRenderNodes: 1,
-      maxRenderEdges: 2,
-      softLimitMultiplier: 2,
-    });
+    const graph = buildNetworkCallsignRelationsGraphView(
+      createGraph(),
+      '',
+      ['652.111', '852.111'],
+      1,
+    );
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(
+      graph,
+      graph.nodes.filter((node) => node.visible),
+      {
+        maxRenderNodes: 1,
+        maxRenderEdges: 2,
+        softLimitMultiplier: 2,
+      },
+    );
 
     expect(renderView.warning).toBe(true);
     expect(renderView.nodes).toHaveLength(0);
@@ -293,7 +351,11 @@ describe('network relations helpers', () => {
       1,
     );
 
-    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), NETWORK_RELATIONS_RENDER_LIMITS);
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(
+      graph,
+      graph.nodes.filter((node) => node.visible),
+      NETWORK_RELATIONS_RENDER_LIMITS,
+    );
 
     expect(renderView.warning).toBe(true);
     expect(renderView.nodes).toHaveLength(0);
@@ -327,11 +389,15 @@ describe('network relations helpers', () => {
       1,
     );
 
-    const renderView = buildRenderableNetworkCallsignRelationsGraphView(graph, graph.nodes.filter((node) => node.visible), {
-      maxRenderNodes: 10,
-      maxRenderEdges: 10,
-      softLimitMultiplier: 3,
-    });
+    const renderView = buildRenderableNetworkCallsignRelationsGraphView(
+      graph,
+      graph.nodes.filter((node) => node.visible),
+      {
+        maxRenderNodes: 10,
+        maxRenderEdges: 10,
+        softLimitMultiplier: 3,
+      },
+    );
 
     expect(renderView.warning).toBe(false);
     expect(renderView.edges).toHaveLength(10);

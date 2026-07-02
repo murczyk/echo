@@ -1,4 +1,9 @@
-import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry, Unit } from '../../../../Bindings';
+import type {
+  SavedFilterDuty,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Unit,
+} from '../../../../Bindings';
 import { FeedFilterPanelView } from './FeedFilterPanelView';
 import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 

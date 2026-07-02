@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Dialog, DialogContent, Typography } from '@mui/material';
-import type {
-  VideoPreviewSource,
-  VideoPlayerState,
-} from './message-card-video-utils';
+import type { VideoPreviewSource, VideoPlayerState } from './message-card-video-utils';
 import { MessageCardVideoPreviewStage } from './MessageCardVideoPreviewStage';
 import {
   MessageCardVideoPreviewActions,
@@ -29,19 +26,14 @@ export function MessageCardVideoPreviewDialog({
   const videoCount = videos?.length ?? 0;
   const hasCarousel = videoCount > 1;
   const resolvedIndex =
-    videoCount > 0
-      ? (((currentIndex ?? initialIndex) % videoCount) + videoCount) %
-        videoCount
-      : 0;
+    videoCount > 0 ? (((currentIndex ?? initialIndex) % videoCount) + videoCount) % videoCount : 0;
   const video = videoCount > 0 ? videos[resolvedIndex] : null;
 
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
 
-  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(
-    null,
-  );
+  const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const infoOpen = infoAnchorEl !== null;
 
   const [playerState, setPlayerState] = useState<VideoPlayerState>({
@@ -76,9 +68,7 @@ export function MessageCardVideoPreviewDialog({
     let blobUrl = '';
 
     const source =
-      typeof video.source === 'string'
-        ? video.source
-        : URL.createObjectURL(video.source);
+      typeof video.source === 'string' ? video.source : URL.createObjectURL(video.source);
 
     if (typeof video.source !== 'string') {
       blobUrl = source;
@@ -138,8 +128,7 @@ export function MessageCardVideoPreviewDialog({
       setPlayerState((s) => ({ ...s, isFullscreen: false }));
     };
     window.addEventListener('keydown', handleFullscreenEscape, true);
-    return () =>
-      window.removeEventListener('keydown', handleFullscreenEscape, true);
+    return () => window.removeEventListener('keydown', handleFullscreenEscape, true);
   }, [playerState.isFullscreen]);
 
   useEffect(() => {
@@ -164,13 +153,7 @@ export function MessageCardVideoPreviewDialog({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [
-    hasCarousel,
-    playerState.isFullscreen,
-    open,
-    resolvedIndex,
-    onIndexChange,
-  ]);
+  }, [hasCarousel, playerState.isFullscreen, open, resolvedIndex, onIndexChange]);
 
   const handlePlayPause = useCallback(() => {
     const v = videoRef.current;
@@ -237,9 +220,7 @@ export function MessageCardVideoPreviewDialog({
         sx: {
           display: 'flex',
           flexDirection: 'column',
-          width: playerState.isFullscreen
-            ? '100vw'
-            : { xs: '96vw', sm: '92vw' },
+          width: playerState.isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
           height: playerState.isFullscreen ? '100svh' : '92svh',
           maxWidth: playerState.isFullscreen ? '100vw' : 'min(92vw, 1280px)',
           maxHeight: playerState.isFullscreen ? '100svh' : '92svh',

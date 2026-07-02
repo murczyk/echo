@@ -28,7 +28,9 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-export async function tryRunAndReturnNullExceptUnauthorized<T>(request: () => Promise<T>): Promise<T | null> {
+export async function tryRunAndReturnNullExceptUnauthorized<T>(
+  request: () => Promise<T>,
+): Promise<T | null> {
   try {
     return await request();
   } catch (error) {
@@ -49,7 +51,9 @@ async function parseErrorMessage(response: Response): Promise<string> {
       if (data && typeof data === 'object') {
         const knownMessage =
           typeof data === 'object' && data !== null
-            ? (data as Record<string, unknown>).error ?? (data as Record<string, unknown>).message ?? (data as Record<string, unknown>).detail
+            ? ((data as Record<string, unknown>).error ??
+              (data as Record<string, unknown>).message ??
+              (data as Record<string, unknown>).detail)
             : undefined;
         if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) return knownMessage;
         return JSON.stringify(data);

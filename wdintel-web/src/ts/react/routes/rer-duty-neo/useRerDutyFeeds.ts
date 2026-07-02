@@ -36,12 +36,15 @@ export function getPendingDutyCallsignLookups(params: {
 }
 
 /** Merge API freqs with frequencies from loaded messages. */
-function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [number, { freq?: string | null }][] }[]): string[] {
+function mergeFreqsFromMessages(
+  apiFreqs: string[],
+  messageFeeds: { items: [number, { freq?: string | null }][] }[],
+): string[] {
   const fromMsgs = new Set<string>();
   messageFeeds.forEach((feed) =>
     feed.items.forEach(([, msg]) => {
       if (msg.freq && msg.freq.trim() !== '') fromMsgs.add(msg.freq.trim());
-    })
+    }),
   );
   const merged = new Set<string>([...apiFreqs, ...fromMsgs]);
   return sortFrequenciesNumerically([...merged]);
@@ -57,8 +60,9 @@ function mergeGroupsFromMessages(
   const fromMsgs = new Set<string>();
   messageFeeds.forEach((feed) =>
     feed.items.forEach(([, msg]) => {
-      if (msg.groupMasterKey && msg.groupMasterKey.trim() !== '') fromMsgs.add(msg.groupMasterKey.trim());
-    })
+      if (msg.groupMasterKey && msg.groupMasterKey.trim() !== '')
+        fromMsgs.add(msg.groupMasterKey.trim());
+    }),
   );
   messageFeeds.forEach((feed) => {
     (feed.filter.groupsSelected ?? []).forEach((key) => {
@@ -74,13 +78,16 @@ function mergeGroupsFromMessages(
 
 function mergePostsFromMessages(
   apiPosts: string[],
-  messageFeeds: { items: [number, { post?: string | null }][]; filter: { postsSelected?: string[] | null; postsDenied?: string[] | null } }[],
+  messageFeeds: {
+    items: [number, { post?: string | null }][];
+    filter: { postsSelected?: string[] | null; postsDenied?: string[] | null };
+  }[],
 ): string[] {
   const fromMsgs = new Set<string>();
   messageFeeds.forEach((feed) =>
     feed.items.forEach(([, msg]) => {
       if (msg.post && msg.post.trim() !== '') fromMsgs.add(msg.post.trim());
-    })
+    }),
   );
   messageFeeds.forEach((feed) => {
     (feed.filter.postsSelected ?? []).forEach((post) => {
@@ -191,7 +198,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
       .then((items) => {
         if (isUnmountedRef.current) return;
         let retryMapChanged = false;
-        const returnedByCallsign = new Map(items.map((item) => [normalizeCallsignLookupValue(item.callsign), item] as const));
+        const returnedByCallsign = new Map(
+          items.map((item) => [normalizeCallsignLookupValue(item.callsign), item] as const),
+        );
         items.forEach((item) => {
           const key = normalizeCallsignLookupValue(item.callsign);
           if (item.res.length > 0) {
@@ -206,7 +215,10 @@ export function useRerDutyFeeds(authUserName: string | null) {
         pendingCallsigns.forEach((callsign) => {
           if (!returnedByCallsign.has(callsign)) {
             enrichedCallsignsRef.current.delete(callsign);
-            emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
+            emptyResultRetryAfterMsRef.current.set(
+              callsign,
+              nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS,
+            );
             retryMapChanged = true;
           }
         });
@@ -219,7 +231,10 @@ export function useRerDutyFeeds(authUserName: string | null) {
         if (isUnmountedRef.current) return;
         pendingCallsigns.forEach((callsign) => {
           enrichedCallsignsRef.current.delete(callsign);
-          emptyResultRetryAfterMsRef.current.set(callsign, nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS);
+          emptyResultRetryAfterMsRef.current.set(
+            callsign,
+            nowMs + CALLSIGN_LOOKUP_RETRY_BACKOFF_MS,
+          );
         });
         setCallsignRetryVersion((current) => current + 1);
         setFeedError(`Не вдалося завантажити довідку позивних`);
@@ -259,10 +274,13 @@ export function useRerDutyFeeds(authUserName: string | null) {
 
     if (isNullOrUndefined(nextRetryAtMs)) return;
 
-    callsignRetryTimeoutRef.current = setTimeout(() => {
-      callsignRetryTimeoutRef.current = null;
-      setCallsignRetryVersion((current) => current + 1);
-    }, Math.max(0, nextRetryAtMs - nowMs));
+    callsignRetryTimeoutRef.current = setTimeout(
+      () => {
+        callsignRetryTimeoutRef.current = null;
+        setCallsignRetryVersion((current) => current + 1);
+      },
+      Math.max(0, nextRetryAtMs - nowMs),
+    );
 
     return () => {
       if (callsignRetryTimeoutRef.current) {
@@ -299,15 +317,15 @@ export function useRerDutyFeeds(authUserName: string | null) {
 
   const freqs = useMemo(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
-    [filterOpts.freqs, feedState.messageFeeds]
+    [filterOpts.freqs, feedState.messageFeeds],
   );
   const groupsList = useMemo(
     () => mergeGroupsFromMessages(filterOpts.groupsList, feedState.messageFeeds),
-    [filterOpts.groupsList, feedState.messageFeeds]
+    [filterOpts.groupsList, feedState.messageFeeds],
   );
   const postsList = useMemo(
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
-    [filterOpts.postsList, feedState.messageFeeds]
+    [filterOpts.postsList, feedState.messageFeeds],
   );
   const addFrequencyToFilter = useCallback(
     (feedId: string, freq: string) => {
@@ -316,7 +334,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
       const trimmed = freq.trim();
       if (trimmed === '') return;
       const nextFreqs = Array.from(new Set([...(feed.filter.freqsSelected ?? []), trimmed]));
-      const nextDeniedFreqs = (feed.filter.freqsDenied ?? []).filter((value) => value.trim() !== trimmed);
+      const nextDeniedFreqs = (feed.filter.freqsDenied ?? []).filter(
+        (value) => value.trim() !== trimmed,
+      );
       feedState.applyFilter(feedId, {
         ...feed.filter,
         freqsSelected: nextFreqs.length > 0 ? nextFreqs : null,

@@ -6,7 +6,12 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxMessageTag, SummaryTableFreqRow, User } from '../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxMessageTag,
+  SummaryTableFreqRow,
+  User,
+} from '../../../../Bindings';
 import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
 import { emptyQueryState } from './helpers';
 import { useAnalysisDataMessageActions } from './use-analysis-data.message-actions';
@@ -84,7 +89,9 @@ function patchItems(
   items: Array<[number, InboxMessage]>,
   updater: (messageId: number, message: InboxMessage) => InboxMessage,
 ): Array<[number, InboxMessage]> {
-  return items.map(([messageId, message]) => [messageId, updater(messageId, message)] as [number, InboxMessage]);
+  return items.map(
+    ([messageId, message]) => [messageId, updater(messageId, message)] as [number, InboxMessage],
+  );
 }
 
 function TestHarness(props: {
@@ -94,8 +101,12 @@ function TestHarness(props: {
   currentUser?: User | null;
   onError?: ReturnType<typeof vi.fn>;
 }) {
-  const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(props.initialMessages ?? [[1, buildMessage()]]);
-  const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>(props.initialMessages ?? [[1, buildMessage()]]);
+  const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
+    props.initialMessages ?? [[1, buildMessage()]],
+  );
+  const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>(
+    props.initialMessages ?? [[1, buildMessage()]],
+  );
   const [onError] = useState(() => props.onError ?? vi.fn());
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
@@ -163,7 +174,14 @@ describe('useAnalysisDataMessageActions', () => {
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} initialMessages={initialMessages} authUserName={options.authUserName} currentUser={options.currentUser} />);
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialMessages={initialMessages}
+          authUserName={options.authUserName}
+          currentUser={options.currentUser}
+        />,
+      );
     });
     return apiRef;
   }

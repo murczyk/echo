@@ -14,12 +14,19 @@ type Params = {
   queryState: AnalysisQueryState;
 };
 
-export function useAnalysisGroupsActivityData({ onError, onUnauthorized, optionsFreqValues, queryState }: Params) {
+export function useAnalysisGroupsActivityData({
+  onError,
+  onUnauthorized,
+  optionsFreqValues,
+  queryState,
+}: Params) {
   const [groupsActivity, setGroupsActivity] = useState<FreqDailyActivityCount | null>(null);
   const [groupsActivityLoadedFreq, setGroupsActivityLoadedFreq] = useState<string | null>(null);
-  const [groupsActivityLoadedPeriod, setGroupsActivityLoadedPeriod] = useState<AnalysisGroupsActivityPeriod | null>(null);
+  const [groupsActivityLoadedPeriod, setGroupsActivityLoadedPeriod] =
+    useState<AnalysisGroupsActivityPeriod | null>(null);
   const [groupsActivityLoading, setGroupsActivityLoading] = useState(false);
-  const [groupsActivityPeriod, setGroupsActivityPeriod] = useState<AnalysisGroupsActivityPeriod>('selected');
+  const [groupsActivityPeriod, setGroupsActivityPeriod] =
+    useState<AnalysisGroupsActivityPeriod>('selected');
 
   const loadGroupsActivity = useCallback(
     async (period?: AnalysisGroupsActivityPeriod) => {
@@ -47,7 +54,11 @@ export function useAnalysisGroupsActivityData({ onError, onUnauthorized, options
       setGroupsActivityLoading(true);
       setGroupsActivityPeriod(nextPeriod);
       try {
-        const rsp = await fetchFreqActivityDaily({ freq: firstFreq, sinceDateInclusiveMs, tillDateInclusiveMs });
+        const rsp = await fetchFreqActivityDaily({
+          freq: firstFreq,
+          sinceDateInclusiveMs,
+          tillDateInclusiveMs,
+        });
         setGroupsActivity(rsp);
         setGroupsActivityLoadedFreq(firstFreq);
         setGroupsActivityLoadedPeriod(nextPeriod);

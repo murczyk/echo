@@ -23,7 +23,11 @@ import { MRT_ColumnDef } from 'material-react-table';
 import { useId, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 
-import type { AreaOfResponsibility, MyAdminSignalGroup, SignalGroupLogin } from '../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  MyAdminSignalGroup,
+  SignalGroupLogin,
+} from '../../../../Bindings';
 import { ELLIPSIS } from '../../utils/misc';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -92,7 +96,10 @@ function formatAors(group: MyAdminSignalGroup): string {
 }
 
 function formatGroupLogin(login: SignalGroupLogin): string {
-  if (!login.deltaLogin || login.login.toLocaleLowerCase() === login.deltaLogin.toLocaleLowerCase()) {
+  if (
+    !login.deltaLogin ||
+    login.login.toLocaleLowerCase() === login.deltaLogin.toLocaleLowerCase()
+  ) {
     return login.login;
   }
   return `${login.login} (${login.deltaLogin})`;
@@ -114,10 +121,17 @@ function groupLoginValues(logins: SignalGroupLogin[]): string[] {
 
 function DisableNetworkAssignmentLabel() {
   return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}
+    >
       <Box component="span">Вимкнути привʼязку мереж</Box>
       <Tooltip title={DISABLE_NETWORK_ASSIGNMENT_TOOLTIP} placement="top">
-        <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }} aria-label="Підказка">
+        <Box
+          component="span"
+          sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }}
+          aria-label="Підказка"
+        >
           <InfoOutlinedIcon sx={{ fontSize: 16 }} />
         </Box>
       </Tooltip>
@@ -125,7 +139,10 @@ function DisableNetworkAssignmentLabel() {
   );
 }
 
-function MyGroupActions(props: { group: MyAdminSignalGroup; onEdit: (group: MyAdminSignalGroup) => void }) {
+function MyGroupActions(props: {
+  group: MyAdminSignalGroup;
+  onEdit: (group: MyAdminSignalGroup) => void;
+}) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const menuButtonId = useId();
   const menuLabelId = `${menuButtonId}-trigger`;
@@ -193,7 +210,10 @@ function MyGroupActions(props: { group: MyAdminSignalGroup; onEdit: (group: MyAd
   );
 }
 
-function useMyGroupsColumns(enableEditActions: boolean, onEdit: (group: MyAdminSignalGroup) => void) {
+function useMyGroupsColumns(
+  enableEditActions: boolean,
+  onEdit: (group: MyAdminSignalGroup) => void,
+) {
   return useMemo<MRT_ColumnDef<MyAdminSignalGroup>[]>(
     () => [
       ...(enableEditActions
@@ -344,7 +364,9 @@ function MyGroupEditDialog(props: {
             multiple
             options={props.logins}
             value={editDialog?.selectedUsers ?? []}
-            onChange={(_, value) => editDialog && setEditDialog({ ...editDialog, selectedUsers: value })}
+            onChange={(_, value) =>
+              editDialog && setEditDialog({ ...editDialog, selectedUsers: value })
+            }
             renderInput={(params) => <TextField {...params} label="Користувачі" />}
           />
         ) : null}
@@ -352,7 +374,9 @@ function MyGroupEditDialog(props: {
           multiple
           options={props.logins}
           value={editDialog?.selectedAdmins ?? []}
-          onChange={(_, value) => editDialog && setEditDialog({ ...editDialog, selectedAdmins: value })}
+          onChange={(_, value) =>
+            editDialog && setEditDialog({ ...editDialog, selectedAdmins: value })
+          }
           renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
         />
         <Autocomplete
@@ -384,7 +408,11 @@ function MyGroupEditDialog(props: {
         />
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <PowerButton variant="outlined" onClick={() => setEditDialog(null)} disabled={editDialog?.isSaving}>
+        <PowerButton
+          variant="outlined"
+          onClick={() => setEditDialog(null)}
+          disabled={editDialog?.isSaving}
+        >
           Скасувати
         </PowerButton>
         <PowerButton
@@ -450,7 +478,9 @@ export function SettingsMyGroupsSection({
 
   async function handleSaveGroupEdit() {
     if (!editDialog) return;
-    const selectedAdmins = Array.from(new Set(editDialog.selectedAdmins.map((login) => login.trim()).filter(Boolean)));
+    const selectedAdmins = Array.from(
+      new Set(editDialog.selectedAdmins.map((login) => login.trim()).filter(Boolean)),
+    );
     if (selectedAdmins.length === 0) {
       setEditDialog({
         ...editDialog,
@@ -468,7 +498,8 @@ export function SettingsMyGroupsSection({
         disableNetworkAssignment: editDialog.disableNetworkAssignment,
         userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
         adminLogins: selectedAdmins,
-        areaOfResponsibilityIds: editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
+        areaOfResponsibilityIds:
+          editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
       });
       await onGroupsChanged();
       setEditDialog(null);
@@ -482,7 +513,11 @@ export function SettingsMyGroupsSection({
   }
 
   return (
-    <Box role="tabpanel" id="settings-neo-panel-my-groups" aria-labelledby="settings-neo-tab-my-groups">
+    <Box
+      role="tabpanel"
+      id="settings-neo-panel-my-groups"
+      aria-labelledby="settings-neo-tab-my-groups"
+    >
       <Box sx={{ p: 3 }}>
         <Stack spacing={3}>
           <Typography component="h2" variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }}>
@@ -492,11 +527,14 @@ export function SettingsMyGroupsSection({
           <PowerAlert severity="info">
             <Stack spacing={1.5}>
               <Box>
-                Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
+                Для того щоби додати вашу приватну групу, додайте в неї телефон бота, написаний в
+                описі групи підтримки, і напишіть адміністраторам повідомлення у форматі:
                 <br />
-                1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу приватною, видиму користувачам Delta1, Delta2, Delta3
+                1. Додано групу МОЯ_ГРУПА (WhatsApp), зробіть мене (DeltaUser) адміном та групу
+                приватною, видиму користувачам Delta1, Delta2, Delta3
                 <br />
-                2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу публічною, на смугу 99АК
+                2. Додано групу МОЯ_ГРУПА (Signal), зробіть мене (DeltaUser) адміном та групу
+                публічною, на смугу 99АК
               </Box>
               <MyGroupsSetupFlowImage />
             </Stack>
@@ -515,10 +553,18 @@ export function SettingsMyGroupsSection({
 
           {status === 'success' && hasGroups ? (
             <TableStateProvider
-              tableId={enableEditActions ? 'settings-neo-my-groups-v3' : 'settings-neo-my-groups-v2'}
-              defaultColumnOrder={enableEditActions ? DEFAULT_MY_GROUPS_EDIT_COLUMN_ORDER : DEFAULT_MY_GROUPS_COLUMN_ORDER}
+              tableId={
+                enableEditActions ? 'settings-neo-my-groups-v3' : 'settings-neo-my-groups-v2'
+              }
+              defaultColumnOrder={
+                enableEditActions
+                  ? DEFAULT_MY_GROUPS_EDIT_COLUMN_ORDER
+                  : DEFAULT_MY_GROUPS_COLUMN_ORDER
+              }
               defaultColumnVisibility={
-                enableEditActions ? DEFAULT_MY_GROUPS_EDIT_COLUMNS_VISIBILITY : DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY
+                enableEditActions
+                  ? DEFAULT_MY_GROUPS_EDIT_COLUMNS_VISIBILITY
+                  : DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY
               }
               defaultEnableColumnOrdering={false}
             >
@@ -548,7 +594,8 @@ export function SettingsMyGroupsSection({
                   Груп не знайдено
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Тут з&apos;являться групи, коли для вашого облікового запису знайдуться приватні або керовані групи.
+                  Тут з&apos;являться групи, коли для вашого облікового запису знайдуться приватні
+                  або керовані групи.
                 </Typography>
               </Stack>
             </Box>

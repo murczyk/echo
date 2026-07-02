@@ -9,7 +9,13 @@ type Props = {
   action?: ReactNode;
 };
 
-export function NetworkDetailsEmptyState({ icon, title, description, minHeight = 220, action }: Props) {
+export function NetworkDetailsEmptyState({
+  icon,
+  title,
+  description,
+  minHeight = 220,
+  action,
+}: Props) {
   return (
     <Box
       sx={{

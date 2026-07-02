@@ -20,12 +20,7 @@ import {
 import type { MouseEvent } from 'react';
 import { useTheme } from '@mui/material/styles';
 
-import {
-  ZOOM_MAX,
-  ZOOM_MARKS,
-  ZOOM_MIN,
-  ZOOM_STEP,
-} from './message-card-image-preview-utils';
+import { ZOOM_MAX, ZOOM_MARKS, ZOOM_MIN, ZOOM_STEP } from './message-card-image-preview-utils';
 import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
 export function MessageCardImagePreviewControls({
@@ -75,9 +70,7 @@ export function MessageCardImagePreviewControls({
         marks={ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
         onChange={(_, value) => {
-          const nextZoom = Array.isArray(value)
-            ? (value[0] ?? ZOOM_MIN)
-            : value;
+          const nextZoom = Array.isArray(value) ? (value[0] ?? ZOOM_MIN) : value;
           onSetPreviewZoom(nextZoom);
         }}
         sx={{
@@ -135,19 +128,11 @@ export function MessageCardImagePreviewControls({
 
       <Box sx={{ ml: { xs: 0, sm: 1 } }}>
         <Tooltip
-          title={
-            isFullscreen
-              ? 'Вийти з повноекранного режиму'
-              : 'Повноекранний режим'
-          }
+          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
           enterDelay={300}
         >
           <IconButton
-            aria-label={
-              isFullscreen
-                ? 'Вийти з повноекранного режиму'
-                : 'Повноекранний режим'
-            }
+            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
             size="small"
             onClick={onToggleFullscreen}
             sx={{ color: 'text.secondary' }}

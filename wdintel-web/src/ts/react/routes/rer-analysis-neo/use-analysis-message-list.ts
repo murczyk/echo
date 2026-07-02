@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { CallsignInfoRes, CountStatsRsp, InboxMessage, MessageComment, User } from '../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  CountStatsRsp,
+  InboxMessage,
+  MessageComment,
+  User,
+} from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/analysis';
 import { buildInboxReq } from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
@@ -58,17 +64,21 @@ export function useAnalysisMessageList({
 
   const loadMessageComments = useCallback(
     async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
-      await loadMissingMessageCommentsForMessages(loadedMessages, {
-        authUserName: currentUserRef.current?.name ?? null,
-        currentUser: currentUserRef.current,
-        messageComments: messageCommentsRef.current,
-        messageCommentsLoadVersionRef,
-        onError,
-        onUnauthorized,
-        setMessageComments,
-        setUsers,
-        users: usersRef.current,
-      }, forceReload);
+      await loadMissingMessageCommentsForMessages(
+        loadedMessages,
+        {
+          authUserName: currentUserRef.current?.name ?? null,
+          currentUser: currentUserRef.current,
+          messageComments: messageCommentsRef.current,
+          messageCommentsLoadVersionRef,
+          onError,
+          onUnauthorized,
+          setMessageComments,
+          setUsers,
+          users: usersRef.current,
+        },
+        forceReload,
+      );
     },
     [currentUserRef, onError, onUnauthorized, setUsers, usersRef],
   );
@@ -93,7 +103,16 @@ export function useAnalysisMessageList({
     } finally {
       setMessagesPaging(false);
     }
-  }, [loadMessageComments, loadMissingNetworksForMessages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState, setSummaryCallsignsInfo]);
+  }, [
+    loadMessageComments,
+    loadMissingNetworksForMessages,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+    setSummaryCallsignsInfo,
+  ]);
 
   const loadMoreMessages = useCallback(async () => {
     const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
@@ -129,7 +148,17 @@ export function useAnalysisMessageList({
         setMessagesPaging(false);
       }
     }
-  }, [loadMessageComments, loadMissingNetworksForMessages, messages, newestFirst, onError, onUnauthorized, optionsFreqValues, queryState, setSummaryCallsignsInfo]);
+  }, [
+    loadMessageComments,
+    loadMissingNetworksForMessages,
+    messages,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+    setSummaryCallsignsInfo,
+  ]);
 
   return {
     aorEntries,

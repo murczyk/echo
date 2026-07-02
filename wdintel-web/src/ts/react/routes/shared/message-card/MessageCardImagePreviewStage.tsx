@@ -109,10 +109,7 @@ export const MessageCardImagePreviewStage = forwardRef<
         }}
       />
       {failedHref === currentHref ? (
-        <Typography
-          variant="body2"
-          sx={{ color: 'text.secondary', textAlign: 'center' }}
-        >
+        <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
           Зображення недоступне
         </Typography>
       ) : null}

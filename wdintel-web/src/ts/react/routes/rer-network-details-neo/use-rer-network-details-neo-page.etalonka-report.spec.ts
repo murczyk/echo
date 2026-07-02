@@ -55,7 +55,11 @@ describe('rer-network-details etalonka report helpers', () => {
         },
       },
     });
-    expect(buildEtalonkaReportFilename(12, report)).toBe('etalonka_network_12_2026-01-15T12-34_2026-01-16T09-05.docx');
-    expect(buildEtalonkaNetworksReportFilename(report)).toBe('etalonka_2026-01-15T12-34_2026-01-16T09-05.docx');
+    expect(buildEtalonkaReportFilename(12, report)).toBe(
+      'etalonka_network_12_2026-01-15T12-34_2026-01-16T09-05.docx',
+    );
+    expect(buildEtalonkaNetworksReportFilename(report)).toBe(
+      'etalonka_2026-01-15T12-34_2026-01-16T09-05.docx',
+    );
   });
 });

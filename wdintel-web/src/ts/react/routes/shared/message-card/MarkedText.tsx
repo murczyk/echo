@@ -6,11 +6,23 @@ import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 import type { Theme } from '@mui/material/styles';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 
-
-import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  ContentNode,
+  InboxMessage,
+  Network,
+  Unit,
+} from '../../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
-import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from '../../rer-duty-neo/utils';
-import { formatCallsignHintTooltipData, getCallsignHintResult, isCallsignRelatedToNetworks } from '../../rer-analysis-neo/callsign-hints';
+import {
+  buildAnalysisMapHrefWithSearch,
+  uniquePointEtalonsForMapSearch,
+} from '../../rer-duty-neo/utils';
+import {
+  formatCallsignHintTooltipData,
+  getCallsignHintResult,
+  isCallsignRelatedToNetworks,
+} from '../../rer-analysis-neo/callsign-hints';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -63,7 +75,11 @@ function normalizeSearchToken(value: string): string {
   return normalizeCallsignLookupValue(value).replace(/[^0-9a-zа-яёіїєґ-]+/giu, '');
 }
 
-function isSearchHighlightedCallsign(callsignText: string, searchTerms: Set<string>, highlightedTexts: Set<string>): boolean {
+function isSearchHighlightedCallsign(
+  callsignText: string,
+  searchTerms: Set<string>,
+  highlightedTexts: Set<string>,
+): boolean {
   const normalizedCallsignText = normalizeSearchToken(callsignText);
   if (normalizedCallsignText === '') return false;
   if (highlightedTexts.has(normalizedCallsignText)) return true;
@@ -104,7 +120,8 @@ function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSPropert
 function searchHighlightedCallsignBaseSx(theme: Theme): CSSProperties {
   return {
     display: 'inline',
-    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 213, 79, 0.38)' : 'rgba(255, 179, 0, 0.40)',
+    backgroundColor:
+      theme.palette.mode === 'dark' ? 'rgba(255, 213, 79, 0.38)' : 'rgba(255, 179, 0, 0.40)',
     boxShadow: theme.palette.mode === 'dark' ? 'inset 0 -1px 0 rgba(0, 0, 0, 0.5)' : 'none',
     borderRadius: 0,
     padding: '0 1px',
@@ -220,7 +237,10 @@ function PointToken({
             '&:hover': { backgroundColor: 'transparent' },
           }}
         >
-          <span aria-hidden style={{ lineHeight: 1, fontSize: '1em', fontWeight: 'inherit', margin: '0 2px' }}>
+          <span
+            aria-hidden
+            style={{ lineHeight: 1, fontSize: '1em', fontWeight: 'inherit', margin: '0 2px' }}
+          >
             ⋮
           </span>
         </IconButton>
@@ -271,19 +291,22 @@ function PointToken({
 
 function KeywordToken({ text }: { text: string }) {
   return (
-    <span className="badge-highlighed-token badge-highlighed-token--callsign" style={tokenPillBaseStyle(false)}>
+    <span
+      className="badge-highlighed-token badge-highlighed-token--callsign"
+      style={tokenPillBaseStyle(false)}
+    >
       {text}
     </span>
   );
 }
 
-function SearchHighlightedCallsign({
-  children,
-}: {
-  children: ReactNode;
-}) {
+function SearchHighlightedCallsign({ children }: { children: ReactNode }) {
   return (
-    <Box component="span" className="badge-highlighed-token badge-highlighed-token--callsign" sx={searchHighlightedCallsignPlainSx}>
+    <Box
+      component="span"
+      className="badge-highlighed-token badge-highlighed-token--callsign"
+      sx={searchHighlightedCallsignPlainSx}
+    >
       {children}
     </Box>
   );
@@ -312,7 +335,11 @@ function CallsignWithHint({
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
   const callsignInfo = callsignInfoMap?.[normalizeCallsignLookupValue(displayText)]?.res ?? null;
   const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
-  const isNetworkRelated = hasCatalogMatch && !!networks && !!unitsMap && isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
+  const isNetworkRelated =
+    hasCatalogMatch &&
+    !!networks &&
+    !!unitsMap &&
+    isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
   const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
   const wrapSearchHighlighted = (node: ReactNode) =>
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
@@ -335,10 +362,7 @@ function CallsignWithHint({
           {displayText}
         </a>
       ) : (
-        <Box
-          component="span"
-          sx={callsignPlainStyle()}
-        >
+        <Box component="span" sx={callsignPlainStyle()}>
           {displayText}
         </Box>
       ),
@@ -376,15 +400,22 @@ function CallsignWithHint({
   if (isNullOrUndefined(tooltipText)) {
     if (hasMessageNetworks) {
       if (!hasCatalogMatch) {
-        return wrapSearchHighlighted(renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }));
+        return wrapSearchHighlighted(
+          renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }),
+        );
       }
       return wrapSearchHighlighted(callsignDisplay);
     }
-    return wrapSearchHighlighted(shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText));
+    return wrapSearchHighlighted(
+      shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText),
+    );
   }
 
   return (
-    <Box component="span" sx={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline', pr: '8px' }}>
+    <Box
+      component="span"
+      sx={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline', pr: '8px' }}
+    >
       {wrapSearchHighlighted(callsignDisplay)}
       <Tooltip
         placement="top"
@@ -404,11 +435,35 @@ function CallsignWithHint({
           },
         }}
         title={
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 320, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-            <Typography component="div" sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              maxHeight: 320,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              minWidth: 0,
+            }}
+          >
+            <Typography
+              component="div"
+              sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}
+            >
               {tooltipText.header}
             </Typography>
-            <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
+            <Box
+              component="ul"
+              sx={{
+                m: 0,
+                pl: 0,
+                listStyle: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5,
+                minWidth: 0,
+              }}
+            >
               {tooltipText.items.map((item, index) => (
                 <Typography
                   key={`${displayText}-${index}`}
@@ -445,7 +500,11 @@ function CallsignWithHint({
             '&:hover': { bgcolor: 'var(--color-card)' },
           }}
         >
-          {isNetworkHint ? <InfoIcon sx={{ fontSize: 16 }} /> : <InfoOutlinedIcon sx={{ fontSize: 16 }} />}
+          {isNetworkHint ? (
+            <InfoIcon sx={{ fontSize: 16 }} />
+          ) : (
+            <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+          )}
         </IconButton>
       </Tooltip>
     </Box>
@@ -475,7 +534,9 @@ export function renderMarkedText(
   const highlightedTexts = collectHighlightedTexts(nodes);
   const searchTerms = collectSearchTerms(options?.searchText);
   const allPointEtalons = uniquePointEtalonsForMapSearch(
-    isPresent(messagePointEtalons) && messagePointEtalons.length > 0 ? messagePointEtalons : fromNodes,
+    isPresent(messagePointEtalons) && messagePointEtalons.length > 0
+      ? messagePointEtalons
+      : fromNodes,
   );
   const renderedNodes: ReactNode[] = [];
 
@@ -496,7 +557,11 @@ export function renderMarkedText(
       const { text } = node.CNCallsignC;
       const callsignText = text.trim();
       if (callsignText === '') continue;
-      const searchHighlighted = isSearchHighlightedCallsign(callsignText, searchTerms, highlightedTexts);
+      const searchHighlighted = isSearchHighlightedCallsign(
+        callsignText,
+        searchTerms,
+        highlightedTexts,
+      );
       renderedNodes.push(
         <CallsignWithHint
           key={i}

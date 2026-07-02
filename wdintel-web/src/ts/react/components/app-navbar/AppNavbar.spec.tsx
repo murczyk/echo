@@ -24,11 +24,11 @@ afterEach(() => {
 });
 
 vi.mock('./ChangelogDropdown', () => ({
-  ChangelogDropdown: () => <div data-testid="mock-changelog-dropdown" />
+  ChangelogDropdown: () => <div data-testid="mock-changelog-dropdown" />,
 }));
 
 vi.mock('./ProfileDropdown', () => ({
-  ProfileDropdown: () => <div data-testid="mock-profile-dropdown" />
+  ProfileDropdown: () => <div data-testid="mock-profile-dropdown" />,
 }));
 
 function renderComponent(props: any) {
@@ -70,14 +70,16 @@ describe('AppNavbar', () => {
 
   it('renders the brand logo and title', () => {
     const { container } = renderComponent(defaultProps);
-    const logoImg = Array.from(container.querySelectorAll('img')).find(img => img.src.includes('echo-logo.svg'));
+    const logoImg = Array.from(container.querySelectorAll('img')).find((img) =>
+      img.src.includes('echo-logo.svg'),
+    );
     expect(logoImg).not.toBeUndefined();
   });
 
   it('renders main navigation elements for Rer role', () => {
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Rer'] }
+      user: { ...defaultProps.user, roles: ['Rer'] },
     });
     const content = container.textContent;
     expect(content).toContain('Оперативний');
@@ -91,7 +93,7 @@ describe('AppNavbar', () => {
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['Admin'] }
+      user: { ...defaultProps.user, roles: ['Admin'] },
     });
     expect(container.textContent).toContain('Адмін');
   });
@@ -99,7 +101,7 @@ describe('AppNavbar', () => {
   it('toggles mobile menu on click', () => {
     const { container } = renderComponent(defaultProps);
     const mobileButton = container.querySelector('button[aria-controls="app-navbar-links-panel"]');
-    
+
     // Initially hidden on mobile (hidden class present on the panel)
     const panel = container.querySelector('#app-navbar-links-panel');
     expect(panel?.className).toContain('hidden');
@@ -107,7 +109,7 @@ describe('AppNavbar', () => {
     act(() => {
       mobileButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    
+
     // After click, 'flex' should replace 'hidden lg:flex' for mobile
     expect(panel?.className).not.toContain('hidden');
   });
@@ -116,9 +118,9 @@ describe('AppNavbar', () => {
     const onNavbarVisibilityChange = vi.fn();
     const { container } = renderComponent({
       ...defaultProps,
-      onNavbarVisibilityChange
+      onNavbarVisibilityChange,
     });
-    
+
     // Find the fullscreen toggle button
     const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
     expect(toggleButton).not.toBeNull();
@@ -126,7 +128,7 @@ describe('AppNavbar', () => {
     act(() => {
       toggleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    
+
     expect(onNavbarVisibilityChange).toHaveBeenCalled();
   });
 

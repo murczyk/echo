@@ -28,10 +28,17 @@ describe('network callsigns table shared helpers', () => {
   });
 
   it('prioritizes developing before catalog in the status filter order', () => {
-    expect(NETWORK_STATUS_FILTER_ORDER.slice(0, 4)).toEqual(['All', 'Developing', 'Catalog', 'Unknown']);
+    expect(NETWORK_STATUS_FILTER_ORDER.slice(0, 4)).toEqual([
+      'All',
+      'Developing',
+      'Catalog',
+      'Unknown',
+    ]);
   });
 
   it('shows a dash when a count is still loading', () => {
-    expect(CountChipLabel({ label: 'Всі', count: null }).props.children[1].props.children).toBe(NO_DATA_LABEL);
+    expect(CountChipLabel({ label: 'Всі', count: null }).props.children[1].props.children).toBe(
+      NO_DATA_LABEL,
+    );
   });
 });

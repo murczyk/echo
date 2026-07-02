@@ -125,11 +125,9 @@ export type CreateSystemSettingsInput = {
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
   return {
     id: raw.id,
-    rerAnalysisUnitsExactMatchOnlyDefault:
-      raw.rer_analysis_units_exact_match_only_default,
+    rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions:
-      raw.rer_duty_insert_historical_interceptions,
+    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
@@ -151,11 +149,9 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
 function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurrent {
   return {
     id: raw.id ?? null,
-    rerAnalysisUnitsExactMatchOnlyDefault:
-      raw.rer_analysis_units_exact_match_only_default,
+    rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
     rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions:
-      raw.rer_duty_insert_historical_interceptions,
+    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
@@ -171,9 +167,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
 }
 
 export async function listSystemSettings(): Promise<SystemSettingsItem[]> {
-  const data = await postJson<SystemSettingsListRspRaw>(
-    '/api/admin/system-settings/list',
-  );
+  const data = await postJson<SystemSettingsListRspRaw>('/api/admin/system-settings/list');
   return (data.items || []).map(normalizeItem);
 }
 
@@ -181,11 +175,9 @@ export async function createSystemSettings(
   input: CreateSystemSettingsInput,
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
-    rer_analysis_units_exact_match_only_default:
-      input.rerAnalysisUnitsExactMatchOnlyDefault,
+    rer_analysis_units_exact_match_only_default: input.rerAnalysisUnitsExactMatchOnlyDefault,
     rer_duty_test_enabled: input.rerDutyTestEnabled,
-    rer_duty_insert_historical_interceptions:
-      input.rerDutyInsertHistoricalInterceptions,
+    rer_duty_insert_historical_interceptions: input.rerDutyInsertHistoricalInterceptions,
     rer_duty_test_since_ms: input.rerDutyTestSinceMs,
     rer_duty_test_limit: input.rerDutyTestLimit,
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
@@ -198,27 +190,17 @@ export async function createSystemSettings(
     peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
     peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
   };
-  const data = await postJson<SystemSettingsItemRaw>(
-    '/api/admin/system-settings/create',
-    req,
-  );
+  const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);
 }
 
 export async function currentSystemSettings(): Promise<SystemSettingsCurrent> {
-  const data = await postJson<SystemSettingsCurrentRspRaw>(
-    '/api/system-settings/current',
-  );
+  const data = await postJson<SystemSettingsCurrentRspRaw>('/api/system-settings/current');
   return normalizeCurrent(data);
 }
 
-export async function activateSystemSettings(
-  id: number,
-): Promise<SystemSettingsItem> {
+export async function activateSystemSettings(id: number): Promise<SystemSettingsItem> {
   const req: ActivateSystemSettingsReqRaw = { id };
-  const data = await postJson<SystemSettingsItemRaw>(
-    '/api/admin/system-settings/activate',
-    req,
-  );
+  const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/activate', req);
   return normalizeItem(data);
 }

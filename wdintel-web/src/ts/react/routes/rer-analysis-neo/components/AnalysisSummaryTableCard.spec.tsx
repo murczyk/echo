@@ -19,7 +19,13 @@ vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span>map</sp
 vi.mock('@mui/material', () => ({
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: ReactNode; onClick?: () => void; disabled?: boolean; disableRipple?: boolean; disableTouchRipple?: boolean }) => (
+  Button: (props: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+    disableRipple?: boolean;
+    disableTouchRipple?: boolean;
+  }) => (
     <button
       type="button"
       onClick={props.onClick}
@@ -32,20 +38,32 @@ vi.mock('@mui/material', () => ({
   ),
   CircularProgress: () => <div>loading</div>,
   Dialog: (props: { children: ReactNode; open: boolean; disableRestoreFocus?: boolean }) =>
-    (props.open ? <div data-testid="rename-dialog" data-disable-restore-focus={String(props.disableRestoreFocus ?? false)}>{props.children}</div> : null),
+    props.open ? (
+      <div
+        data-testid="rename-dialog"
+        data-disable-restore-focus={String(props.disableRestoreFocus ?? false)}
+      >
+        {props.children}
+      </div>
+    ) : null,
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
   FormControl: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   InputLabel: ({ children }: { children: ReactNode }) => <label>{children}</label>,
-  MenuItem: ({ children, value }: { children: ReactNode; value: string }) => <option value={value}>{children}</option>,
+  MenuItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Select: (props: {
     children: ReactNode;
     value: string;
     onChange?: (event: { target: { value: string } }) => void;
   }) => (
-    <select value={props.value} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}>
+    <select
+      value={props.value}
+      onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
+    >
       {props.children}
     </select>
   ),
@@ -61,16 +79,16 @@ vi.mock('@mui/material', () => ({
     const handleValueChange = (value: string) => props.onChange?.({ target: { value } });
 
     return (
-    <label>
-      <span>{props.label}</span>
-      <input
-        aria-label={props['aria-label'] ?? props.label}
-        value={props.value ?? ''}
-        disabled={props.disabled}
-        onInput={(event) => handleValueChange((event.currentTarget as HTMLInputElement).value)}
-        onChange={(event) => handleValueChange((event.currentTarget as HTMLInputElement).value)}
-      />
-    </label>
+      <label>
+        <span>{props.label}</span>
+        <input
+          aria-label={props['aria-label'] ?? props.label}
+          value={props.value ?? ''}
+          disabled={props.disabled}
+          onInput={(event) => handleValueChange((event.currentTarget as HTMLInputElement).value)}
+          onChange={(event) => handleValueChange((event.currentTarget as HTMLInputElement).value)}
+        />
+      </label>
     );
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -86,10 +104,18 @@ vi.mock('material-react-table', () => ({
     const rowActionsColumn = columns.find((column) => column.id === 'rowActions');
     return (
       <>
-        <div data-testid="callsigns-cell-overflow">{callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}</div>
-        <div data-testid="default-head-bg">{table.defaultColumn?.muiTableHeadCellProps?.sx?.backgroundColor ?? ''}</div>
-        <div data-testid="row-actions-enable-resizing">{String(rowActionsColumn?.enableResizing ?? '')}</div>
-        <div data-testid="row-actions">{table.renderRowActions?.({ row: { original: data[0] } })}</div>
+        <div data-testid="callsigns-cell-overflow">
+          {callsignsColumn?.muiTableBodyCellProps?.sx?.overflow ?? ''}
+        </div>
+        <div data-testid="default-head-bg">
+          {table.defaultColumn?.muiTableHeadCellProps?.sx?.backgroundColor ?? ''}
+        </div>
+        <div data-testid="row-actions-enable-resizing">
+          {String(rowActionsColumn?.enableResizing ?? '')}
+        </div>
+        <div data-testid="row-actions">
+          {table.renderRowActions?.({ row: { original: data[0] } })}
+        </div>
         <table aria-label={table.muiTableProps?.['aria-label']}>
           <thead>
             <tr>
@@ -105,7 +131,9 @@ vi.mock('material-react-table', () => ({
                 <td>{index + 1}</td>
                 {columns.map((column) => {
                   const key = column.id ?? column.accessorKey;
-                  const cellValue = column.Cell ? column.Cell({ row: { original: rowData } }) : rowData[column.accessorKey];
+                  const cellValue = column.Cell
+                    ? column.Cell({ row: { original: rowData } })
+                    : rowData[column.accessorKey];
                   return <td key={key}>{cellValue}</td>;
                 })}
               </tr>
@@ -127,10 +155,21 @@ vi.mock('../../../components/PowerButton', () => ({
 
 vi.mock('../../../components/MrtRowActionButton', () => ({
   MrtRowActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  MrtRowActionButton: (props: { label: string; onClick: () => void; disabled?: boolean; opensModal?: boolean }) => {
+  MrtRowActionButton: (props: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    opensModal?: boolean;
+  }) => {
     capturedRowActionProps.push({ label: props.label, opensModal: props.opensModal });
     return (
-      <button type="button" aria-label={props.label} onClick={props.onClick} disabled={props.disabled} data-opens-modal={props.opensModal ? 'true' : 'false'}>
+      <button
+        type="button"
+        aria-label={props.label}
+        onClick={props.onClick}
+        disabled={props.disabled}
+        data-opens-modal={props.opensModal ? 'true' : 'false'}
+      >
         {props.label}
       </button>
     );
@@ -158,7 +197,11 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
 }));
 
 vi.mock('../../../components/TableToolbarControls', () => ({
-  TableToolbarControls: (props: { trailingActionsBeforeInternal?: ReactNode; trailingActions?: ReactNode; withGlobalTextFilter?: boolean }) => (
+  TableToolbarControls: (props: {
+    trailingActionsBeforeInternal?: ReactNode;
+    trailingActions?: ReactNode;
+    withGlobalTextFilter?: boolean;
+  }) => (
     <div>
       {props.withGlobalTextFilter ? <input aria-label="Пошук" /> : null}
       {props.trailingActionsBeforeInternal}
@@ -167,9 +210,17 @@ vi.mock('../../../components/TableToolbarControls', () => ({
   ),
 }));
 
-vi.mock('../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
-  InternalTableActions: ({ children }: { children?: ReactNode }) => <div>{children}<span>internal-actions</span></div>,
-}));
+vi.mock(
+  '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  () => ({
+    InternalTableActions: ({ children }: { children?: ReactNode }) => (
+      <div>
+        {children}
+        <span>internal-actions</span>
+      </div>
+    ),
+  }),
+);
 
 vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
   TableStateProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -222,11 +273,22 @@ function buildNetwork(overrides: Partial<Network> = {}): Network {
   } as Network;
 }
 
-function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSummaryTableCard>> = {}): ComponentProps<typeof AnalysisSummaryTableCard> {
+function buildProps(
+  overrides: Partial<ComponentProps<typeof AnalysisSummaryTableCard>> = {},
+): ComponentProps<typeof AnalysisSummaryTableCard> {
   return {
     callsignInfoMap: {
       alpha: {
-        res: [{ id: 7, position: 'оператор', unit1: '1 обрмп', unit2: '', unitId: 1, networkIdsReportedIn: [] }],
+        res: [
+          {
+            id: 7,
+            position: 'оператор',
+            unit1: '1 обрмп',
+            unit2: '',
+            unitId: 1,
+            networkIdsReportedIn: [],
+          },
+        ],
       } as CallsignInfoRes,
     },
     networkDisplayMap: { 11: 'р/м Сокіл' },
@@ -243,7 +305,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSummaryTabl
   };
 }
 
-async function renderComponent(props: ComponentProps<typeof AnalysisSummaryTableCard>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof AnalysisSummaryTableCard>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -264,13 +328,17 @@ async function renderStandalone(node: ReactNode): Promise<Rendered> {
 }
 
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(label) || item.getAttribute('aria-label') === label);
+  const button = Array.from(container.querySelectorAll('button')).find(
+    (item) => item.textContent?.includes(label) || item.getAttribute('aria-label') === label,
+  );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
 }
 
 function getInput(container: HTMLElement, label: string): HTMLInputElement {
-  const input = Array.from(container.querySelectorAll('input')).find((item) => item.getAttribute('aria-label') === label);
+  const input = Array.from(container.querySelectorAll('input')).find(
+    (item) => item.getAttribute('aria-label') === label,
+  );
   if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found: ${label}`);
   return input;
 }
@@ -319,14 +387,18 @@ describe('AnalysisSummaryTableCard', () => {
     expect(view.container.textContent).toContain('Локації');
     expect(view.container.textContent).toContain('Дії');
     expect(view.container.textContent).toContain('XLSX');
-    expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe('var(--bs-body-bg)');
+    expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe(
+      'var(--bs-body-bg)',
+    );
   });
 
   it('disables resizing for the row actions column', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="row-actions-enable-resizing"]')?.textContent).toBe('false');
+    expect(
+      view.container.querySelector('[data-testid="row-actions-enable-resizing"]')?.textContent,
+    ).toBe('false');
   });
 
   it('keeps the first load skeleton free of the reload overlay', async () => {
@@ -393,7 +465,11 @@ describe('AnalysisSummaryTableCard', () => {
     ]);
 
     await click(getButton(view.container, 'Редагувати підрозділ'));
-    expect(view.container.querySelector('[data-testid="rename-dialog"]')?.getAttribute('data-disable-restore-focus')).toBe('true');
+    expect(
+      view.container
+        .querySelector('[data-testid="rename-dialog"]')
+        ?.getAttribute('data-disable-restore-focus'),
+    ).toBe('true');
   });
 
   it('opens and closes the rename dialog from the actions column', async () => {

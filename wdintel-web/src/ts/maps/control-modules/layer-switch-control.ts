@@ -16,21 +16,25 @@ export interface LayerSwitchControl extends L.Control {
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer; googleHybrid: L.TileLayer },
   features: FeatureToggleState,
-  onFeatureToggle: (feature: FeatureName, enabled: boolean) => void
+  onFeatureToggle: (feature: FeatureName, enabled: boolean) => void,
 ): LayerSwitchControl {
   const LayerSwitchControlClass = L.Control.extend({
     _tileLayers: tileLayers,
     _currentLayer: tileLayers.googleHybrid,
     _featureState: features,
-    _layerSwitchElement: null as (HTMLElement & {
-      setCurrentLayer?: (currentLayer: 'openStreetMap' | 'googleHybrid') => void;
-      setFeatures?: (features: FeatureToggleState) => void;
-    }) | null,
+    _layerSwitchElement: null as
+      | (HTMLElement & {
+          setCurrentLayer?: (currentLayer: 'openStreetMap' | 'googleHybrid') => void;
+          setFeatures?: (features: FeatureToggleState) => void;
+        })
+      | null,
 
     onAdd: function (map: L.Map) {
       this._map = map;
       this._container = L.DomUtil.create('div', 'leaflet-control layer-switch-control-host');
-      const layerSwitchElement = document.createElement('analysis-map-layer-switch') as HTMLElement & {
+      const layerSwitchElement = document.createElement(
+        'analysis-map-layer-switch',
+      ) as HTMLElement & {
         setCurrentLayer?: (currentLayer: 'openStreetMap' | 'googleHybrid') => void;
         setFeatures?: (features: FeatureToggleState) => void;
       };
@@ -47,12 +51,16 @@ export function createLayerSwitchControl(
         this._switchLayer(layer);
       });
       layerSwitchElement.addEventListener('analysis-map-feature-toggle', (event: Event) => {
-        const customEvent =
-          event as CustomEvent<{ feature?: keyof FeatureToggleState; enabled?: boolean }>;
+        const customEvent = event as CustomEvent<{
+          feature?: keyof FeatureToggleState;
+          enabled?: boolean;
+        }>;
         const feature = customEvent.detail?.feature;
         const enabled = customEvent.detail?.enabled;
         if (
-          (feature !== 'palitrasEnabled' && feature !== 'kmzEnabled' && feature !== 'pelengsEnabled') ||
+          (feature !== 'palitrasEnabled' &&
+            feature !== 'kmzEnabled' &&
+            feature !== 'pelengsEnabled') ||
           typeof enabled !== 'boolean'
         ) {
           return;

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
-
 import type {
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
@@ -36,7 +35,7 @@ import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import { notifyDutyNewMessages } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
-import {currentSystemSettings} from "../../services/api/system-settings";
+import { currentSystemSettings } from '../../services/api/system-settings';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -101,15 +100,22 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   });
   const shortStateMountedRef = useRef(true);
   const shortStateIdRef = useRef(getShortStateIdFromUrl());
-  const initialMessageFeedsHashRef = useRef<string>(stableStringify(toShortQueryState(messageFeeds)));
+  const initialMessageFeedsHashRef = useRef<string>(
+    stableStringify(toShortQueryState(messageFeeds)),
+  );
   const blockShortStateHydrationRef = useRef(false);
 
   useEffect(() => {
     messageFeedsRef.current = messageFeeds;
   }, [messageFeeds]);
 
-  const { inboxCallsignInfoMap, callsignInfoMap, mergeInboxCallsigns, mergeResolvedCallsigns, retainFeedIds } =
-    useRerDutyCallsignInfo();
+  const {
+    inboxCallsignInfoMap,
+    callsignInfoMap,
+    mergeInboxCallsigns,
+    mergeResolvedCallsigns,
+    retainFeedIds,
+  } = useRerDutyCallsignInfo();
   const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
@@ -118,7 +124,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setArrowResultByFeedId((prev) => ({ ...prev, [feedId]: message }));
     arrowResultTimeoutsRef.current[key] = setTimeout(() => {
       delete arrowResultTimeoutsRef.current[key];
-      setArrowResultByFeedId((prev) => (prev[feedId] === message ? { ...prev, [feedId]: null } : prev));
+      setArrowResultByFeedId((prev) =>
+        prev[feedId] === message ? { ...prev, [feedId]: null } : prev,
+      );
     }, 3000);
   }, []);
 
@@ -171,7 +179,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 adjacentFreqsRange: 0,
                 highlightSignalsEnabled: false,
                 onlyMyUnitTagsEnabled: false,
-              }))
+              })),
             );
           } catch (e) {
             if (!cancelled) {
@@ -206,7 +214,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       feed: MessageFeedState,
       opts: Omit<
         Parameters<typeof buildInboxReq>[0],
-        'filter' | 'expandedFreqsSelected' | 'expandedFreqsDenied' | 'highlightSignals' | 'reportTagsOnlyThisUnit'
+        | 'filter'
+        | 'expandedFreqsSelected'
+        | 'expandedFreqsDenied'
+        | 'highlightSignals'
+        | 'reportTagsOnlyThisUnit'
       >,
     ) => {
       const range = feed.adjacentFreqsRange ?? 0;
@@ -219,7 +231,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : undefined;
       const expandedDenied =
         range > 0 && freqs.length > 0
-          ? [...(feed.filter.freqsDenied ?? []), ...findAllAdjacentFreqs(freqs, feed.filter.freqsDenied ?? [], range)]
+          ? [
+              ...(feed.filter.freqsDenied ?? []),
+              ...findAllAdjacentFreqs(freqs, feed.filter.freqsDenied ?? [], range),
+            ]
           : undefined;
       return buildInboxReq({
         ...opts,
@@ -234,7 +249,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
 
   const loadFeedInitialMessages = useCallback(
-    async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
+    async (
+      feedId: string,
+      overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean },
+    ) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
       const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
@@ -274,7 +292,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       } catch (e) {
         if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
         setError(e instanceof Error ? e.message : String(e));
-        setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
+        setMessageFeeds((prev) =>
+          prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)),
+        );
       }
     },
     [messageFeeds, buildReqForFeed, mergeInboxCallsigns, setProfiles, setGroupInfos],
@@ -285,7 +305,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
-      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: true } : x)));
+      setMessageFeeds((prev) =>
+        prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: true } : x)),
+      );
       setError(null);
       try {
         const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
@@ -322,7 +344,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: false } : x)));
+        setMessageFeeds((prev) =>
+          prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: false } : x)),
+        );
       }
     },
     [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
@@ -331,7 +355,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const loadFeedNewerMessages = useCallback(
     async (
       feedId: string,
-      opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
+      opts?: {
+        nolimit?: boolean;
+        scrollToEndAfterLoad?: boolean;
+        markAllReadAfterAppend?: boolean;
+      },
     ) => {
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
@@ -359,7 +387,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         if (rsp.inboxItems.length > 0) {
           const feedNow = messageFeeds.find((x) => x.id === feedId);
           if (feedNow) {
-            const newItems = rsp.inboxItems.filter(([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id));
+            const newItems = rsp.inboxItems.filter(
+              ([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id),
+            );
             if (newItems.length > 0) {
               setMessageFeeds((prev) =>
                 prev.map((x) => {
@@ -368,7 +398,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                   const toAdd = newItems.filter(([id]) => !existingIds.has(id));
                   if (toAdd.length === 0) return x;
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
-                  const markAllRead = opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+                  const markAllRead =
+                    opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
                   const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
                   const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, toAdd.length);
                   delete lastServerCountByFeedIdRef.current[feedId];
@@ -448,10 +479,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         try {
           const lastItem = w.items[w.items.length - 1];
           const hasItems = w.items.length > 0;
-          const { quantity } = await fetchInboxCount(buildReqForFeed(w, { sinceIdNoninclusive: lastItem?.[0] ?? null, nolimit: true }));
+          const { quantity } = await fetchInboxCount(
+            buildReqForFeed(w, { sinceIdNoninclusive: lastItem?.[0] ?? null, nolimit: true }),
+          );
           return { feedId: w.id, quantity, hasItems, skipped: false, failed: false };
         } catch {
-          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false, failed: true };
+          return {
+            feedId: w.id,
+            quantity: 0,
+            hasItems: w.items.length > 0,
+            skipped: false,
+            failed: true,
+          };
         } finally {
           countInFlightByFeedIdRef.current.delete(w.id);
         }
@@ -476,7 +515,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         lastServerCountByFeedIdRef.current[feedId] = 0;
         continue;
       }
-      const prevServerCount = lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
+      const prevServerCount =
+        lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
       const nextCount = entry.quantity;
       if (isPresent(prevServerCount)) {
         const newCount = Math.max(0, nextCount - prevServerCount);
@@ -488,15 +528,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
         const atBottom = atBottomByFeedIdRef.current[feedId] ?? false;
         const shouldFollowScroll =
-          !deps.disableAutoScroll &&
-          (watchModeByFeedId[feedId] ?? false) &&
-          atBottom;
+          !deps.disableAutoScroll && (watchModeByFeedId[feedId] ?? false) && atBottom;
         await loadFeedNewerMessages(feedId, {
           scrollToEndAfterLoad: shouldFollowScroll,
         });
       }
     }
-  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs,deps.disableAutoScroll]);
+  }, [
+    messageFeeds,
+    watchModeByFeedId,
+    loadFeedNewerMessages,
+    buildReqForFeed,
+    freqs,
+    deps.disableAutoScroll,
+  ]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -507,7 +552,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           if (w.items.length === 0) return true;
           return pendingReloadFeedIdsRef.current.has(w.id);
         })
-        .map((w) => `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`)
+        .map(
+          (w) =>
+            `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`,
+        )
         .join(';'),
     [messageFeeds],
   );
@@ -523,7 +571,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       return pendingReloadFeedIdsRef.current.has(w.id);
     });
     const needingKeys = new Set(
-      needingLoad.map((w) => `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`),
+      needingLoad.map(
+        (w) =>
+          `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`,
+      ),
     );
     const started = loadStartedKeysRef.current;
     [...started].forEach((key) => {
@@ -562,7 +613,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [messageFeeds]);
 
-
   const persistStateToUrl = useCallback(
     (next: MessageFeedState[]) => {
       if (shortStateIdRef.current && !shortStateReady) {
@@ -600,7 +650,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           pushStateToUrl({ messageFeeds: next.map((f) => [f.id, f.filter]) });
         });
     },
-    [featureShortStateEnabled, shortStateReady]
+    [featureShortStateEnabled, shortStateReady],
   );
 
   const crud = useRerDutyFeedCrud(

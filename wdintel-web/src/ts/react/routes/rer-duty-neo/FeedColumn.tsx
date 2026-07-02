@@ -90,7 +90,10 @@ export type FeedColumnProps = {
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
-export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn({ column }, ref) {
+export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
+  { column },
+  ref,
+) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
   const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
   const { onRemoveColumn } = actions;
@@ -110,14 +113,18 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     () => getStoredDutyNotificationSettingsForFeed(feed.id),
     [feed.id, notificationStorageSyncKey],
   );
-  const dutyNotificationsOn = dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
+  const dutyNotificationsOn =
+    dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
       e.stopPropagation();
       const cur = getStoredDutyNotificationSettingsForFeed(feed.id);
       if (cur.soundEnabled || cur.browserEnabled) {
-        setStoredDutyNotificationSettingsForFeed(feed.id, { soundEnabled: false, browserEnabled: false });
+        setStoredDutyNotificationSettingsForFeed(feed.id, {
+          soundEnabled: false,
+          browserEnabled: false,
+        });
         bumpNotificationStorageSync();
         return;
       }

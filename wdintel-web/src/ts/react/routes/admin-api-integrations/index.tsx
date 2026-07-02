@@ -71,7 +71,7 @@ function toForm(integration: ApiIntegration): ApiIntegrationForm {
 }
 
 function toSaveReq(form: ApiIntegrationForm): UpsertApiIntegrationReq {
-  const iggyValue = (value: string) => form.hasIggyConnection ? value.trim() : null;
+  const iggyValue = (value: string) => (form.hasIggyConnection ? value.trim() : null);
   return {
     id: form.id,
     description: form.description.trim() || null,
@@ -150,7 +150,7 @@ export function AdminApiIntegrationsPage() {
     setIntegrations((previous) => {
       const exists = previous.some((item) => item.id === integration.id);
       return exists
-        ? previous.map((item) => item.id === integration.id ? integration : item)
+        ? previous.map((item) => (item.id === integration.id ? integration : item))
         : [integration, ...previous];
     });
     setSelectedId(integration.id);
@@ -248,7 +248,11 @@ export function AdminApiIntegrationsPage() {
         <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
           <Stack spacing={2}>
             <div className="flex flex-wrap gap-2">
-              <PowerButton variant="contained" onClick={() => selectIntegration(null)} disabled={disabled}>
+              <PowerButton
+                variant="contained"
+                onClick={() => selectIntegration(null)}
+                disabled={disabled}
+              >
                 Нова інтеграція
               </PowerButton>
               {disabled ? <CircularProgress size={18} /> : null}
@@ -282,7 +286,9 @@ export function AdminApiIntegrationsPage() {
             <TextField
               label="Опис"
               value={form.description}
-              onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, description: event.target.value }))
+              }
               multiline
               minRows={2}
               fullWidth
@@ -291,34 +297,40 @@ export function AdminApiIntegrationsPage() {
             <Autocomplete
               options={apiUsers}
               value={selectedApiUser}
-              onChange={(_, option) => setForm((previous) => ({ ...previous, apiUser: option?.login ?? '' }))}
+              onChange={(_, option) =>
+                setForm((previous) => ({ ...previous, apiUser: option?.login ?? '' }))
+              }
               getOptionLabel={(option) => option.login}
               isOptionEqualToValue={(option, value) => option.login === value.login}
-              renderInput={(params) => <TextField {...params} label="API користувач" required fullWidth />}
+              renderInput={(params) => (
+                <TextField {...params} label="API користувач" required fullWidth />
+              )}
             />
 
             <FormControlLabel
-              control={(
+              control={
                 <Switch
                   checked={form.hasIggyConnection}
                   onChange={(event) => setHasIggyConnection(event.target.checked)}
                 />
-              )}
+              }
               label="Є підключення до Iggy"
             />
 
             {form.id ? (
               <FormControlLabel
-                control={(
+                control={
                   <Switch
                     checked={form.syncEnabled}
-                    onChange={(event) => setForm((previous) => ({
-                      ...previous,
-                      syncEnabled: event.target.checked,
-                    }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        syncEnabled: event.target.checked,
+                      }))
+                    }
                     disabled={!form.hasIggyConnection}
                   />
-                )}
+                }
                 label="Увімкнути синхронізацію"
               />
             ) : null}
@@ -326,7 +338,9 @@ export function AdminApiIntegrationsPage() {
             <TextField
               label="Iggy URL"
               value={form.iggyUrl}
-              onChange={(event) => setForm((previous) => ({ ...previous, iggyUrl: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, iggyUrl: event.target.value }))
+              }
               placeholder="iggy://localhost:8090"
               disabled={!form.hasIggyConnection}
               required={form.hasIggyConnection}
@@ -335,7 +349,9 @@ export function AdminApiIntegrationsPage() {
             <TextField
               label="Iggy логін"
               value={form.iggyLogin}
-              onChange={(event) => setForm((previous) => ({ ...previous, iggyLogin: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, iggyLogin: event.target.value }))
+              }
               disabled={!form.hasIggyConnection}
               required={form.hasIggyConnection}
               fullWidth
@@ -344,7 +360,9 @@ export function AdminApiIntegrationsPage() {
               label="Iggy пароль"
               type="password"
               value={form.iggyPassword}
-              onChange={(event) => setForm((previous) => ({ ...previous, iggyPassword: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, iggyPassword: event.target.value }))
+              }
               disabled={!form.hasIggyConnection}
               required={form.hasIggyConnection}
               fullWidth
@@ -352,7 +370,9 @@ export function AdminApiIntegrationsPage() {
             <TextField
               label="Назва топіку для надсилання вхідних повідомлень"
               value={form.iggyInboxTopic}
-              onChange={(event) => setForm((previous) => ({ ...previous, iggyInboxTopic: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, iggyInboxTopic: event.target.value }))
+              }
               disabled={!form.hasIggyConnection}
               required={form.hasIggyConnection}
               fullWidth
@@ -360,7 +380,9 @@ export function AdminApiIntegrationsPage() {
             <TextField
               label="Назва топіку для отримання аналітичної інформації"
               value={form.iggyAnalyticsTopic}
-              onChange={(event) => setForm((previous) => ({ ...previous, iggyAnalyticsTopic: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, iggyAnalyticsTopic: event.target.value }))
+              }
               disabled={!form.hasIggyConnection}
               required={form.hasIggyConnection}
               fullWidth
@@ -377,7 +399,12 @@ export function AdminApiIntegrationsPage() {
             </PowerButton>
           ) : null}
           {form.id ? (
-            <PowerButton variant="outlined" color="error" onClick={handleDelete} disabled={disabled}>
+            <PowerButton
+              variant="outlined"
+              color="error"
+              onClick={handleDelete}
+              disabled={disabled}
+            >
               Видалити
             </PowerButton>
           ) : null}

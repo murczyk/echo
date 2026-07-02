@@ -6,7 +6,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Network } from '../../../../Bindings';
-import { EMPTY_STATE, type NetworkDetailsNeoPageState, type NetworkEditForm } from './use-rer-network-details-neo-page.types';
+import {
+  EMPTY_STATE,
+  type NetworkDetailsNeoPageState,
+  type NetworkEditForm,
+} from './use-rer-network-details-neo-page.types';
 import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 const apiMock = vi.hoisted(() => ({
@@ -150,10 +154,7 @@ describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
     apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
 
-    renderHarness(
-      buildNetwork({ deleted: true, activeTo: null }),
-      buildEditForm(),
-    );
+    renderHarness(buildNetwork({ deleted: true, activeTo: null }), buildEditForm());
 
     await act(async () => {
       await latestActions?.saveNetworkEdit();
@@ -169,10 +170,7 @@ describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
     apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
 
-    renderHarness(
-      buildNetwork({ deleted: true, activeTo: 1 }),
-      buildEditForm(),
-    );
+    renderHarness(buildNetwork({ deleted: true, activeTo: 1 }), buildEditForm());
 
     await act(async () => {
       await latestActions?.saveNetworkEdit();

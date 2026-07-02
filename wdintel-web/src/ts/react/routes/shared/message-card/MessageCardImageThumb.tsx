@@ -43,9 +43,7 @@ export function MessageCardImageThumb({
       onClick={canOpen ? handleOpenClick : undefined}
       disabled={!canOpen}
       aria-label="Відкрити зображення"
-      data-picture-thumb-state={
-        failed ? 'failed' : loaded ? 'loaded' : 'loading'
-      }
+      data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
       data-picture-thumb-layout={variant}
       sx={{
         display: 'inline-flex',
@@ -138,11 +136,7 @@ export function MessageCardImageThumb({
             }}
           >
             <BrokenImageOutlinedIcon aria-hidden />
-            <Typography
-              variant="caption"
-              component="span"
-              sx={{ textAlign: 'center' }}
-            >
+            <Typography variant="caption" component="span" sx={{ textAlign: 'center' }}>
               Зображення недоступне
             </Typography>
           </Box>

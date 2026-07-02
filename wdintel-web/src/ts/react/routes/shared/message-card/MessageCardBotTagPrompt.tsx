@@ -35,7 +35,13 @@ export function MessageCardBotTagPrompt({
       >
         бот помилився
       </Button>
-      <Button type="button" size="small" variant="outlined" onClick={onCancelBotTagAction} sx={{ minHeight: 30, textTransform: 'none' }}>
+      <Button
+        type="button"
+        size="small"
+        variant="outlined"
+        onClick={onCancelBotTagAction}
+        sx={{ minHeight: 30, textTransform: 'none' }}
+      >
         закрити
       </Button>
     </Box>

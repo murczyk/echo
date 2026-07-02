@@ -20,7 +20,8 @@ vi.mock('@mui/material', () => ({
   ),
   InputAdornment: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Paper: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Popover: (props: { open?: boolean; children: ReactNode }) => (props.open ? <div>{props.children}</div> : null),
+  Popover: (props: { open?: boolean; children: ReactNode }) =>
+    props.open ? <div>{props.children}</div> : null,
   Tooltip: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   TextField: (props: {
@@ -57,7 +58,9 @@ type Rendered = {
   root: Root;
 };
 
-function buildProps(overrides: Partial<ComponentProps<typeof AnalysisHeaderControls>> = {}): ComponentProps<typeof AnalysisHeaderControls> {
+function buildProps(
+  overrides: Partial<ComponentProps<typeof AnalysisHeaderControls>> = {},
+): ComponentProps<typeof AnalysisHeaderControls> {
   return {
     queryState: {
       search: 'uid-1',
@@ -69,7 +72,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisHeaderContr
   };
 }
 
-async function renderComponent(props: ComponentProps<typeof AnalysisHeaderControls>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof AnalysisHeaderControls>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -108,7 +113,9 @@ describe('AnalysisHeaderControls', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('input[value="uid-1"]')).toBeTruthy();
-    expect(view.container.querySelector('input[value="27.03.2026 21:52 — 28.03.2026 09:52"]')).toBeTruthy();
+    expect(
+      view.container.querySelector('input[value="27.03.2026 21:52 — 28.03.2026 09:52"]'),
+    ).toBeTruthy();
     expect(view.container.querySelector('button[aria-label="Очистити пошук"]')).toBeTruthy();
   });
 
@@ -152,7 +159,9 @@ describe('AnalysisHeaderControls', () => {
     expect(field).toBeTruthy();
 
     await click(field as HTMLInputElement);
-    const preset = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent === '3 дн');
+    const preset = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent === '3 дн',
+    );
     expect(preset).toBeTruthy();
 
     await click(preset as HTMLButtonElement);

@@ -6,7 +6,10 @@ import type { MutableRefObject } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { NetworkCallsignRelationNode, NetworkCallsignRelationsRsp } from '../../../../../Bindings';
+import type {
+  NetworkCallsignRelationNode,
+  NetworkCallsignRelationsRsp,
+} from '../../../../../Bindings';
 import {
   buildNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
@@ -18,7 +21,10 @@ type Rendered = {
   root: Root;
 };
 
-function relationNode(overrides: Partial<NetworkCallsignRelationNode> & Pick<NetworkCallsignRelationNode, 'id' | 'label'>): NetworkCallsignRelationNode {
+function relationNode(
+  overrides: Partial<NetworkCallsignRelationNode> &
+    Pick<NetworkCallsignRelationNode, 'id' | 'label'>,
+): NetworkCallsignRelationNode {
   return {
     weight: 1,
     relationCount: 1,
@@ -125,8 +131,12 @@ describe('NetworkCallsignRelationsGraphCanvas', () => {
 
     const markerBadges = view.container.querySelectorAll('g[role="img"]');
     expect(markerBadges).toHaveLength(3);
-    expect(markerBadges[0]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x - 15} ${alphaPosition!.y})`);
-    expect(markerBadges[1]?.getAttribute('transform')).toBe(`translate(${alphaPosition!.x + 15} ${alphaPosition!.y})`);
+    expect(markerBadges[0]?.getAttribute('transform')).toBe(
+      `translate(${alphaPosition!.x - 15} ${alphaPosition!.y})`,
+    );
+    expect(markerBadges[1]?.getAttribute('transform')).toBe(
+      `translate(${alphaPosition!.x + 15} ${alphaPosition!.y})`,
+    );
     expect(markerBadges[0]?.querySelector('circle')?.getAttribute('r')).toBe('12');
     expect(markerBadges[1]?.querySelector('circle')?.getAttribute('r')).toBe('12');
     expect(markerBadges[0]?.querySelector('svg')?.getAttribute('width')).toBe('16');
@@ -139,6 +149,8 @@ describe('NetworkCallsignRelationsGraphCanvas', () => {
     const view = renderCanvas();
     rendered.push(view);
 
-    expect(view.container.querySelector('g[aria-label="Збіг з каталогу, не підтверджено в мережі"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('g[aria-label="Збіг з каталогу, не підтверджено в мережі"]'),
+    ).not.toBeNull();
   });
 });

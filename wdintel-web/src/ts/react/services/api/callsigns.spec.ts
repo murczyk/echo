@@ -12,9 +12,14 @@ describe('callsigns API 401 handling', () => {
   });
 
   it('redirects binary downloads on 401', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })),
+    );
 
-    await expect(downloadCallsignsCsv({} as Parameters<typeof downloadCallsignsCsv>[0])).rejects.toMatchObject({
+    await expect(
+      downloadCallsignsCsv({} as Parameters<typeof downloadCallsignsCsv>[0]),
+    ).rejects.toMatchObject({
       name: 'HttpRequestError',
       status: 401,
       message: 'unauthorized',

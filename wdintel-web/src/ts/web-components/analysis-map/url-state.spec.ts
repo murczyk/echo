@@ -73,8 +73,13 @@ describe('analysis map url state', () => {
   });
 
   it('persists classic rebuilt urls into legacy storage', () => {
-    updateStateUrl('https://example.test/rer-analysis?state=%7B%22search%22%3A%22old%22%7D', 'classic-uid');
+    updateStateUrl(
+      'https://example.test/rer-analysis?state=%7B%22search%22%3A%22old%22%7D',
+      'classic-uid',
+    );
 
-    expect(globalThis.localStorage.getItem(RER_ANALYSIS_LEGACY_QUERY_STATE_KEY)).toContain('classic-uid');
+    expect(globalThis.localStorage.getItem(RER_ANALYSIS_LEGACY_QUERY_STATE_KEY)).toContain(
+      'classic-uid',
+    );
   });
 });

@@ -101,12 +101,12 @@ vi.mock('./useRerDutyMessageActions', () => ({
 
 vi.mock('./useRerDutyFeedState', () => ({
   useRerDutyFeedState: () => {
-    const [callsignInfoMap, setCallsignInfoMap] = React.useState<Record<string, { callsign: string; res: unknown[] }>>(
-      hoisted.initialCallsignInfoMap,
-    );
-    const [inboxCallsignInfoMap, setInboxCallsignInfoMap] = React.useState<Record<string, { callsign: string; res: unknown[] }>>(
-      hoisted.initialInboxCallsignInfoMap,
-    );
+    const [callsignInfoMap, setCallsignInfoMap] = React.useState<
+      Record<string, { callsign: string; res: unknown[] }>
+    >(hoisted.initialCallsignInfoMap);
+    const [inboxCallsignInfoMap, setInboxCallsignInfoMap] = React.useState<
+      Record<string, { callsign: string; res: unknown[] }>
+    >(hoisted.initialInboxCallsignInfoMap);
 
     return {
       messageFeeds: hoisted.messageFeeds,
@@ -183,7 +183,7 @@ describe('getPendingDutyCallsignLookups', () => {
         },
       ] as never,
       enrichedCallsigns: new Set<string>(),
-      inboxCallsignInfoMap: { 'борода': { res: [] } },
+      inboxCallsignInfoMap: { борода: { res: [] } },
       loadingCallsigns: new Set<string>(),
       emptyResultRetryAfterMs: new Map<string, number>([['борода', 10_000]]),
       nowMs: 9_000,
@@ -211,7 +211,7 @@ describe('getPendingDutyCallsignLookups', () => {
         },
       ] as never,
       enrichedCallsigns: new Set<string>(['демон']),
-      inboxCallsignInfoMap: { 'демон': { res: [{}] } },
+      inboxCallsignInfoMap: { демон: { res: [{}] } },
       loadingCallsigns: new Set<string>(['байкал']),
       emptyResultRetryAfterMs: new Map<string, number>(),
       nowMs: 9_000,
@@ -228,7 +228,7 @@ describe('getPendingDutyCallsignLookups', () => {
         },
       ] as never,
       enrichedCallsigns: new Set<string>(),
-      inboxCallsignInfoMap: { 'борода': { res: [] } },
+      inboxCallsignInfoMap: { борода: { res: [] } },
       loadingCallsigns: new Set<string>(),
       emptyResultRetryAfterMs: new Map<string, number>([['борода', 10_000]]),
       nowMs: 10_001,
@@ -239,8 +239,8 @@ describe('getPendingDutyCallsignLookups', () => {
 });
 
 describe('useRerDutyFeeds', () => {
-let container: HTMLElement;
-let root: Root;
+  let container: HTMLElement;
+  let root: Root;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -341,18 +341,21 @@ let root: Root;
       latest!.addFrequencyToFilter('mf-0', '153.6250');
     });
 
-    expect(hoisted.applyFilterMock).toHaveBeenCalledWith('mf-0', expect.objectContaining({
-      freqsSelected: ['153.6250'],
-      freqsDenied: ['200.0000'],
-    }));
+    expect(hoisted.applyFilterMock).toHaveBeenCalledWith(
+      'mf-0',
+      expect.objectContaining({
+        freqsSelected: ['153.6250'],
+        freqsDenied: ['200.0000'],
+      }),
+    );
   });
 
   it('retries failed callsign lookups after the backoff expires even when inbox rows already exist', async () => {
     hoisted.initialCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.initialInboxCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.fetchAnalysisCallsignInfos
       .mockReset()
@@ -368,7 +371,9 @@ let root: Root;
 
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(1, ['борода']);
-    expect(hoisted.setFeedErrorMock).toHaveBeenCalledWith('Не вдалося завантажити довідку позивних');
+    expect(hoisted.setFeedErrorMock).toHaveBeenCalledWith(
+      'Не вдалося завантажити довідку позивних',
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
@@ -381,12 +386,14 @@ let root: Root;
 
   it('still runs enrichment when inbox cache already contains a partial callsign row set', async () => {
     hoisted.initialCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.initialInboxCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
-    hoisted.fetchAnalysisCallsignInfos.mockReset().mockResolvedValueOnce([{ callsign: 'БОРОДА', res: [{ id: 2 }] }]);
+    hoisted.fetchAnalysisCallsignInfos
+      .mockReset()
+      .mockResolvedValueOnce([{ callsign: 'БОРОДА', res: [{ id: 2 }] }]);
 
     await act(async () => {
       root.render(React.createElement(TestHarness));
@@ -401,10 +408,10 @@ let root: Root;
 
   it('retries empty enrichment results even when inbox rows already exist', async () => {
     hoisted.initialCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.initialInboxCallsignInfoMap = {
-      'борода': { callsign: 'БОРОДА', res: [{ id: 1 }] },
+      борода: { callsign: 'БОРОДА', res: [{ id: 1 }] },
     };
     hoisted.fetchAnalysisCallsignInfos
       .mockReset()

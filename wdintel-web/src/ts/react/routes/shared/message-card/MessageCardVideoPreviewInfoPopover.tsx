@@ -19,8 +19,7 @@ export function MessageCardVideoPreviewInfoPopover({
   const videoId = video.id?.trim() ?? '';
   const showVideoId = videoId !== '';
   const contentType = video.mimeType?.trim() || '—';
-  const normalizedFileSize =
-    video.sizeBytes != null ? formatSizeBytes(video.sizeBytes) : '—';
+  const normalizedFileSize = video.sizeBytes != null ? formatSizeBytes(video.sizeBytes) : '—';
   const url = typeof video.source === 'string' ? video.source : 'Local File';
 
   return (

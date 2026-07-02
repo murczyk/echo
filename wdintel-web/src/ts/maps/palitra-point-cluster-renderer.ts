@@ -15,7 +15,11 @@ export function resolvePalitraPointColor(palitra: Palitra, point: PalitraPoint):
 }
 
 function resolvePalitraClusterColor(palitra: Palitra, points: PalitraPoint[]): string {
-  return points.map((point) => resolvePalitraPointColor(palitra, point)).find((color) => color.trim() !== '') ?? palitra.color_hex;
+  return (
+    points
+      .map((point) => resolvePalitraPointColor(palitra, point))
+      .find((color) => color.trim() !== '') ?? palitra.color_hex
+  );
 }
 
 export class PalitraPointClusterRenderer {
@@ -24,7 +28,10 @@ export class PalitraPointClusterRenderer {
 
   constructor(
     private map: L.Map,
-    private onOverlayContextMenu?: (target: { lat: number; lng: number }, latlng: { lat: number; lng: number }) => void,
+    private onOverlayContextMenu?: (
+      target: { lat: number; lng: number },
+      latlng: { lat: number; lng: number },
+    ) => void,
   ) {}
 
   clear(): void {
@@ -66,7 +73,7 @@ export class PalitraPointClusterRenderer {
           permanent: true,
           direction: 'top',
           offset: [0, -10],
-          className: 'palitra-point-label'
+          className: 'palitra-point-label',
         });
       } else if (!inView && hasTooltip) {
         marker.unbindTooltip();
@@ -98,9 +105,9 @@ export class PalitraPointClusterRenderer {
                 ${childCount}
             </div>`,
           className: 'palitra-point-cluster',
-          iconSize: L.point(30, 30)
+          iconSize: L.point(30, 30),
         });
-      }
+      },
     });
 
     for (let i = 0; i < points.length; i += MARKER_ADD_CHUNK_SIZE) {
@@ -128,13 +135,17 @@ export class PalitraPointClusterRenderer {
       color: '#fff',
       weight: 2,
       opacity: 1,
-      fillOpacity: 0.8
+      fillOpacity: 0.8,
     });
 
-    const popupContent = buildPalitraPopupContent(marker as PointMarker & L.Layer & { closePopup: () => void }, palitra, {
-      emphasisLine: point.label ? { label: 'Мітка', value: point.label } : null,
-      metaLines: [`Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}`],
-    });
+    const popupContent = buildPalitraPopupContent(
+      marker as PointMarker & L.Layer & { closePopup: () => void },
+      palitra,
+      {
+        emphasisLine: point.label ? { label: 'Мітка', value: point.label } : null,
+        metaLines: [`Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}`],
+      },
+    );
 
     marker.bindPopup(popupContent, {
       className: 'analysis-map-compact-popup-shell',
@@ -161,5 +172,4 @@ export class PalitraPointClusterRenderer {
     markerSink.push(marker as PointMarker);
     clusterGroup.addLayer(marker);
   }
-
 }

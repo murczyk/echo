@@ -13,7 +13,9 @@ export const PowerMenu = forwardRef(function PowerMenu(
   }
 
   const legacyMenuListProps = (props as { MenuListProps?: Record<string, unknown> }).MenuListProps;
-  const { MenuListProps: _ignoredMenuListProps, ...restProps } = props as MuiMenuProps & { MenuListProps?: Record<string, unknown> };
+  const { MenuListProps: _ignoredMenuListProps, ...restProps } = props as MuiMenuProps & {
+    MenuListProps?: Record<string, unknown>;
+  };
 
   return (
     <MuiMenu
@@ -22,7 +24,10 @@ export const PowerMenu = forwardRef(function PowerMenu(
       slotProps={{
         ...slotProps,
         list: {
-          'aria-labelledby': slotProps?.list?.['aria-labelledby'] || legacyMenuListProps?.['aria-labelledby'] || 'basic-button',
+          'aria-labelledby':
+            slotProps?.list?.['aria-labelledby'] ||
+            legacyMenuListProps?.['aria-labelledby'] ||
+            'basic-button',
           ...legacyMenuListProps,
           ...slotProps?.list,
         },

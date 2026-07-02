@@ -1,7 +1,14 @@
 import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 
-import type { CallsignInfoRes, CorrelatedFreq, FreqDailyActivityCount, NetJsonGraphAndMeta, NewCallsignsRes, SummaryTableFreqRow } from '../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  CorrelatedFreq,
+  FreqDailyActivityCount,
+  NetJsonGraphAndMeta,
+  NewCallsignsRes,
+  SummaryTableFreqRow,
+} from '../../../../Bindings';
 import type { AnalysisCountItem, AnalysisGroupsActivityPeriod, AnalysisQueryState } from './types';
 import type { Setter } from './use-analysis-sidebar-data.types';
 import { useAnalysisGraphData } from './use-analysis-graph-data';
@@ -106,9 +113,24 @@ export function useAnalysisSidebarData({
     summaryCallsignsInfoRef,
     setSummaryCallsignsInfo,
   });
-  const graphData = useAnalysisGraphData({ onError, onUnauthorized, optionsFreqValues, queryState });
-  const groupsActivityData = useAnalysisGroupsActivityData({ onError, onUnauthorized, optionsFreqValues, queryState });
-  const topSidebarData = useAnalysisTopSidebarData({ onError, onUnauthorized, optionsFreqValues, queryState });
+  const graphData = useAnalysisGraphData({
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+  });
+  const groupsActivityData = useAnalysisGroupsActivityData({
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+  });
+  const topSidebarData = useAnalysisTopSidebarData({
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+  });
 
   const downloadKmz = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);

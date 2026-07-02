@@ -1,7 +1,15 @@
-import { Box, Button, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  FormControlLabel,
+  Paper,
+  Stack,
+  Switch,
+  Typography,
+} from '@mui/material';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
-
 
 import type { NetJsonGraphAndMeta } from '../../../../../Bindings';
 
@@ -54,7 +62,15 @@ function renderGraph(elemId: string, graphDataAndMeta: NetJsonGraphAndMeta) {
   graph.render();
 }
 
-export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit, visible = true, onLoad, onToggleNolimit }: Props) {
+export function AnalysisCallsignGraphCard({
+  graph,
+  loading,
+  loadVersion,
+  nolimit,
+  visible = true,
+  onLoad,
+  onToggleNolimit,
+}: Props) {
   const graphId = useId().replace(/:/g, '-');
   const elementId = `callsign-graph-div-${graphId}`;
   const headingId = `${elementId}-heading`;
@@ -64,7 +80,8 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
   const [zoomHintVisible, setZoomHintVisible] = useState(false);
 
   useEffect(() => {
-    if (!visible || loading || isPresent(graph) || autoloadedVersionRef.current === loadVersion) return;
+    if (!visible || loading || isPresent(graph) || autoloadedVersionRef.current === loadVersion)
+      return;
     autoloadedVersionRef.current = loadVersion;
     onLoad();
   }, [graph, loadVersion, loading, onLoad, visible]);
@@ -134,7 +151,11 @@ export function AnalysisCallsignGraphCard({ graph, loading, loadVersion, nolimit
           <Typography variant="caption" color="text.secondary" role="status" aria-live="polite">
             Показано {nodes.length} з {graph.overallCount ?? nodes.length} позивних
           </Typography>
-          <FormControlLabel control={<Switch checked={nolimit} onChange={onToggleNolimit} />} label="показувати всі" sx={{ mr: 0 }} />
+          <FormControlLabel
+            control={<Switch checked={nolimit} onChange={onToggleNolimit} />}
+            label="показувати всі"
+            sx={{ mr: 0 }}
+          />
         </Stack>
       ) : null}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>

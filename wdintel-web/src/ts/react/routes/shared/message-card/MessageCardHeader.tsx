@@ -27,14 +27,28 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Box, Button, ButtonGroup, Menu, MenuItem, Stack, Tooltip, Typography, type SxProps, type Theme } from '@mui/material';
+import {
+  Box,
+  Button,
+  ButtonGroup,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+  type SxProps,
+  type Theme,
+} from '@mui/material';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
 import type { InboxMessage } from '../../../../../Bindings';
-import type { MessageEntityExcludeMenuOption, MessageEntityFilterKind } from '../../rer-duty-neo/utils';
+import type {
+  MessageEntityExcludeMenuOption,
+  MessageEntityFilterKind,
+} from '../../rer-duty-neo/utils';
 import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 import {
   buildMessageCardNavigationMenuItems,
@@ -90,8 +104,11 @@ function ActionIconButton({
   icon: JSX.Element;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   selected?: boolean;
-  buttonProps?: Omit<ComponentProps<typeof Button>, 'children' | 'onClick' | 'startIcon' | 'endIcon'>;
-  }) {
+  buttonProps?: Omit<
+    ComponentProps<typeof Button>,
+    'children' | 'onClick' | 'startIcon' | 'endIcon'
+  >;
+}) {
   return (
     <Tooltip title={title}>
       <Button
@@ -150,12 +167,27 @@ function CenteredInfoRow({
         }}
       >
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>{icon}</Box>
-        <Box sx={{ minWidth: 0, maxWidth: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            maxWidth: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
           {text}
         </Box>
         {trailing ? (
           <Box
-            sx={{ width: 30, minWidth: 30, height: 30, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+            sx={{
+              width: 30,
+              minWidth: 30,
+              height: 30,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
           >
             {trailing}
           </Box>
@@ -208,22 +240,29 @@ function ActionIconsRow({
   const copyMenuId = useId();
   const overflowMenuId = useId();
   const navigationMenuId = useId();
-  const [excludeMenuAnchorPosition, setExcludeMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
-  const [copyMenuAnchorPosition, setCopyMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
-  const [overflowMenuAnchorPosition, setOverflowMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
-  const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] = useState<MenuAnchorPosition | null>(null);
+  const [excludeMenuAnchorPosition, setExcludeMenuAnchorPosition] =
+    useState<MenuAnchorPosition | null>(null);
+  const [copyMenuAnchorPosition, setCopyMenuAnchorPosition] = useState<MenuAnchorPosition | null>(
+    null,
+  );
+  const [overflowMenuAnchorPosition, setOverflowMenuAnchorPosition] =
+    useState<MenuAnchorPosition | null>(null);
+  const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
+    useState<MenuAnchorPosition | null>(null);
   const [stackedLayout, setStackedLayout] = useState(compact);
-  const canShowExcludeMenu = displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
+  const canShowExcludeMenu =
+    displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
   const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
   const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
   const hasCopyTextWithNetwork = isPresent(onCopyTextWithNetwork);
   const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
-  const canShowLocationCopy = etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
+  const canShowLocationCopy =
+    etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
   const overflowMenuItems = [
     isPresent(onEditDetails)
-        ? {
+      ? {
           key: 'edit-details',
           title: 'Редагувати додаткові поля та позивні',
           icon: <EditIcon fontSize="small" />,
@@ -240,7 +279,17 @@ function ActionIconsRow({
           onClick: onDelete,
         }
       : null,
-  ].filter((item): item is { key: string; title: string; icon: JSX.Element; selected: boolean; onClick: () => void } => item != null);
+  ].filter(
+    (
+      item,
+    ): item is {
+      key: string;
+      title: string;
+      icon: JSX.Element;
+      selected: boolean;
+      onClick: () => void;
+    } => item != null,
+  );
   const canShowOverflowMenu = overflowMenuItems.length > 0;
 
   function getMenuAnchorPosition(event: MouseEvent<HTMLButtonElement>): MenuAnchorPosition {
@@ -319,14 +368,22 @@ function ActionIconsRow({
     <ActionIconButton
       key="important"
       title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
-      icon={msg.important ? <FlagIcon fontSize="inherit" /> : <FlagOutlinedIcon fontSize="inherit" />}
+      icon={
+        msg.important ? <FlagIcon fontSize="inherit" /> : <FlagOutlinedIcon fontSize="inherit" />
+      }
       onClick={onImportant}
       selected={msg.important}
     />,
     <ActionIconButton
       key="bookmark"
       title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
-      icon={msg.bookmarked ? <BookmarkIcon fontSize="inherit" /> : <BookmarkBorderOutlinedIcon fontSize="inherit" />}
+      icon={
+        msg.bookmarked ? (
+          <BookmarkIcon fontSize="inherit" />
+        ) : (
+          <BookmarkBorderOutlinedIcon fontSize="inherit" />
+        )
+      }
       onClick={onBookmark}
       selected={msg.bookmarked}
     />,
@@ -528,7 +585,11 @@ function ActionIconsRow({
         MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
       >
         {overflowMenuItems.map((item) => (
-          <MenuItem key={item.key} selected={item.selected} onClick={() => handleOverflowMenuItemClick(item.onClick)}>
+          <MenuItem
+            key={item.key}
+            selected={item.selected}
+            onClick={() => handleOverflowMenuItemClick(item.onClick)}
+          >
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
               {item.icon}
               <span>{item.title}</span>
@@ -620,9 +681,26 @@ function ActionIconsRow({
               onClick={closeNavigationMenu}
               sx={{ maxWidth: 320, overflow: 'hidden' }}
             >
-              <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, width: '100%' }}>
+              <Box
+                component="span"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.25,
+                  minWidth: 0,
+                  width: '100%',
+                }}
+              >
                 <PeopleIcon fontSize="small" />
-                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Box
+                  component="span"
+                  sx={{
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   В мережу{' '}
                   <Box component="strong" sx={{ fontWeight: 700 }}>
                     {item.networkLabel}
@@ -631,7 +709,12 @@ function ActionIconsRow({
                     <Box
                       component="span"
                       className="badge badge-no-unit-sm"
-                      sx={{ ml: '0.35em', verticalAlign: 'middle', position: 'relative', top: '-0.06em' }}
+                      sx={{
+                        ml: '0.35em',
+                        verticalAlign: 'middle',
+                        position: 'relative',
+                        top: '-0.06em',
+                      }}
                     >
                       в дорозвідці
                     </Box>
@@ -649,9 +732,26 @@ function ActionIconsRow({
               onClick={closeNavigationMenu}
               sx={{ maxWidth: 320, overflow: 'hidden' }}
             >
-              <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, width: '100%' }}>
+              <Box
+                component="span"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.25,
+                  minWidth: 0,
+                  width: '100%',
+                }}
+              >
                 <MapIcon fontSize="small" />
-                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Box
+                  component="span"
+                  sx={{
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {item.label ?? 'На мапу'}
                 </Box>
               </Box>
@@ -666,9 +766,26 @@ function ActionIconsRow({
               onClick={closeNavigationMenu}
               sx={{ maxWidth: 320, overflow: 'hidden' }}
             >
-              <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, width: '100%' }}>
+              <Box
+                component="span"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.25,
+                  minWidth: 0,
+                  width: '100%',
+                }}
+              >
                 <BarChartIcon fontSize="small" />
-                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Box
+                  component="span"
+                  sx={{
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {item.label ?? 'В аналіз'}
                 </Box>
               </Box>
@@ -685,7 +802,10 @@ function ActionIconsRow({
         MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
       >
         {excludeMenuOptions.map((option) => (
-          <MenuItem key={`${option.entity}:${option.value}`} onClick={() => handleExcludeMenuItemClick(option)}>
+          <MenuItem
+            key={`${option.entity}:${option.value}`}
+            onClick={() => handleExcludeMenuItemClick(option)}
+          >
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
               {option.entity === 'group' ? (
                 <GraphicEqIcon fontSize="small" />
@@ -734,39 +854,46 @@ function NetworkEtalonSection({
 }: {
   etalonDisplayModel: MessageCardEtalonDisplayModel;
 }) {
-  const { displayValue, locationDisplayValue, primaryKind, renderedNetworks, showInlineLocationTooltip } =
-    etalonDisplayModel;
+  const {
+    displayValue,
+    locationDisplayValue,
+    primaryKind,
+    renderedNetworks,
+    showInlineLocationTooltip,
+  } = etalonDisplayModel;
   const showTopGridLocation = primaryKind === 'network' && locationDisplayValue != null;
 
-  const geoButton = !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
-    <Tooltip title={locationDisplayValue} placement="top">
-      <Box
-        component="span"
-        aria-label={`Локація: ${locationDisplayValue}`}
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxSizing: 'border-box',
-          width: 24,
-          height: 24,
-          p: 0,
-          border: '1px solid transparent',
-          borderRadius: '50%',
-          color: MESSAGE_CARD_ACTION_COLOR,
-          flexShrink: 0,
-          alignSelf: 'center',
-          '&:hover': {
+  const geoButton =
+    !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
+      <Tooltip title={locationDisplayValue} placement="top">
+        <Box
+          component="span"
+          aria-label={`Локація: ${locationDisplayValue}`}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            width: 24,
+            height: 24,
+            p: 0,
+            border: '1px solid transparent',
+            borderRadius: '50%',
             color: MESSAGE_CARD_ACTION_COLOR,
-          },
-        }}
-      >
-        <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
-      </Box>
-    </Tooltip>
-  ) : null;
+            flexShrink: 0,
+            alignSelf: 'center',
+            '&:hover': {
+              color: MESSAGE_CARD_ACTION_COLOR,
+            },
+          }}
+        >
+          <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
+        </Box>
+      </Tooltip>
+    ) : null;
 
-  const networkContent = primaryKind === 'network' ? (
+  const networkContent =
+    primaryKind === 'network' ? (
       <Box
         sx={{
           minWidth: 0,
@@ -826,26 +953,50 @@ function NetworkEtalonSection({
       <Typography
         component="span"
         variant="body2"
-        sx={{ minWidth: 0, overflowWrap: 'anywhere', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}
+        sx={{
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          fontWeight: 700,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}
       >
         {displayValue}
       </Typography>
     );
 
-  const primaryIcon = primaryKind === 'location' ? (
-    <PlaceOutlinedIcon
-      sx={{ fontSize: 18, color: MESSAGE_CARD_ACTION_COLOR, flexShrink: 0, alignSelf: 'center', mt: '1px' }}
-      titleAccess="Локація"
-    />
-  ) : (
-    <PeopleOutlineOutlinedIcon
-      sx={{ fontSize: 18, color: MESSAGE_CARD_ACTION_COLOR, flexShrink: 0, alignSelf: 'center', mt: '1px' }}
-      titleAccess="Еталонна прив'язка"
-    />
-  );
+  const primaryIcon =
+    primaryKind === 'location' ? (
+      <PlaceOutlinedIcon
+        sx={{
+          fontSize: 18,
+          color: MESSAGE_CARD_ACTION_COLOR,
+          flexShrink: 0,
+          alignSelf: 'center',
+          mt: '1px',
+        }}
+        titleAccess="Локація"
+      />
+    ) : (
+      <PeopleOutlineOutlinedIcon
+        sx={{
+          fontSize: 18,
+          color: MESSAGE_CARD_ACTION_COLOR,
+          flexShrink: 0,
+          alignSelf: 'center',
+          mt: '1px',
+        }}
+        titleAccess="Еталонна прив'язка"
+      />
+    );
 
   return (
-    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}>
+    <Stack
+      direction="row"
+      spacing={0.75}
+      alignItems="center"
+      sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}
+    >
       {primaryIcon}
       <Box
         sx={{
@@ -925,9 +1076,14 @@ export function MessageCardHeader({
   onEditDetails,
   onExcludeMessageEntity,
 }: MessageCardHeaderProps) {
-  const navigationMenuItems = buildMessageCardNavigationMenuItems(etalonDisplayModel.renderedNetworks, mapHref, analysisHref);
+  const navigationMenuItems = buildMessageCardNavigationMenuItems(
+    etalonDisplayModel.renderedNetworks,
+    mapHref,
+    analysisHref,
+  );
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
-  const showTopGridLocation = etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
+  const showTopGridLocation =
+    etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.75} alignItems="center">
@@ -942,36 +1098,39 @@ export function MessageCardHeader({
       ) : null}
     </Stack>
   );
-  const hasFrequencyFilter = isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
+  const hasFrequencyFilter =
+    isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
   function handleAddFrequencyToFilterClick(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
   }
 
-  const freqBlock =
-    isPresent(msg.freq) ? (
-      <CenteredInfoRow
-        icon={
-          <SettingsInputAntennaOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} titleAccess="Частота" />
-        }
-        text={
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-              {msg.freq}
-            </Typography>
-          </Box>
-        }
-        trailing={
-          hasFrequencyFilter ? (
-            <ActionIconButton
-              title="В фільтр"
-              icon={<FilterAltOutlinedIcon fontSize="inherit" />}
-              onClick={handleAddFrequencyToFilterClick}
-            />
-          ) : null
-        }
-      />
-    ) : null;
+  const freqBlock = isPresent(msg.freq) ? (
+    <CenteredInfoRow
+      icon={
+        <SettingsInputAntennaOutlinedIcon
+          sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }}
+          titleAccess="Частота"
+        />
+      }
+      text={
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {msg.freq}
+          </Typography>
+        </Box>
+      }
+      trailing={
+        hasFrequencyFilter ? (
+          <ActionIconButton
+            title="В фільтр"
+            icon={<FilterAltOutlinedIcon fontSize="inherit" />}
+            onClick={handleAddFrequencyToFilterClick}
+          />
+        ) : null
+      }
+    />
+  ) : null;
 
   if (compact) {
     return (
@@ -1037,12 +1196,34 @@ export function MessageCardHeader({
             gridRow: 1,
           }}
         >
-          {topRight ?? <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />}
+          {topRight ?? (
+            <Box
+              sx={{
+                minHeight: 28,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+              }}
+            />
+          )}
         </Box>
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
-          <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
+        <Box
+          sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
+        >
+          <Stack
+            direction="row"
+            spacing={1.5}
+            useFlexGap
+            flexWrap="wrap"
+            alignItems="center"
+            sx={{ minWidth: 0 }}
+          >
             {isPresent(groupName) ? (
-              <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
+              <MetaLine
+                icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
+                title="Група"
+                text={groupName}
+              />
             ) : (
               <Typography variant="caption" color="text.secondary">
                 —
@@ -1088,7 +1269,14 @@ export function MessageCardHeader({
             gridRow: 2,
           }}
         >
-          <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <Box
+            sx={{
+              minHeight: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+            }}
+          >
             {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
           </Box>
         </Box>
@@ -1103,7 +1291,13 @@ export function MessageCardHeader({
             pr: `${rightInsetPx}px`,
           }}
         >
-          <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
+          <Box
+            sx={{
+              flex: `0 1 ${networkRowContentWidthPct}%`,
+              minWidth: 0,
+              maxWidth: `${networkRowContentWidthPct}%`,
+            }}
+          >
             <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
           </Box>
         </Box>
@@ -1119,7 +1313,11 @@ export function MessageCardHeader({
           }}
         >
           {showTopGridLocation ? (
-            <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+            <MetaLine
+              icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
+              title="Локація"
+              text={locationDisplayValue}
+            />
           ) : null}
         </Box>
       </Box>
@@ -1129,19 +1327,28 @@ export function MessageCardHeader({
   return (
     <Box
       data-message-header-grid="true"
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+        gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
         width: '100%',
         alignItems: 'center',
         columnGap: 4,
         rowGap: 0.75,
       }}
     >
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>{dateTimeBlock}</Box>
+      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
+        {dateTimeBlock}
+      </Box>
       <Box
-        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 1 }}
+        sx={{
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gridColumn: 2,
+          gridRow: 1,
+        }}
       >
         <ActionIconsRow
           id={id}
@@ -1177,19 +1384,45 @@ export function MessageCardHeader({
           gridRow: 1,
         }}
       >
-        {topRight ?? <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }} />}
+        {topRight ?? (
+          <Box
+            sx={{
+              minHeight: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+            }}
+          />
+        )}
       </Box>
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}>
-        <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
+      <Box
+        sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
+      >
+        <Stack
+          direction="row"
+          spacing={1.5}
+          useFlexGap
+          flexWrap="wrap"
+          alignItems="center"
+          sx={{ minWidth: 0 }}
+        >
           {isPresent(groupName) ? (
-            <MetaLine icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />} title="Група" text={groupName} />
+            <MetaLine
+              icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
+              title="Група"
+              text={groupName}
+            />
           ) : (
             <Typography variant="caption" color="text.secondary">
               —
             </Typography>
           )}
           {isPresent(senderName) ? (
-            <MetaLine icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />} title="Відправник" text={senderName} />
+            <MetaLine
+              icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
+              title="Відправник"
+              text={senderName}
+            />
           ) : (
             <Typography variant="caption" color="text.secondary">
               —
@@ -1198,7 +1431,14 @@ export function MessageCardHeader({
         </Stack>
       </Box>
       <Box
-        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: 2, gridRow: 2 }}
+        sx={{
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gridColumn: 2,
+          gridRow: 2,
+        }}
       >
         {freqBlock ?? (
           <CenteredTextOnlyRow
@@ -1221,7 +1461,9 @@ export function MessageCardHeader({
           gridRow: 2,
         }}
       >
-        <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <Box
+          sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
+        >
           {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
         </Box>
       </Box>
@@ -1236,7 +1478,13 @@ export function MessageCardHeader({
           pr: `${rightInsetPx}px`,
         }}
       >
-        <Box sx={{ flex: `0 1 ${networkRowContentWidthPct}%`, minWidth: 0, maxWidth: `${networkRowContentWidthPct}%` }}>
+        <Box
+          sx={{
+            flex: `0 1 ${networkRowContentWidthPct}%`,
+            minWidth: 0,
+            maxWidth: `${networkRowContentWidthPct}%`,
+          }}
+        >
           <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
         </Box>
       </Box>
@@ -1252,7 +1500,11 @@ export function MessageCardHeader({
         }}
       >
         {showTopGridLocation ? (
-          <MetaLine icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />} title="Локація" text={locationDisplayValue} />
+          <MetaLine
+            icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
+            title="Локація"
+            text={locationDisplayValue}
+          />
         ) : null}
       </Box>
     </Box>

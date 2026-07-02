@@ -19,7 +19,8 @@ export function getSearchQueryFromCurrentUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const params = new URL(window.location.href).searchParams;
   const fromFlatState = parseRerAnalysisQueryStateFromSearchParams(params)?.search;
-  if (fromFlatState != null && String(fromFlatState).trim() !== '') return String(fromFlatState).trim();
+  if (fromFlatState != null && String(fromFlatState).trim() !== '')
+    return String(fromFlatState).trim();
   const state = parseStateFromUrl(params.get('state'));
   const fromState = state?.search;
   if (fromState != null && String(fromState).trim() !== '') return String(fromState).trim();
@@ -31,7 +32,9 @@ export function updateStateUrl(currentUrl: string, messageUid: string): string {
     const url = new URL(currentUrl);
     if (url.pathname === CLASSIC_RER_ANALYSIS_PATH) {
       const storedState = loadLegacyRerAnalysisQueryState();
-      const rawStateFromUrl = parseRawRerAnalysisLegacyState(url.searchParams.get(RER_ANALYSIS_LEGACY_STATE_PARAM));
+      const rawStateFromUrl = parseRawRerAnalysisLegacyState(
+        url.searchParams.get(RER_ANALYSIS_LEGACY_STATE_PARAM),
+      );
       const baseState =
         parseStateFromUrl(url.searchParams.get(RER_ANALYSIS_LEGACY_STATE_PARAM)) ??
         parseRerAnalysisQueryStateFromSearchParams(url.searchParams) ??
@@ -41,7 +44,9 @@ export function updateStateUrl(currentUrl: string, messageUid: string): string {
       saveLegacyRerAnalysisQueryState(toLegacyRerAnalysisQueryState(stateObject));
       const canonicalLegacyState = toLegacyRerAnalysisQueryState(stateObject);
       const legacyState =
-        rawStateFromUrl != null ? { ...rawStateFromUrl, ...canonicalLegacyState, search: messageUid } : canonicalLegacyState;
+        rawStateFromUrl != null
+          ? { ...rawStateFromUrl, ...canonicalLegacyState, search: messageUid }
+          : canonicalLegacyState;
       clearRerAnalysisQueryStateSearchParams(url.searchParams);
       url.searchParams.set(RER_ANALYSIS_LEGACY_STATE_PARAM, JSON.stringify(legacyState));
     } else {

@@ -2,9 +2,24 @@ import AddIcon from '@mui/icons-material/Add';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
-import { Box, Button, ButtonBase, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  ButtonBase,
+  CircularProgress,
+  IconButton,
+  Paper,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
+import {
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
 
@@ -13,7 +28,10 @@ import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-deta
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
-import { NETWORK_RELATIONS_FULLSCREEN_Z_INDEX, getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
+import {
+  NETWORK_RELATIONS_FULLSCREEN_Z_INDEX,
+  getNetworkRelationsGraphTheme,
+} from './network-relations-graph-theme';
 import type {
   NetworkCallsignRelationFreqView,
   NetworkCallsignRelationsEdgeView,
@@ -72,8 +90,12 @@ type Props = {
 };
 
 function getDefaultEnabledFreqs(legendFreqs: NetworkCallsignRelationFreqView[]): string[] {
-  const enabledByDefaultFreqs = legendFreqs.filter((freq) => freq.enabledByDefault).map((freq) => freq.freq);
-  return enabledByDefaultFreqs.length > 0 ? enabledByDefaultFreqs : legendFreqs.map((freq) => freq.freq);
+  const enabledByDefaultFreqs = legendFreqs
+    .filter((freq) => freq.enabledByDefault)
+    .map((freq) => freq.freq);
+  return enabledByDefaultFreqs.length > 0
+    ? enabledByDefaultFreqs
+    : legendFreqs.map((freq) => freq.freq);
 }
 
 function sameFreqs(left: string[], right: string[]): boolean {
@@ -164,7 +186,9 @@ export function NetworkCallsignRelationsGraphStage({
   }, [isFullscreen]);
 
   const handleFilterToggle = (freq: string, checked: boolean) => {
-    const nextFreqs = checked ? [...new Set([...relationsEnabledFreqs, freq])] : relationsEnabledFreqs.filter((item) => item !== freq);
+    const nextFreqs = checked
+      ? [...new Set([...relationsEnabledFreqs, freq])]
+      : relationsEnabledFreqs.filter((item) => item !== freq);
     onEnabledFreqsChange(nextFreqs);
   };
 
@@ -252,7 +276,10 @@ export function NetworkCallsignRelationsGraphStage({
             borderRadius: '8px',
             bgcolor: graphTheme.zoomControlBg,
             border: `1px solid ${graphTheme.zoomControlBorder}`,
-            boxShadow: theme.palette.mode === 'dark' ? '0 2px 10px rgba(0,0,0,0.22)' : '0 2px 10px rgba(0,0,0,0.12)',
+            boxShadow:
+              theme.palette.mode === 'dark'
+                ? '0 2px 10px rgba(0,0,0,0.22)'
+                : '0 2px 10px rgba(0,0,0,0.12)',
             '& .MuiIconButton-root + .MuiIconButton-root': {
               borderLeft: `1px solid ${graphTheme.zoomControlBorder}`,
             },
@@ -349,7 +376,11 @@ export function NetworkCallsignRelationsGraphStage({
               },
             }}
           >
-            <Box component="i" className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'} aria-hidden="true" />
+            <Box
+              component="i"
+              className={isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen'}
+              aria-hidden="true"
+            />
           </IconButton>
           {isFullscreen ? (
             <IconButton
@@ -403,7 +434,10 @@ export function NetworkCallsignRelationsGraphStage({
             <Typography variant="h6" sx={{ color: graphTheme.overlayText }}>
               Забагато зв'язків для відображення
             </Typography>
-            <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary, maxWidth: 480 }}>
+            <Typography
+              variant="body2"
+              sx={{ color: graphTheme.overlayTextSecondary, maxWidth: 480 }}
+            >
               Збільшіть інтенсивність, звузьте період або вимкніть частоти.
             </Typography>
           </Stack>
@@ -463,7 +497,9 @@ export function NetworkCallsignRelationsGraphStage({
               aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
               aria-haspopup="dialog"
               aria-expanded={intensityAnchorEl !== null}
-              aria-controls={intensityAnchorEl !== null ? `${headingId}-intensity-popover` : undefined}
+              aria-controls={
+                intensityAnchorEl !== null ? `${headingId}-intensity-popover` : undefined
+              }
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -488,7 +524,10 @@ export function NetworkCallsignRelationsGraphStage({
               }}
             >
               <Stack spacing={0.15}>
-                <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary, lineHeight: 1.1 }}>
+                <Typography
+                  variant="caption"
+                  sx={{ color: graphTheme.overlayTextSecondary, lineHeight: 1.1 }}
+                >
                   Інтенсивність
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
@@ -496,7 +535,14 @@ export function NetworkCallsignRelationsGraphStage({
                 </Typography>
               </Stack>
               <Tooltip title="Мінімальна кількість перехоплень для видимого ребра або вузла.">
-                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', color: graphTheme.overlayTextSecondary }}>
+                <Box
+                  component="span"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    color: graphTheme.overlayTextSecondary,
+                  }}
+                >
                   <InfoOutlinedIcon sx={{ fontSize: 16 }} />
                 </Box>
               </Tooltip>
@@ -518,15 +564,32 @@ export function NetworkCallsignRelationsGraphStage({
               color: graphTheme.overlayText,
             }}
           >
-            <Typography variant="overline" sx={{ color: graphTheme.overlayTextSecondary, letterSpacing: 1 }}>
+            <Typography
+              variant="overline"
+              sx={{ color: graphTheme.overlayTextSecondary, letterSpacing: 1 }}
+            >
               Частоти
             </Typography>
             <Stack spacing={0.8} sx={{ mt: 0.5 }}>
               {legendFreqs.map((freq) => {
                 const enabled = relationsEnabledFreqs.includes(freq.freq);
                 return (
-                  <Stack key={freq.freq} direction="row" spacing={1} alignItems="center" sx={{ opacity: enabled ? 1 : 0.35 }}>
-                    <Box sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color, flexShrink: 0 }} />
+                  <Stack
+                    key={freq.freq}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    sx={{ opacity: enabled ? 1 : 0.35 }}
+                  >
+                    <Box
+                      sx={{
+                        width: 18,
+                        height: 3,
+                        borderRadius: 999,
+                        bgcolor: freq.color,
+                        flexShrink: 0,
+                      }}
+                    />
                     <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {freq.freq}
                     </Typography>
@@ -599,5 +662,7 @@ export function NetworkCallsignRelationsGraphStage({
     </Paper>
   );
 
-  return isFullscreen && typeof document !== 'undefined' ? createPortal(stagePanel, document.body) : stagePanel;
+  return isFullscreen && typeof document !== 'undefined'
+    ? createPortal(stagePanel, document.body)
+    : stagePanel;
 }

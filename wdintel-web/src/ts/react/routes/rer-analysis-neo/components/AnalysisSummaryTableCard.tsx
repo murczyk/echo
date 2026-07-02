@@ -21,15 +21,24 @@ import { MaterialReactTable, useMaterialReactTable } from 'material-react-table'
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX, STANDARD_DIALOG_FORM_STACK_SX } from '../../../components/dialogStyles';
+import {
+  STANDARD_DIALOG_ACTIONS_SX,
+  STANDARD_DIALOG_FORM_STACK_SX,
+} from '../../../components/dialogStyles';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
   getPageScrollTableContainerSx,
 } from '../../../components/mui-customized/table/custom-styles';
-import { getDefaultMRTOptions, renderColumnActionsMenuItems } from '../../../components/mui-customized/table/get-default-table-options';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
-import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../../components/mui-customized/table/table-state-provider';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableToolbarControls } from '../../../components/TableToolbarControls';
@@ -41,7 +50,10 @@ import {
   DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING,
 } from './analysis-summary-table-columns';
 import { SummaryTableLoadingState } from './analysis-summary-table-cells';
-import { buildAnalysisSummaryTableRows, type AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
+import {
+  buildAnalysisSummaryTableRows,
+  type AnalysisSummaryTableRowView,
+} from './analysis-summary-table-rows';
 
 type Props = {
   callsignInfoMap: Record<string, CallsignInfoRes>;
@@ -359,8 +371,20 @@ function AnalysisSummaryTableCardInner({
         desktopBreakpoint={sidebarMode ? 'md' : 'lg'}
         leadingDesktopBreakpoint={sidebarMode ? 'md' : 'lg'}
         trailingActions={
-          <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Button startIcon={<DownloadIcon />} onClick={onDownloadXlsx} variant="outlined" aria-label="XLSX" title="XLSX">
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            useFlexGap
+            sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}
+          >
+            <Button
+              startIcon={<DownloadIcon />}
+              onClick={onDownloadXlsx}
+              variant="outlined"
+              aria-label="XLSX"
+              title="XLSX"
+            >
               XLSX
             </Button>
             <InternalTableActions table={table} filtersHidden rowNumberAppearanceControl />
@@ -369,11 +393,28 @@ function AnalysisSummaryTableCardInner({
       />
 
       <Box sx={outerTableContainerSx}>
-        <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: '100%' }}>
+        <Box
+          sx={{
+            position: 'relative',
+            minHeight: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: '100%',
+          }}
+        >
           {showInitialSkeleton ? (
             <SummaryTableLoadingState />
           ) : showEmptyState ? (
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <TableEmptyState message="Частоти за обраними параметрами відсутні" />
             </Box>
           ) : (
@@ -385,11 +426,17 @@ function AnalysisSummaryTableCardInner({
         </Box>
       </Box>
 
-      <Dialog open={isPresent(renameDialog)} onClose={closeRenameDialog} disableRestoreFocus={MRT_ROW_ACTION_MODAL_PROPS.disableRestoreFocus}>
+      <Dialog
+        open={isPresent(renameDialog)}
+        onClose={closeRenameDialog}
+        disableRestoreFocus={MRT_ROW_ACTION_MODAL_PROPS.disableRestoreFocus}
+      >
         <DialogTitle>Редагувати підрозділ</DialogTitle>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
-            <Box sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>{renameDialog ? `Частота ${renameDialog.freq}` : ''}</Box>
+            <Box sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+              {renameDialog ? `Частота ${renameDialog.freq}` : ''}
+            </Box>
             {renameDialog?.units.length === 1 ? null : (
               <FormControl size="small" fullWidth disabled={renameSaving}>
                 <InputLabel id={`${headingId}-rename-unit-label`}>Підрозділ</InputLabel>
@@ -399,7 +446,9 @@ function AnalysisSummaryTableCardInner({
                   value={renameDialog?.selectedUnit ?? ''}
                   onChange={(event) => {
                     const selectedUnit = String(event.target.value);
-                    setRenameDialog((current) => (current ? { ...current, selectedUnit } : current));
+                    setRenameDialog((current) =>
+                      current ? { ...current, selectedUnit } : current,
+                    );
                     setRenameValue(selectedUnit);
                   }}
                 >
@@ -419,7 +468,11 @@ function AnalysisSummaryTableCardInner({
               value={renameValue}
               disabled={renameSaving}
               onChange={(event) => setRenameValue(event.target.value)}
-              aria-label={renameDialog ? `Назва підрозділу для частоти ${renameDialog.freq}` : 'Назва підрозділу'}
+              aria-label={
+                renameDialog
+                  ? `Назва підрозділу для частоти ${renameDialog.freq}`
+                  : 'Назва підрозділу'
+              }
             />
           </Stack>
         </DialogContent>
@@ -427,7 +480,11 @@ function AnalysisSummaryTableCardInner({
           <Button onClick={closeRenameDialog} disabled={renameSaving}>
             Скасувати
           </Button>
-          <Button variant="contained" onClick={() => void saveRename()} disabled={isNullOrUndefined(renameDialog) || renameSaving || renameValue.trim() === ''}>
+          <Button
+            variant="contained"
+            onClick={() => void saveRename()}
+            disabled={isNullOrUndefined(renameDialog) || renameSaving || renameValue.trim() === ''}
+          >
             Зберегти
           </Button>
         </DialogActions>

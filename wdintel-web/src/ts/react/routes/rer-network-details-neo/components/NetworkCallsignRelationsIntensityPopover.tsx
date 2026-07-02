@@ -79,7 +79,9 @@ export function NetworkCallsignRelationsIntensityPopover({
               max={intensitySliderMax}
               step={1}
               track="normal"
-              onChange={(_, value) => onMinIntensityChange(Array.isArray(value) ? value[0] ?? minIntensity : value)}
+              onChange={(_, value) =>
+                onMinIntensityChange(Array.isArray(value) ? (value[0] ?? minIntensity) : value)
+              }
               sx={{
                 '& .MuiSlider-track': {
                   border: 'none',

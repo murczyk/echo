@@ -1,10 +1,17 @@
 import AddIcon from '@mui/icons-material/Add';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
-import { MaterialReactTable, type MRT_ColumnDef, useMaterialReactTable } from 'material-react-table';
+import {
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  useMaterialReactTable,
+} from 'material-react-table';
 
 import type { NetworkCallsignCatalogRowView } from '../network-callsigns.types';
-import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import {
+  MrtRowActionButton,
+  mrtRowActionsColumnSize,
+} from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -27,7 +34,10 @@ import {
   NETWORK_CALLSIGN_COLUMN_SIZES,
 } from './NetworkCallsignsTableShared';
 import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
-import { TableStateProvider, useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../../components/mui-customized/table/table-state-provider';
 
 const catalogMRTOptions = getDefaultMRTOptions<NetworkCallsignCatalogRowView>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -35,7 +45,8 @@ const NETWORK_MRT_LOCALIZATION = {
   rowNumbers: 'Номер рядка',
 };
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+const resolvedPaperProps =
+  typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
 type Props = {
   title: string;
@@ -65,7 +76,16 @@ export function NetworkCallsignsCatalogTable({
       tableId="network-details-callsigns-catalog"
       defaultColumnVisibility={{ ...CATALOG_COLUMNS_VISIBILITY, 'mrt-row-numbers': true }}
       defaultColumnOrder={buildNetworkColumnOrder({
-        dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'dateBoundAt', 'sourceName'],
+        dataColumnIds: [
+          'callsign',
+          'position',
+          'unitName',
+          'lastDatetime',
+          'messageCount',
+          'comment',
+          'dateBoundAt',
+          'sourceName',
+        ],
       })}
     >
       <NetworkCallsignsCatalogTableContent
@@ -98,13 +118,18 @@ function NetworkCallsignsCatalogTableContent({
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightAddIds.length > 0;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
-  const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(() => [
+  const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(
+    () => [
       {
         header: 'Позивний',
         accessorKey: 'callsign',
         id: 'callsign',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
-        Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{formatMrtCellTextValue(row.original.callsign)}</Typography>,
+        Cell: ({ row }) => (
+          <Typography variant="body2" fontWeight={700}>
+            {formatMrtCellTextValue(row.original.callsign)}
+          </Typography>
+        ),
       },
       {
         header: 'Посада',
@@ -137,7 +162,11 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'messageCount',
         id: 'messageCount',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
-        Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{row.original.messageCount}</Typography>,
+        Cell: ({ row }) => (
+          <Typography variant="body2" fontWeight={700}>
+            {row.original.messageCount}
+          </Typography>
+        ),
       },
       {
         header: 'Коментар',
@@ -167,7 +196,9 @@ function NetworkCallsignsCatalogTableContent({
         enableResizing: false,
         Cell: ({ row }) => <NetworkCallsignSourceCell sourceName={row.original.sourceName} />,
       },
-    ], [canManage, inFlightAddIds, isInitialLoading, onAddKnownCallsign]);
+    ],
+    [canManage, inFlightAddIds, isInitialLoading, onAddKnownCallsign],
+  );
 
   const table = useMaterialReactTable({
     columns,
@@ -215,14 +246,17 @@ function NetworkCallsignsCatalogTableContent({
         </Box>
       );
     },
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-      noDataMessage: loadingError ? 'Не вдалося завантажити каталог' : 'Співпадіння з каталогом відсутні',
-      noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
-      onNoDataAction: loadingError ? onReload : undefined,
-      filteredMessage: 'Немає співпадінь з каталогом за обраними фільтрами',
-      onClearFilters: undefined,
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+        noDataMessage: loadingError
+          ? 'Не вдалося завантажити каталог'
+          : 'Співпадіння з каталогом відсутні',
+        noDataActionLabel: loadingError ? 'Спробувати ще раз' : undefined,
+        onNoDataAction: loadingError ? onReload : undefined,
+        filteredMessage: 'Немає співпадінь з каталогом за обраними фільтрами',
+        onClearFilters: undefined,
+      }),
     state: {
       isLoading: isBusy && !isInitialLoading,
       showLoadingOverlay: isBusy && !isInitialLoading,
@@ -266,7 +300,16 @@ function NetworkCallsignsCatalogTableContent({
     initialState: {
       density: 'comfortable',
       columnOrder: buildNetworkColumnOrder({
-        dataColumnIds: ['callsign', 'position', 'unitName', 'lastDatetime', 'messageCount', 'comment', 'dateBoundAt', 'sourceName'],
+        dataColumnIds: [
+          'callsign',
+          'position',
+          'unitName',
+          'lastDatetime',
+          'messageCount',
+          'comment',
+          'dateBoundAt',
+          'sourceName',
+        ],
       }),
       columnVisibility: CATALOG_COLUMNS_VISIBILITY,
     },
@@ -278,9 +321,35 @@ function NetworkCallsignsCatalogTableContent({
   }, [table, tableStateContext]);
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 0, mb: 1.25, width: '100%', flexWrap: 'wrap' }}>
-        <Stack direction="row" spacing={1.25} alignItems="baseline" sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+    <Box
+      sx={{
+        minHeight: 0,
+        minWidth: 0,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        width: '100%',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 2,
+          mt: 0,
+          mb: 1.25,
+          width: '100%',
+          flexWrap: 'wrap',
+        }}
+      >
+        <Stack
+          direction="row"
+          spacing={1.25}
+          alignItems="baseline"
+          sx={{ flexWrap: 'wrap', minWidth: 0 }}
+        >
           <Typography variant="h6">{title}</Typography>
           <Typography variant="body2" color="text.secondary">
             {countLabel}
@@ -289,9 +358,20 @@ function NetworkCallsignsCatalogTableContent({
         <InternalTableActions table={table} rowNumberAppearanceControl />
       </Box>
 
-      {loadingError && rows.length > 0 ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
+      {loadingError && rows.length > 0 ? (
+        <PowerAlert severity="error">{loadingError}</PowerAlert>
+      ) : null}
 
-      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'hidden' }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          display: 'flex',
+          width: '100%',
+          overflowX: 'hidden',
+        }}
+      >
         <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>
           <MaterialReactTable table={table} />
         </Box>

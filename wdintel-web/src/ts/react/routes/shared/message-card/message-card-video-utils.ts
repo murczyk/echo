@@ -35,17 +35,12 @@ export function formatVideoTime(seconds: number): string {
   const secs = total % 60;
 
   if (hours > 0) {
-    return [
-      String(hours),
-      String(minutes).padStart(2, '0'),
-      String(secs).padStart(2, '0'),
-    ].join(':');
+    return [String(hours), String(minutes).padStart(2, '0'), String(secs).padStart(2, '0')].join(
+      ':',
+    );
   }
 
-  return [
-    String(minutes).padStart(2, '0'),
-    String(secs).padStart(2, '0'),
-  ].join(':');
+  return [String(minutes).padStart(2, '0'), String(secs).padStart(2, '0')].join(':');
 }
 
 export function downloadOriginalVideo(video: VideoPreviewSource) {

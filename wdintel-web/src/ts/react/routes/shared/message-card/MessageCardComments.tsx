@@ -11,7 +11,9 @@ export function MessageCardComments({ messageComments }: { messageComments: Mess
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const hasOtherCommentsRest = messageComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
   const visibleOtherComments =
-    showOtherCommentsRest || !hasOtherCommentsRest ? messageComments : messageComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
+    showOtherCommentsRest || !hasOtherCommentsRest
+      ? messageComments
+      : messageComments.slice(0, OTHER_COMMENTS_PREVIEW_COUNT);
   const otherCommentsExpandToggleButton = hasOtherCommentsRest ? (
     <Button
       size="small"
@@ -19,8 +21,16 @@ export function MessageCardComments({ messageComments }: { messageComments: Mess
       variant="text"
       onClick={() => setShowOtherCommentsRest((v) => !v)}
       aria-expanded={showOtherCommentsRest}
-      aria-label={showOtherCommentsRest ? 'Згорнути додаткові коментарі' : 'Показати додаткові коментарі'}
-      endIcon={showOtherCommentsRest ? <ExpandLessIcon fontSize="inherit" aria-hidden /> : <ExpandMoreIcon fontSize="inherit" aria-hidden />}
+      aria-label={
+        showOtherCommentsRest ? 'Згорнути додаткові коментарі' : 'Показати додаткові коментарі'
+      }
+      endIcon={
+        showOtherCommentsRest ? (
+          <ExpandLessIcon fontSize="inherit" aria-hidden />
+        ) : (
+          <ExpandMoreIcon fontSize="inherit" aria-hidden />
+        )
+      }
       sx={{
         flexShrink: 0,
         minHeight: 27,
@@ -53,16 +63,30 @@ export function MessageCardComments({ messageComments }: { messageComments: Mess
       }}
     >
       {visibleOtherComments.map((comment, index) => (
-        <Stack key={`${comment.messageId}-${comment.id}-${index}`} spacing={0.25} sx={{ minWidth: 0 }}>
-          <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}>
+        <Stack
+          key={`${comment.messageId}-${comment.id}-${index}`}
+          spacing={0.25}
+          sx={{ minWidth: 0 }}
+        >
+          <Typography
+            variant="caption"
+            sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}
+          >
             {comment.login}
           </Typography>
-          <Typography variant="caption" sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', lineHeight: 1.4, minWidth: 0 }}>
+          <Typography
+            variant="caption"
+            sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', lineHeight: 1.4, minWidth: 0 }}
+          >
             {comment.comment}
           </Typography>
         </Stack>
       ))}
-      {otherCommentsExpandToggleButton ? <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>{otherCommentsExpandToggleButton}</Box> : null}
+      {otherCommentsExpandToggleButton ? (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+          {otherCommentsExpandToggleButton}
+        </Box>
+      ) : null}
     </Stack>
   );
 }

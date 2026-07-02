@@ -6,10 +6,26 @@ import type { Dispatch, SetStateAction } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, Network, NewCallsignsRes, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+import type {
+  InboxMessage,
+  Network,
+  NewCallsignsRes,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
 import { emptyQueryState } from './helpers';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
-import type { AnalysisAorEntry, AnalysisCenterTab, AnalysisCountItem, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState, AnalysisSidebarTab } from './types';
+import type {
+  AnalysisAorEntry,
+  AnalysisCenterTab,
+  AnalysisCountItem,
+  AnalysisFilterOptions,
+  AnalysisFilterSectionId,
+  AnalysisQueryState,
+  AnalysisSidebarTab,
+} from './types';
 
 const reloadAnalysisDataMock = vi.hoisted(() => ({
   reloadAnalysisData: vi.fn(() => Promise.resolve()),
@@ -61,15 +77,21 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     loadMessageComments: vi.fn().mockResolvedValue(undefined),
     invalidateMessagePaging: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
-    setCounts: noopSetter as Dispatch<SetStateAction<import('../../../../Bindings').CountStatsRsp | null>>,
+    setCounts: noopSetter as Dispatch<
+      SetStateAction<import('../../../../Bindings').CountStatsRsp | null>
+    >,
     setCountsLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setFiltersLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setGroupInfos: noopSetter as Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>,
     setMapLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setMapDateRange: noopSetter as Dispatch<SetStateAction<{ startDate: number; endDate: number }>>,
-    setMapNetworkUnits: noopSetter as Dispatch<SetStateAction<import('../../../../Bindings').NetworkUnit[]>>,
+    setMapNetworkUnits: noopSetter as Dispatch<
+      SetStateAction<import('../../../../Bindings').NetworkUnit[]>
+    >,
     setMapOpenMessages: noopSetter as Dispatch<SetStateAction<Array<[number, InboxMessage]>>>,
-    setMapPoints: noopSetter as Dispatch<SetStateAction<import('../../../../Bindings').FreqDetailedPoint[]>>,
+    setMapPoints: noopSetter as Dispatch<
+      SetStateAction<import('../../../../Bindings').FreqDetailedPoint[]>
+    >,
     setMessages: noopSetter as Dispatch<SetStateAction<Array<[number, InboxMessage]>>>,
     setMessagesLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setNetworks: noopSetter as Dispatch<SetStateAction<Network[]>>,
@@ -83,7 +105,9 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     setNolimitShown: noopSetter as Dispatch<SetStateAction<boolean>>,
     setOptions: noopSetter as Dispatch<SetStateAction<AnalysisFilterOptions>>,
     setProfiles: noopSetter as Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>,
-    setSummaryCallsignsInfo: noopSetter as Dispatch<SetStateAction<Record<string, import('../../../../Bindings').CallsignInfoRes>>>,
+    setSummaryCallsignsInfo: noopSetter as Dispatch<
+      SetStateAction<Record<string, import('../../../../Bindings').CallsignInfoRes>>
+    >,
     setTagsMap: noopSetter as Dispatch<SetStateAction<Record<number, Tag>>>,
     setTopCallsigns: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
     setTopFreqs: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
@@ -177,7 +201,9 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
-    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'bravo' });
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({
+      search: 'bravo',
+    });
   });
 
   it('reschedules an aborted key when the user reverts before the debounce fires', async () => {
@@ -194,7 +220,8 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
 
     await renderHook(params);
-    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
@@ -220,7 +247,9 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
-    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({ search: 'alpha' });
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]?.queryState).toMatchObject({
+      search: 'alpha',
+    });
 
     await act(async () => {
       resolveInitialReload?.();
@@ -296,7 +325,8 @@ describe('useAnalysisReloadOrchestrator', () => {
     const params = buildParams();
 
     await renderHook(params);
-    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
 
@@ -312,7 +342,8 @@ describe('useAnalysisReloadOrchestrator', () => {
       await Promise.resolve();
     });
 
-    const secondSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0].signal as AbortSignal | undefined;
+    const secondSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0].signal as
+      AbortSignal | undefined;
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
@@ -336,7 +367,8 @@ describe('useAnalysisReloadOrchestrator', () => {
     const params = buildParams();
 
     await renderHook(params);
-    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as AbortSignal | undefined;
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal as
+      AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
 
     await rerenderHook({

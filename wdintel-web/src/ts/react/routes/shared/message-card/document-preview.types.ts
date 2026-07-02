@@ -19,4 +19,3 @@ export type DocumentPreviewEntryState<TLoaded = unknown> = {
   loaded?: TLoaded;
   error?: string;
 };
-

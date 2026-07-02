@@ -14,7 +14,8 @@ const tableOptionsMock = vi.hoisted(() => ({
 }));
 
 vi.mock('material-react-table', async () => {
-  const actual = await vi.importActual<typeof import('material-react-table')>('material-react-table');
+  const actual =
+    await vi.importActual<typeof import('material-react-table')>('material-react-table');
   return {
     ...actual,
     useMaterialReactTable: tableOptionsMock.useMaterialReactTable,
@@ -63,7 +64,9 @@ describe('SettingsNeoTable', () => {
     });
 
     expect(tableOptionsMock.useMaterialReactTable).toHaveBeenCalled();
-    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.enableTopToolbar).toBe(false);
+    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.enableTopToolbar).toBe(
+      false,
+    );
 
     root.unmount();
     container.remove();
@@ -85,8 +88,12 @@ describe('SettingsNeoTable', () => {
       );
     });
 
-    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.enableTopToolbar).toBe(true);
-    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.renderTopToolbar).toEqual(expect.any(Function));
+    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.enableTopToolbar).toBe(
+      true,
+    );
+    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.renderTopToolbar).toEqual(
+      expect.any(Function),
+    );
 
     root.unmount();
     container.remove();
@@ -106,9 +113,9 @@ describe('SettingsNeoTable', () => {
       );
     });
 
-    expect(tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTableHeadCellProps).toMatchObject(
-      CUSTOM_STYLES.muiTableHeadCellProps,
-    );
+    expect(
+      tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTableHeadCellProps,
+    ).toMatchObject(CUSTOM_STYLES.muiTableHeadCellProps);
 
     root.unmount();
     container.remove();
@@ -132,7 +139,8 @@ describe('SettingsNeoTable', () => {
       );
     });
 
-    const headCellProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTableHeadCellProps as {
+    const headCellProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]
+      ?.muiTableHeadCellProps as {
       sx: Record<string, unknown>;
     };
 
@@ -158,7 +166,8 @@ describe('SettingsNeoTable', () => {
       );
     });
 
-    const paperProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]?.muiTablePaperProps as Function;
+    const paperProps = tableOptionsMock.useMaterialReactTable.mock.calls.at(-1)?.[0]
+      ?.muiTablePaperProps as Function;
     const resolvedPaperProps = paperProps({
       table: {
         getState: () => ({ showSkeletons: false }),

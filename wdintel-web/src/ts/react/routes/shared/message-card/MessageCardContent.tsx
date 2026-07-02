@@ -33,19 +33,13 @@ import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { collectMessageImages } from './message-card-image-utils';
 import { MessageCardImageList } from './MessageCardImageList';
 import { MessageCardTags } from './MessageCardTags';
-import type {
-  AnalysisCallsignActions,
-  MessageCardBotTagAction,
-} from './message-card.types';
+import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 
-export type {
-  AnalysisCallsignActions,
-  MessageCardBotTagAction,
-} from './message-card.types';
+export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
 export function MessageCardMessageBody({
   compact = false,
@@ -72,10 +66,7 @@ export function MessageCardMessageBody({
   tagsLayout?: TagsLayoutVariant;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
-  onMarkBotTagWrong?: (
-    messageId: number,
-    tagId: number,
-  ) => void | Promise<void>;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   analysisCallsignActions?: AnalysisCallsignActions;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -84,24 +75,13 @@ export function MessageCardMessageBody({
   searchText?: string | null;
 }) {
   const images = collectMessageImages(msg);
-  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(
-    null,
-  );
-  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(
-    null,
-  );
+  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
+  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
 
-  const imageHrefSet = useMemo(
-    () => new Set(images.map((image) => image.href)),
-    [images],
-  );
+  const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
-  const previewableDocuments = documents.filter(
-    (document) => document.kind !== 'unsupported',
-  );
-  const [documentPreviewIndex, setDocumentPreviewIndex] = useState<
-    number | null
-  >(null);
+  const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
+  const [documentPreviewIndex, setDocumentPreviewIndex] = useState<number | null>(null);
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
@@ -115,14 +95,11 @@ export function MessageCardMessageBody({
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
 
   const videoAttachments = attachmentMedia.filter(
-    (attachment) =>
-      isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment),
+    (attachment) => isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment),
   );
 
   const downloadAttachments = attachmentMedia.filter(
-    (attachment) =>
-      !isAudioMediaAttachment(attachment) &&
-      !isVideoMediaAttachment(attachment),
+    (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
 
   const videoPreviewSources = useMemo(() => {
@@ -196,30 +173,26 @@ export function MessageCardMessageBody({
         >
           {documents.map((document, index) => {
             const previewIndex = previewableDocuments.findIndex(
-              (previewableDocument) =>
-                previewableDocument.href === document.href,
+              (previewableDocument) => previewableDocument.href === document.href,
             );
             return (
               <MessageMediaDocumentLink
-              key={document.id ?? document.href}
-              document={document}
-              index={index}
-              onPreview={
-                previewIndex >= 0
-                  ? () => {
-                      blurActiveElement();
-                      setDocumentPreviewIndex(previewIndex);
-                    }
-                  : undefined
-              }
-            />
-          );
-        })}
+                key={document.id ?? document.href}
+                document={document}
+                index={index}
+                onPreview={
+                  previewIndex >= 0
+                    ? () => {
+                        blurActiveElement();
+                        setDocumentPreviewIndex(previewIndex);
+                      }
+                    : undefined
+                }
+              />
+            );
+          })}
           {audioAttachments.map((attachment) => (
-            <MessageMediaAudioPlayer
-              key={attachment.id}
-              attachment={attachment}
-            />
+            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
           ))}
           {videoAttachments.length > 0 && (
             <Box
@@ -242,10 +215,7 @@ export function MessageCardMessageBody({
             </Box>
           )}
           {downloadAttachments.map((attachment) => (
-            <MessageMediaDownloadLink
-              key={attachment.id}
-              attachment={attachment}
-            />
+            <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
           ))}
         </Box>
       ) : null}
@@ -259,11 +229,7 @@ export function MessageCardMessageBody({
       {hasTextPrimary ? (
         <Box
           component="div"
-          className={
-            msg.textMarked && msg.textMarked.length > 0
-              ? 'text-marked'
-              : undefined
-          }
+          className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
           sx={{
             whiteSpace: 'pre-wrap',
             overflowWrap: 'anywhere',
@@ -274,20 +240,12 @@ export function MessageCardMessageBody({
         </Box>
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{ minWidth: 0 }}
-        >
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
           <ChatBubbleOutlineOutlinedIcon
             sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
             titleAccess="Коментар"
           />
-          <Typography
-            variant="caption"
-            sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}
-          >
+          <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {msg.extendedForm}
           </Typography>
         </Stack>
@@ -319,9 +277,7 @@ export function MessageCardMessageBody({
           </span>
         </Box>
       ) : null}
-      {botTagAction != null &&
-      onMarkBotTagWrong != null &&
-      onCancelBotTagAction != null ? (
+      {botTagAction != null && onMarkBotTagWrong != null && onCancelBotTagAction != null ? (
         <MessageCardBotTagPrompt
           botTagAction={botTagAction}
           onCancelBotTagAction={onCancelBotTagAction}
@@ -349,21 +305,16 @@ function useMemoText(
   searchText?: string | null,
 ) {
   return msg.textMarked && msg.textMarked.length > 0
-    ? renderMarkedText(
-        msg.textMarked,
-        msg.text ?? '',
-        getPointEtalonsFromMessage(msg, tagsMap),
-        {
-          showPointLinks,
-          message: msg,
-          callsignInfoMap,
-          networks,
-          unitsMap,
-          freq: msg.freq ?? null,
-          networkIds: msg.networkIds ?? null,
-          searchText,
-        },
-      )
+    ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
+        showPointLinks,
+        message: msg,
+        callsignInfoMap,
+        networks,
+        unitsMap,
+        freq: msg.freq ?? null,
+        networkIds: msg.networkIds ?? null,
+        searchText,
+      })
     : (() => {
         const text = msg.text?.trim() ?? '';
         if (text === '' || text === '—' || text === '-') return null;

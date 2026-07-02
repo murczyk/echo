@@ -15,7 +15,9 @@ describe('browser utils', () => {
   it('adds encoded backTo to paths with query params', () => {
     window.history.replaceState({}, '', '/admin/users?page=2');
 
-    expect(withBackTo('/admin/edit?id=5')).toBe('/admin/edit?id=5&backTo=%2Fadmin%2Fusers%3Fpage%3D2');
+    expect(withBackTo('/admin/edit?id=5')).toBe(
+      '/admin/edit?id=5&backTo=%2Fadmin%2Fusers%3Fpage%3D2',
+    );
   });
 
   it('pushes state and dispatches popstate when navigating within spa', () => {

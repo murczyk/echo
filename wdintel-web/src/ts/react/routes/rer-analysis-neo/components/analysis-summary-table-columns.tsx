@@ -21,15 +21,25 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
 };
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['rowActions', 'freq', 'count', 'coordinateLabels', 'callsignSearchText', 'unitSearchText', 'locationSearchText'],
+  dataColumnIds: [
+    'rowActions',
+    'freq',
+    'count',
+    'coordinateLabels',
+    'callsignSearchText',
+    'unitSearchText',
+    'locationSearchText',
+  ],
   withRowNumbers: true,
 });
 
-export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [{ id: 'count', desc: true }] satisfies MRT_SortingState;
+export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [
+  { id: 'count', desc: true },
+] satisfies MRT_SortingState;
 
-const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'] as Partial<
-  MRT_ColumnDef<AnalysisSummaryTableRowView>
->;
+const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions[
+  'mrt-row-actions'
+] as Partial<MRT_ColumnDef<AnalysisSummaryTableRowView>>;
 
 export function buildAnalysisSummaryTableColumns({
   onRenameUnit,
@@ -56,8 +66,16 @@ export function buildAnalysisSummaryTableColumns({
       Cell: ({ row }) => (
         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
           <MrtRowActions>
-            <MrtRowActionButton label="У фільтр" onClick={() => onSelectFreq(row.original.freq)} icon={<FilterAltIcon fontSize="small" />} />
-            <MrtRowActionButton label="На мапі" onClick={() => onShowFreqOnMap(row.original.freq)} icon={<MapIcon fontSize="small" />} />
+            <MrtRowActionButton
+              label="У фільтр"
+              onClick={() => onSelectFreq(row.original.freq)}
+              icon={<FilterAltIcon fontSize="small" />}
+            />
+            <MrtRowActionButton
+              label="На мапі"
+              onClick={() => onShowFreqOnMap(row.original.freq)}
+              icon={<MapIcon fontSize="small" />}
+            />
             <MrtRowActionButton
               label="Редагувати підрозділ"
               onClick={() => onRenameUnit(row.original)}
@@ -77,7 +95,11 @@ export function buildAnalysisSummaryTableColumns({
       grow: false,
       enableSorting: true,
       Cell: ({ row }) => (
-        <Typography variant="body2" noWrap sx={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Typography
+          variant="body2"
+          noWrap
+          sx={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
           {row.original.freq}
         </Typography>
       ),

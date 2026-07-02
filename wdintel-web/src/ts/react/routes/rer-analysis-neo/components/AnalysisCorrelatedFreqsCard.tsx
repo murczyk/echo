@@ -1,4 +1,13 @@
-import { CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
+import {
+  CircularProgress,
+  Paper,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+} from '@mui/material';
 import { useId } from 'react';
 
 import type { CorrelatedFreq } from '../../../../../Bindings';
@@ -34,9 +43,7 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selected
           </CompactText>
         </Stack>
       ) : correlatedFreqs.length === 0 ? (
-        <CompactText color="text.secondary">
-          Немає даних
-        </CompactText>
+        <CompactText color="text.secondary">Немає даних</CompactText>
       ) : (
         <Table size="small" aria-label="Таблиця суміжних частот">
           <TableHead>
@@ -53,9 +60,16 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selected
                   <Stack direction="row" gap={0.5} flexWrap="wrap">
                     {item.commonCallsigns.length === 0
                       ? 'Без позивних'
-                      : item.commonCallsigns.slice(0, 6).map((callsign) => (
-                          <CompactPowerChip key={`${item.freq}-${callsign}`} label={callsign} size="small" color="default" />
-                        ))}
+                      : item.commonCallsigns
+                          .slice(0, 6)
+                          .map((callsign) => (
+                            <CompactPowerChip
+                              key={`${item.freq}-${callsign}`}
+                              label={callsign}
+                              size="small"
+                              color="default"
+                            />
+                          ))}
                   </Stack>
                 </TableCell>
               </TableRow>

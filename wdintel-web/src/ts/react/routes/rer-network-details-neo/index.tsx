@@ -67,7 +67,10 @@ function buildPageTitle(
   }
 
   return (
-    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}>
+    <Box
+      component="span"
+      sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}
+    >
       <Tooltip title={status.label} arrow placement="bottom-start">
         <Box
           component="span"
@@ -123,11 +126,22 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       : 'Розгорнути ліву панель';
 
   if (page.error && !page.network) {
-    return <PageErrorState message={page.error} actionLabel="Спробувати ще раз" onAction={page.reload} />;
+    return (
+      <PageErrorState message={page.error} actionLabel="Спробувати ще раз" onAction={page.reload} />
+    );
   }
 
   return (
-    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        overflow: 'hidden',
+      }}
+    >
       <PageHeader
         title={title}
         titleLeadingActions={
@@ -144,10 +158,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              component="a"
-              href="/rer-networks-neo"
-            >
+            <Button component="a" href="/rer-networks-neo">
               До списку мереж
             </Button>
             <Button
@@ -197,7 +208,11 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
                   <span>Еталонний опис</span>
                 </Stack>
               </MenuItem>
-              <MenuItem onClick={page.openDeleteDialog} disabled={!page.canDelete || !page.network} sx={{ color: 'error.main' }}>
+              <MenuItem
+                onClick={page.openDeleteDialog}
+                disabled={!page.canDelete || !page.network}
+                sx={{ color: 'error.main' }}
+              >
                 <Stack direction="row" spacing={1} alignItems="center">
                   <DeleteIcon fontSize="small" />
                   <span>Видалити</span>
@@ -209,10 +224,16 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
       />
 
       {page.error ? <PowerAlert severity="error">{page.error}</PowerAlert> : null}
-      {page.referenceWarning ? <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert> : null}
-      {page.callsignWarning ? <PowerAlert severity="warning">{page.callsignWarning}</PowerAlert> : null}
+      {page.referenceWarning ? (
+        <PowerAlert severity="warning">{page.referenceWarning}</PowerAlert>
+      ) : null}
+      {page.callsignWarning ? (
+        <PowerAlert severity="warning">{page.callsignWarning}</PowerAlert>
+      ) : null}
       {page.copyStatus ? (
-        <PowerAlert severity={page.copyStatusTone === 'error' ? 'error' : 'success'}>{page.copyStatus}</PowerAlert>
+        <PowerAlert severity={page.copyStatusTone === 'error' ? 'error' : 'success'}>
+          {page.copyStatus}
+        </PowerAlert>
       ) : null}
 
       <NetworkDetailsNeoPageBody
@@ -222,11 +243,11 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         panelPlacement={panelPlacement}
         topPanelCollapsed={topPanelCollapsed}
         showAllAors={showAllAors}
-      onToggleShowAllAors={() => setShowAllAors((current) => !current)}
-      onSetPanelPlacement={setPanelPlacement}
-      onSetTopPanelCollapsed={setTopPanelCollapsed}
-      onToggleTopPanelCollapsed={() => setTopPanelCollapsed((current) => !current)}
-    />
+        onToggleShowAllAors={() => setShowAllAors((current) => !current)}
+        onSetPanelPlacement={setPanelPlacement}
+        onSetTopPanelCollapsed={setTopPanelCollapsed}
+        onToggleTopPanelCollapsed={() => setTopPanelCollapsed((current) => !current)}
+      />
       <NetworkDetailsNeoPageDialogs page={page} />
     </Box>
   );

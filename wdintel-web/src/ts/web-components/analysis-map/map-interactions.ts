@@ -1,9 +1,11 @@
 import * as L from 'leaflet';
 
 export function patchMouseDownMapFocus(map: L.Map): void {
-  const keyboardHandler = (map as L.Map & {
-    keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map };
-  }).keyboard;
+  const keyboardHandler = (
+    map as L.Map & {
+      keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map };
+    }
+  ).keyboard;
   const originalOnMouseDown = keyboardHandler?._onMouseDown;
   if (!keyboardHandler || !originalOnMouseDown) {
     return;
@@ -62,7 +64,9 @@ export function shouldHandleMapSurfaceContextMenu(event: Event, map: L.Map): boo
     return false;
   }
 
-  if (target.closest('.analysis-map-coord-menu-overlay, .leaflet-control-container, .leaflet-control')) {
+  if (
+    target.closest('.analysis-map-coord-menu-overlay, .leaflet-control-container, .leaflet-control')
+  ) {
     return false;
   }
 
@@ -74,5 +78,7 @@ export function shouldHandleMapSurfaceContextMenu(event: Event, map: L.Map): boo
     return false;
   }
 
-  return target === mapContainer || target.closest('.leaflet-tile-pane, .leaflet-map-pane') !== null;
+  return (
+    target === mapContainer || target.closest('.leaflet-tile-pane, .leaflet-map-pane') !== null
+  );
 }

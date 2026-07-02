@@ -2,14 +2,16 @@ import type { InboxMessage } from '../../../../Bindings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
-  onUpdateLocalMessage: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => void;
+  onUpdateLocalMessage: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => void;
 };
 
 type Result = {
@@ -18,7 +20,10 @@ type Result = {
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
   saveEditor: (message: InboxMessage) => Promise<void>;
-  saveMessageUpdate: (messageId: number, updater: (message: InboxMessage) => InboxMessage) => Promise<boolean>;
+  saveMessageUpdate: (
+    messageId: number,
+    updater: (message: InboxMessage) => InboxMessage,
+  ) => Promise<boolean>;
 };
 
 function toErrorMessage(error: unknown): string {
@@ -26,7 +31,9 @@ function toErrorMessage(error: unknown): string {
   return 'Сталася помилка під час збереження повідомлення.';
 }
 
-export function buildMessageDraftMap(messages: Array<[number, InboxMessage]>): Map<number, InboxMessage> {
+export function buildMessageDraftMap(
+  messages: Array<[number, InboxMessage]>,
+): Map<number, InboxMessage> {
   return new Map(messages);
 }
 
@@ -36,7 +43,8 @@ export function prepareQueuedMessageUpdate(
   messageId: number,
   updater: (message: InboxMessage) => InboxMessage,
 ): { currentMessage: InboxMessage | null; nextMessage: InboxMessage | null } {
-  const currentMessage = draftMap.get(messageId) ?? messages.find(([id]) => id === messageId)?.[1] ?? null;
+  const currentMessage =
+    draftMap.get(messageId) ?? messages.find(([id]) => id === messageId)?.[1] ?? null;
   if (isNullOrUndefined(currentMessage)) return { currentMessage: null, nextMessage: null };
   const nextMessage = updater(currentMessage);
   if (nextMessage !== currentMessage) {
@@ -52,7 +60,13 @@ export function enqueueMessageSave<T>(
 ): Promise<T> {
   const previous = queue.get(messageId) ?? Promise.resolve();
   const current = previous.then(() => task());
-  queue.set(messageId, current.then(() => undefined, () => undefined));
+  queue.set(
+    messageId,
+    current.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
   return current;
 }
 
@@ -62,7 +76,9 @@ export function useAnalysisMessageEditor({
   onUnauthorized,
   onUpdateLocalMessage,
 }: Props): Result {
-  const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(
+    null,
+  );
   const [editorSaveInFlight, setEditorSaveInFlight] = useState(false);
   const messagesRef = useRef(messages);
   const messageDraftsRef = useRef(buildMessageDraftMap(messages));

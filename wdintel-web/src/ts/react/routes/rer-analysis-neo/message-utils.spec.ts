@@ -19,7 +19,12 @@ function buildUnit(id: number, name: string): Unit {
   };
 }
 
-function buildNetwork(id: number, name: string, unitIds: number[] | null, location = 'KYIV'): Network {
+function buildNetwork(
+  id: number,
+  name: string,
+  unitIds: number[] | null,
+  location = 'KYIV',
+): Network {
   return {
     id,
     freqs: [],

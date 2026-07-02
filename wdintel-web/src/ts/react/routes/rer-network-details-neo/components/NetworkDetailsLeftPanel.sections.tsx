@@ -84,7 +84,13 @@ function FieldList({
         }}
       >
         {fields.map((field) => (
-          <FieldRow key={field.key} compact={compact} label={field.label} labelWidth={labelWidth} value={field.value} />
+          <FieldRow
+            key={field.key}
+            compact={compact}
+            label={field.label}
+            labelWidth={labelWidth}
+            value={field.value}
+          />
         ))}
       </Box>
     );
@@ -93,7 +99,13 @@ function FieldList({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {fields.map((field) => (
-        <FieldRow key={field.key} compact={compact} label={field.label} labelWidth={labelWidth} value={field.value} />
+        <FieldRow
+          key={field.key}
+          compact={compact}
+          label={field.label}
+          labelWidth={labelWidth}
+          value={field.value}
+        />
       ))}
     </Box>
   );
@@ -113,7 +125,13 @@ function MainSection({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: layout === 'top' ? 1.25 : 2 }}>
       <SectionTitle>Основне</SectionTitle>
-      <FieldList layout={layout} compact={compact} columns={1} labelWidth={labelWidth} fields={fields} />
+      <FieldList
+        layout={layout}
+        compact={compact}
+        columns={1}
+        labelWidth={labelWidth}
+        fields={fields}
+      />
     </Box>
   );
 }
@@ -132,7 +150,13 @@ function OperationalSection({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: layout === 'top' ? 1.25 : 2 }}>
       <SectionTitle>Операційні</SectionTitle>
-      <FieldList layout={layout} compact={compact} columns={layout === 'top' ? 2 : 1} labelWidth={labelWidth} fields={fields} />
+      <FieldList
+        layout={layout}
+        compact={compact}
+        columns={layout === 'top' ? 2 : 1}
+        labelWidth={labelWidth}
+        fields={fields}
+      />
     </Box>
   );
 }
@@ -149,9 +173,22 @@ function AdditionalSection({
   fields: FieldConfig[];
 }) {
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: layout === 'top' ? 1.25 : 2, pb: layout === 'top' ? 0.5 : 2 }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: layout === 'top' ? 1.25 : 2,
+        pb: layout === 'top' ? 0.5 : 2,
+      }}
+    >
       <SectionTitle>Додатково</SectionTitle>
-      <FieldList layout={layout} compact={compact} columns={1} labelWidth={labelWidth} fields={fields} />
+      <FieldList
+        layout={layout}
+        compact={compact}
+        columns={1}
+        labelWidth={labelWidth}
+        fields={fields}
+      />
     </Box>
   );
 }
@@ -217,8 +254,18 @@ export function MainContentSections({
         }}
       >
         <MainSection layout={layout} compact={compact} labelWidth="180px" fields={mainFields} />
-        <OperationalSection layout={layout} compact={compact} labelWidth="minmax(176px, max-content)" fields={operationalFields} />
-        <AdditionalSection layout={layout} compact={compact} labelWidth="minmax(120px, max-content)" fields={additionalFields} />
+        <OperationalSection
+          layout={layout}
+          compact={compact}
+          labelWidth="minmax(176px, max-content)"
+          fields={operationalFields}
+        />
+        <AdditionalSection
+          layout={layout}
+          compact={compact}
+          labelWidth="minmax(120px, max-content)"
+          fields={additionalFields}
+        />
       </Box>
     );
   }
@@ -227,9 +274,19 @@ export function MainContentSections({
     <>
       <MainSection layout={layout} compact={compact} labelWidth={null} fields={mainFields} />
       <Divider />
-      <OperationalSection layout={layout} compact={compact} labelWidth={null} fields={operationalFields} />
+      <OperationalSection
+        layout={layout}
+        compact={compact}
+        labelWidth={null}
+        fields={operationalFields}
+      />
       <Divider />
-      <AdditionalSection layout={layout} compact={compact} labelWidth={null} fields={additionalFields} />
+      <AdditionalSection
+        layout={layout}
+        compact={compact}
+        labelWidth={null}
+        fields={additionalFields}
+      />
     </>
   );
 }

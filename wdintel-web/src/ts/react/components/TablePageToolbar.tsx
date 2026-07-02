@@ -38,23 +38,22 @@ type Props = {
 export function TablePageToolbar(props: Props) {
   const tableStateContext = useTableStateContext();
   const shouldRenderInternalActions = !props.internalActionsHidden;
-  const internalActions =
-    shouldRenderInternalActions ? (
-      <InternalTableActions
-        table={tableStateContext.tableInstance}
-        filtersHidden={props.filtersHidden}
-        colOrderHidden={props.colOrderHidden}
-        columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}
-        colOrderDisabled={props.internalActionsDisabled || props.colOrderDisabled}
-        filtersDisabled={props.internalActionsDisabled || props.filtersDisabled}
-        additionalActiveFilters={props.additionalActiveFilters}
-        onClearAdditionalActiveFilter={props.onClearAdditionalActiveFilter}
-        onClearAdditionalActiveFilters={props.onClearAdditionalActiveFilters}
-        rowNumberAppearanceControl={props.rowNumberAppearanceControl}
-      >
-        {props.additionalInternalActions}
-      </InternalTableActions>
-    ) : null;
+  const internalActions = shouldRenderInternalActions ? (
+    <InternalTableActions
+      table={tableStateContext.tableInstance}
+      filtersHidden={props.filtersHidden}
+      colOrderHidden={props.colOrderHidden}
+      columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}
+      colOrderDisabled={props.internalActionsDisabled || props.colOrderDisabled}
+      filtersDisabled={props.internalActionsDisabled || props.filtersDisabled}
+      additionalActiveFilters={props.additionalActiveFilters}
+      onClearAdditionalActiveFilter={props.onClearAdditionalActiveFilter}
+      onClearAdditionalActiveFilters={props.onClearAdditionalActiveFilters}
+      rowNumberAppearanceControl={props.rowNumberAppearanceControl}
+    >
+      {props.additionalInternalActions}
+    </InternalTableActions>
+  ) : null;
   const hasControls = Boolean(props.withGlobalTextFilter || props.filter || internalActions);
 
   const headerActions = (

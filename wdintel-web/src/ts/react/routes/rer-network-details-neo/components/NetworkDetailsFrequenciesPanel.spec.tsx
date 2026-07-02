@@ -55,7 +55,15 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
 }));
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
-  buildDefaultColumnOrder: ({ dataColumnIds, withRowNumbers, withRowActions }: { dataColumnIds: string[]; withRowNumbers?: boolean; withRowActions?: boolean }) => [
+  buildDefaultColumnOrder: ({
+    dataColumnIds,
+    withRowNumbers,
+    withRowActions,
+  }: {
+    dataColumnIds: string[];
+    withRowNumbers?: boolean;
+    withRowActions?: boolean;
+  }) => [
     ...(withRowNumbers ? ['mrt-row-numbers'] : []),
     ...(withRowActions ? ['mrt-row-actions'] : []),
     ...dataColumnIds,
@@ -73,13 +81,17 @@ vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
 }));
 
 vi.mock('../../../components/mui-customized/table/mrt-cell-text', () => ({
-  renderMrtCellWithFallback: (_value: string, render: (text: string) => ReactNode) => render(_value),
+  renderMrtCellWithFallback: (_value: string, render: (text: string) => ReactNode) =>
+    render(_value),
   renderMrtCellTextValue: (value: string) => value,
 }));
 
-vi.mock('../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
-  InternalTableActions: () => null,
-}));
+vi.mock(
+  '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  () => ({
+    InternalTableActions: () => null,
+  }),
+);
 
 import { NetworkDetailsFrequenciesPanel } from './NetworkDetailsFrequenciesPanel';
 
@@ -130,13 +142,25 @@ describe('NetworkDetailsFrequenciesPanel', () => {
     expect(options?.manualSorting).toBe(true);
     expect(options?.initialState?.sorting).toEqual(DEFAULT_NETWORK_FREQ_SORTING);
 
-    const columnsById = new Map((options?.columns as Array<Record<string, any>> ?? []).map((column) => [column.id, column]));
-    expect(columnsById.get('displayFreq')).toEqual(expect.objectContaining({ enableSorting: true }));
+    const columnsById = new Map(
+      ((options?.columns as Array<Record<string, any>>) ?? []).map((column) => [column.id, column]),
+    );
+    expect(columnsById.get('displayFreq')).toEqual(
+      expect.objectContaining({ enableSorting: true }),
+    );
     expect(columnsById.get('typeLabel')).toEqual(expect.objectContaining({ enableSorting: true }));
-    expect(columnsById.get('encryptionLabel')).toEqual(expect.objectContaining({ enableSorting: true }));
-    expect(columnsById.get('messageCount')).toEqual(expect.objectContaining({ enableSorting: true }));
-    expect(columnsById.get('callsignLabel')).toEqual(expect.objectContaining({ enableSorting: false }));
-    expect(columnsById.get('lastDatetime')).toEqual(expect.objectContaining({ enableSorting: false }));
+    expect(columnsById.get('encryptionLabel')).toEqual(
+      expect.objectContaining({ enableSorting: true }),
+    );
+    expect(columnsById.get('messageCount')).toEqual(
+      expect.objectContaining({ enableSorting: true }),
+    );
+    expect(columnsById.get('callsignLabel')).toEqual(
+      expect.objectContaining({ enableSorting: false }),
+    );
+    expect(columnsById.get('lastDatetime')).toEqual(
+      expect.objectContaining({ enableSorting: false }),
+    );
 
     root.unmount();
     container.remove();

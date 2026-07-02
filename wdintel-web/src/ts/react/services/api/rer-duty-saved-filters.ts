@@ -1,8 +1,18 @@
-import type { RerDutyQueryState, RerDutyQueryStateWf as RerDutyFeedFilterState, RerDutyShortStateCreateRsp, RerDutyShortStateGetRsp, SavedFilterDuty, SavedFilterRenameReq, SavedFilterDutyUpsertReq } from '../../../../Bindings';
+import type {
+  RerDutyQueryState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+  RerDutyShortStateCreateRsp,
+  RerDutyShortStateGetRsp,
+  SavedFilterDuty,
+  SavedFilterRenameReq,
+  SavedFilterDutyUpsertReq,
+} from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 
-function rerDutyQueryStateWfToSnake(w: RerDutyFeedFilterState): Record<string, string[] | number | boolean | null> {
+function rerDutyQueryStateWfToSnake(
+  w: RerDutyFeedFilterState,
+): Record<string, string[] | number | boolean | null> {
   return {
     groups_selected: w.groupsSelected,
     groups_denied: w.groupsDenied,
@@ -20,7 +30,10 @@ function rerDutyQueryStateWfToSnake(w: RerDutyFeedFilterState): Record<string, s
 }
 
 export async function savedFiltersList(): Promise<SavedFilterDuty[]> {
-  const raw = await postJson<Array<{ id: number; name: string; req: unknown }>>('/api/rer/duty/saved-filters', {});
+  const raw = await postJson<Array<{ id: number; name: string; req: unknown }>>(
+    '/api/rer/duty/saved-filters',
+    {},
+  );
   return (raw || []).map((r) => ({
     id: r.id,
     name: r.name,
@@ -33,7 +46,10 @@ export async function savedFilterUpsert(req: SavedFilterDutyUpsertReq): Promise<
     name: req.name,
     req: rerDutyQueryStateWfToSnake(req.req),
   };
-  const raw = await postJson<Array<{ id: number; name: string; req: unknown }>>('/api/rer/duty/saved-filter-upsert', body);
+  const raw = await postJson<Array<{ id: number; name: string; req: unknown }>>(
+    '/api/rer/duty/saved-filter-upsert',
+    body,
+  );
   return (raw || []).map((r) => ({
     id: r.id,
     name: r.name,
@@ -49,13 +65,16 @@ export async function savedFilterRename(req: SavedFilterRenameReq): Promise<void
   await postVoid('/api/rer/duty/saved-filter-rename', transformCamelToSnake(req));
 }
 
-export async function rerDutyShortStateCreate(state: RerDutyQueryState): Promise<RerDutyShortStateCreateRsp> {
+export async function rerDutyShortStateCreate(
+  state: RerDutyQueryState,
+): Promise<RerDutyShortStateCreateRsp> {
   const body = { state: transformCamelToSnake(state) };
   return postJson<RerDutyShortStateCreateRsp>('/api/rer-duty/filters/create', body as any);
 }
 
 export async function rerDutyShortStateGet(id: string): Promise<RerDutyShortStateGetRsp> {
   const raw = await postJson<{ state?: unknown } | null>('/api/rer-duty/filters/get', { id });
-  const state = (raw?.state ?? null) ? (transformSnakeToCamel(raw?.state ?? {}) as RerDutyQueryState) : null;
+  const state =
+    (raw?.state ?? null) ? (transformSnakeToCamel(raw?.state ?? {}) as RerDutyQueryState) : null;
   return { state: state ?? { waterfalls: [] } };
 }

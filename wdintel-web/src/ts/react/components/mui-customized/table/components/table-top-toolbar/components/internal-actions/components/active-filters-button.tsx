@@ -6,7 +6,6 @@ import type { MouseEvent } from 'react';
 import { MRT_ColumnFiltersState, MRT_RowData, MRT_TableInstance } from 'material-react-table';
 import { isPresent } from '../../../../../../../../utils/misc';
 
-
 import { PowerButton } from '../../../../../../../PowerButton';
 import { PowerIconButton } from '../../../../../../../PowerIconButton';
 import { PowerMenu } from '../../../../../../../PowerMenu';
@@ -52,7 +51,9 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
       return;
     }
 
-    const additionalFilter = (props.additionalActiveFilters ?? []).find((filter) => filter.id === filterId);
+    const additionalFilter = (props.additionalActiveFilters ?? []).find(
+      (filter) => filter.id === filterId,
+    );
     if (additionalFilter) {
       props.onClearAdditionalActiveFilter?.(filterId);
       return;
@@ -61,7 +62,9 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
     if (isGlobalFilter) {
       props.table.setGlobalFilter('');
     } else {
-      props.table.setColumnFilters((currentFilters) => currentFilters.filter((filter) => filter.id !== filterId));
+      props.table.setColumnFilters((currentFilters) =>
+        currentFilters.filter((filter) => filter.id !== filterId),
+      );
     }
   }
 
@@ -87,7 +90,13 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
         }}
       >
         <Box sx={{ p: 2, minWidth: 340, maxWidth: 480 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mb: 1.5 }}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={2}
+            sx={{ mb: 1.5 }}
+          >
             <Typography variant="subtitle1" fontWeight={600}>
               Активні фільтри
             </Typography>
@@ -117,7 +126,11 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
                     <Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>
                       {filter.label}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ wordBreak: 'break-word' }}
+                    >
                       {filter.valuePreview}
                     </Typography>
                   </Box>
@@ -149,7 +162,12 @@ export function ActiveFiltersButton<T extends MRT_RowData>(props: ActiveFiltersB
       <Tooltip title="Активні фільтри">
         <span>
           <Badge color="error" variant="dot" invisible={!hasActiveFilters} overlap="circular">
-            <PowerIconButton id="active-filters-button" disabled={isDisabled} onClick={onOpen} size="small">
+            <PowerIconButton
+              id="active-filters-button"
+              disabled={isDisabled}
+              onClick={onOpen}
+              size="small"
+            >
               <FilterAltIcon />
             </PowerIconButton>
           </Badge>

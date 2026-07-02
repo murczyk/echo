@@ -156,7 +156,9 @@ export function compactRerAnalysisQueryState(state: unknown): RerAnalysisQuerySt
   return compacted;
 }
 
-export function parseRerAnalysisQueryStateFromSearchParams(params: URLSearchParams): RerAnalysisQueryState | null {
+export function parseRerAnalysisQueryStateFromSearchParams(
+  params: URLSearchParams,
+): RerAnalysisQueryState | null {
   const parsed: RerAnalysisQueryState = {};
 
   for (const field of QUERY_STATE_FIELD_CONFIGS) {
@@ -208,7 +210,10 @@ export function clearRerAnalysisQueryStateSearchParams(params: URLSearchParams):
   }
 }
 
-export function writeRerAnalysisQueryStateToSearchParams(params: URLSearchParams, state: unknown): void {
+export function writeRerAnalysisQueryStateToSearchParams(
+  params: URLSearchParams,
+  state: unknown,
+): void {
   const compactState = compactRerAnalysisQueryState(state);
 
   clearRerAnalysisQueryStateSearchParams(params);

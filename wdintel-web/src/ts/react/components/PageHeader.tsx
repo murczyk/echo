@@ -54,11 +54,24 @@ export function PageHeader({
         }}
       >
         {titleLeadingActions ? (
-          <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexShrink: 0, mr: titleLeadingGap }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
+              flexShrink: 0,
+              mr: titleLeadingGap,
+            }}
+          >
             {titleLeadingActions}
           </Box>
         ) : null}
-        <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }} className={titleClassName}>
+        <Typography
+          component="h1"
+          variant="h5"
+          sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
+          className={titleClassName}
+        >
           {title}
         </Typography>
         {titleActions ? (
@@ -79,30 +92,36 @@ export function PageHeader({
             <Box
               component="span"
               aria-label="Інформація про сторінку"
-              sx={{ ml: 0.75, display: 'inline-flex', alignSelf: 'center', lineHeight: 0, cursor: 'default' }}
+              sx={{
+                ml: 0.75,
+                display: 'inline-flex',
+                alignSelf: 'center',
+                lineHeight: 0,
+                cursor: 'default',
+              }}
             >
               <InfoOutlinedIcon fontSize="small" />
             </Box>
           </Tooltip>
         ) : null}
       </Box>
-        {middle ? (
-          <Box
-            sx={{
-              minWidth: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              width: { xs: '100%', sm: 'fit-content' },
-              maxWidth: '100%',
-              flexShrink: 0,
-              flexBasis: { xs: '100%', sm: 'auto' },
-              ml: { xs: 0, sm: middleGap },
-            }}
-          >
-            {middle}
-          </Box>
-        ) : null}
+      {middle ? (
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            width: { xs: '100%', sm: 'fit-content' },
+            maxWidth: '100%',
+            flexShrink: 0,
+            flexBasis: { xs: '100%', sm: 'auto' },
+            ml: { xs: 0, sm: middleGap },
+          }}
+        >
+          {middle}
+        </Box>
+      ) : null}
       <Box
         sx={{
           minWidth: 0,

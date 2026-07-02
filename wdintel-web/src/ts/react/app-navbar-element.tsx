@@ -1,10 +1,10 @@
-import React from "react";
-import { createRoot, Root } from "react-dom/client";
-import { AppNavbar, AppNavbarProps } from "./components/app-navbar/AppNavbar";
+import React from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import { AppNavbar, AppNavbarProps } from './components/app-navbar/AppNavbar';
 
 type ParsedNavbarProps = Omit<
   AppNavbarProps,
-  "onLogout" | "onThemeChange" | "onNavbarVisibilityChange" | "onOpenChangelog"
+  'onLogout' | 'onThemeChange' | 'onNavbarVisibilityChange' | 'onOpenChangelog'
 >;
 
 function AppNavbarRoot({
@@ -17,20 +17,16 @@ function AppNavbarRoot({
   const callbacks = React.useMemo(() => {
     return {
       onLogout: () => {
-        host.dispatchEvent(new CustomEvent("navbar-logout"));
+        host.dispatchEvent(new CustomEvent('navbar-logout'));
       },
       onThemeChange: (theme: string) => {
-        host.dispatchEvent(
-          new CustomEvent("navbar-theme-toggle", { detail: theme }),
-        );
+        host.dispatchEvent(new CustomEvent('navbar-theme-toggle', { detail: theme }));
       },
       onNavbarVisibilityChange: () => {
-        host.dispatchEvent(new CustomEvent("navbar-visibility-toggle"));
+        host.dispatchEvent(new CustomEvent('navbar-visibility-toggle'));
       },
       onOpenChangelog: (version: string) => {
-        host.dispatchEvent(
-          new CustomEvent("navbar-open-changelog", { detail: version }),
-        );
+        host.dispatchEvent(new CustomEvent('navbar-open-changelog', { detail: version }));
       },
     };
   }, [host]);
@@ -60,8 +56,8 @@ class AppNavbarElement extends HTMLElement {
 
   connectedCallback() {
     if (!this.root) {
-      this.style.display = "block";
-      this.style.width = "100%";
+      this.style.display = 'block';
+      this.style.width = '100%';
       this.root = createRoot(this);
     }
 
@@ -74,6 +70,6 @@ class AppNavbarElement extends HTMLElement {
   }
 }
 
-if (!customElements.get("app-navbar")) {
-  customElements.define("app-navbar", AppNavbarElement);
+if (!customElements.get('app-navbar')) {
+  customElements.define('app-navbar', AppNavbarElement);
 }

@@ -74,10 +74,8 @@ export class PalitraPointsLoader {
 
     const currentZoom = this.map.getZoom();
     const bounds = this.mapAccessor.getBufferedBounds();
-    const palitraIds = filterPalitraApiIdsByBounds(
-      palitras,
-      bounds,
-      (palitra) => this.apiAccessor.apiPalitraId(palitra),
+    const palitraIds = filterPalitraApiIdsByBounds(palitras, bounds, (palitra) =>
+      this.apiAccessor.apiPalitraId(palitra),
     );
     if (palitraIds.length === 0) {
       return;
@@ -89,7 +87,9 @@ export class PalitraPointsLoader {
     }
 
     const tileKey = this.cacheManager.buildTileKey(bounds, currentZoom);
-    const filteredIds = requestPalitraIds.filter((id) => !this.cacheManager.hasPendingRequest(id, tileKey));
+    const filteredIds = requestPalitraIds.filter(
+      (id) => !this.cacheManager.hasPendingRequest(id, tileKey),
+    );
     if (filteredIds.length === 0) {
       return;
     }

@@ -1,6 +1,9 @@
 import { expect, test, type Browser } from '@playwright/test';
 
-import { installRouteLoadComparisonMocks, type RouteLoadSuite } from './page-loading-comparison.fixtures';
+import {
+  installRouteLoadComparisonMocks,
+  type RouteLoadSuite,
+} from './page-loading-comparison.fixtures';
 
 type RouteComparisonCase = {
   name: string;
@@ -93,7 +96,9 @@ test.describe('@perf', () => {
   ];
 
   for (const routeComparison of routeComparisons) {
-    test(`${routeComparison.name} neo first load is not slower than classic`, async ({ browser }, testInfo) => {
+    test(`${routeComparison.name} neo first load is not slower than classic`, async ({
+      browser,
+    }, testInfo) => {
       const classic = await measureRouteLoad(
         browser,
         routeComparison.classicPath,

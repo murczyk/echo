@@ -53,7 +53,10 @@ export function buildNetworkDetailsTabUrl(
   return `${location.pathname}${query === '' ? '' : `?${query}`}${location.hash}`;
 }
 
-export function updateCurrentNetworkDetailsTabUrl(tab: NetworkDetailsTab, mode: 'push' | 'replace'): void {
+export function updateCurrentNetworkDetailsTabUrl(
+  tab: NetworkDetailsTab,
+  mode: 'push' | 'replace',
+): void {
   if (typeof window === 'undefined') return;
 
   const nextUrl = buildNetworkDetailsTabUrl(window.location, tab);

@@ -105,14 +105,25 @@ export function PalitraFolderActionDialog({
   if (!state) return null;
 
   const nextFolderPathError =
-    state.kind === 'assign' || state.kind === 'rename' ? validateFolderPath(state.nextFolderPath) : null;
+    state.kind === 'assign' || state.kind === 'rename'
+      ? validateFolderPath(state.nextFolderPath)
+      : null;
   const showNameError = nameTouched && Boolean(nextFolderPathError);
   const previewLines = formatFolderActionPreviewLines(state);
   const hasFolderOptions = assignFolderOptions.length > 0;
-  const assignMetaLines = state.kind === 'assign' ? previewLines.filter((line) => !line.startsWith('Обрано палітр:')) : previewLines;
+  const assignMetaLines =
+    state.kind === 'assign'
+      ? previewLines.filter((line) => !line.startsWith('Обрано палітр:'))
+      : previewLines;
 
   return (
-    <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth='sm' disableRestoreFocus={disableRestoreFocus}>
+    <Dialog
+      open
+      onClose={submitting ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+      disableRestoreFocus={disableRestoreFocus}
+    >
       <DialogTitle>{getDialogTitle(state)}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -139,15 +150,17 @@ export function PalitraFolderActionDialog({
                 onChange={(_event, value) => {
                   const nextValue = typeof value === 'string' ? value : (value ?? '');
                   onNextFolderPathChange(
-                    assignFolderOptionSet.has(nextValue) ? nextValue : sanitizeFolderInput(nextValue),
+                    assignFolderOptionSet.has(nextValue)
+                      ? nextValue
+                      : sanitizeFolderInput(nextValue),
                   );
                   setNameTouched(true);
                 }}
-                noOptionsText='Немає збігів. Буде створено нову папку з цією назвою.'
+                noOptionsText="Немає збігів. Буде створено нову папку з цією назвою."
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label='Папка'
+                    label="Папка"
                     onBlur={() => setNameTouched(true)}
                     error={showNameError}
                     helperText={
@@ -178,12 +191,13 @@ export function PalitraFolderActionDialog({
                         paddingTop: 16.5,
                         paddingBottom: 16.5,
                       },
-                      '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
-                        WebkitTextFillColor: 'var(--bs-body-color)',
-                        WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
-                        transition: 'background-color 9999s ease-out 0s',
-                        caretColor: 'var(--bs-body-color)',
-                      },
+                      '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus':
+                        {
+                          WebkitTextFillColor: 'var(--bs-body-color)',
+                          WebkitBoxShadow: '0 0 0 100px var(--bs-body-bg) inset',
+                          transition: 'background-color 9999s ease-out 0s',
+                          caretColor: 'var(--bs-body-color)',
+                        },
                     }}
                   />
                 )}
@@ -193,19 +207,21 @@ export function PalitraFolderActionDialog({
 
           {state.kind === 'rename' ? (
             <TextField
-              label='Нова назва папки'
+              label="Нова назва папки"
               value={state.nextFolderPath}
               onChange={(event) => onNextFolderPathChange(sanitizeFolderInput(event.target.value))}
               onBlur={() => setNameTouched(true)}
               error={showNameError}
-              helperText={showNameError ? nextFolderPathError : 'Поточна назва: ' + state.folderPath}
+              helperText={
+                showNameError ? nextFolderPathError : 'Поточна назва: ' + state.folderPath
+              }
               autoFocus
             />
           ) : null}
 
           {state.kind === 'assign' && state.targetPalitraNames.length > 0 ? (
             <Stack spacing={1}>
-              <Typography variant='body2' color='text.secondary'>
+              <Typography variant="body2" color="text.secondary">
                 Обрані палітри: {state.preview.requestedCount}
               </Typography>
               <Box
@@ -220,7 +236,7 @@ export function PalitraFolderActionDialog({
               >
                 <Stack spacing={0.75}>
                   {state.targetPalitraNames.map((name, index) => (
-                    <Typography key={name + '-' + String(index)} variant='body2'>
+                    <Typography key={name + '-' + String(index)} variant="body2">
                       {name}
                     </Typography>
                   ))}
@@ -231,32 +247,36 @@ export function PalitraFolderActionDialog({
 
           <Stack spacing={1}>
             {assignMetaLines.map((line) => (
-              <Typography key={line} variant='body2'>
+              <Typography key={line} variant="body2">
                 {line}
               </Typography>
             ))}
           </Stack>
 
           {state.kind !== 'assign' ? (
-            <PowerAlert severity='info'>
+            <PowerAlert severity="info">
               Дія застосовується до всіх доступних палітр у цій папці, включаючи архівні.
             </PowerAlert>
           ) : null}
 
           {state.kind === 'delete' ? (
-            <PowerAlert severity='error'>Ця дія видалить палітри, що зараз лежать у папці.</PowerAlert>
+            <PowerAlert severity="error">
+              Ця дія видалить палітри, що зараз лежать у папці.
+            </PowerAlert>
           ) : null}
 
           {state.kind === 'assign' && state.preview.unchangedCount > 0 ? (
-            <PowerAlert severity='info'>Частина вибраних палітр уже лежить у цій папці.</PowerAlert>
+            <PowerAlert severity="info">Частина вибраних палітр уже лежить у цій папці.</PowerAlert>
           ) : null}
 
           {state.preview.modifiableCount === 0 ? (
-            <PowerAlert severity='warning'>Немає доступних палітр для цієї дії.</PowerAlert>
+            <PowerAlert severity="warning">Немає доступних палітр для цієї дії.</PowerAlert>
           ) : null}
 
           {state.preview.skippedCount > 0 ? (
-            <PowerAlert severity='warning'>Частина палітр недоступна для зміни й буде пропущена.</PowerAlert>
+            <PowerAlert severity="warning">
+              Частина палітр недоступна для зміни й буде пропущена.
+            </PowerAlert>
           ) : null}
         </Stack>
       </DialogContent>
@@ -271,10 +291,12 @@ export function PalitraFolderActionDialog({
             }
             onConfirm();
           }}
-          variant='contained'
+          variant="contained"
           color={FOLDER_ACTION_CONFIRM_COLORS[state.kind]}
-          disabled={submitting || Boolean(nextFolderPathError) || state.preview.modifiableCount === 0}
-          startIcon={submitting ? <CircularProgress size={16} color='inherit' /> : null}
+          disabled={
+            submitting || Boolean(nextFolderPathError) || state.preview.modifiableCount === 0
+          }
+          startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : null}
         >
           {getConfirmLabel(state)}
         </Button>

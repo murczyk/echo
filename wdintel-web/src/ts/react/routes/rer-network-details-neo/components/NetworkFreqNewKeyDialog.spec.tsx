@@ -20,7 +20,10 @@ vi.mock('@mui/material', () => ({
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   TextField: ({ label, required }: { label?: ReactNode; required?: boolean }) => (
     <label>
-      <span>{label}{required ? ' *' : ''}</span>
+      <span>
+        {label}
+        {required ? ' *' : ''}
+      </span>
     </label>
   ),
 }));
@@ -83,6 +86,8 @@ describe('NetworkFreqNewKeyDialog', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[data-severity="info"]')).not.toBeNull();
-    expect(view.container.textContent).toContain('Ключ буде додано до системи одразу після створення');
+    expect(view.container.textContent).toContain(
+      'Ключ буде додано до системи одразу після створення',
+    );
   });
 });

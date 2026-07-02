@@ -75,7 +75,11 @@ export type MrtTableFrameLayout = 'list' | 'workspace';
 const DEFAULT_LIST_TABLE_MIN_HEIGHT = 320;
 const DEFAULT_LIST_TABLE_MAX_HEIGHT = 560;
 
-function resolveDefaultMrtPaperProps<TData extends MRT_RowData>({ table }: { table: MRT_TableInstance<TData> }) {
+function resolveDefaultMrtPaperProps<TData extends MRT_RowData>({
+  table,
+}: {
+  table: MRT_TableInstance<TData>;
+}) {
   const paperProps = CUSTOM_STYLES.muiTablePaperProps;
   return typeof paperProps === 'function' ? paperProps({ table }) : paperProps || {};
 }
@@ -107,8 +111,8 @@ export function getDefaultMrtPaperProps<TData extends MRT_RowData>({
             minHeight: 0,
           }
         : {
-          height: 'auto',
-          minHeight: DEFAULT_LIST_TABLE_MIN_HEIGHT,
+            height: 'auto',
+            minHeight: DEFAULT_LIST_TABLE_MIN_HEIGHT,
           }),
     },
   };
@@ -303,9 +307,10 @@ export const CUSTOM_STYLES = {
       sx: {
         ...(table.getState().showSkeletons
           ? {
-              '& .MuiTableBody-root .MuiTableRow-root, & .MuiTableBody-root .MuiTableCell-root, & .MuiSkeleton-root': {
-                cursor: 'progress',
-              },
+              '& .MuiTableBody-root .MuiTableRow-root, & .MuiTableBody-root .MuiTableCell-root, & .MuiSkeleton-root':
+                {
+                  cursor: 'progress',
+                },
             }
           : {}),
         ...(table.getState().showSkeletons

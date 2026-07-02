@@ -57,9 +57,7 @@ describe('PowerAlert', () => {
   it('auto-hides success alert by default', () => {
     vi.useFakeTimers();
 
-    const view = renderComponent(
-      <PowerAlert severity="success">done</PowerAlert>,
-    );
+    const view = renderComponent(<PowerAlert severity="success">done</PowerAlert>);
     rendered.push(view);
 
     act(() => {
@@ -133,13 +131,9 @@ describe('PowerAlert', () => {
   });
 
   it('shows close button for warning and error alerts', () => {
-    const withoutOnClose = renderComponent(
-      <PowerAlert severity="error">error</PowerAlert>,
-    );
+    const withoutOnClose = renderComponent(<PowerAlert severity="error">error</PowerAlert>);
     rendered.push(withoutOnClose);
-    expect(
-      withoutOnClose.container.querySelector('button[aria-label="Close"]'),
-    ).not.toBeNull();
+    expect(withoutOnClose.container.querySelector('button[aria-label="Close"]')).not.toBeNull();
 
     const withOnClose = renderComponent(
       <PowerAlert severity="error" onClose={() => {}}>
@@ -147,8 +141,6 @@ describe('PowerAlert', () => {
       </PowerAlert>,
     );
     rendered.push(withOnClose);
-    expect(
-      withOnClose.container.querySelector('button[aria-label="Close"]'),
-    ).not.toBeNull();
+    expect(withOnClose.container.querySelector('button[aria-label="Close"]')).not.toBeNull();
   });
 });

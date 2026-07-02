@@ -39,9 +39,19 @@ type ViewModelArgs = {
   setPelengShowLabels: (pelengShowLabels: boolean) => void;
   setPelengSatelliteEnabled: (pelengSatelliteEnabled: boolean) => void;
   setPelengHeatmapEnabled: (pelengHeatmapEnabled: boolean) => void;
-  setActiveNetworkDetailsTab: (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => void;
-  loadRelations: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
-  loadPelengPoints: (networkId: number, sinceDateInclusiveMs: number, tillDateNoninclusiveMs: number) => Promise<void>;
+  setActiveNetworkDetailsTab: (
+    activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab'],
+  ) => void;
+  loadRelations: (
+    networkId: number,
+    sinceDateInclusiveMs: number,
+    tillDateNoninclusiveMs: number,
+  ) => Promise<void>;
+  loadPelengPoints: (
+    networkId: number,
+    sinceDateInclusiveMs: number,
+    tillDateNoninclusiveMs: number,
+  ) => Promise<void>;
   loadNetworkActivity: (networkId: number) => Promise<void>;
   reload: () => void;
   actions: Actions;

@@ -78,7 +78,12 @@ export function getDateTimeRangeControlTextFieldSx(open: boolean) {
   };
 }
 
-export function DateTimeRangeControl({ value, onChange, className, disabled = false }: DateTimeRangeControlProps) {
+export function DateTimeRangeControl({
+  value,
+  onChange,
+  className,
+  disabled = false,
+}: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
@@ -124,7 +129,8 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
   }, []);
 
   const intervalLabel = useMemo(
-    () => `${formatDisplayValue(value.fromDateTimeStr)} — ${formatDisplayValue(value.toDateTimeStr)}`,
+    () =>
+      `${formatDisplayValue(value.fromDateTimeStr)} — ${formatDisplayValue(value.toDateTimeStr)}`,
     [value.fromDateTimeStr, value.toDateTimeStr],
   );
 
@@ -146,7 +152,10 @@ export function DateTimeRangeControl({ value, onChange, className, disabled = fa
         }}
         InputProps={{
           endAdornment: (
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', mx: 1.5, color: 'primary.main' }}>
+            <Box
+              component="span"
+              sx={{ display: 'inline-flex', alignItems: 'center', mx: 1.5, color: 'primary.main' }}
+            >
               <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
             </Box>
           ),

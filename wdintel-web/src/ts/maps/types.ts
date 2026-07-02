@@ -3,7 +3,7 @@ export type MapPointShort = {
   lng: number;
   body: string;
   id: number;
-}
+};
 
 export type MapPointDetailed = Omit<MapPointShort, 'body'> & {
   message_uid?: string | null;
@@ -11,7 +11,6 @@ export type MapPointDetailed = Omit<MapPointShort, 'body'> & {
   sk42_coords: string;
   freq: string | null;
   message_id: number;
-}
+};
 
-
-export type MapPoint = MapPointShort | MapPointDetailed
+export type MapPoint = MapPointShort | MapPointDetailed;

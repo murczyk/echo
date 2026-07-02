@@ -7,7 +7,12 @@ import {
   deleteNetworkDescription,
   updateNetworkDescription,
 } from '../../services/api/networks';
-import { formatErrorMessage, toNetworkDescriptionForm, type NetworkDescriptionForm, type NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import {
+  formatErrorMessage,
+  toNetworkDescriptionForm,
+  type NetworkDescriptionForm,
+  type NetworkDetailsNeoPageState,
+} from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -30,7 +35,9 @@ function getDescriptionValidationError(): string {
 
 function resetDescriptionDrawerState(
   current: NetworkDetailsNeoPageState,
-  extra: Partial<Pick<NetworkDetailsNeoPageState, 'descriptionDrawerDescrType' | 'descriptionDrawerMode'>> = {},
+  extra: Partial<
+    Pick<NetworkDetailsNeoPageState, 'descriptionDrawerDescrType' | 'descriptionDrawerMode'>
+  > = {},
 ): NetworkDetailsNeoPageState {
   return {
     ...current,
@@ -45,43 +52,56 @@ function resetDescriptionDrawerState(
 }
 
 export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState }: Args) {
-  const toggleDescriptionExpanded = useCallback((descriptionId: number) => {
-    setState((current) => {
-      const isExpanded = current.expandedDescriptionIds.includes(descriptionId);
-      return {
+  const toggleDescriptionExpanded = useCallback(
+    (descriptionId: number) => {
+      setState((current) => {
+        const isExpanded = current.expandedDescriptionIds.includes(descriptionId);
+        return {
+          ...current,
+          expandedDescriptionIds: isExpanded
+            ? current.expandedDescriptionIds.filter((id) => id !== descriptionId)
+            : [...current.expandedDescriptionIds, descriptionId],
+        };
+      });
+    },
+    [setState],
+  );
+
+  const openDescriptionDrawerForCreate = useCallback(
+    (descrType: NetworkDetailsNeoPageState['descriptionDrawerDescrType']) => {
+      setState((current) => ({
         ...current,
-        expandedDescriptionIds: isExpanded
-          ? current.expandedDescriptionIds.filter((id) => id !== descriptionId)
-          : [...current.expandedDescriptionIds, descriptionId],
-      };
-    });
-  }, [setState]);
+        descriptionDrawerOpen: true,
+        descriptionDrawerMode: 'create',
+        descriptionDrawerDescrType: descrType,
+        descriptionDrawerDescriptionId: null,
+        descriptionDrawerForm: toNetworkDescriptionForm('', '', null),
+        descriptionDrawerSaving: false,
+        descriptionDrawerError: null,
+      }));
+    },
+    [setState],
+  );
 
-  const openDescriptionDrawerForCreate = useCallback((descrType: NetworkDetailsNeoPageState['descriptionDrawerDescrType']) => {
-    setState((current) => ({
-      ...current,
-      descriptionDrawerOpen: true,
-      descriptionDrawerMode: 'create',
-      descriptionDrawerDescrType: descrType,
-      descriptionDrawerDescriptionId: null,
-      descriptionDrawerForm: toNetworkDescriptionForm('', '', null),
-      descriptionDrawerSaving: false,
-      descriptionDrawerError: null,
-    }));
-  }, [setState]);
-
-  const openDescriptionDrawerForEdit = useCallback((description: Network['descriptions'][number]) => {
-    setState((current) => ({
-      ...current,
-      descriptionDrawerOpen: true,
-      descriptionDrawerMode: 'edit',
-      descriptionDrawerDescrType: description.descrType,
-      descriptionDrawerDescriptionId: description.id,
-      descriptionDrawerForm: toNetworkDescriptionForm(description.topic ?? '', description.description, description.networkFrequencyId ?? null),
-      descriptionDrawerSaving: false,
-      descriptionDrawerError: null,
-    }));
-  }, [setState]);
+  const openDescriptionDrawerForEdit = useCallback(
+    (description: Network['descriptions'][number]) => {
+      setState((current) => ({
+        ...current,
+        descriptionDrawerOpen: true,
+        descriptionDrawerMode: 'edit',
+        descriptionDrawerDescrType: description.descrType,
+        descriptionDrawerDescriptionId: description.id,
+        descriptionDrawerForm: toNetworkDescriptionForm(
+          description.topic ?? '',
+          description.description,
+          description.networkFrequencyId ?? null,
+        ),
+        descriptionDrawerSaving: false,
+        descriptionDrawerError: null,
+      }));
+    },
+    [setState],
+  );
 
   const closeDescriptionDrawer = useCallback(() => {
     setState((current) => {
@@ -90,19 +110,25 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
     });
   }, [setState]);
 
-  const setDescriptionDrawerForm = useCallback((descriptionDrawerForm: NetworkDescriptionForm) => {
-    setState((current) => ({ ...current, descriptionDrawerForm }));
-  }, [setState]);
+  const setDescriptionDrawerForm = useCallback(
+    (descriptionDrawerForm: NetworkDescriptionForm) => {
+      setState((current) => ({ ...current, descriptionDrawerForm }));
+    },
+    [setState],
+  );
 
-  const openDeleteDescriptionDialog = useCallback((description: Network['descriptions'][number]) => {
-    setState((current) => ({
-      ...current,
-      deleteDescriptionDialogOpen: true,
-      deleteDescriptionTarget: description,
-      deleteDescriptionSubmitting: false,
-      deleteDescriptionError: null,
-    }));
-  }, [setState]);
+  const openDeleteDescriptionDialog = useCallback(
+    (description: Network['descriptions'][number]) => {
+      setState((current) => ({
+        ...current,
+        deleteDescriptionDialogOpen: true,
+        deleteDescriptionTarget: description,
+        deleteDescriptionSubmitting: false,
+        deleteDescriptionError: null,
+      }));
+    },
+    [setState],
+  );
 
   const closeDeleteDescriptionDialog = useCallback(() => {
     setState((current) => {

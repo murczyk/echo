@@ -7,7 +7,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Network, NetworkFreqsRes } from '../../../../Bindings';
-import { EMPTY_STATE, type NetworkDetailsNeoPageState, type NetworkFreqCreateWizardForm, type NetworkFreqEditForm } from './use-rer-network-details-neo-page.types';
+import {
+  EMPTY_STATE,
+  type NetworkDetailsNeoPageState,
+  type NetworkFreqCreateWizardForm,
+  type NetworkFreqEditForm,
+} from './use-rer-network-details-neo-page.types';
 import { NETWORK_STATUS_ACTIVE } from './network-status';
 
 const apiMock = vi.hoisted(() => ({
@@ -198,9 +203,11 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
 
   it('keeps concurrent local rows when the create response arrives later', async () => {
     let resolveResponse!: (value: { network: Network; freq: NetworkFreqsRes | null }) => void;
-    const responsePromise = new Promise<{ network: Network; freq: NetworkFreqsRes | null }>((resolve) => {
-      resolveResponse = resolve;
-    });
+    const responsePromise = new Promise<{ network: Network; freq: NetworkFreqsRes | null }>(
+      (resolve) => {
+        resolveResponse = resolve;
+      },
+    );
 
     apiMock.addFreqToNetworkV2.mockReturnValueOnce(responsePromise);
     apiMock.getNetworkFreqCallsigns.mockResolvedValueOnce(['BRAVO']);
@@ -249,16 +256,21 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       freq: null,
     });
     apiMock.getSingleNetworkFreqs.mockResolvedValueOnce({
-      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000' }), buildFreq({ networkFreqId: 9, freq: '50.0000' })],
+      freqs: [
+        buildFreq({ networkFreqId: 7, freq: '30.0000' }),
+        buildFreq({ networkFreqId: 9, freq: '50.0000' }),
+      ],
     });
     apiMock.getNetworkFreqsActivity.mockResolvedValueOnce({
       7: { '2026-06-01': 3 },
       9: {},
     });
-    apiMock.getNetworkFreqCallsignsBatch.mockResolvedValueOnce(new Map([
-      [7, ['ALPHA']],
-      [9, []],
-    ]));
+    apiMock.getNetworkFreqCallsignsBatch.mockResolvedValueOnce(
+      new Map([
+        [7, ['ALPHA']],
+        [9, []],
+      ]),
+    );
 
     renderHarness({
       ...EMPTY_STATE,
@@ -361,10 +373,12 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     });
 
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
-    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalledWith(expect.objectContaining({
-      freq: '20.0000',
-      encryptionKeyIds: [13],
-    }));
+    expect(apiMock.updateNetworkFreqV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        freq: '20.0000',
+        encryptionKeyIds: [13],
+      }),
+    );
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
     expect(latestState?.freqs[0]?.modulationId).toBe(12);
@@ -447,7 +461,12 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     const pendingCallsigns = createDeferred<string[]>();
     apiMock.updateNetworkFreqV2.mockResolvedValueOnce({
       network: buildNetwork(),
-      freq: buildFreq({ networkFreqId: 7, modulationId: 12, freq: '20.0000', callsigns: ['BRAVO'] }),
+      freq: buildFreq({
+        networkFreqId: 7,
+        modulationId: 12,
+        freq: '20.0000',
+        callsigns: ['BRAVO'],
+      }),
     });
     apiMock.getNetworkFreqCallsigns.mockReturnValueOnce(pendingCallsigns.promise);
 
@@ -482,7 +501,10 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     const batchCallsigns = createDeferred<Map<number, string[]>>();
 
     apiMock.getSingleNetworkFreqs.mockResolvedValueOnce({
-      freqs: [buildFreq({ networkFreqId: 7, freq: '30.0000' }), buildFreq({ networkFreqId: 8, freq: '40.0000' })],
+      freqs: [
+        buildFreq({ networkFreqId: 7, freq: '30.0000' }),
+        buildFreq({ networkFreqId: 8, freq: '40.0000' }),
+      ],
     });
     apiMock.getNetworkFreqsActivity.mockResolvedValueOnce({
       7: {},
@@ -526,10 +548,12 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     });
 
     await act(async () => {
-      batchCallsigns.resolve(new Map([
-        [7, ['ALPHA']],
-        [8, ['BRAVO']],
-      ]));
+      batchCallsigns.resolve(
+        new Map([
+          [7, ['ALPHA']],
+          [8, ['BRAVO']],
+        ]),
+      );
       await Promise.resolve();
     });
 
