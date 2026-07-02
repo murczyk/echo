@@ -3,17 +3,36 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ClearIcon from '@mui/icons-material/Clear';
 import EditIcon from '@mui/icons-material/Edit';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputAdornment, MenuItem, OutlinedInput, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  IconButton,
+  InputAdornment,
+  MenuItem,
+  OutlinedInput,
+  Select,
+  SelectChangeEvent,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
-
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import {
+  MrtRowActionButton,
+  MrtRowActions,
+  mrtRowActionsColumnSize,
+} from '../../components/MrtRowActionButton';
 import { TableContentState } from '../../components/TableContentState';
 import { PowerButton } from '../../components/PowerButton';
 import {
@@ -27,7 +46,10 @@ import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { listAors } from '../../services/api/aor';
 import { listAorLocationConfigs, saveAorLocationConfig } from '../../services/api/location-config';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
@@ -99,14 +121,19 @@ function formatLocationConfigs(configs: string[] | null | undefined): string {
   return configs.map((config) => config.split('/').pop() || config).join(', ');
 }
 
-function buildAorRows(aors: AreaOfResponsibility[], locationConfigsByAorId: Map<number, string[]>): AorRow[] {
+function buildAorRows(
+  aors: AreaOfResponsibility[],
+  locationConfigsByAorId: Map<number, string[]>,
+): AorRow[] {
   return aors.map((aor) => ({
     ...aor,
     locationConfigs: locationConfigsByAorId.get(aor.id) ?? [],
   }));
 }
 
-function buildLocationConfigsByAorId(items: Awaited<ReturnType<typeof listAorLocationConfigs>>['items']): Map<number, string[]> {
+function buildLocationConfigsByAorId(
+  items: Awaited<ReturnType<typeof listAorLocationConfigs>>['items'],
+): Map<number, string[]> {
   return new Map(items.map((item) => [item.aorId, item.selectedConfigs ?? []]));
 }
 
@@ -161,7 +188,8 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
       },
       {
         header: 'Координати',
-        accessorFn: (row) => `${formatCoords(row.leftCoordinates)} ${formatCoords(row.rightCoordinates)}`,
+        accessorFn: (row) =>
+          `${formatCoords(row.leftCoordinates)} ${formatCoords(row.rightCoordinates)}`,
         id: 'coordinates',
         Cell: ({ row }) => (
           <div className="text-sm">
@@ -230,7 +258,8 @@ function AorTable(props: AorTableProps) {
   const columns = useAorColumns();
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -268,7 +297,9 @@ function AorTable(props: AorTableProps) {
     getColumnCanGlobalFilter: (column) => column.getIsVisible(),
     enableRowActions: !props.loading,
     positionActionsColumn: 'first',
-    renderRowActions: ({ row }) => <RowActions aor={row.original} onConfigure={props.onConfigure} />,
+    renderRowActions: ({ row }) => (
+      <RowActions aor={row.original} onConfigure={props.onConfigure} />
+    ),
     defaultColumn: {
       size: 200,
       renderColumnActionsMenuItems,
@@ -320,7 +351,8 @@ function AdminAorNeoPageBody() {
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableLocationConfigs, setAvailableLocationConfigs] = useState<string[]>([]);
-  const [locationConfigDialog, setLocationConfigDialog] = useState<LocationConfigDialogState | null>(null);
+  const [locationConfigDialog, setLocationConfigDialog] =
+    useState<LocationConfigDialogState | null>(null);
 
   async function loadAorPage() {
     setLoadStatus('loading');
@@ -367,7 +399,7 @@ function AdminAorNeoPageBody() {
             selectedConfigs,
             error: null,
           }
-        : current
+        : current,
     );
   }
 
@@ -379,7 +411,7 @@ function AdminAorNeoPageBody() {
             selectedConfigs: [],
             error: null,
           }
-        : current
+        : current,
     );
   }
 
@@ -392,11 +424,14 @@ function AdminAorNeoPageBody() {
             isSaving: true,
             error: null,
           }
-        : current
+        : current,
     );
 
     try {
-      const saved = await saveAorLocationConfig(locationConfigDialog.aorId, locationConfigDialog.selectedConfigs);
+      const saved = await saveAorLocationConfig(
+        locationConfigDialog.aorId,
+        locationConfigDialog.selectedConfigs,
+      );
       setAors((prev) =>
         prev.map((aor) =>
           aor.id === saved.aorId
@@ -404,8 +439,8 @@ function AdminAorNeoPageBody() {
                 ...aor,
                 locationConfigs: saved.selectedConfigs,
               }
-            : aor
-        )
+            : aor,
+        ),
       );
       setLocationConfigDialog(null);
     } catch (error) {
@@ -417,7 +452,7 @@ function AdminAorNeoPageBody() {
               isSaving: false,
               error: errorMessage,
             }
-          : current
+          : current,
       );
     }
   }
@@ -441,8 +476,23 @@ function AdminAorNeoPageBody() {
   };
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
         <TablePageToolbar
           title="Смуги відповідальності"
           withGlobalTextFilter
@@ -457,15 +507,26 @@ function AdminAorNeoPageBody() {
           }
         />
 
-        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderTable()}
+        </Box>
 
-        <Dialog open={Boolean(locationConfigDialog)} onClose={closeLocationConfigDialog} maxWidth="sm" fullWidth>
+        <Dialog
+          open={Boolean(locationConfigDialog)}
+          onClose={closeLocationConfigDialog}
+          maxWidth="sm"
+          fullWidth
+        >
           <DialogTitle>Файли населених пунктів для AOR</DialogTitle>
           <DialogContent>
             {locationConfigDialog ? (
               <Stack spacing={2} sx={{ pt: 1 }}>
-                <Typography>Смуга: {formatMrtCellTextValue(locationConfigDialog.aorName)}</Typography>
-                {locationConfigDialog.error ? <PowerAlert severity="error">{locationConfigDialog.error}</PowerAlert> : null}
+                <Typography>
+                  Смуга: {formatMrtCellTextValue(locationConfigDialog.aorName)}
+                </Typography>
+                {locationConfigDialog.error ? (
+                  <PowerAlert severity="error">{locationConfigDialog.error}</PowerAlert>
+                ) : null}
                 <FormControl size="small" fullWidth>
                   <Select
                     multiple
@@ -524,14 +585,21 @@ function AdminAorNeoPageBody() {
             ) : null}
           </DialogContent>
           <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-            <PowerButton onClick={closeLocationConfigDialog} disabled={locationConfigDialog?.isSaving}>
+            <PowerButton
+              onClick={closeLocationConfigDialog}
+              disabled={locationConfigDialog?.isSaving}
+            >
               Скасувати
             </PowerButton>
             <PowerButton
               variant="contained"
               onClick={() => void saveLocationConfig()}
               disabled={locationConfigDialog?.isSaving}
-              startIcon={locationConfigDialog?.isSaving ? <CircularProgress color="inherit" size={16} /> : null}
+              startIcon={
+                locationConfigDialog?.isSaving ? (
+                  <CircularProgress color="inherit" size={16} />
+                ) : null
+              }
             >
               Зберегти
             </PowerButton>

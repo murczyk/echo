@@ -29,6 +29,7 @@ function createNode(): NetworkCallsignRelationNode {
     position: 'КР',
     unitName: '1 мб',
     knownCallsignId: 10,
+    enrichmentSource: 'RelationEnrichmentNetwork',
   };
 }
 
@@ -54,7 +55,9 @@ function createMessage(): NetworkCallsignRelationMessage {
   };
 }
 
-function renderDetails(overrides: Partial<Parameters<typeof NetworkCallsignRelationsGraphDetails>[0]> = {}) {
+function renderDetails(
+  overrides: Partial<Parameters<typeof NetworkCallsignRelationsGraphDetails>[0]> = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -119,6 +122,18 @@ describe('NetworkCallsignRelationsGraphDetails', () => {
     expect(view.container.textContent).toContain('boom');
   });
 
+  it('marks catalog suggestions as unconfirmed', () => {
+    const view = renderDetails({
+      selectedNode: {
+        ...createNode(),
+        enrichmentSource: 'RelationEnrichmentCatalog',
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Каталог · не підтверджено');
+  });
+
   it('shows a back action when edge details were opened from a node list', () => {
     const onBackToNode = vi.fn();
     const view = renderDetails({
@@ -130,7 +145,9 @@ describe('NetworkCallsignRelationsGraphDetails', () => {
     });
     rendered.push(view);
 
-    const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('До списку ALPHA'));
+    const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('До списку ALPHA'),
+    );
     expect(button).toBeTruthy();
 
     act(() => {

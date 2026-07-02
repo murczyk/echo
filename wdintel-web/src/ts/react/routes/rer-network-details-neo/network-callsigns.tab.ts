@@ -1,4 +1,9 @@
-import type { CallsignActivityItem, KnownCallsignShortRes, NetworkCallsign, NetworkCallsignRes } from '../../../../Bindings';
+import type {
+  CallsignActivityItem,
+  KnownCallsignShortRes,
+  NetworkCallsign,
+  NetworkCallsignRes,
+} from '../../../../Bindings';
 import {
   type NetworkCallsignActivityMap,
   type NetworkCallsignCatalogCallsign,
@@ -9,7 +14,9 @@ import {
 } from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 
-export function createNetworkCallsignActivityMap(records: Array<{ callsign: string; activity: CallsignActivityItem }>): NetworkCallsignActivityMap {
+export function createNetworkCallsignActivityMap(
+  records: Array<{ callsign: string; activity: CallsignActivityItem }>,
+): NetworkCallsignActivityMap {
   const map = new Map<string, CallsignActivityItem>();
   records.forEach((record) => {
     const callsign = normalizeCallsignDisplay(record.callsign);
@@ -19,7 +26,9 @@ export function createNetworkCallsignActivityMap(records: Array<{ callsign: stri
   return map;
 }
 
-function toActivityFallback(row: Pick<NetworkCallsignRes, 'messageCount' | 'lastDatetime' | 'freqs'>): CallsignActivityItem {
+function toActivityFallback(
+  row: Pick<NetworkCallsignRes, 'messageCount' | 'lastDatetime' | 'freqs'>,
+): CallsignActivityItem {
   return {
     messageCount: row.messageCount,
     lastDatetime: row.lastDatetime,
@@ -36,8 +45,14 @@ function resolveActivity(
 }
 
 function compareCallsignViewsByActivityDesc(
-  left: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
-  right: Pick<NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView, 'messageCount' | 'lastDatetime' | 'callsign'>,
+  left: Pick<
+    NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView,
+    'messageCount' | 'lastDatetime' | 'callsign'
+  >,
+  right: Pick<
+    NetworkCallsignCatalogGroupView | NetworkCallsignInterceptedView,
+    'messageCount' | 'lastDatetime' | 'callsign'
+  >,
 ): number {
   if (left.messageCount !== right.messageCount) {
     return right.messageCount - left.messageCount;
@@ -66,7 +81,9 @@ function compareInterceptedCallsignsByActivityDesc(
   return compareCallsignViewsByActivityDesc(left, right);
 }
 
-function buildCatalogCallsign(knownCallsign: KnownCallsignShortRes): NetworkCallsignCatalogCallsign {
+function buildCatalogCallsign(
+  knownCallsign: KnownCallsignShortRes,
+): NetworkCallsignCatalogCallsign {
   return {
     id: knownCallsign.id,
     callsign: normalizeCallsignDisplay(knownCallsign.callsign),
@@ -84,7 +101,9 @@ export function buildNetworkCallsignTabData(
   activityMap: NetworkCallsignActivityMap,
   networkCallsigns: NetworkCallsign[],
 ): NetworkCallsignsDerivedData {
-  const knownNetworkCallsigns = new Set(networkCallsigns.map((networkCallsign) => normalizeCallsignDisplay(networkCallsign.callsign)));
+  const knownNetworkCallsigns = new Set(
+    networkCallsigns.map((networkCallsign) => normalizeCallsignDisplay(networkCallsign.callsign)),
+  );
   const catalogCallsignGroups: NetworkCallsignCatalogGroupView[] = [];
   const unknownInterceptedCallsigns: NetworkCallsignInterceptedView[] = [];
 
@@ -141,7 +160,9 @@ export function removeKnownCallsignIdsFromNetworkCallsignGroups(
     const knownCallsigns = group.knownCallsigns ?? [];
     if (knownCallsigns.length === 0) return group;
 
-    const nextKnownCallsigns = knownCallsigns.filter((knownCallsign) => !knownCallsignIdSet.has(knownCallsign.id));
+    const nextKnownCallsigns = knownCallsigns.filter(
+      (knownCallsign) => !knownCallsignIdSet.has(knownCallsign.id),
+    );
     if (nextKnownCallsigns.length === knownCallsigns.length) return group;
 
     return {
@@ -151,35 +172,42 @@ export function removeKnownCallsignIdsFromNetworkCallsignGroups(
   });
 }
 
-export function mergeNetworkCallsigns(existingNetworkCallsigns: NetworkCallsign[], addedNetworkCallsigns: NetworkCallsign[]): NetworkCallsign[] {
+export function mergeNetworkCallsigns(
+  existingNetworkCallsigns: NetworkCallsign[],
+  addedNetworkCallsigns: NetworkCallsign[],
+): NetworkCallsign[] {
   if (addedNetworkCallsigns.length === 0) return existingNetworkCallsigns;
 
-  const byId = new Map(existingNetworkCallsigns.map((networkCallsign) => [networkCallsign.id, networkCallsign] as const));
+  const byId = new Map(
+    existingNetworkCallsigns.map(
+      (networkCallsign) => [networkCallsign.id, networkCallsign] as const,
+    ),
+  );
   addedNetworkCallsigns.forEach((networkCallsign) => {
     byId.set(networkCallsign.id, networkCallsign);
   });
   return [...byId.values()];
 }
 
-export function flattenCatalogCallsignRows(groups: NetworkCallsignCatalogGroupView[]): NetworkCallsignCatalogRowView[] {
-  return [...groups]
-    .sort(compareCatalogCallsignGroupsByActivityDesc)
-    .flatMap((group) =>
-      [...group.knownCallsigns]
-        .sort((left, right) => right.createdAt - left.createdAt)
-        .map((knownCallsign) => ({
-          id: knownCallsign.id,
-          knownCallsignId: knownCallsign.id,
-          callsign: knownCallsign.callsign,
-          position: knownCallsign.position,
-          unitName: knownCallsign.unitName,
-          lastDatetime: group.lastDatetime,
-          messageCount: group.messageCount,
-          comment: knownCallsign.comment,
-          dateBoundAt: knownCallsign.createdAt,
-          sourceName: knownCallsign.sourceName,
-          networkCallsign: group.callsign,
-          freqs: group.freqs,
-        })),
-    );
+export function flattenCatalogCallsignRows(
+  groups: NetworkCallsignCatalogGroupView[],
+): NetworkCallsignCatalogRowView[] {
+  return [...groups].sort(compareCatalogCallsignGroupsByActivityDesc).flatMap((group) =>
+    [...group.knownCallsigns]
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map((knownCallsign) => ({
+        id: knownCallsign.id,
+        knownCallsignId: knownCallsign.id,
+        callsign: knownCallsign.callsign,
+        position: knownCallsign.position,
+        unitName: knownCallsign.unitName,
+        lastDatetime: group.lastDatetime,
+        messageCount: group.messageCount,
+        comment: knownCallsign.comment,
+        dateBoundAt: knownCallsign.createdAt,
+        sourceName: knownCallsign.sourceName,
+        networkCallsign: group.callsign,
+        freqs: group.freqs,
+      })),
+  );
 }

@@ -7,7 +7,10 @@ export function loadingOverlayBackdropSx(theme: Theme) {
     inset: 0,
     zIndex: 10,
     color: theme.palette.text.primary,
-    backgroundColor: alpha(theme.palette.background.default, theme.palette.mode === 'dark' ? 0.52 : 0.62),
+    backgroundColor: alpha(
+      theme.palette.background.default,
+      theme.palette.mode === 'dark' ? 0.52 : 0.62,
+    ),
   };
 }
 

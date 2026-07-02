@@ -2,12 +2,32 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import {
+  AreaOfResponsibility,
+  Organism,
+  OrganismGroup,
+  SignalGroupFull,
+  UpdateOrganismReq,
+} from '../../../../Bindings';
+import {
+  MrtRowActionButton,
+  MrtRowActions,
+  mrtRowActionsColumnSize,
+} from '../../components/MrtRowActionButton';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -27,7 +47,10 @@ import {
   renderColumnActionsMenuItems,
   withExplicitSelectAllOption,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { listAors } from '../../services/api/aor';
 import {
   deleteOrganism,
@@ -156,7 +179,9 @@ function buildGroupLabels(groupKeys: string[], lookup: OrganismLookup): GroupLab
     .sort((a, b) => a.label.localeCompare(b.label, 'uk-UA'));
 }
 
-function buildGroupFilterOptions(groups: Iterable<SignalGroupFull>): { text: string; value: string }[] {
+function buildGroupFilterOptions(
+  groups: Iterable<SignalGroupFull>,
+): { text: string; value: string }[] {
   const labels = new Map<string, string>();
   Array.from(groups).forEach((group) => {
     const label = formatGroupLabel(group, group.masterKey);
@@ -179,192 +204,202 @@ function buildComputedGroupFilterOptions(
 }
 
 function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: LoadingStatus) {
-  return useMemo<MRT_ColumnDef<Organism>[]>(
-    () => {
-      const groupFilterOptions = buildGroupFilterOptions(lookup.groupByKey.values());
-      const computedGroupFilterOptions = buildComputedGroupFilterOptions(lookup.computedGroupsById);
+  return useMemo<MRT_ColumnDef<Organism>[]>(() => {
+    const groupFilterOptions = buildGroupFilterOptions(lookup.groupByKey.values());
+    const computedGroupFilterOptions = buildComputedGroupFilterOptions(lookup.computedGroupsById);
 
-      return [
-        {
-          header: 'ID',
-          accessorKey: 'id',
-          size: 90,
-          enableColumnOrdering: false,
+    return [
+      {
+        header: 'ID',
+        accessorKey: 'id',
+        size: 90,
+        enableColumnOrdering: false,
+      },
+      {
+        header: 'Назва',
+        accessorKey: 'name',
+        size: 240,
+      },
+      {
+        header: 'Батьківський',
+        id: 'parent',
+        accessorFn: (row) =>
+          formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
+        Cell: ({ row }) => {
+          const parentName = row.original.parentId
+            ? lookup.parentById.get(row.original.parentId)
+            : null;
+          return <span>{formatMrtCellTextValue(parentName)}</span>;
         },
-        {
-          header: 'Назва',
-          accessorKey: 'name',
-          size: 240,
+        size: 200,
+      },
+      {
+        header: 'Смуги',
+        id: 'aors',
+        accessorFn: (row) =>
+          (row.aorIds ?? []).map((id) => formatAorLabel(lookup.aorById.get(id), id)),
+        Cell: ({ row }) => {
+          if (row.original.aorIds.length === 0) return <span>—</span>;
+          const labels = row.original.aorIds
+            .map((id) => formatAorLabel(lookup.aorById.get(id), id))
+            .join(', ');
+          return (
+            <Tooltip title={labels}>
+              <span>{labels}</span>
+            </Tooltip>
+          );
         },
-        {
-          header: 'Батьківський',
-          id: 'parent',
-          accessorFn: (row) => formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
-          Cell: ({ row }) => {
-            const parentName = row.original.parentId ? lookup.parentById.get(row.original.parentId) : null;
-            return <span>{formatMrtCellTextValue(parentName)}</span>;
-          },
-          size: 200,
+        filterVariant: 'multi-select',
+        filterSelectOptions: Array.from(lookup.aorById.values()).map((aor) => ({
+          text: aor.name,
+          value: aor.name,
+        })),
+        filterFn: 'arrIncludesSome',
+        enableSorting: false,
+        size: 240,
+      },
+      {
+        header: 'Групи',
+        id: 'groups',
+        accessorFn: (row) => {
+          const computedGroups = lookup.computedGroupsById.get(row.id) ?? [];
+          return computedGroups.map((group) => formatGroupLabel(group, group.masterKey));
         },
-        {
-          header: 'Смуги',
-          id: 'aors',
-          accessorFn: (row) => (row.aorIds ?? []).map((id) => formatAorLabel(lookup.aorById.get(id), id)),
-          Cell: ({ row }) => {
-            if (row.original.aorIds.length === 0) return <span>—</span>;
-            const labels = row.original.aorIds
-              .map((id) => formatAorLabel(lookup.aorById.get(id), id))
-              .join(', ');
-            return (
-              <Tooltip title={labels}>
-                <span>{labels}</span>
-              </Tooltip>
-            );
-          },
-          filterVariant: 'multi-select',
-          filterSelectOptions: Array.from(lookup.aorById.values()).map((aor) => ({
-            text: aor.name,
-            value: aor.name,
-          })),
-          filterFn: 'arrIncludesSome',
-          enableSorting: false,
-          size: 240,
+        Cell: ({ row }) => {
+          const computedGroups = lookup.computedGroupsById.get(row.original.id) ?? [];
+          if (computedGroupsStatus === 'loading' && computedGroups.length === 0) {
+            return <CircularProgress size={16} />;
+          }
+          if (computedGroupsStatus === 'error') return <span>—</span>;
+          if (computedGroups.length === 0) return <span>—</span>;
+          const labels = computedGroups
+            .map((group) => formatGroupLabel(group, group.masterKey))
+            .join(', ');
+          return (
+            <Tooltip title={labels}>
+              <span>{labels}</span>
+            </Tooltip>
+          );
         },
-        {
-          header: 'Групи',
-          id: 'groups',
-          accessorFn: (row) => {
-            const computedGroups = lookup.computedGroupsById.get(row.id) ?? [];
-            return computedGroups.map((group) => formatGroupLabel(group, group.masterKey));
-          },
-          Cell: ({ row }) => {
-            const computedGroups = lookup.computedGroupsById.get(row.original.id) ?? [];
-            if (computedGroupsStatus === 'loading' && computedGroups.length === 0) {
-              return <CircularProgress size={16} />;
-            }
-            if (computedGroupsStatus === 'error') return <span>—</span>;
-            if (computedGroups.length === 0) return <span>—</span>;
-            const labels = computedGroups.map((group) => formatGroupLabel(group, group.masterKey)).join(', ');
-            return (
-              <Tooltip title={labels}>
-                <span>{labels}</span>
-              </Tooltip>
-            );
-          },
-          filterVariant: 'multi-select',
-          filterSelectOptions: computedGroupFilterOptions,
-          filterFn: 'arrIncludesSome',
-          enableSorting: false,
-          size: 240,
-        },
-        {
-          header: 'Ролі',
-          id: 'roles',
-          accessorFn: (row) => row.roles ?? [],
-          Cell: ({ row }) => {
-            if (row.original.roles.length === 0) return <span>—</span>;
-            return (
-              <div className="flex flex-wrap gap-1">
-                {row.original.roles.map((role) => (
-                  <PowerChip
-                    key={role}
-                    size="small"
-                    label={role}
-                    title={role}
-                    interactive={false}
-                    unselectedOpacity={1}
-                    fontSize="0.75rem"
-                    fontWeight={500}
-                    labelPaddingX={0.5}
-                    labelPaddingY={0.25}
-                    unselectedBackgroundColor="#f1f5f9"
-                    unselectedTextColor="#475569"
-                    unselectedBorderColor="#cbd5e1"
-                    sx={{ lineHeight: 1 }}
-                  />
-                ))}
-              </div>
-            );
-          },
-          filterVariant: 'multi-select',
-          filterSelectOptions: ROLE_OPTIONS,
-          filterFn: 'arrIncludesSome',
-          size: 220,
-        },
-        {
-          header: 'Активна',
-          id: 'enabled',
-          accessorFn: (row) => (row.enabled ? 'так' : 'ні'),
-          Cell: ({ row }) => (
-            <div className="flex justify-center">
-              {row.original.enabled ? (
-                <CheckCircleIcon className="text-green-600" fontSize="small" />
-              ) : (
-                <CancelIcon className="text-red-600" fontSize="small" />
-              )}
+        filterVariant: 'multi-select',
+        filterSelectOptions: computedGroupFilterOptions,
+        filterFn: 'arrIncludesSome',
+        enableSorting: false,
+        size: 240,
+      },
+      {
+        header: 'Ролі',
+        id: 'roles',
+        accessorFn: (row) => row.roles ?? [],
+        Cell: ({ row }) => {
+          if (row.original.roles.length === 0) return <span>—</span>;
+          return (
+            <div className="flex flex-wrap gap-1">
+              {row.original.roles.map((role) => (
+                <PowerChip
+                  key={role}
+                  size="small"
+                  label={role}
+                  title={role}
+                  interactive={false}
+                  unselectedOpacity={1}
+                  fontSize="0.75rem"
+                  fontWeight={500}
+                  labelPaddingX={0.5}
+                  labelPaddingY={0.25}
+                  unselectedBackgroundColor="#f1f5f9"
+                  unselectedTextColor="#475569"
+                  unselectedBorderColor="#cbd5e1"
+                  sx={{ lineHeight: 1 }}
+                />
+              ))}
             </div>
-          ),
-          filterVariant: 'select',
-          filterSelectOptions: ENABLED_FILTER_OPTIONS,
-          Filter: buildExplicitSingleSelectColumnFilter<Organism>({
-            options: ENABLED_FILTER_OPTIONS,
-            fallbackValue: 'Усі',
-            onChange: (column, nextValue) => {
-              column.setFilterValue(nextValue === 'Усі' ? undefined : nextValue);
-            },
-          }),
-          size: 110,
-          muiTableBodyCellProps: () => ({
-            sx: {
-              justifyContent: 'center',
-              ...CUSTOM_CELL_STYLES,
-            },
-          }),
+          );
         },
-        {
-          header: 'Обмежити групами',
-          id: 'limitGroups',
-          accessorFn: (row) => {
-            const groupKeys = lookup.organismGroupKeysById.get(row.id) ?? [];
-            if (groupKeys.length === 0) return ['без обмежень'];
-            return buildGroupLabels(groupKeys, lookup).map((item) => item.label);
+        filterVariant: 'multi-select',
+        filterSelectOptions: ROLE_OPTIONS,
+        filterFn: 'arrIncludesSome',
+        size: 220,
+      },
+      {
+        header: 'Активна',
+        id: 'enabled',
+        accessorFn: (row) => (row.enabled ? 'так' : 'ні'),
+        Cell: ({ row }) => (
+          <div className="flex justify-center">
+            {row.original.enabled ? (
+              <CheckCircleIcon className="text-green-600" fontSize="small" />
+            ) : (
+              <CancelIcon className="text-red-600" fontSize="small" />
+            )}
+          </div>
+        ),
+        filterVariant: 'select',
+        filterSelectOptions: ENABLED_FILTER_OPTIONS,
+        Filter: buildExplicitSingleSelectColumnFilter<Organism>({
+          options: ENABLED_FILTER_OPTIONS,
+          fallbackValue: 'Усі',
+          onChange: (column, nextValue) => {
+            column.setFilterValue(nextValue === 'Усі' ? undefined : nextValue);
           },
-          Cell: ({ row }) => {
-            const groupKeys = lookup.organismGroupKeysById.get(row.original.id) ?? [];
-            if (groupKeys.length === 0) return <span>без обмежень</span>;
-            const labels = buildGroupLabels(groupKeys, lookup).map((item) => item.label);
-            const labelText = labels.join(', ');
-            return (
-              <Tooltip title={labelText}>
-                <span>{labelText}</span>
-              </Tooltip>
-            );
+        }),
+        size: 110,
+        muiTableBodyCellProps: () => ({
+          sx: {
+            justifyContent: 'center',
+            ...CUSTOM_CELL_STYLES,
           },
-          filterVariant: 'multi-select',
-          filterSelectOptions: [{ text: 'без обмежень', value: 'без обмежень' }, ...groupFilterOptions],
-          filterFn: 'arrIncludesSome',
-          enableSorting: false,
-          size: 240,
+        }),
+      },
+      {
+        header: 'Обмежити групами',
+        id: 'limitGroups',
+        accessorFn: (row) => {
+          const groupKeys = lookup.organismGroupKeysById.get(row.id) ?? [];
+          if (groupKeys.length === 0) return ['без обмежень'];
+          return buildGroupLabels(groupKeys, lookup).map((item) => item.label);
         },
-        {
-          header: 'Користувачі',
-          accessorKey: 'loginsCount',
-          size: 110,
+        Cell: ({ row }) => {
+          const groupKeys = lookup.organismGroupKeysById.get(row.original.id) ?? [];
+          if (groupKeys.length === 0) return <span>без обмежень</span>;
+          const labels = buildGroupLabels(groupKeys, lookup).map((item) => item.label);
+          const labelText = labels.join(', ');
+          return (
+            <Tooltip title={labelText}>
+              <span>{labelText}</span>
+            </Tooltip>
+          );
         },
-        {
-          header: 'Створено',
-          id: 'createdAt',
-          accessorFn: (row) => row.createdAt,
-          Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
-          size: 140,
-        },
-      ];
-    },
-    [lookup, computedGroupsStatus],
-  );
+        filterVariant: 'multi-select',
+        filterSelectOptions: [
+          { text: 'без обмежень', value: 'без обмежень' },
+          ...groupFilterOptions,
+        ],
+        filterFn: 'arrIncludesSome',
+        enableSorting: false,
+        size: 240,
+      },
+      {
+        header: 'Користувачі',
+        accessorKey: 'loginsCount',
+        size: 110,
+      },
+      {
+        header: 'Створено',
+        id: 'createdAt',
+        accessorFn: (row) => row.createdAt,
+        Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
+        size: 140,
+      },
+    ];
+  }, [lookup, computedGroupsStatus]);
 }
 
-function RowActions(props: { organism: Organism; onEdit: (organism: Organism) => void; onDelete: (organism: Organism) => void }) {
+function RowActions(props: {
+  organism: Organism;
+  onEdit: (organism: Organism) => void;
+  onDelete: (organism: Organism) => void;
+}) {
   return (
     <MrtRowActions>
       <MrtRowActionButton
@@ -372,13 +407,13 @@ function RowActions(props: { organism: Organism; onEdit: (organism: Organism) =>
         onClick={() => props.onEdit(props.organism)}
         icon={<EditIcon fontSize="small" />}
       />
-    <MrtRowActionButton
-      label="Видалити"
-      onClick={() => props.onDelete(props.organism)}
-      icon={<DeleteIcon fontSize="small" />}
-      tone="danger"
-      opensModal
-    />
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(props.organism)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+        opensModal
+      />
     </MrtRowActions>
   );
 }
@@ -395,7 +430,8 @@ function OrganismsTable(props: {
   const tableStateContext = useTableStateContext();
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -511,7 +547,10 @@ function DeleteOrganismDialog(props: {
         if (!isCancelled) setActiveLogins(logins);
       } catch (error) {
         if (!isCancelled) {
-          setStatus({ kind: 'error', message: `Не вдалося завантажити активних користувачів: ${formatErrorMessage(error)}` });
+          setStatus({
+            kind: 'error',
+            message: `Не вдалося завантажити активних користувачів: ${formatErrorMessage(error)}`,
+          });
         }
       } finally {
         if (!isCancelled) setIsLoadingLogins(false);
@@ -543,7 +582,10 @@ function DeleteOrganismDialog(props: {
       await props.onReload();
       props.onClose();
     } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка видалення організму: ${formatErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        message: `Помилка видалення організму: ${formatErrorMessage(error)}`,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -559,7 +601,10 @@ function DeleteOrganismDialog(props: {
       await props.onReload();
       props.onClose();
     } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка остаточного видалення: ${formatErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        message: `Помилка остаточного видалення: ${formatErrorMessage(error)}`,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -591,7 +636,9 @@ function DeleteOrganismDialog(props: {
         {hasMultipleActiveUsers ? (
           <PowerAlert severity="warning">
             Для цього організму більше одного активного користувача. Видалення недоступне.
-            {activeLogins && activeLogins.length > 0 ? ` Активні логіни: ${activeLogins.join(', ')}` : ''}
+            {activeLogins && activeLogins.length > 0
+              ? ` Активні логіни: ${activeLogins.join(', ')}`
+              : ''}
           </PowerAlert>
         ) : null}
       </DialogContent>
@@ -599,10 +646,20 @@ function DeleteOrganismDialog(props: {
         <PowerButton onClick={props.onClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>
-        <PowerButton variant="outlined" color="error" onClick={handleSoftDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
+        <PowerButton
+          variant="outlined"
+          color="error"
+          onClick={handleSoftDelete}
+          disabled={isSubmitting || hasMultipleActiveUsers}
+        >
           Видалити
         </PowerButton>
-        <PowerButton variant="contained" color="error" onClick={handleHardDelete} disabled={isSubmitting || hasMultipleActiveUsers}>
+        <PowerButton
+          variant="contained"
+          color="error"
+          onClick={handleHardDelete}
+          disabled={isSubmitting || hasMultipleActiveUsers}
+        >
           Видалити назавжди
         </PowerButton>
       </DialogActions>
@@ -619,7 +676,9 @@ function AdminOrganismsNeoPageBody() {
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [referenceStatus, setReferenceStatus] = useState<LoadingStatus>('idle');
   const [referenceError, setReferenceError] = useState<string | null>(null);
-  const [computedGroupsById, setComputedGroupsById] = useState<Map<number, SignalGroupFull[]>>(new Map());
+  const [computedGroupsById, setComputedGroupsById] = useState<Map<number, SignalGroupFull[]>>(
+    new Map(),
+  );
   const [computedGroupsStatus, setComputedGroupsStatus] = useState<LoadingStatus>('idle');
 
   const [deleteTarget, setDeleteTarget] = useState<Organism | null>(null);
@@ -746,36 +805,53 @@ function AdminOrganismsNeoPageBody() {
   };
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      {referenceStatus === 'error' ? (
-        <PowerAlert severity="error" onClose={() => setReferenceError(null)}>
-          {referenceError || 'Помилка завантаження довідників'}
-        </PowerAlert>
-      ) : null}
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        {referenceStatus === 'error' ? (
+          <PowerAlert severity="error" onClose={() => setReferenceError(null)}>
+            {referenceError || 'Помилка завантаження довідників'}
+          </PowerAlert>
+        ) : null}
 
-      <TablePageToolbar
-        title="Організми"
-        withGlobalTextFilter
-        hideGlobalTextFilter={organismsStatus !== 'success'}
-        internalActionsDisabled={organismsStatus !== 'success'}
-        actions={
-          <div className="flex gap-3">
-            <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити організм
-            </PowerButton>
-          </div>
-        }
-      />
+        <TablePageToolbar
+          title="Організми"
+          withGlobalTextFilter
+          hideGlobalTextFilter={organismsStatus !== 'success'}
+          internalActionsDisabled={organismsStatus !== 'success'}
+          actions={
+            <div className="flex gap-3">
+              <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+                Створити організм
+              </PowerButton>
+            </div>
+          }
+        />
 
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderTable()}
+        </Box>
 
-      <DeleteOrganismDialog
-        organism={deleteTarget}
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
-        onReload={reloadAll}
-      />
+        <DeleteOrganismDialog
+          organism={deleteTarget}
+          open={Boolean(deleteTarget)}
+          onClose={() => setDeleteTarget(null)}
+          onReload={reloadAll}
+        />
       </Stack>
     </Box>
   );

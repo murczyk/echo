@@ -20,6 +20,7 @@ just setup-git-hooks
 ```
 
 This enables repo-shared hooks in `.githooks/`, including a `pre-push` check that blocks force-pushes to `main`.
+Running `npm install` in `wdintel-web` also configures these hooks automatically for frontend developers.
 
 Front-end:
 

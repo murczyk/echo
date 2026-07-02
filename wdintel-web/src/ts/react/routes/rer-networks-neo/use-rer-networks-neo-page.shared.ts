@@ -28,7 +28,10 @@ export function normalizeActivityMap(
   return activity;
 }
 
-export function isSameSidebarUnitFilter(left: SelectedSidebarUnitFilter | null, right: SelectedSidebarUnitFilter): boolean {
+export function isSameSidebarUnitFilter(
+  left: SelectedSidebarUnitFilter | null,
+  right: SelectedSidebarUnitFilter,
+): boolean {
   if (left === null || left.kind !== right.kind || left.label !== right.label) {
     return false;
   }
@@ -52,8 +55,10 @@ export function isSameSidebarUnitFilter(left: SelectedSidebarUnitFilter | null, 
 export function getNetworkPermissionsFromRoles(rolesList: string[]) {
   const roles = new Set(rolesList);
   return {
-    canEdit: roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
+    canEdit:
+      roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
     canExport: roles.has('Admin') || roles.has('Rer') || roles.has('Full'),
-    canDelete: roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
+    canDelete:
+      roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
   };
 }

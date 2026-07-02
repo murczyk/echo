@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { InboxMessage, Network, NewCallsignsRes, SignalGroupEntry, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+import type {
+  InboxMessage,
+  Network,
+  NewCallsignsRes,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
 import { buildAnalysisReq } from './helpers';
 import { reloadAnalysisData } from './use-analysis-data.reload';
 import type { FilterSectionLoadPlan } from './use-analysis-data-filter-sections';
-import type { AnalysisAorEntry, AnalysisCenterTab, AnalysisCountItem, AnalysisFilterOptions, AnalysisFilterSectionId, AnalysisQueryState, AnalysisSidebarTab } from './types';
+import type {
+  AnalysisAorEntry,
+  AnalysisCenterTab,
+  AnalysisCountItem,
+  AnalysisFilterOptions,
+  AnalysisFilterSectionId,
+  AnalysisQueryState,
+  AnalysisSidebarTab,
+} from './types';
 
 type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchAnalysisNetworks;
 
@@ -40,7 +56,10 @@ type Params = {
   loadSummaryData: () => Promise<void>;
   loadTopSidebarData: () => Promise<void>;
   clearAnalysisResults: () => void;
-  loadMessageComments: (messages: Array<[number, InboxMessage]>, forceReload?: boolean) => Promise<void>;
+  loadMessageComments: (
+    messages: Array<[number, InboxMessage]>,
+    forceReload?: boolean,
+  ) => Promise<void>;
   invalidateMessagePaging: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -276,14 +295,19 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
 
   useEffect(() => {
     if (deferInitialLoad) return;
-    if (lastReloadTriggerKeyRef.current === reloadTriggerKey && invalidatedReloadTriggerKeyRef.current !== reloadTriggerKey) return;
+    if (
+      lastReloadTriggerKeyRef.current === reloadTriggerKey &&
+      invalidatedReloadTriggerKeyRef.current !== reloadTriggerKey
+    )
+      return;
     const runReload = () => {
       lastReloadTriggerKeyRef.current = reloadTriggerKey;
       if (invalidatedReloadTriggerKeyRef.current === reloadTriggerKey) {
         invalidatedReloadTriggerKeyRef.current = null;
       }
       summaryDebouncePendingKeyRef.current = null;
-      const summaryReloadWasAlreadyPending = summaryReloadPendingKeyRef.current === reloadTriggerKey;
+      const summaryReloadWasAlreadyPending =
+        summaryReloadPendingKeyRef.current === reloadTriggerKey;
       summaryReloadPendingKeyRef.current = reloadTriggerKey;
       if (centerTab === 'summary' && !summaryReloadWasAlreadyPending) {
         invalidateSummaryData(true);

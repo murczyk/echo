@@ -21,8 +21,12 @@ type SourceMeta = {
 
 export function sortNetworkCallsignSources(sources: Source[]): Source[] {
   return [...sources].sort((left, right) => {
-    const leftIndex = SOURCE_DISPLAY_ORDER.indexOf(normalizeSourceName(left.name) as (typeof SOURCE_DISPLAY_ORDER)[number]);
-    const rightIndex = SOURCE_DISPLAY_ORDER.indexOf(normalizeSourceName(right.name) as (typeof SOURCE_DISPLAY_ORDER)[number]);
+    const leftIndex = SOURCE_DISPLAY_ORDER.indexOf(
+      normalizeSourceName(left.name) as (typeof SOURCE_DISPLAY_ORDER)[number],
+    );
+    const rightIndex = SOURCE_DISPLAY_ORDER.indexOf(
+      normalizeSourceName(right.name) as (typeof SOURCE_DISPLAY_ORDER)[number],
+    );
     const leftOrder = leftIndex === -1 ? SOURCE_DISPLAY_ORDER.length : leftIndex;
     const rightOrder = rightIndex === -1 ? SOURCE_DISPLAY_ORDER.length : rightIndex;
     if (leftOrder !== rightOrder) return leftOrder - rightOrder;
@@ -87,13 +91,18 @@ export function NetworkCallsignSourceIcon({ sourceName }: { sourceName: string }
 }
 
 export function NetworkCallsignSourceCell({ sourceName }: { sourceName: string }) {
-  return renderMrtCellWithFallback(sourceName, (text) => <NetworkCallsignSourceIcon sourceName={text} />);
+  return renderMrtCellWithFallback(sourceName, (text) => (
+    <NetworkCallsignSourceIcon sourceName={text} />
+  ));
 }
 
 export function NetworkCallsignSourceChipLabel({ sourceName }: { sourceName: string }) {
   const meta = getNetworkCallsignSourceMeta(sourceName);
   return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}
+    >
       <Box
         component="span"
         sx={{

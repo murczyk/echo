@@ -40,7 +40,15 @@ export class PalitraSearchState {
   }
 
   async setSearchQuery(params: SetSearchQueryParams): Promise<void> {
-    const { query, palitras, apiPalitraId, cacheManager, callbacks, onSearchResults, onSearchCleared } = params;
+    const {
+      query,
+      palitras,
+      apiPalitraId,
+      cacheManager,
+      callbacks,
+      onSearchResults,
+      onSearchCleared,
+    } = params;
     const q = (query ?? '').trim();
     if (q === '') {
       this.searchQuery = '';
@@ -68,7 +76,9 @@ export class PalitraSearchState {
     const filteredFromCache = fromCache.map(({ palitra_id, points }) => ({
       palitra_id,
       points: points.filter(
-        (point) => point.label && searchTerms.some((term) => labelMatchesTerm(point.label!.toLowerCase(), term)),
+        (point) =>
+          point.label &&
+          searchTerms.some((term) => labelMatchesTerm(point.label!.toLowerCase(), term)),
       ),
     }));
     // Do not block backend request on cache rendering (fitBounds + cluster build can be expensive).

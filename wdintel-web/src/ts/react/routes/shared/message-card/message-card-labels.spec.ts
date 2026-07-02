@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 import { buildMessageCardDisplayLabels } from './message-card-labels';
 
-function buildMessage(overrides: Partial<InboxMessage> = {}): Pick<InboxMessage, 'text' | 'freq' | 'groupMasterKey' | 'sender'> {
+function buildMessage(
+  overrides: Partial<InboxMessage> = {},
+): Pick<InboxMessage, 'text' | 'freq' | 'groupMasterKey' | 'sender'> {
   return {
     text: 'hello',
     freq: '100.000',
@@ -41,10 +43,13 @@ describe('buildMessageCardDisplayLabels', () => {
   });
 
   it('falls back to raw group and sender identifiers when friendly labels are missing', () => {
-    const labels = buildMessageCardDisplayLabels(buildMessage({ groupMasterKey: 'group-9', sender: 'sender-9' }), {
-      groupInfos: {},
-      profiles: {},
-    });
+    const labels = buildMessageCardDisplayLabels(
+      buildMessage({ groupMasterKey: 'group-9', sender: 'sender-9' }),
+      {
+        groupInfos: {},
+        profiles: {},
+      },
+    );
 
     expect(labels.groupName).toBe('group-9');
     expect(labels.senderName).toBe('sender-9');

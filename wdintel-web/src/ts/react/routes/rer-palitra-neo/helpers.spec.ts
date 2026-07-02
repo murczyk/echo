@@ -41,7 +41,10 @@ function makeScope(overrides: Partial<MyScope> = {}): MyScope {
   return {
     organism: { id: 5, name: 'Scope Unit' } as Organism,
     aorIds: [11, 12],
-    aors: [{ id: 11, name: 'North' }, { id: 12, name: 'South' }] as MyScope['aors'],
+    aors: [
+      { id: 11, name: 'North' },
+      { id: 12, name: 'South' },
+    ] as MyScope['aors'],
     ...overrides,
   } as MyScope;
 }
@@ -58,7 +61,12 @@ function makeForm(overrides: Partial<PalitraFormState> = {}): PalitraFormState {
   };
 }
 
-function makePalitra(id: number, folder: string | null, author = 'operator', lastUploadedAtTs: number | null = null): Palitra {
+function makePalitra(
+  id: number,
+  folder: string | null,
+  author = 'operator',
+  lastUploadedAtTs: number | null = null,
+): Palitra {
   return {
     id,
     name: 'Palitra ' + String(id),
@@ -74,7 +82,12 @@ function makePalitra(id: number, folder: string | null, author = 'operator', las
   } as Palitra;
 }
 
-function makeRow(id: number, folder: string | null, canSelect = true, canModify = canSelect): PalitraRowView {
+function makeRow(
+  id: number,
+  folder: string | null,
+  canSelect = true,
+  canModify = canSelect,
+): PalitraRowView {
   return {
     id,
     kind: 'palitra',
@@ -104,18 +117,22 @@ describe('rer-palitra helpers', () => {
       'aor',
     ]);
 
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Rer', 'UnitsEditor'] }), makeScope())).toEqual([
-      'logins',
-      'organisms',
-    ]);
+    expect(
+      getAvailableAccessTypes(makeUser({ roles: ['Rer', 'UnitsEditor'] }), makeScope()),
+    ).toEqual(['logins', 'organisms']);
 
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Full', 'CallsignsEditor'] }), makeScope())).toEqual([
+    expect(
+      getAvailableAccessTypes(makeUser({ roles: ['Full', 'CallsignsEditor'] }), makeScope()),
+    ).toEqual(['logins', 'organisms']);
+    expect(getAvailableAccessTypes(makeUser({ roles: ['UnitsEditor'] }), makeScope())).toEqual([]);
+    expect(getAvailableAccessTypes(makeUser({ roles: ['Rer'] }), makeScope())).toEqual([
       'logins',
       'organisms',
     ]);
-    expect(getAvailableAccessTypes(makeUser({ roles: ['UnitsEditor'] }), makeScope())).toEqual([]);
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Rer'] }), makeScope())).toEqual(['logins', 'organisms']);
-    expect(getAvailableAccessTypes(makeUser({ roles: ['Full'] }), makeScope())).toEqual(['logins', 'organisms']);
+    expect(getAvailableAccessTypes(makeUser({ roles: ['Full'] }), makeScope())).toEqual([
+      'logins',
+      'organisms',
+    ]);
     expect(getAvailableAccessTypes(makeUser({ roles: ['Basic'] }), makeScope())).toEqual([]);
     expect(getAvailableAccessTypes(makeUser({ roles: [] }), null)).toEqual([]);
   });
@@ -134,10 +151,16 @@ describe('rer-palitra helpers', () => {
     const palitra = makePalitra(1, null, 'operator');
 
     expect(canModifyPalitra(makeUser({ name: 'admin', roles: ['Admin'] }), palitra)).toBe(true);
-    expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer', 'UnitsEditor'] }), palitra)).toBe(true);
-    expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['UnitsEditor'] }), palitra)).toBe(false);
+    expect(
+      canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer', 'UnitsEditor'] }), palitra),
+    ).toBe(true);
+    expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['UnitsEditor'] }), palitra)).toBe(
+      false,
+    );
     expect(canModifyPalitra(makeUser({ name: 'operator', roles: ['Rer'] }), palitra)).toBe(true);
-    expect(canModifyPalitra(makeUser({ name: 'other', roles: ['Rer', 'UnitsEditor'] }), palitra)).toBe(false);
+    expect(
+      canModifyPalitra(makeUser({ name: 'other', roles: ['Rer', 'UnitsEditor'] }), palitra),
+    ).toBe(false);
   });
 
   it('normalizes login access by trimming, deduplicating, and preserving order', () => {
@@ -148,7 +171,10 @@ describe('rer-palitra helpers', () => {
   });
 
   it('creates scoped initial form values for non-admin users', () => {
-    const form = getInitialCreateForm(makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] }), makeScope());
+    const form = getInitialCreateForm(
+      makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] }),
+      makeScope(),
+    );
 
     expect(form.accessType).toBe('organisms');
     expect(form.logins).toEqual(['scout']);
@@ -169,7 +195,9 @@ describe('rer-palitra helpers', () => {
     const scope = makeScope();
 
     expect(withDefaultOrganismAccess(makeForm(), 'organisms', scope).organismIds).toEqual([5]);
-    expect(withDefaultOrganismAccess(makeForm({ organismIds: [77] }), 'organisms', scope).organismIds).toEqual([77]);
+    expect(
+      withDefaultOrganismAccess(makeForm({ organismIds: [77] }), 'organisms', scope).organismIds,
+    ).toEqual([77]);
     expect(withDefaultOrganismAccess(makeForm(), 'logins', scope).accessType).toBe('logins');
   });
 
@@ -225,11 +253,8 @@ describe('rer-palitra helpers', () => {
     ).toEqual([5]);
 
     expect(
-      applyRestrictedAccess(
-        makeForm({ accessType: 'aor', aorIds: [11] }),
-        restrictedUser,
-        scope,
-      ).aorIds,
+      applyRestrictedAccess(makeForm({ accessType: 'aor', aorIds: [11] }), restrictedUser, scope)
+        .aorIds,
     ).toEqual([]);
   });
 
@@ -254,11 +279,8 @@ describe('rer-palitra helpers', () => {
     ).toEqual([]);
 
     expect(
-      applyRestrictedAccess(
-        makeForm({ accessType: 'aor', aorIds: [11] }),
-        restrictedUser,
-        scope,
-      ).aorIds,
+      applyRestrictedAccess(makeForm({ accessType: 'aor', aorIds: [11] }), restrictedUser, scope)
+        .aorIds,
     ).toEqual([]);
   });
 
@@ -280,19 +302,13 @@ describe('rer-palitra helpers', () => {
     const scope = makeScope();
 
     expect(
-      applyRestrictedAccess(
-        makeForm({ accessType: 'aor', aorIds: [] }),
-        restrictedUser,
-        scope,
-      ).aorIds,
+      applyRestrictedAccess(makeForm({ accessType: 'aor', aorIds: [] }), restrictedUser, scope)
+        .aorIds,
     ).toEqual([]);
 
     expect(
-      applyRestrictedAccess(
-        makeForm({ accessType: 'aor', aorIds: [99] }),
-        restrictedUser,
-        scope,
-      ).aorIds,
+      applyRestrictedAccess(makeForm({ accessType: 'aor', aorIds: [99] }), restrictedUser, scope)
+        .aorIds,
     ).toEqual([]);
   });
 
@@ -305,15 +321,20 @@ describe('rer-palitra helpers', () => {
     } as Palitra;
     const organisms = [{ id: 5, name: 'Scope Unit' }] as Organism[];
 
-    expect(getAccessSummary(palitra, makeUser({ roles: ['Admin'] }), makeScope(), organisms, [])).toBe(
-      'Підрозділи: Scope Unit',
-    );
+    expect(
+      getAccessSummary(palitra, makeUser({ roles: ['Admin'] }), makeScope(), organisms, []),
+    ).toBe('Підрозділи: Scope Unit');
 
-    expect(getAccessSummary(palitra, makeUser({ name: 'operator', roles: ['UnitsEditor'] }), makeScope(), organisms, [])).toBe(
-      'Підрозділи: Scope Unit',
-    );
+    expect(
+      getAccessSummary(
+        palitra,
+        makeUser({ name: 'operator', roles: ['UnitsEditor'] }),
+        makeScope(),
+        organisms,
+        [],
+      ),
+    ).toBe('Підрозділи: Scope Unit');
   });
-
 
   it('does not mark root palitras as already in target folder before a folder is chosen', () => {
     const preview = buildAssignFolderPreview([makeRow(1, null), makeRow(2, '')], [1, 2], '');
@@ -327,11 +348,7 @@ describe('rer-palitra helpers', () => {
     expect(normalizeFolderPathForUi('  North  ')).toBe('North');
 
     const tree = buildFolderTree(
-      [
-        makePalitra(1, 'North'),
-        makePalitra(2, 'South'),
-        makePalitra(3, 'Bravo', 'other'),
-      ],
+      [makePalitra(1, 'North'), makePalitra(2, 'South'), makePalitra(3, 'Bravo', 'other')],
       makeUser({ name: 'operator', roles: ['Admin'] }),
     );
 
@@ -368,7 +385,11 @@ describe('rer-palitra helpers', () => {
       expandedFolderPaths: new Set(['North']),
     });
 
-    expect(rows.map((row) => row.kind === 'folder' ? 'folder:' + row.folderPath : 'palitra:' + String(row.id))).toEqual([
+    expect(
+      rows.map((row) =>
+        row.kind === 'folder' ? 'folder:' + row.folderPath : 'palitra:' + String(row.id),
+      ),
+    ).toEqual([
       'folder:North',
       'palitra:2',
       'palitra:4',
@@ -390,7 +411,11 @@ describe('rer-palitra helpers', () => {
 
   it('builds assign previews and human preview lines', () => {
     const preview = buildAssignFolderPreview(
-      [makeRow(1, 'North/Alpha', true), makeRow(2, 'North/Alpha', false), makeRow(3, 'North/Beta', true)],
+      [
+        makeRow(1, 'North/Alpha', true),
+        makeRow(2, 'North/Alpha', false),
+        makeRow(3, 'North/Beta', true),
+      ],
       [1, 2, 3],
       'North/Alpha',
     );
@@ -414,7 +439,9 @@ describe('rer-palitra helpers', () => {
   it('keeps read-only palitras downloadable but not modifiable in bulk selections', () => {
     const rows = [makeRow(1, null, true, true), makeRow(2, null, true, false)];
 
-    expect(getSelectedDownloadablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([1, 2]);
+    expect(getSelectedDownloadablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([
+      1, 2,
+    ]);
     expect(getSelectedModifiablePalitras(rows, [1, 2]).map((palitra) => palitra.id)).toEqual([1]);
   });
 
@@ -422,6 +449,8 @@ describe('rer-palitra helpers', () => {
     const summary = buildBulkActionResultSummary([1, 3], [3]);
     expect(summary.changedIds).toEqual([3]);
     expect(summary.skippedIds).toEqual([1]);
-    expect(formatFolderActionSuccessMessage('assign', summary)).toBe('Палітри переміщено в папку: змінено 1 з 2.');
+    expect(formatFolderActionSuccessMessage('assign', summary)).toBe(
+      'Палітри переміщено в папку: змінено 1 з 2.',
+    );
   });
 });

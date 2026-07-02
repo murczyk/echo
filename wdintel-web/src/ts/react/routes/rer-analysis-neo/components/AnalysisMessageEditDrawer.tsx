@@ -4,7 +4,6 @@ import { Box, Button, Chip, Drawer, IconButton, Stack, TextField, Typography } f
 import { memo, useEffect, useMemo, useState } from 'react';
 import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
 
-
 import type { InboxMessage } from '../../../../../Bindings';
 
 type Props = {
@@ -23,7 +22,13 @@ function normalizeCallsign(value: string): string {
   return value.trim().toUpperCase();
 }
 
-function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClose, onSave }: Props) {
+function AnalysisMessageEditDrawerComponent({
+  message,
+  open,
+  saveInFlight,
+  onClose,
+  onSave,
+}: Props) {
   const [callsignDraft, setCallsignDraft] = useState('');
   const [draftMessage, setDraftMessage] = useState<InboxMessage | null>(message?.message ?? null);
 
@@ -35,12 +40,16 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
   const currentMessage = draftMessage ?? message?.message ?? null;
 
   const updateDraftField = <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
-    setDraftMessage((current) => (isNullOrUndefined(current) ? current : { ...current, [field]: value }));
+    setDraftMessage((current) =>
+      isNullOrUndefined(current) ? current : { ...current, [field]: value },
+    );
   };
 
   const proposedCallsigns = useMemo(() => {
     if (isNullOrUndefined(currentMessage)) return [];
-    const present = new Set((currentMessage.callsigns ?? []).map((item) => normalizeCallsign(item)));
+    const present = new Set(
+      (currentMessage.callsigns ?? []).map((item) => normalizeCallsign(item)),
+    );
     return (currentMessage.callsignsAlg2 ?? [])
       .map((item) => normalizeCallsign(item))
       .filter((item) => item.length > 0 && item.length <= 12 && !present.has(item))
@@ -65,7 +74,9 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
     if (isNullOrUndefined(currentMessage)) return;
     updateDraftField(
       'callsigns',
-      (currentMessage.callsigns ?? []).filter((item) => normalizeCallsign(item) !== normalizeCallsign(callsign)),
+      (currentMessage.callsigns ?? []).filter(
+        (item) => normalizeCallsign(item) !== normalizeCallsign(callsign),
+      ),
     );
   };
 
@@ -78,7 +89,14 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose} ModalProps={{ disableRestoreFocus: true }}>
-      <Box sx={{ width: { xs: '100vw', sm: 420 }, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box
+        sx={{
+          width: { xs: '100vw', sm: 420 },
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+        }}
+      >
         <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="h6">Редагування додаткових полів</Typography>
         </Box>
@@ -115,7 +133,11 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
                   }
                 }}
               />
-              <IconButton aria-label="Додати позивний" onClick={addCallsign} disabled={normalizeCallsign(callsignDraft) === ''}>
+              <IconButton
+                aria-label="Додати позивний"
+                onClick={addCallsign}
+                disabled={normalizeCallsign(callsignDraft) === ''}
+              >
                 <AddIcon />
               </IconButton>
             </Stack>
@@ -146,7 +168,12 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
                 </Typography>
                 <Stack direction="row" gap={1} flexWrap="wrap">
                   {proposedCallsigns.map((callsign) => (
-                    <Chip key={callsign} label={callsign} onClick={() => addSuggestedCallsign(callsign)} variant="filled" />
+                    <Chip
+                      key={callsign}
+                      label={callsign}
+                      onClick={() => addSuggestedCallsign(callsign)}
+                      variant="filled"
+                    />
                   ))}
                 </Stack>
               </Stack>
@@ -173,9 +200,18 @@ function AnalysisMessageEditDrawerComponent({ message, open, saveInFlight, onClo
             onChange={(event) => updateDraftField('location', event.target.value || null)}
           />
         </Stack>
-        <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          justifyContent="flex-end"
+          sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}
+        >
           <Button onClick={onClose}>Скасувати</Button>
-          <Button variant="contained" onClick={() => currentMessage && onSave(currentMessage)} disabled={saveInFlight || isNullOrUndefined(currentMessage)}>
+          <Button
+            variant="contained"
+            onClick={() => currentMessage && onSave(currentMessage)}
+            disabled={saveInFlight || isNullOrUndefined(currentMessage)}
+          >
             {saveInFlight ? `Зберігаємо${ELLIPSIS}` : 'Зберегти'}
           </Button>
         </Stack>

@@ -12,7 +12,9 @@ export function parseUtcDateTime(value: string | null | undefined): Date | null 
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export async function listReportHistory(options?: { signal?: AbortSignal }): Promise<ReportHistoryRow[]> {
+export async function listReportHistory(options?: {
+  signal?: AbortSignal;
+}): Promise<ReportHistoryRow[]> {
   const raw = await postJson<unknown>('/api/report-history/list', undefined, options);
   return transformSnakeToCamel<ReportHistoryRow[]>(raw) ?? [];
 }
@@ -35,8 +37,15 @@ export type ReportHistoryBatchRsp = {
   nextOffset: number;
 };
 
-export async function listAllReportHistory(req: ReportHistoryBatchReq, options?: { signal?: AbortSignal }): Promise<ReportHistoryBatchRsp> {
-  const raw = await postJson<unknown>('/api/admin/report-history/list', transformCamelToSnake(req), options);
+export async function listAllReportHistory(
+  req: ReportHistoryBatchReq,
+  options?: { signal?: AbortSignal },
+): Promise<ReportHistoryBatchRsp> {
+  const raw = await postJson<unknown>(
+    '/api/admin/report-history/list',
+    transformCamelToSnake(req),
+    options,
+  );
   return transformSnakeToCamel<ReportHistoryBatchRsp>(raw);
 }
 
@@ -76,7 +85,10 @@ export async function downloadReportHistory(id: number): Promise<Blob> {
   return postBytes('/api/report-history/download', transformCamelToSnake(req));
 }
 
-export async function fetchReportHistoryTaskStatus(id: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
+export async function fetchReportHistoryTaskStatus(
+  id: number,
+  skip: number,
+): Promise<BgtaskStatusAndLogsRsp> {
   const row = await fetchReportHistoryStatus(id);
 
   if (row.status === 'planned' || (row.status === 'in_progress' && row.bgtaskId === null)) {

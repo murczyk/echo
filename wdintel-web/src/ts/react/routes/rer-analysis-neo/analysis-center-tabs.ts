@@ -5,7 +5,10 @@ import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 
 import type { AnalysisCenterTab } from './types';
 
-export const ANALYSIS_CENTER_TAB_META: Record<AnalysisCenterTab, { icon: typeof MessageOutlinedIcon; label: string }> = {
+export const ANALYSIS_CENTER_TAB_META: Record<
+  AnalysisCenterTab,
+  { icon: typeof MessageOutlinedIcon; label: string }
+> = {
   messages: { icon: MessageOutlinedIcon, label: 'Повідомлення' },
   summary: { icon: TableRowsOutlinedIcon, label: 'Зведена таблиця' },
   map: { icon: MapOutlinedIcon, label: 'Мапа' },

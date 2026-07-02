@@ -292,8 +292,16 @@ describe('useRerAnalysisNeoPage', () => {
     currentAnalysisData = buildAnalysisData();
     useAnalysisDataMock.mockImplementation(() => {
       if (currentAnalysisData == null) throw new Error('analysis data not initialized');
-      currentAnalysisData.options.freqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
-      currentAnalysisData.options.newFreqs = analysisFreqValues.map((value) => ({ value, label: value, count: 1 }));
+      currentAnalysisData.options.freqs = analysisFreqValues.map((value) => ({
+        value,
+        label: value,
+        count: 1,
+      }));
+      currentAnalysisData.options.newFreqs = analysisFreqValues.map((value) => ({
+        value,
+        label: value,
+        count: 1,
+      }));
       return currentAnalysisData;
     });
     useAnalysisSavedFiltersMock.mockReset();
@@ -364,13 +372,13 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('user-settings-updated', {
-        detail: {
-          tagsLayout: 'compact',
-          disableAutoScroll: false,
-          analysisMapInSidebar: true,
-        },
-      }),
-    );
+          detail: {
+            tagsLayout: 'compact',
+            disableAutoScroll: false,
+            analysisMapInSidebar: true,
+          },
+        }),
+      );
     });
     await flushEffects();
 
@@ -483,7 +491,9 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    const analysisData = useAnalysisDataMock.mock.results[useAnalysisDataMock.mock.results.length - 1]?.value as ReturnType<typeof buildAnalysisData>;
+    const analysisData = useAnalysisDataMock.mock.results[
+      useAnalysisDataMock.mock.results.length - 1
+    ]?.value as ReturnType<typeof buildAnalysisData>;
     const savedFilter = {
       id: 9,
       name: 'Saved filter',
@@ -607,13 +617,13 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('user-settings-updated', {
-        detail: {
-          tagsLayout: 'compact',
-          disableAutoScroll: false,
-          analysisMapInSidebar: false,
-        },
-      }),
-    );
+          detail: {
+            tagsLayout: 'compact',
+            disableAutoScroll: false,
+            analysisMapInSidebar: false,
+          },
+        }),
+      );
     });
     await flushEffects();
 

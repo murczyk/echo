@@ -190,7 +190,9 @@ describe('useAnalysisReport', () => {
         progress: 45,
         errorLog: null,
       });
-    reportHistoryApiMock.isCancelledReportHistory.mockImplementation((row) => row.status === 'failed' && row.isCancelled === true);
+    reportHistoryApiMock.isCancelledReportHistory.mockImplementation(
+      (row) => row.status === 'failed' && row.isCancelled === true,
+    );
     bgtaskApiMock.fetchBgtaskStatusAndLogs.mockResolvedValueOnce({
       running: false,
       loglines: [],

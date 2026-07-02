@@ -27,7 +27,7 @@ export function createMapWindowControl(
       this._container = L.DomUtil.create('div', 'leaflet-control analysis-map-window-control-host');
 
       const windowControlElement = document.createElement(
-        'analysis-map-window-control'
+        'analysis-map-window-control',
       ) as AnalysisMapWindowControlElement;
       if (options.showFullscreen === false) {
         windowControlElement.setAttribute('show-fullscreen', 'false');

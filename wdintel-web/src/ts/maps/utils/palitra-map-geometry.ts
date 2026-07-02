@@ -83,8 +83,7 @@ export function createPalitraGeometryLayer(palitraDetails: PalitraDetails): L.La
         },
       ),
     );
-    const lineLayer =
-      lineLayers.length === 1 ? lineLayers[0] : L.featureGroup(lineLayers);
+    const lineLayer = lineLayers.length === 1 ? lineLayers[0] : L.featureGroup(lineLayers);
     const metaLines = buildLineMetaLines(geometry, palitra, validLines);
     bindPalitraPopup(lineLayer, palitra, metaLines);
     lineLayer.bindTooltip(palitra.name, {
@@ -144,10 +143,7 @@ function buildLineMetaLines(
   palitra: Palitra,
   lineStrings: Coords[][],
 ): string[] {
-  const totalPoints = lineStrings.reduce(
-    (acc, line) => acc + line.length,
-    0,
-  );
+  const totalPoints = lineStrings.reduce((acc, line) => acc + line.length, 0);
   const metaLines: Array<string | null> = [
     formatCenterLine(geometry),
     `Ліній: ${lineStrings.length}`,
@@ -183,9 +179,7 @@ function bindPalitraPopup(
   );
 }
 
-function buildLineStringsBounds(
-  lineStrings?: Coords[][] | null,
-): L.LatLngBounds | null {
+function buildLineStringsBounds(lineStrings?: Coords[][] | null): L.LatLngBounds | null {
   if (!lineStrings || lineStrings.length === 0) {
     return null;
   }

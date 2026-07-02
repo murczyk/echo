@@ -29,12 +29,14 @@ export interface SearchControl extends L.Control {
 /** Creates a map control that hosts <analysis-map-search>. */
 export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
-    _searchElement: null as (HTMLElement & {
-      setResultsCount?: (count: number | null) => void;
-      setSearchLoading?: (isLoading: boolean) => void;
-      setSearchDisabled?: (isDisabled: boolean) => void;
-      setPlaceholder?: (placeholder: string) => void;
-    }) | null,
+    _searchElement: null as
+      | (HTMLElement & {
+          setResultsCount?: (count: number | null) => void;
+          setSearchLoading?: (isLoading: boolean) => void;
+          setSearchDisabled?: (isDisabled: boolean) => void;
+          setPlaceholder?: (placeholder: string) => void;
+        })
+      | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
       const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
@@ -70,7 +72,10 @@ export function createAttributionControl() {
   return L.control.attribution({ position: 'bottomleft' });
 }
 
-export function createTimeswitchControl(dates: { startDate: number; endDate: number }, isLoading = false) {
+export function createTimeswitchControl(
+  dates: { startDate: number; endDate: number },
+  isLoading = false,
+) {
   const TimeswitchControl = L.Control.extend({
     onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
@@ -79,7 +84,7 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
 
       this._dateRangeSelector.setAttribute(
         'dates',
-        JSON.stringify({ startDate: dates.startDate, endDate: dates.endDate })
+        JSON.stringify({ startDate: dates.startDate, endDate: dates.endDate }),
       );
       this._dateRangeSelector.setAttribute('loading', isLoading ? 'true' : 'false');
 
@@ -96,7 +101,7 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
     updateDates: function (newDates: { startDate: number; endDate: number }) {
       this._dateRangeSelector.setAttribute(
         'dates',
-        JSON.stringify({ startDate: newDates.startDate, endDate: newDates.endDate })
+        JSON.stringify({ startDate: newDates.startDate, endDate: newDates.endDate }),
       );
     },
     updateLoading: function (nextLoading: boolean) {

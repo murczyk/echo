@@ -2,7 +2,13 @@ import * as L from 'leaflet';
 
 import { PalitraCacheManager } from './palitra-cache-manager';
 import { PalitraPointClusterRenderer } from './palitra-point-cluster-renderer';
-import { Palitra, PalitraDetails, PalitraManagerCallbacks, PalitraManagerOptions, PalitraPoint } from './palitra-types';
+import {
+  Palitra,
+  PalitraDetails,
+  PalitraManagerCallbacks,
+  PalitraManagerOptions,
+  PalitraPoint,
+} from './palitra-types';
 import { PalitraPointsLoader } from './palitra-points-loader';
 import { PalitraSearchState } from './palitra-search-state';
 import { splitEntriesByGeometry } from './utils/palitra-point-assignment';
@@ -216,7 +222,11 @@ export class PalitraPointsController {
     const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
     const clusters = await Promise.all(
       splitEntries.map(async ({ palitra, points }) => {
-        const cluster = await this.pointClustersRenderer.createPointsCluster(palitra, points, nextPointMarkers);
+        const cluster = await this.pointClustersRenderer.createPointsCluster(
+          palitra,
+          points,
+          nextPointMarkers,
+        );
         return { palitraId: palitra.id, cluster };
       }),
     );
@@ -225,7 +235,11 @@ export class PalitraPointsController {
     if (!this.searchState.isCurrentRenderGeneration(currentGen)) {
       return;
     }
-    if (!this.stateAccessor.getEnabled() || !this.searchState.hasActiveSearch() || !this.searchState.getLastSearchResult()) {
+    if (
+      !this.stateAccessor.getEnabled() ||
+      !this.searchState.hasActiveSearch() ||
+      !this.searchState.getLastSearchResult()
+    ) {
       return;
     }
 
@@ -276,7 +290,11 @@ export class PalitraPointsController {
       const palitraIds = this.stateAccessor
         .getPalitras()
         .map((palitraDetails) => this.apiAccessor.apiPalitraId(palitraDetails.palitra));
-      const hasPendingCoverage = this.cacheManager.hasPendingCoverage(palitraIds, bounds, this.map.getZoom());
+      const hasPendingCoverage = this.cacheManager.hasPendingCoverage(
+        palitraIds,
+        bounds,
+        this.map.getZoom(),
+      );
       if (hasPendingCoverage) {
         return;
       }
@@ -288,18 +306,28 @@ export class PalitraPointsController {
       Array.from(pointsByApiId.entries()).map(([palitra_id, points]) => ({ palitra_id, points })),
       this.buildPalitrasByApiId(),
     );
-    const cappedSplitEntries = this.truncateSplitEntriesToMaxRendered(splitEntries, MAX_RENDERED_POINTS);
+    const cappedSplitEntries = this.truncateSplitEntriesToMaxRendered(
+      splitEntries,
+      MAX_RENDERED_POINTS,
+    );
 
     const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
     const clusters = await Promise.all(
       cappedSplitEntries.map(async ({ palitra, points }) => {
-        const cluster = await this.pointClustersRenderer.createPointsCluster(palitra, points, nextPointMarkers);
+        const cluster = await this.pointClustersRenderer.createPointsCluster(
+          palitra,
+          points,
+          nextPointMarkers,
+        );
         return { palitraId: palitra.id, cluster };
       }),
     );
 
     // Async guard: skip stale non-search render result.
-    if (!this.searchState.isCurrentRenderGeneration(currentGen) || this.searchState.hasActiveSearch()) {
+    if (
+      !this.searchState.isCurrentRenderGeneration(currentGen) ||
+      this.searchState.hasActiveSearch()
+    ) {
       return;
     }
     if (!this.stateAccessor.getEnabled()) {

@@ -47,11 +47,19 @@ function toAutocompleteOption(option: AnalysisFilterOption, index: number): Auto
   };
 }
 
-function optionContainsValue(option: AutocompleteOption, selected: string, normalizeUnknownAliases: boolean): boolean {
+function optionContainsValue(
+  option: AutocompleteOption,
+  selected: string,
+  normalizeUnknownAliases: boolean,
+): boolean {
   if (option.value === selected || option.values.includes(selected)) {
     return true;
   }
-  return normalizeUnknownAliases && option.value === '' && (selected === '' || selected === 'Не визначено');
+  return (
+    normalizeUnknownAliases &&
+    option.value === '' &&
+    (selected === '' || selected === 'Не визначено')
+  );
 }
 
 function buildSelectedOptions(
@@ -63,9 +71,18 @@ function buildSelectedOptions(
 ): AutocompleteOption[] {
   if (!preserveSelectionOrder) {
     return [
-      ...autocompleteOptions.filter((option) => selectedValues.some((selected) => optionContainsValue(option, selected, normalizeUnknownAliases))),
+      ...autocompleteOptions.filter((option) =>
+        selectedValues.some((selected) =>
+          optionContainsValue(option, selected, normalizeUnknownAliases),
+        ),
+      ),
       ...selectedValues
-        .filter((selected) => !autocompleteOptions.some((option) => optionContainsValue(option, selected, normalizeUnknownAliases)))
+        .filter(
+          (selected) =>
+            !autocompleteOptions.some((option) =>
+              optionContainsValue(option, selected, normalizeUnknownAliases),
+            ),
+        )
         .map((selected) => {
           const label = labelCache[selected] ?? selected;
           return { key: selected, label, value: selected, count: 0, values: [selected] };
@@ -76,7 +93,9 @@ function buildSelectedOptions(
   const selectedOptions: AutocompleteOption[] = [];
   const seenKeys = new Set<string>();
   selectedValues.forEach((selected) => {
-    const option = autocompleteOptions.find((candidate) => optionContainsValue(candidate, selected, normalizeUnknownAliases));
+    const option = autocompleteOptions.find((candidate) =>
+      optionContainsValue(candidate, selected, normalizeUnknownAliases),
+    );
     if (option != null) {
       if (seenKeys.has(option.key)) return;
       seenKeys.add(option.key);
@@ -206,7 +225,12 @@ export function AnalysisFilterField({
       onClose={() => {
         setOpen(false);
         if (deferredCommit) {
-          if (draftValueRef.current.length !== lastCommittedValueRef.current.length || !draftValueRef.current.every((item, index) => item === lastCommittedValueRef.current[index])) {
+          if (
+            draftValueRef.current.length !== lastCommittedValueRef.current.length ||
+            !draftValueRef.current.every(
+              (item, index) => item === lastCommittedValueRef.current[index],
+            )
+          ) {
             commitValue(draftValueRef.current);
           }
         }
@@ -236,7 +260,11 @@ export function AnalysisFilterField({
         })
       }
       onChange={(_event, next, reason) => {
-        const nextValues = buildCommittedValues(next, effectiveValue, preserveSelectedOptionValuesOnChange);
+        const nextValues = buildCommittedValues(
+          next,
+          effectiveValue,
+          preserveSelectedOptionValuesOnChange,
+        );
         if (deferredCommit && open) {
           updateDraftValue(nextValues);
         } else {
@@ -254,7 +282,10 @@ export function AnalysisFilterField({
               <Typography variant="body2" sx={{ minWidth: 0, flex: 1 }} noWrap title={option.label}>
                 {option.label}
               </Typography>
-              <Typography variant="body2" sx={{ flexShrink: 0, whiteSpace: 'nowrap', color: 'text.secondary' }}>
+              <Typography
+                variant="body2"
+                sx={{ flexShrink: 0, whiteSpace: 'nowrap', color: 'text.secondary' }}
+              >
                 {option.count}
               </Typography>
             </Box>

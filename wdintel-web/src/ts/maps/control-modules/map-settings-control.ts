@@ -7,11 +7,12 @@ export interface MapSettingsControl extends L.Control {
 
 export function createMapSettingsControl(
   initialShowPelengLabels: boolean,
-  onPelengLabelsChange: (show: boolean) => void
+  onPelengLabelsChange: (show: boolean) => void,
 ): MapSettingsControl {
   const MapSettingsControlClass = L.Control.extend({
     _showPelengLabels: initialShowPelengLabels,
-    _settingsElement: null as (HTMLElement & { setPelengLabelsVisible?: (visible: boolean) => void }) | null,
+    _settingsElement: null as
+      (HTMLElement & { setPelengLabelsVisible?: (visible: boolean) => void }) | null,
 
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-control map-settings-control-host');

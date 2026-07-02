@@ -99,7 +99,9 @@ export function formatTooltipDate(dayMs: number): string {
   return TOOLTIP_DATE_FORMATTER.format(new Date(dayMs));
 }
 
-export function normalizeActivityDay(countsByGroup: Record<string, number>): Record<string, number> {
+export function normalizeActivityDay(
+  countsByGroup: Record<string, number>,
+): Record<string, number> {
   const normalizedCounts: Record<string, number> = {};
   for (const [groupName, count] of Object.entries(countsByGroup)) {
     if (!Number.isFinite(count) || count <= 0) continue;
@@ -112,7 +114,13 @@ export function sumCounts(countsByGroup: Record<string, number>): number {
   return Object.values(countsByGroup).reduce((sum, count) => sum + count, 0);
 }
 
-export function buildRoundedTopRectPath(x: number, y: number, width: number, height: number, radius = 4): string {
+export function buildRoundedTopRectPath(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius = 4,
+): string {
   const r = Math.min(radius, width / 2, height);
   if (height <= 0 || width <= 0) return '';
   if (r <= 0) {
@@ -148,7 +156,9 @@ function buildActivityDays(networkActivity: NetworkActivity, anchorDayMs: number
   }
 
   const dayMsValues = [...normalizedByDay.keys()];
-  const lastDayMs = Number.isFinite(anchorDayMs) ? startOfKyivDayMs(anchorDayMs) : Math.max(...dayMsValues);
+  const lastDayMs = Number.isFinite(anchorDayMs)
+    ? startOfKyivDayMs(anchorDayMs)
+    : Math.max(...dayMsValues);
   return Array.from({ length: 10 }, (_, index) => {
     const dayMs = lastDayMs - (9 - index) * DAY_MS;
     const countsByGroup = normalizedByDay.get(dayMs) ?? {};
@@ -186,7 +196,10 @@ export function buildYTicks(maxValue: number): number[] {
   return [0, 1, 2, 3, 4].map((index) => Math.round(step * index));
 }
 
-export function buildActivityChartData(networkActivity: NetworkActivity, anchorDayMs: number): ActivityChartData {
+export function buildActivityChartData(
+  networkActivity: NetworkActivity,
+  anchorDayMs: number,
+): ActivityChartData {
   const days = buildActivityDays(networkActivity, anchorDayMs);
   const groupTotals = new Map<string, number>();
 
@@ -201,7 +214,9 @@ export function buildActivityChartData(networkActivity: NetworkActivity, anchorD
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'uk'))
     .map(([groupName]) => groupName);
 
-  const groupColors = new Map(groupNames.map((groupName) => [groupName, getGroupColor(groupName)] as const));
+  const groupColors = new Map(
+    groupNames.map((groupName) => [groupName, getGroupColor(groupName)] as const),
+  );
   const chartDays = days.map((day) => ({
     ...day,
     segments: groupNames

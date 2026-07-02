@@ -6,7 +6,12 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const badgeProps: Array<{ invisible?: boolean; color?: string; variant?: string; overlap?: string }> = [];
+const badgeProps: Array<{
+  invisible?: boolean;
+  color?: string;
+  variant?: string;
+  overlap?: string;
+}> = [];
 
 vi.mock('@mui/material', () => ({
   Badge: ({
@@ -26,16 +31,28 @@ vi.mock('@mui/material', () => ({
   }) => {
     badgeProps.push({ invisible, color, variant, overlap });
     return (
-      <span className={className} data-badge-invisible={String(invisible ?? false)} data-badge-color={color} data-badge-variant={variant} data-badge-overlap={overlap}>
+      <span
+        className={className}
+        data-badge-invisible={String(invisible ?? false)}
+        data-badge-color={color}
+        data-badge-variant={variant}
+        data-badge-overlap={overlap}
+      >
         {children}
       </span>
     );
   },
-  Box: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <div {...props}>{children}</div>,
+  Box: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+    <div {...props}>{children}</div>
+  ),
   Checkbox: ({ checked, onChange }: { checked?: boolean; onChange?: () => void }) => (
     <input type="checkbox" checked={checked ?? false} onChange={onChange} />
   ),
-  IconButton: ({ children, onClick, ...props }: { children?: ReactNode; onClick?: () => void } & Record<string, unknown>) => (
+  IconButton: ({
+    children,
+    onClick,
+    ...props
+  }: { children?: ReactNode; onClick?: () => void } & Record<string, unknown>) => (
     <button type="button" onClick={onClick} {...props}>
       {children}
     </button>
@@ -44,7 +61,9 @@ vi.mock('@mui/material', () => ({
     <input type="radio" checked={checked ?? false} onChange={onChange} />
   ),
   ThemeProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Typography: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <div {...props}>{children}</div>,
+  Typography: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+    <div {...props}>{children}</div>
+  ),
 }));
 
 vi.mock('./mui-theme', () => ({
@@ -59,7 +78,11 @@ describe('AnalysisMapLayerSwitchControl', () => {
     document.body.innerHTML = '';
   });
 
-  async function render(features: { palitrasEnabled: boolean; pelengsEnabled: boolean; kmzEnabled: boolean }) {
+  async function render(features: {
+    palitrasEnabled: boolean;
+    pelengsEnabled: boolean;
+    kmzEnabled: boolean;
+  }) {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);

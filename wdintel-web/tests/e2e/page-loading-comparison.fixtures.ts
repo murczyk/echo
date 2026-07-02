@@ -166,7 +166,11 @@ function emptyDutyLongPollResponse() {
   };
 }
 
-async function routeCallsingsApi(route: Route, pathname: string, delayMs: number): Promise<boolean> {
+async function routeCallsingsApi(
+  route: Route,
+  pathname: string,
+  delayMs: number,
+): Promise<boolean> {
   if (pathname === '/api/user') {
     await fulfillJson(route, emptyUserResponse());
     return true;
@@ -234,7 +238,11 @@ async function routePalitraApi(route: Route, pathname: string, delayMs: number):
   return false;
 }
 
-async function routeMessengerApi(route: Route, pathname: string, delayMs: number): Promise<boolean> {
+async function routeMessengerApi(
+  route: Route,
+  pathname: string,
+  delayMs: number,
+): Promise<boolean> {
   if (pathname === '/api/user') {
     await fulfillJson(route, emptyUserResponse());
     return true;

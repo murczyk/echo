@@ -12,7 +12,10 @@ import {
 } from '../../services/api/analysis';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { downloadBlob } from '../../utils/download-blob';
-import { fetchReportHistoryStatus, isCancelledReportHistory } from '../../services/api/report-history';
+import {
+  fetchReportHistoryStatus,
+  isCancelledReportHistory,
+} from '../../services/api/report-history';
 import {
   buildReportFilename,
   buildReportRequest,
@@ -136,27 +139,30 @@ export function useAnalysisReport({
     }
   }, []);
 
-  const finalizeCancelledReportTaskRun = useCallback((id: number, historyRow: ReportHistoryRow, logs: string[]) => {
-    updateReportTaskRuns((current) =>
-      current.map((run) =>
-        run.id === id
-          ? {
-              ...run,
-              running: false,
-              cancelled: true,
-              curr: run.curr,
-              overall: run.overall,
-              logs,
-              error: null,
-              finishedAt: historyRow.completedAt ?? new Date().toISOString(),
-              expanded: false,
-              historyRow,
-              startedAt: historyRow.startedAt ?? run.startedAt,
-            }
-          : run,
-      ),
-    );
-  }, [updateReportTaskRuns]);
+  const finalizeCancelledReportTaskRun = useCallback(
+    (id: number, historyRow: ReportHistoryRow, logs: string[]) => {
+      updateReportTaskRuns((current) =>
+        current.map((run) =>
+          run.id === id
+            ? {
+                ...run,
+                running: false,
+                cancelled: true,
+                curr: run.curr,
+                overall: run.overall,
+                logs,
+                error: null,
+                finishedAt: historyRow.completedAt ?? new Date().toISOString(),
+                expanded: false,
+                historyRow,
+                startedAt: historyRow.startedAt ?? run.startedAt,
+              }
+            : run,
+        ),
+      );
+    },
+    [updateReportTaskRuns],
+  );
 
   const openReport = useCallback(() => {
     setReport((current) => ({ ...current, open: true }));
@@ -168,7 +174,9 @@ export function useAnalysisReport({
 
   const toggleReportTaskRunLogs = useCallback(
     (id: number, expanded: boolean) => {
-      updateReportTaskRuns((current) => current.map((run) => (run.id === id ? { ...run, expanded } : run)));
+      updateReportTaskRuns((current) =>
+        current.map((run) => (run.id === id ? { ...run, expanded } : run)),
+      );
     },
     [updateReportTaskRuns],
   );
@@ -194,7 +202,11 @@ export function useAnalysisReport({
       runSessionRef.current = sessionId;
       const shouldStopRun = () => !isMountedRef.current || runSessionRef.current !== sessionId;
 
-      if (state.template === 'summary_table' || state.template === 'kmz' || state.template === 'geojson') {
+      if (
+        state.template === 'summary_table' ||
+        state.template === 'kmz' ||
+        state.template === 'geojson'
+      ) {
         if (isNullOrUndefined(runSnapshot.analysisReq)) {
           onError('Перевірте дату та час перед експортом.');
           return;
@@ -233,7 +245,10 @@ export function useAnalysisReport({
           if (shouldStopRun()) {
             return;
           }
-          downloadBlob(blob, buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr));
+          downloadBlob(
+            blob,
+            buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr),
+          );
         } catch (error) {
           if (isMountedRef.current && !onUnauthorized(error)) {
             onError(toErrorMessage(error));
@@ -256,7 +271,11 @@ export function useAnalysisReport({
       setReportProgressExpanded(false);
       let runId: number | null = null;
       try {
-        const reportName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
+        const reportName = buildReportFilename(
+          state,
+          runSnapshot.fromDateTimeStr,
+          runSnapshot.toDateTimeStr,
+        );
         const reportTitle = reportTemplateToUiTitle(state);
         const headerTitle = `Звіт ${reportTitle}: ${reportName}`;
         reportTaskRunCounterRef.current += 1;
@@ -286,7 +305,9 @@ export function useAnalysisReport({
           },
         ]);
 
-        const taskId = await launchAnalysisReportTask(buildReportRequest(state, runSnapshot.inboxReq));
+        const taskId = await launchAnalysisReportTask(
+          buildReportRequest(state, runSnapshot.inboxReq),
+        );
         if (shouldStopRun()) {
           finalizeAbortedReportTaskRun(runId);
           return;
@@ -310,7 +331,10 @@ export function useAnalysisReport({
               return;
             }
             const message = toErrorMessage(
-              new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null),
+              new ReportTaskError(
+                historyRow.lastError ?? 'Сталася помилка під час формування звіту.',
+                null,
+              ),
             );
             updateReportTaskRuns((current) =>
               current.map((run) =>
@@ -331,7 +355,10 @@ export function useAnalysisReport({
                     },
               ),
             );
-            throw new ReportTaskError(historyRow.lastError ?? 'Сталася помилка під час формування звіту.', null);
+            throw new ReportTaskError(
+              historyRow.lastError ?? 'Сталася помилка під час формування звіту.',
+              null,
+            );
           }
           if (historyRow.status === 'done') {
             updateReportTaskRuns((current) =>
@@ -395,7 +422,11 @@ export function useAnalysisReport({
                     ...run,
                     running: rsp.running,
                     cancelled: false,
-                    curr: rsp.running ? progress.curr : rsp.finishedWithError ? progress.curr : progress.overall,
+                    curr: rsp.running
+                      ? progress.curr
+                      : rsp.finishedWithError
+                        ? progress.curr
+                        : progress.overall,
                     overall: progress.overall,
                     logs,
                     error: rsp.finishedWithError
@@ -434,7 +465,11 @@ export function useAnalysisReport({
           finalizeAbortedReportTaskRun(runId);
           return;
         }
-        let downloadFileName = buildReportFilename(state, runSnapshot.fromDateTimeStr, runSnapshot.toDateTimeStr);
+        let downloadFileName = buildReportFilename(
+          state,
+          runSnapshot.fromDateTimeStr,
+          runSnapshot.toDateTimeStr,
+        );
         if (state.template === 'rer_report' || state.template === 'sposob') {
           const latestRow = await fetchReportHistoryStatus(taskId);
           if (shouldStopRun()) {
@@ -458,7 +493,15 @@ export function useAnalysisReport({
           onError(message);
           updateReportTaskRuns((current) =>
             current.map((run) =>
-              run.id === runId ? { ...run, running: false, error: message, finishedAt: new Date().toISOString(), expanded: true } : run,
+              run.id === runId
+                ? {
+                    ...run,
+                    running: false,
+                    error: message,
+                    finishedAt: new Date().toISOString(),
+                    expanded: true,
+                  }
+                : run,
             ),
           );
         }

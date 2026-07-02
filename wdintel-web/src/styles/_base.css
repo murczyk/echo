@@ -3,28 +3,27 @@
 
 html,
 body {
-    font-size: 14px;
-    background-color: var(--background-color);
-    overflow-x: hidden;
+  font-size: 14px;
+  background-color: var(--background-color);
+  overflow-x: hidden;
 }
 
 @media (min-width: 1200px) {
-    html:has(.app-shell--fixed-viewport),
-    body:has(.app-shell--fixed-viewport) {
-        overflow-y: hidden;
-    }
+  html:has(.app-shell--fixed-viewport),
+  body:has(.app-shell--fixed-viewport) {
+    overflow-y: hidden;
+  }
 }
 
 @layer base {
-
-    h1,
-    h2,
-    h3,
-    h4,
-    h5,
-    h6 {
-        margin: 0;
-    }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0;
+  }
 }
 
 h1,
@@ -33,85 +32,85 @@ h3,
 h4,
 h5,
 h6 {
-    font-weight: 600;
+  font-weight: 600;
 }
 
 h1 {
-    font-size: 32px;
-    line-height: 36px;
+  font-size: 32px;
+  line-height: 36px;
 }
 
 h2 {
-    font-size: 28px;
-    line-height: 32px;
+  font-size: 28px;
+  line-height: 32px;
 }
 
 h3 {
-    font-size: 24px;
-    line-height: 28px;
+  font-size: 24px;
+  line-height: 28px;
 }
 
 h4 {
-    font-size: 20px;
-    line-height: 24px;
+  font-size: 20px;
+  line-height: 24px;
 }
 
 h5 {
-    font-size: 16px;
-    line-height: 20px;
+  font-size: 16px;
+  line-height: 20px;
 }
 
 h6 {
-    font-size: 14px;
-    line-height: 20px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 a {
-    text-decoration: none;
-    color: var(--action-color);
+  text-decoration: none;
+  color: var(--action-color);
 }
 
 .rer-duty a {
-    color: inherit;
+  color: inherit;
 }
 
 sup {
-    font-size: 0.75em;
-    vertical-align: super;
-    line-height: 0;
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
 }
 
 /* Utility classes */
 .h-0 {
-    height: 0;
+  height: 0;
 }
 
 .pointer {
-    cursor: pointer;
+  cursor: pointer;
 }
 
 .pointer-events-none {
-    pointer-events: none;
+  pointer-events: none;
 }
 
 .arrow {
-    cursor: pointer;
+  cursor: pointer;
 }
 
 .nowrap {
-    white-space: nowrap;
+  white-space: nowrap;
 }
 
 .hover-unmuted {
-    opacity: 0.5;
+  opacity: 0.5;
 }
 
 .hover-unmuted:hover {
-    opacity: 1;
+  opacity: 1;
 }

@@ -16,12 +16,26 @@ vi.mock('@mui/material', () => ({
     renderInput?: (params: unknown) => ReactNode;
   }) => (
     <div>
-      <div data-testid="autocomplete-options">{(options ?? []).map((option) => getOptionLabel?.(option) ?? option.label ?? option.name ?? `#${option.id}`).join('|')}</div>
+      <div data-testid="autocomplete-options">
+        {(options ?? [])
+          .map(
+            (option) => getOptionLabel?.(option) ?? option.label ?? option.name ?? `#${option.id}`,
+          )
+          .join('|')}
+      </div>
       {renderInput ? renderInput({} as never) : null}
     </div>
   ),
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, disabled, onClick }: { children?: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+  Button: ({
+    children,
+    disabled,
+    onClick,
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+  }) => (
     <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
@@ -50,13 +64,7 @@ vi.mock('@mui/material', () => ({
   ),
   CircularProgress: () => <span data-testid="spinner" />,
   Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  FormControlLabel: ({
-    control,
-    label,
-  }: {
-    control?: ReactNode;
-    label?: ReactNode;
-  }) => (
+  FormControlLabel: ({ control, label }: { control?: ReactNode; label?: ReactNode }) => (
     <label>
       {control}
       <span>{label}</span>
@@ -105,7 +113,11 @@ vi.mock('../../../components/SearchableMultiOptionAutocomplete', () => ({
   }: {
     options: Array<{ id: number; label?: string; name?: string }>;
     getOptionLabel: (option: { id: number; label?: string; name?: string }) => string;
-  }) => <div data-testid="unit-options">{options.map((option) => getOptionLabel(option)).join('|')}</div>,
+  }) => (
+    <div data-testid="unit-options">
+      {options.map((option) => getOptionLabel(option)).join('|')}
+    </div>
+  ),
 }));
 
 vi.mock('./NetworkFreqActivityPeriodControl', () => ({
@@ -182,9 +194,7 @@ function renderDrawer(
           { id: 1, label: '11 АК' } as NetworkEditLookupOption,
           { id: 2, label: '12 ОМБр' } as NetworkEditLookupOption,
         ]}
-        postOptions={[
-          { id: 1, label: '_stihl_XN Пост' } as NetworkEditLookupOption,
-        ]}
+        postOptions={[{ id: 1, label: '_stihl_XN Пост' } as NetworkEditLookupOption]}
         encryptionOptions={[{ id: 11, label: 'FM' } as NetworkEditLookupOption]}
         onClose={() => {}}
         onChange={nextSetForm}
@@ -217,13 +227,19 @@ describe('NetworkEditDrawer', () => {
 
     expect(view.container.textContent).not.toContain('Невірний формат частоти');
     expect(view.container.textContent).toContain('Перша частота *');
-    expect([...view.container.querySelectorAll('button')].some((button) => button.textContent === 'Перша частота *')).toBe(false);
+    expect(
+      [...view.container.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Перша частота *',
+      ),
+    ).toBe(false);
 
     act(() => {
       view.setForm(buildForm({ freq: '123.45' }));
     });
 
-    const freqInput = view.container.querySelector('input[aria-label="Частота"]') as HTMLInputElement | null;
+    const freqInput = view.container.querySelector(
+      'input[aria-label="Частота"]',
+    ) as HTMLInputElement | null;
     expect(freqInput).not.toBeNull();
 
     act(() => {
@@ -237,17 +253,25 @@ describe('NetworkEditDrawer', () => {
     const view = renderDrawer(buildForm({ aorIds: [3], unitIds: [2] }));
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="autocomplete-options"]')?.textContent).toBe('Вся смуга|Альфа|Бета');
-    expect(view.container.querySelector('[data-testid="unit-options"]')?.textContent).toBe('11 АК|12 ОМБр');
+    expect(view.container.querySelector('[data-testid="autocomplete-options"]')?.textContent).toBe(
+      'Вся смуга|Альфа|Бета',
+    );
+    expect(view.container.querySelector('[data-testid="unit-options"]')?.textContent).toBe(
+      '11 АК|12 ОМБр',
+    );
   });
 
   it('disables create save while the first frequency is invalid', () => {
     const view = renderDrawer(buildForm());
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Створити') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Створити',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
-    expect(view.container.querySelector('[data-testid="freq-activity-period-control"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="freq-activity-period-control"]'),
+    ).not.toBeNull();
   });
 
   it('allows create save with blank optional frequency', () => {
@@ -262,7 +286,9 @@ describe('NetworkEditDrawer', () => {
     );
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Створити') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Створити',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(false);
     expect(view.container.textContent).toContain('Перша частота');
     expect(view.container.textContent).not.toContain('Перша частота *');
@@ -272,14 +298,18 @@ describe('NetworkEditDrawer', () => {
     const view = renderDrawer(buildForm());
     rendered.push(view);
 
-    const operationalButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Оперативні параметри'));
+    const operationalButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Оперативні параметри'),
+    );
     expect(operationalButton).toBeDefined();
 
     act(() => {
       operationalButton?.click();
     });
 
-    const checkbox = view.container.querySelector('input[aria-label="Не архівувати автоматично"]') as HTMLInputElement | null;
+    const checkbox = view.container.querySelector(
+      'input[aria-label="Не архівувати автоматично"]',
+    ) as HTMLInputElement | null;
     expect(checkbox).not.toBeNull();
     expect(checkbox?.checked).toBe(false);
 
@@ -291,10 +321,15 @@ describe('NetworkEditDrawer', () => {
   });
 
   it('disables edit save while required metadata is invalid', () => {
-    const view = renderDrawer(buildForm({ id: 10, name: 'управління', location: 'район', aorIds: [] }), 'edit');
+    const view = renderDrawer(
+      buildForm({ id: 10, name: 'управління', location: 'район', aorIds: [] }),
+      'edit',
+    );
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
   });
 });

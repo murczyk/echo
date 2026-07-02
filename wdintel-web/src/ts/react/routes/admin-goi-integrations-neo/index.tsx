@@ -1,4 +1,14 @@
-import { Autocomplete, Card, CardActions, CardContent, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import {
+  Autocomplete,
+  Card,
+  CardActions,
+  CardContent,
+  CircularProgress,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import React from 'react';
 
 import { Organism } from '../../../../Bindings';
@@ -70,9 +80,7 @@ function formatErrorMessage(error: unknown): string {
 
 function asNumberArray(value: unknown): number[] {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => Number(item))
-      .filter((item) => Number.isFinite(item));
+    return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
   }
   if (typeof value === 'string' && value.trim() !== '') {
     return value
@@ -192,8 +200,9 @@ export function AdminGoiIntegrationsNeoPage() {
         setIntegrations(nextIntegrations);
         setOrganisms(nextOrganisms);
         setLogins(
-          Array.from(new Set(nextLogins.users.map((user) => user.login)))
-            .sort((a, b) => a.localeCompare(b, 'uk')),
+          Array.from(new Set(nextLogins.users.map((user) => user.login))).sort((a, b) =>
+            a.localeCompare(b, 'uk'),
+          ),
         );
         if (nextIntegrations.length > 0) {
           setSelectedId(nextIntegrations[0].id);
@@ -339,7 +348,10 @@ export function AdminGoiIntegrationsNeoPage() {
           "Воркер налаштовано. Логін 'goi' і згенерований пароль записані на інстансі та повернуті у форму.",
       });
     } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка налаштування воркера: ${formatErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        message: `Помилка налаштування воркера: ${formatErrorMessage(error)}`,
+      });
     } finally {
       setSettingUpWorker(false);
     }
@@ -365,7 +377,11 @@ export function AdminGoiIntegrationsNeoPage() {
         <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
           <Stack spacing={2}>
             <div className="flex flex-wrap gap-2">
-              <PowerButton variant="contained" onClick={() => selectIntegration(null)} disabled={saving || checking || settingUpWorker}>
+              <PowerButton
+                variant="contained"
+                onClick={() => selectIntegration(null)}
+                disabled={saving || checking || settingUpWorker}
+              >
                 Нова інтеграція
               </PowerButton>
               {saving || checking || settingUpWorker ? <CircularProgress size={18} /> : null}
@@ -399,7 +415,9 @@ export function AdminGoiIntegrationsNeoPage() {
             <Autocomplete
               options={ownerOptions}
               value={selectedOwner}
-              onChange={(_, option) => setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))}
+              onChange={(_, option) =>
+                setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))
+              }
               getOptionLabel={(option) => option.name || `ID ${option.id}`}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               renderOption={(props, option) => (
@@ -424,17 +442,85 @@ export function AdminGoiIntegrationsNeoPage() {
             </TextField>
 
             {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
-              <TextField label="GOI URL" value={form.apiHost} onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))} fullWidth />
+              <TextField
+                label="GOI URL"
+                value={form.apiHost}
+                onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))}
+                fullWidth
+              />
             ) : (
               <>
-                <TextField label="SSH host" value={form.sshHost} onChange={(event) => setForm((prev) => ({ ...prev, sshHost: event.target.value }))} fullWidth />
-                <TextField label="SSH user" value={form.sshUser} onChange={(event) => setForm((prev) => ({ ...prev, sshUser: event.target.value }))} fullWidth />
-                <TextField label="SSH порт" type="number" value={form.sshPort} onChange={(event) => setForm((prev) => ({ ...prev, sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT }))} fullWidth />
-                <TextField label="Шлях до палітр" value={form.path} onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))} fullWidth />
-                <TextField label="API host" value={form.apiHost} onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))} fullWidth />
-                <TextField label="API порт" type="number" value={form.apiPort} onChange={(event) => setForm((prev) => ({ ...prev, apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT }))} fullWidth />
-                <TextField label="API логін" value={form.apiLogin} onChange={(event) => setForm((prev) => ({ ...prev, apiLogin: event.target.value }))} fullWidth />
-                <TextField label="API пароль" type="password" value={form.apiPassword} onChange={(event) => setForm((prev) => ({ ...prev, apiPassword: event.target.value }))} fullWidth />
+                <TextField
+                  label="SSH host"
+                  value={form.sshHost}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, sshHost: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="SSH user"
+                  value={form.sshUser}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, sshUser: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="SSH порт"
+                  type="number"
+                  value={form.sshPort}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT,
+                    }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Шлях до палітр"
+                  value={form.path}
+                  onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
+                  fullWidth
+                />
+                <TextField
+                  label="API host"
+                  value={form.apiHost}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, apiHost: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="API порт"
+                  type="number"
+                  value={form.apiPort}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT,
+                    }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="API логін"
+                  value={form.apiLogin}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, apiLogin: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="API пароль"
+                  type="password"
+                  value={form.apiPassword}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, apiPassword: event.target.value }))
+                  }
+                  fullWidth
+                />
               </>
             )}
 
@@ -474,26 +560,45 @@ export function AdminGoiIntegrationsNeoPage() {
                   {option}
                 </li>
               )}
-              renderInput={(params) => <TextField {...params} label="Доступ для логінів" fullWidth />}
+              renderInput={(params) => (
+                <TextField {...params} label="Доступ для логінів" fullWidth />
+              )}
             />
           </Stack>
         </CardContent>
         <CardActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: 'wrap' }}>
-          <PowerButton variant="contained" onClick={handleSave} disabled={saving || checking || settingUpWorker}>
+          <PowerButton
+            variant="contained"
+            onClick={handleSave}
+            disabled={saving || checking || settingUpWorker}
+          >
             {form.id ? 'Зберегти' : 'Створити'}
           </PowerButton>
           {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
-            <PowerButton variant="outlined" onClick={handleCheckConnection} disabled={saving || checking || settingUpWorker}>
+            <PowerButton
+              variant="outlined"
+              onClick={handleCheckConnection}
+              disabled={saving || checking || settingUpWorker}
+            >
               Перевірити з'єднання
             </PowerButton>
           ) : null}
           {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
-            <PowerButton variant="outlined" onClick={handleSetupWorker} disabled={saving || checking || settingUpWorker}>
+            <PowerButton
+              variant="outlined"
+              onClick={handleSetupWorker}
+              disabled={saving || checking || settingUpWorker}
+            >
               Налаштувати воркер
             </PowerButton>
           ) : null}
           {form.id ? (
-            <PowerButton variant="outlined" color="error" onClick={handleDelete} disabled={saving || checking || settingUpWorker}>
+            <PowerButton
+              variant="outlined"
+              color="error"
+              onClick={handleDelete}
+              disabled={saving || checking || settingUpWorker}
+            >
               Видалити
             </PowerButton>
           ) : null}

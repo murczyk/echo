@@ -5,7 +5,12 @@ import {
   parseRerAnalysisQueryStateFromSearchParams,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
-import { APP_TIME_ZONE, combineDateTimeInputToMs, formatDateTimeInputValueInTimeZone, isNullOrUndefined } from '../../utils/misc';
+import {
+  APP_TIME_ZONE,
+  combineDateTimeInputToMs,
+  formatDateTimeInputValueInTimeZone,
+  isNullOrUndefined,
+} from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import type { AnalysisQueryState } from './types';
 
@@ -28,7 +33,11 @@ function parseOptionalBooleanParam(value: string | null): boolean | null {
   return null;
 }
 
-function findAllAdjacentFreqs(allFrequencies: string[], selectedFrequencies: string[], range: number): string[] {
+function findAllAdjacentFreqs(
+  allFrequencies: string[],
+  selectedFrequencies: string[],
+  range: number,
+): string[] {
   if (range <= 0) return [];
   return allFrequencies.filter((freq) => {
     if (selectedFrequencies.includes(freq)) return false;
@@ -82,7 +91,10 @@ export function emptyQueryState(): AnalysisQueryState {
   };
 }
 
-function getDefaultAnalysisDateRange(now: Date): { fromDateTimeStr: string; toDateTimeStr: string } {
+function getDefaultAnalysisDateRange(now: Date): {
+  fromDateTimeStr: string;
+  toDateTimeStr: string;
+} {
   const startOfTodayInAppTz = dayjs(now).tz(APP_TIME_ZONE).startOf('day');
   const startOfTomorrowInAppTz = startOfTodayInAppTz.add(1, 'day');
 
@@ -117,7 +129,8 @@ export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
 ): AnalysisQueryState {
-  if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '') return normalizeQueryState(parsed);
+  if (parsed.fromDateTimeStr !== '' && parsed.toDateTimeStr !== '')
+    return normalizeQueryState(parsed);
 
   const defaultDateRange = getDefaultAnalysisDateRange(now);
   return normalizeQueryState({
@@ -197,7 +210,10 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
   };
 }
 
-export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: string[] = []): AnalysisStatsReq | null {
+export function buildAnalysisReq(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
@@ -208,7 +224,12 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
 
   const expandedFreqs =
     query.adjacentFreqsRange > 0
-      ? Array.from(new Set([...query.freqsSelected, ...findAllAdjacentFreqs(allFrequencies, query.freqsSelected, query.adjacentFreqsRange)]))
+      ? Array.from(
+          new Set([
+            ...query.freqsSelected,
+            ...findAllAdjacentFreqs(allFrequencies, query.freqsSelected, query.adjacentFreqsRange),
+          ]),
+        )
       : query.freqsSelected;
 
   return {
@@ -221,7 +242,9 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
     selectedUnits: query.unitsSelected.length ? query.unitsSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
-    selectedAors: query.aorsSelected.length ? query.aorsSelected.map((value) => Number(value)).filter(Number.isFinite) : null,
+    selectedAors: query.aorsSelected.length
+      ? query.aorsSelected.map((value) => Number(value)).filter(Number.isFinite)
+      : null,
     orWithExtendedForm: query.orWithExtendedForm,
     orBookmarked: query.orBookmarked,
     orImportant: query.orImportant,
@@ -229,7 +252,9 @@ export function buildAnalysisReq(state: AnalysisQueryState, allFrequencies: stri
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
     selectedTags: query.tags.length ? query.tags : null,
-    selectedNetworks: query.withoutNetwork ? null : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
+    selectedNetworks: query.withoutNetwork
+      ? null
+      : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
     withoutNetwork: query.withoutNetwork,
     metadataCc: query.metadataCc.length ? query.metadataCc : null,
     metadataSender: query.metadataSender.length ? query.metadataSender : null,
@@ -319,7 +344,11 @@ export function shouldRebuildAnalysisRequests(
   currentFrequencies: string[] = [],
   nextFrequencies: string[] = [],
 ): boolean {
-  if (state.adjacentFreqsRange <= 0 || state.freqsSelected.length === 0 || nextFrequencies.length === 0) {
+  if (
+    state.adjacentFreqsRange <= 0 ||
+    state.freqsSelected.length === 0 ||
+    nextFrequencies.length === 0
+  ) {
     return false;
   }
 
@@ -327,10 +356,15 @@ export function shouldRebuildAnalysisRequests(
   const nextReq = buildAnalysisReq(state, nextFrequencies);
   if (isNullOrUndefined(currentReq) || isNullOrUndefined(nextReq)) return false;
 
-  return JSON.stringify(currentReq.selectedFreqs ?? []) !== JSON.stringify(nextReq.selectedFreqs ?? []);
+  return (
+    JSON.stringify(currentReq.selectedFreqs ?? []) !== JSON.stringify(nextReq.selectedFreqs ?? [])
+  );
 }
 
-export function queryStateFromSavedFilter(savedFilter: SavedFilter, current: AnalysisQueryState): AnalysisQueryState {
+export function queryStateFromSavedFilter(
+  savedFilter: SavedFilter,
+  current: AnalysisQueryState,
+): AnalysisQueryState {
   const req = savedFilter.req;
   return normalizeQueryState({
     ...current,
@@ -410,8 +444,14 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   return normalizeQueryState({
     ...emptyQueryState(),
     includeOnlyNewFreqs: false,
-    fromDateTimeStr: formatDateTimeInputValueInTimeZone(new Date(normalized.sinceDateInclusiveMs), APP_TIME_ZONE),
-    toDateTimeStr: formatDateTimeInputValueInTimeZone(new Date(normalized.tillDateNoninclusiveMs), APP_TIME_ZONE),
+    fromDateTimeStr: formatDateTimeInputValueInTimeZone(
+      new Date(normalized.sinceDateInclusiveMs),
+      APP_TIME_ZONE,
+    ),
+    toDateTimeStr: formatDateTimeInputValueInTimeZone(
+      new Date(normalized.tillDateNoninclusiveMs),
+      APP_TIME_ZONE,
+    ),
     aorsSelected: (normalized.selectedAors ?? []).map(String),
     groupsSelected: normalized.selectedGroups ?? [],
     sendersSelected: normalized.selectedSenders ?? [],
@@ -443,22 +483,35 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   });
 }
 
-function analysisReqComparisonKey(req: AnalysisStatsReq, allFrequencies: string[] = []): string | null {
+function analysisReqComparisonKey(
+  req: AnalysisStatsReq,
+  allFrequencies: string[] = [],
+): string | null {
   const normalized = buildAnalysisReq(canonicalizeAnalysisReqToQueryState(req), allFrequencies);
   if (isNullOrUndefined(normalized)) return null;
 
-  const { sinceDateInclusiveMs: _sinceDateInclusiveMs, tillDateNoninclusiveMs: _tillDateNoninclusiveMs, ...rest } = normalized;
+  const {
+    sinceDateInclusiveMs: _sinceDateInclusiveMs,
+    tillDateNoninclusiveMs: _tillDateNoninclusiveMs,
+    ...rest
+  } = normalized;
   return JSON.stringify(rest);
 }
 
-export function queryStateComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+export function queryStateComparisonKey(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): string | null {
   const req = buildAnalysisReq(state, allFrequencies);
   if (isNullOrUndefined(req)) return null;
 
   return analysisReqComparisonKey(req, allFrequencies);
 }
 
-export function queryStateUiComparisonKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+export function queryStateUiComparisonKey(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): string | null {
   const analysisKey = queryStateComparisonKey(state, allFrequencies);
   if (isNullOrUndefined(analysisKey)) return null;
 
@@ -468,14 +521,21 @@ export function queryStateUiComparisonKey(state: AnalysisQueryState, allFrequenc
   });
 }
 
-export function queryStateReloadKey(state: AnalysisQueryState, allFrequencies: string[] = []): string | null {
+export function queryStateReloadKey(
+  state: AnalysisQueryState,
+  allFrequencies: string[] = [],
+): string | null {
   const req = buildAnalysisReq(state, allFrequencies);
   if (isNullOrUndefined(req)) return null;
 
   return JSON.stringify(req);
 }
 
-export function queryStateMatchesSavedFilter(state: AnalysisQueryState, savedFilter: SavedFilter, allFrequencies: string[] = []): boolean {
+export function queryStateMatchesSavedFilter(
+  state: AnalysisQueryState,
+  savedFilter: SavedFilter,
+  allFrequencies: string[] = [],
+): boolean {
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;

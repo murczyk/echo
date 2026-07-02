@@ -16,7 +16,7 @@ export class PalitraCacheManager {
 
   constructor(
     private ttlMs: number,
-    private maxTiles: number
+    private maxTiles: number,
   ) {}
 
   hasPendingRequest(palitraId: number, tileKey: string): boolean {
@@ -24,28 +24,24 @@ export class PalitraCacheManager {
   }
 
   markPending(palitraIds: number[], tileKey: string): void {
-    palitraIds.forEach(id => {
+    palitraIds.forEach((id) => {
       this.pendingRequests.add(`${id}:${tileKey}`);
     });
   }
 
   clearPending(palitraIds: number[], tileKey: string): void {
-    palitraIds.forEach(id => {
+    palitraIds.forEach((id) => {
       this.pendingRequests.delete(`${id}:${tileKey}`);
     });
   }
 
-  filterByCache(
-    palitraIds: number[],
-    bounds: L.LatLngBounds,
-    zoom: number
-  ): number[] {
+  filterByCache(palitraIds: number[], bounds: L.LatLngBounds, zoom: number): number[] {
     const now = Date.now();
     const tileKey = this.buildTileKey(bounds, zoom);
     let expiredCount = 0;
     let cachedCount = 0;
-    
-    const filtered = palitraIds.filter(palitraId => {
+
+    const filtered = palitraIds.filter((palitraId) => {
       const cacheKey = `${palitraId}:${tileKey}`;
       const cachedAt = this.cache.get(cacheKey);
       if (cachedAt === undefined) {
@@ -59,12 +55,14 @@ export class PalitraCacheManager {
       cachedCount++;
       return false;
     });
-    
+
     if (expiredCount > 0) {
       debugPalitraCache(`[Palitra Cache] Expired ${expiredCount} tiles due to TTL`);
     }
     if (cachedCount > 0) {
-      debugPalitraCache(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
+      debugPalitraCache(
+        `[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`,
+      );
     }
 
     return filtered;
@@ -72,7 +70,7 @@ export class PalitraCacheManager {
 
   markRequested(palitraIds: number[], tileKey: string): void {
     const now = Date.now();
-    palitraIds.forEach(palitraId => {
+    palitraIds.forEach((palitraId) => {
       this.cache.set(`${palitraId}:${tileKey}`, now);
     });
   }
@@ -81,9 +79,11 @@ export class PalitraCacheManager {
     palitraIds: number[],
     bounds: L.LatLngBounds,
     tileKey: string,
-    onUpdate: () => void
+    onUpdate: () => void,
   ): Promise<void> {
-    debugPalitraCache(`[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`);
+    debugPalitraCache(
+      `[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`,
+    );
     try {
       const response = await fetch('/api/palitra/points', {
         method: 'POST',
@@ -94,29 +94,31 @@ export class PalitraCacheManager {
             min_lat: bounds.getSouth(),
             min_lng: bounds.getWest(),
             max_lat: bounds.getNorth(),
-            max_lng: bounds.getEast()
-          }
-        })
+            max_lng: bounds.getEast(),
+          },
+        }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       const data = await response.json();
       this.storePoints(data, tileKey);
       onUpdate();
     } catch (error) {
       console.error('[Palitra Cache] Failed to fetch palitra points:', error);
       // Remove from cache to allow retry
-      palitraIds.forEach(id => {
+      palitraIds.forEach((id) => {
         this.cache.delete(`${id}:${tileKey}`);
       });
     }
   }
 
   /** All cached points for given palitras (from all tiles), deduped, for local search */
-  getCachedPointsForPalitras(palitraIds: number[]): { palitra_id: number; points: PalitraPoint[] }[] {
+  getCachedPointsForPalitras(
+    palitraIds: number[],
+  ): { palitra_id: number; points: PalitraPoint[] }[] {
     const result: { palitra_id: number; points: PalitraPoint[] }[] = [];
     for (const palitraId of palitraIds) {
       const tiles = this.tiles.get(palitraId);
@@ -147,7 +149,7 @@ export class PalitraCacheManager {
   /** Fetch points by label search (exact match). Does not use tile cache. */
   async fetchSearchPoints(
     palitraIds: number[],
-    pointLabels: string[]
+    pointLabels: string[],
   ): Promise<{ palitra_id: number; points: PalitraPoint[] }[]> {
     if (palitraIds.length === 0 || pointLabels.length === 0) {
       return [];
@@ -157,8 +159,8 @@ export class PalitraCacheManager {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         palitra_ids: palitraIds,
-        point_labels: pointLabels
-      })
+        point_labels: pointLabels,
+      }),
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -166,14 +168,14 @@ export class PalitraCacheManager {
     return response.json();
   }
 
-  /** Store points in the cache 
+  /** Store points in the cache
    * @param data - The data to store
    * @param tileKey - The tile key
    * Seen is a set of keys for deduplication bc same point can be in multiple tiles
-  */
+   */
   storePoints(data: { palitra_id: number; points: PalitraPoint[] }[], tileKey: string): void {
     let totalNewPoints = 0;
-    data.forEach(item => {
+    data.forEach((item) => {
       if (item && typeof item.palitra_id === 'number') {
         let tiles = this.tiles.get(item.palitra_id);
         if (!tiles) {
@@ -196,7 +198,7 @@ export class PalitraCacheManager {
 
     debugPalitraCache(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
     this.logStats();
-    
+
     // Evict old entries if needed
     this.evict();
   }
@@ -206,10 +208,10 @@ export class PalitraCacheManager {
     if (entries.length <= this.maxTiles) {
       return;
     }
-    
+
     const beforeEviction = entries.length;
     const beforePoints = this.getTotalPoints();
-    
+
     // Sort by timestamp, keep newest
     entries.sort((a, b) => b[1] - a[1]);
     const toKeep = entries.slice(0, this.maxTiles);
@@ -217,12 +219,14 @@ export class PalitraCacheManager {
     toKeep.forEach(([key, timestamp]) => {
       this.cache.set(key, timestamp);
     });
-    
+
     // Clean corresponding tiles
     this.cleanOrphaned();
-    
+
     const afterPoints = this.getTotalPoints();
-    debugPalitraCache(`[Palitra Cache] EVICTION: Removed ${beforeEviction - this.maxTiles} tiles, freed ${beforePoints - afterPoints} points`);
+    debugPalitraCache(
+      `[Palitra Cache] EVICTION: Removed ${beforeEviction - this.maxTiles} tiles, freed ${beforePoints - afterPoints} points`,
+    );
     this.logStats();
   }
 
@@ -255,13 +259,15 @@ export class PalitraCacheManager {
     const totalTiles = this.cache.size;
     const totalPoints = this.getTotalPoints();
     const palitrasWithData = this.tiles.size;
-    
+
     // Estimate memory usage (rough calculation)
     const estimatedMemoryMB = (totalPoints * 70) / (1024 * 1024); // ~70 bytes per point
     const avgPointsPerTile = totalTiles > 0 ? Math.round(totalPoints / totalTiles) : 0;
-    
-    debugPalitraCache(`[Palitra Cache Stats] Tiles: ${totalTiles}/${this.maxTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`);
-    
+
+    debugPalitraCache(
+      `[Palitra Cache Stats] Tiles: ${totalTiles}/${this.maxTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`,
+    );
+
     // Detailed breakdown per palitra
     const breakdown: string[] = [];
     this.tiles.forEach((tiles, palitraId) => {
@@ -375,12 +381,12 @@ export class PalitraCacheManager {
     if (parts.length !== 2) {
       return null;
     }
-    const coords = parts[1].split(',').map(value => Number(value));
+    const coords = parts[1].split(',').map((value) => Number(value));
     if (coords.length !== 4) {
       return null;
     }
     const [minLat, minLng, maxLat, maxLng] = coords;
-    if ([minLat, minLng, maxLat, maxLng].some(value => Number.isNaN(value))) {
+    if ([minLat, minLng, maxLat, maxLng].some((value) => Number.isNaN(value))) {
       return null;
     }
     return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);

@@ -34,8 +34,12 @@ export function getNetworkRelationsGraphTheme(theme: Theme): NetworkRelationsGra
     surfaceBg: isDarkMode ? 'rgba(255,255,255,0.06)' : alpha(theme.palette.text.primary, 0.04),
     surfaceBorder: isDarkMode ? 'rgba(255,255,255,0.14)' : alpha(theme.palette.divider, 0.9),
     zoomControlBg: isDarkMode ? '#24272d' : alpha(theme.palette.background.paper, 0.96),
-    zoomControlBorder: isDarkMode ? 'rgba(255,255,255,0.28)' : alpha(theme.palette.text.primary, 0.35),
-    zoomControlHoverBg: isDarkMode ? 'rgba(255,255,255,0.08)' : alpha(theme.palette.text.primary, 0.06),
+    zoomControlBorder: isDarkMode
+      ? 'rgba(255,255,255,0.28)'
+      : alpha(theme.palette.text.primary, 0.35),
+    zoomControlHoverBg: isDarkMode
+      ? 'rgba(255,255,255,0.08)'
+      : alpha(theme.palette.text.primary, 0.06),
     zoomControlText: isDarkMode ? '#f3f5f7' : theme.palette.text.primary,
   };
 }

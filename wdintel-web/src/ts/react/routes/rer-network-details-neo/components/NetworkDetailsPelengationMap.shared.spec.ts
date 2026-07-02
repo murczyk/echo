@@ -29,13 +29,18 @@ describe('NetworkDetailsPelengationMap.shared', () => {
   });
 
   it('collects distinct sorted frequencies', () => {
-    expect(getPelengationFrequencies(points)).toEqual(['146.5000', '146.7500', '149.0000', NO_DATA_LABEL]);
+    expect(getPelengationFrequencies(points)).toEqual([
+      '146.5000',
+      '146.7500',
+      '149.0000',
+      NO_DATA_LABEL,
+    ]);
   });
 
   it('filters points by search and enabled frequencies', () => {
-    expect(filterPelengationPoints(points, '750', [NO_DATA_LABEL, '146.5000', '146.7500', '149.0000'])).toEqual([
-      { id: 2, lat: 49.2, lng: 32.2, body: 'two', freq: ' 146.7500 ' },
-    ]);
+    expect(
+      filterPelengationPoints(points, '750', [NO_DATA_LABEL, '146.5000', '146.7500', '149.0000']),
+    ).toEqual([{ id: 2, lat: 49.2, lng: 32.2, body: 'two', freq: ' 146.7500 ' }]);
     expect(filterPelengationPoints(points, '', [NO_DATA_LABEL, '149.0000'])).toEqual([
       { id: 3, lat: 49.3, lng: 32.3, body: 'three', freq: '149.0000' },
       { id: 4, lat: 49.4, lng: 32.4, body: 'four', freq: '   ' },

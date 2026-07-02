@@ -50,7 +50,8 @@ class MockIntersectionObserver {
   }
 }
 
-globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
+globalThis.IntersectionObserver =
+  MockIntersectionObserver as unknown as typeof IntersectionObserver;
 
 vi.mock('react-pdf', () => {
   const pdfjs = { GlobalWorkerOptions: { workerSrc: '' } };
@@ -112,7 +113,9 @@ describe('PdfDocumentPreview', () => {
     expect(container.querySelectorAll('[data-page]')).toHaveLength(0);
 
     await act(async () => {
-      container.querySelector('[data-document]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container
+        .querySelector('[data-document]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(container.querySelectorAll('[data-pdf-page-shell]')).toHaveLength(10);

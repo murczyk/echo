@@ -140,7 +140,10 @@ function emptyLongPollResponse() {
   };
 }
 
-export async function installAnalysisNeoApiMocks(page: Page, options: AnalysisNeoMockOptions = {}): Promise<void> {
+export async function installAnalysisNeoApiMocks(
+  page: Page,
+  options: AnalysisNeoMockOptions = {},
+): Promise<void> {
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const resourceType = request.resourceType();

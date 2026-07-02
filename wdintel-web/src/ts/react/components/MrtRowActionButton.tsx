@@ -54,8 +54,7 @@ function runRowAction({
 
 function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
   if (tone !== 'default') {
-    const toneColor =
-      tone === 'danger' ? theme.palette.error.main : theme.palette.warning.main;
+    const toneColor = tone === 'danger' ? theme.palette.error.main : theme.palette.warning.main;
 
     return {
       width: 28,
@@ -89,7 +88,10 @@ function actionButtonSx(theme: Theme, tone: Tone): SystemStyleObject<Theme> {
     '&:focus-visible': {
       outline: `2px solid ${alpha(theme.palette.primary.main, 0.7)}`,
       outlineOffset: 1,
-      backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.1),
+      backgroundColor: alpha(
+        theme.palette.primary.main,
+        theme.palette.mode === 'dark' ? 0.18 : 0.1,
+      ),
     },
     '&.Mui-disabled': {
       color: theme.palette.action.disabled,
@@ -153,7 +155,14 @@ export function MrtRowActions({ children, layout = 'row', forceMenu = false }: G
   );
 }
 
-export function MrtRowActionButton({ label, onClick, icon, disabled = false, tone = 'default', opensModal = false }: Props) {
+export function MrtRowActionButton({
+  label,
+  onClick,
+  icon,
+  disabled = false,
+  tone = 'default',
+  opensModal = false,
+}: Props) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (opensModal) {
@@ -198,7 +207,14 @@ function rowActionToneColor(theme: Theme, tone: Tone) {
 }
 
 function OverflowMenuAction({ action, onClose }: { action: ActionElement; onClose: () => void }) {
-  const { label, onClick, icon, disabled = false, tone = 'default', opensModal = false } = action.props;
+  const {
+    label,
+    onClick,
+    icon,
+    disabled = false,
+    tone = 'default',
+    opensModal = false,
+  } = action.props;
 
   function handleClick(event: MouseEvent<HTMLLIElement>) {
     event.stopPropagation();

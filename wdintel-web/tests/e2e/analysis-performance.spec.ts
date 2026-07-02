@@ -8,7 +8,10 @@ type LoadResult = {
 };
 
 test.describe('@perf', () => {
-  async function measureRouteLoad(browser: Browser, path: '/rer-analysis' | '/rer-analysis-neo'): Promise<LoadResult> {
+  async function measureRouteLoad(
+    browser: Browser,
+    path: '/rer-analysis' | '/rer-analysis-neo',
+  ): Promise<LoadResult> {
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -21,7 +24,10 @@ test.describe('@perf', () => {
       const startedAt = performance.now();
       await page.goto(path);
 
-      const title = path === '/rer-analysis-neo' ? page.getByRole('heading', { name: 'Аналіз', level: 1 }) : page.getByRole('heading', { name: 'аналіз', level: 1 });
+      const title =
+        path === '/rer-analysis-neo'
+          ? page.getByRole('heading', { name: 'Аналіз', level: 1 })
+          : page.getByRole('heading', { name: 'аналіз', level: 1 });
       await expect(title).toBeVisible();
       const titleMs = performance.now() - startedAt;
 
@@ -34,7 +40,9 @@ test.describe('@perf', () => {
     }
   }
 
-  test('rer-analysis-neo first load is not slower than rer-analysis', async ({ browser }, testInfo) => {
+  test('rer-analysis-neo first load is not slower than rer-analysis', async ({
+    browser,
+  }, testInfo) => {
     const classic = await measureRouteLoad(browser, '/rer-analysis');
     const neo = await measureRouteLoad(browser, '/rer-analysis-neo');
 

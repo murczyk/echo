@@ -20,7 +20,10 @@ import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { listTags } from '../../services/api/tags';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
 
@@ -134,7 +137,8 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
   const tableStateContext = useTableStateContext();
   const columns = useTagColumns();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -260,23 +264,40 @@ function AdminTagsNeoPageBody() {
   };
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <TablePageToolbar
-        title="Теги"
-        withGlobalTextFilter
-        hideGlobalTextFilter={status !== 'success'}
-        internalActionsDisabled={status !== 'success'}
-        actions={
-          <div className="flex gap-3">
-            <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити тег
-            </PowerButton>
-          </div>
-        }
-      />
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        <TablePageToolbar
+          title="Теги"
+          withGlobalTextFilter
+          hideGlobalTextFilter={status !== 'success'}
+          internalActionsDisabled={status !== 'success'}
+          actions={
+            <div className="flex gap-3">
+              <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
+                Створити тег
+              </PowerButton>
+            </div>
+          }
+        />
 
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderTable()}
+        </Box>
       </Stack>
     </Box>
   );

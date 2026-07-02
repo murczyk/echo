@@ -82,7 +82,10 @@ export function createDefaultReportState(): AnalysisReportState {
   };
 }
 
-export function reportTemplateToKind(template: ReportTemplateId, senderAggregation: SenderAggregation): string {
+export function reportTemplateToKind(
+  template: ReportTemplateId,
+  senderAggregation: SenderAggregation,
+): string {
   switch (template) {
     case 'senders':
       return senderAggregation === 'ByPost' ? 'posts' : 'senders';
@@ -148,7 +151,10 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
   }
 }
 
-export function buildReportRequest(state: AnalysisReportState, req: InboxMessagesReq): ReportPreviewReq {
+export function buildReportRequest(
+  state: AnalysisReportState,
+  req: InboxMessagesReq,
+): ReportPreviewReq {
   return {
     kind: reportTemplateToKind(state.template, state.senderAggregation),
     reportType: reportTemplateToType(state),
@@ -161,36 +167,60 @@ export function buildReportRequest(state: AnalysisReportState, req: InboxMessage
     tagReportSortBy: state.template === 'tags' ? state.tagReportSortBy : null,
     report1213LinkedNetworksOnly: null,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
-    interceptionKeepFullMessage: state.template === 'interception' ? state.interceptionKeepFullMessage : null,
-    interceptionKeepOldColors: state.template === 'interception' ? state.interceptionKeepOldColors : null,
+    interceptionKeepFullMessage:
+      state.template === 'interception' ? state.interceptionKeepFullMessage : null,
+    interceptionKeepOldColors:
+      state.template === 'interception' ? state.interceptionKeepOldColors : null,
     digestOmitExoId: state.template === 'digest' ? false : null,
     digestForm1217: state.template === 'digest' ? false : null,
     sposobUnitName: state.template === 'sposob' ? state.sposobUnitName.trim() : null,
   } as ReportPreviewReq;
 }
 
-export function reportDownloadMeta(state: AnalysisReportState): { extension: string; mimeType: string } {
+export function reportDownloadMeta(state: AnalysisReportState): {
+  extension: string;
+  mimeType: string;
+} {
   switch (state.template) {
     case 'pelengs':
     case 'interception':
     case 'senders':
-      return { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+      return {
+        extension: 'xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
     case 'reo':
       return state.reoFileType === 'Xlsx'
-        ? { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
-        : { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+        ? {
+            extension: 'xlsx',
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }
+        : {
+            extension: 'docx',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          };
     case 'summary_table':
-      return { extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+      return {
+        extension: 'xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
     case 'kmz':
       return { extension: 'kmz', mimeType: 'application/vnd.google-earth.kmz' };
     case 'geojson':
       return { extension: 'geojson', mimeType: 'application/geo+json' };
     default:
-      return { extension: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+      return {
+        extension: 'docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      };
   }
 }
 
-export function buildReportFilename(state: AnalysisReportState, fromDateTimeStr: string, toDateTimeStr: string) {
+export function buildReportFilename(
+  state: AnalysisReportState,
+  fromDateTimeStr: string,
+  toDateTimeStr: string,
+) {
   const { extension } = reportDownloadMeta(state);
   return `report_${fromDateTimeStr}_${toDateTimeStr}.${extension}`;
 }
@@ -239,7 +269,8 @@ export function describeAppliedReportFilters(
     report.reportTagsOnlyThisUnit ||
     (report.template === 'tags' && report.tagReportSortBy !== 'ByTime') ||
     (report.template === 'babak' && report.withoutComments) ||
-    ((report.template === 'babak' || report.template === 'interception') && report.withoutModelTags) ||
+    ((report.template === 'babak' || report.template === 'interception') &&
+      report.withoutModelTags) ||
     (report.template === 'active_networks' && report.activeNetworksAorIds.length > 0);
 
   let globalHint = 'Звіт буде сформовано за вибраний період без додаткових фільтрів.';
@@ -270,7 +301,10 @@ export function describeAppliedReportFilters(
   if (report.template === 'babak' && report.withoutComments) {
     inPlaceHints.push('Коментарі не включаються у звіт.');
   }
-  if ((report.template === 'babak' || report.template === 'interception') && report.withoutModelTags) {
+  if (
+    (report.template === 'babak' || report.template === 'interception') &&
+    report.withoutModelTags
+  ) {
     inPlaceHints.push('Без автоматичних тегів для цього шаблону.');
   }
 

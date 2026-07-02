@@ -9,14 +9,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NETWORK_STATUS_ACTIVE } from '../network-status';
 
 vi.mock('@mui/icons-material/ContentCopyOutlined', () => ({ default: () => <span /> }));
-vi.mock('@mui/icons-material/KeyboardArrowLeftOutlined', () => ({ default: () => <span data-testid="arrow-left" /> }));
+vi.mock('@mui/icons-material/KeyboardArrowLeftOutlined', () => ({
+  default: () => <span data-testid="arrow-left" />,
+}));
 vi.mock('@mui/icons-material/KeyboardArrowDownOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/KeyboardArrowUpOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/MoreVertOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('@mui/material', () => ({
   Box: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
-  Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
+  Button: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
@@ -80,7 +90,9 @@ type Rendered = {
   root: Root;
 };
 
-async function renderPanel(props: ComponentProps<typeof NetworkDetailsLeftPanel>): Promise<Rendered> {
+async function renderPanel(
+  props: ComponentProps<typeof NetworkDetailsLeftPanel>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -173,8 +185,12 @@ describe('NetworkDetailsLeftPanel', () => {
     const view = await renderPanel(baseProps({ placement: 'left' }));
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="network-details-panel-actions"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="network-details-panel-actions"]'),
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]'),
+    ).toBeNull();
   });
 
   it('renders the collapsed top summary with values only', async () => {
@@ -186,22 +202,30 @@ describe('NetworkDetailsLeftPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]')?.textContent).not.toContain('Підрозділ 1');
-    expect(view.container.querySelector('[data-summary-key="callsigns"]')?.textContent).toContain('Склад кореспондентів');
-    expect(view.container.querySelector('[data-summary-key="callsigns"]')?.textContent).toContain('11');
-    expect(view.container.querySelector('[data-summary-key="activity"]')?.getAttribute('data-summary-tone')).toBe('success');
+    expect(
+      view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]'),
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="network-details-panel-collapsed-summary"]')
+        ?.textContent,
+    ).not.toContain('Підрозділ 1');
+    expect(view.container.querySelector('[data-summary-key="callsigns"]')?.textContent).toContain(
+      'Склад кореспондентів',
+    );
+    expect(view.container.querySelector('[data-summary-key="callsigns"]')?.textContent).toContain(
+      '11',
+    );
+    expect(
+      view.container
+        .querySelector('[data-summary-key="activity"]')
+        ?.getAttribute('data-summary-tone'),
+    ).toBe('success');
     expect(view.container.textContent).not.toContain('|');
 
-    const itemKeys = Array.from(view.container.querySelectorAll('[data-summary-key]')).map((node) => node.getAttribute('data-summary-key'));
-    expect(itemKeys).toEqual([
-      'location',
-      'aor',
-      'callsigns',
-      'activity',
-      'created',
-      'operator',
-    ]);
+    const itemKeys = Array.from(view.container.querySelectorAll('[data-summary-key]')).map((node) =>
+      node.getAttribute('data-summary-key'),
+    );
+    expect(itemKeys).toEqual(['location', 'aor', 'callsigns', 'activity', 'created', 'operator']);
     expect(view.container.textContent).not.toContain('Оновлено');
   });
 
@@ -216,8 +240,14 @@ describe('NetworkDetailsLeftPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-summary-key="activity"]')?.getAttribute('data-summary-tone')).toBe('default');
-    expect(view.container.querySelector('[data-summary-key="activity"]')?.textContent).toContain('Неактивна');
+    expect(
+      view.container
+        .querySelector('[data-summary-key="activity"]')
+        ?.getAttribute('data-summary-tone'),
+    ).toBe('default');
+    expect(view.container.querySelector('[data-summary-key="activity"]')?.textContent).toContain(
+      'Неактивна',
+    );
   });
 
   it('calls the copy helper from the menu', async () => {

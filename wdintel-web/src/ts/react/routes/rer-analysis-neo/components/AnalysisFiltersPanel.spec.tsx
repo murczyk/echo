@@ -19,7 +19,10 @@ function uniqueInOrder(values: string[]): string[] {
 }
 
 vi.mock('@mui/material', () => ({
-  Accordion: (props: { children: ReactNode; onChange?: (event: unknown, nextExpanded: boolean) => void }) => {
+  Accordion: (props: {
+    children: ReactNode;
+    onChange?: (event: unknown, nextExpanded: boolean) => void;
+  }) => {
     accordionSpy(props);
     return <div>{props.children}</div>;
   },
@@ -32,7 +35,10 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
-  Checkbox: (props: { checked?: boolean; onChange?: (_event: Event, checked: boolean) => void }) => (
+  Checkbox: (props: {
+    checked?: boolean;
+    onChange?: (_event: Event, checked: boolean) => void;
+  }) => (
     <input
       type="checkbox"
       checked={props.checked ?? false}
@@ -50,14 +56,19 @@ vi.mock('@mui/material', () => ({
   ),
   InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   InputLabel: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  MenuItem: ({ children, value }: { children: ReactNode; value: string }) => <option value={value}>{children}</option>,
+  MenuItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
   Paper: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Select: (props: {
     children: ReactNode;
     value: string;
     onChange?: (event: { target: { value: string } }) => void;
   }) => (
-    <select value={props.value} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}>
+    <select
+      value={props.value}
+      onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
+    >
       {props.children}
     </select>
   ),
@@ -86,10 +97,19 @@ vi.mock('@mui/material', () => ({
       onChange={(event) => props.onChange?.(event.nativeEvent, event.currentTarget.checked)}
     />
   ),
-  TextField: (props: { label?: string; value?: string; onChange?: (event: { target: { value: string } }) => void; type?: string }) => (
+  TextField: (props: {
+    label?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    type?: string;
+  }) => (
     <label>
       <span>{props.label}</span>
-      <input type={props.type ?? 'text'} value={props.value ?? ''} onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })} />
+      <input
+        type={props.type ?? 'text'}
+        value={props.value ?? ''}
+        onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
+      />
     </label>
   ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -112,7 +132,9 @@ vi.mock('@mui/icons-material/InfoOutlined', () => ({
 vi.mock('./AnalysisFilterField', () => ({
   AnalysisFilterField: (props: unknown) => {
     analysisFilterFieldSpy(props);
-    return <div data-testid={`filter-${String((props as { label?: string }).label ?? 'unknown')}`} />;
+    return (
+      <div data-testid={`filter-${String((props as { label?: string }).label ?? 'unknown')}`} />
+    );
   },
 }));
 
@@ -199,7 +221,9 @@ function buildNetwork(id: number, name: string): AnalysisPageState['networks'][n
   };
 }
 
-function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>['page']> = {}): ComponentProps<typeof AnalysisFiltersPanel> {
+function buildProps(
+  overrides: Partial<ComponentProps<typeof AnalysisFiltersPanel>['page']> = {},
+): ComponentProps<typeof AnalysisFiltersPanel> {
   return {
     page: {
       isDirty: false,
@@ -249,7 +273,9 @@ function buildProps(overrides: Partial<ComponentProps<typeof AnalysisFiltersPane
   };
 }
 
-async function renderComponent(props: ComponentProps<typeof AnalysisFiltersPanel>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof AnalysisFiltersPanel>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -260,10 +286,13 @@ async function renderComponent(props: ComponentProps<typeof AnalysisFiltersPanel
 }
 
 function findLabelInput(container: HTMLElement, labelText: string): HTMLInputElement {
-  const label = Array.from(container.querySelectorAll('label')).find((item) => item.textContent?.includes(labelText));
+  const label = Array.from(container.querySelectorAll('label')).find((item) =>
+    item.textContent?.includes(labelText),
+  );
   if (!label) throw new Error(`Label not found: ${labelText}`);
   const input = label.querySelector('input');
-  if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found for label: ${labelText}`);
+  if (!(input instanceof HTMLInputElement))
+    throw new Error(`Input not found for label: ${labelText}`);
   return input;
 }
 
@@ -339,14 +368,12 @@ describe('AnalysisFiltersPanel', () => {
   it('shows loading state for an opened lazy section instead of an empty-options message', async () => {
     let tagsSectionLoading = false;
     let resolveLoad: (() => void) | null = null;
-    const loadFilterSection = vi.fn(
-      () => {
-        tagsSectionLoading = true;
-        return new Promise<void>((resolve) => {
-          resolveLoad = resolve;
-        });
-      },
-    );
+    const loadFilterSection = vi.fn(() => {
+      tagsSectionLoading = true;
+      return new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      });
+    });
 
     const buildPage = () =>
       buildProps({
@@ -358,8 +385,17 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     const tagsAccordion = accordionSpy.mock.calls
-      .map(([callProps]) => callProps as { 'data-section-id'?: string; onChange?: (event: unknown, nextExpanded: boolean) => void })
-      .find((callProps) => callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function');
+      .map(
+        ([callProps]) =>
+          callProps as {
+            'data-section-id'?: string;
+            onChange?: (event: unknown, nextExpanded: boolean) => void;
+          },
+      )
+      .find(
+        (callProps) =>
+          callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function',
+      );
     await act(async () => {
       tagsAccordion?.onChange?.(null, true);
     });
@@ -370,7 +406,9 @@ describe('AnalysisFiltersPanel', () => {
 
     expect(
       analysisFilterFieldSpy.mock.calls.some(
-        ([callProps]) => (callProps as { label: string; loading?: boolean }).label === 'Теги' && (callProps as { label: string; loading?: boolean }).loading === true,
+        ([callProps]) =>
+          (callProps as { label: string; loading?: boolean }).label === 'Теги' &&
+          (callProps as { label: string; loading?: boolean }).loading === true,
       ),
     ).toBe(true);
     expect(loadFilterSection).toHaveBeenCalledWith('tags');
@@ -434,14 +472,24 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const groupsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number; values?: string[] }>; value: string[] })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number; values?: string[] }>;
+            value: string[];
+          },
+      )
       .find((callProps) => callProps.label === 'Групи');
 
     expect(groupsField?.options).toEqual([
       { value: 'group-a', label: 'Грак Пл', count: 2, values: ['group-a', 'group-b'] },
     ]);
     expect(groupsField?.value).toEqual(['group-b']);
-    expect((groupsField as { preserveSelectedOptionValuesOnChange?: boolean } | undefined)?.preserveSelectedOptionValuesOnChange).toBe(true);
+    expect(
+      (groupsField as { preserveSelectedOptionValuesOnChange?: boolean } | undefined)
+        ?.preserveSelectedOptionValuesOnChange,
+    ).toBe(true);
   });
 
   it('uses the network stats label and sorts networks by it', async () => {
@@ -459,7 +507,13 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const networksField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Мережі');
 
     expect(networksField?.options).toEqual([
@@ -539,9 +593,17 @@ describe('AnalysisFiltersPanel', () => {
 
     rendered.push(await renderComponent(props));
 
-    expect(accordionSpy.mock.calls.map(([callProps]) => (callProps as { expanded: boolean }).expanded).every((expanded) => expanded === false)).toBe(true);
+    expect(
+      accordionSpy.mock.calls
+        .map(([callProps]) => (callProps as { expanded: boolean }).expanded)
+        .every((expanded) => expanded === false),
+    ).toBe(true);
 
-    const renderedLabels = uniqueInOrder(analysisFilterFieldSpy.mock.calls.map(([callProps]) => (callProps as { label?: string }).label ?? ''));
+    const renderedLabels = uniqueInOrder(
+      analysisFilterFieldSpy.mock.calls.map(
+        ([callProps]) => (callProps as { label?: string }).label ?? '',
+      ),
+    );
     expect(renderedLabels).toEqual([
       'Смуги',
       'Частоти',
@@ -560,38 +622,104 @@ describe('AnalysisFiltersPanel', () => {
     ]);
 
     const tagsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Теги');
     const aorsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Смуги');
     const groupsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Групи');
     const locationsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Локації');
     const postsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Пости');
     const unitsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Підрозділи');
     const metadataCcsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Метадані CC');
     const metadataSendersField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Метадані відправника');
     const metadataReceiversField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number }> })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number }>;
+          },
+      )
       .find((callProps) => callProps.label === 'Метадані отримувача');
 
     expect(tagsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Бета']);
-    expect(aorsField?.options.map((option) => option.label)).toEqual(['Вся смуга', 'Смуга А', 'Смуга Б']);
+    expect(aorsField?.options.map((option) => option.label)).toEqual([
+      'Вся смуга',
+      'Смуга А',
+      'Смуга Б',
+    ]);
     expect(groupsField?.options.map((option) => option.label)).toEqual(['Група А', 'Група Б']);
-    expect(unitsField?.options.map((option) => option.label)).toEqual(['3 мсб 121 мсп', '128 омсбр', '344 мсп 69 мсд 6 а']);
-    expect(locationsField?.options.map((option) => option.label)).toEqual(['<Не вказано>', 'Амбарне', 'Іванівка']);
+    expect(unitsField?.options.map((option) => option.label)).toEqual([
+      '3 мсб 121 мсп',
+      '128 омсбр',
+      '344 мсп 69 мсд 6 а',
+    ]);
+    expect(locationsField?.options.map((option) => option.label)).toEqual([
+      '<Не вказано>',
+      'Амбарне',
+      'Іванівка',
+    ]);
     expect(postsField?.options.map((option) => option.label)).toEqual(['Пост А', 'Пост Б']);
     expect(metadataCcsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Зет']);
     expect(metadataSendersField?.options.map((option) => option.label)).toEqual(['1', '7', '856']);
@@ -634,7 +762,9 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    const resetButton = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('Скинути'));
+    const resetButton = Array.from(view.container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('Скинути'),
+    );
     expect(resetButton).toBeTruthy();
     expect((resetButton as HTMLButtonElement | undefined)?.disabled ?? true).toBe(false);
   });
@@ -650,8 +780,17 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     const tagsAccordion = accordionSpy.mock.calls
-      .map(([callProps]) => callProps as { 'data-section-id'?: string; onChange?: (event: unknown, nextExpanded: boolean) => void })
-      .find((callProps) => callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function');
+      .map(
+        ([callProps]) =>
+          callProps as {
+            'data-section-id'?: string;
+            onChange?: (event: unknown, nextExpanded: boolean) => void;
+          },
+      )
+      .find(
+        (callProps) =>
+          callProps['data-section-id'] === 'Теги' && typeof callProps.onChange === 'function',
+      );
     expect(tagsAccordion?.onChange).toBeTypeOf('function');
 
     await act(async () => {
@@ -694,7 +833,15 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(props));
 
     const callsignsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; options: Array<{ value: string; label: string; count: number; values: string[] }>; value: string[]; onChange: (next: string[]) => void })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            options: Array<{ value: string; label: string; count: number; values: string[] }>;
+            value: string[];
+            onChange: (next: string[]) => void;
+          },
+      )
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
@@ -753,7 +900,9 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     const toggleButton = (labelText: string) => {
-      const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes(labelText));
+      const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+        item.textContent?.includes(labelText),
+      );
       if (!(button instanceof HTMLButtonElement)) {
         throw new Error(`Button not found for label: ${labelText}`);
       }
@@ -770,9 +919,18 @@ describe('AnalysisFiltersPanel', () => {
       toggleButton('Без метаданих').click();
     });
 
-    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: false, withoutMetadata: false });
-    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: true, withoutMetadata: false });
-    expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMetadata: false, withoutMetadata: true });
+    expect(updateQueryState).toHaveBeenCalledWith({
+      onlyWithMetadata: false,
+      withoutMetadata: false,
+    });
+    expect(updateQueryState).toHaveBeenCalledWith({
+      onlyWithMetadata: true,
+      withoutMetadata: false,
+    });
+    expect(updateQueryState).toHaveBeenCalledWith({
+      onlyWithMetadata: false,
+      withoutMetadata: true,
+    });
   });
 
   it('clears without-coords when the peleng checkbox is disabled', async () => {
@@ -1038,7 +1196,9 @@ describe('AnalysisFiltersPanel', () => {
     );
     rendered.push(view);
 
-    const button = Array.from(view.container.querySelectorAll('button')).find((item) => item.textContent?.includes('Скинути'));
+    const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('Скинути'),
+    );
     expect(button).toBeTruthy();
     expect((button as HTMLButtonElement).disabled).toBe(true);
     button?.click();
@@ -1103,7 +1263,9 @@ describe('AnalysisFiltersPanel', () => {
 
     const chipProps = powerChipSpy.mock.calls.at(-1)?.[0] as { onDelete?: () => void } | undefined;
     expect(chipProps?.onDelete).toBeUndefined();
-    expect(view.container.querySelector('[data-testid="saved-filter-chip"]')?.textContent).toBe('Saved filter');
+    expect(view.container.querySelector('[data-testid="saved-filter-chip"]')?.textContent).toBe(
+      'Saved filter',
+    );
     expect(view.container.textContent).toContain('Обраний фільтр:');
 
     expect(

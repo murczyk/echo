@@ -34,7 +34,7 @@ type PalitrasElementApi = HTMLElement & {
 export function createPalitrasControl(
   palitras: PalitraDetails[],
   visibleIds: number[],
-  onVisibleIdsChange: (visibleIds: number[]) => void
+  onVisibleIdsChange: (visibleIds: number[]) => void,
 ): PalitrasControl {
   const PalitrasControlClass = L.Control.extend({
     _palitras: palitras,

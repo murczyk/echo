@@ -52,7 +52,14 @@ describe('NetworkDatePickerField', () => {
     const onChange = vi.fn();
 
     act(() => {
-      root.render(<NetworkDatePickerField label="Від" value="2026-05-01" allowEmpty={false} onChange={onChange} />);
+      root.render(
+        <NetworkDatePickerField
+          label="Від"
+          value="2026-05-01"
+          allowEmpty={false}
+          onChange={onChange}
+        />,
+      );
     });
 
     const pickerProps = powerDatePickerMock.mock.calls.at(-1)?.[0];
@@ -74,7 +81,14 @@ describe('NetworkDatePickerField', () => {
     const emptyOnChange = vi.fn();
 
     act(() => {
-      emptyRoot.render(<NetworkDatePickerField label="Від" value="2026-05-01" allowEmpty onChange={emptyOnChange} />);
+      emptyRoot.render(
+        <NetworkDatePickerField
+          label="Від"
+          value="2026-05-01"
+          allowEmpty
+          onChange={emptyOnChange}
+        />,
+      );
     });
 
     const emptyPickerProps = powerDatePickerMock.mock.calls.at(-1)?.[0];

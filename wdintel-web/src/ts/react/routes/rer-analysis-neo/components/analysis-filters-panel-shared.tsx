@@ -3,7 +3,6 @@ import { Accordion, AccordionDetails, AccordionSummary, Box, Typography } from '
 import type { ReactNode } from 'react';
 import { isNullOrUndefined } from '../../../utils/misc';
 
-
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 
 export type AnalysisFiltersPanelPage = Pick<
@@ -101,14 +100,25 @@ export function getInitialExpandedSections(): Record<FilterSectionId, boolean> {
   return { ...defaultExpandedSections };
 }
 
-export function sectionCountLabel(selectedCount: number, overallCount: number | null | undefined): string | null {
+export function sectionCountLabel(
+  selectedCount: number,
+  overallCount: number | null | undefined,
+): string | null {
   if (isNullOrUndefined(overallCount)) {
     return selectedCount > 0 ? String(selectedCount) : null;
   }
   return selectedCount > 0 ? `${selectedCount} з ${overallCount}` : String(overallCount);
 }
 
-export function FilterSection({ sectionId, title, countLabel, expanded, onToggle, onLoad, children }: FilterSectionProps) {
+export function FilterSection({
+  sectionId,
+  title,
+  countLabel,
+  expanded,
+  onToggle,
+  onLoad,
+  children,
+}: FilterSectionProps) {
   return (
     <Accordion
       data-section-id={sectionId ?? title}
@@ -152,11 +162,24 @@ export function FilterSection({ sectionId, title, countLabel, expanded, onToggle
           },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, width: '100%', minWidth: 0 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            width: '100%',
+            minWidth: 0,
+          }}
+        >
           <Typography variant="subtitle2" sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
             {title}
           </Typography>
-          {countLabel ? <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: 0.75 }}>{countLabel}</Box> : null}
+          {countLabel ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: 0.75 }}>
+              {countLabel}
+            </Box>
+          ) : null}
         </Box>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 1.5, pb: 1.25, pt: 0 }}>

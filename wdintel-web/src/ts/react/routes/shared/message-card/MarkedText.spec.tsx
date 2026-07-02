@@ -8,9 +8,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
 import { CALLSIGN_TOOLTIP_ITEM_SX, renderMarkedText } from './MarkedText';
-import type { CallsignInfoRes, ContentNode, InboxMessage, Network, Unit } from '../../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  ContentNode,
+  InboxMessage,
+  Network,
+  Unit,
+} from '../../../../../Bindings';
 
-function decodeMapHrefState(href: string | null): { search: string; freqs_selected?: string[] } | null {
+function decodeMapHrefState(
+  href: string | null,
+): { search: string; freqs_selected?: string[] } | null {
   if (href == null || href === '') return null;
   const url = new URL(href, 'https://example.test');
   const legacy = url.searchParams.get('state');
@@ -130,7 +138,13 @@ function normalizeCssColor(value: string): { r: number; g: number; b: number; a:
   const trimmed = value.trim();
   if (trimmed.startsWith('#')) {
     const hex = trimmed.slice(1);
-    const normalized = hex.length === 3 ? hex.split('').map((part) => part + part).join('') : hex;
+    const normalized =
+      hex.length === 3
+        ? hex
+            .split('')
+            .map((part) => part + part)
+            .join('')
+        : hex;
     return {
       r: Number.parseInt(normalized.slice(0, 2), 16),
       g: Number.parseInt(normalized.slice(2, 4), 16),
@@ -149,7 +163,10 @@ function normalizeCssColor(value: string): { r: number; g: number; b: number; a:
   };
 }
 
-function compositeOver(fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number; a: number }) {
+function compositeOver(
+  fg: { r: number; g: number; b: number; a: number },
+  bg: { r: number; g: number; b: number; a: number },
+) {
   const alpha = fg.a + bg.a * (1 - fg.a);
   return {
     r: Math.round((fg.r * fg.a + bg.r * bg.a * (1 - fg.a)) / alpha),
@@ -201,7 +218,10 @@ describe('MarkedText', () => {
   it('renders callsigns with the updated accent color and border width', async () => {
     await act(async () => {
       root.render(
-        <TestHost nodes={[{ CNCallsignC: { text: 'abCd', begin: 0, end: 4, etalon: 'abCd' } }]} bodyText="abCd" />,
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'abCd', begin: 0, end: 4, etalon: 'abCd' } }]}
+          bodyText="abCd"
+        />,
       );
     });
 
@@ -313,7 +333,9 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
-    expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=WOLF');
+    expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe(
+      '/rer-callsigns-neo?callsign=WOLF',
+    );
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
@@ -532,7 +554,7 @@ describe('MarkedText', () => {
           bodyText="РЖАВИЙ"
           message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
           callsignInfoMap={{
-            'ржавий': {
+            ржавий: {
               callsign: 'РЖАВИЙ',
               res: [
                 {
@@ -611,7 +633,9 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent).toBe('ГЛОБУС');
+    expect(
+      container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent,
+    ).toBe('ГЛОБУС');
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {
@@ -657,15 +681,26 @@ describe('MarkedText', () => {
 
     expect(contrastRatio(LIGHT_CALLSIGN_COLOR, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(DARK_CALLSIGN_COLOR, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(lightTheme.palette.text.primary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(lightTheme.palette.text.primary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(
+      4.5,
+    );
     expect(contrastRatio(darkTheme.palette.text.primary, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(lightTheme.palette.text.secondary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(darkTheme.palette.text.secondary, DARK_CARD_BG)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(lightTheme.palette.text.secondary, LIGHT_CARD_BG)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrastRatio(darkTheme.palette.text.secondary, DARK_CARD_BG)).toBeGreaterThanOrEqual(
+      4.5,
+    );
   });
 
   it('renders highlighted keywords as non-interactive orange badges with black text', async () => {
     await act(async () => {
-      root.render(<TestHost nodes={[{ CNHighlightC: { text: 'ключове', begin: 0, end: 8 } }]} bodyText="ключове" />);
+      root.render(
+        <TestHost
+          nodes={[{ CNHighlightC: { text: 'ключове', begin: 0, end: 8 } }]}
+          bodyText="ключове"
+        />,
+      );
     });
 
     const badge = container.querySelector('.badge-highlighed-token');
@@ -680,7 +715,9 @@ describe('MarkedText', () => {
 
   it('does not render empty highlighted keywords', async () => {
     await act(async () => {
-      root.render(<TestHost nodes={[{ CNHighlightC: { text: '  ', begin: 0, end: 5 } }]} bodyText="текст" />);
+      root.render(
+        <TestHost nodes={[{ CNHighlightC: { text: '  ', begin: 0, end: 5 } }]} bodyText="текст" />,
+      );
     });
 
     expect(container.querySelector('.badge-highlighed-token')).toBeNull();

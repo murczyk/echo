@@ -17,18 +17,24 @@ export type FeedNotificationPanelProps = {
   onPersisted?: () => void;
 };
 
-export function FeedNotificationPanel({ feedId, storageSyncKey = 0, onPersisted }: FeedNotificationPanelProps) {
+export function FeedNotificationPanel({
+  feedId,
+  storageSyncKey = 0,
+  onPersisted,
+}: FeedNotificationPanelProps) {
   const [dutyNotificationSettings, setDutyNotificationSettings] = useState(() =>
     getStoredDutyNotificationSettingsForFeed(feedId),
   );
-  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | 'unsupported'>(() =>
-    getBrowserNotificationPermission(),
-  );
+  const [browserPermission, setBrowserPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() => getBrowserNotificationPermission());
 
   useEffect(() => {
     const next = getStoredDutyNotificationSettingsForFeed(feedId);
     setDutyNotificationSettings((prev) =>
-      prev.soundEnabled === next.soundEnabled && prev.browserEnabled === next.browserEnabled ? prev : next,
+      prev.soundEnabled === next.soundEnabled && prev.browserEnabled === next.browserEnabled
+        ? prev
+        : next,
     );
     setBrowserPermission(getBrowserNotificationPermission());
   }, [feedId, storageSyncKey]);

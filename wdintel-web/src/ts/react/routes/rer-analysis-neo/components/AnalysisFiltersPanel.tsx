@@ -1,7 +1,16 @@
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
-import { Badge, Box, Button, Divider, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
+import {
+  Badge,
+  Box,
+  Button,
+  Divider,
+  Paper,
+  Stack,
+  Typography,
+  useMediaQuery,
+} from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 
@@ -9,7 +18,11 @@ import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
-import { getInitialExpandedSections, type AnalysisFiltersPanelProps, type FilterSectionId } from './analysis-filters-panel-shared';
+import {
+  getInitialExpandedSections,
+  type AnalysisFiltersPanelProps,
+  type FilterSectionId,
+} from './analysis-filters-panel-shared';
 
 export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
   const {
@@ -108,7 +121,13 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
                   <FilterAltOutlinedIcon sx={{ fontSize: 18 }} />
                 </Badge>
               }
-              endIcon={showFilterContent ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              endIcon={
+                showFilterContent ? (
+                  <ExpandLessIcon fontSize="small" />
+                ) : (
+                  <ExpandMoreIcon fontSize="small" />
+                )
+              }
               sx={{
                 flexShrink: 1,
                 minWidth: 0,
@@ -120,14 +139,16 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
               Фільтри
             </Button>
           ) : (
-            <Typography
-              variant="subtitle1"
-              sx={{ fontWeight: 600, lineHeight: 1.2 }}
-            >
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
               Фільтри
             </Typography>
           )}
-          <Button size="small" onClick={resetFilters} disabled={!canResetFilters} sx={{ flexShrink: 0 }}>
+          <Button
+            size="small"
+            onClick={resetFilters}
+            disabled={!canResetFilters}
+            sx={{ flexShrink: 0 }}
+          >
             Скинути
           </Button>
         </Stack>
@@ -150,8 +171,16 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
             >
               <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {loadedSavedFilter ? (
-                  <Stack direction="row" spacing={0.75} alignItems="center" sx={{ alignSelf: 'flex-start', mb: 1 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="center"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                  >
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
+                    >
                       Обраний фільтр:
                     </Typography>
                     <PowerChip
@@ -205,8 +234,16 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
             <>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 {loadedSavedFilter ? (
-                  <Stack direction="row" spacing={0.75} alignItems="center" sx={{ alignSelf: 'flex-start', mb: 1 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="center"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                  >
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
+                    >
                       Обраний фільтр:
                     </Typography>
                     <PowerChip

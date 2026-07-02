@@ -38,7 +38,10 @@ function getClearButton(el: HTMLElement): HTMLButtonElement | null {
 async function typeInput(input: HTMLInputElement, value: string): Promise<void> {
   await act(async () => {
     input.focus();
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )?.set;
     nativeInputValueSetter?.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });

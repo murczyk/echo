@@ -1,7 +1,18 @@
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { Callsign } from '../../../../Bindings';
-import type { CallsignsFilterState, CallsignsSortState, SelectedSidebarUnitFilter, UnitHierarchyFilter } from './types';
-import { createDefaultFilters, DEFAULT_SORT, getDefaultPageSize, normalizeDuplicateLookupValue, toUpperCaseCallsign } from './helpers-core';
+import type {
+  CallsignsFilterState,
+  CallsignsSortState,
+  SelectedSidebarUnitFilter,
+  UnitHierarchyFilter,
+} from './types';
+import {
+  createDefaultFilters,
+  DEFAULT_SORT,
+  getDefaultPageSize,
+  normalizeDuplicateLookupValue,
+  toUpperCaseCallsign,
+} from './helpers-core';
 
 const EMPTY_HIERARCHY_PARAM = '__EMPTY__';
 
@@ -41,8 +52,12 @@ export function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
         ? developing
         : defaults.filterDeveloping,
     isIgnoringDateFilter: !sortDateEnabled,
-    fromDateTimeLocal: sortDateEnabled ? (params.get('from') ?? defaults.fromDateTimeLocal) : defaults.fromDateTimeLocal,
-    toDateTimeLocal: sortDateEnabled ? (params.get('to') ?? defaults.toDateTimeLocal) : defaults.toDateTimeLocal,
+    fromDateTimeLocal: sortDateEnabled
+      ? (params.get('from') ?? defaults.fromDateTimeLocal)
+      : defaults.fromDateTimeLocal,
+    toDateTimeLocal: sortDateEnabled
+      ? (params.get('to') ?? defaults.toDateTimeLocal)
+      : defaults.toDateTimeLocal,
   };
 }
 
@@ -62,7 +77,8 @@ export function readInitialCallsignsSortFromUrl(): CallsignsSortState {
     column === 'radioFreq'
       ? column
       : DEFAULT_SORT.column;
-  const validDirection = direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
+  const validDirection =
+    direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
 
   return {
     column: validColumn,
@@ -115,7 +131,9 @@ export function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter 
 }
 
 export function getSidebarGroupLabel(hierarchy: UnitHierarchyFilter): string {
-  const lastDefinedEntry = (Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>)
+  const lastDefinedEntry = (
+    Object.entries(hierarchy) as Array<[keyof UnitHierarchyFilter, string | null]>
+  )
     .reverse()
     .find(([, value]) => isPresent(value));
 
@@ -159,29 +177,39 @@ export function areSidebarFiltersEqual(
   }
 
   if (left.kind === 'group' && right.kind === 'group') {
-    return left.hierarchy.army === right.hierarchy.army
-      && left.hierarchy.division === right.hierarchy.division
-      && left.hierarchy.regiment === right.hierarchy.regiment
-      && left.hierarchy.battalion === right.hierarchy.battalion;
+    return (
+      left.hierarchy.army === right.hierarchy.army &&
+      left.hierarchy.division === right.hierarchy.division &&
+      left.hierarchy.regiment === right.hierarchy.regiment &&
+      left.hierarchy.battalion === right.hierarchy.battalion
+    );
   }
 
   return false;
 }
 
-export function areCallsignFiltersEqual(left: CallsignsFilterState, right: CallsignsFilterState): boolean {
-  return left.filterText === right.filterText
-    && left.filterCallsign === right.filterCallsign
-    && left.filterPosition === right.filterPosition
-    && left.filterFullName === right.filterFullName
-    && left.filterComment === right.filterComment
-    && left.filterUnit === right.filterUnit
-    && left.filterDeveloping === right.filterDeveloping
-    && left.isIgnoringDateFilter === right.isIgnoringDateFilter
-    && left.fromDateTimeLocal === right.fromDateTimeLocal
-    && left.toDateTimeLocal === right.toDateTimeLocal;
+export function areCallsignFiltersEqual(
+  left: CallsignsFilterState,
+  right: CallsignsFilterState,
+): boolean {
+  return (
+    left.filterText === right.filterText &&
+    left.filterCallsign === right.filterCallsign &&
+    left.filterPosition === right.filterPosition &&
+    left.filterFullName === right.filterFullName &&
+    left.filterComment === right.filterComment &&
+    left.filterUnit === right.filterUnit &&
+    left.filterDeveloping === right.filterDeveloping &&
+    left.isIgnoringDateFilter === right.isIgnoringDateFilter &&
+    left.fromDateTimeLocal === right.fromDateTimeLocal &&
+    left.toDateTimeLocal === right.toDateTimeLocal
+  );
 }
 
-export function areCallsignSortStatesEqual(left: CallsignsSortState, right: CallsignsSortState): boolean {
+export function areCallsignSortStatesEqual(
+  left: CallsignsSortState,
+  right: CallsignsSortState,
+): boolean {
   return left.column === right.column && left.direction === right.direction;
 }
 
@@ -206,10 +234,32 @@ export function syncCallsignsStateToUrl(
     setOrDelete('full_name', filters.filterFullName.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
     setOrDelete('unit', filters.filterUnit.trim() || null);
-    setHierarchyParam(params, 'unit_army', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.army : null);
-    setHierarchyParam(params, 'unit_division', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.division : null);
-    setHierarchyParam(params, 'unit_regiment', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.regiment : null);
-    setHierarchyParam(params, 'unit_battalion', selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.battalion : null);
+    setHierarchyParam(
+      params,
+      'unit_army',
+      selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy.army : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_division',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.division
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_regiment',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.regiment
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_battalion',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.battalion
+        : null,
+    );
 
     if (filters.filterDeveloping !== 'OnlyNonDeveloping') {
       params.set('developing', filters.filterDeveloping);
@@ -257,7 +307,9 @@ export function normalizeCallsigns(callsigns: Callsign[]): Callsign[] {
   return callsigns.map(normalizeCallsign);
 }
 
-export function hasAnyDuplicateHintInput(rows: Array<{ callsign: string; fullName: string }>): boolean {
+export function hasAnyDuplicateHintInput(
+  rows: Array<{ callsign: string; fullName: string }>,
+): boolean {
   return rows.some((row) => {
     const callsignInput = normalizeDuplicateLookupValue(row.callsign);
     const fullNameInput = normalizeDuplicateLookupValue(row.fullName);

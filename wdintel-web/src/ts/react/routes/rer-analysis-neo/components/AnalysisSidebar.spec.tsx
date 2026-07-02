@@ -13,10 +13,7 @@ vi.mock('@mui/material', () => ({
       {props.label}
     </button>
   ),
-  Tabs: (props: {
-    children: ReactNode;
-    onChange?: (_event: Event, value: string) => void;
-  }) => (
+  Tabs: (props: { children: ReactNode; onChange?: (_event: Event, value: string) => void }) => (
     <div>
       {Array.isArray(props.children)
         ? props.children.map((child, index) =>
@@ -25,7 +22,11 @@ vi.mock('@mui/material', () => ({
                   ...child,
                   props: {
                     ...(child as { props: Record<string, unknown> }).props,
-                    onClick: () => props.onChange?.(new Event('change'), String((child as { props: { value: string } }).props.value)),
+                    onClick: () =>
+                      props.onChange?.(
+                        new Event('change'),
+                        String((child as { props: { value: string } }).props.value),
+                      ),
                     key: index,
                   },
                 }
@@ -60,7 +61,9 @@ type Rendered = {
   root: Root;
 };
 
-function buildProps(overrides: Partial<ComponentProps<typeof AnalysisSidebar>> = {}): ComponentProps<typeof AnalysisSidebar> {
+function buildProps(
+  overrides: Partial<ComponentProps<typeof AnalysisSidebar>> = {},
+): ComponentProps<typeof AnalysisSidebar> {
   return {
     callsignGraph: null,
     callsignGraphLoading: false,
@@ -147,7 +150,9 @@ describe('AnalysisSidebar', () => {
   });
 
   it('renders the map content for the map tab', async () => {
-    const view = await renderComponent(buildProps({ analysisMapInSidebar: true, rightSidebarTab: 'map' }));
+    const view = await renderComponent(
+      buildProps({ analysisMapInSidebar: true, rightSidebarTab: 'map' }),
+    );
     rendered.push(view);
 
     expect(view.container.textContent).toContain('map-pane');
@@ -158,14 +163,22 @@ describe('AnalysisSidebar', () => {
     const view = await renderComponent(buildProps({ analysisMapInSidebar: false }));
     rendered.push(view);
 
-    expect(Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('Мапа'))).toBe(false);
+    expect(
+      Array.from(view.container.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('Мапа'),
+      ),
+    ).toBe(false);
   });
 
   it('shows the map tab when the map is in the sidebar', async () => {
     const view = await renderComponent(buildProps({ analysisMapInSidebar: true }));
     rendered.push(view);
 
-    expect(Array.from(view.container.querySelectorAll('button')).some((button) => button.textContent?.includes('Мапа'))).toBe(true);
+    expect(
+      Array.from(view.container.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('Мапа'),
+      ),
+    ).toBe(true);
   });
 
   it('renders only the callsigns content for the callsigns tab', async () => {
@@ -204,7 +217,9 @@ describe('AnalysisSidebar', () => {
   });
 
   it('allows a null tab while the right panel is closed', async () => {
-    const view = await renderComponent(buildProps({ rightPanelOpen: false, rightSidebarTab: null }));
+    const view = await renderComponent(
+      buildProps({ rightPanelOpen: false, rightSidebarTab: null }),
+    );
     rendered.push(view);
 
     expect(view.container.textContent).not.toContain('callsigns-pane');

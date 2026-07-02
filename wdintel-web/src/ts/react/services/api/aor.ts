@@ -15,7 +15,9 @@ type ListAreasOfResponsibilityReqBody = {
   sort_by: ListAreasOfResponsibilityReq['sortBy'];
 };
 
-function toListAreasOfResponsibilityReqBody(req: ListAreasOfResponsibilityReq): ListAreasOfResponsibilityReqBody {
+function toListAreasOfResponsibilityReqBody(
+  req: ListAreasOfResponsibilityReq,
+): ListAreasOfResponsibilityReqBody {
   return { sort_by: req.sortBy };
 }
 
@@ -85,7 +87,9 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeCoordinates(coords: AorCoordinatesLike | null | undefined): AorCoordinates | null {
+function normalizeCoordinates(
+  coords: AorCoordinatesLike | null | undefined,
+): AorCoordinates | null {
   if (!coords) return null;
 
   return {
@@ -120,7 +124,9 @@ function toAorCoordinatesBody(coords: AorCoordinates | null): AorCoordinatesBody
   };
 }
 
-function toAreaOfResponsibilityInsertBody(req: AreaOfResponsibilityInsert): AreaOfResponsibilityInsertBody {
+function toAreaOfResponsibilityInsertBody(
+  req: AreaOfResponsibilityInsert,
+): AreaOfResponsibilityInsertBody {
   return {
     name: req.name,
     description: req.description,
@@ -132,7 +138,9 @@ function toAreaOfResponsibilityInsertBody(req: AreaOfResponsibilityInsert): Area
   };
 }
 
-function toUpdateAreaOfResponsibilityReqBody(req: UpdateAreaOfResponsibilityReq): UpdateAreaOfResponsibilityReqBody {
+function toUpdateAreaOfResponsibilityReqBody(
+  req: UpdateAreaOfResponsibilityReq,
+): UpdateAreaOfResponsibilityReqBody {
   return {
     id: req.id,
     insert: toAreaOfResponsibilityInsertBody(req.insert),
@@ -156,7 +164,9 @@ function toUpdateAreaOfResponsibilityReportOrderReqBody(
   };
 }
 
-function toDeleteAreaOfResponsibilityReqBody(req: DeleteAreaOfResponsibilityReq): DeleteAreaOfResponsibilityReqBody {
+function toDeleteAreaOfResponsibilityReqBody(
+  req: DeleteAreaOfResponsibilityReq,
+): DeleteAreaOfResponsibilityReqBody {
   return { id: req.id };
 }
 
@@ -173,12 +183,18 @@ export async function listAors(
 }
 
 export async function createAor(req: AreaOfResponsibilityInsert): Promise<AreaOfResponsibility> {
-  const data = await postJson<AreaOfResponsibilityLike>('/api/sigint/aor/create', toAreaOfResponsibilityInsertBody(req));
+  const data = await postJson<AreaOfResponsibilityLike>(
+    '/api/sigint/aor/create',
+    toAreaOfResponsibilityInsertBody(req),
+  );
   return normalizeAor(data);
 }
 
 export async function updateAor(req: UpdateAreaOfResponsibilityReq): Promise<AreaOfResponsibility> {
-  const data = await postJson<AreaOfResponsibilityLike>('/api/sigint/aor/update', toUpdateAreaOfResponsibilityReqBody(req));
+  const data = await postJson<AreaOfResponsibilityLike>(
+    '/api/sigint/aor/update',
+    toUpdateAreaOfResponsibilityReqBody(req),
+  );
   return normalizeAor(data);
 }
 

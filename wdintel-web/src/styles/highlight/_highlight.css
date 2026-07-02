@@ -1,39 +1,36 @@
 /* Highlight and Marked Token Styles */
 .highlight {
-    background: #fffbe6;
-    border-radius: 4px;
-    padding: 2px 4px;
+  background: #fffbe6;
+  border-radius: 4px;
+  padding: 2px 4px;
 }
 
 .highlight pre {
-    background: #fffbe6;
-    border-radius: 4px;
-    padding: 2px 4px;
+  background: #fffbe6;
+  border-radius: 4px;
+  padding: 2px 4px;
 }
 
 .highlight pre code {
-    background: transparent;
-    padding: 0;
+  background: transparent;
+  padding: 0;
 }
 
-
 .text-marked .content-token-wrap {
-    display: inline-block;
+  display: inline-block;
 }
 
 .text-marked .content-token {
-    border-radius: 2px;
-    padding: 0 2px;
-    margin: 0 1px;
-    transition: background 0.2s;
+  border-radius: 2px;
+  padding: 0 2px;
+  margin: 0 1px;
+  transition: background 0.2s;
 }
 
-
-
 .badge-highlighed-nearby-font {
-    font-weight: bold;
+  font-weight: bold;
 }
 
 .badge-highlighed-nearby-font--white {
-    color: #fff;
+  color: #fff;
 }

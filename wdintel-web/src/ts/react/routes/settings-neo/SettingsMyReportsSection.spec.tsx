@@ -43,8 +43,13 @@ vi.mock('../../services/api/report-history', () => ({
   downloadReportHistory: vi.fn(),
   retryReportHistory: vi.fn(),
   cancelReportHistory: vi.fn(),
-  isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined; isCancelled: boolean }) =>
-    row.isCancelled === true || (row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем')),
+  isCancelledReportHistory: (row: {
+    status: string;
+    lastError: string | null | undefined;
+    isCancelled: boolean;
+  }) =>
+    row.isCancelled === true ||
+    (row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем')),
   parseUtcDateTime: vi.fn((value: string | null) => {
     if (value === null || value.trim() === '') return null;
     const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
@@ -79,16 +84,24 @@ vi.mock('../../components/mui-customized/table/table-state-provider', () => ({
   },
 }));
 
-vi.mock('../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
-  InternalTableActions: ({ children }: { children?: ReactNode }) => <div data-testid="table-actions">{children}</div>,
-}));
+vi.mock(
+  '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  () => ({
+    InternalTableActions: ({ children }: { children?: ReactNode }) => (
+      <div data-testid="table-actions">{children}</div>
+    ),
+  }),
+);
 
 vi.mock('./SettingsNeoTable', () => ({
   SettingsNeoTable: (props: Record<string, unknown>) => {
     capturedSettingsNeoTableProps = props;
     const columns = (props.columns as Array<Record<string, any>>) ?? [];
     const actionsColumn = columns.find((column) => column.id === 'actions');
-    const cell = typeof actionsColumn?.Cell === 'function' ? actionsColumn.Cell({ row: { original: sampleRunningRow } } as never) : null;
+    const cell =
+      typeof actionsColumn?.Cell === 'function'
+        ? actionsColumn.Cell({ row: { original: sampleRunningRow } } as never)
+        : null;
     return <div data-testid="settings-neo-table">{cell}</div>;
   },
 }));
@@ -110,8 +123,10 @@ describe('SettingsMyReportsSection', () => {
       root.render(<SettingsMyReportsSection active />);
     });
 
-    const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, unknown>>) ?? [];
-    const actionsColumn = columns.find((column) => column.id === 'actions') as Record<string, unknown> | undefined;
+    const columns =
+      (capturedSettingsNeoTableProps?.columns as Array<Record<string, unknown>>) ?? [];
+    const actionsColumn = columns.find((column) => column.id === 'actions') as
+      Record<string, unknown> | undefined;
     expect(capturedSettingsNeoTableProps?.enableRowActions).toBeUndefined();
     expect(capturedSettingsNeoTableProps?.showToolbarInternalActions).toBe(true);
     expect(capturedSettingsNeoTableProps?.enableTopToolbar).toBe(true);

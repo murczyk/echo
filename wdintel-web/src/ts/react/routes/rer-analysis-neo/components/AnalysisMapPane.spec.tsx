@@ -7,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AnalysisMapPane } from './AnalysisMapPane';
 
-function buildProps(overrides: Partial<Parameters<typeof AnalysisMapPane>[0]> = {}): Parameters<typeof AnalysisMapPane>[0] {
+function buildProps(
+  overrides: Partial<Parameters<typeof AnalysisMapPane>[0]> = {},
+): Parameters<typeof AnalysisMapPane>[0] {
   return {
     mapAttrs: {
       daterange: '',
@@ -92,7 +94,12 @@ describe('AnalysisMapPane', () => {
     expect(map).not.toBeNull();
 
     await act(async () => {
-      map?.dispatchEvent(new CustomEvent('load-messages-description', { detail: { messageIds: [1] }, bubbles: true }));
+      map?.dispatchEvent(
+        new CustomEvent('load-messages-description', {
+          detail: { messageIds: [1] },
+          bubbles: true,
+        }),
+      );
     });
 
     expect(map?.getAttribute('messages-loading')).toBe('true');
@@ -118,7 +125,12 @@ describe('AnalysisMapPane', () => {
     expect(map).not.toBeNull();
 
     await act(async () => {
-      map?.dispatchEvent(new CustomEvent('load-messages-description', { detail: { messageIds: [1] }, bubbles: true }));
+      map?.dispatchEvent(
+        new CustomEvent('load-messages-description', {
+          detail: { messageIds: [1] },
+          bubbles: true,
+        }),
+      );
     });
 
     expect(map?.getAttribute('messages-loading')).toBe('true');

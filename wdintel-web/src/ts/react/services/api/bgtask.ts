@@ -22,7 +22,8 @@ export function parseBgtaskProgressStages(loglines: string[]): BgtaskProgressSta
     if (!match) continue;
     const index = Number(match[1]);
     const overall = Number(match[2]);
-    if (!Number.isFinite(index) || !Number.isFinite(overall) || index <= 0 || overall <= 0) continue;
+    if (!Number.isFinite(index) || !Number.isFinite(overall) || index <= 0 || overall <= 0)
+      continue;
     stages.set(index, { index, overall, text: match[3] });
   }
   return [...stages.values()].sort((left, right) => left.index - right.index);
@@ -47,7 +48,10 @@ export function getBgtaskProgressFromPercent(
   return getBgtaskProgress(loglines);
 }
 
-export async function fetchBgtaskStatusAndLogs(taskId: number, skip: number): Promise<BgtaskStatusAndLogsRsp> {
+export async function fetchBgtaskStatusAndLogs(
+  taskId: number,
+  skip: number,
+): Promise<BgtaskStatusAndLogsRsp> {
   const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
   const rsp = transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
   return {

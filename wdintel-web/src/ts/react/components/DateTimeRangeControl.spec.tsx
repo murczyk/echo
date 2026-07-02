@@ -6,10 +6,13 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import dayjs from 'dayjs';
 
-const powerDateTimePickerMock = vi.fn((props: { allowEmpty?: boolean; onChange: (value: unknown) => void }) => null);
+const powerDateTimePickerMock = vi.fn(
+  (props: { allowEmpty?: boolean; onChange: (value: unknown) => void }) => null,
+);
 
 vi.mock('./PowerDateTimePicker', () => ({
-  PowerDateTimePicker: (props: { allowEmpty?: boolean; onChange: (value: unknown) => void }) => powerDateTimePickerMock(props),
+  PowerDateTimePicker: (props: { allowEmpty?: boolean; onChange: (value: unknown) => void }) =>
+    powerDateTimePickerMock(props),
 }));
 
 import { DateTimeRangeControl, getDateTimeRangeControlTextFieldSx } from './DateTimeRangeControl';
@@ -93,5 +96,4 @@ describe('DateTimeRangeControl', () => {
     expect(openRootSx['&:hover fieldset'].borderColor).toBe('primary.main');
     expect(openRootSx['&.Mui-focused fieldset'].borderColor).toBe('primary.main');
   });
-
 });

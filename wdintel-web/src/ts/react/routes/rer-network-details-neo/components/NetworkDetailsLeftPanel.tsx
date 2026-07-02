@@ -82,7 +82,11 @@ function TopPanelActions({
           <Tooltip title={collapseLabel} arrow>
             <span>
               <IconButton size="small" onClick={onToggleCollapsed} aria-label={collapseLabel}>
-                {collapsed ? <KeyboardArrowDownOutlinedIcon fontSize="small" /> : <KeyboardArrowUpOutlinedIcon fontSize="small" />}
+                {collapsed ? (
+                  <KeyboardArrowDownOutlinedIcon fontSize="small" />
+                ) : (
+                  <KeyboardArrowUpOutlinedIcon fontSize="small" />
+                )}
               </IconButton>
             </span>
           </Tooltip>
@@ -104,7 +108,11 @@ function TopPanelActions({
           }}
         >
           <ListItemIcon>
-            {placement === 'left' ? <KeyboardArrowUpOutlinedIcon fontSize="small" /> : <KeyboardArrowLeftOutlinedIcon fontSize="small" />}
+            {placement === 'left' ? (
+              <KeyboardArrowUpOutlinedIcon fontSize="small" />
+            ) : (
+              <KeyboardArrowLeftOutlinedIcon fontSize="small" />
+            )}
           </ListItemIcon>
           {placementLabel}
         </MenuItem>
@@ -205,15 +213,15 @@ export function NetworkDetailsLeftPanel({
         overflow: isTopPlacement ? 'hidden' : 'auto',
       }}
     >
-        <Box
-          sx={{
-            minHeight: 0,
-            p: isTopPlacement ? 1.5 : 2,
-            pt: isTopPlacement ? (collapsed ? 1.5 : 2) : 2,
-            pr: isTopPlacement ? 1.5 : 4,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: isTopPlacement ? 1.5 : 2.5,
+      <Box
+        sx={{
+          minHeight: 0,
+          p: isTopPlacement ? 1.5 : 2,
+          pt: isTopPlacement ? (collapsed ? 1.5 : 2) : 2,
+          pr: isTopPlacement ? 1.5 : 4,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: isTopPlacement ? 1.5 : 2.5,
           boxSizing: 'border-box',
           overflow: 'visible',
           position: 'relative',
@@ -246,7 +254,10 @@ export function NetworkDetailsLeftPanel({
             </Box>
           </Box>
         ) : (
-          <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} data-testid="network-details-panel-actions">
+          <Box
+            sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}
+            data-testid="network-details-panel-actions"
+          >
             <TopPanelActions
               placement={placement}
               collapsed={collapsed}

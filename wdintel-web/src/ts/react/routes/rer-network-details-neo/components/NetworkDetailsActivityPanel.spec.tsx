@@ -8,15 +8,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Box: ({ component: Component = 'div', children, ...rest }: { component?: any; children?: ReactNode }) =>
-    <Component {...rest}>{children}</Component>,
+  Box: ({
+    component: Component = 'div',
+    children,
+    ...rest
+  }: {
+    component?: any;
+    children?: ReactNode;
+  }) => <Component {...rest}>{children}</Component>,
   Button: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={onClick}>
       {children}
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
-  Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => <section ref={ref}>{children}</section>),
+  Paper: forwardRef<HTMLElement, { children?: ReactNode }>(({ children }, ref) => (
+    <section ref={ref}>{children}</section>
+  )),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
@@ -28,7 +36,9 @@ type Rendered = {
   root: Root;
 };
 
-async function renderComponent(props: ComponentProps<typeof NetworkDetailsActivityPanel>): Promise<Rendered> {
+async function renderComponent(
+  props: ComponentProps<typeof NetworkDetailsActivityPanel>,
+): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -77,7 +87,9 @@ describe('NetworkDetailsActivityPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Немає даних активності');
-    expect(view.container.textContent).toContain('Активність буде доступна після першої фіксації сигналу');
+    expect(view.container.textContent).toContain(
+      'Активність буде доступна після першої фіксації сигналу',
+    );
     expect(view.container.querySelector('svg[data-chart="network-activity"]')).toBeNull();
   });
 
@@ -93,7 +105,10 @@ describe('NetworkDetailsActivityPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Помилка завантаження');
-    const retryButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Спробувати ще раз')) ?? null;
+    const retryButton =
+      [...view.container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Спробувати ще раз'),
+      ) ?? null;
     await act(async () => {
       retryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -128,7 +143,9 @@ describe('NetworkDetailsActivityPanel', () => {
     expect(document.body.textContent).toContain('Разом');
 
     await act(async () => {
-      view.container.querySelector('svg[data-chart="network-activity"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      view.container
+        .querySelector('svg[data-chart="network-activity"]')
+        ?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
     });
 
     expect(document.body.textContent).not.toContain('Разом');

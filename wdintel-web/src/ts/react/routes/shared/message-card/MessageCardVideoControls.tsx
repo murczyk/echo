@@ -60,15 +60,8 @@ export function VolumeControl({
         gap: 1,
       }}
     >
-      <Tooltip
-        title={muted || volume === 0 ? 'Увімкнути звук' : 'Вимкнути звук'}
-        enterDelay={300}
-      >
-        <IconButton
-          size="small"
-          onClick={onMuteToggle}
-          sx={{ color: 'inherit', p: 0.5 }}
-        >
+      <Tooltip title={muted || volume === 0 ? 'Увімкнути звук' : 'Вимкнути звук'} enterDelay={300}>
+        <IconButton size="small" onClick={onMuteToggle} sx={{ color: 'inherit', p: 0.5 }}>
           {muted || volume === 0 ? (
             <VolumeOffIcon fontSize="small" />
           ) : (
@@ -177,9 +170,7 @@ export function VideoProgressSlider({
         padding: '0',
         height: 4,
         '& .MuiSlider-track': {
-          transition: isDragging.current
-            ? 'none'
-            : 'width 0.25s linear, left 0.25s linear',
+          transition: isDragging.current ? 'none' : 'width 0.25s linear, left 0.25s linear',
         },
         '& .MuiSlider-thumb': {
           width: 12,

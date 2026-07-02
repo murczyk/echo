@@ -7,72 +7,70 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
-import "bootstrap/dist/js/bootstrap.bundle.min.js"
-import "bootstrap/dist/css/bootstrap.css"
-import { inverse, forward } from "mgrs"
-import { copyTextToClipboard } from "./ts/copy-to-clipboard"
-import { td_usk2000_to_wgs84, td_wgs84_to_usk2000 } from "./ts/utils"
-import "./ts/web-components/bar-chart"
-import "./ts/web-components/freq-activity-chart"
-import "./ts/web-components/freq-detail-chart"
-import "./styles/style.css"
-import "./styles/floating-popup.css"
-import { setupMap, addPointsToLayer } from './ts/maps/maps'
-import type { MapPointShort } from './ts/maps/types'
-import './ts/web-components/analysis-map'
-import './ts/react/analysis-map-search-element'
-import './ts/react/app-navbar-element'
-import './ts/react/analysis-map-palitras-element'
-import './ts/react/analysis-map-coord-menu-element'
-import './ts/react/analysis-map-settings-element'
-import './ts/react/analysis-map-layer-switch-element'
-import './ts/react/analysis-map-window-control-element'
-import './ts/react/analysis-count-chip-element'
-import './ts/web-components/modal-dialog.ts'
-import './ts/web-components/dashboard-chart.ts'
-import './ts/web-components/small-map.ts'
-import './ts/web-components/floating-popup.ts'
-import './ts/react/aor-neo-element'
-import './ts/react/admin-directions-neo-element'
-import './ts/react/aor-neo-form-element'
-import './ts/react/control-panel-neo-element'
-import './ts/react/keys-neo-element'
-import './ts/react/location-config-neo-element'
-import './ts/react/messenger-neo-element'
-import './ts/react/organisms-neo-element'
-import './ts/react/organisms-neo-edit-element'
-import './ts/react/admin-all-reports-element'
-import './ts/react/settings-neo-element'
-import './ts/react/system-settings-neo-element'
-import './ts/react/tags-neo-element'
-import './ts/react/tags-neo-edit-element'
-import './ts/react/tags-neo-keyword-edit-element'
-import './ts/react/users-neo-element'
-import './ts/react/goi-associations-element'
-import './ts/react/goi-knowledge-element'
-import './ts/react/goi-integrations-neo-element'
-import './ts/react/api-integrations-element'
-import './ts/react/goi-settings-element'
-import './ts/react/rer-duty-neo-element'
-import './ts/react/rer-analysis-neo-element'
-import './ts/react/rer-network-details-neo-element'
-import './ts/react/rer-palitra-neo-element'
-import './ts/react/rer-callsigns-neo-element'
-import './ts/react/rer-networks-neo-element'
-import './ts/react/importer-beta-element'
-import './ts/react/updates-neo-element'
-import { saveLegacyRerAnalysisQueryState } from "./ts/rer-analysis-query-state-legacy"
-import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
-import { getNavigationApi, type NavigationNavigateEvent } from "./ts/browser/navigation-api"
+import 'bootstrap/dist/js/bootstrap.bundle.min.js';
+import 'bootstrap/dist/css/bootstrap.css';
+import { inverse, forward } from 'mgrs';
+import { copyTextToClipboard } from './ts/copy-to-clipboard';
+import { td_usk2000_to_wgs84, td_wgs84_to_usk2000 } from './ts/utils';
+import './ts/web-components/bar-chart';
+import './ts/web-components/freq-activity-chart';
+import './ts/web-components/freq-detail-chart';
+import './styles/style.css';
+import './styles/floating-popup.css';
+import { setupMap, addPointsToLayer } from './ts/maps/maps';
+import type { MapPointShort } from './ts/maps/types';
+import './ts/web-components/analysis-map';
+import './ts/react/analysis-map-search-element';
+import './ts/react/app-navbar-element';
+import './ts/react/analysis-map-palitras-element';
+import './ts/react/analysis-map-coord-menu-element';
+import './ts/react/analysis-map-settings-element';
+import './ts/react/analysis-map-layer-switch-element';
+import './ts/react/analysis-map-window-control-element';
+import './ts/react/analysis-count-chip-element';
+import './ts/web-components/modal-dialog.ts';
+import './ts/web-components/dashboard-chart.ts';
+import './ts/web-components/small-map.ts';
+import './ts/web-components/floating-popup.ts';
+import './ts/react/aor-neo-element';
+import './ts/react/admin-directions-neo-element';
+import './ts/react/aor-neo-form-element';
+import './ts/react/control-panel-neo-element';
+import './ts/react/keys-neo-element';
+import './ts/react/location-config-neo-element';
+import './ts/react/messenger-neo-element';
+import './ts/react/organisms-neo-element';
+import './ts/react/organisms-neo-edit-element';
+import './ts/react/admin-all-reports-element';
+import './ts/react/settings-neo-element';
+import './ts/react/system-settings-neo-element';
+import './ts/react/tags-neo-element';
+import './ts/react/tags-neo-edit-element';
+import './ts/react/tags-neo-keyword-edit-element';
+import './ts/react/users-neo-element';
+import './ts/react/goi-associations-element';
+import './ts/react/goi-knowledge-element';
+import './ts/react/goi-integrations-neo-element';
+import './ts/react/api-integrations-element';
+import './ts/react/goi-settings-element';
+import './ts/react/rer-duty-neo-element';
+import './ts/react/rer-analysis-neo-element';
+import './ts/react/rer-network-details-neo-element';
+import './ts/react/rer-palitra-neo-element';
+import './ts/react/rer-callsigns-neo-element';
+import './ts/react/rer-networks-neo-element';
+import './ts/react/importer-beta-element';
+import './ts/react/updates-neo-element';
+import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
+import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
+import { getNavigationApi, type NavigationNavigateEvent } from './ts/browser/navigation-api';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 
-
 dayjs.extend(utc);
 dayjs.extend(timezone);
-
 
 const RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY = 'rer-network-details.preferredView';
 
@@ -84,18 +82,18 @@ let themeSwitchStyleMounted = false;
 let themeApplyRequestToken = 0;
 
 function loadLastSeenChangelogVersion(): string | null {
-    return localStorage.getItem('echo-last-seen-changelog');
+  return localStorage.getItem('echo-last-seen-changelog');
 }
 
 function saveLastSeenChangelogVersion(version: string): void {
-    localStorage.setItem('echo-last-seen-changelog', version);
+  localStorage.setItem('echo-last-seen-changelog', version);
 }
 
 function ensureThemeSwitchUi(): HTMLDivElement {
-    if (!themeSwitchStyleMounted) {
-        const style = document.createElement('style');
-        style.id = 'theme-switch-overlay-style';
-        style.textContent = `
+  if (!themeSwitchStyleMounted) {
+    const style = document.createElement('style');
+    style.id = 'theme-switch-overlay-style';
+    style.textContent = `
 html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
   transition: none !important;
 }
@@ -141,273 +139,276 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
 @keyframes theme-switch-spin {
   to { transform: rotate(360deg); }
 }`;
-        document.head.appendChild(style);
-        themeSwitchStyleMounted = true;
-    }
+    document.head.appendChild(style);
+    themeSwitchStyleMounted = true;
+  }
 
-    if (!themeSwitchOverlay) {
-        const overlay = document.createElement('div');
-        overlay.id = 'theme-switch-overlay';
-        overlay.innerHTML = `
+  if (!themeSwitchOverlay) {
+    const overlay = document.createElement('div');
+    overlay.id = 'theme-switch-overlay';
+    overlay.innerHTML = `
 <div class="theme-switch-overlay__card">
   <span class="theme-switch-overlay__spinner" aria-hidden="true"></span>
   <span>Зміна теми...</span>
 </div>`;
-        document.body.appendChild(overlay);
-        themeSwitchOverlay = overlay;
-    }
+    document.body.appendChild(overlay);
+    themeSwitchOverlay = overlay;
+  }
 
-    return themeSwitchOverlay;
+  return themeSwitchOverlay;
 }
 
 function resetThemeSwitchUi() {
-    if (themeSwitchOverlay) {
-        themeSwitchOverlay.classList.remove('visible');
-    }
-    document.documentElement.classList.remove('theme-switching');
+  if (themeSwitchOverlay) {
+    themeSwitchOverlay.classList.remove('visible');
+  }
+  document.documentElement.classList.remove('theme-switching');
 }
 
 function getResolvedTheme(themeMode: string): AppliedTheme {
-    if (themeMode === 'dark') return 'dark';
-    if (themeMode === 'light') return 'light';
-    if (themeMode === 'system') {
-        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'light';
+  if (themeMode === 'dark') return 'dark';
+  if (themeMode === 'light') return 'light';
+  if (themeMode === 'system') {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light';
+  }
+  return 'light';
 }
 
 function getCurrentAppliedTheme(): AppliedTheme {
-    return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
+  return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
 }
 
 function applyResolvedTheme(theme: AppliedTheme) {
-    const htmlElement = document.documentElement;
-    if (theme === 'dark') {
-        htmlElement.setAttribute("data-bs-theme", "dark");
-        window.dispatchEvent(new CustomEvent('echo-theme-applied', { detail: { theme } }));
-        return;
-    }
-    htmlElement.removeAttribute("data-bs-theme");
+  const htmlElement = document.documentElement;
+  if (theme === 'dark') {
+    htmlElement.setAttribute('data-bs-theme', 'dark');
     window.dispatchEvent(new CustomEvent('echo-theme-applied', { detail: { theme } }));
+    return;
+  }
+  htmlElement.removeAttribute('data-bs-theme');
+  window.dispatchEvent(new CustomEvent('echo-theme-applied', { detail: { theme } }));
 }
 
 function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
-    const requestToken = ++themeApplyRequestToken;
-    const nextTheme = getResolvedTheme(themeMode);
-    const currentTheme = getCurrentAppliedTheme();
+  const requestToken = ++themeApplyRequestToken;
+  const nextTheme = getResolvedTheme(themeMode);
+  const currentTheme = getCurrentAppliedTheme();
 
-    resetThemeSwitchUi();
+  resetThemeSwitchUi();
 
-    if (!options?.withLoader || nextTheme === currentTheme) {
-        applyResolvedTheme(nextTheme);
-        return;
+  if (!options?.withLoader || nextTheme === currentTheme) {
+    applyResolvedTheme(nextTheme);
+    return;
+  }
+
+  const overlay = ensureThemeSwitchUi();
+  const showDelayMs = 90;
+  const minVisibleMs = 500;
+  let overlayShownAt = 0;
+  let overlayVisible = false;
+  let hideTimer = 0;
+  let finished = false;
+
+  const finish = () => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    window.clearTimeout(showTimer);
+    window.clearTimeout(hideTimer);
+
+    if (themeApplyRequestToken !== requestToken) {
+      return;
     }
 
-    const overlay = ensureThemeSwitchUi();
-    const showDelayMs = 90;
-    const minVisibleMs = 500;
-    let overlayShownAt = 0;
-    let overlayVisible = false;
-    let hideTimer = 0;
-    let finished = false;
+    if (overlayVisible) {
+      overlay.classList.remove('visible');
+    }
+    document.documentElement.classList.remove('theme-switching');
+  };
 
-    const finish = () => {
-        if (finished) {
-            return;
-        }
-        finished = true;
-        window.clearTimeout(showTimer);
-        window.clearTimeout(hideTimer);
+  const showTimer = window.setTimeout(() => {
+    if (themeApplyRequestToken !== requestToken) {
+      return;
+    }
+    overlayVisible = true;
+    overlayShownAt = performance.now();
+    overlay.classList.add('visible');
+  }, showDelayMs);
 
-        if (themeApplyRequestToken !== requestToken) {
-            return;
-        }
+  document.documentElement.classList.add('theme-switching');
 
-        if (overlayVisible) {
-            overlay.classList.remove('visible');
-        }
-        document.documentElement.classList.remove('theme-switching');
-    };
+  applyResolvedTheme(nextTheme);
 
-    const showTimer = window.setTimeout(() => {
-        if (themeApplyRequestToken !== requestToken) {
-            return;
-        }
-        overlayVisible = true;
-        overlayShownAt = performance.now();
-        overlay.classList.add('visible');
-    }, showDelayMs);
+  requestAnimationFrame(() => {
+    if (themeApplyRequestToken !== requestToken) {
+      finish();
+      return;
+    }
 
-    document.documentElement.classList.add('theme-switching');
+    if (!overlayVisible) {
+      finish();
+      return;
+    }
 
-    applyResolvedTheme(nextTheme);
+    const elapsed = performance.now() - overlayShownAt;
+    if (elapsed >= minVisibleMs) {
+      finish();
+      return;
+    }
 
-    requestAnimationFrame(() => {
-        if (themeApplyRequestToken !== requestToken) {
-            finish();
-            return;
-        }
-
-        if (!overlayVisible) {
-            finish();
-            return;
-        }
-
-        const elapsed = performance.now() - overlayShownAt;
-        if (elapsed >= minVisibleMs) {
-            finish();
-            return;
-        }
-
-        hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
-    });
+    hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
+  });
 }
 
 function applyCurrentTheme() {
-    // Get current theme from localStorage or use system preference
-    const savedTheme = localStorage.getItem('echo-theme-mode');
-    if (savedTheme) {
-        applyTheme(savedTheme);
-    } else {
-        // No saved theme, use system preference
-        const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        applyTheme(systemTheme);
-    }
+  // Get current theme from localStorage or use system preference
+  const savedTheme = localStorage.getItem('echo-theme-mode');
+  if (savedTheme) {
+    applyTheme(savedTheme);
+  } else {
+    // No saved theme, use system preference
+    const systemTheme =
+      window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    applyTheme(systemTheme);
+  }
 }
 
 function setAppShellNavbarHeightVar(heightPx: number): void {
-    if (!Number.isFinite(heightPx) || heightPx <= 0) {
-        return;
-    }
-    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.ceil(heightPx)}px`);
+  if (!Number.isFinite(heightPx) || heightPx <= 0) {
+    return;
+  }
+  document.documentElement.style.setProperty(
+    '--app-shell-navbar-height',
+    `${Math.ceil(heightPx)}px`,
+  );
 }
 
 function createNavbarHeightSync() {
-    let observedNavbar: HTMLElement | null = null;
-    let rafId = 0;
-    const resizeObserver = typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => {
-            scheduleSync();
+  let observedNavbar: HTMLElement | null = null;
+  let rafId = 0;
+  const resizeObserver =
+    typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+          scheduleSync();
         })
-        : null;
+      : null;
 
-    const syncNavbar = () => {
-        rafId = 0;
-        const navbar = document.getElementById('app-navbar-shell') as HTMLElement | null;
+  const syncNavbar = () => {
+    rafId = 0;
+    const navbar = document.getElementById('app-navbar-shell') as HTMLElement | null;
 
-        if (navbar !== observedNavbar) {
-            if (observedNavbar && resizeObserver) {
-                resizeObserver.unobserve(observedNavbar);
-            }
-            observedNavbar = navbar;
-            if (observedNavbar && resizeObserver) {
-                resizeObserver.observe(observedNavbar);
-            }
-        }
+    if (navbar !== observedNavbar) {
+      if (observedNavbar && resizeObserver) {
+        resizeObserver.unobserve(observedNavbar);
+      }
+      observedNavbar = navbar;
+      if (observedNavbar && resizeObserver) {
+        resizeObserver.observe(observedNavbar);
+      }
+    }
 
-        if (observedNavbar) {
-            setAppShellNavbarHeightVar(observedNavbar.getBoundingClientRect().height);
-        }
-    };
+    if (observedNavbar) {
+      setAppShellNavbarHeightVar(observedNavbar.getBoundingClientRect().height);
+    }
+  };
 
-    const scheduleSync = () => {
-        if (rafId !== 0) {
-            return;
-        }
-        rafId = window.requestAnimationFrame(syncNavbar);
-    };
+  const scheduleSync = () => {
+    if (rafId !== 0) {
+      return;
+    }
+    rafId = window.requestAnimationFrame(syncNavbar);
+  };
 
-    const mutationObserver = new MutationObserver(() => {
-        scheduleSync();
-    });
-    // We only need to detect navbar mount/unmount/replacement, not every style/class mutation in the app.
-    mutationObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+  const mutationObserver = new MutationObserver(() => {
+    scheduleSync();
+  });
+  // We only need to detect navbar mount/unmount/replacement, not every style/class mutation in the app.
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
 
-    window.addEventListener('resize', scheduleSync, { passive: true });
-    window.addEventListener('orientationchange', scheduleSync, { passive: true });
+  window.addEventListener('resize', scheduleSync, { passive: true });
+  window.addEventListener('orientationchange', scheduleSync, { passive: true });
 
-    syncNavbar();
-    requestAnimationFrame(() => {
-        scheduleSync();
-        setTimeout(scheduleSync, 350);
-    });
+  syncNavbar();
+  requestAnimationFrame(() => {
+    scheduleSync();
+    setTimeout(scheduleSync, 350);
+  });
 
-    return scheduleSync;
+  return scheduleSync;
 }
 
 // Listen for system theme changes
 if (window.matchMedia) {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    mediaQuery.addEventListener('change', (e) => {
-        // Only apply system theme if current theme is set to 'system'
-        const currentTheme = localStorage.getItem('echo-theme-mode');
-        if (currentTheme === 'system') {
-            const newSystemTheme = e.matches ? 'dark' : 'light';
-            applyTheme(newSystemTheme);
-        }
-    });
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  mediaQuery.addEventListener('change', (e) => {
+    // Only apply system theme if current theme is set to 'system'
+    const currentTheme = localStorage.getItem('echo-theme-mode');
+    if (currentTheme === 'system') {
+      const newSystemTheme = e.matches ? 'dark' : 'light';
+      applyTheme(newSystemTheme);
+    }
+  });
 }
 
 function td_propose_icons(search, description) {
-    return search.search(description).map((x: any) => x.icon).slice(0, 8);
-};
+  return search
+    .search(description)
+    .map((x: any) => x.icon)
+    .slice(0, 8);
+}
 async function loadDescriptionIconTitle(search) {
-    const response = await fetch('/data/description-icon-title.json');
-    const documents = await response.json();
-    search.addDocuments(documents);
+  const response = await fetch('/data/description-icon-title.json');
+  const documents = await response.json();
+  search.addDocuments(documents);
 }
 let search: any = null;
-import('../static/js-search').then(module => {
-    search = new module.Search('icon');
-    search.addIndex('title');
-    search.addIndex('descrption');
-    search.addIndex('icon');
+import('../static/js-search').then((module) => {
+  search = new module.Search('icon');
+  search.addIndex('title');
+  search.addIndex('descrption');
+  search.addIndex('icon');
 
-
-
-
-    if (window.location.pathname.endsWith("/importer")) {
-        loadDescriptionIconTitle(search)
-    } else {
-        const navigation = getNavigationApi();
-        if (navigation) {
-            const navHandler = async (event: Event) => {
-                const navigateEvent = event as unknown as NavigationNavigateEvent;
-                if (navigateEvent.destination.url.endsWith("/importer")) {
-                    await loadDescriptionIconTitle(search)
-                    navigation.removeEventListener("navigate", navHandler);
-                }
-            }
-
-            navigation.addEventListener("navigate", navHandler)
-
-        } else {
-            // fallback for firefox and safari (Navigation API is not implemented there yet)
-            loadDescriptionIconTitle(search)
+  if (window.location.pathname.endsWith('/importer')) {
+    loadDescriptionIconTitle(search);
+  } else {
+    const navigation = getNavigationApi();
+    if (navigation) {
+      const navHandler = async (event: Event) => {
+        const navigateEvent = event as unknown as NavigationNavigateEvent;
+        if (navigateEvent.destination.url.endsWith('/importer')) {
+          await loadDescriptionIconTitle(search);
+          navigation.removeEventListener('navigate', navHandler);
         }
+      };
+
+      navigation.addEventListener('navigate', navHandler);
+    } else {
+      // fallback for firefox and safari (Navigation API is not implemented there yet)
+      loadDescriptionIconTitle(search);
     }
-})
-
-
-
-
+  }
+});
 
 // This is called BEFORE your Elm app starts up
 //
 // The value returned here will be passed as flags
 // into your `Shared.init` function.
 export const flags = ({ env }) => {
-    const isDark = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const now = dayjs().tz('Europe/Kiev').valueOf();
-    return {
-        "isDark": isDark,
-        "now": now
-    };
-
-}
+  const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const now = dayjs().tz('Europe/Kiev').valueOf();
+  return {
+    isDark: isDark,
+    now: now,
+  };
+};
 
 // This is called AFTER your Elm app starts up
 //
@@ -415,436 +416,439 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
-    // Apply initial theme based on localStorage or system preference
-    applyCurrentTheme();
-    const syncNavbarHeight = createNavbarHeightSync();
+  // Apply initial theme based on localStorage or system preference
+  applyCurrentTheme();
+  const syncNavbarHeight = createNavbarHeightSync();
 
-    setupCommentDraftTracker();
+  setupCommentDraftTracker();
 
-    if (app.ports && app.ports.home_usk2000ToWgs84 && app.ports.home_usk2000ToWgs84Res) {
-        app.ports.home_usk2000ToWgs84.subscribe(({ coords }) => {
-            let res = td_usk2000_to_wgs84(coords);
-            let res_latlng = { lat: res.x, lng: res.y };
-            let arg = { coords: res_latlng };
-            app.ports.home_usk2000ToWgs84Res.send(arg);
-        });
+  if (app.ports && app.ports.home_usk2000ToWgs84 && app.ports.home_usk2000ToWgs84Res) {
+    app.ports.home_usk2000ToWgs84.subscribe(({ coords }) => {
+      let res = td_usk2000_to_wgs84(coords);
+      let res_latlng = { lat: res.x, lng: res.y };
+      let arg = { coords: res_latlng };
+      app.ports.home_usk2000ToWgs84Res.send(arg);
+    });
+  }
+
+  if (app.ports && app.ports.shared_saveLastSeenChangelog) {
+    app.ports.shared_saveLastSeenChangelog.subscribe((version: string) => {
+      saveLastSeenChangelogVersion(version);
+    });
+  }
+
+  if (app.ports && app.ports.shared_loadLastSeenChangelog) {
+    app.ports.shared_loadLastSeenChangelog.subscribe(() => {
+      const savedVersion = loadLastSeenChangelogVersion();
+      app.ports.shared_loadLastSeenChangelogRes.send(savedVersion || '');
+    });
+  }
+
+  if (app.ports && app.ports.home_mgrsToWgs84 && app.ports.home_mgrsToWgs84Res) {
+    app.ports.home_mgrsToWgs84.subscribe(({ coords }) => {
+      let res = inverse(coords);
+      let res_latlng = { lat: res[1], lng: res[0] };
+      let arg = { coords: res_latlng };
+      app.ports.home_mgrsToWgs84Res.send(arg);
+    });
+  }
+
+  if (app.ports && app.ports.home_wgs84ToUsk2000 && app.ports.home_wgs84ToUsk2000Res) {
+    app.ports.home_wgs84ToUsk2000.subscribe(({ coords }) => {
+      let res = td_wgs84_to_usk2000({ y: coords.lat, x: coords.lng });
+      let res_xy = { x: Math.round(res.y), y: Math.round(res.x) };
+      let arg = { coords: res_xy };
+      app.ports.home_wgs84ToUsk2000Res.send(arg);
+    });
+  }
+
+  if (app.ports && app.ports.home_wgs84ToMgrs && app.ports.home_wgs84ToMgrsRes) {
+    app.ports.home_wgs84ToMgrs.subscribe(({ coords, viewId }) => {
+      let res = forward([coords.lng, coords.lat]);
+      let arg = { coords: res, viewId };
+      app.ports.home_wgs84ToMgrsRes.send(arg);
+    });
+  }
+
+  if (app.ports && app.ports.importer_usk2000ToWgs84 && app.ports.importer_usk2000ToWgs84Res) {
+    app.ports.importer_usk2000ToWgs84.subscribe(({ rowId, coordId, coords }) => {
+      let res = td_usk2000_to_wgs84(coords);
+      let res_latlng = { lat: res.x, lng: res.y };
+      let arg = {
+        rowId: rowId,
+        coordId: coordId,
+        coords: res_latlng,
+      };
+      app.ports.importer_usk2000ToWgs84Res.send(arg);
+    });
+  }
+
+  if (app.ports && app.ports.importer_proposeIcons && app.ports.importer_proposeIconsRes) {
+    app.ports.importer_proposeIcons.subscribe(({ rowId, text }) => {
+      let res = td_propose_icons(search, text);
+      let arg = {
+        rowId: rowId,
+        icons: res,
+      };
+      app.ports.importer_proposeIconsRes.send(arg);
+    });
+  }
+
+  let td_arrayBufferToBase64 = function (buffer) {
+    let binary = '';
+    let bytes = new Uint8Array(buffer);
+    let len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
     }
+    return window.btoa(binary);
+  };
 
-    if (app.ports && app.ports.shared_saveLastSeenChangelog) {
-        app.ports.shared_saveLastSeenChangelog.subscribe((version: string) => {
-            saveLastSeenChangelogVersion(version);
-        });
-    }
-
-    if (app.ports && app.ports.shared_loadLastSeenChangelog) {
-        app.ports.shared_loadLastSeenChangelog.subscribe(() => {
-            const savedVersion = loadLastSeenChangelogVersion();
-            app.ports.shared_loadLastSeenChangelogRes.send(savedVersion || '');
-        });
-    }
-
-    if (app.ports && app.ports.home_mgrsToWgs84 && app.ports.home_mgrsToWgs84Res) {
-        app.ports.home_mgrsToWgs84.subscribe(({ coords }) => {
-            let res = inverse(coords);
-            let res_latlng = { lat: res[1], lng: res[0] };
-            let arg = { coords: res_latlng };
-            app.ports.home_mgrsToWgs84Res.send(arg);
-        });
-    }
-
-    if (app.ports && app.ports.home_wgs84ToUsk2000 && app.ports.home_wgs84ToUsk2000Res) {
-        app.ports.home_wgs84ToUsk2000.subscribe(({ coords }) => {
-            let res = td_wgs84_to_usk2000({ y: coords.lat, x: coords.lng });
-            let res_xy = { x: Math.round(res.y), y: Math.round(res.x) };
-            let arg = { coords: res_xy };
-            app.ports.home_wgs84ToUsk2000Res.send(arg);
-        });
-    }
-
-    if (app.ports && app.ports.home_wgs84ToMgrs && app.ports.home_wgs84ToMgrsRes) {
-        app.ports.home_wgs84ToMgrs.subscribe(({ coords, viewId }) => {
-            let res = forward([coords.lng, coords.lat]);
-            let arg = { coords: res, viewId };
-            app.ports.home_wgs84ToMgrsRes.send(arg);
-        });
-    }
-
-    if (app.ports && app.ports.importer_usk2000ToWgs84 && app.ports.importer_usk2000ToWgs84Res) {
-        app.ports.importer_usk2000ToWgs84.subscribe(({ rowId, coordId, coords }) => {
-            let res = td_usk2000_to_wgs84(coords);
-            let res_latlng = { lat: res.x, lng: res.y };
-            let arg = {
-                rowId: rowId,
-                coordId: coordId,
-                coords: res_latlng
-            };
-            app.ports.importer_usk2000ToWgs84Res.send(arg);
-        });
-    }
-
-    if (app.ports && app.ports.importer_proposeIcons && app.ports.importer_proposeIconsRes) {
-        app.ports.importer_proposeIcons.subscribe(({ rowId, text }) => {
-            let res = td_propose_icons(search, text);
-            let arg = {
-                rowId: rowId,
-                icons: res
-            };
-            app.ports.importer_proposeIconsRes.send(arg);
-        });
-    }
-
-    let td_arrayBufferToBase64 = function(buffer) {
-        let binary = '';
-        let bytes = new Uint8Array(buffer);
-        let len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
-
-    if (app.ports && app.ports.importer_pasteImage && app.ports.importer_pasteImageRes) {
-        app.ports.importer_pasteImage.subscribe(({ rowId }) => {
-            navigator.clipboard.read().then((contents) => {
-                for (const item of contents) {
-                    if (item.types.includes('image/png')) {
-                        item.getType('image/png').then((blob) => {
-                            blob.arrayBuffer().then((arr) => {
-                                let contentsBase64 = td_arrayBufferToBase64(arr);
-                                let arg = { rowId: rowId, contentsBase64: contentsBase64 };
-                                app.ports.importer_pasteImageRes.send(arg);
-                            });
-                        });
-                    }
-                }
+  if (app.ports && app.ports.importer_pasteImage && app.ports.importer_pasteImageRes) {
+    app.ports.importer_pasteImage.subscribe(({ rowId }) => {
+      navigator.clipboard.read().then((contents) => {
+        for (const item of contents) {
+          if (item.types.includes('image/png')) {
+            item.getType('image/png').then((blob) => {
+              blob.arrayBuffer().then((arr) => {
+                let contentsBase64 = td_arrayBufferToBase64(arr);
+                let arg = { rowId: rowId, contentsBase64: contentsBase64 };
+                app.ports.importer_pasteImageRes.send(arg);
+              });
             });
-        });
-    }
-
-    if (app.ports && app.ports.rer_importer_focus) {
-        app.ports.rer_importer_focus.subscribe(({ elemId }) => {
-            requestAnimationFrame(
-                () => {
-                    document.getElementById(elemId)?.focus();
-                });
-        });
-    }
-
-    if (app.ports && app.ports.port_focusHtmlElement) {
-        app.ports.port_focusHtmlElement.subscribe(({ elemId }) => {
-            requestAnimationFrame(
-                () => {
-                    document.getElementById(elemId)?.focus();
-                });
-        });
-    }
-
-    if (app.ports && app.ports.port_scrollToElement) {
-        app.ports.port_scrollToElement.subscribe(({ elemId, x, y }) => {
-            requestAnimationFrame(
-                () => {
-                    let el = document.getElementById(elemId);
-                    el?.scrollTo({ top: y, left: x, behavior: "instant" });
-                });
-        });
-    }
-
-    if (app.ports && app.ports.waterfall_scrollIntoView) {
-        app.ports.waterfall_scrollIntoView.subscribe(({ elemId, height, waterfallId }) => {
-            requestAnimationFrame(
-                () => {
-                    const el = document.getElementById(elemId);
-                    const waterfall = document.getElementById(waterfallId);
-                    if (el) {
-                        const notVisibleHeight = el.offsetHeight - height
-
-                        el.scrollIntoView({ behavior: "instant", block: "start", inline: "nearest" });
-
-                        if (waterfall) {
-                            waterfall.scrollBy({ behavior: "instant", top: notVisibleHeight })
-                        }
-                    }
-
-                });
-        });
-
-    }
-    if (app.ports && app.ports.waterfall_scrollTo) {
-        app.ports.waterfall_scrollTo.subscribe(({ elemId, x, y }) => {
-            requestAnimationFrame(
-                () => {
-                    let el = document.getElementById(elemId);
-                    el?.scrollTo({ top: y, left: x, behavior: "instant" });
-                });
-        });
-    }
-
-    if (app.ports && app.ports.waterfall_copyTextToClipboard) {
-        app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
-            copyTextToClipboard(text);
-        });
-    }
-
-    if (app.ports && app.ports.waterfall_getVisibleMsgIds && app.ports.waterfall_getVisibleMsgIdsRes) {
-        app.ports.waterfall_getVisibleMsgIds.subscribe(({ waterfallId, allMsgIds }: { waterfallId: string, allMsgIds: number[] }) => {
-            const waterfallElement = document.getElementById(`waterfall-${waterfallId}`);
-
-            if (waterfallElement) {
-
-                const waterfallPosTop = waterfallElement.getBoundingClientRect().top;
-
-                const viewportTop = window.scrollY + waterfallPosTop;
-                const viewportBottom = viewportTop + window.innerHeight;
-
-                const isVisible = (index) => {
-                    const msgId = allMsgIds[index];
-                    const elem = document.getElementById(`waterfall-${waterfallId}-message-${msgId}`);
-
-                    if (elem) {
-                        const elemTop = elem.getBoundingClientRect().top + window.scrollY;
-                        const elemBottom = elemTop + elem.offsetHeight;
-
-                        const isPartiallyVisible = (elemBottom > viewportTop) && (elemTop < viewportBottom);
-
-                        const visibleTop = Math.max(elemTop, viewportTop)
-                        const visibleBottom = Math.min(elemBottom, viewportBottom)
-                        const visibleHeight = Math.max(0, visibleBottom - visibleTop)
-
-                        return {
-                            visible: isPartiallyVisible,
-                            elemTop,
-                            elemBottom,
-                            visibleHeight
-                        };
-                    }
-                    return { visible: false, elemTop: null, elemBottom: null, visibleHeight: 0 };
-                };
-
-                const findVisibleTopToBottom = (index) => {
-                    let bottom = index;
-                    let top = index;
-
-                    while (isVisible(bottom - 1).visible && bottom >= 0) {
-                        bottom--;
-                    }
-                    while (isVisible(top + 1).visible && top < allMsgIds.length) {
-                        top++;
-                    }
-
-                    return { bottom, top };
-                };
-
-                const visibleMsgIds: number[] = [];
-                let firstVisibleIndex: number;
-
-                let left = 0
-                let right = allMsgIds.length - 1
-
-                while (left <= right) {
-                    const mid = Math.floor((left + right) / 2)
-                    const currentMessage = isVisible(mid);
-
-                    if (currentMessage.visible) {
-                        const { bottom, top } = findVisibleTopToBottom(mid);
-                        for (let j = bottom; j <= top; j++) {
-                            visibleMsgIds.push(allMsgIds[j]);
-                        }
-                        firstVisibleIndex = bottom;
-                        break;
-                    }
-
-                    if (currentMessage.elemTop !== null && currentMessage.elemTop >= viewportTop) {
-                        right = mid - 1
-                    } else {
-
-                        left = mid + 1
-                    }
-
-                }
-                //@ts-ignore
-                const firstMessageVisibility = isVisible(firstVisibleIndex);
-                const firstVisibleHeight = firstMessageVisibility.visible ? firstMessageVisibility.visibleHeight : 0;
-
-                app.ports.waterfall_getVisibleMsgIdsRes.send({ waterfallId, msgIds: visibleMsgIds, firstVisibleHeight });
-            }
-        });
-    }
-
-    window.netjson_graphs = {};
-
-    let scriptLoaded = false;
-
-    const loadScript = () => {
-        if (!scriptLoaded) {
-            scriptLoaded = true;
-            return import("../static/netjsongraph/netjsongraph.min.js")
+          }
         }
-        return Promise.resolve();
-    };
-    if (app.ports && app.ports.port_initNetjsonGraph) {
-        app.ports.port_initNetjsonGraph.subscribe(({ elemId, graphDataAndMeta }) => {
-            loadScript().then(() => {
-                let graphData = graphDataAndMeta.graph;
-                graphData.type = graphData.type_;
+      });
+    });
+  }
 
-                let graph;
-                if (elemId in window.netjson_graphs) {
-                    graph = window.netjson_graphs[elemId];
-                    graph.utils.JSONDataUpdate(graphData);
-                } else {
-                    graph = new NetJSONGraph(graphData, {
-                        el: document.getElementById(elemId),
-                        graphConfig: {
-                            series: {
-                                nodeSize: (node) => {
-                                    if (node.count <= 20) {
-                                        return Math.sqrt(node.count) * 4;
-                                    } else {
-                                        return 20 + Math.log(node.count);
-                                    }
-                                }
-                            },
-                            baseOptions: {
-                                backgroundColor: "#211a11",
-                            }
-                        },
-                        linkCategories: graphDataAndMeta.linkCategories,
-                    });
-                }
-                graph.render();
+  if (app.ports && app.ports.rer_importer_focus) {
+    app.ports.rer_importer_focus.subscribe(({ elemId }) => {
+      requestAnimationFrame(() => {
+        document.getElementById(elemId)?.focus();
+      });
+    });
+  }
 
-            })
-        });
+  if (app.ports && app.ports.port_focusHtmlElement) {
+    app.ports.port_focusHtmlElement.subscribe(({ elemId }) => {
+      requestAnimationFrame(() => {
+        document.getElementById(elemId)?.focus();
+      });
+    });
+  }
 
-    }
+  if (app.ports && app.ports.port_scrollToElement) {
+    app.ports.port_scrollToElement.subscribe(({ elemId, x, y }) => {
+      requestAnimationFrame(() => {
+        let el = document.getElementById(elemId);
+        el?.scrollTo({ top: y, left: x, behavior: 'instant' });
+      });
+    });
+  }
 
-    if (app.ports && app.ports.shared_toggleDarkMode) {
-        app.ports.shared_toggleDarkMode.subscribe(() => {
-            // This port is now used for applying theme changes
-            // The actual theme mode is managed by the new system
-            applyCurrentTheme();
-        });
-    }
+  if (app.ports && app.ports.waterfall_scrollIntoView) {
+    app.ports.waterfall_scrollIntoView.subscribe(({ elemId, height, waterfallId }) => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(elemId);
+        const waterfall = document.getElementById(waterfallId);
+        if (el) {
+          const notVisibleHeight = el.offsetHeight - height;
 
-    if (app.ports && app.ports.shared_saveThemeMode) {
-        app.ports.shared_saveThemeMode.subscribe((themeMode: string) => {
-            // Save theme mode to localStorage
-            localStorage.setItem('echo-theme-mode', themeMode);
-            // Apply the theme immediately
-            applyTheme(themeMode, { withLoader: true });
-        });
-    }
+          el.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'nearest' });
 
-    if (app.ports && app.ports.shared_loadThemeMode) {
-        app.ports.shared_loadThemeMode.subscribe(() => {
-            // Load theme mode from localStorage
-            const savedTheme = localStorage.getItem('echo-theme-mode');
-            if (savedTheme) {
-                app.ports.shared_loadThemeModeRes.send(savedTheme);
+          if (waterfall) {
+            waterfall.scrollBy({ behavior: 'instant', top: notVisibleHeight });
+          }
+        }
+      });
+    });
+  }
+  if (app.ports && app.ports.waterfall_scrollTo) {
+    app.ports.waterfall_scrollTo.subscribe(({ elemId, x, y }) => {
+      requestAnimationFrame(() => {
+        let el = document.getElementById(elemId);
+        el?.scrollTo({ top: y, left: x, behavior: 'instant' });
+      });
+    });
+  }
+
+  if (app.ports && app.ports.waterfall_copyTextToClipboard) {
+    app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
+      copyTextToClipboard(text);
+    });
+  }
+
+  if (
+    app.ports &&
+    app.ports.waterfall_getVisibleMsgIds &&
+    app.ports.waterfall_getVisibleMsgIdsRes
+  ) {
+    app.ports.waterfall_getVisibleMsgIds.subscribe(
+      ({ waterfallId, allMsgIds }: { waterfallId: string; allMsgIds: number[] }) => {
+        const waterfallElement = document.getElementById(`waterfall-${waterfallId}`);
+
+        if (waterfallElement) {
+          const waterfallPosTop = waterfallElement.getBoundingClientRect().top;
+
+          const viewportTop = window.scrollY + waterfallPosTop;
+          const viewportBottom = viewportTop + window.innerHeight;
+
+          const isVisible = (index) => {
+            const msgId = allMsgIds[index];
+            const elem = document.getElementById(`waterfall-${waterfallId}-message-${msgId}`);
+
+            if (elem) {
+              const elemTop = elem.getBoundingClientRect().top + window.scrollY;
+              const elemBottom = elemTop + elem.offsetHeight;
+
+              const isPartiallyVisible = elemBottom > viewportTop && elemTop < viewportBottom;
+
+              const visibleTop = Math.max(elemTop, viewportTop);
+              const visibleBottom = Math.min(elemBottom, viewportBottom);
+              const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+
+              return {
+                visible: isPartiallyVisible,
+                elemTop,
+                elemBottom,
+                visibleHeight,
+              };
+            }
+            return { visible: false, elemTop: null, elemBottom: null, visibleHeight: 0 };
+          };
+
+          const findVisibleTopToBottom = (index) => {
+            let bottom = index;
+            let top = index;
+
+            while (isVisible(bottom - 1).visible && bottom >= 0) {
+              bottom--;
+            }
+            while (isVisible(top + 1).visible && top < allMsgIds.length) {
+              top++;
+            }
+
+            return { bottom, top };
+          };
+
+          const visibleMsgIds: number[] = [];
+          let firstVisibleIndex: number;
+
+          let left = 0;
+          let right = allMsgIds.length - 1;
+
+          while (left <= right) {
+            const mid = Math.floor((left + right) / 2);
+            const currentMessage = isVisible(mid);
+
+            if (currentMessage.visible) {
+              const { bottom, top } = findVisibleTopToBottom(mid);
+              for (let j = bottom; j <= top; j++) {
+                visibleMsgIds.push(allMsgIds[j]);
+              }
+              firstVisibleIndex = bottom;
+              break;
+            }
+
+            if (currentMessage.elemTop !== null && currentMessage.elemTop >= viewportTop) {
+              right = mid - 1;
             } else {
-                // No saved theme, use system preference
-                const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-                app.ports.shared_loadThemeModeRes.send(systemTheme);
+              left = mid + 1;
             }
-        });
+          }
+          //@ts-ignore
+          const firstMessageVisibility = isVisible(firstVisibleIndex);
+          const firstVisibleHeight = firstMessageVisibility.visible
+            ? firstMessageVisibility.visibleHeight
+            : 0;
+
+          app.ports.waterfall_getVisibleMsgIdsRes.send({
+            waterfallId,
+            msgIds: visibleMsgIds,
+            firstVisibleHeight,
+          });
+        }
+      },
+    );
+  }
+
+  window.netjson_graphs = {};
+
+  let scriptLoaded = false;
+
+  const loadScript = () => {
+    if (!scriptLoaded) {
+      scriptLoaded = true;
+      return import('../static/netjsongraph/netjsongraph.min.js');
     }
+    return Promise.resolve();
+  };
+  if (app.ports && app.ports.port_initNetjsonGraph) {
+    app.ports.port_initNetjsonGraph.subscribe(({ elemId, graphDataAndMeta }) => {
+      loadScript().then(() => {
+        let graphData = graphDataAndMeta.graph;
+        graphData.type = graphData.type_;
 
-    if (
-        app.ports &&
-        app.ports.shared_saveRerNetworkDetailsPreferredView &&
-        app.ports.shared_loadRerNetworkDetailsPreferredView &&
-        app.ports.shared_loadRerNetworkDetailsPreferredViewRes
-    ) {
-        app.ports.shared_saveRerNetworkDetailsPreferredView.subscribe((preferredView: string) => {
-            localStorage.setItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY, preferredView);
-        });
+        let graph;
+        if (elemId in window.netjson_graphs) {
+          graph = window.netjson_graphs[elemId];
+          graph.utils.JSONDataUpdate(graphData);
+        } else {
+          graph = new NetJSONGraph(graphData, {
+            el: document.getElementById(elemId),
+            graphConfig: {
+              series: {
+                nodeSize: (node) => {
+                  if (node.count <= 20) {
+                    return Math.sqrt(node.count) * 4;
+                  } else {
+                    return 20 + Math.log(node.count);
+                  }
+                },
+              },
+              baseOptions: {
+                backgroundColor: '#211a11',
+              },
+            },
+            linkCategories: graphDataAndMeta.linkCategories,
+          });
+        }
+        graph.render();
+      });
+    });
+  }
 
-        app.ports.shared_loadRerNetworkDetailsPreferredView.subscribe(() => {
-            const storedValue = localStorage.getItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY);
-            app.ports.shared_loadRerNetworkDetailsPreferredViewRes.send(storedValue === 'classic' ? 'classic' : 'neo');
-        });
-    }
+  if (app.ports && app.ports.shared_toggleDarkMode) {
+    app.ports.shared_toggleDarkMode.subscribe(() => {
+      // This port is now used for applying theme changes
+      // The actual theme mode is managed by the new system
+      applyCurrentTheme();
+    });
+  }
 
-    if (app.ports && app.ports.shared_triggerResize) {
-        app.ports.shared_triggerResize.subscribe(() => {
-            // Use requestAnimationFrame to ensure DOM changes are applied first
-            requestAnimationFrame(() => {
-                // Then add a delay to allow CSS transitions to complete
-                setTimeout(() => {
-                    syncNavbarHeight();
-                    window.dispatchEvent(new Event('resize'));
-                }, 300); // Match the transition duration from CSS
-            });
-        });
-    }
+  if (app.ports && app.ports.shared_saveThemeMode) {
+    app.ports.shared_saveThemeMode.subscribe((themeMode: string) => {
+      // Save theme mode to localStorage
+      localStorage.setItem('echo-theme-mode', themeMode);
+      // Apply the theme immediately
+      applyTheme(themeMode, { withLoader: true });
+    });
+  }
 
+  if (app.ports && app.ports.shared_loadThemeMode) {
+    app.ports.shared_loadThemeMode.subscribe(() => {
+      // Load theme mode from localStorage
+      const savedTheme = localStorage.getItem('echo-theme-mode');
+      if (savedTheme) {
+        app.ports.shared_loadThemeModeRes.send(savedTheme);
+      } else {
+        // No saved theme, use system preference
+        const systemTheme =
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+        app.ports.shared_loadThemeModeRes.send(systemTheme);
+      }
+    });
+  }
 
-    if (app.ports && app.ports.shared_getLocation && app.ports.shared_getLocationRes) {
-        app.ports.shared_getLocation.subscribe(() => {
-            let loc = window.location;
-            let res = {
-                host: loc.host,
-                hostname: loc.hostname,
-                href: loc.href,
-                origin: loc.origin,
-                pathname: loc.pathname,
-                port_: loc.port,
-                protocol: loc.protocol,
-                search: loc.search,
-                hash: loc.hash
-            };
-            app.ports.shared_getLocationRes.send(res);
-        });
-    }
+  if (
+    app.ports &&
+    app.ports.shared_saveRerNetworkDetailsPreferredView &&
+    app.ports.shared_loadRerNetworkDetailsPreferredView &&
+    app.ports.shared_loadRerNetworkDetailsPreferredViewRes
+  ) {
+    app.ports.shared_saveRerNetworkDetailsPreferredView.subscribe((preferredView: string) => {
+      localStorage.setItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY, preferredView);
+    });
 
-    if (app.ports && app.ports.importer_mgrsToWgs84 && app.ports.importer_mgrsToWgs84Res) {
-        app.ports.importer_mgrsToWgs84.subscribe(({ rowId, coordId, coords }) => {
-            let res = inverse(coords);
-            let res_latlng = { lat: res[1], lng: res[0] };
-            let arg = {
-                rowId: rowId,
-                coordId: coordId,
-                coords: res_latlng
-            };
-            app.ports.importer_mgrsToWgs84Res.send(arg);
-        });
-    }
+    app.ports.shared_loadRerNetworkDetailsPreferredView.subscribe(() => {
+      const storedValue = localStorage.getItem(RER_NETWORK_DETAILS_PREFERRED_VIEW_KEY);
+      app.ports.shared_loadRerNetworkDetailsPreferredViewRes.send(
+        storedValue === 'classic' ? 'classic' : 'neo',
+      );
+    });
+  }
 
-    if (app.ports && app.ports.shared_loadScript) {
-        let presentScripts = document.getElementsByTagName('script');
-        app.ports.shared_loadScript.subscribe(function(url) {
-            for (let i = 0; i < presentScripts.length; i++) {
-                if (presentScripts[i].src.endsWith(url)) {
-                    app.ports.shared_loadScriptRes.send(url);
-                    return;
-                }
-            };
+  if (app.ports && app.ports.shared_triggerResize) {
+    app.ports.shared_triggerResize.subscribe(() => {
+      // Use requestAnimationFrame to ensure DOM changes are applied first
+      requestAnimationFrame(() => {
+        // Then add a delay to allow CSS transitions to complete
+        setTimeout(() => {
+          syncNavbarHeight();
+          window.dispatchEvent(new Event('resize'));
+        }, 300); // Match the transition duration from CSS
+      });
+    });
+  }
 
-            const script = document.createElement('script');
-            script.src = url;
-            script.onload = function() {
-                app.ports.shared_loadScriptRes.send(url);
-                presentScripts = document.getElementsByTagName('script');
-            };
-            document.body.appendChild(script);
-        });
-    }
+  if (app.ports && app.ports.shared_getLocation && app.ports.shared_getLocationRes) {
+    app.ports.shared_getLocation.subscribe(() => {
+      let loc = window.location;
+      let res = {
+        host: loc.host,
+        hostname: loc.hostname,
+        href: loc.href,
+        origin: loc.origin,
+        pathname: loc.pathname,
+        port_: loc.port,
+        protocol: loc.protocol,
+        search: loc.search,
+        hash: loc.hash,
+      };
+      app.ports.shared_getLocationRes.send(res);
+    });
+  }
 
-    if (app.ports && app.ports.rer_analysis_saveQueryState) {
-        app.ports.rer_analysis_saveQueryState.subscribe((queryState: unknown) => {
-            saveLegacyRerAnalysisQueryState(queryState);
-        });
-    }
+  if (app.ports && app.ports.importer_mgrsToWgs84 && app.ports.importer_mgrsToWgs84Res) {
+    app.ports.importer_mgrsToWgs84.subscribe(({ rowId, coordId, coords }) => {
+      let res = inverse(coords);
+      let res_latlng = { lat: res[1], lng: res[0] };
+      let arg = {
+        rowId: rowId,
+        coordId: coordId,
+        coords: res_latlng,
+      };
+      app.ports.importer_mgrsToWgs84Res.send(arg);
+    });
+  }
 
+  if (app.ports && app.ports.shared_loadScript) {
+    let presentScripts = document.getElementsByTagName('script');
+    app.ports.shared_loadScript.subscribe(function (url) {
+      for (let i = 0; i < presentScripts.length; i++) {
+        if (presentScripts[i].src.endsWith(url)) {
+          app.ports.shared_loadScriptRes.send(url);
+          return;
+        }
+      }
 
+      const script = document.createElement('script');
+      script.src = url;
+      script.onload = function () {
+        app.ports.shared_loadScriptRes.send(url);
+        presentScripts = document.getElementsByTagName('script');
+      };
+      document.body.appendChild(script);
+    });
+  }
 
-    if (app.ports && app.ports.rer_freqs_openMap && app.ports.rer_freqs_closeMapRes) {
-        app.ports.rer_freqs_openMap.subscribe(function(data: { points: MapPointShort[]; containerId: string }) {
-            if (data.points.length > 0) {
-                setupMap(data, () => app.ports.rer_freqs_closeMapRes.send(data.containerId))
-            }
-        });
+  if (app.ports && app.ports.rer_analysis_saveQueryState) {
+    app.ports.rer_analysis_saveQueryState.subscribe((queryState: unknown) => {
+      saveLegacyRerAnalysisQueryState(queryState);
+    });
+  }
 
-    }
-
-}
+  if (app.ports && app.ports.rer_freqs_openMap && app.ports.rer_freqs_closeMapRes) {
+    app.ports.rer_freqs_openMap.subscribe(function (data: {
+      points: MapPointShort[];
+      containerId: string;
+    }) {
+      if (data.points.length > 0) {
+        setupMap(data, () => app.ports.rer_freqs_closeMapRes.send(data.containerId));
+      }
+    });
+  }
+};

@@ -7,7 +7,11 @@ import { listAors } from '../../services/api/aor';
 import { listPosts } from '../../services/api/posts';
 import { getEncryptions } from '../../services/api/encryptions';
 import { getUnitsList } from '../../services/api/units';
-import { getNetworkUnitStats, getNetworksGroupsActivity, listNetworks } from '../../services/api/networks';
+import {
+  getNetworkUnitStats,
+  getNetworksGroupsActivity,
+  listNetworks,
+} from '../../services/api/networks';
 import {
   buildNetworksListReq,
   buildNetworksStatusCountsReq,
@@ -20,7 +24,11 @@ import {
   isAbortError,
   normalizeActivityMap,
 } from './use-rer-networks-neo-page.shared';
-import type { ActivityByNetworkId, NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
+import type {
+  ActivityByNetworkId,
+  NetworksQuerySnapshot,
+  UiMessage,
+} from './use-rer-networks-neo-page.types';
 import { redirectToLogin } from '../../auth-redirect';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
@@ -54,7 +62,9 @@ type LoadArgs = {
   setPosts: Dispatch<SetStateAction<Array<{ id: number; name: string }>>>;
   setEncryptions: Dispatch<SetStateAction<EncryptionRec[]>>;
   setStatus: Dispatch<SetStateAction<UiMessage>>;
-  setStatusCounts: Dispatch<SetStateAction<{ active: number; inactive: number; archived: number } | null>>;
+  setStatusCounts: Dispatch<
+    SetStateAction<{ active: number; inactive: number; archived: number } | null>
+  >;
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setActivityByNetworkId: Dispatch<SetStateAction<ActivityByNetworkId>>;
@@ -62,13 +72,21 @@ type LoadArgs = {
 };
 
 export function createRerNetworksNeoLoadActions(args: LoadArgs) {
-  const loadNetworks = async (snapshot: NetworksQuerySnapshot, options?: { includeLookups?: boolean; append?: boolean; force?: boolean }) => {
+  const loadNetworks = async (
+    snapshot: NetworksQuerySnapshot,
+    options?: { includeLookups?: boolean; append?: boolean; force?: boolean },
+  ) => {
     const seq = ++args.requestSeqRef.current;
     const includeLookups = options?.includeLookups ?? false;
     const append = options?.append ?? false;
     const force = options?.force ?? false;
     const controller = new AbortController();
-    if (args.lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey && !append && !includeLookups && !force) {
+    if (
+      args.lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey &&
+      !append &&
+      !includeLookups &&
+      !force
+    ) {
       return;
     }
     if (!append) {
@@ -78,7 +96,8 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
     const req = buildNetworksListReq({
       searchText: snapshot.globalFilter,
       selectedSidebarUnitFilter: snapshot.selectedSidebarUnitFilter,
-      selectedUnitLabel: snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
+      selectedUnitLabel:
+        snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
       showOnlyInvestigating: snapshot.filters.showOnlyInvestigating,
       status: snapshot.filters.status,
       columnFilters: snapshot.columnFilters,
@@ -97,7 +116,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
     try {
       const lookupsPromise = includeLookups
-        ? Promise.all([getUnitsList(), listAors({ sortBy: null }), getNetworkUnitStats(), listPosts(), getEncryptions()])
+        ? Promise.all([
+            getUnitsList(),
+            listAors({ sortBy: null }),
+            getNetworkUnitStats(),
+            listPosts(),
+            getEncryptions(),
+          ])
         : null;
       const networksPromise = listNetworks(req, { signal: controller.signal });
 
@@ -112,7 +137,8 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       if (lookupsPromise !== null) {
         (async () => {
           try {
-            const [unitsList, aorList, unitStatsList, postsList, encryptionList] = await lookupsPromise;
+            const [unitsList, aorList, unitStatsList, postsList, encryptionList] =
+              await lookupsPromise;
             if (args.requestSeqRef.current !== seq) return;
             args.setUnits(unitsList);
             args.setAors(aorList);
@@ -189,15 +215,27 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
     const seq = args.requestSeqRef.current;
     try {
       const countsReq = buildNetworksStatusCountsReq({
-        searchText: args.latestQuerySnapshotRef.current?.globalFilter ?? args.tableStateContextRef.current.globalFilter,
+        searchText:
+          args.latestQuerySnapshotRef.current?.globalFilter ??
+          args.tableStateContextRef.current.globalFilter,
         selectedSidebarUnitFilter:
-          args.latestQuerySnapshotRef.current?.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,
+          args.latestQuerySnapshotRef.current?.selectedSidebarUnitFilter ??
+          args.selectedSidebarUnitFilterRef.current,
         selectedUnitLabel:
-          (args.latestQuerySnapshotRef.current?.filters.unitText ?? args.filtersRef.current.unitText).trim() === ''
+          (
+            args.latestQuerySnapshotRef.current?.filters.unitText ??
+            args.filtersRef.current.unitText
+          ).trim() === ''
             ? null
-            : (args.latestQuerySnapshotRef.current?.filters.unitText ?? args.filtersRef.current.unitText).trim(),
-        showOnlyInvestigating: args.latestQuerySnapshotRef.current?.filters.showOnlyInvestigating ?? args.filtersRef.current.showOnlyInvestigating,
-        columnFilters: args.latestQuerySnapshotRef.current?.columnFilters ?? args.columnFiltersRef.current,
+            : (
+                args.latestQuerySnapshotRef.current?.filters.unitText ??
+                args.filtersRef.current.unitText
+              ).trim(),
+        showOnlyInvestigating:
+          args.latestQuerySnapshotRef.current?.filters.showOnlyInvestigating ??
+          args.filtersRef.current.showOnlyInvestigating,
+        columnFilters:
+          args.latestQuerySnapshotRef.current?.columnFilters ?? args.columnFiltersRef.current,
       });
       const { statusCounts } = await listNetworks({
         ...countsReq,
@@ -243,8 +281,10 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       };
       const req = buildNetworksListReq({
         searchText: snapshot.globalFilter,
-        selectedSidebarUnitFilter: snapshot.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,
-        selectedUnitLabel: snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
+        selectedSidebarUnitFilter:
+          snapshot.selectedSidebarUnitFilter ?? args.selectedSidebarUnitFilterRef.current,
+        selectedUnitLabel:
+          snapshot.filters.unitText.trim() === '' ? null : snapshot.filters.unitText.trim(),
         showOnlyInvestigating: snapshot.filters.showOnlyInvestigating,
         status: snapshot.filters.status,
         columnFilters: snapshot.columnFilters,
@@ -252,7 +292,9 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         limit: NETWORK_LIST_PAGE_SIZE,
         offset: args.networksLengthRef.current,
       });
-      const { list: networksList, statusCounts } = await listNetworks(req, { signal: args.loadMoreAbortRef.current.signal });
+      const { list: networksList, statusCounts } = await listNetworks(req, {
+        signal: args.loadMoreAbortRef.current.signal,
+      });
 
       if (args.requestSeqRef.current !== seq) return;
 
@@ -298,7 +340,10 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
         redirectToLogin();
         return;
       }
-      args.setStatus({ kind: 'error', text: `Помилка завантаження мереж: ${formatErrorMessage(error)}` });
+      args.setStatus({
+        kind: 'error',
+        text: `Помилка завантаження мереж: ${formatErrorMessage(error)}`,
+      });
     } finally {
       if (args.requestSeqRef.current === seq) {
         args.setLoadingMore(false);

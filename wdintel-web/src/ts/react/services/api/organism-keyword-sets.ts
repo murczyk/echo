@@ -16,7 +16,9 @@ export function suggestNewKeywordSetName(sets: readonly OrganismKeywordSetDto[])
   let n = 1;
   while (true) {
     const candidate =
-      n === 1 ? ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX : `${ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX} ${n}`;
+      n === 1
+        ? ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX
+        : `${ORGANISM_KEYWORD_SET_NEW_NAME_PREFIX} ${n}`;
     if (!taken.has(candidate)) return candidate;
     n += 1;
   }
@@ -45,7 +47,10 @@ export async function deleteOrganismKeywordSet(id: number): Promise<void> {
 export async function inflectOrganismKeywordForms(
   req: OrganismKeywordSetInflectReq,
 ): Promise<OrganismKeywordSetInflectRsp> {
-  const raw = await postJson<unknown>('/api/organism/keyword-sets/inflect', transformCamelToSnake(req));
+  const raw = await postJson<unknown>(
+    '/api/organism/keyword-sets/inflect',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<OrganismKeywordSetInflectRsp>(raw);
 }
 

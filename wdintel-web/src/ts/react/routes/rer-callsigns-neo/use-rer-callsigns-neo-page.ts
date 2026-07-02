@@ -46,16 +46,21 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<UiStatus>(null);
-  const [filters, setFilters] = useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
+  const [filters, setFilters] = useState<CallsignsFilterState>(() =>
+    readInitialCallsignsFiltersFromUrl(),
+  );
   const [sort, setSort] = useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => readInitialSidebarOpenFromUrl());
-  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] = useState<SelectedSidebarUnitFilter | null>(() =>
-    readInitialSidebarFilterFromUrl(),
-  );
+  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
+    useState<SelectedSidebarUnitFilter | null>(() => readInitialSidebarFilterFromUrl());
   const [addUnitId, setAddUnitId] = useState<number | null>(null);
   const [addSourceId, setAddSourceId] = useState<number | null>(null);
-  const [addCallsignAdditionalSourceIds, setAddCallsignAdditionalSourceIds] = useState<number[]>([]);
-  const [addRows, setAddRows] = useState<CallsignDraftRow[]>([{ callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' }]);
+  const [addCallsignAdditionalSourceIds, setAddCallsignAdditionalSourceIds] = useState<number[]>(
+    [],
+  );
+  const [addRows, setAddRows] = useState<CallsignDraftRow[]>([
+    { callsign: '', position: '', fullName: '', comment: '', developing: false, radioFreq: '' },
+  ]);
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [addValidationError, setAddValidationError] = useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
@@ -126,15 +131,35 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   );
   const deferredDuplicateHintInputs = useDeferredValue(duplicateHintInputs);
 
-  const sortedCallsigns = useMemo(() => sortRowsClientSide(callsigns, sort, unitsById, sourcesById), [callsigns, sort, sourcesById, unitsById]);
-  const rows = useMemo(() => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows, [sortedCallsigns, sourcesById, unitsById]);
-  const unitStatsView = useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
+  const sortedCallsigns = useMemo(
+    () => sortRowsClientSide(callsigns, sort, unitsById, sourcesById),
+    [callsigns, sort, sourcesById, unitsById],
+  );
+  const rows = useMemo(
+    () => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows,
+    [sortedCallsigns, sourcesById, unitsById],
+  );
+  const unitStatsView = useMemo(
+    () => mergeUnitStatsWithUnits(unitStats, unitsById),
+    [unitStats, unitsById],
+  );
   const addPotentialDuplicateGroups = useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
-    const activeDuplicateHintInputs = addDuplicateHintsImmediate ? duplicateHintInputs : deferredDuplicateHintInputs;
+    const activeDuplicateHintInputs = addDuplicateHintsImmediate
+      ? duplicateHintInputs
+      : deferredDuplicateHintInputs;
     if (activeDuplicateHintInputs.length === 0) return [];
     return buildDuplicateHintGroups(activeDuplicateHintInputs, callsigns, addUnitId, unitsById);
-  }, [addDuplicateHintsEnabled, addDuplicateHintsImmediate, addSubmitting, addUnitId, callsigns, deferredDuplicateHintInputs, duplicateHintInputs, unitsById]);
+  }, [
+    addDuplicateHintsEnabled,
+    addDuplicateHintsImmediate,
+    addSubmitting,
+    addUnitId,
+    callsigns,
+    deferredDuplicateHintInputs,
+    duplicateHintInputs,
+    unitsById,
+  ]);
 
   const actions = useRerCallsignsNeoPageActions({
     permissions,
@@ -224,7 +249,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setSort((prev) => (areCallsignSortStatesEqual(prev, nextSort) ? prev : nextSort));
       setSidebarOpen((prev) => (prev === nextSidebarOpen ? prev : nextSidebarOpen));
       setSelectedSidebarUnitFilter((prev) =>
-        areSidebarFiltersEqual(prev, nextSelectedSidebarUnitFilter) ? prev : nextSelectedSidebarUnitFilter,
+        areSidebarFiltersEqual(prev, nextSelectedSidebarUnitFilter)
+          ? prev
+          : nextSelectedSidebarUnitFilter,
       );
     }
 
@@ -233,7 +260,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, []);
 
   useEffect(() => {
-    setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
+    setSelectedCallsignIds((prev) =>
+      prev.filter((id) => callsigns.some((callsign) => callsign.id === id)),
+    );
   }, [callsigns]);
 
   useEffect(() => {

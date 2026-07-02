@@ -18,13 +18,11 @@ export type FeedFilterSavedFiltersViewModel = {
   onDeleteExisting: () => Promise<void>;
 };
 
-export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel): FeedFilterSavedFiltersViewModel {
+export function useFeedFilterSavedFiltersViewModel(
+  panel: FeedFilterPanelModel,
+): FeedFilterSavedFiltersViewModel {
   const { feedId, filterState, toggles, savedFilters, actions } = panel;
-  const {
-    savedFilters: savedFilterItems,
-    selectedSavedId,
-    saveFilterName,
-  } = savedFilters;
+  const { savedFilters: savedFilterItems, selectedSavedId, saveFilterName } = savedFilters;
   const {
     onSavedFilterSelect,
     onSaveFilterNameChange,
@@ -36,29 +34,44 @@ export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel):
   } = actions;
 
   const [saveInFlight, setSaveInFlight] = useState(false);
-  const loadedSavedFilter =
-    isNullOrUndefined(selectedSavedId) ? null : (savedFilterItems.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
+  const loadedSavedFilter = isNullOrUndefined(selectedSavedId)
+    ? null
+    : (savedFilterItems.find((savedFilter) => savedFilter.id === selectedSavedId) ?? null);
   const loadedFilterNormalized = useMemo(
-    () => (isNullOrUndefined(loadedSavedFilter) ? null : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>)),
+    () =>
+      isNullOrUndefined(loadedSavedFilter)
+        ? null
+        : normalizeFeed(loadedSavedFilter.req as unknown as Record<string, unknown>),
     [loadedSavedFilter],
   );
   const isDirty =
     isPresent(loadedFilterNormalized) &&
     !(
-      JSON.stringify(filterState.groupsSelected) === JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
-      JSON.stringify(filterState.deniedGroups) === JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
-      JSON.stringify(filterState.sendersSelected) === JSON.stringify(loadedFilterNormalized.sendersSelected ?? []) &&
-      JSON.stringify(filterState.deniedSenders) === JSON.stringify(loadedFilterNormalized.deniedSenders ?? []) &&
-      JSON.stringify(filterState.freqsSelected) === JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
-      JSON.stringify(filterState.freqsDenied) === JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
-      JSON.stringify(filterState.postsSelected ?? []) === JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
-      JSON.stringify(filterState.postsDenied ?? []) === JSON.stringify(loadedFilterNormalized.postsDenied ?? []) &&
-      JSON.stringify(filterState.unitsSelected ?? []) === JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
-      JSON.stringify(filterState.unitsDenied ?? []) === JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
-      (toggles.unitsExactMatchOnly ?? false) === (loadedFilterNormalized.unitsExactMatchOnly ?? false)
+      JSON.stringify(filterState.groupsSelected) ===
+        JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
+      JSON.stringify(filterState.deniedGroups) ===
+        JSON.stringify(loadedFilterNormalized.groupsDenied ?? []) &&
+      JSON.stringify(filterState.sendersSelected) ===
+        JSON.stringify(loadedFilterNormalized.sendersSelected ?? []) &&
+      JSON.stringify(filterState.deniedSenders) ===
+        JSON.stringify(loadedFilterNormalized.deniedSenders ?? []) &&
+      JSON.stringify(filterState.freqsSelected) ===
+        JSON.stringify(loadedFilterNormalized.freqsSelected ?? []) &&
+      JSON.stringify(filterState.freqsDenied) ===
+        JSON.stringify(loadedFilterNormalized.freqsDenied ?? []) &&
+      JSON.stringify(filterState.postsSelected ?? []) ===
+        JSON.stringify(loadedFilterNormalized.postsSelected ?? []) &&
+      JSON.stringify(filterState.postsDenied ?? []) ===
+        JSON.stringify(loadedFilterNormalized.postsDenied ?? []) &&
+      JSON.stringify(filterState.unitsSelected ?? []) ===
+        JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
+      JSON.stringify(filterState.unitsDenied ?? []) ===
+        JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
+      (toggles.unitsExactMatchOnly ?? false) ===
+        (loadedFilterNormalized.unitsExactMatchOnly ?? false)
     );
 
-  const runSavedFilterAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
+  const runSavedFilterAction = async <T>(action: () => Promise<T>): Promise<T | undefined> => {
     if (saveInFlight) return;
     setSaveInFlight(true);
     try {
@@ -84,9 +97,12 @@ export function useFeedFilterSavedFiltersViewModel(panel: FeedFilterPanelModel):
     },
     onSavedFilterNameChange: onSaveFilterNameChange,
     onUpdateExisting: () => runSavedFilterAction(() => onUpdateSelectedSavedFilter(feedId)),
-    onSaveAsNew: (name) => runSavedFilterAction(() => onSaveFilter(feedId, name)).then((result) => result === true),
+    onSaveAsNew: (name) =>
+      runSavedFilterAction(() => onSaveFilter(feedId, name)).then((result) => result === true),
     onRenameExisting: (name) =>
-      runSavedFilterAction(() => onRenameSelectedSavedFilter(feedId, name)).then((result) => result === true),
+      runSavedFilterAction(() => onRenameSelectedSavedFilter(feedId, name)).then(
+        (result) => result === true,
+      ),
     onDeleteExisting: () => runSavedFilterAction(() => onDeleteSelectedSavedFilter(feedId)),
   };
 }

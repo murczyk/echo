@@ -2,7 +2,10 @@ import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
 import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
-import { useFeedFilterSavedFiltersViewModel, type FeedFilterSavedFiltersViewModel } from './useFeedFilterSavedFiltersViewModel';
+import {
+  useFeedFilterSavedFiltersViewModel,
+  type FeedFilterSavedFiltersViewModel,
+} from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
 
 type FeedFilterMode = 'include' | 'exclude';
@@ -75,7 +78,10 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     onReloadFreqs,
   } = actions;
   const sortedGroupKeys = useMemo(
-    () => [...groupsList].sort((a, b) => (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b)),
+    () =>
+      [...groupsList].sort((a, b) =>
+        (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b),
+      ),
     [groupInfos, groupsList],
   );
 
@@ -160,8 +166,10 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       options: senderOptions,
       getOptionLabel: (option: { id: string; label: string }) => option.label,
       getOptionKey: (option: { id: string; label: string }) => option.id,
-      isOptionEqualToValue: (option: { id: string; label: string }, value: { id: string; label: string }) =>
-        option.id === value.id,
+      isOptionEqualToValue: (
+        option: { id: string; label: string },
+        value: { id: string; label: string },
+      ) => option.id === value.id,
       placeholder: senderSelectionState.localValue.length === 0 ? senderEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1',
     },

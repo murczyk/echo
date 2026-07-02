@@ -32,7 +32,9 @@ let lastTextFieldProps: TextFieldProps | undefined;
 let lastPowerIconButtonProps: PowerIconButtonProps | undefined;
 
 vi.mock('@mui/icons-material/Clear', () => ({ default: () => <span data-testid="clear-icon" /> }));
-vi.mock('@mui/icons-material/Search', () => ({ default: () => <span data-testid="search-icon" /> }));
+vi.mock('@mui/icons-material/Search', () => ({
+  default: () => <span data-testid="search-icon" />,
+}));
 
 vi.mock('@mui/material', () => ({
   InputAdornment: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -40,7 +42,11 @@ vi.mock('@mui/material', () => ({
     lastTextFieldProps = props;
 
     return (
-      <div data-testid="text-field" data-placeholder={props.placeholder ?? ''} data-disabled={props.disabled ? 'true' : 'false'}>
+      <div
+        data-testid="text-field"
+        data-placeholder={props.placeholder ?? ''}
+        data-disabled={props.disabled ? 'true' : 'false'}
+      >
         <div>{props.slotProps?.input?.startAdornment}</div>
         <div>{props.slotProps?.input?.endAdornment}</div>
       </div>
@@ -67,7 +73,11 @@ type Rendered = {
   root: Root;
 };
 
-async function renderComponent(props?: { globalFilter?: string; disabled?: boolean; setGlobalFilter?: (value: string) => void }): Promise<Rendered> {
+async function renderComponent(props?: {
+  globalFilter?: string;
+  disabled?: boolean;
+  setGlobalFilter?: (value: string) => void;
+}): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -86,7 +96,9 @@ async function renderComponent(props?: { globalFilter?: string; disabled?: boole
   return { container, root };
 }
 
-function createKeyboardEvent(overrides: Partial<KeyboardEvent<HTMLInputElement>> = {}): KeyboardEvent<HTMLInputElement> {
+function createKeyboardEvent(
+  overrides: Partial<KeyboardEvent<HTMLInputElement>> = {},
+): KeyboardEvent<HTMLInputElement> {
   return {
     key: 'Escape',
     preventDefault: vi.fn(),

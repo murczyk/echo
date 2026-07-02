@@ -24,10 +24,17 @@ export function createEmptyDraftRow(): CallsignDraftRow {
 }
 
 export function hasAnyDraftValue(row: CallsignDraftRow): boolean {
-  return [row.callsign, row.position, row.fullName, row.comment, row.radioFreq].some((value) => value.trim() !== '') || row.developing;
+  return (
+    [row.callsign, row.position, row.fullName, row.comment, row.radioFreq].some(
+      (value) => value.trim() !== '',
+    ) || row.developing
+  );
 }
 
-export function validateDraftRows(rows: CallsignDraftRow[], _sourceId: number | null): CallsignDraftValidation {
+export function validateDraftRows(
+  rows: CallsignDraftRow[],
+  _sourceId: number | null,
+): CallsignDraftValidation {
   if (rows.length === 0) return { valid: false, error: 'Немає рядків для додавання' };
 
   const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
@@ -37,7 +44,10 @@ export function validateDraftRows(rows: CallsignDraftRow[], _sourceId: number | 
     const hasIdentity = row.callsign.trim() !== '' || row.fullName.trim() !== '';
     if (hasIdentity) return false;
 
-    return [row.position, row.comment, row.radioFreq].every((value) => value.trim() === '') && !row.developing;
+    return (
+      [row.position, row.comment, row.radioFreq].every((value) => value.trim() === '') &&
+      !row.developing
+    );
   });
   if (emptyIdentityAndLegacyContent) return { valid: false, error: EMPTY_CALLSIGN_ROW_ERROR };
 
@@ -55,11 +65,11 @@ export function validateEditForm(form: CallsignEditForm | null): CallsignDraftVa
   if (!form) return { valid: false, error: 'Не вибрано позивний для редагування' };
   const hasIdentity = form.callsign.trim() !== '' || form.fullName.trim() !== '';
   const hasLegacyContent =
-    [form.position, form.comment, form.radioFreq].some((value) => value.trim() !== '')
-    || form.developing
-    || form.unitId > 0
-    || isPresent(form.sourceId)
-    || form.callsignAdditionalSourceIds.length > 0;
+    [form.position, form.comment, form.radioFreq].some((value) => value.trim() !== '') ||
+    form.developing ||
+    form.unitId > 0 ||
+    isPresent(form.sourceId) ||
+    form.callsignAdditionalSourceIds.length > 0;
   if (!hasIdentity && !hasLegacyContent) {
     return { valid: false, error: LEGACY_CALLSIGN_CLEAR_ERROR };
   }
@@ -69,10 +79,13 @@ export function validateEditForm(form: CallsignEditForm | null): CallsignDraftVa
   return { valid: true, error: null };
 }
 
-function sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds: number[], primarySourceId: number | null | undefined): number[] {
-  const uniqueIds = Array.from(new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
-    (left, right) => left - right,
-  );
+function sanitizeCallsignAdditionalSourceIds(
+  callsignAdditionalSourceIds: number[],
+  primarySourceId: number | null | undefined,
+): number[] {
+  const uniqueIds = Array.from(
+    new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0)),
+  ).sort((left, right) => left - right);
   if (isNullOrUndefined(primarySourceId)) return uniqueIds;
   return uniqueIds.filter((sourceId) => sourceId !== primarySourceId);
 }
@@ -84,7 +97,10 @@ export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
     position: callsign.position,
     fullName: callsign.fullName,
     comment: callsign.comment,
-    callsignAdditionalSourceIds: sanitizeCallsignAdditionalSourceIds(callsign.callsignAdditionalSources, callsign.sourceId),
+    callsignAdditionalSourceIds: sanitizeCallsignAdditionalSourceIds(
+      callsign.callsignAdditionalSources,
+      callsign.sourceId,
+    ),
     unitId: callsign.unitId,
     sourceId: callsign.sourceId,
     developing: callsign.developing,
@@ -126,7 +142,12 @@ export function parseTabDelimitedInput(input: string): {
   return { rows, error: null };
 }
 
-function createDraftRow(callsign: string, position: string, fullName: string, comment: string): CallsignDraftRow {
+function createDraftRow(
+  callsign: string,
+  position: string,
+  fullName: string,
+  comment: string,
+): CallsignDraftRow {
   return {
     callsign: toUpperCaseCallsign(callsign.trim()),
     position: position.trim(),
@@ -138,7 +159,10 @@ function createDraftRow(callsign: string, position: string, fullName: string, co
 }
 
 export function makeUpdatePayload(form: CallsignEditForm): Callsign {
-  const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(form.callsignAdditionalSourceIds, form.sourceId);
+  const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(
+    form.callsignAdditionalSourceIds,
+    form.sourceId,
+  );
   return {
     id: form.id,
     callsign: toUpperCaseCallsign(form.callsign).trim(),
@@ -161,7 +185,10 @@ export function makeCreatePayload(
   sourceId: number,
   callsignAdditionalSourceIds: number[],
 ): CreateCallsignReq {
-  const safeCallsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds, sourceId);
+  const safeCallsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(
+    callsignAdditionalSourceIds,
+    sourceId,
+  );
   return {
     callsign: toUpperCaseCallsign(row.callsign).trim(),
     position: row.position.trim(),

@@ -12,7 +12,11 @@ import {
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import {
+  MrtRowActionButton,
+  MrtRowActions,
+  mrtRowActionsColumnSize,
+} from '../../../components/MrtRowActionButton';
 import type { DevelopingFilter } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
@@ -57,7 +61,17 @@ export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
 };
 
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'fullName', 'comment', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
+  dataColumnIds: [
+    'callsign',
+    'position',
+    'fullName',
+    'comment',
+    'unit',
+    'sourceName',
+    'radioFreq',
+    'developing',
+    'createdAt',
+  ],
   withRowSelection: true,
   withRowNumbers: true,
   withRowActions: true,
@@ -245,7 +259,9 @@ function CallsignsTableComponent({
         size: 260,
         Cell: ({ row }) => (
           <Stack spacing={0.75}>
-            <Typography variant="body2">{formatMrtCellTextValue(row.original.sourceName)}</Typography>
+            <Typography variant="body2">
+              {formatMrtCellTextValue(row.original.sourceName)}
+            </Typography>
             {row.original.callsignAdditionalSourceNames.length > 0 ? (
               <>
                 <Typography variant="caption" color="text.secondary">
@@ -334,14 +350,29 @@ function CallsignsTableComponent({
   );
   const columnFilters = useMemo<MRT_ColumnFiltersState>(
     () => [
-      ...(textFilters.filterCallsign.trim() ? [{ id: 'callsign', value: textFilters.filterCallsign }] : []),
-      ...(textFilters.filterPosition.trim() ? [{ id: 'position', value: textFilters.filterPosition }] : []),
-      ...(textFilters.filterFullName.trim() ? [{ id: 'fullName', value: textFilters.filterFullName }] : []),
-      ...(textFilters.filterComment.trim() ? [{ id: 'comment', value: textFilters.filterComment }] : []),
+      ...(textFilters.filterCallsign.trim()
+        ? [{ id: 'callsign', value: textFilters.filterCallsign }]
+        : []),
+      ...(textFilters.filterPosition.trim()
+        ? [{ id: 'position', value: textFilters.filterPosition }]
+        : []),
+      ...(textFilters.filterFullName.trim()
+        ? [{ id: 'fullName', value: textFilters.filterFullName }]
+        : []),
+      ...(textFilters.filterComment.trim()
+        ? [{ id: 'comment', value: textFilters.filterComment }]
+        : []),
       ...(textFilters.filterUnit.trim() ? [{ id: 'unit', value: textFilters.filterUnit }] : []),
       { id: 'developing', value: toStatusFilterValue(statusFilter) },
     ],
-    [statusFilter, textFilters.filterCallsign, textFilters.filterPosition, textFilters.filterFullName, textFilters.filterComment, textFilters.filterUnit],
+    [
+      statusFilter,
+      textFilters.filterCallsign,
+      textFilters.filterPosition,
+      textFilters.filterFullName,
+      textFilters.filterComment,
+      textFilters.filterUnit,
+    ],
   );
   const showTableOverlay = loading || refreshing || loadingMore;
   const isInitialLoading = loading && rows.length === 0;
@@ -351,7 +382,9 @@ function CallsignsTableComponent({
     if (!element) return;
 
     const hasVerticalOverflow = element.scrollHeight - element.clientHeight > 1;
-    setTableContainerHasVerticalOverflow((prev) => prev === hasVerticalOverflow ? prev : hasVerticalOverflow);
+    setTableContainerHasVerticalOverflow((prev) =>
+      prev === hasVerticalOverflow ? prev : hasVerticalOverflow,
+    );
   }, []);
 
   useLayoutEffect(() => {
@@ -405,7 +438,8 @@ function CallsignsTableComponent({
     enableRowNumbers: true,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
-    enableRowSelection: (row) => canEdit && !bulkDeleteInFlight && inFlightDeleteId !== row.original.id,
+    enableRowSelection: (row) =>
+      canEdit && !bulkDeleteInFlight && inFlightDeleteId !== row.original.id,
     enableMultiRowSelection: true,
     enableSelectAll: true,
     enableRowActions: canEdit,
@@ -451,9 +485,7 @@ function CallsignsTableComponent({
     },
     onRowSelectionChange: (updater) => {
       const nextSelection = resolveUpdater(updater, rowSelection);
-      const nextIds = rows
-        .filter((row) => nextSelection[String(row.id)])
-        .map((row) => row.id);
+      const nextIds = rows.filter((row) => nextSelection[String(row.id)]).map((row) => row.id);
       onSetSelectedCallsignIds(nextIds);
     },
     renderRowActions: ({ row }) => (
@@ -477,13 +509,14 @@ function CallsignsTableComponent({
         </MrtRowActions>
       </Box>
     ),
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-      hasFilters: hasActiveFilters,
-      noDataMessage: 'Позивні відсутні',
-      filteredMessage: 'Немає позивних за обраними фільтрами',
-      onClearFilters,
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+        hasFilters: hasActiveFilters,
+        noDataMessage: 'Позивні відсутні',
+        filteredMessage: 'Немає позивних за обраними фільтрами',
+        onClearFilters,
+      }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,
@@ -632,7 +665,13 @@ function CallsignsTableComponent({
       {showTableOverlay ? (
         <SectionLoadingOverlay
           open={showTableOverlay}
-          ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
+          ariaLabel={
+            loading
+              ? 'Завантаження позивних'
+              : loadingMore
+                ? 'Завантаження позивних'
+                : 'Оновлення позивних'
+          }
           showSpinner={!isInitialLoading}
           sx={{
             inset: 'auto',
@@ -645,7 +684,15 @@ function CallsignsTableComponent({
         />
       ) : null}
 
-      <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          position: 'relative',
+          minHeight: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {isFullScreen ? (
           <Tooltip title="Вийти з повноекранного режиму">
             <Button
@@ -697,32 +744,33 @@ function CallsignsTableComponent({
   );
 }
 
-function areTextFiltersEqual(
-  left: Props['textFilters'],
-  right: Props['textFilters'],
-): boolean {
-  return left.filterCallsign === right.filterCallsign
-    && left.filterPosition === right.filterPosition
-    && left.filterFullName === right.filterFullName
-    && left.filterComment === right.filterComment
-    && left.filterUnit === right.filterUnit;
+function areTextFiltersEqual(left: Props['textFilters'], right: Props['textFilters']): boolean {
+  return (
+    left.filterCallsign === right.filterCallsign &&
+    left.filterPosition === right.filterPosition &&
+    left.filterFullName === right.filterFullName &&
+    left.filterComment === right.filterComment &&
+    left.filterUnit === right.filterUnit
+  );
 }
 
 function areCallsignsTablePropsEqual(prev: Props, next: Props): boolean {
-  return prev.canEdit === next.canEdit
-    && prev.rows === next.rows
-    && prev.loading === next.loading
-    && prev.refreshing === next.refreshing
-    && prev.loadingMore === next.loadingMore
-    && prev.showLoadMore === next.showLoadMore
-    && prev.hasActiveFilters === next.hasActiveFilters
-    && areTextFiltersEqual(prev.textFilters, next.textFilters)
-    && prev.inFlightDeleteId === next.inFlightDeleteId
-    && prev.bulkDeleteInFlight === next.bulkDeleteInFlight
-    && prev.selectedCallsignIds === next.selectedCallsignIds
-    && prev.sort.column === next.sort.column
-    && prev.sort.direction === next.sort.direction
-    && prev.statusFilter === next.statusFilter;
+  return (
+    prev.canEdit === next.canEdit &&
+    prev.rows === next.rows &&
+    prev.loading === next.loading &&
+    prev.refreshing === next.refreshing &&
+    prev.loadingMore === next.loadingMore &&
+    prev.showLoadMore === next.showLoadMore &&
+    prev.hasActiveFilters === next.hasActiveFilters &&
+    areTextFiltersEqual(prev.textFilters, next.textFilters) &&
+    prev.inFlightDeleteId === next.inFlightDeleteId &&
+    prev.bulkDeleteInFlight === next.bulkDeleteInFlight &&
+    prev.selectedCallsignIds === next.selectedCallsignIds &&
+    prev.sort.column === next.sort.column &&
+    prev.sort.direction === next.sort.direction &&
+    prev.statusFilter === next.statusFilter
+  );
 }
 
 export const CallsignsTable = memo(CallsignsTableComponent, areCallsignsTablePropsEqual);

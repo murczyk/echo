@@ -21,12 +21,22 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
         justifyContent: 'flex-start',
       }}
     >
-      <Box sx={{ width: { xs: '100%', sm: 220 }, minWidth: 0, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+      <Box
+        sx={{
+          width: { xs: '100%', sm: 220 },
+          minWidth: 0,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
         <TextField
           placeholder="Пошук"
           size="small"
           value={queryState.search ?? ''}
-          onChange={(event) => updateQueryState({ search: event.target.value.trim() === '' ? '' : event.target.value })}
+          onChange={(event) =>
+            updateQueryState({ search: event.target.value.trim() === '' ? '' : event.target.value })
+          }
           slotProps={{
             input: {
               startAdornment: (
@@ -66,7 +76,15 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
           }}
         />
       </Box>
-      <Box sx={{ width: { xs: '100%', sm: 280 }, minWidth: 0, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+      <Box
+        sx={{
+          width: { xs: '100%', sm: 280 },
+          minWidth: 0,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
         <DateTimeRangeControl
           value={{
             fromDateTimeStr: queryState.fromDateTimeStr,

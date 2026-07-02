@@ -17,7 +17,12 @@ describe('menu-items', () => {
 
   describe('menuIsActive', () => {
     it('checks item menus', () => {
-      const itemMenu: Menu = { type: 'item', link: { type: 'internal', path: '/test' }, activeName: 'test-active', label: 'Test' };
+      const itemMenu: Menu = {
+        type: 'item',
+        link: { type: 'internal', path: '/test' },
+        activeName: 'test-active',
+        label: 'Test',
+      };
       expect(menuIsActive('test-active', itemMenu)).toBe(true);
       expect(menuIsActive('other-active', itemMenu)).toBe(false);
     });
@@ -27,10 +32,20 @@ describe('menu-items', () => {
         type: 'group',
         label: 'Group',
         subs: [
-          { type: 'item', link: { type: 'internal', path: '/test1' }, activeName: 'test-1', label: 'Test 1' },
-          { type: 'item', link: { type: 'internal', path: '/test2' }, activeName: 'test-2', label: 'Test 2' },
-          { type: 'separator' }
-        ]
+          {
+            type: 'item',
+            link: { type: 'internal', path: '/test1' },
+            activeName: 'test-1',
+            label: 'Test 1',
+          },
+          {
+            type: 'item',
+            link: { type: 'internal', path: '/test2' },
+            activeName: 'test-2',
+            label: 'Test 2',
+          },
+          { type: 'separator' },
+        ],
       };
       expect(menuIsActive('test-2', groupMenu)).toBe(true);
       expect(menuIsActive('test-3', groupMenu)).toBe(false);

@@ -1,6 +1,4 @@
-export type WorkerTaskResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string };
+export type WorkerTaskResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export function runWorkerTask<TRequest, TResponse>(
   workerFactory: () => Worker,
@@ -29,7 +27,9 @@ export function runWorkerTask<TRequest, TResponse>(
       reject(new DOMException('Aborted', 'AbortError'));
     };
 
-    const onMessage = (event: MessageEvent<WorkerTaskResult<TResponse> & { requestId?: string }>) => {
+    const onMessage = (
+      event: MessageEvent<WorkerTaskResult<TResponse> & { requestId?: string }>,
+    ) => {
       if (event.data?.requestId !== requestId) return;
       cleanup();
       if (event.data.ok) {

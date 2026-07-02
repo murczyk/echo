@@ -119,7 +119,10 @@ export async function updateTag(tagId: number, req: TagUpsertReq): Promise<TagAd
   return normalizeTagAdmin(data);
 }
 
-export async function addTagKeywords(tagId: number, req: TagKeywordAddReq[]): Promise<TagKeyword[]> {
+export async function addTagKeywords(
+  tagId: number,
+  req: TagKeywordAddReq[],
+): Promise<TagKeyword[]> {
   const data = await postJson<TagKeywordLike[]>(
     `/api/tags/${tagId}/keywords`,
     req.map(toTagKeywordAddReqBody),
@@ -127,7 +130,11 @@ export async function addTagKeywords(tagId: number, req: TagKeywordAddReq[]): Pr
   return (data || []).map(normalizeTagKeyword);
 }
 
-export async function updateTagKeyword(tagId: number, tagKeywordId: number, req: TagKeywordAddReq): Promise<void> {
+export async function updateTagKeyword(
+  tagId: number,
+  tagKeywordId: number,
+  req: TagKeywordAddReq,
+): Promise<void> {
   await putVoid(`/api/tags/${tagId}/keywords/${tagKeywordId}`, toTagKeywordAddReqBody(req));
 }
 

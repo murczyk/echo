@@ -80,7 +80,9 @@ export function buildFolderTree(palitras: Palitra[], user: User | null): FolderT
     palitrasByFolder.set(folderPath, current);
   }
 
-  const sortedPaths = [...folderPaths].sort((left, right) => splitFolderPath(right).length - splitFolderPath(left).length);
+  const sortedPaths = [...folderPaths].sort(
+    (left, right) => splitFolderPath(right).length - splitFolderPath(left).length,
+  );
 
   for (const path of sortedPaths) {
     const node = folderNodes.get(path);
@@ -88,17 +90,29 @@ export function buildFolderTree(palitras: Palitra[], user: User | null): FolderT
 
     const directPalitras = palitrasByFolder.get(path) ?? [];
     const directIds = directPalitras.map((palitra) => palitra.id);
-    const directModifiableIds = directPalitras.filter((palitra) => canModifyPalitra(user, palitra)).map((palitra) => palitra.id);
-    const childAllIds = node.childPaths.flatMap((childPath) => folderNodes.get(childPath)?.allPalitraIds ?? []);
-    const childModifiableIds = node.childPaths.flatMap((childPath) => folderNodes.get(childPath)?.modifiablePalitraIds ?? []);
+    const directModifiableIds = directPalitras
+      .filter((palitra) => canModifyPalitra(user, palitra))
+      .map((palitra) => palitra.id);
+    const childAllIds = node.childPaths.flatMap(
+      (childPath) => folderNodes.get(childPath)?.allPalitraIds ?? [],
+    );
+    const childModifiableIds = node.childPaths.flatMap(
+      (childPath) => folderNodes.get(childPath)?.modifiablePalitraIds ?? [],
+    );
 
     node.childPaths = [...node.childPaths].sort((left, right) => left.localeCompare(right, 'uk'));
     node.directPalitraIds = [...new Set(directIds)].sort((left, right) => left - right);
-    node.allPalitraIds = [...new Set([...directIds, ...childAllIds])].sort((left, right) => left - right);
-    node.modifiablePalitraIds = [...new Set([...directModifiableIds, ...childModifiableIds])].sort((left, right) => left - right);
+    node.allPalitraIds = [...new Set([...directIds, ...childAllIds])].sort(
+      (left, right) => left - right,
+    );
+    node.modifiablePalitraIds = [...new Set([...directModifiableIds, ...childModifiableIds])].sort(
+      (left, right) => left - right,
+    );
   }
 
-  return Array.from(folderNodes.values()).sort((left, right) => left.path.localeCompare(right.path, 'uk'));
+  return Array.from(folderNodes.values()).sort((left, right) =>
+    left.path.localeCompare(right.path, 'uk'),
+  );
 }
 
 export function getFolderNodeByPath(tree: FolderTreeNode[], path: string): FolderTreeNode | null {

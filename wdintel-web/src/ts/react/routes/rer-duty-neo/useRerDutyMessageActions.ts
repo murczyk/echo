@@ -49,7 +49,11 @@ export type MessageActionsDeps = {
     feed: MessageFeedState,
     opts: Omit<
       Parameters<typeof buildInboxReq>[0],
-      'filter' | 'expandedFreqsSelected' | 'expandedFreqsDenied' | 'highlightSignals' | 'reportTagsOnlyThisUnit'
+      | 'filter'
+      | 'expandedFreqsSelected'
+      | 'expandedFreqsDenied'
+      | 'highlightSignals'
+      | 'reportTagsOnlyThisUnit'
     >,
   ) => InboxMessagesReq;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
@@ -116,14 +120,18 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
 
   const setSavedFilterSelectionForFeed = useCallback(
     (feedId: string, savedId: number | null) => {
-      setSelectedSavedIdByFeedId((prev) => (prev[feedId] === savedId ? prev : { ...prev, [feedId]: savedId }));
+      setSelectedSavedIdByFeedId((prev) =>
+        prev[feedId] === savedId ? prev : { ...prev, [feedId]: savedId },
+      );
     },
     [setSelectedSavedIdByFeedId],
   );
 
   const setSavedFilterNameForFeed = useCallback(
     (feedId: string, name: string) => {
-      setSaveFilterNameByFeedId((prev) => (prev[feedId] === name ? prev : { ...prev, [feedId]: name }));
+      setSaveFilterNameByFeedId((prev) =>
+        prev[feedId] === name ? prev : { ...prev, [feedId]: name },
+      );
     },
     [setSaveFilterNameByFeedId],
   );
@@ -203,24 +211,32 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       if (!selectedSaved) return false;
       const trimmed = name.trim();
       if (!trimmed || trimmed === selectedSaved.name) return false;
-      if (savedFilters.some((savedFilter) => savedFilter.id !== selectedSaved.id && savedFilter.name === trimmed)) {
+      if (
+        savedFilters.some(
+          (savedFilter) => savedFilter.id !== selectedSaved.id && savedFilter.name === trimmed,
+        )
+      ) {
         setError(`Фільтр з назвою "${trimmed}" вже існує`);
         return false;
       }
       try {
         await savedFilterRename({ id: selectedSaved.id, name: trimmed });
         setSavedFilters((prev) =>
-          prev.map((savedFilter) => (savedFilter.id === selectedSaved.id ? { ...savedFilter, name: trimmed } : savedFilter)),
+          prev.map((savedFilter) =>
+            savedFilter.id === selectedSaved.id ? { ...savedFilter, name: trimmed } : savedFilter,
+          ),
         );
         setSaveFilterNameByFeedId((prev) => {
           let changed = false;
           const next = { ...prev };
-          Object.entries(selectedSavedIdByFeedIdRef.current).forEach(([targetFeedId, targetSavedId]) => {
-            if (targetSavedId === selectedSaved.id && next[targetFeedId] !== trimmed) {
-              next[targetFeedId] = trimmed;
-              changed = true;
-            }
-          });
+          Object.entries(selectedSavedIdByFeedIdRef.current).forEach(
+            ([targetFeedId, targetSavedId]) => {
+              if (targetSavedId === selectedSaved.id && next[targetFeedId] !== trimmed) {
+                next[targetFeedId] = trimmed;
+                changed = true;
+              }
+            },
+          );
           return changed ? next : prev;
         });
         return true;
@@ -300,7 +316,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
               ? {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
-                    msgId === id ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }] : [msgId, msg],
+                    msgId === id
+                      ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }]
+                      : [msgId, msg],
                   ),
                 }
               : w,
@@ -324,7 +342,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
               ? {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
-                    msgId === id ? [msgId, { ...msg, important: !currentlyImportant }] : [msgId, msg],
+                    msgId === id
+                      ? [msgId, { ...msg, important: !currentlyImportant }]
+                      : [msgId, msg],
                   ),
                 }
               : w,
@@ -358,7 +378,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
           if (w.id !== deleteConfirmFeedId) return w;
           const newItems = w.items.filter(([id]) => id !== deleteConfirmId);
           const newReadIds = new Set([...w.readIds].filter((id) => id !== deleteConfirmId));
-          const unreadCount = w.readIds.has(deleteConfirmId) ? w.unreadCount : Math.max(0, w.unreadCount - 1);
+          const unreadCount = w.readIds.has(deleteConfirmId)
+            ? w.unreadCount
+            : Math.max(0, w.unreadCount - 1);
           return { ...w, items: newItems, readIds: newReadIds, unreadCount };
         }),
       );
@@ -369,11 +391,14 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     setDeleteConfirmFeedId(null);
   }, [deleteConfirmId, deleteConfirmFeedId, setMessageFeeds, setError]);
 
-  const openCommentDialog = useCallback((msgId: number, feedId: string, currentComment: string | null) => {
-    setCommentMessageId(msgId);
-    setCommentFeedId(feedId);
-    setCommentText(currentComment ?? '');
-  }, []);
+  const openCommentDialog = useCallback(
+    (msgId: number, feedId: string, currentComment: string | null) => {
+      setCommentMessageId(msgId);
+      setCommentFeedId(feedId);
+      setCommentText(currentComment ?? '');
+    },
+    [],
+  );
 
   const commentMessagePreview = useMemo(() => {
     if (isNullOrUndefined(commentMessageId) || isNullOrUndefined(commentFeedId)) return null;
@@ -408,12 +433,17 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     }
   }, [commentMessageId, commentFeedId, commentText, setMessageFeeds, setError]);
 
-  const senderOptions = useMemo(() => buildSenderOptions(profiles, messageFeeds), [profiles, messageFeeds]);
+  const senderOptions = useMemo(
+    () => buildSenderOptions(profiles, messageFeeds),
+    [profiles, messageFeeds],
+  );
 
   const senderOptionsStableRef = useRef(senderOptions);
   const senderOptionsStable =
     senderOptionsStableRef.current.length === senderOptions.length &&
-    senderOptionsStableRef.current.every((o, i) => o.id === senderOptions[i].id && o.label === senderOptions[i].label)
+    senderOptionsStableRef.current.every(
+      (o, i) => o.id === senderOptions[i].id && o.label === senderOptions[i].label,
+    )
       ? senderOptionsStableRef.current
       : ((senderOptionsStableRef.current = senderOptions), senderOptions);
 
@@ -435,7 +465,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       const [, msg] = pair;
       const hasTag =
         (msg.tags ?? []).includes(tagId) || (msg.inboxTags ?? []).some((t) => t.tagId === tagId);
-      const nextTags = hasTag ? (msg.tags ?? []).filter((id) => id !== tagId) : [...(msg.tags ?? []), tagId];
+      const nextTags = hasTag
+        ? (msg.tags ?? []).filter((id) => id !== tagId)
+        : [...(msg.tags ?? []), tagId];
       let nextInboxTags: InboxMessageTag[] | null;
       if (hasTag) {
         const filtered = (msg.inboxTags ?? []).filter((t) => t.tagId !== tagId);
@@ -453,7 +485,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       };
       setMessageFeeds((prev) =>
         prev.map((x) =>
-          x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updated] : [id, m])) } : x,
+          x.id === feedId
+            ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updated] : [id, m])) }
+            : x,
         ),
       );
       try {
@@ -463,7 +497,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) =>
           prev.map((x) =>
-            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, msg] : [id, m])) } : x,
+            x.id === feedId
+              ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, msg] : [id, m])) }
+              : x,
           ),
         );
       }
@@ -487,13 +523,17 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       try {
         if (feed.items.length > 0) {
           const lastItem = feed.items[feed.items.length - 1];
-          const { quantity } = await fetchInboxCount(buildReqForFeed(feed, { sinceIdNoninclusive: lastItem[0], nolimit: true }));
+          const { quantity } = await fetchInboxCount(
+            buildReqForFeed(feed, { sinceIdNoninclusive: lastItem[0], nolimit: true }),
+          );
           if (quantity === 0) {
             showArrowResult(feedId, 'Немає нових повідомлень');
             return;
           }
           setMessageFeeds((prev) =>
-            prev.map((f) => (f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f)),
+            prev.map((f) =>
+              f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f,
+            ),
           );
           await loadFeedNewerMessages(feedId, {
             nolimit: true,

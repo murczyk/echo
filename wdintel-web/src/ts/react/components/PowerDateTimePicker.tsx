@@ -101,7 +101,10 @@ export function PowerPickerActionBar({
 
 type BaseDatePickerProps = ComponentProps<typeof DatePicker>;
 
-type PowerDatePickerProps = Omit<BaseDatePickerProps, 'value' | 'onChange' | 'desktopModeMediaQuery' | 'slots' | 'slotProps'> & {
+type PowerDatePickerProps = Omit<
+  BaseDatePickerProps,
+  'value' | 'onChange' | 'desktopModeMediaQuery' | 'slots' | 'slotProps'
+> & {
   value: Dayjs | null;
   onChange: (nextValue: Dayjs | null) => void;
   allowEmpty?: boolean;
@@ -122,7 +125,9 @@ export function PowerDatePicker({
   const debounceTimerRef = useRef<number | null>(null);
   const pendingValueRef = useRef<Dayjs | null>(null);
   const acceptingRef = useRef(false);
-  const selectedSectionsRef = useRef<BaseDatePickerProps['selectedSections']>(props.selectedSections ?? null);
+  const selectedSectionsRef = useRef<BaseDatePickerProps['selectedSections']>(
+    props.selectedSections ?? null,
+  );
 
   useEffect(() => {
     selectedSectionsRef.current = props.selectedSections ?? null;
@@ -301,7 +306,9 @@ export function PowerDateTimePicker({
   const debounceTimerRef = useRef<number | null>(null);
   const pendingValueRef = useRef<Dayjs | null>(null);
   const acceptingRef = useRef(false);
-  const selectedSectionsRef = useRef<BaseDateTimePickerProps['selectedSections']>(props.selectedSections ?? null);
+  const selectedSectionsRef = useRef<BaseDateTimePickerProps['selectedSections']>(
+    props.selectedSections ?? null,
+  );
 
   useEffect(() => {
     selectedSectionsRef.current = props.selectedSections ?? null;

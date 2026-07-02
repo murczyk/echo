@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import type { FreqDetailedPoint, InboxMessage, NetworkUnit, PalitraReadV2 } from '../../../../Bindings';
+import type {
+  FreqDetailedPoint,
+  InboxMessage,
+  NetworkUnit,
+  PalitraReadV2,
+} from '../../../../Bindings';
 import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/analysis';
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -58,7 +63,8 @@ export function useAnalysisMapData({
   const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [mapPalitras, setMapPalitras] = useState<PalitraReadV2[]>([]);
   const [mapPalitrasLoaded, setMapPalitrasLoaded] = useState(false);
-  const [mapPalitrasLoadState, setMapPalitrasLoadState] = useState<AnalysisPalitrasLoadState>('idle');
+  const [mapPalitrasLoadState, setMapPalitrasLoadState] =
+    useState<AnalysisPalitrasLoadState>('idle');
   const mapMessagesLoadVersionRef = useRef(0);
   const mapDateRangeLoadVersionRef = useRef(0);
 
@@ -98,7 +104,9 @@ export function useAnalysisMapData({
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
-      const cleanMessageIds = Array.from(new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))));
+      const cleanMessageIds = Array.from(
+        new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))),
+      );
       if (cleanMessageIds.length === 0) {
         mapMessagesLoadVersionRef.current += 1;
         setMapOpenMessages([]);
@@ -160,7 +168,17 @@ export function useAnalysisMapData({
         palitrasLoaded: mapPalitrasLoaded,
         palitrasLoadState: mapPalitrasLoadState,
       }),
-    [mapDateRange, mapLoading, mapNetworkUnits, mapOpenMessages, mapPalitras, mapPalitrasLoaded, mapPalitrasLoadState, mapPoints, queryState.unitsSelected],
+    [
+      mapDateRange,
+      mapLoading,
+      mapNetworkUnits,
+      mapOpenMessages,
+      mapPalitras,
+      mapPalitrasLoaded,
+      mapPalitrasLoadState,
+      mapPoints,
+      queryState.unitsSelected,
+    ],
   );
 
   return {

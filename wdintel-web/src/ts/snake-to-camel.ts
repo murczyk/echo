@@ -21,7 +21,7 @@ export function toSnakeCase(str: string): string {
  * - Primitives, null, undefined: returned as-is.
  *
  * Use for API responses when the backend sends snake_case (e.g. Rust/Serde default)
- * and the frontend expects camelCase 
+ * and the frontend expects camelCase
  */
 export function transformSnakeToCamel<T>(value: unknown): T {
   if (value === null || value === undefined) {

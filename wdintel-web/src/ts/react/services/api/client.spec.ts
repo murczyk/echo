@@ -13,7 +13,10 @@ describe('api client 401 handling', () => {
 
   it('redirects 401 responses to login with the current relative url', async () => {
     window.history.replaceState({}, '', '/reports?page=2#summary');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })),
+    );
 
     await expect(getJson('/api/reports')).rejects.toMatchObject({
       name: 'HttpRequestError',
@@ -21,14 +24,15 @@ describe('api client 401 handling', () => {
       message: 'unauthorized',
     });
 
-    expect(window.location.href).toContain(
-      '/login?redirect=%2Freports%3Fpage%3D2%23summary',
-    );
+    expect(window.location.href).toContain('/login?redirect=%2Freports%3Fpage%3D2%23summary');
   });
 
   it('does not redirect when already on login', async () => {
     window.history.replaceState({}, '', '/login?foo=1#summary');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })),
+    );
 
     await expect(getJson('/api/reports')).rejects.toBeInstanceOf(HttpRequestError);
 
@@ -37,7 +41,10 @@ describe('api client 401 handling', () => {
 
   it('throws non-401 responses without redirecting', async () => {
     window.history.replaceState({}, '', '/reports?page=2#summary');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('server error', { status: 500 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('server error', { status: 500 })),
+    );
 
     await expect(getJson('/api/reports')).rejects.toMatchObject({
       name: 'HttpRequestError',

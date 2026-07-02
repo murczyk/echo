@@ -1,11 +1,19 @@
-import type { AnalysisStatsSender, InboxMessage, Network, SignalProfileEntry, Unit } from '../../../../Bindings';
+import type {
+  AnalysisStatsSender,
+  InboxMessage,
+  Network,
+  SignalProfileEntry,
+  Unit,
+} from '../../../../Bindings';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { AnalysisFilterOption } from './types';
 import { createMasterUnitText } from '../rer-duty-neo/utils';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
-export function buildSenderLabel(profile: SignalProfileEntry | null | undefined, fallback: string | null): string | null {
+export function buildSenderLabel(
+  profile: SignalProfileEntry | null | undefined,
+  fallback: string | null,
+): string | null {
   const parts = [profile?.givenName, profile?.familyName].filter(Boolean);
   if (parts.length > 0) return parts.join(' ');
   return fallback;
@@ -15,12 +23,18 @@ function shortUuid(uuid: string): string {
   return uuid.slice(0, 8);
 }
 
-function senderDisplayName(profile: SignalProfileEntry | null | undefined, fallback: string): string {
+function senderDisplayName(
+  profile: SignalProfileEntry | null | undefined,
+  fallback: string,
+): string {
   const label = buildSenderLabel(profile, fallback);
   return isNullOrUndefined(label) || label.trim() === '' ? fallback : label.trim();
 }
 
-export function buildNetworkDisplayMap(networks: Network[], unitsMap: Record<number, Unit>): Record<number, string> {
+export function buildNetworkDisplayMap(
+  networks: Network[],
+  unitsMap: Record<number, Unit>,
+): Record<number, string> {
   const next: Record<number, string> = {};
   networks.forEach((network) => {
     next[network.id] = createMasterUnitText(network, unitsMap);
@@ -37,12 +51,18 @@ export function buildSenderFilterOptions(
     counts[name] = (counts[name] ?? 0) + 1;
     return counts;
   }, {});
-  const duplicateNames = new Set(Object.entries(nameCounts).filter(([, count]) => count > 1).map(([name]) => name));
+  const duplicateNames = new Set(
+    Object.entries(nameCounts)
+      .filter(([, count]) => count > 1)
+      .map(([name]) => name),
+  );
 
   return senders
     .map((sender) => {
       const displayName = senderDisplayName(profiles[sender.uuid], sender.uuid);
-      const label = duplicateNames.has(displayName) ? `${displayName} [${shortUuid(sender.uuid)}]` : displayName;
+      const label = duplicateNames.has(displayName)
+        ? `${displayName} [${shortUuid(sender.uuid)}]`
+        : displayName;
       return {
         value: sender.uuid,
         label,

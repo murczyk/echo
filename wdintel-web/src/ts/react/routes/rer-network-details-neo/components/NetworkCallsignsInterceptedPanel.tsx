@@ -1,7 +1,16 @@
 import AddIcon from '@mui/icons-material/Add';
 import HearingOutlinedIcon from '@mui/icons-material/HearingOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import { Box, Button, Chip, CircularProgress, ListItemIcon, MenuItem, Skeleton, Stack } from '@mui/material';
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  ListItemIcon,
+  MenuItem,
+  Skeleton,
+  Stack,
+} from '@mui/material';
 import { useState } from 'react';
 
 import type { NetworkCallsignInterceptedView } from '../network-callsigns.types';
@@ -81,7 +90,12 @@ function InterceptedCallsignChip({
           },
         }}
       />
-      <PowerMenu anchorEl={anchorEl} open={anchorEl !== null} onClose={() => setAnchorEl(null)} slotProps={{ paper: { sx: { minWidth: 250 } } }}>
+      <PowerMenu
+        anchorEl={anchorEl}
+        open={anchorEl !== null}
+        onClose={() => setAnchorEl(null)}
+        slotProps={{ paper: { sx: { minWidth: 250 } } }}
+      >
         <MenuItem
           onClick={() => {
             setAnchorEl(null);
@@ -206,9 +220,7 @@ export function NetworkCallsignsInterceptedPanel({
             </Button>
           </Box>
         ) : null}
-        {loadingError ? (
-          <PowerAlert severity="error">{loadingError}</PowerAlert>
-        ) : null}
+        {loadingError ? <PowerAlert severity="error">{loadingError}</PowerAlert> : null}
         {showEmptyState ? (
           <NetworkDetailsEmptyState
             icon={<HearingOutlinedIcon />}

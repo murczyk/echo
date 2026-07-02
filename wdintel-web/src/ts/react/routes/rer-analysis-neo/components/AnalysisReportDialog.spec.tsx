@@ -31,9 +31,7 @@ function buildReport(overrides: Partial<AnalysisReportState> = {}): AnalysisRepo
   };
 }
 
-function renderDialog(
-  overrides: Partial<Parameters<typeof AnalysisReportDialog>[0]> = {},
-) {
+function renderDialog(overrides: Partial<Parameters<typeof AnalysisReportDialog>[0]> = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -134,8 +132,14 @@ describe('AnalysisReportDialog', () => {
     expect(dialog?.disableEscapeKeyDown).toBe(true);
 
     act(() => {
-      (dialog?.onClose as ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined)?.({}, 'backdropClick');
-      (dialog?.onClose as ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined)?.({}, 'escapeKeyDown');
+      (
+        dialog?.onClose as
+          ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined
+      )?.({}, 'backdropClick');
+      (
+        dialog?.onClose as
+          ((event: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => void) | undefined
+      )?.({}, 'escapeKeyDown');
     });
 
     expect(view.onClose).not.toHaveBeenCalled();
@@ -160,9 +164,9 @@ describe('AnalysisReportDialog', () => {
       supportNonRerInterceptions: true,
       report: buildReport({ template: 'sposob' }),
     });
-    const downloadButton = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.includes('Завантажити'),
-    );
+    const downloadButton = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Завантажити'));
 
     expect(document.body.textContent).toContain('Назва підрозділу');
     expect(downloadButton?.disabled).toBe(true);
@@ -176,9 +180,9 @@ describe('AnalysisReportDialog', () => {
       );
     });
 
-    const enabledDownloadButton = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.includes('Завантажити'),
-    );
+    const enabledDownloadButton = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Завантажити'));
     expect(enabledDownloadButton?.disabled).toBe(false);
 
     act(() => {
@@ -234,7 +238,9 @@ describe('AnalysisReportDialog', () => {
       expect(document.body.textContent).not.toContain('Формується');
       expect(document.body.textContent).toContain('Показати деталі');
       expect(document.body.textContent).not.toContain('ID звіту');
-      expect(document.body.textContent).toContain('Звіт ще не стартував. Перевірте його стан у Налаштування > Мої звіти.');
+      expect(document.body.textContent).toContain(
+        'Звіт ще не стартував. Перевірте його стан у Налаштування > Мої звіти.',
+      );
 
       act(() => {
         view.root.unmount();

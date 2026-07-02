@@ -2,10 +2,7 @@ import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import type { CreateNetworkReq, Network, NetworkFreqsRes } from '../../../../Bindings';
-import {
-  APP_TIME_ZONE,
-  formatUtcDateInputValue,
-} from '../../utils/misc';
+import { APP_TIME_ZONE, formatUtcDateInputValue } from '../../utils/misc';
 import type {
   NetworkDescriptionForm,
   NetworkEditForm,
@@ -21,11 +18,17 @@ import { NETWORK_STATUS_ACTIVE } from './network-status';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-export function sortDescriptionsByCreatedAtDesc(descriptions: Network['descriptions']): Network['descriptions'] {
+export function sortDescriptionsByCreatedAtDesc(
+  descriptions: Network['descriptions'],
+): Network['descriptions'] {
   return [...descriptions].sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function toNetworkDescriptionForm(topic: string, description: string, networkFreqId: number | null): NetworkDescriptionForm {
+export function toNetworkDescriptionForm(
+  topic: string,
+  description: string,
+  networkFreqId: number | null,
+): NetworkDescriptionForm {
   return {
     topic,
     description,
@@ -187,10 +190,14 @@ export function getNetworkUpsertValidationError(
   if (!form) return null;
 
   const name = form.name.trim() === '' ? 'Назва є обовʼязковою' : null;
-  const location = form.location.trim() === '' ? 'Район функціонування/розгортання є обовʼязковим' : null;
+  const location =
+    form.location.trim() === '' ? 'Район функціонування/розгортання є обовʼязковим' : null;
   const aorIds = form.aorIds.length === 0 ? 'Потрібно вибрати принаймні одну смугу' : null;
   const freq = options.includeFrequency ? getFrequencyFormatError(form.freq) : null;
-  const activeFrom = options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null ? 'Потрібно вказати дату початку' : null;
+  const activeFrom =
+    options.includeFrequency && parseNetworkDetailsDateInput(form.activeFrom) === null
+      ? 'Потрібно вказати дату початку'
+      : null;
 
   const error = {
     name,
@@ -215,7 +222,9 @@ export function parseNetworkDetailsDateInputExclusiveEnd(value: string): number 
   return since === null ? null : since + 24 * 60 * 60 * 1000;
 }
 
-export function getDefaultNetworkRelationsDateRange(now: Date = new Date()): NetworkRelationsDateRange {
+export function getDefaultNetworkRelationsDateRange(
+  now: Date = new Date(),
+): NetworkRelationsDateRange {
   const today = dayjs(now).tz(APP_TIME_ZONE).startOf('day');
   const from = today.subtract(1, 'month');
 
@@ -225,7 +234,11 @@ export function getDefaultNetworkRelationsDateRange(now: Date = new Date()): Net
   };
 }
 
-export function normalizeNetworkRelationsSinceChange(currentSince: string, currentTill: string, nextSince: string): NetworkRelationsDateRange {
+export function normalizeNetworkRelationsSinceChange(
+  currentSince: string,
+  currentTill: string,
+  nextSince: string,
+): NetworkRelationsDateRange {
   const trimmedSince = nextSince.trim();
   if (trimmedSince === '') {
     return {
@@ -247,7 +260,11 @@ export function normalizeNetworkRelationsSinceChange(currentSince: string, curre
   };
 }
 
-export function normalizeNetworkRelationsTillChange(currentSince: string, currentTill: string, nextTill: string): NetworkRelationsDateRange {
+export function normalizeNetworkRelationsTillChange(
+  currentSince: string,
+  currentTill: string,
+  nextTill: string,
+): NetworkRelationsDateRange {
   const trimmedTill = nextTill.trim();
   if (trimmedTill === '') {
     return {
@@ -269,11 +286,18 @@ export function normalizeNetworkRelationsTillChange(currentSince: string, curren
   };
 }
 
-export function getDefaultNetworkPelengDateRange(network: Network | null, now: Date = new Date()): NetworkPelengDateRange {
-  const tillDate = network?.activeTo !== null && network?.activeTo !== undefined ? new Date(network.activeTo) : now;
-  const sinceDate = network?.activeFrom !== null && network?.activeFrom !== undefined
-    ? new Date(network.activeFrom)
-    : dayjs(tillDate).tz(APP_TIME_ZONE).subtract(1, 'month').toDate();
+export function getDefaultNetworkPelengDateRange(
+  network: Network | null,
+  now: Date = new Date(),
+): NetworkPelengDateRange {
+  const tillDate =
+    network?.activeTo !== null && network?.activeTo !== undefined
+      ? new Date(network.activeTo)
+      : now;
+  const sinceDate =
+    network?.activeFrom !== null && network?.activeFrom !== undefined
+      ? new Date(network.activeFrom)
+      : dayjs(tillDate).tz(APP_TIME_ZONE).subtract(1, 'month').toDate();
 
   return {
     pelengSince: dayjs(sinceDate).tz(APP_TIME_ZONE).format('YYYY-MM-DD'),
@@ -281,7 +305,11 @@ export function getDefaultNetworkPelengDateRange(network: Network | null, now: D
   };
 }
 
-export function normalizeNetworkPelengSinceChange(currentSince: string, currentTill: string, nextSince: string): NetworkPelengDateRange {
+export function normalizeNetworkPelengSinceChange(
+  currentSince: string,
+  currentTill: string,
+  nextSince: string,
+): NetworkPelengDateRange {
   const trimmedSince = nextSince.trim();
   if (trimmedSince === '') {
     return {
@@ -303,7 +331,11 @@ export function normalizeNetworkPelengSinceChange(currentSince: string, currentT
   };
 }
 
-export function normalizeNetworkPelengTillChange(currentSince: string, currentTill: string, nextTill: string): NetworkPelengDateRange {
+export function normalizeNetworkPelengTillChange(
+  currentSince: string,
+  currentTill: string,
+  nextTill: string,
+): NetworkPelengDateRange {
   const trimmedTill = nextTill.trim();
   if (trimmedTill === '') {
     return {

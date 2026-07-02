@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { isPresent } from '../../../utils/misc';
 
-
 const RELATIVE_TIME_TICK_MS = 60_000;
 
 /** While the card intersects the viewport, keep a live clock for `messageRenderDistance`; otherwise use `referenceTimeMs`. */
@@ -14,7 +13,8 @@ export function useRelativeTimeDisplayMs(
   const [inView, setInView] = useState(false);
   const [liveNowMs, setLiveNowMs] = useState<number | null>(null);
 
-  const enabled = isPresent(messageTimestamp) && isPresent(referenceTimeMs) && !Number.isNaN(messageTimestamp);
+  const enabled =
+    isPresent(messageTimestamp) && isPresent(referenceTimeMs) && !Number.isNaN(messageTimestamp);
 
   useEffect(() => {
     if (!enabled) {
@@ -23,7 +23,9 @@ export function useRelativeTimeDisplayMs(
     }
     const el = rootRef.current;
     if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.01 });
+    const obs = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), {
+      threshold: 0.01,
+    });
     obs.observe(el);
     return () => obs.disconnect();
   }, [enabled]);

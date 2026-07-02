@@ -25,7 +25,11 @@ export function NetworkFreqSectionCard({ title, children, muted = false, hint }:
           {title}
         </Typography>
         {children}
-        {hint ? <Typography variant="body2" color="text.secondary">{hint}</Typography> : null}
+        {hint ? (
+          <Typography variant="body2" color="text.secondary">
+            {hint}
+          </Typography>
+        ) : null}
       </Stack>
     </Box>
   );

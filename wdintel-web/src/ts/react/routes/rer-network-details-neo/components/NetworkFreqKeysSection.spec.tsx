@@ -6,23 +6,45 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
-  Autocomplete: ({ renderInput, sx }: { renderInput?: (params: any) => ReactNode; sx?: unknown }) => {
-    const resolvedSx = typeof sx === 'function'
-      ? sx({
-          palette: {
-            mode: 'light',
-            action: { disabledBackground: '#ddd', disabled: '#bbb' },
-            grey: { 400: '#ccc', 700: '#777' },
-            text: { secondary: '#888' },
-          },
-        } as any)
-      : sx;
+  Autocomplete: ({
+    renderInput,
+    sx,
+  }: {
+    renderInput?: (params: any) => ReactNode;
+    sx?: unknown;
+  }) => {
+    const resolvedSx =
+      typeof sx === 'function'
+        ? sx({
+            palette: {
+              mode: 'light',
+              action: { disabledBackground: '#ddd', disabled: '#bbb' },
+              grey: { 400: '#ccc', 700: '#777' },
+              text: { secondary: '#888' },
+            },
+          } as any)
+        : sx;
 
-    const outlinedRoot = resolvedSx && typeof resolvedSx === 'object' ? (resolvedSx as any)['& .MuiOutlinedInput-root'] : null;
-    const inputRoot = resolvedSx && typeof resolvedSx === 'object' ? (resolvedSx as any)['& .MuiAutocomplete-inputRoot'] : null;
-    const input = resolvedSx && typeof resolvedSx === 'object' ? (resolvedSx as any)['& .MuiAutocomplete-input'] : null;
-    const placeholder = resolvedSx && typeof resolvedSx === 'object' ? (resolvedSx as any)['& .MuiAutocomplete-input::placeholder'] : null;
-    const endAdornment = resolvedSx && typeof resolvedSx === 'object' ? (resolvedSx as any)['& .MuiAutocomplete-endAdornment'] : null;
+    const outlinedRoot =
+      resolvedSx && typeof resolvedSx === 'object'
+        ? (resolvedSx as any)['& .MuiOutlinedInput-root']
+        : null;
+    const inputRoot =
+      resolvedSx && typeof resolvedSx === 'object'
+        ? (resolvedSx as any)['& .MuiAutocomplete-inputRoot']
+        : null;
+    const input =
+      resolvedSx && typeof resolvedSx === 'object'
+        ? (resolvedSx as any)['& .MuiAutocomplete-input']
+        : null;
+    const placeholder =
+      resolvedSx && typeof resolvedSx === 'object'
+        ? (resolvedSx as any)['& .MuiAutocomplete-input::placeholder']
+        : null;
+    const endAdornment =
+      resolvedSx && typeof resolvedSx === 'object'
+        ? (resolvedSx as any)['& .MuiAutocomplete-endAdornment']
+        : null;
 
     return (
       <div
@@ -141,24 +163,76 @@ describe('NetworkFreqKeysSection', () => {
     expect(view.container.querySelector('[data-variant="subtitle1"]')).not.toBeNull();
     expect(view.container.textContent).toContain('Ключі');
     expect(view.container.querySelector('[data-testid="autocomplete"]')).not.toBeNull();
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-outlined-height')).toBe('40');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-outlined-min-height')).toBe('40');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-input-root-align')).toBe('center');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-outlined-padding')).toBe('0 46px 0 14px !important');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-input-height')).toBe('40');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-input-line-height')).toBe('20px');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-input-font-weight')).toBe('400');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-placeholder-font-weight')).toBe('400');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-end-adornment-top')).toBe('50%');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-end-adornment-right')).toBe('10');
-    expect(view.container.querySelector('input[placeholder="Пошук і вибір ключів"]')?.getAttribute('data-size')).toBe('small');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-outlined-height'),
+    ).toBe('40');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-outlined-min-height'),
+    ).toBe('40');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-input-root-align'),
+    ).toBe('center');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-outlined-padding'),
+    ).toBe('0 46px 0 14px !important');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-input-height'),
+    ).toBe('40');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-input-line-height'),
+    ).toBe('20px');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-input-font-weight'),
+    ).toBe('400');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-placeholder-font-weight'),
+    ).toBe('400');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-end-adornment-top'),
+    ).toBe('50%');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-end-adornment-right'),
+    ).toBe('10');
+    expect(
+      view.container
+        .querySelector('input[placeholder="Пошук і вибір ключів"]')
+        ?.getAttribute('data-size'),
+    ).toBe('small');
   });
 
   it('lets the autocomplete grow when selected chips exist', () => {
     const view = renderSectionWithSelectedKeys();
     rendered.push(view);
 
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-outlined-height')).toBe('auto');
-    expect(view.container.querySelector('[data-testid="autocomplete"]')?.getAttribute('data-input-root-align')).toBe('center');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-outlined-height'),
+    ).toBe('auto');
+    expect(
+      view.container
+        .querySelector('[data-testid="autocomplete"]')
+        ?.getAttribute('data-input-root-align'),
+    ).toBe('center');
   });
 });

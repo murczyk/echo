@@ -9,7 +9,10 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
 import { useAnalysisActions } from './use-analysis-actions';
-import { buildAnalysisActionsParams, buildReloadOrchestratorParams } from './use-analysis-data.wiring';
+import {
+  buildAnalysisActionsParams,
+  buildReloadOrchestratorParams,
+} from './use-analysis-data.wiring';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
@@ -28,9 +31,13 @@ export function useAnalysisData({
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
   const referenceState = useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns });
-  const optionsFreqValues = useMemo(() => referenceState.options.freqs.map((option) => option.value), [referenceState.options.freqs]);
+  const optionsFreqValues = useMemo(
+    () => referenceState.options.freqs.map((option) => option.value),
+    [referenceState.options.freqs],
+  );
   const reloadTriggerKey = useMemo(
-    () => `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}`,
+    () =>
+      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}`,
     [newestFirst, optionsFreqValues, queryState],
   );
   const [filtersLoading, setFiltersLoading] = useState(false);

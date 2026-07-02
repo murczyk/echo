@@ -1,7 +1,11 @@
 import * as L from 'leaflet';
 
 import type { PalitraDetails } from '../../../../maps/palitra-types';
-import { DEFAULT_PREVIEW_CENTER, DEFAULT_PREVIEW_ZOOM, PREVIEW_MAX_ZOOM } from './PalitraPreviewDialog.types';
+import {
+  DEFAULT_PREVIEW_CENTER,
+  DEFAULT_PREVIEW_ZOOM,
+  PREVIEW_MAX_ZOOM,
+} from './PalitraPreviewDialog.types';
 
 function createPolygonLayer(palitraDetails: PalitraDetails) {
   const perimeter = palitraDetails.palitra.geometry?.perimeter_linear_ring;
@@ -9,15 +13,18 @@ function createPolygonLayer(palitraDetails: PalitraDetails) {
     return null;
   }
 
-  return L.polygon(perimeter.map((coords) => [coords.lat, coords.lng] as [number, number]), {
-    interactive: false,
-    color: palitraDetails.palitra.color_hex,
-    weight: 2,
-    fillColor: palitraDetails.palitra.color_hex,
-    fillOpacity: 0.14,
-    lineJoin: 'round',
-    lineCap: 'round',
-  });
+  return L.polygon(
+    perimeter.map((coords) => [coords.lat, coords.lng] as [number, number]),
+    {
+      interactive: false,
+      color: palitraDetails.palitra.color_hex,
+      weight: 2,
+      fillColor: palitraDetails.palitra.color_hex,
+      fillOpacity: 0.14,
+      lineJoin: 'round',
+      lineCap: 'round',
+    },
+  );
 }
 
 function createPolylineLayers(palitraDetails: PalitraDetails) {
@@ -29,14 +36,17 @@ function createPolylineLayers(palitraDetails: PalitraDetails) {
   return lineStrings
     .filter((lineString) => Array.isArray(lineString) && lineString.length >= 2)
     .map((lineString) =>
-      L.polyline(lineString.map((coords) => [coords.lat, coords.lng] as [number, number]), {
-        interactive: false,
-        color: palitraDetails.palitra.color_hex,
-        weight: 2,
-        opacity: 0.9,
-        lineJoin: 'round',
-        lineCap: 'round',
-      }),
+      L.polyline(
+        lineString.map((coords) => [coords.lat, coords.lng] as [number, number]),
+        {
+          interactive: false,
+          color: palitraDetails.palitra.color_hex,
+          weight: 2,
+          opacity: 0.9,
+          lineJoin: 'round',
+          lineCap: 'round',
+        },
+      ),
     );
 }
 
@@ -56,7 +66,10 @@ function createCenterLayer(palitraDetails: PalitraDetails) {
   });
 }
 
-export function addPreviewGeometryLayers(layerGroup: L.FeatureGroup, palitraDetailsList: PalitraDetails[]) {
+export function addPreviewGeometryLayers(
+  layerGroup: L.FeatureGroup,
+  palitraDetailsList: PalitraDetails[],
+) {
   palitraDetailsList.forEach((palitraDetails) => {
     const polygon = createPolygonLayer(palitraDetails);
     if (polygon) {

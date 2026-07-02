@@ -28,7 +28,12 @@ function WildcardHelpButton() {
       }}
     >
       <span>
-        <IconButton edge="end" size="small" aria-label={SEARCH_WILDCARD_TOOLTIP} sx={{ color: 'text.secondary' }}>
+        <IconButton
+          edge="end"
+          size="small"
+          aria-label={SEARCH_WILDCARD_TOOLTIP}
+          sx={{ color: 'text.secondary' }}
+        >
           <i className="bi bi-question-circle" />
         </IconButton>
       </span>

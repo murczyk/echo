@@ -70,7 +70,8 @@ vi.mock('../../services/api/report-history', () => ({
   fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
   isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined }) =>
     row.status === 'failed' && row.lastError === 'Скасовано користувачем',
-  isCancelledReportHistoryError: (value: string | null | undefined) => value?.includes('Скасовано користувачем') ?? false,
+  isCancelledReportHistoryError: (value: string | null | undefined) =>
+    value?.includes('Скасовано користувачем') ?? false,
   parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
 }));
 
@@ -243,7 +244,9 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
     await flush();
 
     expect(latestState?.etalonkaReport.progressExpanded).toBe(true);
-    expect((latestState as typeof EMPTY_STATE & { progressExpanded?: boolean })?.progressExpanded).toBeUndefined();
+    expect(
+      (latestState as typeof EMPTY_STATE & { progressExpanded?: boolean })?.progressExpanded,
+    ).toBeUndefined();
   });
 
   it('polls queue state and waits for a real bgtask before showing progress', async () => {

@@ -30,7 +30,10 @@ const buttonSx: SxProps<Theme> = {
   },
 };
 
-function AnalysisMapWindowControlInner({ showFullscreen = true, ...props }: AnalysisMapWindowControlProps) {
+function AnalysisMapWindowControlInner({
+  showFullscreen = true,
+  ...props
+}: AnalysisMapWindowControlProps) {
   return (
     <Box
       className="analysis-map-window-control"

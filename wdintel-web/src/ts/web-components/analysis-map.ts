@@ -1,9 +1,19 @@
 import { L } from '../maps/leaflet-markercluster';
 import type * as Leaflet from 'leaflet';
 
-import { KMZLayer } from '../maps/leaflet-kmz'
+import { KMZLayer } from '../maps/leaflet-kmz';
 import { MapPointDetailed } from '../maps/types';
-import { TimeswitchControl, FeatureToggleState, FeatureName, LayerSwitchControl, SearchControl, MapWindowControl, MapSettingsControl, PalitrasControl, PalitrasLoadState } from '../maps/controls';
+import {
+  TimeswitchControl,
+  FeatureToggleState,
+  FeatureName,
+  LayerSwitchControl,
+  SearchControl,
+  MapWindowControl,
+  MapSettingsControl,
+  PalitrasControl,
+  PalitrasLoadState,
+} from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -11,23 +21,48 @@ import { PalitraDetails } from '../maps/palitra-types';
 import { AnalysisMapCoordMenuController } from './analysis-map/coord-menu-controller';
 import { applyKmzVisibility, loadKmzLayer } from './analysis-map/kmz-layer';
 import { initializeAnalysisMapControls } from './analysis-map/map-controls';
-import { patchMouseDownMapFocus, shouldHandleMapSurfaceContextMenu, suppressNativeContextMenu } from './analysis-map/map-interactions';
+import {
+  patchMouseDownMapFocus,
+  shouldHandleMapSurfaceContextMenu,
+  suppressNativeContextMenu,
+} from './analysis-map/map-interactions';
 import { openMessagesPopup } from './analysis-map/message-popup';
-import { createPointsMarkersGroup, findPointMarkerByMessageId, replacePointsLayer } from './analysis-map/point-markers';
+import {
+  createPointsMarkersGroup,
+  findPointMarkerByMessageId,
+  replacePointsLayer,
+} from './analysis-map/point-markers';
 import { buildPelengLabelGroups } from './analysis-map/peleng-label-groups';
 import { buildPelengLabelTooltipHtml } from './analysis-map/peleng-label-tooltip';
 import { getTileLayers } from './analysis-map/tile-layers';
 import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
 import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
-
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "messages-loading", "messages-load-serial", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state", "overlay-controls-collapsed"]
+  static observedAttributes = [
+    'points',
+    'daterange',
+    'daterange-loading',
+    'messages',
+    'messages-loading',
+    'messages-load-serial',
+    'visibility',
+    'network-units',
+    'selected-units',
+    'palitras',
+    'palitras-loaded',
+    'search',
+    'palitras-load-state',
+    'overlay-controls-collapsed',
+  ];
 
   private _map: L.Map | null = null;
-  private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
+  private _daterange: { startDate: number; endDate: number } = {
+    startDate: new Date().getDate(),
+    endDate: new Date().getDate(),
+  };
   private _switchTimeControl: TimeswitchControl | null = null;
-  private _points: MapPointDetailed[] = []
+  private _points: MapPointDetailed[] = [];
   private _messages: Message[] = [];
   private _networkUnits: NetworkUnit[] = [];
 
@@ -38,7 +73,7 @@ class AnalysisMap extends HTMLElement {
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
   private _kmzLoading: Promise<void> | null = null;
-  private _selectedUnits: string[] = []
+  private _selectedUnits: string[] = [];
 
   private _palitraManager: PalitraManager | null = null;
   private _pelengsLayerGroup: L.LayerGroup | null = null;
@@ -89,13 +124,13 @@ class AnalysisMap extends HTMLElement {
       this._clearCoordinateMarker();
       this._palitraManager?.setSearchQuery(value);
     }
-  }
+  };
   private _escapeHandler = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && this._isFullscreen) {
       event.preventDefault();
       this._setFullscreen(false);
     }
-  }
+  };
   constructor() {
     super();
     this._stateStore = new AnalysisMapStateStore();
@@ -103,7 +138,9 @@ class AnalysisMap extends HTMLElement {
   }
 
   connectedCallback() {
-    this._palitrasLoadState = this._parsePalitrasLoadState(this.getAttribute('palitras-load-state'));
+    this._palitrasLoadState = this._parsePalitrasLoadState(
+      this.getAttribute('palitras-load-state'),
+    );
     this._isDateRangeLoading = this._parseBooleanAttribute(this.getAttribute('daterange-loading'));
     this.addEventListener('search-points', this._searchPointsHandler);
     window.addEventListener('keydown', this._escapeHandler);
@@ -138,12 +175,11 @@ class AnalysisMap extends HTMLElement {
       fillColor: '#0d6efd',
       fillOpacity: 0.8,
       radius: 8,
-      weight: 2
+      weight: 2,
     });
-    marker.bindPopup(
-      `<div>Координати: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}</div>`,
-      { closeButton: true }
-    );
+    marker.bindPopup(`<div>Координати: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}</div>`, {
+      closeButton: true,
+    });
     marker.addTo(this._map);
     this._coordinateSearchMarker = marker;
   }
@@ -385,7 +421,6 @@ class AnalysisMap extends HTMLElement {
     this._palitraManager.setSearchQuery(query);
   }
 
-
   private render() {
     this.innerHTML = `
     <div class="analysis-map-wrapper" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
@@ -395,14 +430,14 @@ class AnalysisMap extends HTMLElement {
   }
 
   private async _initializeMap() {
-    const mapContainer = this.querySelector<HTMLDivElement>('#analysis-map')
+    const mapContainer = this.querySelector<HTMLDivElement>('#analysis-map');
     if (mapContainer) {
       const tileLayers = getTileLayers();
 
       // Start with a single base layer to avoid loading two full tile stacks at once
       const map = L.map(mapContainer, {
         zoomControl: false,
-        attributionControl: false
+        attributionControl: false,
       }).setView([47.42135, 35.62197], 8);
       tileLayers.googleHybrid.addTo(map);
       patchMouseDownMapFocus(map);
@@ -415,78 +450,77 @@ class AnalysisMap extends HTMLElement {
         }
         this._clickedPoint = null;
         this._clickedLatLng = null;
-        this._openPointContextMenu(
-          { lat: event.latlng.lat, lng: event.latlng.lng },
-          event.latlng,
-        );
+        this._openPointContextMenu({ lat: event.latlng.lat, lng: event.latlng.lng }, event.latlng);
       });
 
       this._map = map;
-      const result = this._initializeControls(map, tileLayers)
+      const result = this._initializeControls(map, tileLayers);
       this._switchTimeControl = result.switchTimeControl;
-      this._coordMenuController = new AnalysisMapCoordMenuController(map, (target) => this._buildPointContextMenuContent(target));
+      this._coordMenuController = new AnalysisMapCoordMenuController(map, (target) =>
+        this._buildPointContextMenuContent(target),
+      );
       this._pelengLabelsLayerGroup = L.layerGroup();
       map.on('zoomend', this._handleMapViewChanged);
       map.on('moveend', this._handleMapViewChanged);
 
-     this._palitraManager = new PalitraManager(
-       this._map,
-       {
-         minZoomForPoints: 11,
-         requestDelayMs: 200,
-         cacheTtlMs: 5 * 60 * 1000,
-         maxCachedTiles: 100
-       },
-       {
-         onVisibilityToggle: (palitraId) => {
-           const event = new CustomEvent('palitra-visibility-toggled', {
-             detail: { palitraId },
-             bubbles: true,
-             composed: true
-           });
-           this.dispatchEvent(event);
-         },
-         onSearchResultsCountChanged: (count) => {
-           this._searchControl?.updateResultsCount(count);
-         },
-         onSearchLoadingChanged: (isLoading) => {
-           this._searchControl?.updateSearchLoading(isLoading);
-           this._isSearchLoading = isLoading;
-           this._syncAsyncInteractionState();
-         },
-         onOverlayContextMenu: (target, latlng) => {
-           this._clickedPoint = null;
-           this._clickedLatLng = null;
-           this._openPointContextMenu(target, L.latLng(latlng.lat, latlng.lng));
-         },
-       }
-     );
-     
-     this._palitraManager.setControl(result.palitrasControl);
-     this._palitraManager.setLoadState(this._palitrasLoadState);
-     this._syncAsyncInteractionState();
-     
-     if (this._palitras.length > 0) {
-       this._palitraManager.updatePalitras(this._palitras);
-     }
-     if (this._visiblePalitraIds.length > 0) {
-       this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-     }
-     
-     this._applyPalitraVisibility();
+      this._palitraManager = new PalitraManager(
+        this._map,
+        {
+          minZoomForPoints: 11,
+          requestDelayMs: 200,
+          cacheTtlMs: 5 * 60 * 1000,
+          maxCachedTiles: 100,
+        },
+        {
+          onVisibilityToggle: (palitraId) => {
+            const event = new CustomEvent('palitra-visibility-toggled', {
+              detail: { palitraId },
+              bubbles: true,
+              composed: true,
+            });
+            this.dispatchEvent(event);
+          },
+          onSearchResultsCountChanged: (count) => {
+            this._searchControl?.updateResultsCount(count);
+          },
+          onSearchLoadingChanged: (isLoading) => {
+            this._searchControl?.updateSearchLoading(isLoading);
+            this._isSearchLoading = isLoading;
+            this._syncAsyncInteractionState();
+          },
+          onOverlayContextMenu: (target, latlng) => {
+            this._clickedPoint = null;
+            this._clickedLatLng = null;
+            this._openPointContextMenu(target, L.latLng(latlng.lat, latlng.lng));
+          },
+        },
+      );
 
-     this._pelengsLayerGroup = L.layerGroup();
-     this._applyPelengVisibility();
-     this._replacePointsOnMap(this._points);
-     // Get-inbox-map points are always visible; no need to re-apply on zoom.
+      this._palitraManager.setControl(result.palitrasControl);
+      this._palitraManager.setLoadState(this._palitrasLoadState);
+      this._syncAsyncInteractionState();
 
-    // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
-    this._applySearchQuery();
-    if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
-      this._runSearchQueryIfSet();
-    }
+      if (this._palitras.length > 0) {
+        this._palitraManager.updatePalitras(this._palitras);
+      }
+      if (this._visiblePalitraIds.length > 0) {
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+      }
 
-    void this._loadKmzLayer();
+      this._applyPalitraVisibility();
+
+      this._pelengsLayerGroup = L.layerGroup();
+      this._applyPelengVisibility();
+      this._replacePointsOnMap(this._points);
+      // Get-inbox-map points are always visible; no need to re-apply on zoom.
+
+      // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
+      this._applySearchQuery();
+      if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+        this._runSearchQueryIfSet();
+      }
+
+      void this._loadKmzLayer();
     }
   }
 
@@ -501,7 +535,10 @@ class AnalysisMap extends HTMLElement {
     return value === 'true';
   }
 
-  private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
+  private _initializeControls(
+    map: L.Map,
+    tileLayers: { openStreetMap: L.TileLayer; googleHybrid: L.TileLayer },
+  ) {
     this._restorePelengLabelsPermanentPreference();
 
     const result = initializeAnalysisMapControls({
@@ -573,7 +610,9 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _isDateRangeInteractionLocked(): boolean {
-    return this._isDateRangeLoading || this._isSearchLoading || this._palitrasLoadState === 'loading';
+    return (
+      this._isDateRangeLoading || this._isSearchLoading || this._palitrasLoadState === 'loading'
+    );
   }
 
   private _isSearchInteractionLocked(): boolean {
@@ -635,13 +674,12 @@ class AnalysisMap extends HTMLElement {
   private _emitLoadMessagesDescriptions(messageIds: number[]) {
     const event = new CustomEvent('load-messages-description', {
       detail: {
-        messageIds
+        messageIds,
       },
       bubbles: true,
-      composed: true
+      composed: true,
     });
     this.dispatchEvent(event);
-
   }
 
   private _findPointMarkerByMessageId(messageId: number): DataCircleMarker | null {
@@ -652,7 +690,7 @@ class AnalysisMap extends HTMLElement {
     return {
       palitrasEnabled: this._palitrasEnabled,
       kmzEnabled: this._kmzEnabled,
-      pelengsEnabled: this._pelengsEnabled
+      pelengsEnabled: this._pelengsEnabled,
     };
   }
 
@@ -802,7 +840,9 @@ class AnalysisMap extends HTMLElement {
     }
 
     const visibleBounds = map.getBounds().pad(0.2);
-    const visiblePoints = this._points.filter((point) => visibleBounds.contains([point.lat, point.lng]));
+    const visiblePoints = this._points.filter((point) =>
+      visibleBounds.contains([point.lat, point.lng]),
+    );
     if (visiblePoints.length === 0) {
       return;
     }
@@ -894,12 +934,21 @@ class AnalysisMap extends HTMLElement {
     this._messagesPopupOpenFrame = window.requestAnimationFrame(() => {
       this._messagesPopupOpenFrame = null;
 
-      if (!this._messagesPopupPending || !this._isVisible || !this._initialized || this._messagesLoading) {
+      if (
+        !this._messagesPopupPending ||
+        !this._isVisible ||
+        !this._initialized ||
+        this._messagesLoading
+      ) {
         return;
       }
 
       const opened = this._openMessagesPopup();
-      if (!opened && this._messagesPopupPending && this._messagesPopupOpenRetryCount < AnalysisMap._messagesPopupOpenRetryLimit) {
+      if (
+        !opened &&
+        this._messagesPopupPending &&
+        this._messagesPopupOpenRetryCount < AnalysisMap._messagesPopupOpenRetryLimit
+      ) {
         this._messagesPopupOpenRetryCount += 1;
         this._scheduleMessagesPopupOpen();
       } else if (opened) {
@@ -932,12 +981,14 @@ class AnalysisMap extends HTMLElement {
 
   private _clearMessagesLoadingIndicator(): void {
     if (this._messagesLoadingTarget instanceof DataCircleMarker) {
-      const path = this._messagesLoadingTarget.getElement() as (SVGPathElement & { classList: DOMTokenList }) | null;
+      const path = this._messagesLoadingTarget.getElement() as
+        (SVGPathElement & { classList: DOMTokenList }) | null;
       if (path) {
         path.classList.remove('analysis-map-message-loading-target');
       }
     } else if (this._messagesLoadingTarget) {
-      const icon = (this._messagesLoadingTarget as any).getElement?.() as (HTMLElement & { classList: DOMTokenList }) | null;
+      const icon = (this._messagesLoadingTarget as any).getElement?.() as
+        (HTMLElement & { classList: DOMTokenList }) | null;
       if (icon) {
         icon.classList.remove('analysis-map-message-loading-target--cluster');
       }
@@ -956,7 +1007,8 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _syncClusterMessagesLoadingIndicator(target: L.Layer): void {
-    const icon = (target as any).getElement?.() as (HTMLElement & { classList: DOMTokenList }) | null;
+    const icon = (target as any).getElement?.() as
+      (HTMLElement & { classList: DOMTokenList }) | null;
     if (!icon) {
       return;
     }
@@ -982,4 +1034,4 @@ class AnalysisMap extends HTMLElement {
   }
 }
 
-customElements.define('analysis-map', AnalysisMap)
+customElements.define('analysis-map', AnalysisMap);

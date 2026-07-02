@@ -46,7 +46,9 @@ describe('buildXlsxPreview fallback names', () => {
   });
 });
 
-function makeWorkbookBuffer(sheets: Array<{ name: string; rows: Array<Array<string | number>> }>): ArrayBuffer {
+function makeWorkbookBuffer(
+  sheets: Array<{ name: string; rows: Array<Array<string | number>> }>,
+): ArrayBuffer {
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(buildContentTypesXml(sheets.length)),
     '_rels/.rels': strToU8(buildRootRelsXml()),
@@ -63,8 +65,10 @@ function makeWorkbookBuffer(sheets: Array<{ name: string; rows: Array<Array<stri
 }
 
 function buildContentTypesXml(sheetCount: number): string {
-  const sheetOverrides = Array.from({ length: sheetCount }, (_, index) =>
-    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+  const sheetOverrides = Array.from(
+    { length: sheetCount },
+    (_, index) =>
+      `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
   ).join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

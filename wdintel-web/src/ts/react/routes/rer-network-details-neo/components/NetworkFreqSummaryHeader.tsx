@@ -9,7 +9,9 @@ type Props = {
 };
 
 function formatCallsigns(callsigns: Array<string> | null | undefined): string {
-  const values = (callsigns ?? []).map((callsign) => callsign.trim()).filter((callsign) => callsign !== '');
+  const values = (callsigns ?? [])
+    .map((callsign) => callsign.trim())
+    .filter((callsign) => callsign !== '');
   if (values.length === 0) return '—';
   return values.slice(0, 3).join(', ') + (values.length > 3 ? ELLIPSIS : '');
 }
@@ -34,7 +36,12 @@ export function NetworkFreqSummaryHeader({ freq }: Props) {
           <Chip size="small" label={freq.modulation || 'Не визначено'} />
           <Chip size="small" label={freq.encryption ?? '—'} />
         </Stack>
-        <Typography variant="body2" color="text.secondary" noWrap title={formatCallsigns(freq.callsigns)}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          noWrap
+          title={formatCallsigns(freq.callsigns)}
+        >
           {formatCallsigns(freq.callsigns)}
         </Typography>
       </Stack>

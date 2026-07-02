@@ -1,4 +1,3 @@
-
 interface ImportMetaEnv {
   readonly VITE_RELEASES_BASE_URL?: string;
 }
@@ -21,7 +20,10 @@ declare module 'mammoth' {
     messages?: Array<{ type?: string; message?: string }>;
   };
 
-  export function convertToHtml(input: { arrayBuffer: ArrayBuffer }, options?: Record<string, unknown>): Promise<ConvertToHtmlResult>;
+  export function convertToHtml(
+    input: { arrayBuffer: ArrayBuffer },
+    options?: Record<string, unknown>,
+  ): Promise<ConvertToHtmlResult>;
   const mammoth: {
     convertToHtml: typeof convertToHtml;
   };

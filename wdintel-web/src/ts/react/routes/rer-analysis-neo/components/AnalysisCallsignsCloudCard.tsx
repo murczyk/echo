@@ -36,9 +36,7 @@ export function AnalysisCallsignsCloudCard({ items, loading = false }: Props) {
             <CompactText color="text.secondary">Завантаження...</CompactText>
           </Stack>
         ) : visibleItems.length === 0 ? (
-          <CompactText color="text.secondary">
-            Немає даних
-          </CompactText>
+          <CompactText color="text.secondary">Немає даних</CompactText>
         ) : (
           visibleItems.map((item) => {
             const weight = maxCount === 0 ? 0 : item.count / maxCount;

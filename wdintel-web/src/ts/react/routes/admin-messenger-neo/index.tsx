@@ -5,12 +5,21 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import {
-  MRT_ColumnDef,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Drawer,
+  MenuItem,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -22,7 +31,11 @@ import {
   Login,
   SignalGroupStatsTimelinePoint,
 } from '../../../../Bindings';
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import {
+  MrtRowActionButton,
+  MrtRowActions,
+  mrtRowActionsColumnSize,
+} from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
@@ -157,8 +170,7 @@ const defaultPhoneForm: PhoneForm = {
 };
 
 function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0)
-    return error.message;
+  if (error instanceof Error && error.message.trim().length > 0) return error.message;
   return 'Невідома помилка. Спробуйте ще раз.';
 }
 
@@ -234,10 +246,7 @@ function normalizeToSystemName(displayName: string): string {
     .join('');
 
   const filtered = mapped.replace(/[^a-z0-9_-]/gi, '');
-  const collapsed = filtered
-    .replace(/-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
+  const collapsed = filtered.replace(/-+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
 
   if (collapsed.length < 4) {
     if (collapsed.length === 0) return 'account';
@@ -251,8 +260,7 @@ function normalizeToSystemName(displayName: string): string {
 
 function validateDisplayName(name: string): string | null {
   if (name.trim().length < 2) return 'Назва акаунту має бути мінімум 2 символи';
-  if (name.trim().length > 50)
-    return 'Назва акаунту має бути максимум 50 символів';
+  if (name.trim().length > 50) return 'Назва акаунту має бути максимум 50 символів';
   return null;
 }
 
@@ -330,10 +338,7 @@ function buildDebugDetails(account: EchoAccountF1) {
   ].filter((item) => item.value);
 }
 
-function buildEditRequest(
-  editForm: EditForm,
-  account: EchoAccountF1
-): AccountStatusReq {
+function buildEditRequest(editForm: EditForm, account: EchoAccountF1): AccountStatusReq {
   const currentIsActive = account.status === 'active';
 
   return {
@@ -350,36 +355,27 @@ function buildEditRequest(
 function updateAccountInList(
   accounts: EchoAccountF1[],
   accountId: number,
-  updater: (account: EchoAccountF1) => EchoAccountF1
+  updater: (account: EchoAccountF1) => EchoAccountF1,
 ) {
-  return accounts.map((account) =>
-    account.id === accountId ? updater(account) : account
-  );
+  return accounts.map((account) => (account.id === accountId ? updater(account) : account));
 }
 
-function sumTimelinePoints(
-  points: SignalGroupStatsTimelinePoint[] | undefined
-): number | null {
+function sumTimelinePoints(points: SignalGroupStatsTimelinePoint[] | undefined): number | null {
   if (!points || points.length === 0) return null;
   return points.reduce((sum, point) => sum + point.count, 0);
 }
 
-function useDatasourceActivityTimeline(
-  accounts: EchoAccountF1[],
-  enabled: boolean
-) {
+function useDatasourceActivityTimeline(accounts: EchoAccountF1[], enabled: boolean) {
   const [status, setStatus] = useState<LoadingStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<Map<number, SignalGroupStatsTimelinePoint[]>>(
-    new Map()
-  );
+  const [data, setData] = useState<Map<number, SignalGroupStatsTimelinePoint[]>>(new Map());
   const datasourceIds = useMemo(
     () =>
       accounts
         .map((account) => account.id)
         .filter((id) => id > 0)
         .sort((left, right) => left - right),
-    [accounts]
+    [accounts],
   );
   const requestKey = datasourceIds.join('|');
 
@@ -407,15 +403,11 @@ function useDatasourceActivityTimeline(
         datasourceIds,
         periodHours: MESSENGER_ACTIVITY_PERIOD_HOURS,
       },
-      controller.signal
+      controller.signal,
     )
       .then((timelineRsp) => {
         if (!active) return;
-        setData(
-          new Map(
-            timelineRsp.data.map((entry) => [entry.datasourceId, entry.points])
-          )
-        );
+        setData(new Map(timelineRsp.data.map((entry) => [entry.datasourceId, entry.points])));
         setStatus('success');
       })
       .catch((err) => {
@@ -443,11 +435,7 @@ function getMessengerLabel(messenger: string) {
 function MessengerIcon({ messenger }: { messenger: string }) {
   const label = getMessengerLabel(messenger);
 
-  if (
-    messenger === 'signal'
-    || messenger === 'whatsapp'
-    || messenger === 'echo_operator'
-  ) {
+  if (messenger === 'signal' || messenger === 'whatsapp' || messenger === 'echo_operator') {
     return <DatasourceKindIcon kind={messenger} fontSize="small" titleAccess={label} />;
   }
 
@@ -456,7 +444,7 @@ function MessengerIcon({ messenger }: { messenger: string }) {
 
 function useMessengerColumns(
   timeline: ReturnType<typeof useDatasourceActivityTimeline>,
-  isLoading: boolean
+  isLoading: boolean,
 ): MRT_ColumnDef<EchoAccountF1>[] {
   return useMemo(
     () => [
@@ -469,9 +457,7 @@ function useMessengerColumns(
         header: 'Системний сервіс',
         accessorKey: 'systemServiceName',
         Cell: ({ cell }) => (
-          <span className="text-sm">
-            {formatMrtCellTextValue(cell.getValue<string>())}
-          </span>
+          <span className="text-sm">{formatMrtCellTextValue(cell.getValue<string>())}</span>
         ),
         size: 160,
       },
@@ -479,9 +465,7 @@ function useMessengerColumns(
         header: 'Номер/API Користувач',
         accessorKey: 'phoneOrApi',
         accessorFn: (row) =>
-          row.messenger === 'echo_operator'
-            ? `API: ${row.apiLogin || ''}`
-            : row.phoneNumber,
+          row.messenger === 'echo_operator' ? `API: ${row.apiLogin || ''}` : row.phoneNumber,
         Cell: ({ row }) =>
           row.original.messenger === 'echo_operator' ? (
             row.original.apiLogin ? (
@@ -510,8 +494,7 @@ function useMessengerColumns(
             .join(' | '),
         Cell: ({ row }) => {
           const details = buildDebugDetails(row.original);
-          if (details.length === 0)
-            return <span className="text-muted-foreground">—</span>;
+          if (details.length === 0) return <span className="text-muted-foreground">—</span>;
 
           return (
             <ul className="space-y-1 list-disc list-inside ml-2 text-xs">
@@ -546,10 +529,7 @@ function useMessengerColumns(
               )}
               {row.original.messenger === 'echo_operator' && endpoint ? (
                 <div className="text-xs text-gray-500" title={endpoint}>
-                  Endpoint:{' '}
-                  {endpoint.length > 30
-                    ? `${endpoint.slice(0, 30)}...`
-                    : endpoint}
+                  Endpoint: {endpoint.length > 30 ? `${endpoint.slice(0, 30)}...` : endpoint}
                 </div>
               ) : null}
             </div>
@@ -571,9 +551,7 @@ function useMessengerColumns(
         accessorKey: 'status',
         accessorFn: (row) => getStatusText(row),
         Cell: ({ row }) => (
-          <span className={getStatusColorClass(row.original)}>
-            {getStatusText(row.original)}
-          </span>
+          <span className={getStatusColorClass(row.original)}>{getStatusText(row.original)}</span>
         ),
         size: 140,
       },
@@ -599,7 +577,7 @@ function useMessengerColumns(
         size: 260,
       },
     ],
-    [isLoading, timeline.data, timeline.error, timeline.status]
+    [isLoading, timeline.data, timeline.error, timeline.status],
   );
 }
 
@@ -636,7 +614,9 @@ function TableRowActions(props: TableActionsProps) {
           label={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
           disabled={props.disabled}
           onClick={() => props.onToggleStatus(account.id)}
-          icon={account.status === 'active' ? <PauseCircleOutlineIcon /> : <PlayCircleOutlineIcon />}
+          icon={
+            account.status === 'active' ? <PauseCircleOutlineIcon /> : <PlayCircleOutlineIcon />
+          }
         />
       ) : (
         <MrtRowActionButton
@@ -677,11 +657,12 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
     tableStateContext.columnVisibility[MESSENGER_ACTIVITY_TIMELINE_COLUMN_ID] === true;
   const timeline = useDatasourceActivityTimeline(
     props.data,
-    isActivityTimelineVisible && !props.loading
+    isActivityTimelineVisible && !props.loading,
   );
   const columns = useMessengerColumns(timeline, props.loading);
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -787,29 +768,21 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
 
 function AdminMessengerNeoPageBody() {
   const [accounts, setAccounts] = useState<EchoAccountF1[]>([]);
-  const [accountsStatus, setAccountsStatus] =
-    useState<LoadingStatus>('idle');
+  const [accountsStatus, setAccountsStatus] = useState<LoadingStatus>('idle');
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
   const [linkStep, setLinkStep] = useState<LinkStep>('form');
   const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
   const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>(
-    {}
-  );
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [qrData, setQrData] = useState<QrData | null>(null);
-  const [linkSuccessAccount, setLinkSuccessAccount] =
-    useState<EchoAccountF1 | null>(null);
+  const [linkSuccessAccount, setLinkSuccessAccount] = useState<EchoAccountF1 | null>(null);
   const [linkStatus, setLinkStatus] = useState<StatusMessage>(null);
   const [editSidebarOpen, setEditSidebarOpen] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [editErrors, setEditErrors] = useState<Record<string, string>>(
-    {}
-  );
-  const [deleteAccountId, setDeleteAccountId] = useState<number | null>(
-    null
-  );
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [deleteAccountId, setDeleteAccountId] = useState<number | null>(null);
   const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
   const [isMutating, setIsMutating] = useState(false);
 
@@ -831,7 +804,9 @@ function AdminMessengerNeoPageBody() {
     return accounts.map((account) => ({
       id: account.id,
       areaOfResponsibility:
-        'areaOfResponsibility' in account ? account.areaOfResponsibility : account.area_of_responsibility,
+        'areaOfResponsibility' in account
+          ? account.areaOfResponsibility
+          : account.area_of_responsibility,
       status: account.status,
       createdAt: 'createdAt' in account ? account.createdAt : account.created_at,
       clientId: 'clientId' in account ? account.clientId : account.client_id,
@@ -886,7 +861,7 @@ function AdminMessengerNeoPageBody() {
             updateAccountInList(prev, qrData.accountId, (account) => ({
               ...account,
               isLinked: true,
-            }))
+            })),
           );
           setLinkSuccessAccount(qrData.account);
           setLinkStep('success');
@@ -930,11 +905,7 @@ function AdminMessengerNeoPageBody() {
         const qrCode = extractQrCodeBase64(qrRsp);
 
         if (qrCode.trim().length > 0) {
-          setQrData((prev) =>
-            prev && prev.accountId === accountId
-              ? { ...prev, qrCode }
-              : prev
-          );
+          setQrData((prev) => (prev && prev.accountId === accountId ? { ...prev, qrCode } : prev));
           return;
         }
 
@@ -1007,9 +978,7 @@ function AdminMessengerNeoPageBody() {
     } catch (error) {
       setLinkStatus({
         kind: 'error',
-        message: `Помилка прив'язування акаунту: ${formatErrorMessage(
-          error
-        )}`,
+        message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
       });
     } finally {
       setIsMutating(false);
@@ -1063,7 +1032,7 @@ function AdminMessengerNeoPageBody() {
           displayName: editForm.displayName,
           description: normalizeDescription(editForm.description),
           areaOfResponsibility: updatedAor,
-        }))
+        })),
       );
       closeEditSidebar();
     } catch (error) {
@@ -1081,9 +1050,7 @@ function AdminMessengerNeoPageBody() {
     setIsMutating(true);
     try {
       await unlinkAccount({ accountId: deleteAccountId });
-      setAccounts((prev) =>
-        prev.filter((account) => account.id !== deleteAccountId)
-      );
+      setAccounts((prev) => prev.filter((account) => account.id !== deleteAccountId));
       setDeleteAccountId(null);
     } catch (error) {
       setActionStatus({
@@ -1117,7 +1084,7 @@ function AdminMessengerNeoPageBody() {
         updateAccountInList(prev, accountId, (current) => ({
           ...current,
           status: current.status === 'active' ? 'paused' : 'active',
-        }))
+        })),
       );
     } catch (error) {
       setActionStatus({
@@ -1306,9 +1273,7 @@ function AdminMessengerNeoPageBody() {
                 label="Смуга відповідальності"
                 value={phoneForm.aorId ?? ''}
                 onChange={(event) => {
-                  const value = event.target.value
-                    ? Number(event.target.value)
-                    : null;
+                  const value = event.target.value ? Number(event.target.value) : null;
                   setPhoneForm((prev) => ({ ...prev, aorId: value }));
                   setFormErrors((prev) => ({ ...prev, aorId: '' }));
                 }}
@@ -1339,40 +1304,27 @@ function AdminMessengerNeoPageBody() {
               />
             </div>
 
-            {linkStatus?.kind === 'error' ? (
-              <Info text={linkStatus.message} color="error" />
-            ) : null}
+            {linkStatus?.kind === 'error' ? <Info text={linkStatus.message} color="error" /> : null}
           </Box>
         ) : null}
 
         {linkStep === 'qr' && qrData ? (
           <Box className="flex-1 overflow-y-auto p-6 text-center space-y-4">
             <Typography variant="subtitle1" className="!font-semibold">
-              {getMessengerLabel(qrData.account.messenger)}:{' '}
-              {qrData.account.phoneNumber}
+              {getMessengerLabel(qrData.account.messenger)}: {qrData.account.phoneNumber}
             </Typography>
             {qrData.qrCode ? (
-              <img
-                src={qrData.qrCode}
-                className="mx-auto max-w-xs"
-                alt="QR code"
-              />
+              <img src={qrData.qrCode} className="mx-auto max-w-xs" alt="QR code" />
             ) : (
               <div className="py-8">Завантаження QR коду...</div>
             )}
             <div className="flex items-center justify-center gap-2">
               <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-              <span className="text-sm text-muted-foreground">
-                Очікування підключення...
-              </span>
+              <span className="text-sm text-muted-foreground">Очікування підключення...</span>
             </div>
-            {linkStatus?.kind === 'error' ? (
-              <Info text={linkStatus.message} color="error" />
-            ) : null}
+            {linkStatus?.kind === 'error' ? <Info text={linkStatus.message} color="error" /> : null}
             <div className="flex items-center justify-center gap-2">
-              <PowerButton onClick={closeLinkSidebar}>
-                Скасувати
-              </PowerButton>
+              <PowerButton onClick={closeLinkSidebar}>Скасувати</PowerButton>
               <PowerButton
                 variant="outlined"
                 onClick={() => fetchQrCode(qrData.accountId)}
@@ -1391,8 +1343,7 @@ function AdminMessengerNeoPageBody() {
             </Typography>
             <div className="text-green-600 text-6xl">✅</div>
             <Typography variant="body2" className="text-muted-foreground">
-              {getMessengerLabel(linkSuccessAccount.messenger)}:{' '}
-              {linkSuccessAccount.phoneNumber}
+              {getMessengerLabel(linkSuccessAccount.messenger)}: {linkSuccessAccount.phoneNumber}
             </Typography>
             <PowerButton variant="contained" onClick={closeLinkSidebar}>
               Закрити
@@ -1411,14 +1362,8 @@ function AdminMessengerNeoPageBody() {
               gap: 2,
             }}
           >
-            <PowerButton onClick={closeLinkSidebar}>
-              Скасувати
-            </PowerButton>
-            <PowerButton
-              variant="contained"
-              onClick={submitLinkForm}
-              disabled={isMutating}
-            >
+            <PowerButton onClick={closeLinkSidebar}>Скасувати</PowerButton>
+            <PowerButton variant="contained" onClick={submitLinkForm} disabled={isMutating}>
               Прив'язати
             </PowerButton>
           </Box>
@@ -1450,9 +1395,7 @@ function AdminMessengerNeoPageBody() {
               label="Назва акаунту"
               value={editForm.displayName}
               onChange={(event) => {
-                setEditForm((prev) =>
-                  prev ? { ...prev, displayName: event.target.value } : prev
-                );
+                setEditForm((prev) => (prev ? { ...prev, displayName: event.target.value } : prev));
                 setEditErrors((prev) => ({ ...prev, displayName: '' }));
               }}
               error={Boolean(editErrors.displayName)}
@@ -1464,12 +1407,8 @@ function AdminMessengerNeoPageBody() {
               label="Смуга відповідальності"
               value={editForm.aorId ?? ''}
               onChange={(event) => {
-                const value = event.target.value
-                  ? Number(event.target.value)
-                  : null;
-                setEditForm((prev) =>
-                  prev ? { ...prev, aorId: value } : prev
-                );
+                const value = event.target.value ? Number(event.target.value) : null;
+                setEditForm((prev) => (prev ? { ...prev, aorId: value } : prev));
                 setEditErrors((prev) => ({ ...prev, aorId: '' }));
               }}
               fullWidth
@@ -1487,9 +1426,7 @@ function AdminMessengerNeoPageBody() {
               label="Опис (необов'язково)"
               value={editForm.description}
               onChange={(event) =>
-                setEditForm((prev) =>
-                  prev ? { ...prev, description: event.target.value } : prev
-                )
+                setEditForm((prev) => (prev ? { ...prev, description: event.target.value } : prev))
               }
               multiline
               rows={3}
@@ -1498,9 +1435,7 @@ function AdminMessengerNeoPageBody() {
           </Box>
         ) : null}
         <Box className="p-6 border-t border-border flex gap-3">
-          <PowerButton onClick={closeEditSidebar}>
-            Скасувати
-          </PowerButton>
+          <PowerButton onClick={closeEditSidebar}>Скасувати</PowerButton>
           <PowerButton
             variant="contained"
             onClick={submitEditForm}
@@ -1514,33 +1449,48 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
-      <TablePageToolbar
-        title="Месенджери"
-        titleInfo="Управління прив'язаними акаунтами месенджерів"
-        withGlobalTextFilter
-        hideGlobalTextFilter={accountsStatus !== 'success'}
-        internalActionsDisabled={accountsStatus !== 'success'}
-        actions={
-          <PowerButton variant="contained" onClick={openLinkSidebar}>
-            Прив'язати новий
-          </PowerButton>
-        }
-      />
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        <TablePageToolbar
+          title="Месенджери"
+          titleInfo="Управління прив'язаними акаунтами месенджерів"
+          withGlobalTextFilter
+          hideGlobalTextFilter={accountsStatus !== 'success'}
+          internalActionsDisabled={accountsStatus !== 'success'}
+          actions={
+            <PowerButton variant="contained" onClick={openLinkSidebar}>
+              Прив'язати новий
+            </PowerButton>
+          }
+        />
 
-      {actionStatus?.kind === 'error' ? (
-        <Info text={actionStatus.message} color="error" />
-      ) : null}
-      {actionStatus?.kind === 'success' ? (
-        <PowerAlert severity="success" onClose={() => setActionStatus(null)}>
-          {actionStatus.message}
-        </PowerAlert>
-      ) : null}
-      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
-      {renderDeleteDialog()}
-      {renderLinkSidebar()}
-      {renderEditSidebar()}
+        {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}
+        {actionStatus?.kind === 'success' ? (
+          <PowerAlert severity="success" onClose={() => setActionStatus(null)}>
+            {actionStatus.message}
+          </PowerAlert>
+        ) : null}
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          {renderAccountsTable()}
+        </Box>
+        {renderDeleteDialog()}
+        {renderLinkSidebar()}
+        {renderEditSidebar()}
       </Stack>
     </Box>
   );

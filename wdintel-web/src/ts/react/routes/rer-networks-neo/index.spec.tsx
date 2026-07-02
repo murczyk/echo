@@ -21,7 +21,16 @@ const tableStateMock = vi.hoisted(() => ({
   globalFilter: '',
   columnFilters: [],
   sorting: [],
-  columnOrder: ['mrt-row-numbers', 'mrt-row-actions', 'network', 'aors', 'freqs', 'location', 'activity', 'lastActivity'],
+  columnOrder: [
+    'mrt-row-numbers',
+    'mrt-row-actions',
+    'network',
+    'aors',
+    'freqs',
+    'location',
+    'activity',
+    'lastActivity',
+  ],
   columnSizing: {},
   columnVisibility: {},
   enableColumnOrdering: true,
@@ -42,7 +51,9 @@ const pageMock = vi.hoisted(() => ({
 const mrtMock = vi.hoisted(() => ({
   useMaterialReactTable: vi.fn(),
   MaterialReactTable: vi.fn(() => null),
-  MRT_ToggleFullScreenButton: vi.fn(() => createElement('button', { 'data-testid': 'fullscreen-toggle' }, 'fullscreen')),
+  MRT_ToggleFullScreenButton: vi.fn(() =>
+    createElement('button', { 'data-testid': 'fullscreen-toggle' }, 'fullscreen'),
+  ),
 }));
 
 let capturedOptions: Record<string, unknown> | null = null;
@@ -54,7 +65,10 @@ let root: Root | null = null;
 let defaultPageReturn: Record<string, unknown> | null = null;
 
 vi.mock('../../components/mui-customized/table/table-state-provider', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../components/mui-customized/table/table-state-provider')>();
+  const actual =
+    await importOriginal<
+      typeof import('../../components/mui-customized/table/table-state-provider')
+    >();
   return {
     ...actual,
     TableStateProvider: (props: { children: ReactNode }) => {
@@ -80,12 +94,15 @@ vi.mock('../../components/TablePageToolbar', () => ({
   },
 }));
 
-vi.mock('../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
-  InternalTableActions: (props: Record<string, unknown>) => {
-    capturedInternalActionsProps = props;
-    return createElement('div', null, props.children as never);
-  },
-}));
+vi.mock(
+  '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  () => ({
+    InternalTableActions: (props: Record<string, unknown>) => {
+      capturedInternalActionsProps = props;
+      return createElement('div', null, props.children as never);
+    },
+  }),
+);
 
 vi.mock('./use-rer-networks-neo-page', () => ({
   useRerNetworksNeoPage: pageMock.useRerNetworksNeoPage,
@@ -148,7 +165,10 @@ beforeEach(() => {
   const setReportsMenuAnchorEl = vi.fn((value: unknown) => {
     if (!defaultPageReturn) return;
     const current = defaultPageReturn.reportsMenuAnchorEl as HTMLElement | null;
-    defaultPageReturn.reportsMenuAnchorEl = typeof value === 'function' ? (value as (current: HTMLElement | null) => HTMLElement | null)(current) : (value as HTMLElement | null);
+    defaultPageReturn.reportsMenuAnchorEl =
+      typeof value === 'function'
+        ? (value as (current: HTMLElement | null) => HTMLElement | null)(current)
+        : (value as HTMLElement | null);
   });
   defaultPageReturn = {
     loading: false,
@@ -266,7 +286,9 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   expect(capturedOptions?.columnFilterDisplayMode).toBe('popover');
   expect(capturedOptions?.enableColumnOrdering).toBe(true);
   expect(capturedOptions?.enableColumnResizing).toBe(true);
-  expect((capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+  expect(
+    (capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx,
+  ).toEqual(
     expect.objectContaining({
       backgroundColor: 'var(--bs-body-bg)',
       '& .Mui-TableHeadCell-ResizeHandle-Wrapper': expect.objectContaining({
@@ -274,7 +296,9 @@ it('keeps MRT filter modes disabled on the networks table', () => {
       }),
     }),
   );
-  expect((capturedOptions?.initialState as { columnOrder?: string[] } | undefined)?.columnOrder).toEqual([
+  expect(
+    (capturedOptions?.initialState as { columnOrder?: string[] } | undefined)?.columnOrder,
+  ).toEqual([
     'mrt-row-numbers',
     'mrt-row-actions',
     'network',
@@ -285,31 +309,65 @@ it('keeps MRT filter modes disabled on the networks table', () => {
     'lastActivity',
   ]);
   expect(
-    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string; text?: string }> }>).find((column) => column.id === 'aors')
-      ?.filterSelectOptions,
+    (
+      capturedOptions?.columns as Array<{
+        id?: string;
+        filterSelectOptions?: Array<{ label?: string; value?: string; text?: string }>;
+      }>
+    ).find((column) => column.id === 'aors')?.filterSelectOptions,
   ).toEqual([
     { label: '—', value: '__no_aor__' },
     { label: 'AOR 1', value: '1' },
   ]);
   const columnsById = new Map(
-    (capturedOptions?.columns as Array<{ id?: string; enableColumnFilter?: boolean; enableSorting?: boolean }>).map((column) => [column.id, column]),
+    (
+      capturedOptions?.columns as Array<{
+        id?: string;
+        enableColumnFilter?: boolean;
+        enableSorting?: boolean;
+      }>
+    ).map((column) => [column.id, column]),
   );
-  expect(columnsById.get('network')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
-  expect(columnsById.get('aors')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
-  expect((columnsById.get('aors') as { meta?: { activeFilterValueFormatter?: unknown } } | undefined)?.meta?.activeFilterValueFormatter).toEqual(expect.any(Function));
-  expect(columnsById.get('freqs')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
-  expect(columnsById.get('location')).toEqual(expect.objectContaining({ enableColumnFilter: true, enableSorting: true }));
-  expect(columnsById.get('activity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: false }));
-  expect(columnsById.get('lastActivity')).toEqual(expect.objectContaining({ enableColumnFilter: false, enableSorting: true }));
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnOrder).toEqual(tableStateMock.columnOrder);
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnSizing).toEqual(tableStateMock.columnSizing);
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnVisibility).toEqual(tableStateMock.columnVisibility);
+  expect(columnsById.get('network')).toEqual(
+    expect.objectContaining({ enableColumnFilter: true, enableSorting: true }),
+  );
+  expect(columnsById.get('aors')).toEqual(
+    expect.objectContaining({ enableColumnFilter: true, enableSorting: true }),
+  );
+  expect(
+    (columnsById.get('aors') as { meta?: { activeFilterValueFormatter?: unknown } } | undefined)
+      ?.meta?.activeFilterValueFormatter,
+  ).toEqual(expect.any(Function));
+  expect(columnsById.get('freqs')).toEqual(
+    expect.objectContaining({ enableColumnFilter: true, enableSorting: true }),
+  );
+  expect(columnsById.get('location')).toEqual(
+    expect.objectContaining({ enableColumnFilter: true, enableSorting: true }),
+  );
+  expect(columnsById.get('activity')).toEqual(
+    expect.objectContaining({ enableColumnFilter: false, enableSorting: false }),
+  );
+  expect(columnsById.get('lastActivity')).toEqual(
+    expect.objectContaining({ enableColumnFilter: false, enableSorting: true }),
+  );
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnOrder).toEqual(
+    tableStateMock.columnOrder,
+  );
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnSizing).toEqual(
+    tableStateMock.columnSizing,
+  );
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.columnVisibility).toEqual(
+    tableStateMock.columnVisibility,
+  );
   expect(container?.querySelector('[data-testid="fullscreen-toggle"]')).toBeNull();
-  const displayOptions = capturedOptions?.displayColumnDefOptions as Record<string, { enableResizing?: boolean; size?: number }> | undefined;
+  const displayOptions = capturedOptions?.displayColumnDefOptions as
+    Record<string, { enableResizing?: boolean; size?: number }> | undefined;
   expect(displayOptions?.['mrt-row-numbers']?.enableResizing).toBe(false);
   expect(displayOptions?.['mrt-row-actions']?.enableResizing).toBe(false);
   expect(displayOptions?.['mrt-row-actions']?.size).toBeGreaterThan(0);
-  expect((capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+  expect(
+    (capturedOptions?.muiTableHeadCellProps as { sx?: Record<string, unknown> } | undefined)?.sx,
+  ).toEqual(
     expect.objectContaining({
       '& .Mui-TableHeadCell-ResizeHandle-Wrapper': expect.objectContaining({
         mr: '-8px',
@@ -317,32 +375,47 @@ it('keeps MRT filter modes disabled on the networks table', () => {
       backgroundColor: 'var(--bs-body-bg)',
     }),
   );
-  const networkCell = (capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>).find((column) => column.id === 'network');
-  const renderedNetworkCell = ((networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any)?.type as (
-    props: any,
-  ) => any)?.(
-    (networkCell?.Cell?.({
-      row: {
-        original: {
-          id: 42,
-          network: { name: 'Network 1' },
-          networkLabel: 'р/м Network 1 1 АК',
-          unitLabels: ['1 АК'],
-          developing: true,
-          statusLabel: 'Активна',
-          statusColor: '#54c06c',
-          statusKey: 'active',
-          aorLabels: [],
-          activeFrequencies: [],
-          inactiveFrequencies: [],
-          activityBars: [],
-          lastActivityLabel: '—',
-          lastActivityDetail: 'невідомий',
-          lastActivityTooltip: '—',
-          createdAtLabel: '—',
+  const networkCell = (
+    capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
+  ).find((column) => column.id === 'network');
+  const renderedNetworkCell = (
+    (
+      networkCell?.Cell?.({
+        row: {
+          original: {
+            id: 42,
+            network: { name: 'Network 1' },
+            unitLabels: ['1 АК'],
+            developing: true,
+          },
+        } as never,
+      }) as any
+    )?.type as (props: any) => any
+  )?.(
+    (
+      networkCell?.Cell?.({
+        row: {
+          original: {
+            id: 42,
+            network: { name: 'Network 1' },
+            networkLabel: 'р/м Network 1 1 АК',
+            unitLabels: ['1 АК'],
+            developing: true,
+            statusLabel: 'Активна',
+            statusColor: '#54c06c',
+            statusKey: 'active',
+            aorLabels: [],
+            activeFrequencies: [],
+            inactiveFrequencies: [],
+            activityBars: [],
+            lastActivityLabel: '—',
+            lastActivityDetail: 'невідомий',
+            lastActivityTooltip: '—',
+            createdAtLabel: '—',
+          },
         },
-      },
-    } as never) as any).props,
+      } as never) as any
+    ).props,
   );
   const networkAnchor = renderedNetworkCell.props.children[1];
   const developingChip = renderedNetworkCell.props.children[2];
@@ -355,7 +428,6 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   expect(networkAnchor.props.children.props.text).toBe('р/м Network 1 1 АК');
   expect(developingChip.props.label).toBe('В дорозвідці');
   expect(capturedTableStateProviderProps?.defaultSorting).toEqual([{ id: 'network', desc: false }]);
-
 });
 
 it('wraps long network labels without truncating the status chip row', () => {
@@ -366,32 +438,47 @@ it('wraps long network labels without truncating the status chip row', () => {
     root?.render(createElement(RerNetworksNeoPage));
   });
 
-  const networkCell = (capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>).find((column) => column.id === 'network');
-  const renderedNetworkCell = ((networkCell?.Cell?.({ row: { original: { id: 42, network: { name: 'Network 1' }, unitLabels: ['1 АК'], developing: true } } as never }) as any)?.type as (
-    props: any,
-  ) => any)(
-    (networkCell?.Cell?.({
-      row: {
-        original: {
-          id: 42,
-          network: { name: 'Network 1' },
-          networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
-          unitLabels: ['1 АК'],
-          developing: true,
-          statusLabel: 'Активна',
-          statusColor: '#54c06c',
-          statusKey: 'active',
-          aorLabels: [],
-          activeFrequencies: [],
-          inactiveFrequencies: [],
-          activityBars: [],
-          lastActivityLabel: '—',
-          lastActivityDetail: 'невідомий',
-          lastActivityTooltip: '—',
-          createdAtLabel: '—',
+  const networkCell = (
+    capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
+  ).find((column) => column.id === 'network');
+  const renderedNetworkCell = (
+    (
+      networkCell?.Cell?.({
+        row: {
+          original: {
+            id: 42,
+            network: { name: 'Network 1' },
+            unitLabels: ['1 АК'],
+            developing: true,
+          },
+        } as never,
+      }) as any
+    )?.type as (props: any) => any
+  )(
+    (
+      networkCell?.Cell?.({
+        row: {
+          original: {
+            id: 42,
+            network: { name: 'Network 1' },
+            networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
+            unitLabels: ['1 АК'],
+            developing: true,
+            statusLabel: 'Активна',
+            statusColor: '#54c06c',
+            statusKey: 'active',
+            aorLabels: [],
+            activeFrequencies: [],
+            inactiveFrequencies: [],
+            activityBars: [],
+            lastActivityLabel: '—',
+            lastActivityDetail: 'невідомий',
+            lastActivityTooltip: '—',
+            createdAtLabel: '—',
+          },
         },
-      },
-    } as never) as any).props,
+      } as never) as any
+    ).props,
   );
 
   const networkAnchor = renderedNetworkCell.props.children[1];
@@ -401,7 +488,9 @@ it('wraps long network labels without truncating the status chip row', () => {
   const statusDotBox = statusDot.props.children;
   expect(renderedNetworkCell.props.alignItems).toBe('flex-start');
   expect(statusDotBox.props.sx).toEqual(expect.objectContaining({ alignSelf: 'center' }));
-  expect(networkAnchor.props.sx).toEqual(expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }));
+  expect(networkAnchor.props.sx).toEqual(
+    expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }),
+  );
   expect(rowLabelBox.props.sx).toEqual(
     expect.objectContaining({
       whiteSpace: 'normal',
@@ -423,18 +512,30 @@ it('refreshes AOR filter options after lookup data loads', () => {
   });
 
   expect(
-    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string }> }>).find((column) => column.id === 'aors')
-      ?.filterSelectOptions,
+    (
+      capturedOptions?.columns as Array<{
+        id?: string;
+        filterSelectOptions?: Array<{ label?: string; value?: string }>;
+      }>
+    ).find((column) => column.id === 'aors')?.filterSelectOptions,
   ).toEqual([{ label: '—', value: '__no_aor__' }]);
 
-  defaultPageReturn.aorOptions = [buildAor(2, 'Бета'), buildAor(3, 'Вся смуга'), buildAor(1, 'Альфа')];
+  defaultPageReturn.aorOptions = [
+    buildAor(2, 'Бета'),
+    buildAor(3, 'Вся смуга'),
+    buildAor(1, 'Альфа'),
+  ];
   act(() => {
     root?.render(createElement(RerNetworksNeoPage));
   });
 
   expect(
-    (capturedOptions?.columns as Array<{ id?: string; filterSelectOptions?: Array<{ label?: string; value?: string }> }>).find((column) => column.id === 'aors')
-      ?.filterSelectOptions,
+    (
+      capturedOptions?.columns as Array<{
+        id?: string;
+        filterSelectOptions?: Array<{ label?: string; value?: string }>;
+      }>
+    ).find((column) => column.id === 'aors')?.filterSelectOptions,
   ).toEqual([
     { label: '—', value: '__no_aor__' },
     { label: 'Вся смуга', value: '3' },
@@ -450,27 +551,50 @@ it('does not duplicate the AOR column filter in the active filter list', () => {
   tableStateMock.columnFilters = [{ id: 'aors', value: ['6'] }];
   tableStateMock.globalFilter = 'alpha';
   defaultPageReturn.aorOptions = [buildAor(6, '14 АК')];
-  defaultPageReturn.filters = { ...defaultPageReturn.filters, status: 'active', unitText: '3 АК', showOnlyInvestigating: true };
+  defaultPageReturn.filters = {
+    ...defaultPageReturn.filters,
+    status: 'active',
+    unitText: '3 АК',
+    showOnlyInvestigating: true,
+  };
 
   root = createRoot(container);
   act(() => {
     root?.render(createElement(RerNetworksNeoPage));
   });
 
-  const aorsColumn = (capturedOptions?.columns as Array<{ id?: string; meta?: { activeFilterValueFormatter?: (value: unknown) => string } }>).find((column) => column.id === 'aors');
+  const aorsColumn = (
+    capturedOptions?.columns as Array<{
+      id?: string;
+      meta?: { activeFilterValueFormatter?: (value: unknown) => string };
+    }>
+  ).find((column) => column.id === 'aors');
   expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['6'])).toBe('14 АК');
-  expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['6', NO_AOR_FILTER_VALUE])).toBe('14 АК, —');
+  expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['6', NO_AOR_FILTER_VALUE])).toBe(
+    '14 АК, —',
+  );
   expect(aorsColumn?.meta?.activeFilterValueFormatter?.(['999'])).toBe('#999');
   expect(capturedInternalActionsProps?.additionalActiveFilters).toEqual([
     expect.objectContaining({ id: 'page-unit', label: 'Підрозділ' }),
     expect.objectContaining({ id: 'page-investigating', label: 'Статус', value: 'В дорозвідці' }),
     expect.objectContaining({ id: 'page-status', label: 'Статус' }),
   ]);
-  expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === '__global_filter__')).toBe(false);
-  expect((capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined)?.some((filter) => filter.id === 'aors')).toBe(false);
+  expect(
+    (
+      capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined
+    )?.some((filter) => filter.id === '__global_filter__'),
+  ).toBe(false);
+  expect(
+    (
+      capturedInternalActionsProps?.additionalActiveFilters as Array<{ id: string }> | undefined
+    )?.some((filter) => filter.id === 'aors'),
+  ).toBe(false);
 
   act(() => {
-    (capturedInternalActionsProps?.onClearAdditionalActiveFilter as ((filterId: string) => void) | undefined)?.('page-investigating');
+    (
+      capturedInternalActionsProps?.onClearAdditionalActiveFilter as
+        ((filterId: string) => void) | undefined
+    )?.('page-investigating');
   });
   expect(defaultPageReturn.onClearInvestigatingFilter).toHaveBeenCalled();
 
@@ -498,8 +622,12 @@ it('uses skeleton rows only for the initial load state', () => {
     root?.render(createElement(RerNetworksNeoPage));
   });
 
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(false);
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(false);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(
+    false,
+  );
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(
+    false,
+  );
 });
 
 it('keeps the empty-result table from adding a second vertical scrollbar', () => {
@@ -520,7 +648,11 @@ it('keeps the empty-result table from adding a second vertical scrollbar', () =>
 
   const paperProps =
     typeof capturedOptions?.muiTablePaperProps === 'function'
-      ? (capturedOptions.muiTablePaperProps as (args: { table: { getState: () => { isFullScreen: boolean } } }) => { sx?: Record<string, unknown> })({
+      ? (
+          capturedOptions.muiTablePaperProps as (args: {
+            table: { getState: () => { isFullScreen: boolean } };
+          }) => { sx?: Record<string, unknown> }
+        )({
           table: {
             getState: () => ({ isFullScreen: false }),
           },
@@ -534,14 +666,18 @@ it('keeps the empty-result table from adding a second vertical scrollbar', () =>
       overflow: 'hidden',
     }),
   );
-  expect((capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+  expect(
+    (capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx,
+  ).toEqual(
     expect.objectContaining({
       minHeight: '100%',
       overflowY: 'hidden',
       overflow: 'hidden',
     }),
   );
-  expect((capturedOptions?.muiTableBodyProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+  expect(
+    (capturedOptions?.muiTableBodyProps as { sx?: Record<string, unknown> } | undefined)?.sx,
+  ).toEqual(
     expect.objectContaining({
       minHeight: '100%',
     }),
@@ -568,31 +704,49 @@ it('hides load more and expands the first-load frame to full height', () => {
 
   expect(container.textContent).not.toContain('Завантажити ще');
   expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showSkeletons).toBe(true);
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showLoadingOverlay).toBe(false);
-  expect((capturedOptions?.initialState as Record<string, unknown> | undefined)?.pagination).toEqual({
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showLoadingOverlay).toBe(
+    false,
+  );
+  expect(
+    (capturedOptions?.initialState as Record<string, unknown> | undefined)?.pagination,
+  ).toEqual({
     pageIndex: 0,
     pageSize: 24,
   });
-  expect((capturedOptions?.muiTablePaperProps as (args: { table: { getState: () => { isFullScreen: boolean } } }) => { sx?: Record<string, unknown> } | undefined)?.({
-    table: { getState: () => ({ isFullScreen: false }) },
-  })?.sx).toEqual(
+  expect(
+    (
+      capturedOptions?.muiTablePaperProps as (args: {
+        table: { getState: () => { isFullScreen: boolean } };
+      }) => { sx?: Record<string, unknown> } | undefined
+    )?.({
+      table: { getState: () => ({ isFullScreen: false }) },
+    })?.sx,
+  ).toEqual(
     expect.objectContaining({
       height: '100%',
       minHeight: '100%',
     }),
   );
-  expect((capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx).toEqual(
+  expect(
+    (capturedOptions?.muiTableContainerProps as { sx?: Record<string, unknown> } | undefined)?.sx,
+  ).toEqual(
     expect.objectContaining({
       minHeight: '100%',
       overflowX: 'auto',
       overflowY: 'auto',
     }),
   );
-  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(false);
+  expect((capturedOptions?.state as Record<string, unknown> | undefined)?.showProgressBars).toBe(
+    false,
+  );
 });
 
 it('splits location text into visible lines', () => {
-  expect(getLocationParts('Пункт зв’язку, Місто, Район')).toEqual(['Пункт зв’язку', 'Місто', 'Район']);
+  expect(getLocationParts('Пункт зв’язку, Місто, Район')).toEqual([
+    'Пункт зв’язку',
+    'Місто',
+    'Район',
+  ]);
 });
 
 it('uses top-first placement for the frequency hover popper', () => {
@@ -700,7 +854,9 @@ it('toggles and closes the reports menu', () => {
     root?.render(createElement(RerNetworksNeoPage));
   });
 
-  const reportsButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Звіти'));
+  const reportsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes('Звіти'),
+  );
   if (!reportsButton) throw new Error('reports button not found');
 
   act(() => {

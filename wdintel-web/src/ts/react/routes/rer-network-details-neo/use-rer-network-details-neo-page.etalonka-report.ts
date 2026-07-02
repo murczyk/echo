@@ -1,6 +1,12 @@
 import dayjs from 'dayjs';
 
-import type { EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType, ListNetworksReq, ReportHistoryRow } from '../../../../Bindings';
+import type {
+  EtalonkaJimForksReq,
+  EtalonkaNetworkBatchReq,
+  EtalonkaReportType,
+  ListNetworksReq,
+  ReportHistoryRow,
+} from '../../../../Bindings';
 import { APP_TIME_ZONE, combineDateTimeInputToMs } from '../../utils/misc';
 
 export type NetworkEtalonkaReportType = 'AccordingToTheForm' | 'ExtendedReport';
@@ -89,11 +95,17 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
   };
 }
 
-export function buildEtalonkaNetworkBatchReq(networkId: number, report: NetworkEtalonkaReportState): EtalonkaNetworkBatchReq {
+export function buildEtalonkaNetworkBatchReq(
+  networkId: number,
+  report: NetworkEtalonkaReportState,
+): EtalonkaNetworkBatchReq {
   return buildEtalonkaNetworksBatchReq([networkId], report);
 }
 
-export function buildEtalonkaNetworksBatchReq(networkIds: number[], report: NetworkEtalonkaReportState): EtalonkaNetworkBatchReq {
+export function buildEtalonkaNetworksBatchReq(
+  networkIds: number[],
+  report: NetworkEtalonkaReportState,
+): EtalonkaNetworkBatchReq {
   return {
     networkIds,
     sortBy: null,
@@ -101,7 +113,10 @@ export function buildEtalonkaNetworksBatchReq(networkIds: number[], report: Netw
   };
 }
 
-export function buildEtalonkaNetworksReportReq(req: ListNetworksReq, report: NetworkEtalonkaReportState): EtalonkaJimForksReq {
+export function buildEtalonkaNetworksReportReq(
+  req: ListNetworksReq,
+  report: NetworkEtalonkaReportState,
+): EtalonkaJimForksReq {
   return {
     req,
     etalonkaType: toEtalonkaReportType(report),
@@ -120,7 +135,10 @@ function buildEtalonkaFilename(baseFileName: string, report: NetworkEtalonkaRepo
   return `${[baseFileName, ...dateParts].join('_')}.docx`;
 }
 
-export function buildEtalonkaReportFilename(networkId: number, report: NetworkEtalonkaReportState): string {
+export function buildEtalonkaReportFilename(
+  networkId: number,
+  report: NetworkEtalonkaReportState,
+): string {
   return buildEtalonkaFilename(`etalonka_network_${networkId}`, report);
 }
 

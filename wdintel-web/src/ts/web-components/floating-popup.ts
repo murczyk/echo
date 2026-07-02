@@ -177,21 +177,17 @@ class FloatingPopup extends HTMLElement {
     // ВИДАЛЯЄМО ДУБЛЮВАННЯ КОДУ - використовуємо autoUpdate
     const updatePosition = () => {
       if (!this.bodyPopupElement || !this.state.isOpen) return;
-      
+
       computePosition(actualAnchor, this.bodyPopupElement, {
         // Автоматичний placement на основі позиції в viewport
         placement: this.getOptimalPlacement(actualAnchor),
         strategy: 'fixed',
-        middleware: [
-          offset(8),
-          flip(),
-          shift({ padding: 8 })
-        ]
+        middleware: [offset(8), flip(), shift({ padding: 8 })],
       }).then(({ x, y }) => {
         if (this.bodyPopupElement) {
           Object.assign(this.bodyPopupElement.style, {
             left: `${x}px`,
-            top: `${y}px`
+            top: `${y}px`,
           });
         }
       });
@@ -219,15 +215,15 @@ class FloatingPopup extends HTMLElement {
     const rect = anchor.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
-    
+
     // Розраховуємо центр елемента
     const centerY = rect.top + rect.height / 2;
     const centerX = rect.left + rect.width / 2;
-    
+
     // Визначаємо в якій частині viewport знаходиться елемент
     const isInTopHalf = centerY < viewportHeight / 2;
     const isInLeftHalf = centerX < viewportWidth / 2;
-    
+
     // Якщо елемент в верхній половині - показуємо popup знизу
     // Якщо в нижній - зверху
     if (isInTopHalf) {
@@ -235,7 +231,7 @@ class FloatingPopup extends HTMLElement {
     } else {
       return 'top';
     }
-    
+
     // Можна розширити для left/right якщо потрібно
     // if (isInLeftHalf) return 'right';
     // else return 'left';
@@ -245,9 +241,9 @@ class FloatingPopup extends HTMLElement {
     if (this.state.isTransitioning) return;
 
     this.state.isTransitioning = true;
-    
+
     this.cleanup();
-    
+
     // Hide body elements
     if (this.bodyPopupElement) {
       this.bodyPopupElement.style.opacity = '0';
@@ -255,12 +251,12 @@ class FloatingPopup extends HTMLElement {
       this.bodyPopupElement.style.transform = 'scale(0.95)';
       this.bodyPopupElement.style.pointerEvents = 'none';
     }
-    
+
     if (this.bodyOverlayElement) {
       this.bodyOverlayElement.style.opacity = '0';
       this.bodyOverlayElement.style.visibility = 'hidden';
     }
-    
+
     setTimeout(() => {
       this.state.isTransitioning = false;
     }, 150);
@@ -335,7 +331,7 @@ class FloatingPopup extends HTMLElement {
       justify-content: center;
       transition: all 0.15s ease;
       z-index: 1;
-    `
+    `,
   };
 
   private movePopupToBody() {
@@ -378,29 +374,29 @@ class FloatingPopup extends HTMLElement {
 
     // Overlay click
     this.bodyOverlayElement.addEventListener('click', () => this.close());
-    
+
     // Close button
     const closeButton = this.bodyPopupElement.querySelector('.close-button');
     if (closeButton) {
       closeButton.addEventListener('click', () => this.close());
-      
+
       // Hover effects
       closeButton.addEventListener('mouseenter', () => {
         (closeButton as HTMLElement).style.background = 'var(--color-bg-muted)';
         (closeButton as HTMLElement).style.color = 'var(--color-text)';
         (closeButton as HTMLElement).style.transform = 'scale(1.05)';
       });
-      
+
       closeButton.addEventListener('mouseleave', () => {
         (closeButton as HTMLElement).style.background = 'none';
         (closeButton as HTMLElement).style.color = 'var(--color-text-muted)';
         (closeButton as HTMLElement).style.transform = 'scale(1)';
       });
-      
+
       closeButton.addEventListener('mousedown', () => {
         (closeButton as HTMLElement).style.transform = 'scale(0.95)';
       });
-      
+
       closeButton.addEventListener('mouseup', () => {
         (closeButton as HTMLElement).style.transform = 'scale(1.05)';
       });
@@ -419,19 +415,19 @@ class FloatingPopup extends HTMLElement {
 
     // Зберігаємо close button
     const closeButton = popupContent.querySelector('.close-button');
-    
+
     // Очищаємо контент
     popupContent.innerHTML = '';
-    
+
     // Додаємо close button назад
     if (closeButton) {
       popupContent.appendChild(closeButton);
     }
-    
+
     // Клонуємо та додаємо контент
     const contentClone = contentSlot.cloneNode(true) as HTMLElement;
     contentClone.removeAttribute('slot');
-    
+
     // Вставляємо контент перед close button
     if (closeButton) {
       popupContent.insertBefore(contentClone, closeButton);

@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ParsedRelease, parseRelease } from './markdown-helpers';
-import {
-  fetchReleaseMarkdown,
-  fetchReleasesIndex,
-  ReleaseMeta,
-} from './releases.service';
+import { fetchReleaseMarkdown, fetchReleasesIndex, ReleaseMeta } from './releases.service';
 
 export interface UseUpdatesPageState {
   releases: ReleaseMeta[];

@@ -37,7 +37,7 @@ type Props = Pick<
   | 'topFreqs'
   | 'topLocations'
   | 'topUnits'
-  > &
+> &
   Pick<
     AnalysisPageActions,
     | 'loadCallsignGraph'
@@ -96,7 +96,13 @@ export function AnalysisSidebar({
     <Box
       component="aside"
       aria-label="Аналітична бічна панель"
-      sx={{ minHeight: 0, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      sx={{
+        minHeight: 0,
+        height: '100%',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
       <Box sx={{ pt: 1 }}>
         <Tabs
@@ -138,20 +144,46 @@ export function AnalysisSidebar({
         >
           {sidebarTabs.map((tab) => {
             if (tab === 'map') {
-              return <Tab key={tab} value={tab} icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Мапа" />;
+              return (
+                <Tab
+                  key={tab}
+                  value={tab}
+                  icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />}
+                  iconPosition="start"
+                  label="Мапа"
+                />
+              );
             }
             if (tab === 'stats') {
               return (
-                <Tab key={tab} value={tab} icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Зведення" />
+                <Tab
+                  key={tab}
+                  value={tab}
+                  icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />}
+                  iconPosition="start"
+                  label="Зведення"
+                />
               );
             }
             if (tab === 'callsigns') {
               return (
-                <Tab key={tab} value={tab} icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Позивні" />
+                <Tab
+                  key={tab}
+                  value={tab}
+                  icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />}
+                  iconPosition="start"
+                  label="Позивні"
+                />
               );
             }
             return (
-              <Tab key={tab} value={tab} icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />} iconPosition="start" label="Нові" />
+              <Tab
+                key={tab}
+                value={tab}
+                icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />}
+                iconPosition="start"
+                label="Нові"
+              />
             );
           })}
         </Tabs>
@@ -177,7 +209,9 @@ export function AnalysisSidebar({
         }}
       >
         {keepMapPaneMounted ? (
-          <Box sx={{ height: '100%', minHeight: 0, display: sidebarTab === 'map' ? 'flex' : 'none' }}>
+          <Box
+            sx={{ height: '100%', minHeight: 0, display: sidebarTab === 'map' ? 'flex' : 'none' }}
+          >
             <AnalysisMapPane
               mapAttrs={mapAttrs}
               search={queryState.search}
@@ -191,23 +225,23 @@ export function AnalysisSidebar({
         {sidebarTab === 'stats' ? (
           <>
             <Box>
-          <AnalysisStatsPane
-            correlatedFreqs={correlatedFreqs}
-            correlatedFreqsLoading={correlatedFreqsLoading}
-            groupsActivity={groupsActivity}
-            groupsActivityLoadedFreq={groupsActivityLoadedFreq}
-            groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
-            groupsActivityPeriod={groupsActivityPeriod}
-            groupsActivityLoading={groupsActivityLoading}
+              <AnalysisStatsPane
+                correlatedFreqs={correlatedFreqs}
+                correlatedFreqsLoading={correlatedFreqsLoading}
+                groupsActivity={groupsActivity}
+                groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+                groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
+                groupsActivityPeriod={groupsActivityPeriod}
+                groupsActivityLoading={groupsActivityLoading}
                 onLoadCorrelatedFreqs={loadCorrelatedFreqs}
                 onLoadGroupsActivity={loadGroupsActivity}
-            onSelectFreq={selectOnlyFreq}
-            selectedFreq={queryState.freqsSelected[0] ?? null}
-            rightSidebarLoading={rightSidebarLoading}
-            topFreqs={topFreqs}
-            topLocations={topLocations}
-            topUnits={topUnits}
-          />
+                onSelectFreq={selectOnlyFreq}
+                selectedFreq={queryState.freqsSelected[0] ?? null}
+                rightSidebarLoading={rightSidebarLoading}
+                topFreqs={topFreqs}
+                topLocations={topLocations}
+                topUnits={topUnits}
+              />
             </Box>
           </>
         ) : null}

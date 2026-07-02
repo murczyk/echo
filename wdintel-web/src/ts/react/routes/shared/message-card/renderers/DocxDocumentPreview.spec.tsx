@@ -38,7 +38,13 @@ describe('DocxDocumentPreview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<DocxDocumentPreview href="https://example.test/files/report.docx" zoom={100} sizeBytes={10 * 1024 * 1024 + 1} />);
+      root.render(
+        <DocxDocumentPreview
+          href="https://example.test/files/report.docx"
+          zoom={100}
+          sizeBytes={10 * 1024 * 1024 + 1}
+        />,
+      );
     });
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -67,7 +73,12 @@ describe('DocxDocumentPreview', () => {
       root.render(<DocxDocumentPreview href="https://example.test/files/report.docx" zoom={100} />);
     });
 
-    expect(runWorkerTask).toHaveBeenCalledWith(expect.any(Function), { buffer: arrayBuffer }, expect.any(AbortSignal), [arrayBuffer]);
+    expect(runWorkerTask).toHaveBeenCalledWith(
+      expect.any(Function),
+      { buffer: arrayBuffer },
+      expect.any(AbortSignal),
+      [arrayBuffer],
+    );
     expect(container.querySelector('iframe')).not.toBeNull();
 
     root.unmount();

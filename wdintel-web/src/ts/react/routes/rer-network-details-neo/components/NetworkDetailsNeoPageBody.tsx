@@ -1,5 +1,8 @@
 import { Box, CircularProgress } from '@mui/material';
-import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../../utils/misc';
+import {
+  parseDateInputExclusiveEndInTimeZone,
+  parseDateInputInTimeZone,
+} from '../../../utils/misc';
 import { NetworkDetailsLeftPanel } from './NetworkDetailsLeftPanel';
 import { NetworkDetailsTabPanel } from './NetworkDetailsTabPanel';
 import { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
@@ -200,7 +203,16 @@ export function NetworkDetailsNeoPageBody({
 
   if (panelPlacement === 'top') {
     return (
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          overflow: 'hidden',
+        }}
+      >
         <Box
           sx={{
             minHeight: 0,
@@ -211,9 +223,15 @@ export function NetworkDetailsNeoPageBody({
             overscrollBehavior: 'contain',
           }}
         >
-          <NetworkDetailsLeftPanel placement="top" collapsed={topPanelCollapsed} {...sharedLeftPanelProps} />
+          <NetworkDetailsLeftPanel
+            placement="top"
+            collapsed={topPanelCollapsed}
+            {...sharedLeftPanelProps}
+          />
         </Box>
-        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>{detailsTabPanel}</Box>
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+          {detailsTabPanel}
+        </Box>
       </Box>
     );
   }
@@ -225,7 +243,10 @@ export function NetworkDetailsNeoPageBody({
         minHeight: 0,
         display: 'grid',
         gap: 2,
-        gridTemplateColumns: { xs: '1fr', lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)' },
+        gridTemplateColumns: {
+          xs: '1fr',
+          lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)',
+        },
         overflow: 'hidden',
       }}
     >

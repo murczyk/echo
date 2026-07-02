@@ -13,7 +13,7 @@ export interface BoundsLike {
  */
 export function truncateToMaxRendered(
   data: SearchResultChunk[],
-  maxPoints: number
+  maxPoints: number,
 ): SearchResultChunk[] {
   const flat: { palitra_id: number; point: PalitraPoint }[] = [];
   for (const { palitra_id, points } of data) {
@@ -41,7 +41,7 @@ export function truncateToMaxRendered(
  */
 export function cullSearchResultsToViewport(
   data: SearchResultChunk[],
-  bounds: BoundsLike
+  bounds: BoundsLike,
 ): SearchResultChunk[] {
   return data.map(({ palitra_id, points }) => ({
     palitra_id,

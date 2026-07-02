@@ -42,28 +42,34 @@ function renderFolderRowActions(row: FolderTableRowView, props: Props) {
           label={row.isExpanded ? 'Згорнути папку' : 'Розгорнути папку'}
           onClick={() => props.onToggleFolderExpanded(row.folderPath)}
           disabled={props.loading || props.externalBusy}
-          icon={row.isExpanded ? <ExpandMoreIcon fontSize='small' /> : <ChevronRightIcon fontSize='small' />}
+          icon={
+            row.isExpanded ? (
+              <ExpandMoreIcon fontSize="small" />
+            ) : (
+              <ChevronRightIcon fontSize="small" />
+            )
+          }
         />
         <MrtRowActionButton
-          label='Перейменувати папку'
+          label="Перейменувати папку"
           onClick={() => props.onRequestRenameFolder(row.folderPath)}
           disabled={!row.canModify || props.loading || props.externalBusy}
-          icon={<EditIcon fontSize='small' />}
+          icon={<EditIcon fontSize="small" />}
           opensModal
         />
         <MrtRowActionButton
-          label='Архівувати всі палітри в папці'
+          label="Архівувати всі палітри в папці"
           onClick={() => props.onRequestArchiveFolder(row.folderPath)}
           disabled={!row.canModify || props.loading || props.externalBusy}
-          icon={<ArchiveOutlinedIcon fontSize='small' />}
+          icon={<ArchiveOutlinedIcon fontSize="small" />}
           opensModal
         />
         <MrtRowActionButton
-          label='Видалити всі палітри в папці'
+          label="Видалити всі палітри в папці"
           onClick={() => props.onRequestDeleteFolder(row.folderPath)}
           disabled={!row.canModify || props.loading || props.externalBusy}
-          icon={<DeleteIcon fontSize='small' />}
-          tone='danger'
+          icon={<DeleteIcon fontSize="small" />}
+          tone="danger"
           opensModal
         />
       </MrtRowActions>
@@ -102,13 +108,15 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
   const previewDisabled = isPalitraRowPreviewDisabled(row, props);
 
   return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-      <Tooltip title='Попередній перегляд'>
+    <Box
+      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+    >
+      <Tooltip title="Попередній перегляд">
         <span style={{ display: 'inline-flex' }}>
           <PowerIconButton
-            size='small'
-            aria-label='Попередній перегляд'
-            title='Попередній перегляд'
+            size="small"
+            aria-label="Попередній перегляд"
+            title="Попередній перегляд"
             onClick={(event) => {
               event.stopPropagation();
               props.onRequestPreview(row.palitra);
@@ -132,44 +140,56 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
               },
             })}
           >
-            <VisibilityOutlinedIcon fontSize='small' />
+            <VisibilityOutlinedIcon fontSize="small" />
           </PowerIconButton>
         </span>
       </Tooltip>
       <MrtRowActions forceMenu>
         <MrtRowActionButton
-          label='Редагувати'
+          label="Редагувати"
           onClick={() => props.onOpenEdit(row.palitra)}
           disabled={mutationDisabled}
-          icon={<EditIcon fontSize='small' />}
+          icon={<EditIcon fontSize="small" />}
           opensModal
         />
         <MrtRowActionButton
-          label='Перемістити в папку'
+          label="Перемістити в папку"
           onClick={() => props.onRequestAssignFolder(row.palitra)}
           disabled={mutationDisabled}
-          icon={<DriveFileMoveOutlinedIcon fontSize='small' />}
+          icon={<DriveFileMoveOutlinedIcon fontSize="small" />}
           opensModal
         />
         {row.palitra.isArchived ? (
           <MrtRowActionButton
-            label='Повернути з архіву'
+            label="Повернути з архіву"
             onClick={() => props.onRequestUnarchive(row.palitra)}
             disabled={mutationDisabled}
-            icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <UnarchiveOutlinedIcon fontSize='small' />}
+            icon={
+              row.archiveInFlight ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <UnarchiveOutlinedIcon fontSize="small" />
+              )
+            }
             opensModal
           />
         ) : (
           <MrtRowActionButton
-            label='Перенести в архів'
+            label="Перенести в архів"
             onClick={() => props.onRequestArchive(row.palitra)}
             disabled={mutationDisabled}
-            icon={row.archiveInFlight ? <CircularProgress size={16} color='inherit' /> : <ArchiveOutlinedIcon fontSize='small' />}
+            icon={
+              row.archiveInFlight ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <ArchiveOutlinedIcon fontSize="small" />
+              )
+            }
             opensModal
           />
         )}
         <MrtRowActionButton
-          label='Завантажити'
+          label="Завантажити"
           onClick={() => props.onDownload(row.palitra)}
           disabled={
             row.id < 0 ||
@@ -181,20 +201,38 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             props.bulkDeleteInFlight ||
             props.externalBusy
           }
-          icon={row.downloadInFlight ? <CircularProgress size={16} color='inherit' /> : <DownloadIcon fontSize='small' />}
+          icon={
+            row.downloadInFlight ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <DownloadIcon fontSize="small" />
+            )
+          }
         />
         <MrtRowActionButton
-          label='Додати точки'
+          label="Додати точки"
           onClick={() => props.onRequestUploadPoints(row.id)}
           disabled={mutationDisabled}
-          icon={row.uploadInFlight ? <CircularProgress size={16} color='inherit' /> : <CloudUploadIcon fontSize='small' />}
+          icon={
+            row.uploadInFlight ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <CloudUploadIcon fontSize="small" />
+            )
+          }
         />
         <MrtRowActionButton
-          label='Видалити'
+          label="Видалити"
           onClick={() => props.onDelete(row.palitra)}
           disabled={mutationDisabled}
-          icon={row.deleteInFlight ? <CircularProgress size={16} color='inherit' /> : <DeleteIcon fontSize='small' />}
-          tone='danger'
+          icon={
+            row.deleteInFlight ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <DeleteIcon fontSize="small" />
+            )
+          }
+          tone="danger"
           opensModal
         />
       </MrtRowActions>

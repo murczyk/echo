@@ -30,4 +30,3 @@ self.addEventListener('message', async (event: MessageEvent<DocxPreviewRequest>)
     self.postMessage(response);
   }
 });
-

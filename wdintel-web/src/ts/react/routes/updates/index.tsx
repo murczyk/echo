@@ -27,7 +27,9 @@ export function UpdatesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_240px] gap-4 items-start">
         {releasesLoadError ? (
           <aside className={sidebarShellClass}>
-            <div className="text-sm text-[var(--color-text-muted)]">Не вдалося завантажити релізи</div>
+            <div className="text-sm text-[var(--color-text-muted)]">
+              Не вдалося завантажити релізи
+            </div>
           </aside>
         ) : releasesLoadInProgress && releases.length === 0 ? (
           <aside className={sidebarShellClass}>
@@ -55,9 +57,7 @@ export function UpdatesPage() {
           <div className="text-sm text-[var(--color-text-muted)]">Оберіть реліз</div>
         )}
 
-        {release ? (
-          <TableOfContents sections={release.sections} onJump={jumpToSection} />
-        ) : null}
+        {release ? <TableOfContents sections={release.sections} onJump={jumpToSection} /> : null}
       </div>
     </div>
   );

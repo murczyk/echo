@@ -24,13 +24,10 @@ describe('units API', () => {
 
     await getUnitsList();
 
-    expect(postJsonMock).toHaveBeenCalledWith(
-      '/api/sigint/units',
-      {
-        sort_by: null,
-        after_unit_id: null,
-        before_unit_id: null,
-      },
-    );
+    expect(postJsonMock).toHaveBeenCalledWith('/api/sigint/units', {
+      sort_by: null,
+      after_unit_id: null,
+      before_unit_id: null,
+    });
   });
 });

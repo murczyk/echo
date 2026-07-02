@@ -33,15 +33,21 @@ export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Re
 
 /** Latest sender profiles (UUID -> profile). */
 export async function getLatestSenders(options?: RequestOptions): Promise<SignalProfilesRsp> {
-  const raw = await postJson<{ data: Record<string, { given_name?: string; family_name?: string; givenName?: string; familyName?: string } | null> }>(
-    '/api/rer-importer/latest-senders',
-    {},
-    options,
-  );
+  const raw = await postJson<{
+    data: Record<
+      string,
+      { given_name?: string; family_name?: string; givenName?: string; familyName?: string } | null
+    >;
+  }>('/api/rer-importer/latest-senders', {}, options);
   const data: Record<string, SignalProfilesRsp['data'][string]> = {};
   if (raw?.data) {
     for (const [k, v] of Object.entries(raw.data)) {
-      const entry = v as { given_name?: string; family_name?: string; givenName?: string; familyName?: string } | null;
+      const entry = v as {
+        given_name?: string;
+        family_name?: string;
+        givenName?: string;
+        familyName?: string;
+      } | null;
       if (entry) {
         data[k] = {
           givenName: entry.givenName ?? entry.given_name ?? null,
@@ -105,29 +111,44 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
 }
 
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */
-export async function getUserSigintGroups(sinceDateInclusiveMs: number | null, options?: RequestOptions): Promise<string[]> {
-  const body: Record<string, number> = isPresent(sinceDateInclusiveMs) ? { since_date_inclusive_ms: sinceDateInclusiveMs } : {};
+export async function getUserSigintGroups(
+  sinceDateInclusiveMs: number | null,
+  options?: RequestOptions,
+): Promise<string[]> {
+  const body: Record<string, number> = isPresent(sinceDateInclusiveMs)
+    ? { since_date_inclusive_ms: sinceDateInclusiveMs }
+    : {};
   const raw = await postJson<string[]>('/api/user/sigint-groups', body, options);
   return Array.isArray(raw) ? raw : [];
 }
 
 /** Group details from master keys. */
-export async function getGroupInfosBatch(masterKeys: string[], options?: RequestOptions): Promise<SignalGroupEntry[]> {
+export async function getGroupInfosBatch(
+  masterKeys: string[],
+  options?: RequestOptions,
+): Promise<SignalGroupEntry[]> {
   if (masterKeys.length === 0) return [];
   const body = {
     groups: masterKeys.map((masterKey) => ({ master_key: masterKey })),
     skip_group_stats: true,
   };
-  const raw = await postJson<{ data: Array<Record<string, unknown>> }>('/api/rer-importer/signal-group-batch', body, options);
+  const raw = await postJson<{ data: Array<Record<string, unknown>> }>(
+    '/api/rer-importer/signal-group-batch',
+    body,
+    options,
+  );
   const arr = raw?.data ?? [];
   return arr.map((r: Record<string, unknown>) => ({
     masterKey: (r.master_key ?? r.masterKey) as string,
     name: (r.name ?? '') as string,
     ignoreOperativny: (r.ignore_operativny ?? r.ignoreOperativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(r),
-    disableNetworkAssignment: (r.disable_network_assignment ?? r.disableNetworkAssignment ?? false) as boolean,
+    disableNetworkAssignment: (r.disable_network_assignment ??
+      r.disableNetworkAssignment ??
+      false) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,
     adminData: (r.admin_data ?? r.adminData ?? null) as GroupAdminData | null,
-    areasOfResponsibility: (r.areas_of_responsibility ?? r.areasOfResponsibility ?? null) as AreaOfResponsibility[] | null,
+    areasOfResponsibility: (r.areas_of_responsibility ?? r.areasOfResponsibility ?? null) as
+      AreaOfResponsibility[] | null,
   }));
 }

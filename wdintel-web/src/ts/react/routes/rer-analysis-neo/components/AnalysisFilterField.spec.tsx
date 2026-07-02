@@ -15,9 +15,13 @@ vi.mock('@mui/material', () => ({
     return <div data-testid="autocomplete" />;
   },
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Chip: ({ label, title }: { label?: ReactNode; title?: string }) => <div title={title}>{label}</div>,
+  Chip: ({ label, title }: { label?: ReactNode; title?: string }) => (
+    <div title={title}>{label}</div>
+  ),
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
-  Typography: ({ children, title }: { children: ReactNode; title?: string }) => <span title={title}>{children}</span>,
+  Typography: ({ children, title }: { children: ReactNode; title?: string }) => (
+    <span title={title}>{children}</span>
+  ),
 }));
 
 import { AnalysisFilterField } from './AnalysisFilterField';
@@ -42,12 +46,25 @@ describe('AnalysisFilterField', () => {
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
         reason: 'createOption' | 'selectOption' | 'removeOption' | 'blur' | 'clear' | 'escape',
       ) => void;
-      onInputChange: (_event: unknown, nextInputValue: string, reason: 'input' | 'reset' | 'clear') => void;
+      onInputChange: (
+        _event: unknown,
+        nextInputValue: string,
+        reason: 'input' | 'reset' | 'clear',
+      ) => void;
       onClose?: () => void;
       onOpen?: () => void;
-      renderOption: (props: { key: string; [key: string]: unknown }, option: { key: string; value: string; label: string; count: number; values: string[] }) => unknown;
+      renderOption: (
+        props: { key: string; [key: string]: unknown },
+        option: { key: string; value: string; label: string; count: number; values: string[] },
+      ) => unknown;
       renderTags: (
-        value: Array<{ key: string; value: string; label: string; count: number; values: string[] }>,
+        value: Array<{
+          key: string;
+          value: string;
+          label: string;
+          count: number;
+          values: string[];
+        }>,
         getTagProps: (_args: { index: number }) => { key: string; [key: string]: unknown },
       ) => Array<{ props: { title?: string; label?: unknown } }>;
       options: Array<{ value: string; label: string; count: number; values: string[] }>;
@@ -306,10 +323,18 @@ describe('AnalysisFilterField', () => {
     });
     const openedProps = latestAutocompleteProps();
     act(() => {
-      openedProps.onChange(null, [openedProps.options[0], openedProps.options[1], openedProps.options[2]], 'selectOption');
+      openedProps.onChange(
+        null,
+        [openedProps.options[0], openedProps.options[1], openedProps.options[2]],
+        'selectOption',
+      );
     });
     expect(onChange).not.toHaveBeenCalled();
-    expect(latestAutocompleteProps().value.map((option) => option.value)).toEqual(['u1', 'u2', 'u3']);
+    expect(latestAutocompleteProps().value.map((option) => option.value)).toEqual([
+      'u1',
+      'u2',
+      'u3',
+    ]);
 
     act(() => {
       props.onClose?.();
@@ -514,23 +539,36 @@ describe('AnalysisFilterField', () => {
   it('exposes full labels on hovered options and selected chips', () => {
     const { root } = renderFilterField({
       label: 'Мережі',
-      options: [{ value: '12', label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)', count: 30 }],
+      options: [
+        { value: '12', label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)', count: 30 },
+      ],
       value: ['12'],
       onChange: vi.fn(),
     });
     const props = latestAutocompleteProps();
 
-    const optionElement = props.renderOption({ key: 'opt-12' }, {
-      key: '12',
-      value: '12',
-      label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)',
-      count: 30,
-      values: ['12'],
-    }) as { props: { title?: string; children?: unknown } };
+    const optionElement = props.renderOption(
+      { key: 'opt-12' },
+      {
+        key: '12',
+        value: '12',
+        label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)',
+        count: 30,
+        values: ['12'],
+      },
+    ) as { props: { title?: string; children?: unknown } };
     expect(optionElement.props.title).toBe('р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)');
 
     const chipElements = props.renderTags(
-      [{ key: '12', value: '12', label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)', count: 30, values: ['12'] }],
+      [
+        {
+          key: '12',
+          value: '12',
+          label: 'р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)',
+          count: 30,
+          values: ['12'],
+        },
+      ],
       ({ index }) => ({ key: `tag-${index}` }),
     ) as Array<{ props: { title?: string } }>;
     expect(chipElements[0]?.props.title).toBe('р/м управління 1 гсад 60 сап 69 мсд 6 ЗА (KYIV)');

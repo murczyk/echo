@@ -21,7 +21,10 @@ import {
   type NetworkDetailsNeoPageState,
 } from './use-rer-network-details-neo-page.shared';
 import { buildNetworkFreqActivityByFreq, sortNetworkFreqsByTableOrder } from './frequency-utils';
-import type { NetworkFreqCreateWizardForm, NetworkFreqEditForm } from './use-rer-network-details-neo-page.shared';
+import type {
+  NetworkFreqCreateWizardForm,
+  NetworkFreqEditForm,
+} from './use-rer-network-details-neo-page.shared';
 
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
@@ -32,7 +35,9 @@ type Args = {
   currentNetworkIdRef: MutableRefObject<number | null>;
 };
 
-function resetFreqCreateWizardState(current: NetworkDetailsNeoPageState): NetworkDetailsNeoPageState {
+function resetFreqCreateWizardState(
+  current: NetworkDetailsNeoPageState,
+): NetworkDetailsNeoPageState {
   return {
     ...current,
     freqCreateWizardOpen: false,
@@ -52,7 +57,10 @@ function resetFreqEditDrawerState(current: NetworkDetailsNeoPageState): NetworkD
   };
 }
 
-function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId: number): AddNetworkFreqReq {
+function toCreateNetworkFreqReq(
+  freqForm: NetworkFreqCreateWizardForm,
+  networkId: number,
+): AddNetworkFreqReq {
   return {
     networkId,
     freqRec: {
@@ -67,7 +75,10 @@ function toCreateNetworkFreqReq(freqForm: NetworkFreqCreateWizardForm, networkId
   };
 }
 
-function findNetworkFreq(state: NetworkDetailsNeoPageState, networkFreqId: number): NetworkFreqsRes | null {
+function findNetworkFreq(
+  state: NetworkDetailsNeoPageState,
+  networkFreqId: number,
+): NetworkFreqsRes | null {
   return state.freqs.find((freq) => freq.networkFreqId === networkFreqId) ?? null;
 }
 
@@ -118,138 +129,147 @@ function buildFreqCallsignsStatusPatch(
   };
 }
 
-export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, reloadGeneration, currentNetworkIdRef }: Args) {
+export function useRerNetworkDetailsNeoPageFrequencyActions({
+  state,
+  setState,
+  reloadGeneration,
+  currentNetworkIdRef,
+}: Args) {
   const freqCallsignsBatchRequestIdRef = useRef(0);
   const freqCallsignsSingleRequestIdRef = useRef(0);
-  const setActiveNetworkDetailsTab = useCallback((activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
-    setState((current) => ({
-      ...current,
-      activeNetworkDetailsTab,
-      callsignSectionMode: 'network',
-    }));
-  }, [setState]);
+  const setActiveNetworkDetailsTab = useCallback(
+    (activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab']) => {
+      setState((current) => ({
+        ...current,
+        activeNetworkDetailsTab,
+        callsignSectionMode: 'network',
+      }));
+    },
+    [setState],
+  );
 
-  const loadFrequencies = useCallback(async (networkIdArg?: number) => {
-    const networkId = networkIdArg ?? currentNetworkIdRef.current;
-    if (!networkId || state.freqsLoading) return;
+  const loadFrequencies = useCallback(
+    async (networkIdArg?: number) => {
+      const networkId = networkIdArg ?? currentNetworkIdRef.current;
+      if (!networkId || state.freqsLoading) return;
 
-    reloadGeneration.current += 1;
-    const generation = reloadGeneration.current;
-    const targetNetworkId = networkId;
-
-    setState((current) => ({
-      ...current,
-      freqsLoading: true,
-      freqsError: null,
-      ...buildFreqCallsignsStatusPatch('loading'),
-    }));
-
-    const isCurrent = () => reloadGeneration.current === generation && currentNetworkIdRef.current === targetNetworkId;
-
-    try {
-      const [freqsResponse, activityResponse] = await Promise.all([
-        getSingleNetworkFreqs(networkId, false),
-        getNetworkFreqsActivity(networkId),
-      ]);
-
-      if (!isCurrent()) return;
+      reloadGeneration.current += 1;
+      const generation = reloadGeneration.current;
+      const targetNetworkId = networkId;
 
       setState((current) => ({
         ...current,
-        freqs: sortNetworkFreqsByTableOrder(freqsResponse.freqs),
-        freqActivityByFreq: buildNetworkFreqActivityByFreq(activityResponse, freqsResponse.freqs),
-        freqsLoading: false,
-        freqsLoaded: true,
+        freqsLoading: true,
         freqsError: null,
+        ...buildFreqCallsignsStatusPatch('loading'),
       }));
 
-      void loadFreqCallsignsBatch(networkId, freqsResponse.freqs, generation);
-    } catch (error) {
-      if (!isCurrent()) return;
-      setState((current) => ({
-        ...current,
-        freqsLoading: false,
-        freqsLoaded: false,
-        freqsError: formatErrorMessage(error),
-        ...buildFreqCallsignsStatusPatch('error'),
-      }));
-    }
-  }, [currentNetworkIdRef, reloadGeneration, setState, state.freqsLoading]);
+      const isCurrent = () =>
+        reloadGeneration.current === generation && currentNetworkIdRef.current === targetNetworkId;
 
-  const loadFreqCallsignsBatch = useCallback(async (networkId: number, freqs: NetworkFreqsRes[], generation: number) => {
-    const requestId = ++freqCallsignsBatchRequestIdRef.current;
-    const isCurrent = () =>
-      reloadGeneration.current === generation &&
-      currentNetworkIdRef.current === networkId &&
-      freqCallsignsBatchRequestIdRef.current === requestId;
+      try {
+        const [freqsResponse, activityResponse] = await Promise.all([
+          getSingleNetworkFreqs(networkId, false),
+          getNetworkFreqsActivity(networkId),
+        ]);
 
-    const networkFreqIds = freqs.map((freq) => freq.networkFreqId);
+        if (!isCurrent()) return;
 
-    if (networkFreqIds.length === 0) {
-      if (!isCurrent()) return;
-      setState((current) => ({
-        ...current,
-        ...buildFreqCallsignsStatusPatch('success'),
-      }));
-      return;
-    }
+        setState((current) => ({
+          ...current,
+          freqs: sortNetworkFreqsByTableOrder(freqsResponse.freqs),
+          freqActivityByFreq: buildNetworkFreqActivityByFreq(activityResponse, freqsResponse.freqs),
+          freqsLoading: false,
+          freqsLoaded: true,
+          freqsError: null,
+        }));
 
-    setState((current) => ({
-      ...current,
-      ...buildFreqCallsignsStatusPatch('loading'),
-    }));
+        void loadFreqCallsignsBatch(networkId, freqsResponse.freqs, generation);
+      } catch (error) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          freqsLoading: false,
+          freqsLoaded: false,
+          freqsError: formatErrorMessage(error),
+          ...buildFreqCallsignsStatusPatch('error'),
+        }));
+      }
+    },
+    [currentNetworkIdRef, reloadGeneration, setState, state.freqsLoading],
+  );
 
-    try {
-      const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds);
-      if (!isCurrent()) return;
+  const loadFreqCallsignsBatch = useCallback(
+    async (networkId: number, freqs: NetworkFreqsRes[], generation: number) => {
+      const requestId = ++freqCallsignsBatchRequestIdRef.current;
+      const isCurrent = () =>
+        reloadGeneration.current === generation &&
+        currentNetworkIdRef.current === networkId &&
+        freqCallsignsBatchRequestIdRef.current === requestId;
 
-      setState((current) => ({
-        ...current,
-        freqCallsignsById: new Map([
-          ...callsignsById,
-          ...current.freqCallsignsById,
-        ]),
-        freqCallsignsStatus: 'success',
-      }));
-    } catch (error) {
-      if (!isCurrent()) return;
-      setState((current) => ({
-        ...current,
-        freqCallsignsStatus: 'error',
-      }));
-    }
-  }, [currentNetworkIdRef, reloadGeneration, setState]);
+      const networkFreqIds = freqs.map((freq) => freq.networkFreqId);
 
-  const loadFreqCallsignsSingle = useCallback(async (networkId: number, networkFreqId: number, generation: number) => {
-    const requestId = ++freqCallsignsSingleRequestIdRef.current;
-    const isCurrent = () =>
-      reloadGeneration.current === generation &&
-      currentNetworkIdRef.current === networkId &&
-      freqCallsignsSingleRequestIdRef.current === requestId;
-
-    try {
-      const callsigns = await getNetworkFreqCallsigns(networkFreqId);
-      if (!isCurrent()) return;
+      if (networkFreqIds.length === 0) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          ...buildFreqCallsignsStatusPatch('success'),
+        }));
+        return;
+      }
 
       setState((current) => ({
         ...current,
-        freqCallsignsById: new Map([
-          ...current.freqCallsignsById,
-          [networkFreqId, callsigns],
-        ]),
+        ...buildFreqCallsignsStatusPatch('loading'),
       }));
-    } catch (error) {
-      if (!isCurrent()) return;
 
-      setState((current) => ({
-        ...current,
-        freqCallsignsById: new Map([
-          ...current.freqCallsignsById,
-          [networkFreqId, []],
-        ]),
-      }));
-    }
-  }, [currentNetworkIdRef, reloadGeneration, setState]);
+      try {
+        const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds);
+        if (!isCurrent()) return;
+
+        setState((current) => ({
+          ...current,
+          freqCallsignsById: new Map([...callsignsById, ...current.freqCallsignsById]),
+          freqCallsignsStatus: 'success',
+        }));
+      } catch (error) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          freqCallsignsStatus: 'error',
+        }));
+      }
+    },
+    [currentNetworkIdRef, reloadGeneration, setState],
+  );
+
+  const loadFreqCallsignsSingle = useCallback(
+    async (networkId: number, networkFreqId: number, generation: number) => {
+      const requestId = ++freqCallsignsSingleRequestIdRef.current;
+      const isCurrent = () =>
+        reloadGeneration.current === generation &&
+        currentNetworkIdRef.current === networkId &&
+        freqCallsignsSingleRequestIdRef.current === requestId;
+
+      try {
+        const callsigns = await getNetworkFreqCallsigns(networkFreqId);
+        if (!isCurrent()) return;
+
+        setState((current) => ({
+          ...current,
+          freqCallsignsById: new Map([...current.freqCallsignsById, [networkFreqId, callsigns]]),
+        }));
+      } catch (error) {
+        if (!isCurrent()) return;
+
+        setState((current) => ({
+          ...current,
+          freqCallsignsById: new Map([...current.freqCallsignsById, [networkFreqId, []]]),
+        }));
+      }
+    },
+    [currentNetworkIdRef, reloadGeneration, setState],
+  );
 
   const openFreqCreateWizard = useCallback(() => {
     setState((current) => ({
@@ -268,21 +288,27 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     });
   }, [setState]);
 
-  const setFreqCreateWizardForm = useCallback((freqCreateWizardForm: NetworkFreqCreateWizardForm) => {
-    setState((current) => ({ ...current, freqCreateWizardForm }));
-  }, [setState]);
+  const setFreqCreateWizardForm = useCallback(
+    (freqCreateWizardForm: NetworkFreqCreateWizardForm) => {
+      setState((current) => ({ ...current, freqCreateWizardForm }));
+    },
+    [setState],
+  );
 
-  const openFreqEditDrawer = useCallback((freq: NetworkFreqsRes) => {
-    setState((current) => ({
-      ...current,
-      freqEditDrawerOpen: true,
-      freqEditDrawerForm: toNetworkFreqEditForm(freq),
-      freqEditDrawerSaving: false,
-      freqEditDrawerError: null,
-      freqRowActionMenuAnchorEl: null,
-      freqRowActionTargetId: null,
-    }));
-  }, [setState]);
+  const openFreqEditDrawer = useCallback(
+    (freq: NetworkFreqsRes) => {
+      setState((current) => ({
+        ...current,
+        freqEditDrawerOpen: true,
+        freqEditDrawerForm: toNetworkFreqEditForm(freq),
+        freqEditDrawerSaving: false,
+        freqEditDrawerError: null,
+        freqRowActionMenuAnchorEl: null,
+        freqRowActionTargetId: null,
+      }));
+    },
+    [setState],
+  );
 
   const closeFreqEditDrawer = useCallback(() => {
     setState((current) => {
@@ -291,17 +317,23 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     });
   }, [setState]);
 
-  const setFreqEditDrawerForm = useCallback((freqEditDrawerForm: NetworkFreqEditForm | null) => {
-    setState((current) => ({ ...current, freqEditDrawerForm }));
-  }, [setState]);
+  const setFreqEditDrawerForm = useCallback(
+    (freqEditDrawerForm: NetworkFreqEditForm | null) => {
+      setState((current) => ({ ...current, freqEditDrawerForm }));
+    },
+    [setState],
+  );
 
-  const openFreqRowActions = useCallback((anchorEl: HTMLElement, freqId: number) => {
-    setState((current) => ({
-      ...current,
-      freqRowActionMenuAnchorEl: anchorEl,
-      freqRowActionTargetId: freqId,
-    }));
-  }, [setState]);
+  const openFreqRowActions = useCallback(
+    (anchorEl: HTMLElement, freqId: number) => {
+      setState((current) => ({
+        ...current,
+        freqRowActionMenuAnchorEl: anchorEl,
+        freqRowActionTargetId: freqId,
+      }));
+    },
+    [setState],
+  );
 
   const closeFreqRowActions = useCallback(() => {
     setState((current) => ({
@@ -311,17 +343,20 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     }));
   }, [setState]);
 
-  const openDeleteFreqDialog = useCallback((freq: NetworkFreqsRes) => {
-    setState((current) => ({
-      ...current,
-      freqRowActionMenuAnchorEl: null,
-      freqRowActionTargetId: null,
-      freqDeleteDialogOpen: true,
-      freqDeleteTarget: freq,
-      freqDeleteSubmitting: false,
-      freqDeleteError: null,
-    }));
-  }, [setState]);
+  const openDeleteFreqDialog = useCallback(
+    (freq: NetworkFreqsRes) => {
+      setState((current) => ({
+        ...current,
+        freqRowActionMenuAnchorEl: null,
+        freqRowActionTargetId: null,
+        freqDeleteDialogOpen: true,
+        freqDeleteTarget: freq,
+        freqDeleteSubmitting: false,
+        freqDeleteError: null,
+      }));
+    },
+    [setState],
+  );
 
   const closeDeleteFreqDialog = useCallback(() => {
     setState((current) => {
@@ -336,17 +371,20 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
     });
   }, [setState]);
 
-  const toggleFrequencyGroupExpanded = useCallback((groupId: string) => {
-    setState((current) => {
-      const isExpanded = current.expandedFrequencyGroupIds.includes(groupId);
-      return {
-        ...current,
-        expandedFrequencyGroupIds: isExpanded
-          ? current.expandedFrequencyGroupIds.filter((id) => id !== groupId)
-          : [...current.expandedFrequencyGroupIds, groupId],
-      };
-    });
-  }, [setState]);
+  const toggleFrequencyGroupExpanded = useCallback(
+    (groupId: string) => {
+      setState((current) => {
+        const isExpanded = current.expandedFrequencyGroupIds.includes(groupId);
+        return {
+          ...current,
+          expandedFrequencyGroupIds: isExpanded
+            ? current.expandedFrequencyGroupIds.filter((id) => id !== groupId)
+            : [...current.expandedFrequencyGroupIds, groupId],
+        };
+      });
+    },
+    [setState],
+  );
 
   const saveFreqCreateWizard = useCallback(async () => {
     const network = state.network;
@@ -410,7 +448,16 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         freqCreateWizardError: formatErrorMessage(error),
       }));
     }
-  }, [currentNetworkIdRef, loadFreqCallsignsSingle, loadFrequencies, reloadGeneration, state.freqCreateWizardSaving, state.freqCreateWizardForm, state.network, setState]);
+  }, [
+    currentNetworkIdRef,
+    loadFreqCallsignsSingle,
+    loadFrequencies,
+    reloadGeneration,
+    state.freqCreateWizardSaving,
+    state.freqCreateWizardForm,
+    state.network,
+    setState,
+  ]);
 
   const saveFreqEditDrawer = useCallback(async () => {
     const network = state.network;
@@ -445,7 +492,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         encryptionId: form.encryptionId,
         encryptionKeyIds: [...form.encryptionKeyIds],
         activeFrom: parseNetworkDetailsDateInput(form.activeFrom) ?? currentFreq.activeFrom,
-        activeTo: parseNetworkDetailsDateInput(form.activeTo)
+        activeTo: parseNetworkDetailsDateInput(form.activeTo),
       });
       if (currentNetworkIdRef.current !== targetNetworkId) {
         return;
@@ -484,7 +531,17 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         freqEditDrawerError: formatErrorMessage(error),
       }));
     }
-  }, [currentNetworkIdRef, loadFreqCallsignsSingle, loadFrequencies, reloadGeneration, state.freqEditDrawerForm, state.freqEditDrawerSaving, state.freqs, state.network, setState]);
+  }, [
+    currentNetworkIdRef,
+    loadFreqCallsignsSingle,
+    loadFrequencies,
+    reloadGeneration,
+    state.freqEditDrawerForm,
+    state.freqEditDrawerSaving,
+    state.freqs,
+    state.network,
+    setState,
+  ]);
 
   const deleteFreq = useCallback(async () => {
     const network = state.network;
@@ -521,7 +578,13 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({ state, setState, r
         freqDeleteError: formatErrorMessage(error),
       }));
     }
-  }, [loadFrequencies, state.freqDeleteSubmitting, state.freqDeleteTarget, state.network, setState]);
+  }, [
+    loadFrequencies,
+    state.freqDeleteSubmitting,
+    state.freqDeleteTarget,
+    state.network,
+    setState,
+  ]);
 
   return {
     setActiveNetworkDetailsTab,

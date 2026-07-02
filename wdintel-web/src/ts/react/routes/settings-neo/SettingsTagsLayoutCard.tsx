@@ -2,7 +2,6 @@ import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/ma
 import type { ReactNode } from 'react';
 import { isPresent } from '../../utils/misc';
 
-
 import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
@@ -38,11 +37,7 @@ export function SettingsTagsLayoutCard({
           {title}
         </Typography>
         <Stack spacing={0.5}>
-          {description ? (
-            <Box sx={{ color: 'text.secondary' }}>
-              {description}
-            </Box>
-          ) : null}
+          {description ? <Box sx={{ color: 'text.secondary' }}>{description}</Box> : null}
         </Stack>
         <ToggleButtonGroup
           value={tagsLayout}

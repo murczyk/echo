@@ -1,7 +1,12 @@
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
 
 import { canModifyPalitra, getAccessSummary } from './helpers-access';
-import { buildFolderTree, mapFolderNodeToRowView, normalizeFolderPathForUi, splitFolderPath } from './helpers-folders';
+import {
+  buildFolderTree,
+  mapFolderNodeToRowView,
+  normalizeFolderPathForUi,
+  splitFolderPath,
+} from './helpers-folders';
 import { PalitraRowView, TableRowView } from './types';
 
 export function mapPalitraToRowView({
@@ -48,7 +53,12 @@ export function mapPalitraToRowView({
     author: palitra.author,
     accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
     canModify,
-    canSelect: palitra.id >= 0 && !archiveInFlight && !deleteInFlight && !downloadInFlight && !uploadInFlight,
+    canSelect:
+      palitra.id >= 0 &&
+      !archiveInFlight &&
+      !deleteInFlight &&
+      !downloadInFlight &&
+      !uploadInFlight,
     archiveInFlight,
     deleteInFlight,
     downloadInFlight,
@@ -96,7 +106,10 @@ export function buildTableRows(args: {
   }
 
   for (const [path, childPaths] of folderChildren) {
-    folderChildren.set(path, [...childPaths].sort((left, right) => left.localeCompare(right, 'uk')));
+    folderChildren.set(
+      path,
+      [...childPaths].sort((left, right) => left.localeCompare(right, 'uk')),
+    );
   }
 
   const palitrasByFolder = new Map<string, Palitra[]>();
@@ -184,12 +197,20 @@ export function buildTableRows(args: {
   return rows;
 }
 
-export function getSelectedModifiablePalitras(rows: PalitraRowView[], selectedIds: number[]): Palitra[] {
+export function getSelectedModifiablePalitras(
+  rows: PalitraRowView[],
+  selectedIds: number[],
+): Palitra[] {
   const selectedIdSet = new Set(selectedIds);
-  return rows.filter((row) => selectedIdSet.has(row.id) && row.canSelect && row.canModify).map((row) => row.palitra);
+  return rows
+    .filter((row) => selectedIdSet.has(row.id) && row.canSelect && row.canModify)
+    .map((row) => row.palitra);
 }
 
-export function getSelectedDownloadablePalitras(rows: PalitraRowView[], selectedIds: number[]): Palitra[] {
+export function getSelectedDownloadablePalitras(
+  rows: PalitraRowView[],
+  selectedIds: number[],
+): Palitra[] {
   const selectedIdSet = new Set(selectedIds);
   return rows.filter((row) => selectedIdSet.has(row.id) && row.canSelect).map((row) => row.palitra);
 }

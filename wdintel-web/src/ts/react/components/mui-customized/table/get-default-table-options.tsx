@@ -5,11 +5,18 @@ import { Theme } from '@mui/material';
 import { TextField } from '@mui/material';
 import { TextFieldProps } from '@mui/material/TextField';
 import { TableRowProps } from '@mui/material/TableRow';
-import { MRT_Column, MRT_ColumnDef, MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
+import {
+  MRT_Column,
+  MRT_ColumnDef,
+  MRT_ColumnOrderState,
+  MRT_Row,
+  MRT_RowData,
+  MRT_TableInstance,
+  MRT_TableOptions,
+} from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
 import type { MouseEvent, ReactNode } from 'react';
 import { isNullOrUndefined } from '../../../utils/misc';
-
 
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
@@ -28,7 +35,9 @@ function onSharedSelectFilterMouseDown(event: MouseEvent<HTMLDivElement>) {
     return;
   }
 
-  const selectDisplay = event.currentTarget.querySelector<HTMLElement>('.MuiSelect-select[role="combobox"]');
+  const selectDisplay = event.currentTarget.querySelector<HTMLElement>(
+    '.MuiSelect-select[role="combobox"]',
+  );
   if (!selectDisplay) return;
 
   selectDisplay.dispatchEvent(
@@ -79,12 +88,15 @@ export function renderDefaultMrtEmptyRowsFallback<TData extends MRT_RowData>({
   clearFiltersLabel = 'Очистити фільтри',
   onClearFilters,
 }: MrtEmptyStateProps<TData>) {
-  const hasMrtFilters = Boolean(table.getState().globalFilter) || Boolean(table.getState().columnFilters?.length);
+  const hasMrtFilters =
+    Boolean(table.getState().globalFilter) || Boolean(table.getState().columnFilters?.length);
   const resolvedHasFilters = hasFilters ?? (hasMrtFilters || externalHasFilters || false);
-  const clearFilters = onClearFilters ?? (() => {
-    table.setColumnFilters([]);
-    table.setGlobalFilter('');
-  });
+  const clearFilters =
+    onClearFilters ??
+    (() => {
+      table.setColumnFilters([]);
+      table.setGlobalFilter('');
+    });
 
   return (
     <Box sx={{ py: 6, minHeight: '100%', display: 'flex', flex: 1 }}>
@@ -106,7 +118,11 @@ export function getFilterModeHelperText(filterVariant?: string): string | null {
     return 'Режим фільтрації: Дорівнює';
   }
 
-  if (isNullOrUndefined(filterVariant) || filterVariant === 'text' || filterVariant === 'autocomplete') {
+  if (
+    isNullOrUndefined(filterVariant) ||
+    filterVariant === 'text' ||
+    filterVariant === 'autocomplete'
+  ) {
     return 'Режим фільтрації: Нечіткий';
   }
 
@@ -149,7 +165,11 @@ export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>
       margin="none"
       variant="standard"
       helperText={helperText ?? undefined}
-      value={resolveExplicitSelectFilterValue(column.getFilterValue(), allowedValues, fallbackValue)}
+      value={resolveExplicitSelectFilterValue(
+        column.getFilterValue(),
+        allowedValues,
+        fallbackValue,
+      )}
       onChange={(event) => onChange(column, event.target.value)}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
@@ -259,7 +279,9 @@ export function getSharedSelectAllCheckboxProps<TData extends MRT_RowData>({
   };
 }
 
-export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_TableOptions<TData>> => ({
+export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<
+  MRT_TableOptions<TData>
+> => ({
   layoutMode: 'grid',
   enableStickyHeader: true,
   enableSorting: false,
@@ -271,7 +293,8 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   getRowId: (row) => row.id,
   localization: MRT_Localization_UK,
   positionToolbarAlertBanner: 'bottom',
-  muiFilterTextFieldProps: ({ column }) => getSharedFilterTextFieldProps(column.columnDef.filterVariant),
+  muiFilterTextFieldProps: ({ column }) =>
+    getSharedFilterTextFieldProps(column.columnDef.filterVariant),
   muiSelectAllCheckboxProps: getSharedSelectAllCheckboxProps,
   renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({ table }),
   ...CUSTOM_STYLES,
@@ -308,7 +331,9 @@ export function renderColumnActionsMenuItems({
 }: {
   internalColumnMenuItems: ReactNode[];
 }) {
-  return (internalColumnMenuItems || []).filter((i) => !((i as any).props?.label || '').includes('Показати всі'));
+  return (internalColumnMenuItems || []).filter(
+    (i) => !((i as any).props?.label || '').includes('Показати всі'),
+  );
 }
 
 type UnitSeparatorStyles = {
@@ -347,10 +372,15 @@ export function addUnitSeparatorStyles<T extends Record<string, any>>({
   getUnitId: (row: T) => string | undefined;
   getUnitName: (row: T) => string | undefined;
 } & UnitSeparatorStyles) {
-  return (props: { row: MRT_Row<T>; staticRowIndex: number; table: MRT_TableInstance<T> }): TableRowProps => {
+  return (props: {
+    row: MRT_Row<T>;
+    staticRowIndex: number;
+    table: MRT_TableInstance<T>;
+  }): TableRowProps => {
     if (props.table.getState().sorting?.length) return {};
 
-    const prev = props.staticRowIndex > 0 ? props.table.getRowModel().rows[props.staticRowIndex - 1] : null;
+    const prev =
+      props.staticRowIndex > 0 ? props.table.getRowModel().rows[props.staticRowIndex - 1] : null;
     const differentUnit = prev && getUnitId(props.row.original) !== getUnitId(prev.original);
 
     // якщо ввімкнено "showUnitSeparator" - показуємо назву підрозділу у випадку якщо це перший рядок

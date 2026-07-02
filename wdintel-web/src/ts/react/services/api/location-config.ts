@@ -43,7 +43,10 @@ export async function listAorLocationConfigs(): Promise<ListAorLocationConfigRsp
   };
 }
 
-export async function saveAorLocationConfig(aorId: number, settlementsConfigs: string[]): Promise<AorLocationConfigItem> {
+export async function saveAorLocationConfig(
+  aorId: number,
+  settlementsConfigs: string[],
+): Promise<AorLocationConfigItem> {
   const req: SaveAorLocationConfigReqRaw = {
     aor_id: aorId,
     settlements_configs: settlementsConfigs,

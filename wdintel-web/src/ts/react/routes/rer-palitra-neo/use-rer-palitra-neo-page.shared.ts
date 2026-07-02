@@ -29,7 +29,10 @@ export function updateArchiveViewInUrl(archiveView: ArchiveView) {
   window.history.replaceState({}, '', nextUrl);
 }
 
-export function buildFolderActionStatus(state: FolderActionDialogState, changedIds: number[]): UiStatus {
+export function buildFolderActionStatus(
+  state: FolderActionDialogState,
+  changedIds: number[],
+): UiStatus {
   const summary = buildBulkActionResultSummary(state.preview.requestedIds, changedIds);
   const text = formatFolderActionSuccessMessage(state.kind, summary);
 
@@ -37,7 +40,11 @@ export function buildFolderActionStatus(state: FolderActionDialogState, changedI
     return { kind: 'warning', text };
   }
 
-  if (state.preview.skippedCount > 0 || state.preview.unchangedCount > 0 || summary.skippedCount > 0) {
+  if (
+    state.preview.skippedCount > 0 ||
+    state.preview.unchangedCount > 0 ||
+    summary.skippedCount > 0
+  ) {
     return { kind: 'warning', text };
   }
 

@@ -34,7 +34,14 @@ export const DEFAULT_PALITRA_COLUMN_VISIBILITY: MRT_VisibilityState = {
 };
 
 export const DEFAULT_PALITRA_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['name', 'colorHex', 'sourceFileName', 'lastUploadedAtTs', 'author', 'accessSummary'],
+  dataColumnIds: [
+    'name',
+    'colorHex',
+    'sourceFileName',
+    'lastUploadedAtTs',
+    'author',
+    'accessSummary',
+  ],
   withRowSelection: true,
   withRowNumbers: true,
   withRowActions: true,
@@ -88,7 +95,10 @@ export function PalitraTable({
   onRequestDeleteFolder,
 }: Props) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo(() => buildPalitraTableColumns(onToggleFolderExpanded), [onToggleFolderExpanded]);
+  const columns = useMemo(
+    () => buildPalitraTableColumns(onToggleFolderExpanded),
+    [onToggleFolderExpanded],
+  );
   const columnSizing = useMemo(
     () => ({
       ...tableStateContext.columnSizing,
@@ -100,12 +110,14 @@ export function PalitraTable({
   const rowSelection = useMemo(
     () =>
       rows.reduce<Record<string, boolean>>((acc, row) => {
-        if (row.kind === 'palitra' && selectedPalitraIds.includes(row.id)) acc[String(row.id)] = true;
+        if (row.kind === 'palitra' && selectedPalitraIds.includes(row.id))
+          acc[String(row.id)] = true;
         return acc;
       }, {}),
     [rows, selectedPalitraIds],
   );
-  const hasActiveFilters = tableStateContext.globalFilter.trim() !== '' || tableStateContext.columnFilters.length > 0;
+  const hasActiveFilters =
+    tableStateContext.globalFilter.trim() !== '' || tableStateContext.columnFilters.length > 0;
   const visibleRows = useMemo(
     () => (hasActiveFilters ? rows : rows.filter((row) => !row.hiddenByCollapsedFolder)),
     [hasActiveFilters, rows],
@@ -153,7 +165,11 @@ export function PalitraTable({
     enableSorting: false,
     enableRowNumbers: true,
     enableRowActions: true,
-    enableRowSelection: (row) => row.original.kind === 'palitra' && row.original.canSelect && !bulkDeleteInFlight && !externalBusy,
+    enableRowSelection: (row) =>
+      row.original.kind === 'palitra' &&
+      row.original.canSelect &&
+      !bulkDeleteInFlight &&
+      !externalBusy,
     enableMultiRowSelection: true,
     enableSelectAll: true,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
@@ -169,7 +185,10 @@ export function PalitraTable({
     onRowSelectionChange: (updater) => {
       const nextSelection = resolveUpdater(updater, rowSelection);
       const nextIds = visibleRows
-        .filter((row): row is PalitraRowView => row.kind === 'palitra' && Boolean(nextSelection[String(row.id)]))
+        .filter(
+          (row): row is PalitraRowView =>
+            row.kind === 'palitra' && Boolean(nextSelection[String(row.id)]),
+        )
         .map((row) => row.id);
       onSetSelectedPalitraIds(nextIds);
     },
@@ -192,9 +211,10 @@ export function PalitraTable({
         onRequestArchiveFolder,
         onRequestDeleteFolder,
       }),
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+      }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,
@@ -274,7 +294,10 @@ export function PalitraTable({
           : {}),
         opacity:
           row.original.kind === 'palitra' &&
-          (row.original.archiveInFlight || row.original.deleteInFlight || row.original.downloadInFlight || row.original.uploadInFlight)
+          (row.original.archiveInFlight ||
+            row.original.deleteInFlight ||
+            row.original.downloadInFlight ||
+            row.original.uploadInFlight)
             ? 0.6
             : 1,
       },

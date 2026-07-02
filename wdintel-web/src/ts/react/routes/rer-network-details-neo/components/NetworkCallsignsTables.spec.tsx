@@ -42,7 +42,9 @@ type Rendered = {
 
 type CallsignPanelProps = ComponentProps<typeof NetworkDetailsCallsignsPanel>;
 
-function createNetworkCallsign(overrides: Partial<CallsignPanelProps['networkCallsigns'][number]> = {}) {
+function createNetworkCallsign(
+  overrides: Partial<CallsignPanelProps['networkCallsigns'][number]> = {},
+) {
   return {
     id: 1,
     networkId: 42,
@@ -180,7 +182,10 @@ describe('NetworkDetailsCallsignsPanel', () => {
     expect(childMockState.catalogCallsignsError).toBe('Каталог помилка');
     expect(childMockState.interceptedCallsignsError).toBe('Перехоплення помилка');
 
-    const retryButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Спробувати ще раз')) ?? null;
+    const retryButton =
+      [...view.container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Спробувати ще раз'),
+      ) ?? null;
     expect(retryButton).not.toBeNull();
     act(() => {
       retryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -224,7 +229,10 @@ describe('NetworkDetailsCallsignsPanel', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Activity failed');
-    const retryButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Спробувати ще раз')) ?? null;
+    const retryButton =
+      [...view.container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Спробувати ще раз'),
+      ) ?? null;
     expect(retryButton).not.toBeNull();
     act(() => {
       retryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

@@ -11,10 +11,7 @@ import {
 import { buildListCallsignsReq, formatErrorMessage, nextSortState } from './helpers-core';
 import { callsignToEditForm, makeUpdatePayload, validateEditForm } from './helpers-form';
 import { useRerCallsignsNeoPageAddActions } from './use-rer-callsigns-neo-page.add-actions';
-import {
-  areSidebarFiltersEqual,
-  normalizeCallsign,
-} from './use-rer-callsigns-neo-page.shared';
+import { areSidebarFiltersEqual, normalizeCallsign } from './use-rer-callsigns-neo-page.shared';
 import type {
   CallsignDraftRow,
   CallsignEditForm,
@@ -78,7 +75,12 @@ type Args = {
   setCallsigns: SetState<Callsign[]>;
   setDownloadInProgress: SetState<DownloadKind | null>;
   refreshLookupsAndStats: () => Promise<void>;
-  runListFetch: (args: { append: boolean; afterId: number | null; announceLoading: boolean; preserveLoadedCount?: boolean }) => Promise<void>;
+  runListFetch: (args: {
+    append: boolean;
+    afterId: number | null;
+    announceLoading: boolean;
+    preserveLoadedCount?: boolean;
+  }) => Promise<void>;
 };
 
 export function useRerCallsignsNeoPageActions({
@@ -155,32 +157,43 @@ export function useRerCallsignsNeoPageActions({
     refreshLookupsAndStats,
   });
 
-  const onFiltersChange = useCallback((updater: (prev: CallsignsFilterState) => CallsignsFilterState) => {
-    setFilters((prev) => {
-      const next = updater(prev);
-      if (next.filterUnit.trim() !== prev.filterUnit.trim() && selectedSidebarUnitFilter) {
-        if (selectedSidebarUnitFilter.kind === 'leaf') {
-          if (next.filterUnit.trim() !== selectedSidebarUnitFilter.unitName) {
+  const onFiltersChange = useCallback(
+    (updater: (prev: CallsignsFilterState) => CallsignsFilterState) => {
+      setFilters((prev) => {
+        const next = updater(prev);
+        if (next.filterUnit.trim() !== prev.filterUnit.trim() && selectedSidebarUnitFilter) {
+          if (selectedSidebarUnitFilter.kind === 'leaf') {
+            if (next.filterUnit.trim() !== selectedSidebarUnitFilter.unitName) {
+              setSelectedSidebarUnitFilter(null);
+            }
+          } else if (next.filterUnit.trim() !== '') {
             setSelectedSidebarUnitFilter(null);
           }
-        } else if (next.filterUnit.trim() !== '') {
-          setSelectedSidebarUnitFilter(null);
         }
-      }
-      return next;
-    });
-  }, [selectedSidebarUnitFilter, setFilters, setSelectedSidebarUnitFilter]);
+        return next;
+      });
+    },
+    [selectedSidebarUnitFilter, setFilters, setSelectedSidebarUnitFilter],
+  );
 
-  const onSort = useCallback((column: CallsignsSortState['column'], direction?: CallsignsSortState['direction']) => {
-    setSort((prev) => nextSortState(prev, column, direction));
-  }, [setSort]);
+  const onSort = useCallback(
+    (column: CallsignsSortState['column'], direction?: CallsignsSortState['direction']) => {
+      setSort((prev) => nextSortState(prev, column, direction));
+    },
+    [setSort],
+  );
 
   const onRefresh = useCallback(async () => {
     setStatus(null);
     setRefreshing(true);
     await Promise.all([
       refreshLookupsAndStats(),
-      runListFetch({ append: false, afterId: null, announceLoading: false, preserveLoadedCount: true }),
+      runListFetch({
+        append: false,
+        afterId: null,
+        announceLoading: false,
+        preserveLoadedCount: true,
+      }),
     ]);
   }, [refreshLookupsAndStats, runListFetch, setRefreshing, setStatus]);
 
@@ -199,38 +212,47 @@ export function useRerCallsignsNeoPageActions({
     }));
   }, [setFilters, setSelectedSidebarUnitFilter]);
 
-  const setCallsignSelected = useCallback((callsignId: number, checked: boolean) => {
-    setSelectedCallsignIds((prev) => {
-      if (checked) {
-        if (prev.includes(callsignId)) return prev;
-        return [...prev, callsignId];
-      }
-      return prev.filter((id) => id !== callsignId);
-    });
-  }, [setSelectedCallsignIds]);
+  const setCallsignSelected = useCallback(
+    (callsignId: number, checked: boolean) => {
+      setSelectedCallsignIds((prev) => {
+        if (checked) {
+          if (prev.includes(callsignId)) return prev;
+          return [...prev, callsignId];
+        }
+        return prev.filter((id) => id !== callsignId);
+      });
+    },
+    [setSelectedCallsignIds],
+  );
 
-  const setAllCallsignsSelected = useCallback((callsignIds: number[], checked: boolean) => {
-    if (callsignIds.length === 0) return;
-    setSelectedCallsignIds((prev) => {
-      if (checked) {
-        const selected = new Set(prev);
-        for (const callsignId of callsignIds) selected.add(callsignId);
-        return Array.from(selected);
-      }
-      const toRemove = new Set(callsignIds);
-      return prev.filter((id) => !toRemove.has(id));
-    });
-  }, [setSelectedCallsignIds]);
+  const setAllCallsignsSelected = useCallback(
+    (callsignIds: number[], checked: boolean) => {
+      if (callsignIds.length === 0) return;
+      setSelectedCallsignIds((prev) => {
+        if (checked) {
+          const selected = new Set(prev);
+          for (const callsignId of callsignIds) selected.add(callsignId);
+          return Array.from(selected);
+        }
+        const toRemove = new Set(callsignIds);
+        return prev.filter((id) => !toRemove.has(id));
+      });
+    },
+    [setSelectedCallsignIds],
+  );
 
   const clearSelectedCallsigns = useCallback(() => {
     setSelectedCallsignIds((prev) => (prev.length === 0 ? prev : []));
   }, [setSelectedCallsignIds]);
 
-  const onOpenEdit = useCallback((callsign: Callsign) => {
-    if (!permissions.canEdit) return;
-    setEditValidationError(null);
-    setEditForm(callsignToEditForm(callsign));
-  }, [permissions.canEdit, setEditForm, setEditValidationError]);
+  const onOpenEdit = useCallback(
+    (callsign: Callsign) => {
+      if (!permissions.canEdit) return;
+      setEditValidationError(null);
+      setEditForm(callsignToEditForm(callsign));
+    },
+    [permissions.canEdit, setEditForm, setEditValidationError],
+  );
 
   const onCloseEdit = useCallback(() => {
     if (editSubmitting) return;
@@ -261,13 +283,24 @@ export function useRerCallsignsNeoPageActions({
     } finally {
       setEditSubmitting(false);
     }
-  }, [editForm, refreshLookupsAndStats, setCallsigns, setEditForm, setEditSubmitting, setEditValidationError, setStatus]);
+  }, [
+    editForm,
+    refreshLookupsAndStats,
+    setCallsigns,
+    setEditForm,
+    setEditSubmitting,
+    setEditValidationError,
+    setStatus,
+  ]);
 
-  const onRequestDelete = useCallback((callsign: Callsign) => {
-    if (!permissions.canEdit) return;
-    if (bulkDeleteInFlight || deleteInFlightId !== null) return;
-    setDeleteTarget(callsign);
-  }, [bulkDeleteInFlight, deleteInFlightId, permissions.canEdit, setDeleteTarget]);
+  const onRequestDelete = useCallback(
+    (callsign: Callsign) => {
+      if (!permissions.canEdit) return;
+      if (bulkDeleteInFlight || deleteInFlightId !== null) return;
+      setDeleteTarget(callsign);
+    },
+    [bulkDeleteInFlight, deleteInFlightId, permissions.canEdit, setDeleteTarget],
+  );
 
   const onCancelDelete = useCallback(() => {
     if (deleteSubmitting || bulkDeleteInFlight || deleteInFlightId !== null) return;
@@ -288,24 +321,47 @@ export function useRerCallsignsNeoPageActions({
       setStatus({ kind: 'success', text: 'Позивний видалено' });
       await refreshLookupsAndStats();
     } catch (error) {
-      setStatus({ kind: 'error', text: `Помилка видалення позивного: ${formatErrorMessage(error)}` });
+      setStatus({
+        kind: 'error',
+        text: `Помилка видалення позивного: ${formatErrorMessage(error)}`,
+      });
     } finally {
       setDeleteSubmitting(false);
       setDeleteInFlightId(null);
     }
-  }, [deleteTarget, refreshLookupsAndStats, setCallsigns, setDeleteInFlightId, setDeleteSubmitting, setDeleteTarget, setSelectedCallsignIds, setStatus]);
+  }, [
+    deleteTarget,
+    refreshLookupsAndStats,
+    setCallsigns,
+    setDeleteInFlightId,
+    setDeleteSubmitting,
+    setDeleteTarget,
+    setSelectedCallsignIds,
+    setStatus,
+  ]);
 
   const requestBulkDelete = useCallback(() => {
     if (!permissions.canEdit) return;
     if (bulkDeleteInFlight || deleteInFlightId !== null || deleteTarget !== null) return;
 
     const selectedSet = new Set(selectedCallsignIds);
-    const selected = callsigns.filter((callsign) => selectedSet.has(callsign.id) && deleteInFlightId !== callsign.id);
+    const selected = callsigns.filter(
+      (callsign) => selectedSet.has(callsign.id) && deleteInFlightId !== callsign.id,
+    );
     if (selected.length === 0) return;
 
     setBulkDeleteDialogCallsigns(selected);
     setBulkDeleteDialogOpen(true);
-  }, [bulkDeleteInFlight, callsigns, deleteInFlightId, deleteTarget, permissions.canEdit, selectedCallsignIds, setBulkDeleteDialogCallsigns, setBulkDeleteDialogOpen]);
+  }, [
+    bulkDeleteInFlight,
+    callsigns,
+    deleteInFlightId,
+    deleteTarget,
+    permissions.canEdit,
+    selectedCallsignIds,
+    setBulkDeleteDialogCallsigns,
+    setBulkDeleteDialogOpen,
+  ]);
 
   const cancelBulkDelete = useCallback(() => {
     if (bulkDeleteInFlight || deleteInFlightId !== null) return;
@@ -350,31 +406,53 @@ export function useRerCallsignsNeoPageActions({
       setBulkDeleteInFlight(false);
       setBulkDeleteDialogCallsigns([]);
     }
-  }, [bulkDeleteDialogCallsigns, bulkDeleteInFlight, deleteInFlightId, refreshLookupsAndStats, setBulkDeleteDialogCallsigns, setBulkDeleteInFlight, setBulkDeleteDialogOpen, setCallsigns, setDeleteInFlightId, setSelectedCallsignIds, setStatus]);
+  }, [
+    bulkDeleteDialogCallsigns,
+    bulkDeleteInFlight,
+    deleteInFlightId,
+    refreshLookupsAndStats,
+    setBulkDeleteDialogCallsigns,
+    setBulkDeleteInFlight,
+    setBulkDeleteDialogOpen,
+    setCallsigns,
+    setDeleteInFlightId,
+    setSelectedCallsignIds,
+    setStatus,
+  ]);
 
   const onBulkDeleteDialogExited = useCallback(() => {
     if (bulkDeleteDialogOpen || bulkDeleteInFlight) return;
     setBulkDeleteDialogCallsigns([]);
   }, [bulkDeleteDialogOpen, bulkDeleteInFlight, setBulkDeleteDialogCallsigns]);
 
-  const onDownload = useCallback(async (kind: DownloadKind) => {
-    setStatus(null);
-    setDownloadInProgress(kind);
-    try {
-      const req = buildListCallsignsReq({
-        filters,
-        sort,
-        query: { afterId: null, limit: null },
-        sidebarUnitHierarchyFilter: selectedSidebarUnitFilter?.kind === 'group' ? selectedSidebarUnitFilter.hierarchy : null,
-      });
-      const blob = kind === 'csv' ? await downloadCallsignsCsv(req) : await downloadCallsignsXlsx(req);
-      downloadBlob(blob, kind === 'csv' ? 'callsigns.csv' : 'callsigns.xlsx');
-    } catch (error) {
-      setStatus({ kind: 'error', text: `Помилка завантаження ${kind.toUpperCase()}: ${formatErrorMessage(error)}` });
-    } finally {
-      setDownloadInProgress(null);
-    }
-  }, [filters, selectedSidebarUnitFilter, setDownloadInProgress, setStatus, sort]);
+  const onDownload = useCallback(
+    async (kind: DownloadKind) => {
+      setStatus(null);
+      setDownloadInProgress(kind);
+      try {
+        const req = buildListCallsignsReq({
+          filters,
+          sort,
+          query: { afterId: null, limit: null },
+          sidebarUnitHierarchyFilter:
+            selectedSidebarUnitFilter?.kind === 'group'
+              ? selectedSidebarUnitFilter.hierarchy
+              : null,
+        });
+        const blob =
+          kind === 'csv' ? await downloadCallsignsCsv(req) : await downloadCallsignsXlsx(req);
+        downloadBlob(blob, kind === 'csv' ? 'callsigns.csv' : 'callsigns.xlsx');
+      } catch (error) {
+        setStatus({
+          kind: 'error',
+          text: `Помилка завантаження ${kind.toUpperCase()}: ${formatErrorMessage(error)}`,
+        });
+      } finally {
+        setDownloadInProgress(null);
+      }
+    },
+    [filters, selectedSidebarUnitFilter, setDownloadInProgress, setStatus, sort],
+  );
 
   const onLoadMore = useCallback(async () => {
     if (loadingMore || !showLoadMore || callsigns.length === 0) return;
@@ -383,16 +461,19 @@ export function useRerCallsignsNeoPageActions({
     await runListFetch({ append: true, afterId: last.id, announceLoading: true });
   }, [callsigns, loadingMore, runListFetch, showLoadMore]);
 
-  const onPickUnitFilter = useCallback((filter: SelectedSidebarUnitFilter) => {
-    setSelectedSidebarUnitFilter((prevSelected) => {
-      const nextSelected = areSidebarFiltersEqual(prevSelected, filter) ? null : filter;
-      setFilters((prev) => ({
-        ...prev,
-        filterUnit: nextSelected?.kind === 'leaf' ? nextSelected.unitName : '',
-      }));
-      return nextSelected;
-    });
-  }, [setFilters, setSelectedSidebarUnitFilter]);
+  const onPickUnitFilter = useCallback(
+    (filter: SelectedSidebarUnitFilter) => {
+      setSelectedSidebarUnitFilter((prevSelected) => {
+        const nextSelected = areSidebarFiltersEqual(prevSelected, filter) ? null : filter;
+        setFilters((prev) => ({
+          ...prev,
+          filterUnit: nextSelected?.kind === 'leaf' ? nextSelected.unitName : '',
+        }));
+        return nextSelected;
+      });
+    },
+    [setFilters, setSelectedSidebarUnitFilter],
+  );
 
   const onClearUnitFilter = useCallback(() => {
     setSelectedSidebarUnitFilter(null);

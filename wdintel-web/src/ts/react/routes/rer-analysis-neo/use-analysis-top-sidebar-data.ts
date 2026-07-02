@@ -21,7 +21,12 @@ type Params = {
   queryState: AnalysisQueryState;
 };
 
-export function useAnalysisTopSidebarData({ onError, onUnauthorized, optionsFreqValues, queryState }: Params) {
+export function useAnalysisTopSidebarData({
+  onError,
+  onUnauthorized,
+  optionsFreqValues,
+  queryState,
+}: Params) {
   const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
   const [topFreqs, setTopFreqs] = useState<AnalysisCountItem[]>([]);
   const [topCallsigns, setTopCallsigns] = useState<AnalysisCountItem[]>([]);
@@ -79,15 +84,39 @@ export function useAnalysisTopSidebarData({ onError, onUnauthorized, optionsFreq
         fetchAnalysisLocations(analysisReq, { signal: abortController.signal }),
       ]);
       if (requestId !== rightSidebarRequestRef.current || abortController.signal.aborted) return;
-      setTopCallsigns(topItems(callsignsRsp.callsigns, (item) => item.callsign, (item) => item.count));
-      setTopUnits(topItems(unitsRsp.units, (item) => item.unit, (item) => item.count));
-      setTopLocations(topItems(locationsRsp.locations, (item) => item.location, (item) => item.count));
+      setTopCallsigns(
+        topItems(
+          callsignsRsp.callsigns,
+          (item) => item.callsign,
+          (item) => item.count,
+        ),
+      );
+      setTopUnits(
+        topItems(
+          unitsRsp.units,
+          (item) => item.unit,
+          (item) => item.count,
+        ),
+      );
+      setTopLocations(
+        topItems(
+          locationsRsp.locations,
+          (item) => item.location,
+          (item) => item.count,
+        ),
+      );
     } catch (loadError) {
-      if (requestId !== rightSidebarRequestRef.current || abortController.signal.aborted || isAbortError(loadError)) return;
+      if (
+        requestId !== rightSidebarRequestRef.current ||
+        abortController.signal.aborted ||
+        isAbortError(loadError)
+      )
+        return;
       rightSidebarRequestKeyRef.current = null;
       if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
     } finally {
-      if (requestId === rightSidebarRequestRef.current && !abortController.signal.aborted) setRightSidebarLoading(false);
+      if (requestId === rightSidebarRequestRef.current && !abortController.signal.aborted)
+        setRightSidebarLoading(false);
       if (rightSidebarAbortControllerRef.current === abortController) {
         rightSidebarAbortControllerRef.current = null;
       }

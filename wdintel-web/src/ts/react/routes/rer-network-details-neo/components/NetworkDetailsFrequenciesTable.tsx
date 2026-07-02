@@ -24,7 +24,10 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
-import { renderMrtCellWithFallback, renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
+import {
+  renderMrtCellWithFallback,
+  renderMrtCellTextValue,
+} from '../../../components/mui-customized/table/mrt-cell-text';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { PowerChip } from '../../../components/PowerChip';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
@@ -35,9 +38,7 @@ import {
   sortNetworkFreqRowsByTableOrder,
   type NetworkFreqTableRow,
 } from '../frequency-utils';
-import {
-  buildNetworkColumnOrder,
-} from './NetworkCallsignsTableShared';
+import { buildNetworkColumnOrder } from './NetworkCallsignsTableShared';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkFreqTableRow>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -55,7 +56,8 @@ const DEFAULT_COLUMNS_VISIBILITY = {
 const COMPACT_LOADED_ROW_LIMIT = 8;
 const STATUS_FILTER_COLUMN_ID = 'status';
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+const resolvedPaperProps =
+  typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 type StatusFilterValue = 'Усі' | 'active' | 'inactive';
 
 function getRowIsActive(row: NetworkFreqTableRow): boolean {
@@ -64,7 +66,9 @@ function getRowIsActive(row: NetworkFreqTableRow): boolean {
 
 function resolveStatusFilterValue(columnFilters: MRT_ColumnFiltersState): StatusFilterValue {
   const statusFilter = columnFilters.find((filter) => filter.id === STATUS_FILTER_COLUMN_ID);
-  return statusFilter?.value === 'active' || statusFilter?.value === 'inactive' ? statusFilter.value : 'Усі';
+  return statusFilter?.value === 'active' || statusFilter?.value === 'inactive'
+    ? statusFilter.value
+    : 'Усі';
 }
 
 function renderFrequencyStatusIndicator(isActive: boolean) {
@@ -104,7 +108,12 @@ function renderCategoryChip(label: string) {
 
 function renderFrequencyCell(row: NetworkFreqTableRow) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{ minWidth: 0, pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0 }}
+    >
       {renderFrequencyStatusIndicator(getRowIsActive(row))}
       <Typography variant="body2" fontWeight={600} noWrap title={row.displayFreq}>
         {row.displayFreq}
@@ -218,7 +227,11 @@ function buildColumns(
       id: 'messageCount',
       size: 110,
       enableSorting: true,
-      Cell: ({ row }) => <Typography variant="body2" fontWeight={700}>{getRowMessageCount(row.original)}</Typography>,
+      Cell: ({ row }) => (
+        <Typography variant="body2" fontWeight={700}>
+          {getRowMessageCount(row.original)}
+        </Typography>
+      ),
     },
     {
       header: 'Позивні',
@@ -228,7 +241,8 @@ function buildColumns(
       enableSorting: false,
       Cell: ({ row }) => {
         const label = getRowCallsignLabel(row.original);
-        const freqIds = row.original.kind === 'group' ? row.original.freqIds : [row.original.freq.networkFreqId];
+        const freqIds =
+          row.original.kind === 'group' ? row.original.freqIds : [row.original.freq.networkFreqId];
         const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
         if (freqCallsignsStatus === 'loading' && !isLoaded) {
           return <CircularProgress size={14} />;
@@ -244,7 +258,11 @@ function buildColumns(
             </Tooltip>
           );
         }
-        return renderMrtCellTextValue(label, { title: label, sx: { maxWidth: '100%' }, noWrap: true });
+        return renderMrtCellTextValue(label, {
+          title: label,
+          sx: { maxWidth: '100%' },
+          noWrap: true,
+        });
       },
     },
     {
@@ -286,27 +304,49 @@ function NetworkDetailsFrequenciesTableContent({
   onReloadFrequencies,
 }: NetworkDetailsFrequenciesTableProps) {
   const tableStateContext = useTableStateContext();
-  const encryptionsById = useMemo(() => new Map(encryptions.map((enc) => [enc.id, enc.name])), [encryptions]);
+  const encryptionsById = useMemo(
+    () => new Map(encryptions.map((enc) => [enc.id, enc.name])),
+    [encryptions],
+  );
   const statusFilterValue = resolveStatusFilterValue(tableStateContext.columnFilters);
   const rows = useMemo(() => {
     const filteredFreqs =
       statusFilterValue === 'Усі'
         ? freqs
         : freqs.filter((freq) => (statusFilterValue === 'active' ? freq.isActive : !freq.isActive));
-    const groupedRows = buildNetworkFreqRows(filteredFreqs, encryptionsById, freqCallsignsById, expandedFrequencyGroupIds);
-    return sortNetworkFreqRowsByTableOrder(groupedRows, tableStateContext.sorting, statusFilterValue);
-  }, [expandedFrequencyGroupIds, freqs, freqCallsignsById, encryptionsById, statusFilterValue, tableStateContext.sorting]);
+    const groupedRows = buildNetworkFreqRows(
+      filteredFreqs,
+      encryptionsById,
+      freqCallsignsById,
+      expandedFrequencyGroupIds,
+    );
+    return sortNetworkFreqRowsByTableOrder(
+      groupedRows,
+      tableStateContext.sorting,
+      statusFilterValue,
+    );
+  }, [
+    expandedFrequencyGroupIds,
+    freqs,
+    freqCallsignsById,
+    encryptionsById,
+    statusFilterValue,
+    tableStateContext.sorting,
+  ]);
   const loadingRows = useMemo(() => buildLoadingRows(), []);
   const isInitialLoading = loading || (freqsLoading && !freqsLoaded);
   const isCompactLoadedLayout = !isInitialLoading && rows.length <= COMPACT_LOADED_ROW_LIMIT;
-  const hasActiveFilters = tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
+  const hasActiveFilters =
+    tableStateContext.columnFilters.length > 0 || Boolean(tableStateContext.globalFilter);
   void onOpenFreqRowActions;
   void onCloseFreqRowActions;
   void freqRowActionMenuAnchorEl;
   void freqRowActionTargetId;
 
   function onStatusFilterChange(nextStatusFilterValue: StatusFilterValue) {
-    const nextFilters = tableStateContext.columnFilters.filter((filter) => filter.id !== STATUS_FILTER_COLUMN_ID);
+    const nextFilters = tableStateContext.columnFilters.filter(
+      (filter) => filter.id !== STATUS_FILTER_COLUMN_ID,
+    );
 
     if (nextStatusFilterValue !== 'Усі') {
       nextFilters.push({ id: STATUS_FILTER_COLUMN_ID, value: nextStatusFilterValue });
@@ -317,9 +357,39 @@ function NetworkDetailsFrequenciesTableContent({
 
   const statusFilterChips = (
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      <PowerChip label="Усі" selected={statusFilterValue === 'Усі'} onClick={() => onStatusFilterChange('Усі')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
-      <PowerChip label="Активні" selected={statusFilterValue === 'active'} onClick={() => onStatusFilterChange('active')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
-      <PowerChip label="Неактивні" selected={statusFilterValue === 'inactive'} onClick={() => onStatusFilterChange('inactive')} interactive fontSize="0.75rem" fontWeight={600} labelPaddingX={0.85} labelPaddingY={0.1} sx={{ height: 28, lineHeight: 1 }} />
+      <PowerChip
+        label="Усі"
+        selected={statusFilterValue === 'Усі'}
+        onClick={() => onStatusFilterChange('Усі')}
+        interactive
+        fontSize="0.75rem"
+        fontWeight={600}
+        labelPaddingX={0.85}
+        labelPaddingY={0.1}
+        sx={{ height: 28, lineHeight: 1 }}
+      />
+      <PowerChip
+        label="Активні"
+        selected={statusFilterValue === 'active'}
+        onClick={() => onStatusFilterChange('active')}
+        interactive
+        fontSize="0.75rem"
+        fontWeight={600}
+        labelPaddingX={0.85}
+        labelPaddingY={0.1}
+        sx={{ height: 28, lineHeight: 1 }}
+      />
+      <PowerChip
+        label="Неактивні"
+        selected={statusFilterValue === 'inactive'}
+        onClick={() => onStatusFilterChange('inactive')}
+        interactive
+        fontSize="0.75rem"
+        fontWeight={600}
+        labelPaddingX={0.85}
+        labelPaddingY={0.1}
+        sx={{ height: 28, lineHeight: 1 }}
+      />
     </Stack>
   );
 
@@ -367,7 +437,13 @@ function NetworkDetailsFrequenciesTableContent({
             <MrtRowActionButton
               label={isExpanded ? 'Згорнути групу частот' : 'Розгорнути групу частот'}
               onClick={() => onToggleFrequencyGroupExpanded(groupRow.groupId)}
-              icon={isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+              icon={
+                isExpanded ? (
+                  <ExpandMoreIcon fontSize="small" />
+                ) : (
+                  <ChevronRightIcon fontSize="small" />
+                )
+              }
             />
           </Box>
         );
@@ -376,8 +452,19 @@ function NetworkDetailsFrequenciesTableContent({
       const freqRow = row.original.freq;
       return (
         <MrtRowActions>
-          <MrtRowActionButton label="Редагувати частоту" onClick={() => onOpenFreqEditDrawer(freqRow)} icon={<EditIcon fontSize="small" />} opensModal />
-          <MrtRowActionButton label="Видалити" onClick={() => onOpenDeleteFreqDialog(freqRow)} icon={<DeleteIcon fontSize="small" />} tone="danger" opensModal />
+          <MrtRowActionButton
+            label="Редагувати частоту"
+            onClick={() => onOpenFreqEditDrawer(freqRow)}
+            icon={<EditIcon fontSize="small" />}
+            opensModal
+          />
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onOpenDeleteFreqDialog(freqRow)}
+            icon={<DeleteIcon fontSize="small" />}
+            tone="danger"
+            opensModal
+          />
         </MrtRowActions>
       );
     },
@@ -405,7 +492,11 @@ function NetworkDetailsFrequenciesTableContent({
         height: isCompactLoadedLayout ? 'auto' : '100%',
         minHeight: isCompactLoadedLayout ? 'auto' : 0,
         minWidth: 0,
-        overflow: table.getState().isFullScreen ? 'auto' : isCompactLoadedLayout ? 'visible' : 'hidden',
+        overflow: table.getState().isFullScreen
+          ? 'auto'
+          : isCompactLoadedLayout
+            ? 'visible'
+            : 'hidden',
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 0,
@@ -419,8 +510,22 @@ function NetworkDetailsFrequenciesTableContent({
     muiTableContainerProps: ({ table }) => ({
       sx: {
         ...(isCompactLoadedLayout
-          ? { flex: '0 0 auto', minHeight: 0, height: 'auto', maxHeight: 'none', overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' }
-          : getPageScrollTableContainerSx({ loading: freqsLoading, height: '100%', minHeight: 0, maxHeight: table.getState().isFullScreen ? '100%' : 'none', idleOverflow: 'auto' })),
+          ? {
+              flex: '0 0 auto',
+              minHeight: 0,
+              height: 'auto',
+              maxHeight: 'none',
+              overflowX: 'auto',
+              overflowY: 'visible',
+              WebkitOverflowScrolling: 'touch',
+            }
+          : getPageScrollTableContainerSx({
+              loading: freqsLoading,
+              height: '100%',
+              minHeight: 0,
+              maxHeight: table.getState().isFullScreen ? '100%' : 'none',
+              idleOverflow: 'auto',
+            })),
         width: '100%',
         maxWidth: '100%',
         minWidth: 0,
@@ -451,7 +556,14 @@ function NetworkDetailsFrequenciesTableContent({
       density: 'comfortable',
       sorting: DEFAULT_NETWORK_FREQ_SORTING,
       columnOrder: buildNetworkColumnOrder({
-        dataColumnIds: ['displayFreq', 'typeLabel', 'encryptionLabel', 'messageCount', 'callsignLabel', 'lastDatetime'],
+        dataColumnIds: [
+          'displayFreq',
+          'typeLabel',
+          'encryptionLabel',
+          'messageCount',
+          'callsignLabel',
+          'lastDatetime',
+        ],
       }),
       columnVisibility: DEFAULT_COLUMNS_VISIBILITY,
     },
@@ -463,27 +575,100 @@ function NetworkDetailsFrequenciesTableContent({
   }, [table, tableStateContext]);
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', width: '100%' }}>
+    <Box
+      sx={{
+        minHeight: 0,
+        minWidth: 0,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        width: '100%',
+      }}
+    >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, px: 0, pt: 0, mb: 1.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, width: '100%', minWidth: 0 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            width: '100%',
+            minWidth: 0,
+          }}
+        >
           <Typography variant="h6">Частоти</Typography>
-          {canManage ? <Button variant="contained" onClick={onOpenFreqCreateWizard} disabled={!network || freqsLoading}>Додати</Button> : null}
+          {canManage ? (
+            <Button
+              variant="contained"
+              onClick={onOpenFreqCreateWizard}
+              disabled={!network || freqsLoading}
+            >
+              Додати
+            </Button>
+          ) : null}
         </Box>
         {freqsError ? (
-          <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Typography variant="body2" color="error">{freqsError}</Typography>
-            <Button size="small" onClick={() => onReloadFrequencies()} disabled={freqsLoading}>Спробувати ще раз</Button>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            useFlexGap
+            sx={{ flexWrap: 'wrap' }}
+          >
+            <Typography variant="body2" color="error">
+              {freqsError}
+            </Typography>
+            <Button size="small" onClick={() => onReloadFrequencies()} disabled={freqsLoading}>
+              Спробувати ще раз
+            </Button>
           </Stack>
         ) : null}
       </Box>
 
-      <Stack spacing={1.25} sx={{ minHeight: 0, minWidth: 0, flex: isCompactLoadedLayout ? '0 0 auto' : 1, width: '100%' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, width: '100%', minWidth: 0 }}>
+      <Stack
+        spacing={1.25}
+        sx={{
+          minHeight: 0,
+          minWidth: 0,
+          flex: isCompactLoadedLayout ? '0 0 auto' : 1,
+          width: '100%',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            width: '100%',
+            minWidth: 0,
+          }}
+        >
           <Box sx={{ minWidth: 0 }}>{statusFilterChips}</Box>
-          <Box sx={{ flexShrink: 0 }}><InternalTableActions table={table} rowNumberAppearanceControl /></Box>
+          <Box sx={{ flexShrink: 0 }}>
+            <InternalTableActions table={table} rowNumberAppearanceControl />
+          </Box>
         </Box>
-        <Box sx={{ flex: isCompactLoadedLayout ? '0 0 auto' : 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%', overflowX: 'auto' }}>
-          <Box sx={{ flex: isCompactLoadedLayout ? '0 0 auto' : 1, minHeight: 0, minWidth: 0, display: 'flex', width: '100%' }}>
+        <Box
+          sx={{
+            flex: isCompactLoadedLayout ? '0 0 auto' : 1,
+            minHeight: 0,
+            minWidth: 0,
+            display: 'flex',
+            width: '100%',
+            overflowX: 'auto',
+          }}
+        >
+          <Box
+            sx={{
+              flex: isCompactLoadedLayout ? '0 0 auto' : 1,
+              minHeight: 0,
+              minWidth: 0,
+              display: 'flex',
+              width: '100%',
+            }}
+          >
             <MaterialReactTable table={table} />
           </Box>
         </Box>

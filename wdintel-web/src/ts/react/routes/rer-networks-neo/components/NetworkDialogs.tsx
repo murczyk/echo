@@ -121,16 +121,36 @@ export function NetworkDialogs({ page }: Props) {
         launchWarningText={getEtalonkaLaunchWarning(page.reportTargetRequest)}
         onClose={page.closeReportDialog}
         onDownload={() => void page.downloadEtalonkaReport()}
-        onSetProgressExpanded={(expanded) => page.setEtalonkaReport((current) => ({ ...current, progressExpanded: expanded }))}
-        onTypeChange={(reportType) => page.setEtalonkaReport((current) => ({ ...current, reportType }))}
-        onActiveFreqsOnlyChange={(activeFreqsOnly) => page.setEtalonkaReport((current) => ({ ...current, activeFreqsOnly }))}
-        onIncludeSigintSignsChange={(includeSigintSigns) => page.setEtalonkaReport((current) => ({ ...current, includeSigintSigns }))}
-        onIncludeConfirmationChange={(includeConfirmation) => page.setEtalonkaReport((current) => ({ ...current, includeConfirmation }))}
-        onIncludeHeadingsAndFreqsChange={(includeHeadingsAndFreqs) => page.setEtalonkaReport((current) => ({ ...current, includeHeadingsAndFreqs }))}
-        onIncludeUnitCallsignsChange={(includeUnitCallsigns) => page.setEtalonkaReport((current) => ({ ...current, includeUnitCallsigns }))}
-        onIncludePelengsMapChange={(includePelengsMap) => page.setEtalonkaReport((current) => ({ ...current, includePelengsMap }))}
-        onFromDateTimeStrChange={(fromDateTimeStr) => page.setEtalonkaReport((current) => ({ ...current, fromDateTimeStr }))}
-        onToDateTimeStrChange={(toDateTimeStr) => page.setEtalonkaReport((current) => ({ ...current, toDateTimeStr }))}
+        onSetProgressExpanded={(expanded) =>
+          page.setEtalonkaReport((current) => ({ ...current, progressExpanded: expanded }))
+        }
+        onTypeChange={(reportType) =>
+          page.setEtalonkaReport((current) => ({ ...current, reportType }))
+        }
+        onActiveFreqsOnlyChange={(activeFreqsOnly) =>
+          page.setEtalonkaReport((current) => ({ ...current, activeFreqsOnly }))
+        }
+        onIncludeSigintSignsChange={(includeSigintSigns) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeSigintSigns }))
+        }
+        onIncludeConfirmationChange={(includeConfirmation) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeConfirmation }))
+        }
+        onIncludeHeadingsAndFreqsChange={(includeHeadingsAndFreqs) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeHeadingsAndFreqs }))
+        }
+        onIncludeUnitCallsignsChange={(includeUnitCallsigns) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeUnitCallsigns }))
+        }
+        onIncludePelengsMapChange={(includePelengsMap) =>
+          page.setEtalonkaReport((current) => ({ ...current, includePelengsMap }))
+        }
+        onFromDateTimeStrChange={(fromDateTimeStr) =>
+          page.setEtalonkaReport((current) => ({ ...current, fromDateTimeStr }))
+        }
+        onToDateTimeStrChange={(toDateTimeStr) =>
+          page.setEtalonkaReport((current) => ({ ...current, toDateTimeStr }))
+        }
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 
@@ -140,7 +160,12 @@ export function NetworkDialogs({ page }: Props) {
         form={page.createDialog}
         saving={page.createSubmitting}
         error={page.createError}
-        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.encryptions.length === 0}
+        referenceLoading={
+          page.loading &&
+          page.unitOptions.length === 0 &&
+          page.postOptions.length === 0 &&
+          page.encryptions.length === 0
+        }
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}
@@ -158,7 +183,12 @@ export function NetworkDialogs({ page }: Props) {
         form={page.editDialog}
         saving={page.editSubmitting}
         error={page.editError}
-        referenceLoading={page.loading && page.unitOptions.length === 0 && page.postOptions.length === 0 && page.encryptions.length === 0}
+        referenceLoading={
+          page.loading &&
+          page.unitOptions.length === 0 &&
+          page.postOptions.length === 0 &&
+          page.encryptions.length === 0
+        }
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
         unitOptions={page.unitOptions}
         postOptions={page.postOptions}

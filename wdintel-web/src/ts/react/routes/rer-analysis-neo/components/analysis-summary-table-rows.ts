@@ -78,7 +78,9 @@ export function buildAnalysisSummaryTableRows(params: {
         callsignInfoMap: params.callsignInfoMap,
       }),
       unitLabels: [
-        ...linkedNetworks.map((network) => params.networkDisplayMap[network.id] ?? `р/м ${network.name}`),
+        ...linkedNetworks.map(
+          (network) => params.networkDisplayMap[network.id] ?? `р/м ${network.name}`,
+        ),
         ...row.units,
       ],
       editableUnits: row.units,

@@ -24,7 +24,8 @@ import { useNetworksTableColumns } from './NetworksTableColumns';
 
 const defaultMrtOptions = getDefaultMRTOptions<NetworkRowView>();
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+const resolvedPaperProps =
+  typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
 type Props = {
   rows: NetworkRowView[];
@@ -79,7 +80,10 @@ export function NetworksTable({
     onLocationHoverEnter,
     onLocationHoverLeave,
   });
-  const safeColumnFilters = useMemo(() => sanitizeNetworkColumnFilters(tableStateContext.columnFilters), [tableStateContext.columnFilters]);
+  const safeColumnFilters = useMemo(
+    () => sanitizeNetworkColumnFilters(tableStateContext.columnFilters),
+    [tableStateContext.columnFilters],
+  );
   const isInitialLoading = loading && rows.length === 0;
   const isEmptyResult = !isInitialLoading && rows.length === 0;
   const showLoadMore = !isInitialLoading && !noMoreToLoad;
@@ -156,7 +160,11 @@ export function NetworksTable({
           height: isInitialLoading || isEmptyResult ? '100%' : 'auto',
           minHeight: isInitialLoading || isEmptyResult ? '100%' : 0,
           minWidth: 0,
-          overflow: table.getState().isFullScreen ? 'auto' : showTableOverlay || isEmptyResult ? 'hidden' : 'auto',
+          overflow: table.getState().isFullScreen
+            ? 'auto'
+            : showTableOverlay || isEmptyResult
+              ? 'hidden'
+              : 'auto',
           border: 0,
           borderRadius: 0,
           boxShadow: 'none',
@@ -243,11 +251,31 @@ export function NetworksTable({
       }}
       onPointerMoveCapture={onPointerMoveCapture}
     >
-      <SectionLoadingOverlay open={showTableOverlay} ariaLabel={isInitialLoading ? 'Завантаження мереж' : 'Оновлення мереж'} showSpinner={!isInitialLoading} />
-      <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <SectionLoadingOverlay
+        open={showTableOverlay}
+        ariaLabel={isInitialLoading ? 'Завантаження мереж' : 'Оновлення мереж'}
+        showSpinner={!isInitialLoading}
+      />
+      <Box
+        sx={{
+          position: 'relative',
+          minHeight: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <MaterialReactTable table={table} />
         {showLoadMore ? (
-          <Box sx={{ borderTop: '1px solid', borderColor: 'var(--bs-border-color)', display: 'flex', justifyContent: 'center', p: '10px' }}>
+          <Box
+            sx={{
+              borderTop: '1px solid',
+              borderColor: 'var(--bs-border-color)',
+              display: 'flex',
+              justifyContent: 'center',
+              p: '10px',
+            }}
+          >
             <Button
               variant="outlined"
               onClick={() => void onLoadMoreNetworks()}

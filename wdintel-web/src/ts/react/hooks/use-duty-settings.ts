@@ -23,7 +23,9 @@ export type DutySettingsHook = DutySettingsValue & {
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
-function normalizeDutySettings(settings: Partial<DutySettingsValue> | null | undefined): DutySettingsValue {
+function normalizeDutySettings(
+  settings: Partial<DutySettingsValue> | null | undefined,
+): DutySettingsValue {
   return {
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
     disableAutoScroll: settings?.disableAutoScroll ?? false,
@@ -96,9 +98,12 @@ export function useDutySettings(): DutySettingsHook {
           const normalized = normalizeDutySettings(savedSettings);
           applySettings(normalized);
           setSaveError(null);
-          window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: normalized }));
+          window.dispatchEvent(
+            new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: normalized }),
+          );
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Помилка збереження налаштувань.';
+          const message =
+            error instanceof Error ? error.message : 'Помилка збереження налаштувань.';
           setSaveError(`Помилка збереження: ${message}`);
           break;
         }
@@ -112,11 +117,14 @@ export function useDutySettings(): DutySettingsHook {
     }
   }, [applySettings]);
 
-  const scheduleSave = useCallback((nextSettings: DutySettingsSaveRequest) => {
-    setSaveError(null);
-    pendingSaveRef.current = nextSettings;
-    void flushSaveQueue();
-  }, [flushSaveQueue]);
+  const scheduleSave = useCallback(
+    (nextSettings: DutySettingsSaveRequest) => {
+      setSaveError(null);
+      pendingSaveRef.current = nextSettings;
+      void flushSaveQueue();
+    },
+    [flushSaveQueue],
+  );
 
   return {
     ...settings,
@@ -125,8 +133,10 @@ export function useDutySettings(): DutySettingsHook {
     saveError,
     saveInProgress,
     setTagsLayout: (value) => setSettings((current) => ({ ...current, tagsLayout: value })),
-    setDisableAutoScroll: (value) => setSettings((current) => ({ ...current, disableAutoScroll: value })),
-    setAnalysisMapInSidebar: (value) => setSettings((current) => ({ ...current, analysisMapInSidebar: value })),
+    setDisableAutoScroll: (value) =>
+      setSettings((current) => ({ ...current, disableAutoScroll: value })),
+    setAnalysisMapInSidebar: (value) =>
+      setSettings((current) => ({ ...current, analysisMapInSidebar: value })),
     scheduleSave,
   };
 }

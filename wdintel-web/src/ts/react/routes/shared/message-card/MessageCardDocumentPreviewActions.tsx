@@ -76,9 +76,7 @@ export function MessageCardDocumentPreviewControls({
         aria-label="Масштаб"
         className="[&_.MuiSlider-thumb::before]:shadow-md [&_.MuiSlider-thumb::before]:shadow-black/40 hover:[&_.MuiSlider-thumb]:ring-8 hover:[&_.MuiSlider-thumb]:ring-white/15 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-8 [&_.MuiSlider-thumb.Mui-focusVisible]:ring-white/15"
         onChange={(_, value) => {
-          const nextZoom = Array.isArray(value)
-            ? (value[0] ?? DOCUMENT_PREVIEW_ZOOM_MIN)
-            : value;
+          const nextZoom = Array.isArray(value) ? (value[0] ?? DOCUMENT_PREVIEW_ZOOM_MIN) : value;
           onSetPreviewZoom(nextZoom);
         }}
         sx={{
@@ -134,17 +132,11 @@ export function MessageCardDocumentPreviewControls({
       </Typography>
 
       <Tooltip
-        title={
-          isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'
-        }
+        title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
         enterDelay={300}
       >
         <IconButton
-          aria-label={
-            isFullscreen
-              ? 'Вийти з повноекранного режиму'
-              : 'Повноекранний режим'
-          }
+          aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
           size="small"
           onClick={onToggleFullscreen}
           sx={{ color: 'text.secondary' }}
@@ -233,11 +225,7 @@ export function MessageCardDocumentPreviewActions({
         {hasCarousel && (
           <>
             <Tooltip title="Попереднє" enterDelay={300}>
-              <IconButton
-                size="small"
-                onClick={onGoToPrevious}
-                sx={{ color: 'text.secondary' }}
-              >
+              <IconButton size="small" onClick={onGoToPrevious} sx={{ color: 'text.secondary' }}>
                 <ChevronLeftIcon />
               </IconButton>
             </Tooltip>
@@ -255,11 +243,7 @@ export function MessageCardDocumentPreviewActions({
               {`${resolvedIndex + 1} / ${documentCount}`}
             </Typography>
             <Tooltip title="Наступне" enterDelay={300}>
-              <IconButton
-                size="small"
-                onClick={onGoToNext}
-                sx={{ color: 'text.secondary' }}
-              >
+              <IconButton size="small" onClick={onGoToNext} sx={{ color: 'text.secondary' }}>
                 <ChevronRightIcon />
               </IconButton>
             </Tooltip>
@@ -267,11 +251,7 @@ export function MessageCardDocumentPreviewActions({
         )}
       </Stack>
 
-      <Stack
-        direction="row"
-        justifyContent="flex-end"
-        sx={{ justifySelf: 'end' }}
-      >
+      <Stack direction="row" justifyContent="flex-end" sx={{ justifySelf: 'end' }}>
         <Button aria-label="Закрити" onClick={onClose}>
           Закрити
         </Button>

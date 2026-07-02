@@ -15,4 +15,3 @@ describe('copyXlsxSelection', () => {
     ).toBe('A1\tB1\nA2\tB2');
   });
 });
-

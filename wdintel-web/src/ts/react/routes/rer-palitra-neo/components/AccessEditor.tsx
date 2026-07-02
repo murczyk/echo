@@ -54,13 +54,16 @@ function AccessEditorComponent({
   const restricted = restrictedByRole || readOnly || loading;
   const restrictLogins = (restrictedByRole && !loginSelectionAllowed) || readOnly || loading;
   const disableAccessTypeSelection = Boolean(readOnly || loading);
-  const loginOptions = useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
+  const loginOptions = useMemo(
+    () => Array.from(new Set([...allLogins, ...form.logins])),
+    [allLogins, form.logins],
+  );
   const organismOptions = useMemo(
     () => (restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms),
     [restrictedByRole, myScope, organisms],
   );
   const aorOptions = useMemo(
-    () => (restrictedByRole ? myScope?.aors ?? [] : aors),
+    () => (restrictedByRole ? (myScope?.aors ?? []) : aors),
     [restrictedByRole, myScope, aors],
   );
   const selectedOrganisms = useMemo(
@@ -82,7 +85,14 @@ function AccessEditorComponent({
           onChange={(event) => {
             if (disableAccessTypeSelection) return;
             const nextType = event.target.value as AccessType;
-            onChange(applyRestrictedAccess(withDefaultOrganismAccess(form, nextType, myScope), user, myScope, allLogins));
+            onChange(
+              applyRestrictedAccess(
+                withDefaultOrganismAccess(form, nextType, myScope),
+                user,
+                myScope,
+                allLogins,
+              ),
+            );
           }}
         >
           {availableAccessTypes.map((accessType) => (
@@ -124,7 +134,9 @@ function AccessEditorComponent({
                   ...params.InputProps,
                   endAdornment: (
                     <>
-                      {loading ? <CircularProgress color='inherit' size={16} sx={{ mr: 1 }} /> : null}
+                      {loading ? (
+                        <CircularProgress color="inherit" size={16} sx={{ mr: 1 }} />
+                      ) : null}
                       {params.InputProps.endAdornment}
                     </>
                   ),
@@ -143,7 +155,9 @@ function AccessEditorComponent({
           value={selectedOrganisms}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
-          onChange={(_, selected) => onChange({ ...form, organismIds: selected.map((entry) => entry.id) })}
+          onChange={(_, selected) =>
+            onChange({ ...form, organismIds: selected.map((entry) => entry.id) })
+          }
           disabled={restricted}
           renderOption={(props, option) => {
             const { key: _unusedKey, ...optionProps } = props;
@@ -176,7 +190,9 @@ function AccessEditorComponent({
           value={selectedAors}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
-          onChange={(_, selected) => onChange({ ...form, aorIds: selected.map((entry) => entry.id) })}
+          onChange={(_, selected) =>
+            onChange({ ...form, aorIds: selected.map((entry) => entry.id) })
+          }
           disabled={restricted}
           renderOption={(props, option) => {
             const { key: _unusedKey, ...optionProps } = props;

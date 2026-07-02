@@ -86,8 +86,7 @@ const MEDIA_PATTERNS: Array<{
   {
     regex: /!\[([^\]]*)\]\(([^)]+?)(\s+"[^"]*")?\)/g,
     group: 2,
-    rebuild: (match, resolved) =>
-      match.replace(/\(([^)]+?)(\s+"[^"]*")?\)/, `(${resolved}$2)`),
+    rebuild: (match, resolved) => match.replace(/\(([^)]+?)(\s+"[^"]*")?\)/, `(${resolved}$2)`),
   },
   {
     regex: /(\b(?:src|href|poster)\s*=\s*")([^"]+)(")/g,
@@ -98,8 +97,7 @@ const MEDIA_PATTERNS: Array<{
   {
     regex: /\{\{\s*video\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,
     group: 1,
-    rebuild: (_match, resolved) =>
-      `[Відео](${resolved} "${RELEASE_VIDEO_LINK_TITLE}")`,
+    rebuild: (_match, resolved) => `[Відео](${resolved} "${RELEASE_VIDEO_LINK_TITLE}")`,
   },
   {
     regex: /\{\{\s*(?:img|image)\(\s*id="([^"]+)"[^)]*\)\s*\}\}/g,

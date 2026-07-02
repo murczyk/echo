@@ -2,8 +2,10 @@ import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
-export function mergeAnalysisCallsignInfoEntry(current: CallsignInfoRes | undefined, incoming: CallsignInfoRes): CallsignInfoRes {
+export function mergeAnalysisCallsignInfoEntry(
+  current: CallsignInfoRes | undefined,
+  incoming: CallsignInfoRes,
+): CallsignInfoRes {
   if (isNullOrUndefined(current)) return incoming;
 
   const rowsById = new Map<number, CallsignInfoRes['res'][number]>();
@@ -23,7 +25,9 @@ export function mergeAnalysisCallsignInfoEntry(current: CallsignInfoRes | undefi
       comment: row.comment || existing.comment,
       unit1: row.unit1 || existing.unit1,
       unit2: row.unit2 || existing.unit2,
-      networkIdsReportedIn: Array.from(new Set([...(existing.networkIdsReportedIn ?? []), ...(row.networkIdsReportedIn ?? [])])),
+      networkIdsReportedIn: Array.from(
+        new Set([...(existing.networkIdsReportedIn ?? []), ...(row.networkIdsReportedIn ?? [])]),
+      ),
     });
   });
 

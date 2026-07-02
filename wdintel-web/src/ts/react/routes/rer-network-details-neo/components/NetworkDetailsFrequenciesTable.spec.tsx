@@ -10,7 +10,9 @@ import type { NetworkFreqsRes } from '../../../../../Bindings';
 
 vi.mock('material-react-table', () => ({
   MaterialReactTable: ({ table }: { table: any }) => {
-    const callsignColumn = table.options.columns.find((column: Record<string, any>) => column.id === 'callsignLabel');
+    const callsignColumn = table.options.columns.find(
+      (column: Record<string, any>) => column.id === 'callsignLabel',
+    );
     return (
       <div>
         {table.options.data.map((row: Record<string, any>) => (
@@ -56,7 +58,15 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
   getDefaultMRTOptions: () => ({ localization: {} }),
-  buildDefaultColumnOrder: ({ dataColumnIds, withRowNumbers, withRowActions }: { dataColumnIds: string[]; withRowNumbers?: boolean; withRowActions?: boolean }) => [
+  buildDefaultColumnOrder: ({
+    dataColumnIds,
+    withRowNumbers,
+    withRowActions,
+  }: {
+    dataColumnIds: string[];
+    withRowNumbers?: boolean;
+    withRowActions?: boolean;
+  }) => [
     ...(withRowNumbers ? ['mrt-row-numbers'] : []),
     ...(withRowActions ? ['mrt-row-actions'] : []),
     ...dataColumnIds,
@@ -73,13 +83,17 @@ vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
 }));
 
 vi.mock('../../../components/mui-customized/table/mrt-cell-text', () => ({
-  renderMrtCellWithFallback: (_value: string, render: (text: string) => ReactNode) => render(_value),
+  renderMrtCellWithFallback: (_value: string, render: (text: string) => ReactNode) =>
+    render(_value),
   renderMrtCellTextValue: (value: string) => <span>{value}</span>,
 }));
 
-vi.mock('../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions', () => ({
-  InternalTableActions: () => null,
-}));
+vi.mock(
+  '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
+  () => ({
+    InternalTableActions: () => null,
+  }),
+);
 
 import { NetworkDetailsFrequenciesTable } from './NetworkDetailsFrequenciesTable';
 
@@ -136,7 +150,10 @@ function buildFreq(overrides: Partial<NetworkFreqsRes> = {}): NetworkFreqsRes {
   };
 }
 
-function renderTable(freqCallsignsById: Map<number, string[]>, freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error'): Rendered {
+function renderTable(
+  freqCallsignsById: Map<number, string[]>,
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error',
+): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);

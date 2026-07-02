@@ -1,70 +1,70 @@
 /* FloatingPopup Web Component Styles */
 
 floating-popup {
-    display: contents;
+  display: contents;
 }
 
 /* Prevent flickering during positioning updates */
 floating-popup::part(popup) {
-    will-change: transform;
-    backface-visibility: hidden;
-    perspective: 1000px;
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
 }
 
 /* Ensure popup is above table hover effects */
 floating-popup {
-    position: static !important;
-    z-index: 9999 !important;
+  position: static !important;
+  z-index: 9999 !important;
 }
 
 /* Prevent table hover from affecting popup positioning */
 .base-table tr:hover floating-popup {
-    position: static !important;
+  position: static !important;
 }
 
 /* Prevent conflicts with table cell positioning */
 .base-table td floating-popup {
-    position: static !important;
+  position: static !important;
 }
 
 /* Custom styling for popup parts */
 floating-popup::part(popup) {
-    /* Override default styles if needed */
+  /* Override default styles if needed */
 }
 
 floating-popup::part(overlay) {
-    /* Override overlay styles if needed */
+  /* Override overlay styles if needed */
 }
 
 floating-popup::part(close-button) {
-    /* Override close button styles if needed */
+  /* Override close button styles if needed */
 }
 
 /* Dark theme support */
 @media (prefers-color-scheme: dark) {
-    floating-popup::part(popup) {
-        background: #374151;
-        border-color: #4b5563;
-        color: white;
-    }
+  floating-popup::part(popup) {
+    background: #374151;
+    border-color: #4b5563;
+    color: white;
+  }
 }
 
 /* Integration with existing project styles */
 .floating-popup-content {
-    padding: 1rem;
+  padding: 1rem;
 }
 
 .floating-popup-content h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.1rem;
-    font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .floating-popup-content p {
-    margin: 0;
-    color: #666;
+  margin: 0;
+  color: #666;
 }
 
 .floating-popup-content .btn {
-    margin-top: 0.75rem;
+  margin-top: 0.75rem;
 }

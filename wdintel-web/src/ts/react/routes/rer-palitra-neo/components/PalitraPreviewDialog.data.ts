@@ -1,5 +1,15 @@
-import type { Palitra as ReadPalitra, PalitraGeometryDetails as ReadGeometry, PalitraReadV2 } from '../../../../../Bindings';
-import type { Coords, Geometry, Palitra as MapPalitra, PalitraDetails, PalitraPoint } from '../../../../maps/palitra-types';
+import type {
+  Palitra as ReadPalitra,
+  PalitraGeometryDetails as ReadGeometry,
+  PalitraReadV2,
+} from '../../../../../Bindings';
+import type {
+  Coords,
+  Geometry,
+  Palitra as MapPalitra,
+  PalitraDetails,
+  PalitraPoint,
+} from '../../../../maps/palitra-types';
 
 function normalizeNumber(value: number | string | null | undefined): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -14,7 +24,9 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeCoords(raw: { lat: number | string; lng: number | string } | null | undefined): Coords | null {
+function normalizeCoords(
+  raw: { lat: number | string; lng: number | string } | null | undefined,
+): Coords | null {
   if (!raw) {
     return null;
   }
@@ -57,7 +69,10 @@ export function hasRenderableGeometry(geometry: Geometry | null | undefined): bo
   }
 
   const lineStrings = geometry.line_strings;
-  if (Array.isArray(lineStrings) && lineStrings.some((lineString) => Array.isArray(lineString) && lineString.length >= 2)) {
+  if (
+    Array.isArray(lineStrings) &&
+    lineStrings.some((lineString) => Array.isArray(lineString) && lineString.length >= 2)
+  ) {
     return true;
   }
 
@@ -70,18 +85,21 @@ export function toPreviewPalitras(preview: PalitraReadV2 | null): PalitraDetails
   }
 
   const basePalitra = preview.palitra;
-  const geometries = preview.geometries.length > 0
-    ? preview.geometries
-    : basePalitra.geometry
-      ? [{
-          id: basePalitra.id,
-          colorHex: basePalitra.colorHex,
-          sourceFileName: basePalitra.sourceFileName,
-          lastUploadedAtTs: basePalitra.lastUploadedAtTs,
-          geometry: basePalitra.geometry,
-          points: [],
-        }]
-      : [];
+  const geometries =
+    preview.geometries.length > 0
+      ? preview.geometries
+      : basePalitra.geometry
+        ? [
+            {
+              id: basePalitra.id,
+              colorHex: basePalitra.colorHex,
+              sourceFileName: basePalitra.sourceFileName,
+              lastUploadedAtTs: basePalitra.lastUploadedAtTs,
+              geometry: basePalitra.geometry,
+              points: [],
+            },
+          ]
+        : [];
 
   return geometries
     .map((geometry) => {

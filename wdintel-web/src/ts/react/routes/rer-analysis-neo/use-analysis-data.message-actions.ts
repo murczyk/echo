@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-
 import type { InboxMessage, InboxMessageTag, SummaryTableFreqRow } from '../../../../Bindings';
 import {
   bookmarkAdd,
@@ -56,7 +55,10 @@ function hasBotTag(message: InboxMessage, tagId: number): boolean {
   return getInboxTags(message).some((tag) => tag.tagId === tagId && tag.model != null);
 }
 
-function tagIdsWithFallback(inboxTags: InboxMessageTag[], fallbackTags: number[] | null | undefined): number[] {
+function tagIdsWithFallback(
+  inboxTags: InboxMessageTag[],
+  fallbackTags: number[] | null | undefined,
+): number[] {
   const next: number[] = [];
   for (const tag of inboxTags) {
     if (!next.includes(tag.tagId)) next.push(tag.tagId);
@@ -67,7 +69,11 @@ function tagIdsWithFallback(inboxTags: InboxMessageTag[], fallbackTags: number[]
   return next;
 }
 
-function tagIdsWithoutTagId(inboxTags: InboxMessageTag[], fallbackTags: number[] | null | undefined, tagId: number): number[] {
+function tagIdsWithoutTagId(
+  inboxTags: InboxMessageTag[],
+  fallbackTags: number[] | null | undefined,
+  tagId: number,
+): number[] {
   const next: number[] = [];
   for (const tag of inboxTags) {
     if (tag.tagId !== tagId && !next.includes(tag.tagId)) next.push(tag.tagId);
@@ -88,7 +94,9 @@ function toggleHumanTag(
   const remainingTags =
     login == null
       ? currentTags
-      : currentTags.filter((tag) => !(tag.tagId === tagId && tag.model == null && tag.login === login));
+      : currentTags.filter(
+          (tag) => !(tag.tagId === tagId && tag.model == null && tag.login === login),
+        );
   const hasRemoved = remainingTags.length !== currentTags.length;
   const added =
     login != null && !hasRemoved
@@ -108,12 +116,16 @@ function toggleHumanTag(
   return {
     ...message,
     inboxTags,
-    tags: hasRemainingTag ? tagIdsWithFallback(inboxTags, message.tags ?? []) : tagIdsWithoutTagId(inboxTags, message.tags ?? [], tagId),
+    tags: hasRemainingTag
+      ? tagIdsWithFallback(inboxTags, message.tags ?? [])
+      : tagIdsWithoutTagId(inboxTags, message.tags ?? [], tagId),
   };
 }
 
 function removeBotTags(message: InboxMessage, tagId: number): InboxMessage {
-  const inboxTags = getInboxTags(message).filter((tag) => !(tag.tagId === tagId && tag.model != null));
+  const inboxTags = getInboxTags(message).filter(
+    (tag) => !(tag.tagId === tagId && tag.model != null),
+  );
   return {
     ...message,
     inboxTags,
@@ -154,7 +166,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           await bookmarkAdd({ messageId });
         }
 
-        params.patchMessages((id, message) => (id === messageId ? { ...message, bookmarked: !currentlyBookmarked } : message));
+        params.patchMessages((id, message) =>
+          id === messageId ? { ...message, bookmarked: !currentlyBookmarked } : message,
+        );
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -176,7 +190,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           await importantAdd({ messageId });
         }
 
-        params.patchMessages((id, message) => (id === messageId ? { ...message, important: !currentlyImportant } : message));
+        params.patchMessages((id, message) =>
+          id === messageId ? { ...message, important: !currentlyImportant } : message,
+        );
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -193,7 +209,9 @@ export function useAnalysisDataMessageActions(params: Params) {
       setMessageActionCount((current) => current + 1);
       try {
         await commentSave({ messageId, comment });
-        params.patchMessages((id, message) => (id === messageId ? { ...message, extendedForm: comment } : message));
+        params.patchMessages((id, message) =>
+          id === messageId ? { ...message, extendedForm: comment } : message,
+        );
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -250,7 +268,9 @@ export function useAnalysisDataMessageActions(params: Params) {
       try {
         await inboxMessageTagsModelError({ messageId, tagId });
         setBotTagAction(null);
-        params.patchMessages((id, message) => (id === messageId ? removeBotTags(message, tagId) : message));
+        params.patchMessages((id, message) =>
+          id === messageId ? removeBotTags(message, tagId) : message,
+        );
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -287,7 +307,12 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.setSummaryRows((current) =>
           current.map((row) =>
             row.freq === freq
-              ? { ...row, units: Array.from(new Set(row.units.map((value) => (value === unit ? unitNew : value)))) }
+              ? {
+                  ...row,
+                  units: Array.from(
+                    new Set(row.units.map((value) => (value === unit ? unitNew : value))),
+                  ),
+                }
               : row,
           ),
         );

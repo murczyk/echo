@@ -11,17 +11,22 @@ import type { SigintZone } from '../../../../Bindings';
 
 const saveUserDutySettings = vi.hoisted(() => vi.fn());
 const fetchServerInfoMock = vi.hoisted(() => vi.fn().mockResolvedValue({ version: '1.0.0' }));
-const fetchCurrentUserMock = vi.hoisted(() => vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }));
+const fetchCurrentUserMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }),
+);
 const listMyAdminGroupsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
 const updateMyAdminGroupMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() => vi.fn().mockResolvedValue({ logins: [], areasOfResponsibility: [] }));
+const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ logins: [], areasOfResponsibility: [] }),
+);
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CircularProgress: () => <span>loading</span>,
-  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div role="dialog">{children}</div> : null),
+  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <div role="dialog">{children}</div> : null,
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -47,7 +52,13 @@ vi.mock('@mui/material', () => ({
   TableRow: ({ children }: { children: ReactNode }) => <tr>{children}</tr>,
   Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (_event: unknown, value: boolean) => void }) => (
+  Switch: ({
+    checked,
+    onChange,
+  }: {
+    checked?: boolean;
+    onChange?: (_event: unknown, value: boolean) => void;
+  }) => (
     <button type="button" onClick={() => onChange?.(new Event('change'), !checked)}>
       {checked ? 'on' : 'off'}
     </button>
@@ -62,7 +73,12 @@ vi.mock('../../components/PageHeader', () => ({
 }));
 
 vi.mock('../../components/PowerButton', () => ({
-  PowerButton: (props: { children: ReactNode; onClick?: () => void; type?: 'button' | 'submit'; disabled?: boolean }) => (
+  PowerButton: (props: {
+    children: ReactNode;
+    onClick?: () => void;
+    type?: 'button' | 'submit';
+    disabled?: boolean;
+  }) => (
     <button type={props.type ?? 'button'} onClick={props.onClick} disabled={props.disabled}>
       {props.children}
     </button>
@@ -83,14 +99,20 @@ vi.mock('../../components/PowerIconButton', () => ({
     type?: 'button';
     [key: string]: unknown;
   }) => (
-    <button {...rest} type={type ?? 'button'} onClick={(event) => onClick?.(event)} disabled={disabled}>
+    <button
+      {...rest}
+      type={type ?? 'button'}
+      onClick={(event) => onClick?.(event)}
+      disabled={disabled}
+    >
       {children}
     </button>
   ),
 }));
 
 vi.mock('../../components/PowerMenu', () => ({
-  PowerMenu: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
+  PowerMenu: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <div>{children}</div> : null,
 }));
 
 vi.mock('../../components/PowerAlert', () => ({
@@ -110,7 +132,9 @@ vi.mock('material-react-table', () => ({
             <span key={column.id ?? column.accessorKey}>
               {column.Cell
                 ? column.Cell({ row: { original: row } })
-                : String(column.accessorFn ? column.accessorFn(row) : row[column.accessorKey] ?? '')}
+                : String(
+                    column.accessorFn ? column.accessorFn(row) : (row[column.accessorKey] ?? ''),
+                  )}
             </span>
           ))}
         </div>
@@ -173,7 +197,11 @@ vi.mock('../../services/api/user', () => ({
 
 vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
-  fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact', disableAutoScroll: false, analysisMapInSidebar: false }),
+  fetchUserSettings: vi.fn().mockResolvedValue({
+    tagsLayout: 'compact',
+    disableAutoScroll: false,
+    analysisMapInSidebar: false,
+  }),
   saveUserSettings: saveUserDutySettings,
 }));
 
@@ -205,7 +233,9 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
 }));
 
 vi.mock('./SettingsMyReportsSection', () => ({
-  SettingsMyReportsSection: ({ active }: { active: boolean }) => <div>{active ? 'reports-active' : 'reports-inactive'}</div>,
+  SettingsMyReportsSection: ({ active }: { active: boolean }) => (
+    <div>{active ? 'reports-active' : 'reports-inactive'}</div>
+  ),
 }));
 
 import { SettingsNeoPage } from './index';
@@ -308,7 +338,9 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    const switchButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'off');
+    const switchButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'off',
+    );
     expect(switchButton).toBeTruthy();
 
     await act(async () => {
@@ -584,7 +616,9 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(updateMyAdminGroupMock).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('Потрібно залишити щонайменше одного адміністратора групи');
+    expect(container.textContent).toContain(
+      'Потрібно залишити щонайменше одного адміністратора групи',
+    );
   });
 
   it('keeps required settings loaded when server info fails', async () => {

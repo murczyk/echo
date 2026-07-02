@@ -1,15 +1,5 @@
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import {
-  MRT_ColumnDef,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { Box, Button, CircularProgress, Tooltip, Typography } from '@mui/material';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import {
@@ -76,13 +66,7 @@ type Props = {
   onClearFilters: () => void;
 };
 
-function LongTextCell({
-  value,
-  maxWidth,
-}: {
-  value: string | null | undefined;
-  maxWidth: number;
-}) {
+function LongTextCell({ value, maxWidth }: { value: string | null | undefined; maxWidth: number }) {
   const text = formatMrtCellTextValue(value);
   if (text === '—' || text.length <= 90) {
     return (
@@ -105,9 +89,7 @@ export function GoiAssociationsTable(props: Props) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
-    typeof basePaperProps === 'function'
-      ? basePaperProps
-      : () => basePaperProps || {};
+    typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const columns = useMemo<MRT_ColumnDef<GoiAssociationRowView>[]>(
     () => [
@@ -133,9 +115,7 @@ export function GoiAssociationsTable(props: Props) {
         enableColumnFilter: true,
         enableSorting: false,
         size: 220,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.serverLabel} maxWidth={220} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.serverLabel} maxWidth={220} />,
       },
       {
         header: 'Частота',
@@ -151,9 +131,7 @@ export function GoiAssociationsTable(props: Props) {
         id: 'coordinates',
         enableColumnFilter: true,
         size: 180,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.coordinates} maxWidth={180} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.coordinates} maxWidth={180} />,
       },
       {
         header: 'Категорія',
@@ -177,9 +155,7 @@ export function GoiAssociationsTable(props: Props) {
         id: 'callSigns',
         enableColumnFilter: false,
         size: 220,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.callSignsLabel} maxWidth={220} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.callSignsLabel} maxWidth={220} />,
       },
       {
         header: 'Підрозділ',
@@ -187,9 +163,7 @@ export function GoiAssociationsTable(props: Props) {
         id: 'formation',
         enableColumnFilter: false,
         size: 220,
-        Cell: ({ row }) => (
-          <LongTextCell value={row.original.formation} maxWidth={220} />
-        ),
+        Cell: ({ row }) => <LongTextCell value={row.original.formation} maxWidth={220} />,
       },
       {
         header: 'Кількість',
@@ -198,8 +172,7 @@ export function GoiAssociationsTable(props: Props) {
         enableColumnFilter: false,
         size: 100,
         Cell: ({ row }) =>
-          row.original.associationCount === null ||
-          row.original.associationCount === undefined
+          row.original.associationCount === null || row.original.associationCount === undefined
             ? '—'
             : String(row.original.associationCount),
       },
@@ -251,12 +224,13 @@ export function GoiAssociationsTable(props: Props) {
     onSortingChange: tableStateContext.onSortingChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({
-      table,
-      noDataMessage: 'Висновки відсутні',
-      filteredMessage: 'Немає висновків за обраними фільтрами',
-      onClearFilters: props.onClearFilters,
-    }),
+    renderEmptyRowsFallback: ({ table }) =>
+      renderDefaultMrtEmptyRowsFallback({
+        table,
+        noDataMessage: 'Висновки відсутні',
+        filteredMessage: 'Немає висновків за обраними фільтрами',
+        onClearFilters: props.onClearFilters,
+      }),
     defaultColumn: {
       size: 180,
       renderColumnActionsMenuItems,
@@ -356,11 +330,7 @@ export function GoiAssociationsTable(props: Props) {
               variant="outlined"
               onClick={props.onLoadMore}
               disabled={props.loading || props.loadingMore}
-              startIcon={
-                props.loadingMore ? (
-                  <CircularProgress color="inherit" size={16} />
-                ) : null
-              }
+              startIcon={props.loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
             >
               {props.loadingMore ? LOADING_MORE_TEXT : 'Завантажити ще'}
             </Button>

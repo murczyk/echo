@@ -12,12 +12,28 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, disabled, onClick }: { children?: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+  Button: ({
+    children,
+    disabled,
+    onClick,
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+  }) => (
     <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   ),
-  ButtonBase: ({ children, disabled, onClick }: { children?: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+  ButtonBase: ({
+    children,
+    disabled,
+    onClick,
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+  }) => (
     <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
@@ -30,7 +46,9 @@ vi.mock('@mui/material', () => ({
   DialogTitle: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FormControl: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  InputLabel: ({ children, shrink }: { children?: ReactNode; shrink?: boolean }) => <label data-shrink={shrink ? 'true' : 'false'}>{children}</label>,
+  InputLabel: ({ children, shrink }: { children?: ReactNode; shrink?: boolean }) => (
+    <label data-shrink={shrink ? 'true' : 'false'}>{children}</label>
+  ),
   MenuItem: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Select: ({
     children,
@@ -49,15 +67,54 @@ vi.mock('@mui/material', () => ({
     id?: string;
     [key: string]: any;
   }) => (
-    <div data-value={value} data-label-id={labelId} data-id={id} data-name={inputProps?.name} {...props}>
+    <div
+      data-value={value}
+      data-label-id={labelId}
+      data-id={id}
+      data-name={inputProps?.name}
+      {...props}
+    >
       {typeof renderValue === 'function' ? renderValue(value) : children}
     </div>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, value, onChange, onBlur, placeholder, readOnly, required, disabled, inputProps, helperText }: { label?: ReactNode; value?: string; onChange?: (event: any) => void; onBlur?: () => void; placeholder?: string; readOnly?: boolean; required?: boolean; disabled?: boolean; inputProps?: { readOnly?: boolean }; helperText?: ReactNode }) => (
+  TextField: ({
+    label,
+    value,
+    onChange,
+    onBlur,
+    placeholder,
+    readOnly,
+    required,
+    disabled,
+    inputProps,
+    helperText,
+  }: {
+    label?: ReactNode;
+    value?: string;
+    onChange?: (event: any) => void;
+    onBlur?: () => void;
+    placeholder?: string;
+    readOnly?: boolean;
+    required?: boolean;
+    disabled?: boolean;
+    inputProps?: { readOnly?: boolean };
+    helperText?: ReactNode;
+  }) => (
     <label>
-      <span>{label}{required ? ' *' : ''}</span>
-      <input aria-label={typeof label === 'string' ? label : undefined} placeholder={placeholder} value={value ?? ''} onChange={onChange} onBlur={onBlur} readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined} disabled={disabled ?? false} />
+      <span>
+        {label}
+        {required ? ' *' : ''}
+      </span>
+      <input
+        aria-label={typeof label === 'string' ? label : undefined}
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={onChange}
+        onBlur={onBlur}
+        readOnly={inputProps?.readOnly ?? readOnly ?? onChange === undefined}
+        disabled={disabled ?? false}
+      />
       {helperText ? <div data-testid="helper-text">{helperText}</div> : null}
     </label>
   ),
@@ -69,7 +126,15 @@ vi.mock('../../../components/PowerAlert', () => ({
 }));
 
 vi.mock('../../../components/PowerChip', () => ({
-  PowerChip: ({ label, selected, onClick }: { label: ReactNode; selected?: boolean; onClick?: () => void }) => (
+  PowerChip: ({
+    label,
+    selected,
+    onClick,
+  }: {
+    label: ReactNode;
+    selected?: boolean;
+    onClick?: () => void;
+  }) => (
     <button type="button" data-selected={selected ? 'true' : 'false'} onClick={onClick}>
       {label}
     </button>
@@ -109,7 +174,9 @@ type Rendered = {
 
 const rendered: Rendered[] = [];
 
-function buildForm(overrides: Partial<NetworkFreqCreateWizardForm> = {}): NetworkFreqCreateWizardForm {
+function buildForm(
+  overrides: Partial<NetworkFreqCreateWizardForm> = {},
+): NetworkFreqCreateWizardForm {
   return {
     freq: '146.5000',
     modulation: 'DMR',
@@ -239,28 +306,38 @@ describe('NetworkFreqCreateDrawer', () => {
 
     expect(view.container.querySelector('[data-testid="helper-text"]')).toBeNull();
 
-    const freqInput = view.container.querySelector('input[aria-label="Частота *"]') as HTMLInputElement | null;
+    const freqInput = view.container.querySelector(
+      'input[aria-label="Частота *"]',
+    ) as HTMLInputElement | null;
     await act(async () => {
       freqInput?.focus();
       freqInput?.blur();
       await Promise.resolve();
     });
 
-    expect(view.container.querySelector('[data-testid="helper-text"]')?.textContent).toContain("Це поле обов");
+    expect(view.container.querySelector('[data-testid="helper-text"]')?.textContent).toContain(
+      'Це поле обов',
+    );
   });
 
   it('marks the new key field as required', () => {
     const view = renderManagedDrawer(buildForm());
     rendered.push(view);
 
-    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Додати новий ключ')) as HTMLButtonElement | undefined;
+    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Додати новий ключ'),
+    ) as HTMLButtonElement | undefined;
     act(() => {
       addKeyButton?.click();
     });
 
     expect(view.container.textContent).toContain('Ключ *');
-    expect(view.container.textContent).toContain('Ключ буде додано до системи одразу після створення');
-    expect(view.container.querySelector('input[placeholder="A-Z, 0-9 (4-64 символи)"]')).not.toBeNull();
+    expect(view.container.textContent).toContain(
+      'Ключ буде додано до системи одразу після створення',
+    );
+    expect(
+      view.container.querySelector('input[placeholder="A-Z, 0-9 (4-64 символи)"]'),
+    ).not.toBeNull();
   });
 
   it('renders keys before the technical section', () => {
@@ -275,7 +352,9 @@ describe('NetworkFreqCreateDrawer', () => {
     const view = renderDrawer(buildForm({ activeFrom: '' }));
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
   });
 
@@ -283,13 +362,17 @@ describe('NetworkFreqCreateDrawer', () => {
     const view = renderDrawer(buildForm());
     rendered.push(view);
 
-    const offsetChip = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Девіація до центральної частоти')) as HTMLButtonElement | undefined;
+    const offsetChip = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Девіація до центральної частоти'),
+    ) as HTMLButtonElement | undefined;
     await act(async () => {
       offsetChip?.click();
       await Promise.resolve();
     });
 
-    const deviationSelect = view.container.querySelector('[data-testid="deviation-select"]') as HTMLDivElement | null;
+    const deviationSelect = view.container.querySelector(
+      '[data-testid="deviation-select"]',
+    ) as HTMLDivElement | null;
     expect(deviationSelect).not.toBeNull();
     expect(deviationSelect?.getAttribute('data-value')).toBe('146.5000');
   });
@@ -298,15 +381,21 @@ describe('NetworkFreqCreateDrawer', () => {
     const view = renderDrawer(buildForm({ freq: '' }));
     rendered.push(view);
 
-    const offsetChip = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Девіація до центральної частоти')) as HTMLButtonElement | undefined;
+    const offsetChip = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Девіація до центральної частоти'),
+    ) as HTMLButtonElement | undefined;
     await act(async () => {
       offsetChip?.click();
       await Promise.resolve();
     });
 
-    const deviationSelect = view.container.querySelector('[data-testid="deviation-select"]') as HTMLDivElement | null;
+    const deviationSelect = view.container.querySelector(
+      '[data-testid="deviation-select"]',
+    ) as HTMLDivElement | null;
     expect(deviationSelect).not.toBeNull();
-    expect(deviationSelect?.getAttribute('data-label-id')).toBe('network-freq-deviation-select-label');
+    expect(deviationSelect?.getAttribute('data-label-id')).toBe(
+      'network-freq-deviation-select-label',
+    );
     expect(deviationSelect?.getAttribute('data-id')).toBe('network-freq-deviation-select');
     expect(deviationSelect?.getAttribute('data-name')).toBe('networkFreqDeviationBase');
     expect(view.container.textContent).toContain('Оберіть основну частоту');
@@ -325,7 +414,9 @@ describe('NetworkFreqCreateDrawer', () => {
     const view = renderDrawer(buildForm({ modulation: 'DMR' }));
     rendered.push(view);
 
-    const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
+    const techToggle = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('ТЕХНІЧНІ ДАНІ'),
+    ) as HTMLButtonElement | undefined;
     expect(techToggle?.disabled).toBe(false);
   });
 
@@ -333,7 +424,9 @@ describe('NetworkFreqCreateDrawer', () => {
     const view = renderDrawer(buildForm({ modulation: 'AM' }));
     rendered.push(view);
 
-    const techToggle = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('ТЕХНІЧНІ ДАНІ')) as HTMLButtonElement | undefined;
+    const techToggle = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('ТЕХНІЧНІ ДАНІ'),
+    ) as HTMLButtonElement | undefined;
     expect(techToggle?.disabled).toBe(true);
     expect(view.container.textContent).toContain('доступно лише для DMR');
     expect(view.container.querySelector('[data-testid="keys-section"]')).not.toBeNull();
@@ -346,20 +439,26 @@ describe('NetworkFreqCreateDrawer', () => {
     expect(view.container.querySelector('[data-testid="keys-section"]')).not.toBeNull();
     expect(view.container.textContent).not.toContain('Поля нижче поки що лише для перегляду.');
     expect(view.container.textContent).not.toContain('Поки що не зберігаються.');
-    expect(view.container.textContent).not.toContain('Можна додати кілька ключів до однієї частоти.');
+    expect(view.container.textContent).not.toContain(
+      'Можна додати кілька ключів до однієї частоти.',
+    );
   });
 
   it('validates a new key before creating it', async () => {
     const view = renderManagedDrawer(buildForm());
     rendered.push(view);
 
-    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Додати новий ключ')) as HTMLButtonElement | undefined;
+    const addKeyButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Додати новий ключ'),
+    ) as HTMLButtonElement | undefined;
     await act(async () => {
       addKeyButton?.click();
       await Promise.resolve();
     });
 
-    const keyInput = view.container.querySelector('input[aria-label="Ключ"]') as HTMLInputElement | null;
+    const keyInput = view.container.querySelector(
+      'input[aria-label="Ключ"]',
+    ) as HTMLInputElement | null;
     expect(keyInput?.placeholder).toBe('A-Z, 0-9 (4-64 символи)');
 
     await act(async () => {
@@ -368,7 +467,9 @@ describe('NetworkFreqCreateDrawer', () => {
       await Promise.resolve();
     });
 
-    const createButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes('Створити')) as HTMLButtonElement | undefined;
+    const createButton = [...view.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Створити'),
+    ) as HTMLButtonElement | undefined;
     expect(createButton?.disabled).toBe(true);
   });
 });

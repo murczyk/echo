@@ -80,10 +80,15 @@ function groupPalitras(palitras: PalitraDetails[]): PalitraGroup[] {
     });
   });
 
-  return Array.from(groupsByKey.values()).sort((left, right) => left.name.localeCompare(right.name, 'uk'));
+  return Array.from(groupsByKey.values()).sort((left, right) =>
+    left.name.localeCompare(right.name, 'uk'),
+  );
 }
 
-function splitGroupsByFolder(groups: PalitraGroup[]): { folderGroups: FolderGroup[]; rootGroups: PalitraGroup[] } {
+function splitGroupsByFolder(groups: PalitraGroup[]): {
+  folderGroups: FolderGroup[];
+  rootGroups: PalitraGroup[];
+} {
   const rootGroups: PalitraGroup[] = [];
   const foldersByPath = new Map<string, FolderGroup>();
 
@@ -110,7 +115,9 @@ function splitGroupsByFolder(groups: PalitraGroup[]): { folderGroups: FolderGrou
   const folderGroups = Array.from(foldersByPath.values())
     .map((folder) => ({
       ...folder,
-      palitras: [...folder.palitras].sort((left, right) => left.name.localeCompare(right.name, 'uk')),
+      palitras: [...folder.palitras].sort((left, right) =>
+        left.name.localeCompare(right.name, 'uk'),
+      ),
     }))
     .sort((left, right) => left.name.localeCompare(right.name, 'uk'));
 
@@ -136,7 +143,11 @@ type PalitraGroupRowProps = {
   onToggleColor: (palitraId: number) => void;
 };
 
-function isGroupSelectionEqual(group: PalitraGroup, prevSet: Set<number>, nextSet: Set<number>): boolean {
+function isGroupSelectionEqual(
+  group: PalitraGroup,
+  prevSet: Set<number>,
+  nextSet: Set<number>,
+): boolean {
   for (let index = 0; index < group.colors.length; index += 1) {
     const colorId = group.colors[index].palitra.id;
     if (prevSet.has(colorId) !== nextSet.has(colorId)) {
@@ -146,110 +157,124 @@ function isGroupSelectionEqual(group: PalitraGroup, prevSet: Set<number>, nextSe
   return true;
 }
 
-const PalitraGroupRow = memo(function PalitraGroupRow(props: PalitraGroupRowProps) {
-  const { group, visibleIdsSet, onToggleGroup, onToggleColor } = props;
-  const [expanded, setExpanded] = useState(false);
+const PalitraGroupRow = memo(
+  function PalitraGroupRow(props: PalitraGroupRowProps) {
+    const { group, visibleIdsSet, onToggleGroup, onToggleColor } = props;
+    const [expanded, setExpanded] = useState(false);
 
-  const groupIds = useMemo(
-    () => group.colors.map((palitraDetails) => palitraDetails.palitra.id),
-    [group.colors],
-  );
-  const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
-  const groupSelected = selectedColorsCount === groupIds.length && groupIds.length > 0;
-  const groupPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < groupIds.length;
+    const groupIds = useMemo(
+      () => group.colors.map((palitraDetails) => palitraDetails.palitra.id),
+      [group.colors],
+    );
+    const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
+    const groupSelected = selectedColorsCount === groupIds.length && groupIds.length > 0;
+    const groupPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < groupIds.length;
 
-  return (
-    <Box className={`palitra-item ${props.nested ? 'palitra-item-nested' : ''}`}>
-      <Box className={`palitra-main-row ${props.nested ? 'palitra-main-row-nested' : ''}`}>
-        <Checkbox
-          className="palitra-checkbox"
-          checked={groupSelected}
-          indeterminate={groupPartiallySelected}
-          disabled={props.interactionDisabled}
-          onClick={(event) => {
-            event.stopPropagation();
-          }}
-          onChange={() => onToggleGroup(group)}
-          size="small"
-        />
-        <Box
-          className="palitra-title-button"
-          onClick={() => onToggleGroup(group)}
-          title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}
-        >
-          <Typography className="palitra-name">{group.name}</Typography>
-        </Box>
-        <IconButton
-          className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setExpanded((prev) => !prev);
-          }}
-          aria-label={expanded ? 'Сховати кольори палітри' : `Показати всі кольори палітри (${group.colors.length})`}
-          title={expanded ? 'Сховати кольори палітри' : `Показати всі кольори палітри (${group.colors.length})`}
-          size="small"
-          disabled={props.interactionDisabled}
-        >
-          <ExpandMoreIcon fontSize="small" />
-        </IconButton>
-      </Box>
-
-      {expanded ? (
-        <Box className="palitra-content">
-          <Box className="palitra-colors-row">
-            {group.colors.map((palitraDetails, index) => {
-              const palitra = palitraDetails.palitra;
-              const palitraId = palitra.id;
-              const selected = visibleIdsSet.has(palitraId);
-              const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
-
-              return (
-                <PowerChip
-                  key={colorKey}
-                  label={String(perimeterPointsCount(palitraDetails))}
-                  selected={selected}
-                  onClick={() => {
-                    onToggleColor(palitraId);
-                  }}
-                  backgroundColor={palitra.color_hex}
-                  autoTextContrast
-                  interactive={!props.interactionDisabled}
-                  size="medium"
-                  minWidth={40}
-                  labelPaddingX={0.8}
-                  fontWeight={700}
-                  selectedBorderColor="rgba(255,255,255,0.9)"
-                  unselectedBorderColor="rgba(255,255,255,0.45)"
-                  unselectedOpacity={0.7}
-                  title={palitra.color_hex}
-                  sx={{
-                    transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
-                    boxShadow: selected
-                      ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
-                      : 'none',
-                    transform: selected ? 'translateY(-1px)' : 'none',
-                  }}
-                />
-              );
-            })}
+    return (
+      <Box className={`palitra-item ${props.nested ? 'palitra-item-nested' : ''}`}>
+        <Box className={`palitra-main-row ${props.nested ? 'palitra-main-row-nested' : ''}`}>
+          <Checkbox
+            className="palitra-checkbox"
+            checked={groupSelected}
+            indeterminate={groupPartiallySelected}
+            disabled={props.interactionDisabled}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            onChange={() => onToggleGroup(group)}
+            size="small"
+          />
+          <Box
+            className="palitra-title-button"
+            onClick={() => onToggleGroup(group)}
+            title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}
+          >
+            <Typography className="palitra-name">{group.name}</Typography>
           </Box>
+          <IconButton
+            className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setExpanded((prev) => !prev);
+            }}
+            aria-label={
+              expanded
+                ? 'Сховати кольори палітри'
+                : `Показати всі кольори палітри (${group.colors.length})`
+            }
+            title={
+              expanded
+                ? 'Сховати кольори палітри'
+                : `Показати всі кольори палітри (${group.colors.length})`
+            }
+            size="small"
+            disabled={props.interactionDisabled}
+          >
+            <ExpandMoreIcon fontSize="small" />
+          </IconButton>
         </Box>
-      ) : null}
-    </Box>
-  );
-}, (prevProps, nextProps) => {
-  if (prevProps.group !== nextProps.group) {
-    return false;
-  }
-  if (prevProps.interactionDisabled !== nextProps.interactionDisabled) {
-    return false;
-  }
-  if (prevProps.onToggleGroup !== nextProps.onToggleGroup || prevProps.onToggleColor !== nextProps.onToggleColor) {
-    return false;
-  }
-  return isGroupSelectionEqual(prevProps.group, prevProps.visibleIdsSet, nextProps.visibleIdsSet);
-});
+
+        {expanded ? (
+          <Box className="palitra-content">
+            <Box className="palitra-colors-row">
+              {group.colors.map((palitraDetails, index) => {
+                const palitra = palitraDetails.palitra;
+                const palitraId = palitra.id;
+                const selected = visibleIdsSet.has(palitraId);
+                const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
+
+                return (
+                  <PowerChip
+                    key={colorKey}
+                    label={String(perimeterPointsCount(palitraDetails))}
+                    selected={selected}
+                    onClick={() => {
+                      onToggleColor(palitraId);
+                    }}
+                    backgroundColor={palitra.color_hex}
+                    autoTextContrast
+                    interactive={!props.interactionDisabled}
+                    size="medium"
+                    minWidth={40}
+                    labelPaddingX={0.8}
+                    fontWeight={700}
+                    selectedBorderColor="rgba(255,255,255,0.9)"
+                    unselectedBorderColor="rgba(255,255,255,0.45)"
+                    unselectedOpacity={0.7}
+                    title={palitra.color_hex}
+                    sx={{
+                      transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
+                      boxShadow: selected
+                        ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
+                        : 'none',
+                      transform: selected ? 'translateY(-1px)' : 'none',
+                    }}
+                  />
+                );
+              })}
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
+    );
+  },
+  (prevProps, nextProps) => {
+    if (prevProps.group !== nextProps.group) {
+      return false;
+    }
+    if (prevProps.interactionDisabled !== nextProps.interactionDisabled) {
+      return false;
+    }
+    if (
+      prevProps.onToggleGroup !== nextProps.onToggleGroup ||
+      prevProps.onToggleColor !== nextProps.onToggleColor
+    ) {
+      return false;
+    }
+    return isGroupSelectionEqual(prevProps.group, prevProps.visibleIdsSet, nextProps.visibleIdsSet);
+  },
+);
 
 type FolderGroupRowProps = {
   folder: FolderGroup;
@@ -261,16 +286,27 @@ type FolderGroupRowProps = {
 };
 
 const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) {
-  const { folder, visibleIdsSet, interactionDisabled, onToggleFolder, onToggleGroup, onToggleColor } = props;
+  const {
+    folder,
+    visibleIdsSet,
+    interactionDisabled,
+    onToggleFolder,
+    onToggleGroup,
+    onToggleColor,
+  } = props;
   const [expanded, setExpanded] = useState(false);
 
   const folderColorIds = useMemo(
-    () => folder.palitras.flatMap((group) => group.colors.map((palitraDetails) => palitraDetails.palitra.id)),
+    () =>
+      folder.palitras.flatMap((group) =>
+        group.colors.map((palitraDetails) => palitraDetails.palitra.id),
+      ),
     [folder.palitras],
   );
   const selectedColorsCount = folderColorIds.filter((id) => visibleIdsSet.has(id)).length;
   const folderSelected = selectedColorsCount === folderColorIds.length && folderColorIds.length > 0;
-  const folderPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < folderColorIds.length;
+  const folderPartiallySelected =
+    selectedColorsCount > 0 && selectedColorsCount < folderColorIds.length;
 
   return (
     <Box className="palitra-item palitra-folder-item">
@@ -306,8 +342,16 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
             event.stopPropagation();
             setExpanded((prev) => !prev);
           }}
-          aria-label={expanded ? 'Сховати палітри папки' : `Показати палітри папки (${folder.palitras.length})`}
-          title={expanded ? 'Сховати палітри папки' : `Показати палітри папки (${folder.palitras.length})`}
+          aria-label={
+            expanded
+              ? 'Сховати палітри папки'
+              : `Показати палітри папки (${folder.palitras.length})`
+          }
+          title={
+            expanded
+              ? 'Сховати палітри папки'
+              : `Показати палітри папки (${folder.palitras.length})`
+          }
           size="small"
           disabled={interactionDisabled}
         >
@@ -335,7 +379,14 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
 });
 
 function PalitrasOverlay(props: PalitrasOverlayProps) {
-  const { palitras, visibleIds, loadState, interactionDisabled, forceCollapsed, onVisibleIdsChange } = props;
+  const {
+    palitras,
+    visibleIds,
+    loadState,
+    interactionDisabled,
+    forceCollapsed,
+    onVisibleIdsChange,
+  } = props;
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [isCollapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -367,10 +418,15 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   );
 
   const palitraGroups = useMemo(() => groupPalitras(palitras), [palitras]);
-  const { folderGroups, rootGroups } = useMemo(() => splitGroupsByFolder(palitraGroups), [palitraGroups]);
+  const { folderGroups, rootGroups } = useMemo(
+    () => splitGroupsByFolder(palitraGroups),
+    [palitraGroups],
+  );
 
   const allColorIds = useMemo(() => {
-    const ids = palitraGroups.flatMap((group) => group.colors.map((palitraDetails) => palitraDetails.palitra.id));
+    const ids = palitraGroups.flatMap((group) =>
+      group.colors.map((palitraDetails) => palitraDetails.palitra.id),
+    );
     return Array.from(new Set(ids));
   }, [palitraGroups]);
 
@@ -389,7 +445,9 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
         if (folderMatches) {
           return folder;
         }
-        const matchedPalitras = folder.palitras.filter((group) => normalizeText(group.name).includes(normalizedFilter));
+        const matchedPalitras = folder.palitras.filter((group) =>
+          normalizeText(group.name).includes(normalizedFilter),
+        );
         if (matchedPalitras.length === 0) {
           return null;
         }
@@ -397,7 +455,9 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       })
       .filter((folder): folder is FolderGroup => folder !== null);
 
-    const rootPalitras = rootGroups.filter((group) => normalizeText(group.name).includes(normalizedFilter));
+    const rootPalitras = rootGroups.filter((group) =>
+      normalizeText(group.name).includes(normalizedFilter),
+    );
 
     return {
       folders,
@@ -472,7 +532,9 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       if (interactionDisabled) {
         return;
       }
-      const folderIds = folder.palitras.flatMap((group) => group.colors.map((palitraDetails) => palitraDetails.palitra.id));
+      const folderIds = folder.palitras.flatMap((group) =>
+        group.colors.map((palitraDetails) => palitraDetails.palitra.id),
+      );
       const folderIdsSet = new Set(folderIds);
       const currentVisibleIds = localVisibleIdsRef.current;
       const currentVisibleSet = new Set(currentVisibleIds);
@@ -527,9 +589,12 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
 
       const controlRect = control.getBoundingClientRect();
       const settingsControl = mapRoot.querySelector('.map-settings-control-host');
-      const settingsRect = settingsControl instanceof HTMLElement ? settingsControl.getBoundingClientRect() : null;
+      const settingsRect =
+        settingsControl instanceof HTMLElement ? settingsControl.getBoundingClientRect() : null;
       const mapRect = mapRoot.getBoundingClientRect();
-      const maxBottom = settingsRect ? settingsRect.top - MAP_CONTROL_GAP : mapRect.bottom - MAP_CONTROL_GAP;
+      const maxBottom = settingsRect
+        ? settingsRect.top - MAP_CONTROL_GAP
+        : mapRect.bottom - MAP_CONTROL_GAP;
       const nextMaxHeight = Math.floor(maxBottom - controlRect.top);
 
       setControlMaxHeight(nextMaxHeight > 0 ? nextMaxHeight : null);
@@ -583,7 +648,11 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
               size="small"
               disabled
             >
-              {loadState === 'loading' ? <CircularProgress size={16} thickness={5} /> : <PaletteIcon fontSize="small" />}
+              {loadState === 'loading' ? (
+                <CircularProgress size={16} thickness={5} />
+              ) : (
+                <PaletteIcon fontSize="small" />
+              )}
             </IconButton>
           </span>
         </Box>

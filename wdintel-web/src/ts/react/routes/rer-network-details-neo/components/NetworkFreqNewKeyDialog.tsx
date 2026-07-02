@@ -41,9 +41,11 @@ const compactTextFieldSx = (theme: any) => ({
     minHeight: 40,
     fontSize: '0.875rem',
     '&.Mui-disabled': {
-      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      backgroundColor:
+        theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
       '& .MuiOutlinedInput-notchedOutline': {
-        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+        borderColor:
+          theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
       },
     },
     '& input': {
@@ -52,7 +54,8 @@ const compactTextFieldSx = (theme: any) => ({
       fontSize: '0.875rem',
       '&::placeholder': {
         opacity: 1,
-        color: theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary,
+        color:
+          theme.palette.mode === 'light' ? theme.palette.grey[700] : theme.palette.text.secondary,
       },
     },
   },
@@ -64,9 +67,11 @@ const compactSelectSx = (theme: any) => ({
     minHeight: 40,
     fontSize: '0.875rem',
     '&.Mui-disabled': {
-      backgroundColor: theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
+      backgroundColor:
+        theme.palette.mode === 'light' ? theme.palette.action.disabledBackground : 'transparent',
       '& .MuiOutlinedInput-notchedOutline': {
-        borderColor: theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
+        borderColor:
+          theme.palette.mode === 'light' ? theme.palette.grey[400] : theme.palette.action.disabled,
       },
     },
   },
@@ -109,7 +114,13 @@ export function NetworkFreqNewKeyDialog({
   }, [open, encryptionOptions]);
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm" disableRestoreFocus={disableRestoreFocus}>
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+      disableRestoreFocus={disableRestoreFocus}
+    >
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -150,7 +161,9 @@ export function NetworkFreqNewKeyDialog({
             >
               {encryptionOptions
                 .filter((enc) => enc.name !== 'Без шифрування')
-                .sort((a, b) => (a.name === 'Не визначено' ? 1 : b.name === 'Не визначено' ? -1 : 0))
+                .sort((a, b) =>
+                  a.name === 'Не визначено' ? 1 : b.name === 'Не визначено' ? -1 : 0,
+                )
                 .map((enc) => (
                   <MenuItem key={enc.id} value={String(enc.id)}>
                     {enc.name}
@@ -159,7 +172,8 @@ export function NetworkFreqNewKeyDialog({
             </Select>
           </FormControl>
           <PowerAlert severity="info" autoHideDuration={null}>
-            Ключ буде додано до системи одразу після створення, навіть якщо частоту не буде збережено.
+            Ключ буде додано до системи одразу після створення, навіть якщо частоту не буде
+            збережено.
           </PowerAlert>
         </Stack>
       </DialogContent>

@@ -2,7 +2,15 @@ import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  Typography,
+} from '@mui/material';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { createMapWindowControl, type MapWindowControl } from '../../../../maps/control-modules';
@@ -16,16 +24,31 @@ import { addPreviewGeometryLayers, fitGeometryLayers } from './PalitraPreviewDia
 import { toPreviewPalitras, hasRenderableGeometry } from './PalitraPreviewDialog.data';
 import { createPreviewPointStack, destroyPreviewPointStack } from './PalitraPreviewDialog.points';
 import { getPreviewShellSx } from './PalitraPreviewDialog.styles';
-import { DEFAULT_PREVIEW_CENTER, DEFAULT_PREVIEW_ZOOM, NOOP_CALLBACKS, PREVIEW_MAX_ZOOM, PREVIEW_POINT_OPTIONS } from './PalitraPreviewDialog.types';
+import {
+  DEFAULT_PREVIEW_CENTER,
+  DEFAULT_PREVIEW_ZOOM,
+  NOOP_CALLBACKS,
+  PREVIEW_MAX_ZOOM,
+  PREVIEW_POINT_OPTIONS,
+} from './PalitraPreviewDialog.types';
 import type { PalitraPreviewDialogProps } from './PalitraPreviewDialog.types';
 
-export function PalitraPreviewDialog({ open, palitra, preview, loading, error, onClose }: PalitraPreviewDialogProps) {
+export function PalitraPreviewDialog({
+  open,
+  palitra,
+  preview,
+  loading,
+  error,
+  onClose,
+}: PalitraPreviewDialogProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.FeatureGroup | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const initRafRef = useRef<number | null>(null);
-  const listenersRef = useRef<{ onViewportChanged: (() => void) | null }>({ onViewportChanged: null });
+  const listenersRef = useRef<{ onViewportChanged: (() => void) | null }>({
+    onViewportChanged: null,
+  });
   const previewPalitrasRef = useRef<PalitraDetails[]>([]);
   const pointStackEnabledRef = useRef(false);
   const pointStackGenerationRef = useRef(0);
@@ -37,7 +60,9 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
   const [mapVisible, setMapVisible] = useState(false);
   const [previewRenderReady, setPreviewRenderReady] = useState(false);
   const previewPalitras = useMemo(() => toPreviewPalitras(preview), [preview]);
-  const hasRenderablePreviewGeometry = previewPalitras.some((entry) => hasRenderableGeometry(entry.palitra.geometry));
+  const hasRenderablePreviewGeometry = previewPalitras.some((entry) =>
+    hasRenderableGeometry(entry.palitra.geometry),
+  );
   const hasRenderablePreviewGeometryRef = useRef(hasRenderablePreviewGeometry);
   const previewRenderReadyRef = useRef(previewRenderReady);
   const hasPreviewError = Boolean(error);
@@ -95,9 +120,13 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
 
       getTileLayers().openStreetMap.addTo(map);
 
-      const mapWindowControl = createMapWindowControl(() => {
-        return undefined;
-      }, false, { showFullscreen: false });
+      const mapWindowControl = createMapWindowControl(
+        () => {
+          return undefined;
+        },
+        false,
+        { showFullscreen: false },
+      );
       map.addControl(mapWindowControl);
 
       const layerGroup = L.featureGroup().addTo(map);
@@ -181,21 +210,15 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
     addPreviewGeometryLayers(layerGroup, previewPalitras);
 
     fitGeometryLayers(map, layerGroup);
-    createPreviewPointStack(
-      map,
-      previewPalitras,
-      PREVIEW_POINT_OPTIONS,
-      NOOP_CALLBACKS,
-      {
-        listenersRef,
-        stateRef: previewPalitrasRef,
-        enabledRef: pointStackEnabledRef,
-        generationRef: pointStackGenerationRef,
-        cacheManagerRef,
-        pointClustersRendererRef,
-        pointsControllerRef,
-      },
-    );
+    createPreviewPointStack(map, previewPalitras, PREVIEW_POINT_OPTIONS, NOOP_CALLBACKS, {
+      listenersRef,
+      stateRef: previewPalitrasRef,
+      enabledRef: pointStackEnabledRef,
+      generationRef: pointStackGenerationRef,
+      cacheManagerRef,
+      pointClustersRendererRef,
+      pointsControllerRef,
+    });
     previewRenderReadyRef.current = true;
     setPreviewRenderReady(true);
   }, [open, mapReady, mapVisible, previewPalitras, hasRenderablePreviewGeometry]);
@@ -211,7 +234,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       open={open}
       onClose={onClose}
       fullWidth
-      maxWidth='lg'
+      maxWidth="lg"
       PaperProps={{
         sx: {
           overflow: 'hidden',
@@ -224,7 +247,11 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
         onEntered: () => setMapVisible(true),
         onExited: () => setMapVisible(false),
       }}
-      aria-label={palitra?.name ? 'Попередній перегляд палітри ' + palitra.name : 'Попередній перегляд палітри'}
+      aria-label={
+        palitra?.name
+          ? 'Попередній перегляд палітри ' + palitra.name
+          : 'Попередній перегляд палітри'
+      }
     >
       <DialogContent
         sx={{
@@ -239,7 +266,7 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       >
         <Box
           ref={mapContainerRef}
-          className='palitra-map-surface'
+          className="palitra-map-surface"
           sx={{
             ...getPreviewShellSx(),
             flex: '1 1 auto',
@@ -273,11 +300,16 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
                 bgcolor: 'background.paper',
               }}
             >
-              <PowerAlert severity='error' autoHideDuration={null} dismissible={false} sx={{ width: '100%', maxWidth: 560 }}>
-                <Typography variant='h6' sx={{ mb: 1 }}>
+              <PowerAlert
+                severity="error"
+                autoHideDuration={null}
+                dismissible={false}
+                sx={{ width: '100%', maxWidth: 560 }}
+              >
+                <Typography variant="h6" sx={{ mb: 1 }}>
                   Не вдалося завантажити попередній перегляд палітри
                 </Typography>
-                <Typography variant='body1' sx={{ lineHeight: 1.6 }}>
+                <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
                   {error}
                 </Typography>
               </PowerAlert>
@@ -299,7 +331,9 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
                 bgcolor: 'background.paper',
               }}
             >
-              <Typography variant='body1'>Для цієї палітри немає геометрій для попереднього перегляду.</Typography>
+              <Typography variant="body1">
+                Для цієї палітри немає геометрій для попереднього перегляду.
+              </Typography>
             </Box>
           ) : null}
         </Box>

@@ -1,5 +1,5 @@
 import L from 'leaflet';
-import * as _ from './utils/leaflet-utils'
+import * as _ from './utils/leaflet-utils';
 
 interface KMZLayerOptions extends L.LayerOptions {
   interactive: boolean;
@@ -10,7 +10,6 @@ interface KMZLayerOptions extends L.LayerOptions {
   permanentTooltip: boolean;
 }
 
-
 export class KMZLayer extends L.FeatureGroup {
   options: KMZLayerOptions = {
     interactive: true,
@@ -18,7 +17,7 @@ export class KMZLayer extends L.FeatureGroup {
     bindPopup: true,
     bindTooltip: true,
     preferCanvas: false,
-    permanentTooltip: false
+    permanentTooltip: false,
   };
   defaultStrokeWidth = 2;
 
@@ -32,7 +31,7 @@ export class KMZLayer extends L.FeatureGroup {
       bindTooltip: true,
       preferCanvas: false,
       permanentTooltip: false,
-      ...options
+      ...options,
     };
 
     if (L.Browser.mobile) this.options.bindTooltip = false;
@@ -44,8 +43,7 @@ export class KMZLayer extends L.FeatureGroup {
     this.load(kmzUrl);
   }
   load(kmzUrl: string): void {
-    _.loadFile(kmzUrl)
-      .then((data) => this.parse(data, { name: _.getFileName(kmzUrl), icons: {} }));
+    _.loadFile(kmzUrl).then((data) => this.parse(data, { name: _.getFileName(kmzUrl), icons: {} }));
   }
 
   parse(data: string, props: any): Promise<void> {
@@ -76,7 +74,10 @@ export class KMZLayer extends L.FeatureGroup {
     return Promise.resolve();
   }
 
-  private _geometryToLayer(data: GeoJSON.FeatureCollection<GeoJSON.Geometry | null, GeoJSON.GeoJsonProperties>, _: XMLDocument): L.Layer {
+  private _geometryToLayer(
+    data: GeoJSON.FeatureCollection<GeoJSON.Geometry | null, GeoJSON.GeoJsonProperties>,
+    _: XMLDocument,
+  ): L.Layer {
     const emptyIcon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
     const markersLayer = L.featureGroup();
     const MIN_ZOOM_TO_SHOW_FULLSCREEN = 11;
@@ -103,13 +104,20 @@ export class KMZLayer extends L.FeatureGroup {
             }),
             interactive: this.options.interactive,
           });
-
         } else {
           return marker;
         }
       },
       style: (feature) => {
-        const styles: { stroke?: boolean; color?: string; fill?: boolean; fillColor?: string; opacity?: number; fillOpacity?: number; weight?: number } = {};
+        const styles: {
+          stroke?: boolean;
+          color?: string;
+          fill?: boolean;
+          fillColor?: string;
+          opacity?: number;
+          fillOpacity?: number;
+          weight?: number;
+        } = {};
         if (feature) {
           const prop = feature.properties;
           if (prop.stroke) {
@@ -123,27 +131,27 @@ export class KMZLayer extends L.FeatureGroup {
             styles.fill = true;
             styles.fillColor = prop.stroke;
           }
-          if (prop["stroke-opacity"]) {
-            styles.opacity = prop["stroke-opacity"];
+          if (prop['stroke-opacity']) {
+            styles.opacity = prop['stroke-opacity'];
           }
-          if (prop["fill-opacity"]) {
-            styles.fillOpacity = prop["fill-opacity"];
+          if (prop['fill-opacity']) {
+            styles.fillOpacity = prop['fill-opacity'];
           }
-          if (prop["stroke-width"]) {
-            this.defaultStrokeWidth = prop["stroke-width"]
+          if (prop['stroke-width']) {
+            this.defaultStrokeWidth = prop['stroke-width'];
             styles.weight = Math.floor(this.defaultStrokeWidth / 2);
           }
         }
-        styles.opacity = 0.3
+        styles.opacity = 0.3;
 
-        return styles
+        return styles;
       },
       onEachFeature: (feature, layer) => {
         if (!this.options.ballon) return;
 
         let prop = feature.properties;
-        let name = prop.name || "";
-        let desc = prop.description || "";
+        let name = prop.name || '';
+        let desc = prop.description || '';
 
         if (name || desc) {
           if (this.options.bindPopup) {
@@ -153,11 +161,10 @@ export class KMZLayer extends L.FeatureGroup {
             layer.bindTooltip('<b>' + name + '</b>', {
               permanent: this.options.permanentTooltip,
               direction: 'center',
-              opacity: 0
+              opacity: 0,
             });
           }
         }
-
       },
 
       interactive: this.options.interactive,
@@ -168,30 +175,30 @@ export class KMZLayer extends L.FeatureGroup {
       let newStrokeWidth;
       const mapContainer = this._map.getContainer();
 
-      const zoomTrashold = this._map.getSize().x > 250 ? MIN_ZOOM_TO_SHOW_FULLSCREEN : MIN_ZOOM_TO_SHOW
+      const zoomTrashold =
+        this._map.getSize().x > 250 ? MIN_ZOOM_TO_SHOW_FULLSCREEN : MIN_ZOOM_TO_SHOW;
       if (currentZoom >= zoomTrashold) {
         newStrokeWidth = this.defaultStrokeWidth;
         if (!this._map.hasLayer(markersLayer)) {
           this._map.addLayer(markersLayer);
         }
       } else {
-
-        newStrokeWidth = Math.floor(this.defaultStrokeWidth / 2)
+        newStrokeWidth = Math.floor(this.defaultStrokeWidth / 2);
         if (this._map.hasLayer(markersLayer)) {
-          this._map.removeLayer(markersLayer)
+          this._map.removeLayer(markersLayer);
         }
       }
-      geoJsonLayer.setStyle({ weight: newStrokeWidth })
-      geoJsonLayer.eachLayer(layer => {
-        if (mapContainer.classList.contains("expanded")) {
+      geoJsonLayer.setStyle({ weight: newStrokeWidth });
+      geoJsonLayer.eachLayer((layer) => {
+        if (mapContainer.classList.contains('expanded')) {
         }
         if (currentZoom >= zoomTrashold) {
-          layer.getTooltip()?.setOpacity(0.9)
+          layer.getTooltip()?.setOpacity(0.9);
         } else {
           layer.getTooltip()?.setOpacity(0);
         }
       });
-    }
+    };
     this._map.on('zoomend', onZoomChange);
     return geoJsonLayer;
   }
@@ -199,4 +206,4 @@ export class KMZLayer extends L.FeatureGroup {
 
 export const kmzLayerFactory = (url: string | null, options?: Partial<KMZLayerOptions>) => {
   return new KMZLayer(url, options);
-}
+};

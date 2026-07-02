@@ -1,9 +1,7 @@
 import { Box, Stack, Typography } from '@mui/material';
 import { useId, useMemo, useState } from 'react';
 
-import {
-  NetworkDetailsActivityChart,
-} from './NetworkDetailsActivityChart';
+import { NetworkDetailsActivityChart } from './NetworkDetailsActivityChart';
 import {
   NetworkDetailsActivityEmptyState,
   NetworkDetailsActivityErrorState,
@@ -33,17 +31,26 @@ export function NetworkDetailsActivityPanel({
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
   const [hoveredBar, setHoveredBar] = useState<HoveredBar | null>(null);
-  const chartData = useMemo(() => buildActivityChartData(networkActivity, Date.now()), [networkActivity]);
-  const isLoading = networkActivityLoading || (!networkActivityLoaded && networkActivityError === null);
+  const chartData = useMemo(
+    () => buildActivityChartData(networkActivity, Date.now()),
+    [networkActivity],
+  );
+  const isLoading =
+    networkActivityLoading || (!networkActivityLoaded && networkActivityError === null);
 
   if (networkActivityError) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
           <Typography id={headingId} component="h2" variant="h6">
             Активність мережі
           </Typography>
-          <NetworkDetailsActivityErrorState error={networkActivityError} onReload={onReloadNetworkActivity} />
+          <NetworkDetailsActivityErrorState
+            error={networkActivityError}
+            onReload={onReloadNetworkActivity}
+          />
         </Stack>
       </Box>
     );
@@ -51,7 +58,9 @@ export function NetworkDetailsActivityPanel({
 
   if (isLoading) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
           <Typography id={headingId} component="h2" variant="h6">
             Активність мережі
@@ -64,7 +73,9 @@ export function NetworkDetailsActivityPanel({
 
   if (chartData.groupNames.length === 0) {
     return (
-      <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
           <Typography id={headingId} component="h2" variant="h6">
             Активність мережі
@@ -76,8 +87,14 @@ export function NetworkDetailsActivityPanel({
   }
 
   return (
-    <Box sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }} onMouseLeave={() => setHoveredBar(null)}>
+    <Box
+      sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
+    >
+      <Stack
+        spacing={2}
+        sx={{ minHeight: 0, minWidth: 0, width: '100%' }}
+        onMouseLeave={() => setHoveredBar(null)}
+      >
         <Typography id={headingId} component="h2" variant="h6">
           Активність мережі
         </Typography>
@@ -91,7 +108,13 @@ export function NetworkDetailsActivityPanel({
 
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap', pt: 0.5 }}>
           {chartData.groupNames.map((groupName) => (
-            <Stack key={groupName} direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+            <Stack
+              key={groupName}
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ minWidth: 0 }}
+            >
               <Box
                 sx={{
                   width: 12,

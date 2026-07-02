@@ -2,324 +2,324 @@
 /* Description: CSS custom properties for theming and colors */
 
 @theme {
-    --breakpoint-xs: 30rem;
-    --breakpoint-2xl: 100rem;
-    --breakpoint-3xl: 120rem;
+  --breakpoint-xs: 30rem;
+  --breakpoint-2xl: 100rem;
+  --breakpoint-3xl: 120rem;
 }
 
 @theme {
-    /* Orbit Color System - Semantic & Developer-Friendly */
+  /* Orbit Color System - Semantic & Developer-Friendly */
 
-    /* Primary Colors */
-    --color-primary-light: var(--color-primary-light);
-    --color-primary-light-hover: var(--color-primary-light-hover);
-    --color-primary-light-active: var(--color-primary-light-active);
-    --color-primary: var(--color-primary);
-    --color-primary-hover: var(--color-primary-hover);
-    --color-primary-active: var(--color-primary-active);
-    --color-primary-dark: var(--color-primary-dark);
-    --color-primary-dark-hover: var(--color-primary-dark-hover);
-    --color-primary-dark-active: var(--color-primary-dark-active);
-    --color-primary-darker: var(--color-primary-darker);
+  /* Primary Colors */
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-light-hover: var(--color-primary-light-hover);
+  --color-primary-light-active: var(--color-primary-light-active);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-active: var(--color-primary-active);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-primary-dark-hover: var(--color-primary-dark-hover);
+  --color-primary-dark-active: var(--color-primary-dark-active);
+  --color-primary-darker: var(--color-primary-darker);
 
-    /* Secondary Colors */
-    --color-secondary-light: var(--color-secondary-light);
-    --color-secondary-light-hover: var(--color-secondary-light-hover);
-    --color-secondary-light-active: var(--color-secondary-light-active);
-    --color-secondary: var(--color-secondary);
-    --color-secondary-hover: var(--color-secondary-hover);
-    --color-secondary-active: var(--color-secondary-active);
-    --color-secondary-dark: var(--color-secondary-dark);
-    --color-secondary-dark-hover: var(--color-secondary-dark-hover);
-    --color-secondary-dark-active: var(--color-secondary-dark-active);
-    --color-secondary-darker: var(--color-secondary-darker);
+  /* Secondary Colors */
+  --color-secondary-light: var(--color-secondary-light);
+  --color-secondary-light-hover: var(--color-secondary-light-hover);
+  --color-secondary-light-active: var(--color-secondary-light-active);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-hover: var(--color-secondary-hover);
+  --color-secondary-active: var(--color-secondary-active);
+  --color-secondary-dark: var(--color-secondary-dark);
+  --color-secondary-dark-hover: var(--color-secondary-dark-hover);
+  --color-secondary-dark-active: var(--color-secondary-dark-active);
+  --color-secondary-darker: var(--color-secondary-darker);
 
-    /* Neutral Colors */
-    --color-neutral-light: var(--color-neutral-light);
-    --color-neutral-light-hover: var(--color-neutral-light-hover);
-    --color-neutral-light-active: var(--color-neutral-light-active);
-    --color-neutral: var(--color-neutral);
-    --color-neutral-hover: var(--color-neutral-hover);
-    --color-neutral-active: var(--color-neutral-active);
-    --color-neutral-dark: var(--color-neutral-dark);
-    --color-neutral-dark-hover: var(--color-neutral-dark-hover);
-    --color-neutral-dark-active: var(--color-neutral-dark-active);
-    --color-neutral-darker: var(--color-neutral-darker);
+  /* Neutral Colors */
+  --color-neutral-light: var(--color-neutral-light);
+  --color-neutral-light-hover: var(--color-neutral-light-hover);
+  --color-neutral-light-active: var(--color-neutral-light-active);
+  --color-neutral: var(--color-neutral);
+  --color-neutral-hover: var(--color-neutral-hover);
+  --color-neutral-active: var(--color-neutral-active);
+  --color-neutral-dark: var(--color-neutral-dark);
+  --color-neutral-dark-hover: var(--color-neutral-dark-hover);
+  --color-neutral-dark-active: var(--color-neutral-dark-active);
+  --color-neutral-darker: var(--color-neutral-darker);
 
-    /* Success Colors */
-    --color-success-light: var(--color-success-light);
-    --color-success-light-hover: var(--color-success-light-hover);
-    --color-success-light-active: var(--color-success-light-active);
-    --color-success: var(--color-success);
-    --color-success-hover: var(--color-success-hover);
-    --color-success-active: var(--color-success-active);
-    --color-success-dark: var(--color-success-dark);
-    --color-success-dark-hover: var(--color-success-dark-hover);
-    --color-success-dark-active: var(--color-success-dark-active);
-    --color-success-darker: var(--color-success-darker);
+  /* Success Colors */
+  --color-success-light: var(--color-success-light);
+  --color-success-light-hover: var(--color-success-light-hover);
+  --color-success-light-active: var(--color-success-light-active);
+  --color-success: var(--color-success);
+  --color-success-hover: var(--color-success-hover);
+  --color-success-active: var(--color-success-active);
+  --color-success-dark: var(--color-success-dark);
+  --color-success-dark-hover: var(--color-success-dark-hover);
+  --color-success-dark-active: var(--color-success-dark-active);
+  --color-success-darker: var(--color-success-darker);
 
-    /* Warning Colors */
-    --color-warning-light: var(--color-warning-light);
-    --color-warning-light-hover: var(--color-warning-light-hover);
-    --color-warning-light-active: var(--color-warning-light-active);
-    --color-warning: var(--color-warning);
-    --color-warning-hover: var(--color-warning-hover);
-    --color-warning-active: var(--color-warning-active);
-    --color-warning-dark: var(--color-warning-dark);
-    --color-warning-dark-hover: var(--color-warning-dark-hover);
-    --color-warning-dark-active: var(--color-warning-dark-active);
-    --color-warning-darker: var(--color-warning-darker);
+  /* Warning Colors */
+  --color-warning-light: var(--color-warning-light);
+  --color-warning-light-hover: var(--color-warning-light-hover);
+  --color-warning-light-active: var(--color-warning-light-active);
+  --color-warning: var(--color-warning);
+  --color-warning-hover: var(--color-warning-hover);
+  --color-warning-active: var(--color-warning-active);
+  --color-warning-dark: var(--color-warning-dark);
+  --color-warning-dark-hover: var(--color-warning-dark-hover);
+  --color-warning-dark-active: var(--color-warning-dark-active);
+  --color-warning-darker: var(--color-warning-darker);
 
-    /* Error Colors */
-    --color-error-light: var(--color-error-light);
-    --color-error-light-hover: var(--color-error-light-hover);
-    --color-error-light-active: var(--color-error-light-active);
-    --color-error: var(--color-error);
-    --color-error-hover: var(--color-error-hover);
-    --color-error-active: var(--color-error-active);
-    --color-error-dark: var(--color-error-dark);
-    --color-error-dark-hover: var(--color-error-dark-hover);
-    --color-error-dark-active: var(--color-error-dark-active);
-    --color-error-darker: var(--color-error-darker);
+  /* Error Colors */
+  --color-error-light: var(--color-error-light);
+  --color-error-light-hover: var(--color-error-light-hover);
+  --color-error-light-active: var(--color-error-light-active);
+  --color-error: var(--color-error);
+  --color-error-hover: var(--color-error-hover);
+  --color-error-active: var(--color-error-active);
+  --color-error-dark: var(--color-error-dark);
+  --color-error-dark-hover: var(--color-error-dark-hover);
+  --color-error-dark-active: var(--color-error-dark-active);
+  --color-error-darker: var(--color-error-darker);
 
-    /* Semantic Usage Colors */
-    --color-text-muted: var(--color-text-muted);
-    --color-bg-muted: var(--color-bg-muted);
-    --color-border-muted: var(--color-border-muted);
+  /* Semantic Usage Colors */
+  --color-text-muted: var(--color-text-muted);
+  --color-bg-muted: var(--color-bg-muted);
+  --color-border-muted: var(--color-border-muted);
 }
 
 @theme inline {
-    /* --color-*: initial; */
-    --color-background: var(--background-color);
-    --color-column: var(--column-color);
-    --color-card: var(--card-color);
-    --color-border: var(--border-color);
-    --color-border-selected: var(--border-selected-color);
-    --color-separator: var(--separator-color);
-    --color-icons: var(--icons-color);
-    --color-tag: var(--tag-color);
-    --color-tag-selected: var(--tag-selected-color);
-    --color-text: var(--text-color);
-    --color-text-disabled: var(--text-disabled-color);
-    --color-watermark: var(--watermark-color);
-    --color-action: var(--action-color);
-    --color-action-hovered: var(--action-hovered-color);
-    --color-w: #fff;
-    --color-button-text: var(--button-text-color);
-    --color-toggle: var(--toggle-color);
-    --color-toggle-bal: var(--toggle-ball-color);
-    --color-toggle-selected: var(--toggle-selected-color);
-    --color-toggle-selected-ball: var(--toggle-selected-ball-color);
-    --color-bw: var(--bw-color);
+  /* --color-*: initial; */
+  --color-background: var(--background-color);
+  --color-column: var(--column-color);
+  --color-card: var(--card-color);
+  --color-border: var(--border-color);
+  --color-border-selected: var(--border-selected-color);
+  --color-separator: var(--separator-color);
+  --color-icons: var(--icons-color);
+  --color-tag: var(--tag-color);
+  --color-tag-selected: var(--tag-selected-color);
+  --color-text: var(--text-color);
+  --color-text-disabled: var(--text-disabled-color);
+  --color-watermark: var(--watermark-color);
+  --color-action: var(--action-color);
+  --color-action-hovered: var(--action-hovered-color);
+  --color-w: #fff;
+  --color-button-text: var(--button-text-color);
+  --color-toggle: var(--toggle-color);
+  --color-toggle-bal: var(--toggle-ball-color);
+  --color-toggle-selected: var(--toggle-selected-color);
+  --color-toggle-selected-ball: var(--toggle-selected-ball-color);
+  --color-bw: var(--bw-color);
 
-    /* Orbit-style Primary Colors (existing teal-blue/baby-blue) */
-    --color-primary-light: var(--teal-blue-light);
-    --color-primary-light-hover: var(--teal-blue-light-hover);
-    --color-primary-light-active: var(--teal-blue-light-active);
-    --color-primary: var(--teal-blue-normal);
-    --color-primary-hover: var(--teal-blue-normal-hover);
-    --color-primary-active: var(--teal-blue-normal-active);
-    --color-primary-dark: var(--teal-blue-dark);
-    --color-primary-dark-hover: var(--teal-blue-dark-hover);
-    --color-primary-dark-active: var(--teal-blue-dark-active);
-    --color-primary-darker: var(--teal-blue-darker);
+  /* Orbit-style Primary Colors (existing teal-blue/baby-blue) */
+  --color-primary-light: var(--teal-blue-light);
+  --color-primary-light-hover: var(--teal-blue-light-hover);
+  --color-primary-light-active: var(--teal-blue-light-active);
+  --color-primary: var(--teal-blue-normal);
+  --color-primary-hover: var(--teal-blue-normal-hover);
+  --color-primary-active: var(--teal-blue-normal-active);
+  --color-primary-dark: var(--teal-blue-dark);
+  --color-primary-dark-hover: var(--teal-blue-dark-hover);
+  --color-primary-dark-active: var(--teal-blue-dark-active);
+  --color-primary-darker: var(--teal-blue-darker);
 
-    /* Orbit-style Secondary Colors (existing ochre) */
-    --color-secondary-light: var(--ochre-light);
-    --color-secondary-light-hover: var(--ochre-light-hover);
-    --color-secondary-light-active: var(--ochre-light-active);
-    --color-secondary: var(--ochre-normal);
-    --color-secondary-hover: var(--ochre-normal-hover);
-    --color-secondary-active: var(--ochre-normal-active);
-    --color-secondary-dark: var(--ochre-dark);
-    --color-secondary-dark-hover: var(--ochre-dark-hover);
-    --color-secondary-dark-active: var(--ochre-dark-active);
-    --color-secondary-darker: var(--ochre-darker);
+  /* Orbit-style Secondary Colors (existing ochre) */
+  --color-secondary-light: var(--ochre-light);
+  --color-secondary-light-hover: var(--ochre-light-hover);
+  --color-secondary-light-active: var(--ochre-light-active);
+  --color-secondary: var(--ochre-normal);
+  --color-secondary-hover: var(--ochre-normal-hover);
+  --color-secondary-active: var(--ochre-normal-active);
+  --color-secondary-dark: var(--ochre-dark);
+  --color-secondary-dark-hover: var(--ochre-dark-hover);
+  --color-secondary-dark-active: var(--ochre-dark-active);
+  --color-secondary-darker: var(--ochre-darker);
 
-    /* Orbit-style Neutral Palette */
-    --color-neutral-light: #f8f9fb;
-    --color-neutral-light-hover: #f0f1f3;
-    --color-neutral-light-active: #e7e8ea;
-    --color-neutral: #6b7280;
-    --color-neutral-hover: #5b6570;
-    --color-neutral-active: #4b5563;
-    --color-neutral-dark: #374151;
-    --color-neutral-dark-hover: #2d3748;
-    --color-neutral-dark-active: #1f2937;
-    --color-neutral-darker: #111827;
+  /* Orbit-style Neutral Palette */
+  --color-neutral-light: #f8f9fb;
+  --color-neutral-light-hover: #f0f1f3;
+  --color-neutral-light-active: #e7e8ea;
+  --color-neutral: #6b7280;
+  --color-neutral-hover: #5b6570;
+  --color-neutral-active: #4b5563;
+  --color-neutral-dark: #374151;
+  --color-neutral-dark-hover: #2d3748;
+  --color-neutral-dark-active: #1f2937;
+  --color-neutral-darker: #111827;
 
-    /* Semantic Colors - Balanced/Moderate */
-    /* Success - Balanced Green */
-    --color-success-light: #f0fdf4;
-    --color-success-light-hover: #dcfce7;
-    --color-success-light-active: #bbf7d0;
-    --color-success: #16a34a;
-    --color-success-hover: #15803d;
-    --color-success-active: #166534;
-    --color-success-dark: #14532d;
-    --color-success-dark-hover: #0f3f23;
-    --color-success-dark-active: #052e16;
-    --color-success-darker: #021c0e;
+  /* Semantic Colors - Balanced/Moderate */
+  /* Success - Balanced Green */
+  --color-success-light: #f0fdf4;
+  --color-success-light-hover: #dcfce7;
+  --color-success-light-active: #bbf7d0;
+  --color-success: #16a34a;
+  --color-success-hover: #15803d;
+  --color-success-active: #166534;
+  --color-success-dark: #14532d;
+  --color-success-dark-hover: #0f3f23;
+  --color-success-dark-active: #052e16;
+  --color-success-darker: #021c0e;
 
-    /* Warning - Balanced Orange */
-    --color-warning-light: #fff7ed;
-    --color-warning-light-hover: #ffedd5;
-    --color-warning-light-active: #fed7aa;
-    --color-warning: #ea580c;
-    --color-warning-hover: #c2410c;
-    --color-warning-active: #9a3412;
-    --color-warning-dark: #7c2d12;
-    --color-warning-dark-hover: #5c2414;
-    --color-warning-dark-active: #481a08;
-    --color-warning-darker: #3c1506;
+  /* Warning - Balanced Orange */
+  --color-warning-light: #fff7ed;
+  --color-warning-light-hover: #ffedd5;
+  --color-warning-light-active: #fed7aa;
+  --color-warning: #ea580c;
+  --color-warning-hover: #c2410c;
+  --color-warning-active: #9a3412;
+  --color-warning-dark: #7c2d12;
+  --color-warning-dark-hover: #5c2414;
+  --color-warning-dark-active: #481a08;
+  --color-warning-darker: #3c1506;
 
-    /* Error - Balanced Red */
-    --color-error-light: #fef2f2;
-    --color-error-light-hover: #fecaca;
-    --color-error-light-active: #fca5a5;
-    --color-error: #dc2626;
-    --color-error-hover: #b91c1c;
-    --color-error-active: #991b1b;
-    --color-error-dark: #7f1d1d;
-    --color-error-dark-hover: #5f1c1c;
-    --color-error-dark-active: #450a0a;
-    --color-error-darker: #3c0a0a;
+  /* Error - Balanced Red */
+  --color-error-light: #fef2f2;
+  --color-error-light-hover: #fecaca;
+  --color-error-light-active: #fca5a5;
+  --color-error: #dc2626;
+  --color-error-hover: #b91c1c;
+  --color-error-active: #991b1b;
+  --color-error-dark: #7f1d1d;
+  --color-error-dark-hover: #5f1c1c;
+  --color-error-dark-active: #450a0a;
+  --color-error-darker: #3c0a0a;
 
-    /* Semantic Mappings for Muted/Subdued */
-    --color-text-muted: var(--color-neutral);
-    --color-bg-muted: var(--color-neutral-light);
-    --color-border-muted: var(--color-neutral-light-active);
+  /* Semantic Mappings for Muted/Subdued */
+  --color-text-muted: var(--color-neutral);
+  --color-bg-muted: var(--color-neutral-light);
+  --color-border-muted: var(--color-neutral-light-active);
 
-    --text-*: initial;
-    --text-xs: 12px;
-    --text-sm: 13px;
-    --text-base: 14px;
-    --text-lg: 16px;
+  --text-*: initial;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
 }
 
 :root {
-    --bd-coyote: #9c7a54;
-    --bd-oak-barrel: #6f5333;
-    --bd-coyote-rgb: 156, 122, 84;
-    --sl-tooltip-background-color: var(--bs-body-color);
-    --alto-color: #D9D9D9;
-    --athens-gray-color: #F8F9FB;
-    --lynch-color: #6F839D;
-    --geyser-color: #D2DAE5;
-    --link-water-color: #E2EBF7;
-    --mine-shaft-color: #1F1F1F;
-    --shark-color: #2C2C2E;
-    --pigeon-post-color: #A4BAD7;
-    --mid-gray-color: #5E5E64;
+  --bd-coyote: #9c7a54;
+  --bd-oak-barrel: #6f5333;
+  --bd-coyote-rgb: 156, 122, 84;
+  --sl-tooltip-background-color: var(--bs-body-color);
+  --alto-color: #d9d9d9;
+  --athens-gray-color: #f8f9fb;
+  --lynch-color: #6f839d;
+  --geyser-color: #d2dae5;
+  --link-water-color: #e2ebf7;
+  --mine-shaft-color: #1f1f1f;
+  --shark-color: #2c2c2e;
+  --pigeon-post-color: #a4bad7;
+  --mid-gray-color: #5e5e64;
 
-    --neutral-100: white;
-    --neutral-200: #F8F9FB;
-    --neutral-300: #EFF0F1;
-    --neutral-400: #D9D9D9;
-    --neutral-600: #5E5E64;
-    --neutral-800: #2C2C2E;
-    --neutral-900: #1F1F1F;
+  --neutral-100: white;
+  --neutral-200: #f8f9fb;
+  --neutral-300: #eff0f1;
+  --neutral-400: #d9d9d9;
+  --neutral-600: #5e5e64;
+  --neutral-800: #2c2c2e;
+  --neutral-900: #1f1f1f;
 
-    --teal-blue-light: #eaf0f4;
-    --teal-blue-light-hover: #dfe9ef;
-    --teal-blue-light-active: #bed1dd;
-    --teal-blue-normal: #2c6c91;
-    --teal-blue-normal-hover: #286183;
-    --teal-blue-normal-active: #235674;
-    --teal-blue-dark: #21516d;
-    --teal-blue-dark-hover: #1a4157;
-    --teal-blue-dark-active: #143141;
-    --teal-blue-darker: #0f2633;
+  --teal-blue-light: #eaf0f4;
+  --teal-blue-light-hover: #dfe9ef;
+  --teal-blue-light-active: #bed1dd;
+  --teal-blue-normal: #2c6c91;
+  --teal-blue-normal-hover: #286183;
+  --teal-blue-normal-active: #235674;
+  --teal-blue-dark: #21516d;
+  --teal-blue-dark-hover: #1a4157;
+  --teal-blue-dark-active: #143141;
+  --teal-blue-darker: #0f2633;
 
-    --baby-blue-light: #f4fafe;
-    --baby-blue-light-hover: #eff8fe;
-    --baby-blue-light-active: #def0fc;
-    --baby-blue-normal: #93cdf6;
-    --baby-blue-normal-hover: #84b9dd;
-    --baby-blue-normal-active: #76a4c5;
-    --baby-blue-dark: #6e9ab9;
-    --baby-blue-dark-hover: #587b94;
-    --baby-blue-dark-active: #425c6f;
-    --baby-blue-darker: #334856;
+  --baby-blue-light: #f4fafe;
+  --baby-blue-light-hover: #eff8fe;
+  --baby-blue-light-active: #def0fc;
+  --baby-blue-normal: #93cdf6;
+  --baby-blue-normal-hover: #84b9dd;
+  --baby-blue-normal-active: #76a4c5;
+  --baby-blue-dark: #6e9ab9;
+  --baby-blue-dark-hover: #587b94;
+  --baby-blue-dark-active: #425c6f;
+  --baby-blue-darker: #334856;
 
-    --ochre-light: #fbf3e8;
-    --ochre-light-hover: #f8eddd;
-    --ochre-light-active: #f1dab9;
-    --ochre-normal: #d3871d;
-    --ochre-normal-hover: #be7a1a;
-    --ochre-normal-active: #a96c17;
-    --ochre-dark: #9e6516;
-    --ochre-dark-hover: #7f5111;
-    --ochre-dark-active: #5f3d0d;
-    --ochre-darker: #4a2f0a;
+  --ochre-light: #fbf3e8;
+  --ochre-light-hover: #f8eddd;
+  --ochre-light-active: #f1dab9;
+  --ochre-normal: #d3871d;
+  --ochre-normal-hover: #be7a1a;
+  --ochre-normal-active: #a96c17;
+  --ochre-dark: #9e6516;
+  --ochre-dark-hover: #7f5111;
+  --ochre-dark-active: #5f3d0d;
+  --ochre-darker: #4a2f0a;
 
-    --bw-color: white;
+  --bw-color: white;
 
-    --background-color: var(--neutral-300);
-    --column-color: white;
-    --card-color: var(--athens-gray-color);
-    --border-color: var(--link-water-color);
-    --border-selected-color: var(--ochre-normal);
-    --separator-color: var(--link-water-color);
-    --icons-color: var(--lynch-color);
-    --tag-color: white;
-    --tag-selected-color: var(--ochre-light-active);
-    --text-color: black;
-    --text-disabled-color: var(--geyser-color);
-    --watermark-color: var(--neutral-400);
+  --background-color: var(--neutral-300);
+  --column-color: white;
+  --card-color: var(--athens-gray-color);
+  --border-color: var(--link-water-color);
+  --border-selected-color: var(--ochre-normal);
+  --separator-color: var(--link-water-color);
+  --icons-color: var(--lynch-color);
+  --tag-color: white;
+  --tag-selected-color: var(--ochre-light-active);
+  --text-color: black;
+  --text-disabled-color: var(--geyser-color);
+  --watermark-color: var(--neutral-400);
 
-    --action-color: var(--teal-blue-normal);
-    /* WCAG AA contrast on the light card background. */
-    --message-callsign-color: #1565c0;
-    --action-hovered-color: var(--teal-blue-normal-hover);
-    --button-text-color: white;
-    --toggle-color: white;
-    --toggle-ball-color: var(--neutral-400);
-    --toggle-selected-color: var(--ochre-normal);
-    --toggle-selected-ball-color: white;
-    --color-bg-inactive: #EFF0F1;
-    /* Light gray for inactive rows */
+  --action-color: var(--teal-blue-normal);
+  /* WCAG AA contrast on the light card background. */
+  --message-callsign-color: #1565c0;
+  --action-hovered-color: var(--teal-blue-normal-hover);
+  --button-text-color: white;
+  --toggle-color: white;
+  --toggle-ball-color: var(--neutral-400);
+  --toggle-selected-color: var(--ochre-normal);
+  --toggle-selected-ball-color: white;
+  --color-bg-inactive: #eff0f1;
+  /* Light gray for inactive rows */
 }
 
-html[data-bs-theme="dark"] {
-    --sl-tooltip-background-color: var(--bs-secondary-bg);
-    --bs-body-color: white;
+html[data-bs-theme='dark'] {
+  --sl-tooltip-background-color: var(--bs-secondary-bg);
+  --bs-body-color: white;
 
-    --background-color: var(--mine-shaft-color);
-    --column-color: black;
-    --card-color: var(--shark-color);
-    --border-color: var(--mid-gray-color);
-    --border-selected-color: #BC8C56;
-    --separator-color: var(--mid-gray-color);
-    --icons-color: var(--pigeon-post-color);
-    --tag-color: black;
-    --tag-selected-color: #FABA72;
-    --text-color: white;
-    --watermark-color: var(--neutral-600);
-    --action-color: var(--baby-blue-normal);
-    --message-callsign-color: #90caf9;
-    --action-hovered-color: var(--baby-blue-normal-hover);
-    --button-text-color: black;
-    --toggle-color: black;
-    --bw-color: var(--bs-body-bg);
-    --toggle-selected-color: var(--ochre-normal);
-    --color-bg-inactive: #2C2C2E;
-    /* Neutral dark gray for inactive rows */
+  --background-color: var(--mine-shaft-color);
+  --column-color: black;
+  --card-color: var(--shark-color);
+  --border-color: var(--mid-gray-color);
+  --border-selected-color: #bc8c56;
+  --separator-color: var(--mid-gray-color);
+  --icons-color: var(--pigeon-post-color);
+  --tag-color: black;
+  --tag-selected-color: #faba72;
+  --text-color: white;
+  --watermark-color: var(--neutral-600);
+  --action-color: var(--baby-blue-normal);
+  --message-callsign-color: #90caf9;
+  --action-hovered-color: var(--baby-blue-normal-hover);
+  --button-text-color: black;
+  --toggle-color: black;
+  --bw-color: var(--bs-body-bg);
+  --toggle-selected-color: var(--ochre-normal);
+  --color-bg-inactive: #2c2c2e;
+  /* Neutral dark gray for inactive rows */
 
-    /* Override semantic colors for dark theme */
-    --color-text-muted: var(--color-neutral);
-    --color-bg-muted: var(--color-neutral-dark);
-    --color-border-muted: var(--color-neutral-dark-active);
+  /* Override semantic colors for dark theme */
+  --color-text-muted: var(--color-neutral);
+  --color-bg-muted: var(--color-neutral-dark);
+  --color-border-muted: var(--color-neutral-dark-active);
 
-    /* Override primary colors for dark theme to use baby-blue */
-    --color-primary-light: var(--baby-blue-light);
-    --color-primary-light-hover: var(--baby-blue-light-hover);
-    --color-primary-light-active: var(--baby-blue-light-active);
-    --color-primary: var(--baby-blue-normal);
-    --color-primary-hover: var(--baby-blue-normal-hover);
-    --color-primary-active: var(--baby-blue-normal-active);
-    --color-primary-dark: var(--baby-blue-dark);
-    --color-primary-dark-hover: var(--baby-blue-dark-hover);
-    --color-primary-dark-active: var(--baby-blue-dark-active);
-    --color-primary-darker: var(--baby-blue-darker);
+  /* Override primary colors for dark theme to use baby-blue */
+  --color-primary-light: var(--baby-blue-light);
+  --color-primary-light-hover: var(--baby-blue-light-hover);
+  --color-primary-light-active: var(--baby-blue-light-active);
+  --color-primary: var(--baby-blue-normal);
+  --color-primary-hover: var(--baby-blue-normal-hover);
+  --color-primary-active: var(--baby-blue-normal-active);
+  --color-primary-dark: var(--baby-blue-dark);
+  --color-primary-dark-hover: var(--baby-blue-dark-hover);
+  --color-primary-dark-active: var(--baby-blue-dark-active);
+  --color-primary-darker: var(--baby-blue-darker);
 }

@@ -105,9 +105,7 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
       tagsMap: {},
     });
 
-    expect(derived.unitsOptions).toEqual([
-      { value: '', label: '<Не вказано>', count: 7 },
-    ]);
+    expect(derived.unitsOptions).toEqual([{ value: '', label: '<Не вказано>', count: 7 }]);
   });
 
   it('merges duplicate group labels into one option with combined values and count', () => {

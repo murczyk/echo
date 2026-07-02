@@ -51,7 +51,9 @@ describe('getSharedFilterTextFieldProps', () => {
   });
 
   it('returns the same props for multi-select filters', () => {
-    expect(getSharedFilterTextFieldProps('multi-select')).toEqual(getSharedFilterTextFieldProps('select'));
+    expect(getSharedFilterTextFieldProps('multi-select')).toEqual(
+      getSharedFilterTextFieldProps('select'),
+    );
   });
 
   it('returns empty props for non-select filters', () => {
@@ -100,7 +102,9 @@ describe('resolveExplicitSelectFilterValue', () => {
   });
 
   it('unwraps MRT array values and returns the first allowed value', () => {
-    expect(resolveExplicitSelectFilterValue(['Відомий'], ['Відомий', 'В дорозвідці', 'Усі'], 'Відомий')).toBe('Відомий');
+    expect(
+      resolveExplicitSelectFilterValue(['Відомий'], ['Відомий', 'В дорозвідці', 'Усі'], 'Відомий'),
+    ).toBe('Відомий');
   });
 
   it('falls back when value is missing or unsupported', () => {
@@ -163,10 +167,7 @@ describe('getSharedSelectAllCheckboxProps', () => {
     const props = getSharedSelectAllCheckboxProps({
       table: {
         getRowModel: () => ({
-          rows: [
-            { getCanSelect: () => false },
-            { getCanSelect: () => false },
-          ],
+          rows: [{ getCanSelect: () => false }, { getCanSelect: () => false }],
         }),
       } as any,
     });
@@ -178,10 +179,7 @@ describe('getSharedSelectAllCheckboxProps', () => {
     const props = getSharedSelectAllCheckboxProps({
       table: {
         getRowModel: () => ({
-          rows: [
-            { getCanSelect: () => false },
-            { getCanSelect: () => true },
-          ],
+          rows: [{ getCanSelect: () => false }, { getCanSelect: () => true }],
         }),
       } as any,
     });

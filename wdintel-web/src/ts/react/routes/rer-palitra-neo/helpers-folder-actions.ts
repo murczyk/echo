@@ -1,5 +1,12 @@
 import { normalizeFolderPathForUi } from './helpers-folders';
-import { FolderActionDialogState, FolderActionKind, FolderActionPreview, FolderActionResultSummary, FolderTreeNode, PalitraRowView } from './types';
+import {
+  FolderActionDialogState,
+  FolderActionKind,
+  FolderActionPreview,
+  FolderActionResultSummary,
+  FolderTreeNode,
+  PalitraRowView,
+} from './types';
 
 export function buildAssignFolderPreview(
   rows: PalitraRowView[],
@@ -9,7 +16,9 @@ export function buildAssignFolderPreview(
   const normalizedPath = normalizeFolderPathForUi(folderPath);
   const selectedIdSet = new Set(selectedIds);
   const requestedIds = rows.filter((row) => selectedIdSet.has(row.id)).map((row) => row.id);
-  const modifiableRows = rows.filter((row) => selectedIdSet.has(row.id) && row.canSelect && row.canModify);
+  const modifiableRows = rows.filter(
+    (row) => selectedIdSet.has(row.id) && row.canSelect && row.canModify,
+  );
   const modifiableIds = modifiableRows.map((row) => row.id);
   const modifiableIdSet = new Set(modifiableIds);
   const skippedIds = requestedIds.filter((id) => !modifiableIdSet.has(id));
@@ -52,7 +61,10 @@ export function buildFolderSubtreePreview(node: FolderTreeNode): FolderActionPre
   };
 }
 
-export function buildBulkActionResultSummary(requestedIds: number[], changedIds: number[]): FolderActionResultSummary {
+export function buildBulkActionResultSummary(
+  requestedIds: number[],
+  changedIds: number[],
+): FolderActionResultSummary {
   const uniqueRequestedIds = [...new Set(requestedIds)].sort((left, right) => left - right);
   const uniqueChangedIds = [...new Set(changedIds)].sort((left, right) => left - right);
   const changedIdSet = new Set(uniqueChangedIds);
@@ -68,7 +80,10 @@ export function buildBulkActionResultSummary(requestedIds: number[], changedIds:
   };
 }
 
-export function formatFolderActionSuccessMessage(kind: FolderActionKind, summary: FolderActionResultSummary): string {
+export function formatFolderActionSuccessMessage(
+  kind: FolderActionKind,
+  summary: FolderActionResultSummary,
+): string {
   const labels: Record<FolderActionKind, string> = {
     assign: 'Палітри переміщено в папку',
     rename: 'Папку перейменовано',
@@ -82,7 +97,14 @@ export function formatFolderActionSuccessMessage(kind: FolderActionKind, summary
   }
 
   if (summary.skippedCount > 0) {
-    return label + ': змінено ' + String(summary.changedCount) + ' з ' + String(summary.requestedCount) + '.';
+    return (
+      label +
+      ': змінено ' +
+      String(summary.changedCount) +
+      ' з ' +
+      String(summary.requestedCount) +
+      '.'
+    );
   }
 
   return label + ': ' + String(summary.changedCount) + '.';

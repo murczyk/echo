@@ -62,7 +62,7 @@ export function EditCallsignDrawer({
 
   return (
     <Drawer
-      anchor='right'
+      anchor="right"
       open={open}
       onClose={submitting ? undefined : onClose}
       ModalProps={{
@@ -85,13 +85,13 @@ export function EditCallsignDrawer({
       }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Typography variant='h6' id={titleId}>
+        <Typography variant="h6" id={titleId}>
           Редагувати позивний
         </Typography>
       </Box>
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          {error ? <PowerAlert severity='error'>{error}</PowerAlert> : null}
+          {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
           {form ? (
             <CallsignFormFields
               value={form}
@@ -105,7 +105,7 @@ export function EditCallsignDrawer({
               controlsFirst
               hintContent={
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <Typography variant='caption' color='text.secondary' sx={{ textAlign: 'left' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'left' }}>
                     {CALLSIGN_FORM_HINT}
                     {form.sourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
                   </Typography>
@@ -118,11 +118,20 @@ export function EditCallsignDrawer({
           ) : null}
         </Stack>
       </Box>
-      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+      <Box
+        sx={{
+          p: 2.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 2,
+        }}
+      >
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant='contained' disabled={submitting || !form}>
+        <Button onClick={onSave} variant="contained" disabled={submitting || !form}>
           {submitting ? `Збереження${ELLIPSIS}` : 'Зберегти'}
         </Button>
       </Box>

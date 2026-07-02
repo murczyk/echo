@@ -1,4 +1,9 @@
-import { NetworkCallsignSourceId, type NetworkCallsignDrawerForm, type NetworkCallsignMarkerMode, type NetworkCallsignRowView } from './network-callsigns.types';
+import {
+  NetworkCallsignSourceId,
+  type NetworkCallsignDrawerForm,
+  type NetworkCallsignMarkerMode,
+  type NetworkCallsignRowView,
+} from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 
 export function getNetworkCallsignMarkerMode(
@@ -27,7 +32,10 @@ export function hasNetworkCallsignMarker(
   return networkCallsign.mainRadioStation || networkCallsign.commandControl;
 }
 
-export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId: number | null): NetworkCallsignDrawerForm {
+export function createDefaultNetworkCallsignDrawerForm(
+  networkId: number,
+  unitId: number | null,
+): NetworkCallsignDrawerForm {
   return {
     id: null,
     networkId,
@@ -44,7 +52,9 @@ export function createDefaultNetworkCallsignDrawerForm(networkId: number, unitId
   };
 }
 
-export function isNetworkCallsignSourceRequired(form: Pick<NetworkCallsignDrawerForm, 'developing'>): boolean {
+export function isNetworkCallsignSourceRequired(
+  form: Pick<NetworkCallsignDrawerForm, 'developing'>,
+): boolean {
   return !form.developing;
 }
 
@@ -66,21 +76,25 @@ export function createNetworkCallsignDrawerForm(
     // Ensure markers are exclusive in the drawer form: prefer `commandControl` when
     // both flags are present on an existing record, otherwise use the canonical mode.
     ...(() => {
-      const mode = networkCallsign.mainRadioStation && networkCallsign.commandControl
-        ? 'commandControl'
-        : getNetworkCallsignMarkerMode(networkCallsign);
+      const mode =
+        networkCallsign.mainRadioStation && networkCallsign.commandControl
+          ? 'commandControl'
+          : getNetworkCallsignMarkerMode(networkCallsign);
       const state = getNetworkCallsignMarkerState(mode);
       return { mainRadioStation: state.mainRadioStation, commandControl: state.commandControl };
     })(),
   };
 }
 
-export function getNetworkCallsignDrawerSaveError(form: NetworkCallsignDrawerForm | null): string | null {
+export function getNetworkCallsignDrawerSaveError(
+  form: NetworkCallsignDrawerForm | null,
+): string | null {
   if (!form) return null;
 
   const callsign = normalizeCallsignDisplay(form.callsign);
   if (callsign === '') return 'Позивний є обовʼязковим';
-  if (isNetworkCallsignSourceRequired(form) && form.sourceId === null) return 'Джерело є обовʼязковим';
+  if (isNetworkCallsignSourceRequired(form) && form.sourceId === null)
+    return 'Джерело є обовʼязковим';
   if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
     return 'Для джерела "РО" частота є обовʼязковою';
   }

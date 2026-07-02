@@ -214,10 +214,10 @@ export function useNetworkDetailsPelengationMap(
 
       const canvasSize = heatCanvasSizeRef.current;
       if (
-        canvasSize === null
-        || canvasSize.width !== width
-        || canvasSize.height !== height
-        || canvasSize.dpr !== devicePixelRatio
+        canvasSize === null ||
+        canvasSize.width !== width ||
+        canvasSize.height !== height ||
+        canvasSize.dpr !== devicePixelRatio
       ) {
         currentCanvas.width = drawWidth;
         currentCanvas.height = drawHeight;
@@ -266,7 +266,12 @@ export function useNetworkDetailsPelengationMap(
         .filter(({ projected }) => {
           const x = projected.x * devicePixelRatio * renderScale;
           const y = projected.y * devicePixelRatio * renderScale;
-          return !(x < -renderRadius || y < -renderRadius || x > scratchWidth + renderRadius || y > scratchHeight + renderRadius);
+          return !(
+            x < -renderRadius ||
+            y < -renderRadius ||
+            x > scratchWidth + renderRadius ||
+            y > scratchHeight + renderRadius
+          );
         });
 
       for (const { projected } of projectedPoints) {
@@ -289,7 +294,12 @@ export function useNetworkDetailsPelengationMap(
         const y = (center.y / center.count) * devicePixelRatio * renderScale;
         const alpha = getPelengationHeatmapAlpha(densityByCell.get(key) ?? 1);
 
-        if (x < -renderRadius || y < -renderRadius || x > scratchWidth + renderRadius || y > scratchHeight + renderRadius) {
+        if (
+          x < -renderRadius ||
+          y < -renderRadius ||
+          x > scratchWidth + renderRadius ||
+          y > scratchHeight + renderRadius
+        ) {
           continue;
         }
 
@@ -425,7 +435,6 @@ export function useNetworkDetailsPelengationMap(
 
       markersLayer.addLayer(marker);
       bounds.extend([point.lat, point.lng]);
-
     });
 
     if (viewTransitionRef.current) {

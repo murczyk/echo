@@ -1,7 +1,13 @@
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { useTheme } from '@mui/material/styles';
-import { type MutableRefObject, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react';
+import {
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useState,
+} from 'react';
 import type { ComponentType } from 'react';
 
 import {
@@ -9,6 +15,7 @@ import {
   getRelationEdgeStroke,
   getRelationNodeFill,
   isPointVisibleInRelationViewBox,
+  isCatalogRelationNode,
   type NetworkCallsignRelationFreqView,
   type NetworkCallsignRelationsGraphView,
   type RelationGraphLayout,
@@ -49,10 +56,29 @@ function renderNodeMarkerBadge(
   const iconSize = 16;
 
   return (
-    <g key={label} transform={`translate(${x} ${y})`} role="img" aria-label={label} style={{ pointerEvents: 'none' }}>
+    <g
+      key={label}
+      transform={`translate(${x} ${y})`}
+      role="img"
+      aria-label={label}
+      style={{ pointerEvents: 'none' }}
+    >
       <title>{label}</title>
-      <circle cx={0} cy={0} r={badgeDiameter / 2} fill={fill} stroke="rgba(255,255,255,0.42)" strokeWidth={1} />
-      <Icon x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} htmlColor="#ffffff" />
+      <circle
+        cx={0}
+        cy={0}
+        r={badgeDiameter / 2}
+        fill={fill}
+        stroke="rgba(255,255,255,0.42)"
+        strokeWidth={1}
+      />
+      <Icon
+        x={-iconSize / 2}
+        y={-iconSize / 2}
+        width={iconSize}
+        height={iconSize}
+        htmlColor="#ffffff"
+      />
     </g>
   );
 }
@@ -127,12 +153,21 @@ export function NetworkCallsignRelationsGraphCanvas({
         const targetPosition = layout.positions.get(edge.target);
         if (!sourcePosition || !targetPosition) return null;
         const selected = selectedEdgeId === edge.id;
-        const highlighted = selected || (selectedNodeId !== null && (edge.source === selectedNodeId || edge.target === selectedNodeId));
+        const highlighted =
+          selected ||
+          (selectedNodeId !== null &&
+            (edge.source === selectedNodeId || edge.target === selectedNodeId));
         const stroke = getRelationEdgeStroke(edge, legendFreqs);
         const opacity = highlighted ? 1 : selectedNeighborIds.size > 0 ? 0.18 : 0.5;
         const width = 1.8 + Math.min(edge.visibleWeight, 8) * 0.65;
         const ctrlX = (sourcePosition.x + targetPosition.x) / 2;
-        const ctrlY = (sourcePosition.y + targetPosition.y) / 2 - Math.min(Math.abs(sourcePosition.x - targetPosition.x), Math.abs(sourcePosition.y - targetPosition.y)) * 0.14;
+        const ctrlY =
+          (sourcePosition.y + targetPosition.y) / 2 -
+          Math.min(
+            Math.abs(sourcePosition.x - targetPosition.x),
+            Math.abs(sourcePosition.y - targetPosition.y),
+          ) *
+            0.14;
 
         return (
           <g
@@ -153,7 +188,9 @@ export function NetworkCallsignRelationsGraphCanvas({
               strokeLinejoin="round"
               opacity={selected ? 1 : 0.8}
             />
-            {relationsShowLabels && !denseGraph && isPointVisibleInRelationViewBox(ctrlX, ctrlY, viewBox, 48) ? (
+            {relationsShowLabels &&
+            !denseGraph &&
+            isPointVisibleInRelationViewBox(ctrlX, ctrlY, viewBox, 48) ? (
               <text
                 x={ctrlX}
                 y={ctrlY - 8}
@@ -175,11 +212,25 @@ export function NetworkCallsignRelationsGraphCanvas({
         const position = layout.positions.get(node.id);
         if (!position || !node.visible) return null;
         const selected = selectedNodeId === node.id;
-        const highlighted = selected || (selectedNodeId !== null ? selectedNeighborIds.has(node.id) : node.matchedSearch);
-        const opacity = selectedNodeId !== null || selectedEdgeId !== null ? (highlighted ? 1 : 0.28) : node.matchedSearch ? 1 : 0.9;
-        const stroke = node.matchedSearch ? '#f0d2a0' : selected ? '#fff5df' : 'rgba(255,255,255,0.18)';
+        const highlighted =
+          selected ||
+          (selectedNodeId !== null ? selectedNeighborIds.has(node.id) : node.matchedSearch);
+        const opacity =
+          selectedNodeId !== null || selectedEdgeId !== null
+            ? highlighted
+              ? 1
+              : 0.28
+            : node.matchedSearch
+              ? 1
+              : 0.9;
+        const stroke = node.matchedSearch
+          ? '#f0d2a0'
+          : selected
+            ? '#fff5df'
+            : 'rgba(255,255,255,0.18)';
         const radius = Math.max(20, 22 + Math.min(node.weight, 24) * 0.65);
         const markerOffset = 15;
+        const catalogMarkerOffset = 18;
 
         return (
           <g
@@ -200,6 +251,15 @@ export function NetworkCallsignRelationsGraphCanvas({
               strokeWidth={selected ? 4 : 2}
               filter={`url(#${headingId}-node-shadow)`}
             />
+            {isCatalogRelationNode(node)
+              ? renderNodeMarkerBadge(
+                  position.x,
+                  position.y - catalogMarkerOffset,
+                  'Збіг з каталогу, не підтверджено в мережі',
+                  InfoOutlinedIcon,
+                  theme.palette.secondary.main,
+                )
+              : null}
             {node.mainRadioStation
               ? renderNodeMarkerBadge(
                   node.commandControl ? position.x - markerOffset : position.x,
@@ -218,7 +278,11 @@ export function NetworkCallsignRelationsGraphCanvas({
                   theme.palette.info.main,
                 )
               : null}
-            {((relationsShowLabels && !denseGraph && isPointVisibleInRelationViewBox(position.x, position.y, viewBox, radius * 3)) || selected || node.matchedSearch) && (
+            {((relationsShowLabels &&
+              !denseGraph &&
+              isPointVisibleInRelationViewBox(position.x, position.y, viewBox, radius * 3)) ||
+              selected ||
+              node.matchedSearch) && (
               <text
                 x={position.x}
                 y={position.y + radius + 18}

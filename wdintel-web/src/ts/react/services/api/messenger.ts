@@ -112,44 +112,80 @@ type GroupEntryF1Like = {
     activityLastWeek?: number;
     activity_last_week?: number;
   } | null;
-  areasOfResponsibility?: {
-    id?: number;
-    name?: string;
-    description?: string | null;
-    isTopLevel?: boolean;
-    is_top_level?: boolean;
-    orderForReport?: number | string | null;
-    order_for_report?: number | string | null;
-    leftBound?: number | string | null;
-    left_bound?: number | string | null;
-    rightBound?: number | string | null;
-    right_bound?: number | string | null;
-    leftCoordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    left_coordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    rightCoordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    right_coordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    createdAt?: number;
-    created_at?: number;
-  }[] | null;
-  areas_of_responsibility?: {
-    id?: number;
-    name?: string;
-    description?: string | null;
-    isTopLevel?: boolean;
-    is_top_level?: boolean;
-    orderForReport?: number | string | null;
-    order_for_report?: number | string | null;
-    leftBound?: number | string | null;
-    left_bound?: number | string | null;
-    rightBound?: number | string | null;
-    right_bound?: number | string | null;
-    leftCoordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    left_coordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    rightCoordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    right_coordinates?: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null;
-    createdAt?: number;
-    created_at?: number;
-  }[] | null;
+  areasOfResponsibility?:
+    | {
+        id?: number;
+        name?: string;
+        description?: string | null;
+        isTopLevel?: boolean;
+        is_top_level?: boolean;
+        orderForReport?: number | string | null;
+        order_for_report?: number | string | null;
+        leftBound?: number | string | null;
+        left_bound?: number | string | null;
+        rightBound?: number | string | null;
+        right_bound?: number | string | null;
+        leftCoordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        left_coordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        rightCoordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        right_coordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        createdAt?: number;
+        created_at?: number;
+      }[]
+    | null;
+  areas_of_responsibility?:
+    | {
+        id?: number;
+        name?: string;
+        description?: string | null;
+        isTopLevel?: boolean;
+        is_top_level?: boolean;
+        orderForReport?: number | string | null;
+        order_for_report?: number | string | null;
+        leftBound?: number | string | null;
+        left_bound?: number | string | null;
+        rightBound?: number | string | null;
+        right_bound?: number | string | null;
+        leftCoordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        left_coordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        rightCoordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        right_coordinates?: {
+          latitude?: number | string | null;
+          longitude?: number | string | null;
+          settlement?: string | null;
+        } | null;
+        createdAt?: number;
+        created_at?: number;
+      }[]
+    | null;
 };
 function toQrCodeReqBody(req: QrCodeReq): QrCodeReqBody {
   return { account_id: req.accountId };
@@ -178,7 +214,9 @@ function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
   };
 }
 
-function normalizeAccountStatsTimelineRsp(raw: AccountStatsTimelineRspLike): AccountStatsTimelineRsp {
+function normalizeAccountStatsTimelineRsp(
+  raw: AccountStatsTimelineRspLike,
+): AccountStatsTimelineRsp {
   return {
     data: (raw.data ?? []).map((entry) => ({
       datasourceId: entry.datasourceId ?? entry.datasource_id ?? 0,
@@ -234,7 +272,16 @@ function normalizeNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function normalizeCoordinates(raw: { latitude?: number | string | null; longitude?: number | string | null; settlement?: string | null } | null | undefined) {
+function normalizeCoordinates(
+  raw:
+    | {
+        latitude?: number | string | null;
+        longitude?: number | string | null;
+        settlement?: string | null;
+      }
+    | null
+    | undefined,
+) {
   if (!raw) return null;
   return {
     latitude: normalizeNumber(raw.latitude),
@@ -249,7 +296,8 @@ function normalizeGroupEntry(raw: GroupEntryF1Like): GroupEntryF1 {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     name: raw.name ?? '',
     ignoreOperativny: raw.ignoreOperativny ?? raw.ignore_operativny ?? false,
-    disableNetworkAssignment: raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    disableNetworkAssignment:
+      raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
     groupStats: {
@@ -313,6 +361,9 @@ export async function linkOperator(req: LinkEchoOperatorReq): Promise<LinkAccoun
 }
 
 export async function editGroup(req: GroupUpdateReq): Promise<GroupEntryF1> {
-  const data = await postJson<GroupEntryF1Like>('/api/messenger/edit-group', toGroupUpdateReqBody(req));
+  const data = await postJson<GroupEntryF1Like>(
+    '/api/messenger/edit-group',
+    toGroupUpdateReqBody(req),
+  );
   return normalizeGroupEntry(data ?? {});
 }

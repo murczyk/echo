@@ -2,7 +2,10 @@ import { Box, Checkbox, FormControlLabel, Popover, Stack, Typography } from '@mu
 import { useTheme } from '@mui/material/styles';
 
 import type { NetworkCallsignRelationFreqView } from '../network-relations';
-import { NETWORK_RELATIONS_FULLSCREEN_Z_INDEX, getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
+import {
+  NETWORK_RELATIONS_FULLSCREEN_Z_INDEX,
+  getNetworkRelationsGraphTheme,
+} from './network-relations-graph-theme';
 
 type Props = {
   anchorEl: HTMLElement | null;
@@ -65,7 +68,12 @@ export function NetworkCallsignRelationsGraphFilters({
               return (
                 <FormControlLabel
                   key={freq.freq}
-                  control={<Checkbox checked={enabled} onChange={(_, checked) => onEnabledFreqToggle(freq.freq, checked)} />}
+                  control={
+                    <Checkbox
+                      checked={enabled}
+                      onChange={(_, checked) => onEnabledFreqToggle(freq.freq, checked)}
+                    />
+                  }
                   label={
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Box sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color }} />

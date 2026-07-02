@@ -34,7 +34,13 @@ vi.mock('@mui/material', () => ({
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (_event: Event, value: boolean) => void }) => (
+  Switch: ({
+    checked,
+    onChange,
+  }: {
+    checked?: boolean;
+    onChange?: (_event: Event, value: boolean) => void;
+  }) => (
     <button type="button" onClick={() => onChange?.(new Event('change'), !checked)}>
       {checked ? 'on' : 'off'}
     </button>
@@ -86,13 +92,7 @@ vi.mock('../../components/PowerChip', () => ({
 }));
 
 vi.mock('../../components/SidePanelToggleButton', () => ({
-  SidePanelToggleButton: ({
-    label,
-    onClick,
-  }: {
-    label: string;
-    onClick: () => void;
-  }) => (
+  SidePanelToggleButton: ({ label, onClick }: { label: string; onClick: () => void }) => (
     <button type="button" aria-label={label} onClick={onClick}>
       {label}
     </button>
@@ -334,8 +334,12 @@ describe('RerAnalysisNeoPage', () => {
       root.render(<RerAnalysisNeoPage />);
     });
 
-    const leftToggle = container.querySelector<HTMLButtonElement>('[aria-label="Згорнути ліву панель"]');
-    const rightToggle = container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути праву панель"]');
+    const leftToggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Згорнути ліву панель"]',
+    );
+    const rightToggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Розгорнути праву панель"]',
+    );
 
     expect(leftToggle).not.toBeNull();
     expect(rightToggle).not.toBeNull();

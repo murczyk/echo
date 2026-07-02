@@ -1,6 +1,9 @@
 import type { Palitra as ReadPalitra } from '../../../../../Bindings';
 import type { PalitraReadV2 } from '../../../../../Bindings';
-import type { PalitraManagerCallbacks, PalitraManagerOptions } from '../../../../maps/palitra-types';
+import type {
+  PalitraManagerCallbacks,
+  PalitraManagerOptions,
+} from '../../../../maps/palitra-types';
 
 export type PalitraPreviewDialogProps = {
   open: boolean;

@@ -8,7 +8,8 @@ type Props = {
 };
 
 export function NetworkCallsignStatusDot({ statusLabel, status }: Props) {
-  const color = status === 'developing' ? 'warning.main' : status === 'catalog' ? 'info.main' : 'success.main';
+  const color =
+    status === 'developing' ? 'warning.main' : status === 'catalog' ? 'info.main' : 'success.main';
 
   return (
     <Tooltip title={statusLabel} arrow>

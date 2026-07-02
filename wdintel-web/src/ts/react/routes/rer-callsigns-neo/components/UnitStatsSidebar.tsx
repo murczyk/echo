@@ -4,10 +4,22 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
-import { Box, CircularProgress, Collapse, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  Collapse,
+  IconButton,
+  InputAdornment,
+  List,
+  ListItemButton,
+  ListItemText,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
-
 
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
@@ -157,7 +169,10 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debouncedValue;
 }
 
-function collectExpansionPathToSelectedFilter(nodes: TreeNode[], selectedUnitFilter: SelectedSidebarUnitFilter): string[] {
+function collectExpansionPathToSelectedFilter(
+  nodes: TreeNode[],
+  selectedUnitFilter: SelectedSidebarUnitFilter,
+): string[] {
   const path = collectExpansionPathToSelectedFilterInner(nodes, selectedUnitFilter);
   return path ?? [];
 }
@@ -168,11 +183,15 @@ function collectExpansionPathToSelectedFilterInner(
 ): string[] | null {
   for (const node of nodes) {
     if (node.kind === 'leaf') {
-      if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName) return [];
+      if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName)
+        return [];
       continue;
     }
 
-    if (selectedUnitFilter.kind === 'group' && areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy)) {
+    if (
+      selectedUnitFilter.kind === 'group' &&
+      areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy)
+    ) {
       return [node.id];
     }
 
@@ -194,14 +213,25 @@ type TreeItemProps = {
   selectedUnitFilter?: SelectedSidebarUnitFilter;
 };
 
-function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, selectedUnitFilter }: TreeItemProps) {
+function UnitTreeItem({
+  node,
+  depth,
+  expandedIds,
+  onToggle,
+  onPickUnitFilter,
+  selectedUnitFilter,
+}: TreeItemProps) {
   const paddingLeft = 1 + depth * 2;
 
   if (node.kind === 'leaf') {
     return (
       <ListItemButton
-        onClick={() => onPickUnitFilter({ kind: 'leaf', label: node.unitName, unitName: node.unitName })}
-        selected={selectedUnitFilter?.kind === 'leaf' && selectedUnitFilter.unitName === node.unitName}
+        onClick={() =>
+          onPickUnitFilter({ kind: 'leaf', label: node.unitName, unitName: node.unitName })
+        }
+        selected={
+          selectedUnitFilter?.kind === 'leaf' && selectedUnitFilter.unitName === node.unitName
+        }
         sx={{ pl: paddingLeft + 5, pr: 1.5 }}
         aria-label={`Фільтрувати за підрозділом ${node.unitName}, позивних ${node.count}`}
       >
@@ -224,7 +254,9 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
   }
 
   const isExpanded = expandedIds.has(node.id);
-  const isSelected = selectedUnitFilter?.kind === 'group' && areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy);
+  const isSelected =
+    selectedUnitFilter?.kind === 'group' &&
+    areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy);
   const collapseId = `${node.id}-children`;
 
   return (
@@ -245,12 +277,17 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
           {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
         </IconButton>
         <ListItemButton
-          onClick={() => onPickUnitFilter({ kind: 'group', label: node.label, hierarchy: node.hierarchy })}
+          onClick={() =>
+            onPickUnitFilter({ kind: 'group', label: node.label, hierarchy: node.hierarchy })
+          }
           selected={isSelected}
           sx={{ minWidth: 0, flex: 1, pr: 1.5 }}
           aria-label={`Фільтрувати за гілкою ${node.label}, позивних ${node.count}`}
         >
-          <ListItemText primary={node.label} primaryTypographyProps={{ noWrap: true, title: node.label }} />
+          <ListItemText
+            primary={node.label}
+            primaryTypographyProps={{ noWrap: true, title: node.label }}
+          />
           <PowerChip
             size="small"
             label={node.count}
@@ -287,9 +324,10 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
     return `Підрозділ: ${selectedUnitFilter.label}`;
   }
 
-  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>((lastIndex, key, index) => (
-    isPresent(selectedUnitFilter.hierarchy[key]) ? index : lastIndex
-  ), -1);
+  const deepestLevelIndex = HIERARCHY_KEYS.reduce<number>(
+    (lastIndex, key, index) => (isPresent(selectedUnitFilter.hierarchy[key]) ? index : lastIndex),
+    -1,
+  );
   const hierarchyLabel = deepestLevelIndex >= 0 ? HIERARCHY_LABELS[deepestLevelIndex] : 'Підрозділ';
 
   return `${hierarchyLabel}: ${selectedUnitFilter.label}`;
@@ -309,7 +347,10 @@ export function UnitStatsSidebar({
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
-  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
+  const normalizedSearchQuery = useMemo(
+    () => normalizeSearchQuery(debouncedSearchInput),
+    [debouncedSearchInput],
+  );
   const filteredStats = useMemo(
     () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
     [stats, normalizedSearchQuery],
@@ -394,7 +435,13 @@ export function UnitStatsSidebar({
       <Stack spacing={1.5} sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            useFlexGap
+            sx={{ flexWrap: 'wrap' }}
+          >
             {showInvestigatingFilter && onToggleInvestigating ? (
               <PowerChip
                 size="small"
@@ -431,12 +478,12 @@ export function UnitStatsSidebar({
               size="small"
               selected
               onClick={() => onPickUnitFilter(selectedUnitFilter)}
-              label={(
+              label={
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <span>{formatSelectedFilterLabel(selectedUnitFilter)}</span>
                   <ClearIcon sx={{ fontSize: 16 }} aria-hidden="true" />
                 </Stack>
-              )}
+              }
               title="Скинути фільтр підрозділу"
               sx={{ width: 'fit-content', maxWidth: '100%' }}
             />
@@ -476,7 +523,11 @@ export function UnitStatsSidebar({
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <PowerChip
             size="small"
-            label={normalizedSearchQuery === '' ? `Підрозділів: ${stats.length}` : `Підрозділів: ${filteredStats.length} з ${stats.length}`}
+            label={
+              normalizedSearchQuery === ''
+                ? `Підрозділів: ${stats.length}`
+                : `Підрозділів: ${filteredStats.length} з ${stats.length}`
+            }
             interactive={false}
             unselectedOpacity={1}
             unselectedBackgroundColor="action.selected"
@@ -485,7 +536,11 @@ export function UnitStatsSidebar({
           />
           <PowerChip
             size="small"
-            label={normalizedSearchQuery === '' ? `Позивних: ${total}` : `Позивних: ${total} з ${totalOverall}`}
+            label={
+              normalizedSearchQuery === ''
+                ? `Позивних: ${total}`
+                : `Позивних: ${total} з ${totalOverall}`
+            }
             interactive={false}
             unselectedOpacity={1}
             unselectedBackgroundColor="transparent"
@@ -500,7 +555,13 @@ export function UnitStatsSidebar({
         </Typography>
       </Stack>
       {loading && stats.length === 0 ? (
-        <Stack alignItems="center" justifyContent="center" sx={{ p: 3 }} role="status" aria-live="polite">
+        <Stack
+          alignItems="center"
+          justifyContent="center"
+          sx={{ p: 3 }}
+          role="status"
+          aria-live="polite"
+        >
           <CircularProgress size={24} color="primary" aria-label="Завантаження статистики" />
         </Stack>
       ) : (
@@ -513,7 +574,13 @@ export function UnitStatsSidebar({
           <List
             dense
             disablePadding
-            sx={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', py: 0.5 }}
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              py: 0.5,
+            }}
             aria-label="Дерево підрозділів"
           >
             {tree.map((node) => (
@@ -528,11 +595,23 @@ export function UnitStatsSidebar({
               />
             ))}
             {stats.length === 0 ? (
-              <Typography variant="body2" sx={{ p: 2 }} color="text.secondary" role="status" aria-live="polite">
+              <Typography
+                variant="body2"
+                sx={{ p: 2 }}
+                color="text.secondary"
+                role="status"
+                aria-live="polite"
+              >
                 Статистика відсутня
               </Typography>
             ) : filteredStats.length === 0 ? (
-              <Typography variant="body2" sx={{ p: 2 }} color="text.secondary" role="status" aria-live="polite">
+              <Typography
+                variant="body2"
+                sx={{ p: 2 }}
+                color="text.secondary"
+                role="status"
+                aria-live="polite"
+              >
                 Нічого не знайдено за запитом
               </Typography>
             ) : null}

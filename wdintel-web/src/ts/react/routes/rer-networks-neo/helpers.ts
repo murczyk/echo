@@ -122,7 +122,9 @@ export function getNetworkStatusDescriptor(network: Network): NetworkStatusDescr
   return { label: 'Неактивна', color: NETWORK_STATUS_INACTIVE_COLOR, key: 'inactive' };
 }
 
-export function buildActivityBars(activityByDay: Record<string, Record<string, number>> | null | undefined): Array<{ value: number; title: string }> {
+export function buildActivityBars(
+  activityByDay: Record<string, Record<string, number>> | null | undefined,
+): Array<{ value: number; title: string }> {
   const dayCounts = new Map<number, number>();
   let lastKnownDayMs: number | null = null;
 
@@ -132,7 +134,8 @@ export function buildActivityBars(activityByDay: Record<string, Record<string, n
     const value = Object.values(groups ?? {}).reduce((sum, count) => sum + count, 0);
     const normalizedDayMs = dayjs.utc(dayMs).startOf('day').valueOf();
     dayCounts.set(normalizedDayMs, value);
-    lastKnownDayMs = lastKnownDayMs === null ? normalizedDayMs : Math.max(lastKnownDayMs, normalizedDayMs);
+    lastKnownDayMs =
+      lastKnownDayMs === null ? normalizedDayMs : Math.max(lastKnownDayMs, normalizedDayMs);
   }
 
   const rangeEnd = dayjs.utc(lastKnownDayMs ?? dayjs.utc().valueOf()).startOf('day');
@@ -152,8 +155,13 @@ export function getActivityBarHeight(value: number, maxValue: number): number {
 
   const clampedValue = Math.min(value, maxValue);
   const ratio = clampedValue / maxValue;
-  const height = ACTIVITY_BAR_VISIBLE_MIN_HEIGHT + ratio * (ACTIVITY_BAR_MAX_HEIGHT - ACTIVITY_BAR_VISIBLE_MIN_HEIGHT);
-  return Math.min(ACTIVITY_BAR_MAX_HEIGHT, Math.max(ACTIVITY_BAR_VISIBLE_MIN_HEIGHT, Math.round(height)));
+  const height =
+    ACTIVITY_BAR_VISIBLE_MIN_HEIGHT +
+    ratio * (ACTIVITY_BAR_MAX_HEIGHT - ACTIVITY_BAR_VISIBLE_MIN_HEIGHT);
+  return Math.min(
+    ACTIVITY_BAR_MAX_HEIGHT,
+    Math.max(ACTIVITY_BAR_VISIBLE_MIN_HEIGHT, Math.round(height)),
+  );
 }
 
 export function buildNetworkRowView(
@@ -200,7 +208,11 @@ export function buildNetworkRowView(
   };
 }
 
-export function buildNetworkLabel(network: Network, unitLabels: string[], developing: boolean): string {
+export function buildNetworkLabel(
+  network: Network,
+  unitLabels: string[],
+  developing: boolean,
+): string {
   const pieces = [`р/м ${network.name}`];
   if (unitLabels.length > 0) {
     pieces.push(unitLabels.join(', '));
@@ -211,7 +223,9 @@ export function buildNetworkLabel(network: Network, unitLabels: string[], develo
   return pieces.join(' ');
 }
 
-export function buildNetworkFrequencyDisplayGroups(row: NetworkRowView): NetworkFrequencyDisplayGroup[] {
+export function buildNetworkFrequencyDisplayGroups(
+  row: NetworkRowView,
+): NetworkFrequencyDisplayGroup[] {
   const activeVisible = row.activeFrequencies.slice(0, 2);
   const inactiveVisible = row.inactiveFrequencies.slice(0, 2);
 
@@ -231,7 +245,9 @@ export function buildNetworkFrequencyDisplayGroups(row: NetworkRowView): Network
   ];
 }
 
-export function buildNetworkFrequencyPopupGroups(row: NetworkRowView): NetworkFrequencyDisplayGroup[] {
+export function buildNetworkFrequencyPopupGroups(
+  row: NetworkRowView,
+): NetworkFrequencyDisplayGroup[] {
   return [
     {
       title: 'Активні',
@@ -268,7 +284,10 @@ export function mergeNetworkUnitStatsWithUnits(
       };
     })
     .filter((row): row is NetworkUnitStatView => row !== null)
-    .sort((left, right) => right.count - left.count || left.unitName.localeCompare(right.unitName, 'uk'));
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.unitName.localeCompare(right.unitName, 'uk'),
+    );
 }
 
 export function resolveAorFilterValues(aorIds: number[]): string[] {
@@ -306,7 +325,9 @@ function getNetworkTextColumnFilterValue(
   return normalizeTextColumnFilterValue(columnFilters.find((filter) => filter.id === id)?.value);
 }
 
-export function extractNetworkAorFilterValues(columnFilters: MRT_ColumnFiltersState): number[] | null {
+export function extractNetworkAorFilterValues(
+  columnFilters: MRT_ColumnFiltersState,
+): number[] | null {
   const filterValue = columnFilters.find((filter) => filter.id === 'aors')?.value;
   if (!Array.isArray(filterValue)) return null;
 
@@ -342,10 +363,18 @@ export function buildNetworkUnitFilterFields(params: {
   if (params.selectedSidebarUnitFilter?.kind === 'group') {
     return {
       filterUnit: null,
-      filterUnitArmy: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.army),
-      filterUnitDivision: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.division),
-      filterUnitRegiment: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.regiment),
-      filterUnitBattalion: normalizeUnitHierarchyFilterValue(params.selectedSidebarUnitFilter.hierarchy.battalion),
+      filterUnitArmy: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.army,
+      ),
+      filterUnitDivision: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.division,
+      ),
+      filterUnitRegiment: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.regiment,
+      ),
+      filterUnitBattalion: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.battalion,
+      ),
     };
   }
 
@@ -379,7 +408,9 @@ function normalizeAorColumnFilterValue(value: unknown): string[] | null {
   return values.length === 0 ? null : values;
 }
 
-export function sanitizeNetworkColumnFilters(columnFilters: MRT_ColumnFiltersState): MRT_ColumnFiltersState {
+export function sanitizeNetworkColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): MRT_ColumnFiltersState {
   const sanitized: MRT_ColumnFiltersState = [];
 
   for (const filter of columnFilters) {
@@ -497,7 +528,10 @@ export function buildNetworksStatusCountsReq(params: {
 
 export function resolveAorFilterSelectOptions(aors: AreaOfResponsibility[]) {
   const seenValues = new Set<string>();
-  const addOption = (options: Array<{ label: string; value: string }>, option: { label: string; value: string }) => {
+  const addOption = (
+    options: Array<{ label: string; value: string }>,
+    option: { label: string; value: string },
+  ) => {
     if (seenValues.has(option.value)) {
       return;
     }

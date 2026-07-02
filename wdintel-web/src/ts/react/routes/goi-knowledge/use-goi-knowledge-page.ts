@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  GoiKnowledge,
-  ListGoiKnowledgeReq,
-  ListGoiKnowledgeSortBy,
-} from '../../../../Bindings';
+import { GoiKnowledge, ListGoiKnowledgeReq, ListGoiKnowledgeSortBy } from '../../../../Bindings';
 
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { HttpRequestError } from '../../services/api/client';
@@ -11,12 +7,10 @@ import { listCurrentUserGoiKnowledge } from '../../services/api/goi-knowledge';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
-type UiStatus =
-  | {
-      kind: 'success' | 'error' | 'info' | 'warning';
-      text: string;
-    }
-  | null;
+type UiStatus = {
+  kind: 'success' | 'error' | 'info' | 'warning';
+  text: string;
+} | null;
 
 const GOI_KNOWLEDGE_PAGE_SIZE = 50;
 
@@ -68,35 +62,23 @@ function goiKnowledgeSortBy(
         ? 'GoiKnowledgeSourceKnowledgeIdDesc'
         : 'GoiKnowledgeSourceKnowledgeIdAsc';
     case 'sourceCreatedAt':
-      return current.desc
-        ? 'GoiKnowledgeSourceCreatedAtDesc'
-        : 'GoiKnowledgeSourceCreatedAtAsc';
+      return current.desc ? 'GoiKnowledgeSourceCreatedAtDesc' : 'GoiKnowledgeSourceCreatedAtAsc';
     case 'name':
       return current.desc ? 'GoiKnowledgeNameDesc' : 'GoiKnowledgeNameAsc';
     case 'key':
       return current.desc ? 'GoiKnowledgeKeyDesc' : 'GoiKnowledgeKeyAsc';
     case 'knowledgeType':
-      return current.desc
-        ? 'GoiKnowledgeTypeDesc'
-        : 'GoiKnowledgeTypeAsc';
+      return current.desc ? 'GoiKnowledgeTypeDesc' : 'GoiKnowledgeTypeAsc';
     case 'author':
-      return current.desc
-        ? 'GoiKnowledgeAuthorDesc'
-        : 'GoiKnowledgeAuthorAsc';
+      return current.desc ? 'GoiKnowledgeAuthorDesc' : 'GoiKnowledgeAuthorAsc';
     case 'formation':
-      return current.desc
-        ? 'GoiKnowledgeFormationDesc'
-        : 'GoiKnowledgeFormationAsc';
+      return current.desc ? 'GoiKnowledgeFormationDesc' : 'GoiKnowledgeFormationAsc';
     case 'note':
       return current.desc ? 'GoiKnowledgeNoteDesc' : 'GoiKnowledgeNoteAsc';
     case 'sourceDate':
-      return current.desc
-        ? 'GoiKnowledgeSourceDateDesc'
-        : 'GoiKnowledgeSourceDateAsc';
+      return current.desc ? 'GoiKnowledgeSourceDateDesc' : 'GoiKnowledgeSourceDateAsc';
     case 'createdAt':
-      return current.desc
-        ? 'GoiKnowledgeCreatedAtDesc'
-        : 'GoiKnowledgeCreatedAtAsc';
+      return current.desc ? 'GoiKnowledgeCreatedAtDesc' : 'GoiKnowledgeCreatedAtAsc';
     default:
       return 'GoiKnowledgeSourceKnowledgeIdDesc';
   }
@@ -130,15 +112,10 @@ export function useGoiKnowledgePage() {
         columnFilters: tableStateContext.columnFilters,
         sorting: tableStateContext.sorting,
       }),
-    [
-      tableStateContext.globalFilter,
-      tableStateContext.columnFilters,
-      tableStateContext.sorting,
-    ],
+    [tableStateContext.globalFilter, tableStateContext.columnFilters, tableStateContext.sorting],
   );
   const latestQueryKeyRef = useRef(queryKey);
-  const loadMoreAbortControllerRef =
-    useRef<AbortController | null>(null);
+  const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
 
   latestQueryKeyRef.current = queryKey;
 
@@ -147,31 +124,15 @@ export function useGoiKnowledgePage() {
     offset,
     sortBy: goiKnowledgeSortBy(tableStateContext.sorting),
     filterText: tableStateContext.globalFilter.trim() || null,
-    filterServer:
-      getStringColumnFilterValue(tableStateContext.columnFilters, 'server') ||
-      null,
-    filterName:
-      getStringColumnFilterValue(tableStateContext.columnFilters, 'name') ||
-      null,
-    filterKey:
-      getStringColumnFilterValue(tableStateContext.columnFilters, 'key') ||
-      null,
+    filterServer: getStringColumnFilterValue(tableStateContext.columnFilters, 'server') || null,
+    filterName: getStringColumnFilterValue(tableStateContext.columnFilters, 'name') || null,
+    filterKey: getStringColumnFilterValue(tableStateContext.columnFilters, 'key') || null,
     filterKnowledgeType:
-      getStringColumnFilterValue(
-        tableStateContext.columnFilters,
-        'knowledgeType',
-      ) || null,
-    filterNote:
-      getStringColumnFilterValue(tableStateContext.columnFilters, 'note') ||
-      null,
-    filterAuthor:
-      getStringColumnFilterValue(tableStateContext.columnFilters, 'author') ||
-      null,
+      getStringColumnFilterValue(tableStateContext.columnFilters, 'knowledgeType') || null,
+    filterNote: getStringColumnFilterValue(tableStateContext.columnFilters, 'note') || null,
+    filterAuthor: getStringColumnFilterValue(tableStateContext.columnFilters, 'author') || null,
     filterFormation:
-      getStringColumnFilterValue(
-        tableStateContext.columnFilters,
-        'formation',
-      ) || null,
+      getStringColumnFilterValue(tableStateContext.columnFilters, 'formation') || null,
     filterDeleted: false,
   });
 
@@ -184,40 +145,43 @@ export function useGoiKnowledgePage() {
   useEffect(() => {
     const abortController = new AbortController();
     const hasExistingRows = rows.length > 0;
-    const timeout = window.setTimeout(async () => {
-      if (!hasExistingRows) {
-        setStatus('loading');
-        setErrorMessage(null);
-      } else {
-        setRefreshing(true);
-      }
-
-      try {
-        const rsp = await listCurrentUserGoiKnowledge(
-          buildReq(GOI_KNOWLEDGE_PAGE_SIZE, 0),
-          abortController.signal,
-        );
-        if (abortController.signal.aborted) return;
-        setRows(rsp.items.map(toRowView));
-        setHasMore(rsp.hasMore);
-        setStatus('success');
-        setErrorMessage(null);
-        setNotice(null);
-      } catch (error) {
-        if (abortController.signal.aborted || isAbortError(error)) return;
-        const message = formatErrorMessage(error);
-        if (hasExistingRows) {
-          setNotice({ kind: 'error', text: message });
+    const timeout = window.setTimeout(
+      async () => {
+        if (!hasExistingRows) {
+          setStatus('loading');
+          setErrorMessage(null);
         } else {
-          setStatus('error');
-          setErrorMessage(message);
+          setRefreshing(true);
         }
-      } finally {
-        if (!abortController.signal.aborted) {
-          setRefreshing(false);
+
+        try {
+          const rsp = await listCurrentUserGoiKnowledge(
+            buildReq(GOI_KNOWLEDGE_PAGE_SIZE, 0),
+            abortController.signal,
+          );
+          if (abortController.signal.aborted) return;
+          setRows(rsp.items.map(toRowView));
+          setHasMore(rsp.hasMore);
+          setStatus('success');
+          setErrorMessage(null);
+          setNotice(null);
+        } catch (error) {
+          if (abortController.signal.aborted || isAbortError(error)) return;
+          const message = formatErrorMessage(error);
+          if (hasExistingRows) {
+            setNotice({ kind: 'error', text: message });
+          } else {
+            setStatus('error');
+            setErrorMessage(message);
+          }
+        } finally {
+          if (!abortController.signal.aborted) {
+            setRefreshing(false);
+          }
         }
-      }
-    }, hasExistingRows ? 250 : 0);
+      },
+      hasExistingRows ? 250 : 0,
+    );
 
     return () => {
       window.clearTimeout(timeout);
@@ -236,14 +200,8 @@ export function useGoiKnowledgePage() {
 
     try {
       const nextLimit = rows.length + GOI_KNOWLEDGE_PAGE_SIZE;
-      const rsp = await listCurrentUserGoiKnowledge(
-        buildReq(nextLimit, 0),
-        abortController.signal,
-      );
-      if (
-        abortController.signal.aborted ||
-        latestQueryKeyRef.current !== requestQueryKey
-      ) {
+      const rsp = await listCurrentUserGoiKnowledge(buildReq(nextLimit, 0), abortController.signal);
+      if (abortController.signal.aborted || latestQueryKeyRef.current !== requestQueryKey) {
         return;
       }
       setRows(rsp.items.map(toRowView));
@@ -256,10 +214,7 @@ export function useGoiKnowledgePage() {
       if (loadMoreAbortControllerRef.current === abortController) {
         loadMoreAbortControllerRef.current = null;
       }
-      if (
-        !abortController.signal.aborted &&
-        latestQueryKeyRef.current === requestQueryKey
-      ) {
+      if (!abortController.signal.aborted && latestQueryKeyRef.current === requestQueryKey) {
         setLoadingMore(false);
       }
     }
@@ -271,8 +226,7 @@ export function useGoiKnowledgePage() {
   }
 
   const hasActiveFilters =
-    tableStateContext.globalFilter.trim() !== '' ||
-    tableStateContext.columnFilters.length > 0;
+    tableStateContext.globalFilter.trim() !== '' || tableStateContext.columnFilters.length > 0;
 
   return {
     rows,

@@ -1,108 +1,110 @@
 /* Layer Switch Control */
 #analysis-map .layer-switch-control {
-	max-width: 200px;
-	max-height: 280px;
+  max-width: 200px;
+  max-height: 280px;
 }
 
 #analysis-map .layer-switch-control.collapsed {
-	max-height: 48px;
-	max-width: 48px;
+  max-height: 48px;
+  max-width: 48px;
 }
 
 #analysis-map .layer-switch-list {
-	padding: 4px 0 6px;
-	overflow-y: auto;
-	transition: opacity 0.3s ease, max-height 0.3s ease;
+  padding: 4px 0 6px;
+  overflow-y: auto;
+  transition:
+    opacity 0.3s ease,
+    max-height 0.3s ease;
 }
 
 #analysis-map .layer-switch-control.collapsed .layer-switch-list {
-	max-height: 0;
-	padding: 0;
-	opacity: 0;
-	overflow: hidden;
+  max-height: 0;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
 }
 
 #analysis-map .layer-switch-item {
-	min-height: 36px;
-	padding: 0 16px 0 4px;
-	cursor: pointer;
-	transition: background-color 0.2s;
+  min-height: 36px;
+  padding: 0 16px 0 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 
 #analysis-map .layer-switch-item:hover {
-	background-color: var(--bs-secondary-bg);
+  background-color: var(--bs-secondary-bg);
 }
 
 #analysis-map .layer-switch-label {
-	line-height: 1.25;
+  line-height: 1.25;
 }
 
 #analysis-map .layer-switch-subheader {
-	margin: 8px 0;
-	padding: 0 12px;
-	font-size: 12px;
-	font-weight: 500;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: var(--bs-secondary-color);
+  margin: 8px 0;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
 }
 
 #analysis-map .layer-switch-checkbox {
-	margin-right: 0;
+  margin-right: 0;
 }
 
 #analysis-map .layer-switch-item-label {
-	margin-right: 0;
+  margin-right: 0;
 }
 
 #analysis-map .layer-switch-item-label:hover {
-	background-color: transparent;
+  background-color: transparent;
 }
 
 #analysis-map .layer-switch-control-host {
-	display: inline-block;
+  display: inline-block;
 }
 
 #analysis-map .map-settings-control {
-	max-width: 220px;
+  max-width: 220px;
 }
 
 #analysis-map .map-settings-control .layer-switch-list {
-	padding: 0;
+  padding: 0;
 }
 
 #analysis-map .map-settings-control .map-settings-item {
-	padding: 0 12px 0 4px;
-	border-radius: 0;
-	cursor: pointer;
-	transition: background-color 0.2s;
+  padding: 0 12px 0 4px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 
 #analysis-map .map-settings-control .map-settings-item:hover {
-	background-color: var(--bs-secondary-bg);
+  background-color: var(--bs-secondary-bg);
 }
 
 #analysis-map .map-settings-control .map-settings-checkbox {
-	margin-right: 0;
+  margin-right: 0;
 }
 
 #analysis-map .map-settings-control .map-settings-item-label {
-	margin-right: 0;
+  margin-right: 0;
 }
 
 #analysis-map .map-settings-control .map-settings-item-label:hover {
-	background-color: transparent;
+  background-color: transparent;
 }
 
 #analysis-map .map-settings-control .map-settings-label {
-	line-height: 1.25;
+  line-height: 1.25;
 }
 
 #analysis-map .map-settings-control-host {
-	display: inline-block;
+  display: inline-block;
 }
 
 #analysis-map .leaflet-bottom.leaflet-right .map-settings-control-host {
-	margin-right: 10px;
-	margin-bottom: 10px;
+  margin-right: 10px;
+  margin-bottom: 10px;
 }

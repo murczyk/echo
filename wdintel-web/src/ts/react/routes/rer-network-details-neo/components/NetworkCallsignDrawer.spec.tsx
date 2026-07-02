@@ -33,7 +33,13 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Checkbox: ({ checked, onChange }: { checked?: boolean; onChange?: (event: { target: { checked: boolean } }) => void }) => (
+  Checkbox: ({
+    checked,
+    onChange,
+  }: {
+    checked?: boolean;
+    onChange?: (event: { target: { checked: boolean } }) => void;
+  }) => (
     <input
       type="checkbox"
       checked={checked}
@@ -55,9 +61,15 @@ vi.mock('@mui/material', () => ({
       {helperText ? <span>{helperText}</span> : null}
     </label>
   ),
-  Typography: ({ children, noWrap: _ignoredNoWrap, ...props }: { children?: ReactNode; noWrap?: boolean; [key: string]: unknown }) => (
-    <div {...props}>{children}</div>
-  ),
+  Typography: ({
+    children,
+    noWrap: _ignoredNoWrap,
+    ...props
+  }: {
+    children?: ReactNode;
+    noWrap?: boolean;
+    [key: string]: unknown;
+  }) => <div {...props}>{children}</div>,
 }));
 
 vi.mock('../../../components/PowerAlert', () => ({
@@ -127,9 +139,7 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm) {
           { id: 1, name: 'РЕР', createdAt: 0 } as Source,
           { id: 2, name: 'OSINT', createdAt: 0 } as Source,
         ]}
-        units={[
-          { id: 1, label: '11 АК' },
-        ]}
+        units={[{ id: 1, label: '11 АК' }]}
         saving={false}
         error={error}
         onClose={() => {}}
@@ -158,7 +168,9 @@ describe('NetworkCallsignDrawer', () => {
     });
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
 
     expect(saveButton?.disabled).toBe(false);
   });
@@ -171,7 +183,9 @@ describe('NetworkCallsignDrawer', () => {
     });
     rendered.push(view);
 
-    const saveButton = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Зберегти') as HTMLButtonElement | undefined;
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
 
     expect(saveButton?.disabled).toBe(true);
   });
@@ -197,10 +211,14 @@ describe('NetworkCallsignDrawer', () => {
     rendered.push(view);
 
     act(() => {
-      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'РЕР')?.click();
+      [...view.container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'РЕР')
+        ?.click();
     });
 
-    expect(view.container.querySelector('[data-testid="network-callsign-source-error"]')?.textContent).toBe('Джерело є обовʼязковим');
+    expect(
+      view.container.querySelector('[data-testid="network-callsign-source-error"]')?.textContent,
+    ).toBe('Джерело є обовʼязковим');
   });
 
   it('keeps marker state exclusive when switching between main, command and none', () => {
@@ -213,7 +231,9 @@ describe('NetworkCallsignDrawer', () => {
 
     const clickButton = (label: string) => {
       act(() => {
-        [...view.container.querySelectorAll('button')].find((button) => button.textContent?.includes(label))?.click();
+        [...view.container.querySelectorAll('button')]
+          .find((button) => button.textContent?.includes(label))
+          ?.click();
       });
     };
 
@@ -237,7 +257,9 @@ describe('NetworkCallsignDrawer', () => {
     rendered.push(view);
 
     act(() => {
-      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'В дорозвідці')?.click();
+      [...view.container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'В дорозвідці')
+        ?.click();
     });
 
     expect(view.getCurrentForm()).toMatchObject({
@@ -245,7 +267,9 @@ describe('NetworkCallsignDrawer', () => {
     });
 
     act(() => {
-      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Каталог')?.click();
+      [...view.container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Каталог')
+        ?.click();
     });
 
     expect(view.getCurrentForm()).toMatchObject({

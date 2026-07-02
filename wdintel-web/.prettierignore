@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+elm-stuff/
+src/**/*.elm
+src/Bindings.elm
+src/Bindings.ts
+wdintel-web/src/Bindings.ts

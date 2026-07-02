@@ -45,7 +45,17 @@ describe('previewXlsxRows', () => {
 
 describe('buildXlsxPreview', () => {
   it('parses a simple workbook', async () => {
-    const preview = await buildXlsxPreview(makeWorkbookBuffer([{ name: 'Sheet1', rows: [['Name', 'Age'], ['Alice', 30]] }]));
+    const preview = await buildXlsxPreview(
+      makeWorkbookBuffer([
+        {
+          name: 'Sheet1',
+          rows: [
+            ['Name', 'Age'],
+            ['Alice', 30],
+          ],
+        },
+      ]),
+    );
 
     expect(preview.sheets).toHaveLength(1);
     expect(preview.sheets[0]?.name).toBe('Sheet1');
@@ -134,7 +144,9 @@ describe('buildXlsxPreview', () => {
 
   it('rejects oversized files before parsing', async () => {
     expect(MAX_XLSX_FILE_MB).toBe(10);
-    await expect(buildXlsxPreview(new ArrayBuffer(MAX_XLSX_FILE_BYTES + 1))).rejects.toBeInstanceOf(XlsxPreviewError);
+    await expect(buildXlsxPreview(new ArrayBuffer(MAX_XLSX_FILE_BYTES + 1))).rejects.toBeInstanceOf(
+      XlsxPreviewError,
+    );
     await expect(buildXlsxPreview(new ArrayBuffer(MAX_XLSX_FILE_BYTES + 1))).rejects.toMatchObject({
       code: 'XLSX_FILE_TOO_LARGE',
     });
@@ -196,8 +208,10 @@ function makeWorkbookBuffer(
 }
 
 function buildContentTypesXml(sheetCount: number): string {
-  const sheetOverrides = Array.from({ length: sheetCount }, (_, index) =>
-    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+  const sheetOverrides = Array.from(
+    { length: sheetCount },
+    (_, index) =>
+      `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
   ).join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -285,5 +299,10 @@ function columnLabel(index: number): string {
 }
 
 function escapeXml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 }

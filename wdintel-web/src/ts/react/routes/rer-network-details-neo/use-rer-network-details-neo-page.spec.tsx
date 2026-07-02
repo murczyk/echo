@@ -67,16 +67,18 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
         relationsError: null,
       }));
     });
-    loadMockState.loadPelengPoints.mockImplementation(async (_networkId, sinceDateInclusiveMs, tillDateNoninclusiveMs) => {
-      setState((current) => ({
-        ...current,
-        pelengPointsLoaded: true,
-        pelengPointsLoading: false,
-        pelengPointsError: null,
-        pelengPointsRequestedFrom: sinceDateInclusiveMs,
-        pelengPointsRequestedTo: tillDateNoninclusiveMs,
-      }));
-    });
+    loadMockState.loadPelengPoints.mockImplementation(
+      async (_networkId, sinceDateInclusiveMs, tillDateNoninclusiveMs) => {
+        setState((current) => ({
+          ...current,
+          pelengPointsLoaded: true,
+          pelengPointsLoading: false,
+          pelengPointsError: null,
+          pelengPointsRequestedFrom: sinceDateInclusiveMs,
+          pelengPointsRequestedTo: tillDateNoninclusiveMs,
+        }));
+      },
+    );
 
     if (!loadMockState.loaded) {
       loadMockState.loaded = true;
@@ -102,10 +104,7 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
           { id: 3, name: 'Вся смуга' } as never,
           { id: 1, name: 'Альфа' } as never,
         ],
-        posts: [
-          { id: 10, name: '   ' } as never,
-          { id: 11, name: 'Пост A' } as never,
-        ],
+        posts: [{ id: 10, name: '   ' } as never, { id: 11, name: 'Пост A' } as never],
         ...getDefaultNetworkRelationsDateRange(new Date('2026-06-20T12:00:00Z')),
         ...getDefaultNetworkPelengDateRange(network, new Date('2026-06-20T12:00:00Z')),
       }));
@@ -327,13 +326,17 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     });
 
     expect(latestPage?.activeNetworkDetailsTab).toBe('descriptions');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=justifications');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=justifications',
+    );
 
     act(() => {
       page.setActiveNetworkDetailsTab('callsigns');
     });
 
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=callsigns');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=callsigns',
+    );
     expect(latestPage?.activeNetworkDetailsTab).toBe('callsigns');
   });
 
@@ -351,7 +354,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=callsigns');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=callsigns',
+    );
     expect(latestPage?.activeNetworkDetailsTab).toBe('callsigns');
   });
 
@@ -366,7 +371,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     });
 
     expect(latestPage?.activeNetworkDetailsTab).toBe('descriptions');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=justifications');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=justifications',
+    );
   });
 
   it('falls back from a direct relations url when the user cannot view relations', async () => {
@@ -380,7 +387,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     });
 
     expect(latestPage?.activeNetworkDetailsTab).toBe('descriptions');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=justifications');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=justifications',
+    );
     expect(loadMockState.loadRelations).toHaveBeenCalledTimes(0);
   });
 
@@ -395,7 +404,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     });
 
     expect(latestPage?.activeNetworkDetailsTab).toBe('descriptions');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=justifications');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=justifications',
+    );
     expect(loadMockState.loadNetworkActivity).toHaveBeenCalledTimes(0);
   });
 
@@ -413,7 +424,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     });
 
     expect(latestPage?.activeNetworkDetailsTab).toBe('relations');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=connections-graph');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=connections-graph',
+    );
 
     act(() => {
       page.setRelationsSince('2024-06-01');
@@ -430,7 +443,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
     const page = renderHookHarness();
     expect(loadMockState.loadRelations).toHaveBeenCalledTimes(0);
     expect(latestPage?.activeNetworkDetailsTab).toBe('relations');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=connections-graph');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=connections-graph',
+    );
 
     loadMockState.currentUser = { roles: ['Api'] } as User;
 
@@ -441,7 +456,9 @@ describe('useRerNetworkDetailsNeoPage unit options', () => {
 
     expect(loadMockState.loadRelations).toHaveBeenCalled();
     expect(latestPage?.activeNetworkDetailsTab).toBe('relations');
-    expect(window.location.pathname + window.location.search).toBe('/rer-networks/42?tab=connections-graph');
+    expect(window.location.pathname + window.location.search).toBe(
+      '/rer-networks/42?tab=connections-graph',
+    );
 
     const callsBefore = loadMockState.loadRelations.mock.calls.length;
     act(() => {

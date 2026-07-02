@@ -40,7 +40,15 @@ describe('misc utils', () => {
   it('sorts frequencies numerically without mutating the input', () => {
     const values = ['9.000', '10.000', '1.000', '2.000', '1.2', '1.02', 'not-a-freq'];
 
-    expect(sortFrequenciesNumerically(values)).toEqual(['1.000', '1.02', '1.2', '2.000', '9.000', '10.000', 'not-a-freq']);
+    expect(sortFrequenciesNumerically(values)).toEqual([
+      '1.000',
+      '1.02',
+      '1.2',
+      '2.000',
+      '9.000',
+      '10.000',
+      'not-a-freq',
+    ]);
     expect(values).toEqual(['9.000', '10.000', '1.000', '2.000', '1.2', '1.02', 'not-a-freq']);
   });
 
@@ -60,7 +68,9 @@ describe('misc utils', () => {
   it('formats dates defensively', () => {
     expect(formatDate(null)).toBe('—');
     expect(formatDate(Number.NaN)).toBe('—');
-    expect(formatDate(Date.UTC(2026, 2, 18), { year: 'numeric', month: '2-digit', day: '2-digit' })).toContain('18');
+    expect(
+      formatDate(Date.UTC(2026, 2, 18), { year: 'numeric', month: '2-digit', day: '2-digit' }),
+    ).toContain('18');
   });
 
   it('formats date-times in 24-hour mode', () => {
@@ -88,10 +98,18 @@ describe('misc utils', () => {
     const millis = combineDateTimeToMs('2026-01-15', '12:00', APP_TIME_ZONE);
 
     expect(millis).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
-    expect(formatDateInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15');
-    expect(formatTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('12:00');
-    expect(formatDateTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE)).toBe('2026-01-15T12:00');
-    expect(combineDateTimeInputToMs('2026-01-15T12:00', APP_TIME_ZONE)).toBe(Date.UTC(2026, 0, 15, 10, 0, 0));
+    expect(
+      formatDateInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE),
+    ).toBe('2026-01-15');
+    expect(
+      formatTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE),
+    ).toBe('12:00');
+    expect(
+      formatDateTimeInputValueInTimeZone(new Date(Date.UTC(2026, 0, 15, 10, 0, 0)), APP_TIME_ZONE),
+    ).toBe('2026-01-15T12:00');
+    expect(combineDateTimeInputToMs('2026-01-15T12:00', APP_TIME_ZONE)).toBe(
+      Date.UTC(2026, 0, 15, 10, 0, 0),
+    );
     expect(combineDateTimeInputToMs('2026-01-15 12:00', APP_TIME_ZONE)).toBeNull();
   });
 });

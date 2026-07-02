@@ -1,4 +1,13 @@
-import { Box, CircularProgress, FormControl, IconButton, MenuItem, Select, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  FormControl,
+  IconButton,
+  MenuItem,
+  Select,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
@@ -50,7 +59,11 @@ export function FeedFilterFrequencySection({
                 aria-label="Оновити список частот"
                 sx={{ padding: 0.5 }}
               >
-                {reloadFreqsLoading ? <CircularProgress size={18} /> : <RefreshOutlinedIcon sx={{ fontSize: '1rem' }} />}
+                {reloadFreqsLoading ? (
+                  <CircularProgress size={18} />
+                ) : (
+                  <RefreshOutlinedIcon sx={{ fontSize: '1rem' }} />
+                )}
               </IconButton>
             </span>
           </Tooltip>

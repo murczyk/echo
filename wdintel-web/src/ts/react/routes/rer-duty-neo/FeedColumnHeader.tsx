@@ -8,7 +8,10 @@ import NotificationsOffOutlinedIcon from '@mui/icons-material/NotificationsOffOu
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SpellcheckIcon from '@mui/icons-material/Spellcheck';
 import type { MouseEvent, ReactNode, RefObject } from 'react';
-import type { OrganismKeywordSetDto, RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
+import type {
+  OrganismKeywordSetDto,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+} from '../../../../Bindings';
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
 import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
@@ -100,7 +103,9 @@ function HeaderPanelToggle({
   const activeColor = expanded ? 'primary.light' : 'text.primary';
   const borderSx = {
     ...(borderLeft ? { borderLeft: '1px solid', borderColor: 'rgba(148, 163, 184, 0.28)' } : {}),
-    ...(borderRight ? { borderRight: '1px solid', borderRightColor: 'rgba(148, 163, 184, 0.28)' } : {}),
+    ...(borderRight
+      ? { borderRight: '1px solid', borderRightColor: 'rgba(148, 163, 184, 0.28)' }
+      : {}),
   };
 
   if (iconOnly) {
@@ -344,7 +349,11 @@ export function FeedColumnHeader({
       {showNotificationPanel && (
         <Box sx={columnPanelOverlaySx}>
           <Box ref={notificationPanelRef} sx={columnPanelInnerSx}>
-            <FeedNotificationPanel feedId={feedId} storageSyncKey={notificationStorageSyncKey} onPersisted={onNotificationPersisted} />
+            <FeedNotificationPanel
+              feedId={feedId}
+              storageSyncKey={notificationStorageSyncKey}
+              onPersisted={onNotificationPersisted}
+            />
           </Box>
         </Box>
       )}

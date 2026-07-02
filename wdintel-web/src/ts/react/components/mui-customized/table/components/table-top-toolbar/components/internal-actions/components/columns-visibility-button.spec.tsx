@@ -18,9 +18,17 @@ const tableStateMock = vi.hoisted(() => ({
     locationSearchText: true,
   } as Record<string, boolean>,
   tableColumns: [
-    { id: 'mrt-row-numbers', columnDef: { id: 'mrt-row-numbers', header: '' }, getIsVisible: () => true },
+    {
+      id: 'mrt-row-numbers',
+      columnDef: { id: 'mrt-row-numbers', header: '' },
+      getIsVisible: () => true,
+    },
     { id: 'freq', columnDef: { id: 'freq', header: 'Частота' }, getIsVisible: () => true },
-    { id: 'locationSearchText', columnDef: { id: 'locationSearchText', header: 'Локації' }, getIsVisible: () => true },
+    {
+      id: 'locationSearchText',
+      columnDef: { id: 'locationSearchText', header: 'Локації' },
+      getIsVisible: () => true,
+    },
   ],
 }));
 
@@ -33,7 +41,10 @@ vi.mock('@mui/material', () => ({
       {label}
     </label>
   ),
-  Switch: (props: { checked?: boolean; onChange?: (event: { target: { checked: boolean } }) => void }) => (
+  Switch: (props: {
+    checked?: boolean;
+    onChange?: (event: { target: { checked: boolean } }) => void;
+  }) => (
     <input
       type="checkbox"
       checked={props.checked}
@@ -60,11 +71,18 @@ vi.mock('../../../../../../../PowerIconButton', () => ({
 }));
 
 vi.mock('../../../../../../../PowerMenu', () => ({
-  PowerMenu: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
+  PowerMenu: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div>{children}</div> : null,
 }));
 
 vi.mock('../../../../../table-state-provider', () => ({
-  INTERNAL_COLUMN_IDS: ['mrt-row-actions', 'mrt-row-drag', 'mrt-row-numbers', 'mrt-row-select', 'mrt-row-expand'],
+  INTERNAL_COLUMN_IDS: [
+    'mrt-row-actions',
+    'mrt-row-drag',
+    'mrt-row-numbers',
+    'mrt-row-select',
+    'mrt-row-expand',
+  ],
   useTableStateContext: () => ({
     columnOrderTouched: false,
     columnSizeTouched: false,
@@ -135,9 +153,18 @@ describe('ColumnsVisibilityButton', () => {
 
     await click(trigger as HTMLButtonElement);
 
-    const labels = Array.from(view.container.querySelectorAll('label')).map((label) => label.textContent?.trim() ?? '');
+    const labels = Array.from(view.container.querySelectorAll('label')).map(
+      (label) => label.textContent?.trim() ?? '',
+    );
 
-    expect(labels).toEqual(expect.arrayContaining(['Зміна порядку стовпців', 'Зміна розміру стовпців', 'Частота', 'Локації']));
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Зміна порядку стовпців',
+        'Зміна розміру стовпців',
+        'Частота',
+        'Локації',
+      ]),
+    );
     expect(labels).not.toContain('');
     expect(labels).not.toContain('mrt-row-actions');
   });
@@ -154,10 +181,15 @@ describe('ColumnsVisibilityButton', () => {
     await click(trigger as HTMLButtonElement);
 
     const labels = Array.from(view.container.querySelectorAll('label'));
-    const columnLabels = labels.filter((label) => ['Частота', 'Локації'].includes(label.textContent?.trim() ?? ''));
+    const columnLabels = labels.filter((label) =>
+      ['Частота', 'Локації'].includes(label.textContent?.trim() ?? ''),
+    );
     expect(columnLabels).toHaveLength(2);
     expect(
-      columnLabels.map((label) => (label.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked),
+      columnLabels.map(
+        (label) =>
+          (label.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked,
+      ),
     ).toEqual([true, true]);
   });
 
@@ -179,6 +211,8 @@ describe('ColumnsVisibilityButton', () => {
       (label) => label.textContent?.trim() === 'Частота',
     );
     expect(freqLabel).toBeTruthy();
-    expect((freqLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked).toBe(false);
+    expect(
+      (freqLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked,
+    ).toBe(false);
   });
 });

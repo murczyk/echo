@@ -83,7 +83,9 @@ describe('useRerDutyFeedState — loading', () => {
     hoisted.fetchInboxCount.mockReset();
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
-    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+    hoisted.fetchInboxMessages.mockResolvedValue(
+      inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]),
+    );
     hoisted.systemSettingsCurrent.mockResolvedValue({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
@@ -109,7 +111,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('runs a single get-inbox initial load per feed on mount', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -125,7 +129,9 @@ describe('useRerDutyFeedState — loading', () => {
   it('sets error and clears loading when initial get-inbox fails', async () => {
     hoisted.fetchInboxMessages.mockRejectedValueOnce(new Error('network down'));
 
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -139,7 +145,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('keeps existing items visible while a filter reload is pending', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -177,7 +185,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('updates unreadCount from poll when count > 0 and column has items', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -203,7 +213,9 @@ describe('useRerDutyFeedState — loading', () => {
   it('does not inflate unreadCount from a poll when the feed has no loaded items', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
 
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -226,9 +238,13 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('uses the last message id as the count cursor even when the timestamp is null', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[10, minimalInboxMessage({ timestamp: null })]]));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[10, minimalInboxMessage({ timestamp: null })]]),
+    );
 
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -257,7 +273,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('calls get-inbox again when poll sees new mail and column is near bottom', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -288,7 +306,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('calls get-inbox for newer mail when watch mode is on', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -296,7 +316,9 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]),
+    );
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
     await act(async () => {
@@ -316,7 +338,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('preserves a larger server unreadCount when appending a partially loaded newer batch', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -354,7 +378,9 @@ describe('useRerDutyFeedState — loading', () => {
   it('does not call get-inbox for newer when column has no items (loadFeedNewerMessages no-op)', async () => {
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -382,7 +408,9 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('does not start a second get-inbox-count for a feed while the first is still in flight', async () => {
-    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
     });
@@ -434,7 +462,9 @@ describe('useRerDutyFeedState — loading', () => {
       });
       hoisted.rerDutyShortStateCreate.mockResolvedValue({ id: 'short-123' });
 
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} />);
       });
@@ -467,7 +497,9 @@ describe('useRerDutyFeedState — loading', () => {
       });
       hoisted.rerDutyShortStateCreate.mockRejectedValue(new Error('create failed'));
 
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} />);
       });
@@ -491,7 +523,9 @@ describe('useRerDutyFeedState — loading', () => {
 
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {
     it('marks newer mail as read when watch mode, pixel at-bottom, and auto-scroll is allowed', async () => {
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} />);
       });
@@ -499,7 +533,9 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(
+        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -521,7 +557,9 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     it('does not mark-all-read on newer mail when watch mode but not at pixel bottom (autoscroll off)', async () => {
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} />);
       });
@@ -529,7 +567,9 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(
+        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -551,7 +591,9 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     it('does not mark-all-read when user prefs disable auto-scroll even if watch mode and at bottom', async () => {
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} disableAutoScroll />);
       });
@@ -559,7 +601,9 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(
+        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
@@ -581,7 +625,9 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     it('does not mark-all-read when only near-bottom (range) is true without watch mode', async () => {
-      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = { current: null };
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
       await act(async () => {
         root.render(<TestHarness apiRef={apiRef} />);
       });
@@ -589,7 +635,9 @@ describe('useRerDutyFeedState — loading', () => {
         await flushMicrotasks();
       });
 
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(
+        inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+      );
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {

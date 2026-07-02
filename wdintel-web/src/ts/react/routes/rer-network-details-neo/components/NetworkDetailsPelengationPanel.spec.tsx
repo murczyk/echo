@@ -8,10 +8,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkPoint } from '../../../../../Bindings';
 
 vi.mock('./NetworkDatePickerField', () => ({
-  NetworkDatePickerField: ({ label }: { label: string }) => <div data-testid={`date-picker-${label}`} />,
+  NetworkDatePickerField: ({ label }: { label: string }) => (
+    <div data-testid={`date-picker-${label}`} />
+  ),
 }));
 vi.mock('./NetworkDetailsLoadingState', () => ({
-  NetworkDetailsLoadingState: ({ message }: { message: string }) => <div data-testid="peleng-loading">{message}</div>,
+  NetworkDetailsLoadingState: ({ message }: { message: string }) => (
+    <div data-testid="peleng-loading">{message}</div>
+  ),
 }));
 vi.mock('./NetworkDetailsPelengationMap', () => ({
   NetworkDetailsPelengationMap: () => <div data-testid="pelengation-map" />,

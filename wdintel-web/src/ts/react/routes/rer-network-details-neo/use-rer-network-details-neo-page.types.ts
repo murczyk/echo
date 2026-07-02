@@ -14,7 +14,11 @@ import type {
   Unit,
   User,
 } from '../../../../Bindings';
-import { createDefaultNetworkEtalonkaReportState, type NetworkEtalonkaReportState, type NetworkEtalonkaReportType } from './use-rer-network-details-neo-page.etalonka-report';
+import {
+  createDefaultNetworkEtalonkaReportState,
+  type NetworkEtalonkaReportState,
+  type NetworkEtalonkaReportType,
+} from './use-rer-network-details-neo-page.etalonka-report';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from './use-rer-network-details-neo-page.constants';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
 import type {
@@ -71,7 +75,14 @@ export type NetworkOption = {
 
 export type NetworkDescriptionMode = 'create' | 'edit';
 
-export type NetworkDetailsTab = 'descriptions' | 'signs' | 'frequencies' | 'callsigns' | 'relations' | 'activity' | 'direction-finding';
+export type NetworkDetailsTab =
+  | 'descriptions'
+  | 'signs'
+  | 'frequencies'
+  | 'callsigns'
+  | 'relations'
+  | 'activity'
+  | 'direction-finding';
 
 export type NetworkFreqCreateWizardForm = {
   freq: string;

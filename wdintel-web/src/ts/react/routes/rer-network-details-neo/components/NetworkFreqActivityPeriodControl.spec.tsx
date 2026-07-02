@@ -7,7 +7,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Button: ({ children, disabled, onClick, variant }: { children?: ReactNode; disabled?: boolean; onClick?: () => void; variant?: string }) => (
+  Button: ({
+    children,
+    disabled,
+    onClick,
+    variant,
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+    variant?: string;
+  }) => (
     <button type="button" data-variant={variant} disabled={disabled} onClick={onClick}>
       {children}
     </button>
@@ -54,7 +64,12 @@ type Rendered = {
 
 const rendered: Rendered[] = [];
 
-function renderHarness(initialState: { activeFrom: string; activeTo: string; disabled?: boolean } = { activeFrom: '2026-06-13', activeTo: '' }) {
+function renderHarness(
+  initialState: { activeFrom: string; activeTo: string; disabled?: boolean } = {
+    activeFrom: '2026-06-13',
+    activeTo: '',
+  },
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -103,7 +118,9 @@ describe('NetworkFreqActivityPeriodControl', () => {
 
     expect(view.container.textContent).toContain('Активна');
     expect(view.container.textContent).not.toContain('Активна по');
-    expect(view.container.querySelector('[data-testid="Активна з-width"]')?.textContent).toBe('100%');
+    expect(view.container.querySelector('[data-testid="Активна з-width"]')?.textContent).toBe(
+      '100%',
+    );
   });
 
   it('shows the end date when switching to inactive and initializes it if empty', () => {
@@ -111,11 +128,15 @@ describe('NetworkFreqActivityPeriodControl', () => {
     rendered.push(view);
 
     act(() => {
-      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Неактивна')?.click();
+      [...view.container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Неактивна')
+        ?.click();
     });
 
     expect(view.container.textContent).toContain('Активна по');
-    expect((view.container.querySelector('[data-testid="state"]') as HTMLElement).textContent).not.toContain('"activeTo":""');
+    expect(
+      (view.container.querySelector('[data-testid="state"]') as HTMLElement).textContent,
+    ).not.toContain('"activeTo":""');
   });
 
   it('clears the end date when switching back to active', () => {
@@ -123,19 +144,31 @@ describe('NetworkFreqActivityPeriodControl', () => {
     rendered.push(view);
 
     act(() => {
-      [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Активна')?.click();
+      [...view.container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Активна')
+        ?.click();
     });
 
-    expect((view.container.querySelector('[data-testid="state"]') as HTMLElement).textContent).toContain('"activeTo":""');
+    expect(
+      (view.container.querySelector('[data-testid="state"]') as HTMLElement).textContent,
+    ).toContain('"activeTo":""');
     expect(view.container.textContent).not.toContain('Активна по');
   });
 
   it('disables both buttons and date fields when disabled', () => {
-    const view = renderHarness({ activeFrom: '2026-06-13', activeTo: '2026-06-14', disabled: true });
+    const view = renderHarness({
+      activeFrom: '2026-06-13',
+      activeTo: '2026-06-14',
+      disabled: true,
+    });
     rendered.push(view);
 
     const buttons = [...view.container.querySelectorAll('button')];
     expect(buttons.every((button) => button.disabled)).toBe(true);
-    expect([...view.container.querySelectorAll('input')].every((input) => (input as HTMLInputElement).disabled)).toBe(true);
+    expect(
+      [...view.container.querySelectorAll('input')].every(
+        (input) => (input as HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
   });
 });

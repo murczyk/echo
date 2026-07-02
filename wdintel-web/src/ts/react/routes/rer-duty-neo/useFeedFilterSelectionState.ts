@@ -64,7 +64,16 @@ export function useFeedFilterSelectionState<TLocal>({
       setLocalValue((prev) => (sameSelection(prev, nextLocalValues) ? prev : nextLocalValues));
     }
     previousSelectionKeyRef.current = selectionKey;
-  }, [excludeKey, includeKey, includeValues, excludeValues, localValue, mode, toLocalValues, toParentValues]);
+  }, [
+    excludeKey,
+    includeKey,
+    includeValues,
+    excludeValues,
+    localValue,
+    mode,
+    toLocalValues,
+    toParentValues,
+  ]);
 
   useEffect(() => {
     if (skipWritebackRef.current) {
@@ -77,7 +86,17 @@ export function useFeedFilterSelectionState<TLocal>({
     if (mode === 'include') onIncludeChange(nextParentValues);
     else onExcludeChange(nextParentValues);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on localValue so writeback runs after resync
-  }, [excludeKey, includeKey, includeValues, excludeValues, localValue, mode, onExcludeChange, onIncludeChange, toParentValues]);
+  }, [
+    excludeKey,
+    includeKey,
+    includeValues,
+    excludeValues,
+    localValue,
+    mode,
+    onExcludeChange,
+    onIncludeChange,
+    toParentValues,
+  ]);
 
   return {
     mode,

@@ -12,7 +12,9 @@ vi.mock('./client', () => ({
 
 const postJsonMock = vi.mocked(postJson);
 
-function buildRawMessage(overrides: Partial<InboxMessage> & Record<string, unknown> = {}): InboxMessage {
+function buildRawMessage(
+  overrides: Partial<InboxMessage> & Record<string, unknown> = {},
+): InboxMessage {
   return {
     text: 'P-2 ключ',
     freq: '129.9500',

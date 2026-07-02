@@ -1,9 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 
-import {
-  RELEASE_VIDEO_LINK_TITLE,
-  rewriteRelativeMediaUrls,
-} from '../markdown-helpers';
+import { RELEASE_VIDEO_LINK_TITLE, rewriteRelativeMediaUrls } from '../markdown-helpers';
 import { resolveReleaseMediaUrl } from '../releases.service';
 
 interface MarkdownBodyProps {
@@ -20,10 +17,7 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
     <ReactMarkdown
       components={{
         p: ({ node: _node, ...props }) => (
-          <p
-            className="text-sm leading-relaxed text-[var(--color-text)]"
-            {...props}
-          />
+          <p className="text-sm leading-relaxed text-[var(--color-text)]" {...props} />
         ),
         img: ({ node: _node, ...props }) => (
           <img
@@ -47,7 +41,7 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
             {...props}
           />
         ),
-        a: ({ node: _node, ...props }) => (
+        a: ({ node: _node, ...props }) =>
           props.title === RELEASE_VIDEO_LINK_TITLE ? (
             <video
               className="w-full rounded border border-[var(--color-border)] bg-black"
@@ -62,8 +56,7 @@ export function MarkdownBody({ releaseId, markdown }: MarkdownBodyProps) {
               rel={props.href?.startsWith('http') ? 'noreferrer' : undefined}
               {...props}
             />
-          )
-        ),
+          ),
       }}
     >
       {rewritten}

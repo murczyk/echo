@@ -68,85 +68,90 @@ type CreateCallsignRowSectionProps = {
   onRemoveRow: (index: number) => void;
 };
 
-const CreateCallsignRowSection = memo(function CreateCallsignRowSection({
-  row,
-  index,
-  rowsLength,
-  formDisabled,
-  duplicateHintGroup,
-  onRowChange,
-  onRemoveRow,
-}: CreateCallsignRowSectionProps) {
-  const handleRowChange = useCallback((next: CallsignDraftRow) => {
-    onRowChange(index, next);
-  }, [index, onRowChange]);
+const CreateCallsignRowSection = memo(
+  function CreateCallsignRowSection({
+    row,
+    index,
+    rowsLength,
+    formDisabled,
+    duplicateHintGroup,
+    onRowChange,
+    onRemoveRow,
+  }: CreateCallsignRowSectionProps) {
+    const handleRowChange = useCallback(
+      (next: CallsignDraftRow) => {
+        onRowChange(index, next);
+      },
+      [index, onRowChange],
+    );
 
-  const handleRemoveRow = useCallback(() => {
-    onRemoveRow(index);
-  }, [index, onRemoveRow]);
+    const handleRemoveRow = useCallback(() => {
+      onRemoveRow(index);
+    }, [index, onRemoveRow]);
 
-  const callsignHintContent = duplicateHintGroup ? (
-    <>
-      <Typography component="span" variant="caption" color="warning.main" fontWeight={600}>
-        {duplicateHintGroup.matches.length === 1
-          ? 'Схожий існуючий позивний:'
-          : `Схожі існуючі позивні: ${duplicateHintGroup.matches.length}`}
-      </Typography>
-      <br />
-      {duplicateHintGroup.matches.slice(0, 2).map((match, matchIndex) => (
-        <span key={match.id}>
-          <Typography component="span" variant="caption" color="text.secondary">
-            {match.callsign} | {match.unitName}
-          </Typography>
-          {matchIndex < Math.min(duplicateHintGroup.matches.length, 2) - 1 ? <br /> : null}
-        </span>
-      ))}
-      {duplicateHintGroup.matches.length > 2 ? (
-        <>
-          <br />
-          <Typography component="span" variant="caption" color="text.secondary">
-            {`+ ${duplicateHintGroup.matches.length - 2} more`}
-          </Typography>
-        </>
-      ) : null}
-    </>
-  ) : null;
-
-  return (
-    <Stack spacing={1.5}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="subtitle2">{`Рядок ${index + 1}`}</Typography>
-        {rowsLength > 1 ? (
-          <Tooltip title="Видалити рядок">
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleRemoveRow}
-                disabled={formDisabled}
-                aria-label={`Видалити рядок ${index + 1}`}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+    const callsignHintContent = duplicateHintGroup ? (
+      <>
+        <Typography component="span" variant="caption" color="warning.main" fontWeight={600}>
+          {duplicateHintGroup.matches.length === 1
+            ? 'Схожий існуючий позивний:'
+            : `Схожі існуючі позивні: ${duplicateHintGroup.matches.length}`}
+        </Typography>
+        <br />
+        {duplicateHintGroup.matches.slice(0, 2).map((match, matchIndex) => (
+          <span key={match.id}>
+            <Typography component="span" variant="caption" color="text.secondary">
+              {match.callsign} | {match.unitName}
+            </Typography>
+            {matchIndex < Math.min(duplicateHintGroup.matches.length, 2) - 1 ? <br /> : null}
+          </span>
+        ))}
+        {duplicateHintGroup.matches.length > 2 ? (
+          <>
+            <br />
+            <Typography component="span" variant="caption" color="text.secondary">
+              {`+ ${duplicateHintGroup.matches.length - 2} more`}
+            </Typography>
+          </>
         ) : null}
+      </>
+    ) : null;
+
+    return (
+      <Stack spacing={1.5}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Typography variant="subtitle2">{`Рядок ${index + 1}`}</Typography>
+          {rowsLength > 1 ? (
+            <Tooltip title="Видалити рядок">
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleRemoveRow}
+                  disabled={formDisabled}
+                  aria-label={`Видалити рядок ${index + 1}`}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : null}
+        </Stack>
+        <CallsignFormFields
+          value={row}
+          onChange={handleRowChange}
+          disabled={formDisabled}
+          compact
+          callsignHintContent={callsignHintContent}
+        />
       </Stack>
-      <CallsignFormFields
-        value={row}
-        onChange={handleRowChange}
-        disabled={formDisabled}
-        compact
-        callsignHintContent={callsignHintContent}
-      />
-    </Stack>
-  );
-}, (prev, next) => (
-  prev.row === next.row
-  && prev.index === next.index
-  && prev.rowsLength === next.rowsLength
-  && prev.formDisabled === next.formDisabled
-  && prev.duplicateHintGroup === next.duplicateHintGroup
-));
+    );
+  },
+  (prev, next) =>
+    prev.row === next.row &&
+    prev.index === next.index &&
+    prev.rowsLength === next.rowsLength &&
+    prev.formDisabled === next.formDisabled &&
+    prev.duplicateHintGroup === next.duplicateHintGroup,
+);
 
 type DuplicateHintsSummaryProps = {
   duplicateHintGroups: CallsignDuplicateHintGroup[];
@@ -162,7 +167,15 @@ const DuplicateHintsSummary = memo(function DuplicateHintsSummary({
   const hiddenMatches = totalMatches - previewMatches.length;
 
   return (
-    <Box sx={{ position: 'sticky', top: 0, zIndex: (theme) => theme.zIndex.appBar + 1, bgcolor: 'background.paper', pb: 0.5 }}>
+    <Box
+      sx={{
+        position: 'sticky',
+        top: 0,
+        zIndex: (theme) => theme.zIndex.appBar + 1,
+        bgcolor: 'background.paper',
+        pb: 0.5,
+      }}
+    >
       <PowerAlert
         severity="warning"
         autoHideDuration={null}
@@ -179,7 +192,12 @@ const DuplicateHintsSummary = memo(function DuplicateHintsSummary({
             {`Схожі позивні знайдено: ${totalMatches} у ${duplicateHintGroups.length} рядках`}
           </Typography>
           {previewMatches.map(({ rowIndex, match }) => (
-            <Typography key={`${rowIndex}-${match.id}`} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            <Typography
+              key={`${rowIndex}-${match.id}`}
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block' }}
+            >
               {`Рядок ${rowIndex + 1}: ${match.callsign} | ${match.unitName}`}
             </Typography>
           ))}
@@ -294,7 +312,9 @@ export function CreateCallsignsDrawer({
                 inputValue={unitSearchInput}
                 onInputValueChange={setUnitSearchInput}
                 error={unitSelectionError !== null}
-                helperText={unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'}
+                helperText={
+                  unitSelectionError ?? 'Почніть вводити назву або оберіть підрозділ зі списку'
+                }
                 noOptionsText="Нічого не знайдено"
                 getOptionLabel={getUnitDisplayLabel}
               />
@@ -314,12 +334,12 @@ export function CreateCallsignsDrawer({
                   const raw = event.target.value;
                   const nextSourceId = raw === '' ? null : Number(raw);
                   onAddSourceIdChange(nextSourceId);
-                  onAddCallsignAdditionalSourceIdsChange(addCallsignAdditionalSourceIds.filter((sourceId) => sourceId !== nextSourceId));
+                  onAddCallsignAdditionalSourceIdsChange(
+                    addCallsignAdditionalSourceIds.filter((sourceId) => sourceId !== nextSourceId),
+                  );
                 }}
               >
-                <MenuItem value="">
-                  Оберіть джерело
-                </MenuItem>
+                <MenuItem value="">Оберіть джерело</MenuItem>
                 {sources.map((source) => (
                   <MenuItem key={source.id} value={source.id}>
                     {source.name}
@@ -338,11 +358,16 @@ export function CreateCallsignsDrawer({
               value={addCallsignAdditionalSourceIds}
               onChange={(event) => {
                 const value = event.target.value;
-                onAddCallsignAdditionalSourceIdsChange(typeof value === 'string' ? value.split(',').map(Number) : value.map(Number));
+                onAddCallsignAdditionalSourceIdsChange(
+                  typeof value === 'string' ? value.split(',').map(Number) : value.map(Number),
+                );
               }}
               renderValue={(selected) => {
-                const names = selected
-                  .map((sourceId) => sources.find((source) => source.id === Number(sourceId))?.name ?? `#${sourceId}`);
+                const names = selected.map(
+                  (sourceId) =>
+                    sources.find((source) => source.id === Number(sourceId))?.name ??
+                    `#${sourceId}`,
+                );
                 return names.length > 0 ? names.join(', ') : 'Оберіть підтвердження';
               }}
             >
@@ -358,7 +383,9 @@ export function CreateCallsignsDrawer({
           </FormControl>
           <TextField
             label="Швидка вставка TSV"
-            placeholder={'TSV: "позивний<TAB>посада<TAB>коментар" або "позивний<TAB>посада<TAB>ПІП<TAB>коментар"'}
+            placeholder={
+              'TSV: "позивний<TAB>посада<TAB>коментар" або "позивний<TAB>посада<TAB>ПІП<TAB>коментар"'
+            }
             value={pastedInput}
             size="small"
             multiline
@@ -372,21 +399,44 @@ export function CreateCallsignsDrawer({
             disabled={formDisabled}
             slotProps={{
               input: {
-                endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
+                endAdornment: (
+                  <UploadFileIcon
+                    fontSize="small"
+                    color="action"
+                    aria-hidden="true"
+                    focusable="false"
+                  />
+                ),
               },
             }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1, ml: 0 }}>
-            Підтримуються лише формати: "позивний&lt;TAB&gt;посада&lt;TAB&gt;коментар" або "позивний&lt;TAB&gt;посада&lt;TAB&gt;ПІП&lt;TAB&gt;коментар".
+            Підтримуються лише формати: "позивний&lt;TAB&gt;посада&lt;TAB&gt;коментар" або
+            "позивний&lt;TAB&gt;посада&lt;TAB&gt;ПІП&lt;TAB&gt;коментар".
           </Typography>
 
-          <Stack direction={{ xs: "column", sm: "row-reverse" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row-reverse' }}
+            spacing={1.5}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+          >
             <Stack direction="row" spacing={1}>
-              <Button size="small" startIcon={<ClearAllIcon />} onClick={handleClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
+              <Button
+                size="small"
+                startIcon={<ClearAllIcon />}
+                onClick={handleClearRows}
+                disabled={formDisabled}
+                sx={{ px: '9px' }}
+              >
                 Очистити
               </Button>
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: "left", sm: "left" } }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textAlign: { xs: 'left', sm: 'left' } }}
+            >
               {CALLSIGN_FORM_HINT}
               {addSourceId === 2 ? ` ${RO_SOURCE_RADIO_FREQ_REQUIRED_ERROR}` : ''}
             </Typography>
@@ -408,13 +458,28 @@ export function CreateCallsignsDrawer({
           </Stack>
 
           <Stack direction="row" justifyContent="flex-start">
-            <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={onAppendRow}
+              disabled={formDisabled}
+              sx={{ px: '9px' }}
+            >
               Рядок
             </Button>
           </Stack>
         </Stack>
       </Box>
-      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+      <Box
+        sx={{
+          p: 2.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 2,
+        }}
+      >
         <Button onClick={handleCloseDrawer} disabled={submitting}>
           Скасувати
         </Button>

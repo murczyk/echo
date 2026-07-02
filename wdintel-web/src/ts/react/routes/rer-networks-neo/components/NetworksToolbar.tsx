@@ -18,7 +18,13 @@ function StatusChipLabel({
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ minWidth: 0 }}>
       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
-      <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ minWidth: 0, whiteSpace: 'nowrap' }}>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        useFlexGap
+        sx={{ minWidth: 0, whiteSpace: 'nowrap' }}
+      >
         <Box component="span" sx={{ minWidth: 0 }}>
           {label}
         </Box>
@@ -37,7 +43,13 @@ type Props = {
   filters: Pick<NetworksFilterState, 'status' | 'unitText' | 'showOnlyInvestigating'>;
   setFilters: Dispatch<SetStateAction<NetworksFilterState>>;
   statusCounts: { active: number; inactive: number; archived: number } | null;
-  additionalActiveFilters: Array<{ id: string; label: string; value: string; valuePreview: string; isGlobalFilter: boolean }>;
+  additionalActiveFilters: Array<{
+    id: string;
+    label: string;
+    value: string;
+    valuePreview: string;
+    isGlobalFilter: boolean;
+  }>;
   onClearAdditionalActiveFilter: (filterId: string) => void;
   onClearAdditionalActiveFilters: () => void;
   table: MRT_TableInstance<any>;
@@ -65,7 +77,11 @@ export function NetworksToolbar({
         flexWrap: 'wrap',
       }}
     >
-      <GlobalFilterTextField globalFilter={globalFilter} setGlobalFilter={onChangeGlobalFilter} disabled={loading} />
+      <GlobalFilterTextField
+        globalFilter={globalFilter}
+        setGlobalFilter={onChangeGlobalFilter}
+        disabled={loading}
+      />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
         <PowerChip
           selected={filters.status === 'all'}
@@ -77,21 +93,39 @@ export function NetworksToolbar({
         <PowerChip
           selected={filters.status === 'active'}
           onClick={() => setFilters((current) => ({ ...current, status: 'active' }))}
-          label={<StatusChipLabel color="#54c06c" label="Активні" counter={statusCounts?.active ?? '—'} />}
+          label={
+            <StatusChipLabel
+              color="#54c06c"
+              label="Активні"
+              counter={statusCounts?.active ?? '—'}
+            />
+          }
           interactive
           fontWeight={700}
         />
         <PowerChip
           selected={filters.status === 'inactive'}
           onClick={() => setFilters((current) => ({ ...current, status: 'inactive' }))}
-          label={<StatusChipLabel color="#bfbfbf" label="Неактивні" counter={statusCounts?.inactive ?? '—'} />}
+          label={
+            <StatusChipLabel
+              color="#bfbfbf"
+              label="Неактивні"
+              counter={statusCounts?.inactive ?? '—'}
+            />
+          }
           interactive
           fontWeight={700}
         />
         <PowerChip
           selected={filters.status === 'deleted'}
           onClick={() => setFilters((current) => ({ ...current, status: 'deleted' }))}
-          label={<StatusChipLabel color="#6b6b6b" label="Архівні" counter={statusCounts?.archived ?? '—'} />}
+          label={
+            <StatusChipLabel
+              color="#6b6b6b"
+              label="Архівні"
+              counter={statusCounts?.archived ?? '—'}
+            />
+          }
           interactive
           fontWeight={700}
         />
