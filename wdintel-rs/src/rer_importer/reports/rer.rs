@@ -398,7 +398,8 @@ async fn load_report(
             item_id,
             timestamp,
             comments.join("; "),
-            message_body_without_headers(&message).c(h!())?,
+            message_body_without_duplicate_comments(&message, &comments)
+                .c(h!())?,
             parse_callsigns(&item),
             parse_points(&item),
         );
@@ -672,6 +673,91 @@ fn message_body_without_headers(
     Ok(crate::rer_importer::body_noheader::extract_text(&body)
         .c(h!())?
         .body)
+}
+
+fn message_body_without_duplicate_comments(
+    message: &signal_message::Model,
+    comments: &[String],
+) -> Result<String, AppError> {
+    let body = message_body_without_headers(message).c(h!())?;
+    let comments = parsed_report_comments(message, comments);
+    if comments.is_empty() {
+        return Ok(body);
+    }
+    Ok(strip_comment_blocks(&body, &comments))
+}
+
+fn parsed_report_comments(
+    message: &signal_message::Model,
+    comments: &[String],
+) -> Vec<String> {
+    let body = message.body.as_deref().unwrap_or_default();
+    let parsed = crate::sigint::parser::parse_comments(body);
+    let comments: HashSet<String> = comments
+        .iter()
+        .map(|comment| normalize_report_comment_text(comment))
+        .filter(|comment| !comment.is_empty())
+        .collect();
+    [parsed.top, parsed.bottom]
+        .into_iter()
+        .flatten()
+        .map(|comment| normalize_report_comment_text(&comment))
+        .filter(|comment| comments.contains(comment))
+        .collect()
+}
+
+fn strip_comment_blocks(body: &str, comments: &[String]) -> String {
+    let comments: HashSet<String> = comments.iter().cloned().collect();
+    split_text_blocks(body)
+        .into_iter()
+        .filter(|block| {
+            !comments.contains(&normalize_report_comment_text(block))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn split_text_blocks(body: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut block = Vec::new();
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            if !block.is_empty() {
+                blocks.push(block.join("\n"));
+                block.clear();
+            }
+        } else {
+            block.push(line.trim());
+        }
+    }
+    if !block.is_empty() {
+        blocks.push(block.join("\n"));
+    }
+    blocks
+}
+
+fn normalize_report_comment_text(text: &str) -> String {
+    let mut text = text.trim().to_string();
+    loop {
+        let before = text.len();
+        while text.ends_with(';') || text.ends_with('.') {
+            text = text[..text.len() - 1].trim_end().to_string();
+        }
+        for (open, close) in [('"', '"'), ('«', '»'), ('(', ')')] {
+            if text.starts_with(open)
+                && text.ends_with(close)
+                && text.chars().count() > 1
+            {
+                text = text[open.len_utf8()..text.len() - close.len_utf8()]
+                    .trim()
+                    .to_string();
+            }
+        }
+        if text.len() == before {
+            break;
+        }
+    }
+    text
 }
 
 fn sposob_message_body_without_headers(
@@ -1985,6 +2071,26 @@ mod tests {
             message_body_without_headers(&message).unwrap(),
             "Перехоплення"
         );
+    }
+
+    #[test]
+    fn report_body_strips_comments_already_loaded_from_sigint_comment() {
+        let message = signal_message(
+            1,
+            "верхній коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nнижній коментар",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &[
+                "верхній коментар".to_string(),
+                "нижній коментар".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(!body.contains("верхній коментар"));
+        assert!(!body.contains("нижній коментар"));
+        assert!(body.contains("— репліка"));
     }
 
     #[test]
