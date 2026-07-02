@@ -279,11 +279,7 @@ async fn load_existing_signal_ids(
         .collect::<BTreeMap<_, _>>();
     Ok(signal_message::Entity::find()
         .filter(signal_message::Column::ExternalId.is_in(inbox_ids.to_vec()))
-        .filter(
-            Condition::any()
-                .add(signal_message::Column::Deleted.eq(false))
-                .add(signal_message::Column::MessageUid.is_not_null()),
-        )
+        .filter(signal_message::Column::MessageUid.is_not_null())
         .find_also_related(datasource_group::Entity)
         .all(dbx)
         .await
@@ -1378,6 +1374,50 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn unstaged_signal_message_without_uid_is_not_existing_recovery() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group = mk_echo_group(&env.dbx, account.id, "partial-group").await;
+        let cursor = old_ts();
+        insert_system_settings(&env.dbx, cursor, false).await;
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        mk_signal_for_inbox_with_datasource_group(
+            &env.dbx,
+            inbox.id,
+            datasource_group_id,
+            false,
+            None,
+        )
+        .await;
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
+            .await
+            .unwrap();
+        assert!(!missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Pending);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn external_id_collision_from_other_group_is_not_existing_recovery() {
         let _guard = TEST_LOCK.lock().await;
         let env = recovery_env().await;
@@ -1404,10 +1444,12 @@ mod tests {
             )
             .await
             .unwrap();
-        mk_existing_signal_for_inbox_with_datasource_group(
+        mk_signal_for_inbox_with_datasource_group(
             &env.dbx,
             inbox.id,
             datasource_group_id,
+            false,
+            Some(format!("uid-{}", Uuid::new_v4())),
         )
         .await;
 
@@ -1976,6 +2018,23 @@ mod tests {
         inbox_id: i32,
         datasource_group_id: i64,
     ) -> signal_message::Model {
+        mk_signal_for_inbox_with_datasource_group(
+            dbx,
+            inbox_id,
+            datasource_group_id,
+            false,
+            Some(format!("uid-{}", Uuid::new_v4())),
+        )
+        .await
+    }
+
+    async fn mk_signal_for_inbox_with_datasource_group(
+        dbx: &DatabaseConnection,
+        inbox_id: i32,
+        datasource_group_id: i64,
+        deleted: bool,
+        message_uid: Option<String>,
+    ) -> signal_message::Model {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
@@ -1985,9 +2044,9 @@ mod tests {
             timestamp: Set(Some(now)),
             sender: Set(None),
             format: Set(None),
-            deleted: Set(false),
+            deleted: Set(deleted),
             external_id: Set(Some(i64::from(inbox_id))),
-            message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
+            message_uid: Set(message_uid),
             operator_tags: Set(None),
         }
         .insert(dbx)
