@@ -29,10 +29,23 @@ impl MigrationTrait for Migration {
                 where sm.external_id = eim.id
                     and sm.datasource_group_id = dg.id
                     and sm.echo_inbox_message_id is null
+                    and eim.seen
+                    and sm.created_at >= eim.created_at
+                    and sm.created_at < eim.created_at + interval '1 day'
                     and replace(sm.body, E'\r\n', E'\n') = replace(eim.body, E'\r\n', E'\n')
                     and (sm.timestamp is null
                         or eim.timestamp is null
-                        or sm.timestamp = eim.timestamp);
+                        or sm.timestamp = eim.timestamp)
+                    and not exists (
+                        select 1
+                        from signal_message source_sm
+                        where source_sm.id = sm.external_id
+                            and source_sm.id <> sm.id
+                            and replace(source_sm.body, E'\r\n', E'\n') = replace(sm.body, E'\r\n', E'\n')
+                            and (source_sm.timestamp is null
+                                or sm.timestamp is null
+                                or source_sm.timestamp = sm.timestamp)
+                    );
 
                 create index if not exists signal_message_echo_inbox_message_id_idx
                     on signal_message (echo_inbox_message_id)
