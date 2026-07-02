@@ -21,6 +21,7 @@ import type {
   NetworkCallsignRelationsEdgeView,
   NetworkCallsignRelationsNodeView,
 } from '../network-relations';
+import { isCatalogRelationNode } from '../network-relations';
 import { getNetworkRelationsGraphTheme } from './network-relations-graph-theme';
 
 type Props = {
@@ -195,6 +196,9 @@ export function NetworkCallsignRelationsGraphDetails({
                   <Chip size="small" label={`Зв'язків: ${selectedNode.relationCount}`} />
                   {selectedNode.knownCallsignId ? (
                     <Chip size="small" label={`ID: ${selectedNode.knownCallsignId}`} />
+                  ) : null}
+                  {isCatalogRelationNode(selectedNode) ? (
+                    <Chip size="small" color="warning" label="Каталог · не підтверджено" />
                   ) : null}
                 </Stack>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />

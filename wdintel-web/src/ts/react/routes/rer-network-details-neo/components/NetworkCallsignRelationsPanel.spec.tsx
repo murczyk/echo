@@ -5,7 +5,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
+import type {
+  NetworkCallsignRelationNode,
+  NetworkCallsignRelationsRsp,
+} from '../../../../../Bindings';
 
 vi.mock('./NetworkDatePickerField', () => ({
   NetworkDatePickerField: ({ label }: { label: string }) => (
@@ -22,19 +25,32 @@ type Rendered = {
   root: Root;
 };
 
+function relationNode(
+  overrides: Partial<NetworkCallsignRelationNode> &
+    Pick<NetworkCallsignRelationNode, 'id' | 'label'>,
+): NetworkCallsignRelationNode {
+  return {
+    weight: 1,
+    relationCount: 1,
+    activityCount: 1,
+    mainRadioStation: false,
+    commandControl: false,
+    position: null,
+    unitName: null,
+    knownCallsignId: null,
+    enrichmentSource: 'RelationEnrichmentNone',
+    ...overrides,
+  };
+}
+
 function createDenseRelations(): NetworkCallsignRelationsRsp {
   const nodes = Array.from({ length: 301 }, (_, index) => {
     const id = `NODE_${String(index).padStart(3, '0')}`;
-    return {
+    return relationNode({
       id,
       label: id,
-      weight: 1,
       relationCount: index === 0 || index === 300 ? 1 : 2,
-      activityCount: 1,
-      position: null,
-      unitName: null,
-      knownCallsignId: null,
-    };
+    });
   });
 
   const edges = Array.from({ length: 300 }, (_, index) => {
@@ -59,16 +75,11 @@ function createDenseRelations(): NetworkCallsignRelationsRsp {
 function createDenseUiRelations(): NetworkCallsignRelationsRsp {
   const nodes = Array.from({ length: 41 }, (_, index) => {
     const id = `NODE_${String(index).padStart(3, '0')}`;
-    return {
+    return relationNode({
       id,
       label: id,
-      weight: 1,
       relationCount: index === 0 || index === 40 ? 1 : 2,
-      activityCount: 1,
-      position: null,
-      unitName: null,
-      knownCallsignId: null,
-    };
+    });
   });
 
   const edges = Array.from({ length: 40 }, (_, index) => {
@@ -93,26 +104,19 @@ function createDenseUiRelations(): NetworkCallsignRelationsRsp {
 function createSparseRelations(): NetworkCallsignRelationsRsp {
   return {
     nodes: [
-      {
+      relationNode({
         id: 'ALPHA',
         label: 'ALPHA',
         weight: 3,
         relationCount: 1,
         activityCount: 3,
-        position: null,
-        unitName: null,
-        knownCallsignId: null,
-      },
-      {
+      }),
+      relationNode({
         id: 'BRAVO',
         label: 'BRAVO',
         weight: 2,
-        relationCount: 1,
         activityCount: 2,
-        position: null,
-        unitName: null,
-        knownCallsignId: null,
-      },
+      }),
     ],
     edges: [
       {
@@ -157,26 +161,19 @@ function renderPanel(
     networkId: 1,
     relations: relations ?? {
       nodes: [
-        {
+        relationNode({
           id: 'ALPHA',
           label: 'ALPHA',
           weight: 3,
           relationCount: 1,
           activityCount: 3,
-          position: null,
-          unitName: null,
-          knownCallsignId: null,
-        },
-        {
+        }),
+        relationNode({
           id: 'BRAVO',
           label: 'BRAVO',
           weight: 2,
-          relationCount: 1,
           activityCount: 2,
-          position: null,
-          unitName: null,
-          knownCallsignId: null,
-        },
+        }),
       ],
       edges: [
         {
@@ -438,16 +435,12 @@ describe('NetworkCallsignRelationsPanel', () => {
   it('keeps the graph shell available when relations contain nodes but no edges', () => {
     const view = renderPanel({
       nodes: [
-        {
+        relationNode({
           id: 'ALPHA',
           label: 'ALPHA',
           weight: 1,
           relationCount: 0,
-          activityCount: 1,
-          position: null,
-          unitName: null,
-          knownCallsignId: null,
-        },
+        }),
       ],
       edges: [],
       freqs: [{ freq: '652.111', enabledByDefault: true }],

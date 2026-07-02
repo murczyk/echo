@@ -169,7 +169,7 @@ function installDefaultApiMocks() {
   otherApiMocks.getEncryptions.mockResolvedValue([]);
   otherApiMocks.getUnitsList.mockResolvedValue([]);
   otherApiMocks.listPosts.mockResolvedValue([]);
-  otherApiMocks.getNetworkCallsignRelations.mockResolvedValue({ freqs: [] });
+  otherApiMocks.getNetworkCallsignRelations.mockResolvedValue({ nodes: [], edges: [], freqs: [] });
   otherApiMocks.getNetworkGroupsActivityOne.mockResolvedValue({});
   otherApiMocks.listNetworkPoints.mockResolvedValue({ points: [] });
   callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [] });

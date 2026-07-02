@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
+import type {
+  NetworkCallsignRelationNode,
+  NetworkCallsignRelationsRsp,
+} from '../../../../Bindings';
 import {
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
@@ -9,10 +12,28 @@ import {
   NETWORK_RELATIONS_RENDER_LIMITS,
 } from './network-relations';
 
+function relationNode(
+  overrides: Partial<NetworkCallsignRelationNode> &
+    Pick<NetworkCallsignRelationNode, 'id' | 'label'>,
+): NetworkCallsignRelationNode {
+  return {
+    weight: 1,
+    relationCount: 1,
+    activityCount: 1,
+    mainRadioStation: false,
+    commandControl: false,
+    position: null,
+    unitName: null,
+    knownCallsignId: null,
+    enrichmentSource: 'RelationEnrichmentNone',
+    ...overrides,
+  };
+}
+
 function createGraph(): NetworkCallsignRelationsRsp {
   return {
     nodes: [
-      {
+      relationNode({
         id: 'ALPHA',
         label: 'ALPHA',
         weight: 3,
@@ -21,27 +42,19 @@ function createGraph(): NetworkCallsignRelationsRsp {
         position: 'КР',
         unitName: '1 мб',
         knownCallsignId: 10,
-      },
-      {
+        enrichmentSource: 'RelationEnrichmentNetwork',
+      }),
+      relationNode({
         id: 'BRAVO',
         label: 'BRAVO',
         weight: 2,
         relationCount: 2,
         activityCount: 2,
-        position: null,
-        unitName: null,
-        knownCallsignId: null,
-      },
-      {
+      }),
+      relationNode({
         id: 'CHARLIE',
         label: 'CHARLIE',
-        weight: 1,
-        relationCount: 1,
-        activityCount: 1,
-        position: null,
-        unitName: null,
-        knownCallsignId: null,
-      },
+      }),
     ],
     edges: [
       {
@@ -239,16 +252,10 @@ describe('network relations helpers', () => {
         ...createGraph(),
         nodes: [
           ...createGraph().nodes,
-          {
+          relationNode({
             id: 'DELTA',
             label: 'DELTA',
-            weight: 1,
-            relationCount: 1,
-            activityCount: 1,
-            position: null,
-            unitName: null,
-            knownCallsignId: null,
-          },
+          }),
         ],
         edges: [
           {
@@ -320,16 +327,12 @@ describe('network relations helpers', () => {
   it('warns immediately when the graph is far beyond the soft cap', () => {
     const graph = buildNetworkCallsignRelationsGraphView(
       {
-        nodes: Array.from({ length: 601 }, (_, index) => ({
-          id: `NODE_${index}`,
-          label: `NODE_${index}`,
-          weight: 1,
-          relationCount: 1,
-          activityCount: 1,
-          position: null,
-          unitName: null,
-          knownCallsignId: null,
-        })),
+        nodes: Array.from({ length: 601 }, (_, index) =>
+          relationNode({
+            id: `NODE_${index}`,
+            label: `NODE_${index}`,
+          }),
+        ),
         edges: Array.from({ length: 600 }, (_, index) => {
           const sourceIndex = index % 600;
           const targetIndex = sourceIndex + 1;
@@ -362,16 +365,12 @@ describe('network relations helpers', () => {
   it('honors a custom soft limit multiplier when rendering', () => {
     const graph = buildNetworkCallsignRelationsGraphView(
       {
-        nodes: Array.from({ length: 6 }, (_, index) => ({
-          id: `NODE_${index}`,
-          label: `NODE_${index}`,
-          weight: 1,
-          relationCount: 1,
-          activityCount: 1,
-          position: null,
-          unitName: null,
-          knownCallsignId: null,
-        })),
+        nodes: Array.from({ length: 6 }, (_, index) =>
+          relationNode({
+            id: `NODE_${index}`,
+            label: `NODE_${index}`,
+          }),
+        ),
         edges: Array.from({ length: 25 }, (_, index) => {
           const sourceIndex = index % 6;
           const targetIndex = (sourceIndex + 1) % 6;

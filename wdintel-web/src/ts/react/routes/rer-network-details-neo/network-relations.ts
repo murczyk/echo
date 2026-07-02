@@ -496,6 +496,12 @@ export function getRelationNodeFill(
   return '#9a8568';
 }
 
+export function isCatalogRelationNode(
+  node: Pick<NetworkCallsignRelationNode, 'enrichmentSource'>,
+): boolean {
+  return node.enrichmentSource === 'RelationEnrichmentCatalog';
+}
+
 export function getRelationEdgeLabel(edge: NetworkCallsignRelationsEdgeView): string {
   const firstFreq = edge.visibleByFreq[0];
   if (!firstFreq) return String(edge.visibleWeight);

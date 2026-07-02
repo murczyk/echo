@@ -39,6 +39,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
         position: null,
         unitName: null,
         knownCallsignId: null,
+        enrichmentSource: 'RelationEnrichmentNetwork',
       },
       {
         id: 'BRAVO',
@@ -51,6 +52,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
         position: null,
         unitName: null,
         knownCallsignId: null,
+        enrichmentSource: 'RelationEnrichmentNone',
       },
     ],
     edges: [
