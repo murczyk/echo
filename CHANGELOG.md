@@ -10,6 +10,7 @@
 ## NEXT
 
 - [#2598](https://github.com/echoua/echo/issues/2598) ✅ Палітри: додано попередній перегляд палітр.
+- [#2337](https://github.com/echoua/echo/issues/2337) ✅ Додано парсинг коментарів з перехоплення.
 - [#2499](https://github.com/echoua/echo/issues/2499) 🐞 Мережа: виправлено баг з неповною кількістю позивних в перехопленні
 - [#2727](https://github.com/echoua/echo/issues/2727) 🐞 Документи: виправлено проблему відкриття PDF-файлів.
 - [#2634](https://github.com/echoua/echo/issues/2634) ✅ Аналіз (нова): стан фільтра «Спочатку нові» зберігається в URL.

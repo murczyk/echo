@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 pub mod aor;
 pub mod callsign;
+pub mod comment_review_tui;
 pub mod comments;
 pub mod etalonka;
 pub mod freq;
@@ -34,6 +35,7 @@ pub(crate) mod import;
 pub(crate) mod key;
 pub mod network;
 pub mod oneoff;
+pub mod parser;
 pub mod post;
 pub mod restapi;
 pub mod sender;

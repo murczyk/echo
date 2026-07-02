@@ -370,6 +370,7 @@ pub async fn oneoff_import_sigint_comments(
                 signal_message_id: Set(message.id),
                 comment: Set(row.comment.clone()),
                 created_at: NotSet,
+                sigint_post_id: NotSet,
             };
 
             match active.insert(&dbx).await {

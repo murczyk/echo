@@ -860,6 +860,7 @@ pub async fn submit_upsert_inbox_item(
                     login: Set(login.to_string()),
                     comment: Set(extended_form.clone()),
                     created_at: NotSet,
+                    sigint_post_id: NotSet,
                 }
                 .insert(txn)
                 .await
@@ -879,6 +880,7 @@ pub async fn submit_upsert_inbox_item(
                     login: Set(login.to_string()),
                     comment: Set(extended_form.clone()),
                     created_at: NotSet,
+                    sigint_post_id: NotSet,
                 }
                 .update(txn)
                 .await

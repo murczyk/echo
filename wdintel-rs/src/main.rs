@@ -215,6 +215,16 @@ pub struct OneoffReprocessInboxMetadataPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffReviewParsedSigintCommentsPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+    /// Page size for each DB fetch.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessInboxPostsPs {
     /// Start day (inclusive). Format: `YYYY-MM-DD`.
     #[arg(long)]
@@ -635,6 +645,7 @@ enum Cmd {
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
+    OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
     OneoffEtalonkaReportNetworksFromRerAnalysis(
         OneoffEtalonkaReportNetworksFromRerAnalysisPs,
@@ -988,6 +999,9 @@ async fn async_main(
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffReviewParsedSigintComments(ps) => {
+            sigint::comment_review_tui::run_comment_review_tui(mode, &ps).await
         }
         Cmd::OneoffTagMessagesReport(ps) => {
             sigint::oneoff::oneoff_tag_messages_report(mode, &ps).await

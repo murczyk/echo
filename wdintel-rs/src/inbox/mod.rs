@@ -253,6 +253,12 @@ where
     .await
     .c(h!())?;
 
+    if config.sigint_comment_parsing_enabled()? {
+        insert_missing_auto_comments(txn, message.id, post_id, &body)
+            .await
+            .c(h!())?;
+    }
+
     let ts = datetime
         .unwrap_or_else(|| result.datetime.unwrap_or(message.created_at));
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
@@ -444,6 +450,52 @@ pub async fn fanout_inbox_changes(
         })
         .collect();
     fanout_mult(redis, events).await.c(h!())?;
+    Ok(())
+}
+
+async fn insert_missing_auto_comments<'a, 'async_trait, C>(
+    txn: &'a C,
+    signal_message_id: i64,
+    sigint_post_id: Option<i64>,
+    body: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let parsed = crate::sigint::parser::parse_comments(body);
+    let mut texts = vec![];
+    for text in [parsed.top, parsed.bottom].into_iter().flatten() {
+        if !texts.contains(&text) {
+            texts.push(text);
+        }
+    }
+
+    for text in texts {
+        let exists = sigint_comment::Entity::find()
+            .filter(
+                sigint_comment::Column::SignalMessageId.eq(signal_message_id),
+            )
+            .filter(sigint_comment::Column::Login.eq(SYSTEM_LOGIN_NAME))
+            .filter(sigint_comment::Column::Comment.eq(text.clone()))
+            .one(txn)
+            .await
+            .c(h!())?
+            .is_some();
+        if exists {
+            continue;
+        }
+        sigint_comment::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message_id),
+            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            comment: Set(text),
+            created_at: NotSet,
+            sigint_post_id: Set(sigint_post_id),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 

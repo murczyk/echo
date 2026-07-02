@@ -16,6 +16,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub comment: String,
     pub created_at: DateTime,
+    pub sigint_post_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -29,6 +30,14 @@ pub enum Relation {
     )]
     Login,
     #[sea_orm(
+        belongs_to = "super::sigint_post::Entity",
+        from = "Column::SigintPostId",
+        to = "super::sigint_post::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SigintPost,
+    #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
         to = "super::signal_message::Column::Id",
@@ -41,6 +50,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::sigint_post::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintPost.def()
     }
 }
 
