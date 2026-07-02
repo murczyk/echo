@@ -244,6 +244,50 @@ setup server:
     "
 
 [arg('server', long='server')]
+_sync-deploy-systemd-units server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+
+    echo "Syncing systemd unit files from deploy/ to ${SERVER}..."
+    scp "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/var/tmp/goi.service"
+    scp "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.service" "${SERVER}:/var/tmp/goi-renew-tailscale-cert.service"
+    scp "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.timer" "${SERVER}:/var/tmp/goi-renew-tailscale-cert.timer"
+    scp "{{ goi_dir }}/deploy/swapp.service" "${SERVER}:/var/tmp/swapp.service"
+    scp "{{ goi_dir }}/deploy/swapp-alt.service" "${SERVER}:/var/tmp/swapp-alt.service"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo install -o root -g root -m 0644 /var/tmp/goi.service /etc/systemd/system/goi.service
+      sudo install -o root -g root -m 0644 /var/tmp/goi-renew-tailscale-cert.service /etc/systemd/system/goi-renew-tailscale-cert.service
+      sudo install -o root -g root -m 0644 /var/tmp/goi-renew-tailscale-cert.timer /etc/systemd/system/goi-renew-tailscale-cert.timer
+      sudo install -o root -g root -m 0644 /var/tmp/swapp.service /etc/systemd/system/swapp.service
+      sudo install -o root -g root -m 0644 /var/tmp/swapp-alt.service /etc/systemd/system/swapp-alt.service
+      rm -f /var/tmp/goi.service /var/tmp/goi-renew-tailscale-cert.service /var/tmp/goi-renew-tailscale-cert.timer /var/tmp/swapp.service /var/tmp/swapp-alt.service
+      sudo systemctl daemon-reload
+    "
+
+[arg('server', long='server')]
+_sync-echo-swapp-systemd-unit-templates server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    SYSTEMD_UNIT_DIR="/usr/lib/systemd/system"
+
+    echo "Syncing echo-swapp systemd unit templates from deploy/systemd/ to ${SERVER}..."
+    scp "{{ goi_dir }}/echo-swapp/deploy/systemd/echo-signal-bot@.service" "${SERVER}:/var/tmp/echo-signal-bot@.service"
+    scp "{{ goi_dir }}/echo-swapp/deploy/systemd/echo-whatsapp-bot@.service" "${SERVER}:/var/tmp/echo-whatsapp-bot@.service"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${SYSTEMD_UNIT_DIR}'
+      sudo install -o root -g root -m 0644 /var/tmp/echo-signal-bot@.service '${SYSTEMD_UNIT_DIR}/echo-signal-bot@.service'
+      sudo install -o root -g root -m 0644 /var/tmp/echo-whatsapp-bot@.service '${SYSTEMD_UNIT_DIR}/echo-whatsapp-bot@.service'
+      rm -f /var/tmp/echo-signal-bot@.service /var/tmp/echo-whatsapp-bot@.service
+      sudo systemctl daemon-reload
+    "
+
+[arg('server', long='server')]
 deploy-goi-echo-worker server:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -337,6 +381,8 @@ deploy-echo-swapp server:
       sudo systemctl restart echo-swapp
       rm -f \"./${DEB_NAME}\"
     "
+
+    just --justfile "{{ goi_dir }}/justfile" _sync-echo-swapp-systemd-unit-templates --server "${SERVER}"
 
     echo "Updating nginx on ${SERVER}..."
     just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
@@ -452,14 +498,11 @@ deploy server:
 
     echo "Syncing goi service files..."
     scp "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
-    scp "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/var/tmp/goi.service"
-    ssh ${SERVER} 'sudo mv /var/tmp/goi.service /etc/systemd/system/goi.service'
+    just --justfile "{{ goi_dir }}/justfile" _sync-deploy-systemd-units --server "${SERVER}"
 
     ssh "$SERVER" "set -euo pipefail
       sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
       sudo chmod 0755 '${APP_DIR}/goi-npm-start.sh'
-      sudo chown root:root /etc/systemd/system/goi.service
-      sudo chmod 0644 /etc/systemd/system/goi.service
     "
 
     echo "Installing npm dependencies on ${SERVER}..."
