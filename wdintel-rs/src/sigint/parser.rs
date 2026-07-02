@@ -90,7 +90,7 @@ fn join_block(lines: &[&str]) -> Option<String> {
 }
 
 pub fn parse_comments(body: &str) -> ParsedComments {
-    let lines: Vec<&str> = body.split('\n').collect();
+    let lines: Vec<&str> = body.lines().collect();
 
     let marker_bottom = scan_marker_comment(&lines);
 
@@ -250,6 +250,13 @@ mod tests {
     #[test]
     fn yyyy_mm_dd_comma_time_is_anchor() {
         let body = "2025-03-08, 10:20\n422.500\nЛозуватське, УКХ р/м\nЛУЧНИК\nПИРОЖЕК\n\n— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет\n\nКоментар: БПЛА СОУ";
+        let res = parse_comments(body);
+        assert_eq!(res.bottom.as_deref(), Some("БПЛА СОУ"));
+    }
+
+    #[test]
+    fn crlf_yyyy_mm_dd_comma_time_is_anchor() {
+        let body = "2025-03-08, 10:20\r\n422.500\r\nЛозуватське, УКХ р/м\r\nЛУЧНИК\r\nПИРОЖЕК\r\n\r\n— ПИРОЖЕК я ЛУЧНИК: ФПВ к нам идет\r\n\r\nКоментар: БПЛА СОУ";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("БПЛА СОУ"));
     }
