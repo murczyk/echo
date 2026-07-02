@@ -12,6 +12,8 @@ type OnViewportChangedRef = MutableRefObject<{ onViewportChanged: (() => void) |
 type PreviewPointStackRefs = {
   listenersRef: OnViewportChangedRef;
   stateRef: MutableRefObject<PalitraDetails[]>;
+  enabledRef: MutableRefObject<boolean>;
+  generationRef: MutableRefObject<number>;
   cacheManagerRef: MutableRefObject<PalitraCacheManager | null>;
   pointClustersRendererRef: MutableRefObject<PalitraPointClusterRenderer | null>;
   pointsControllerRef: MutableRefObject<PalitraPointsController | null>;
@@ -24,6 +26,8 @@ export function createPreviewPointStack(
   callbacks: PalitraManagerCallbacks,
   refs: PreviewPointStackRefs,
 ): void {
+  refs.generationRef.current += 1;
+  const stackGeneration = refs.generationRef.current;
   const cacheManager = new PalitraCacheManager(options.cacheTtlMs, options.maxCachedTiles);
   const pointClustersRenderer = new PalitraPointClusterRenderer(map);
   const pointsController = new PalitraPointsController(
@@ -34,7 +38,7 @@ export function createPreviewPointStack(
     pointClustersRenderer,
     {
       getPalitras: () => refs.stateRef.current,
-      getEnabled: () => true,
+      getEnabled: () => refs.enabledRef.current && refs.generationRef.current === stackGeneration,
     },
     {
       getBufferedBounds: () => map.getBounds().pad(0.1),
@@ -49,6 +53,7 @@ export function createPreviewPointStack(
   };
 
   refs.stateRef.current = palitras;
+  refs.enabledRef.current = true;
   refs.listenersRef.current.onViewportChanged = onViewportChanged;
   map.on('zoomend', onViewportChanged);
   map.on('moveend', onViewportChanged);
@@ -70,6 +75,8 @@ export function destroyPreviewPointStack(
     map.off('moveend', refs.listenersRef.current.onViewportChanged);
   }
 
+  refs.enabledRef.current = false;
+  refs.generationRef.current += 1;
   refs.listenersRef.current.onViewportChanged = null;
   refs.pointsControllerRef.current?.destroy();
   refs.pointsControllerRef.current = null;

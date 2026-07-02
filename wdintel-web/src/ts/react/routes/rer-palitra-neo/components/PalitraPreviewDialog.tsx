@@ -27,6 +27,8 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
   const initRafRef = useRef<number | null>(null);
   const listenersRef = useRef<{ onViewportChanged: (() => void) | null }>({ onViewportChanged: null });
   const previewPalitrasRef = useRef<PalitraDetails[]>([]);
+  const pointStackEnabledRef = useRef(false);
+  const pointStackGenerationRef = useRef(0);
   const cacheManagerRef = useRef<PalitraCacheManager | null>(null);
   const pointClustersRendererRef = useRef<PalitraPointClusterRenderer | null>(null);
   const pointsControllerRef = useRef<PalitraPointsController | null>(null);
@@ -135,6 +137,8 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       destroyPreviewPointStack(mapRef.current, {
         listenersRef,
         stateRef: previewPalitrasRef,
+        enabledRef: pointStackEnabledRef,
+        generationRef: pointStackGenerationRef,
         cacheManagerRef,
         pointClustersRendererRef,
         pointsControllerRef,
@@ -161,6 +165,8 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
     destroyPreviewPointStack(map, {
       listenersRef,
       stateRef: previewPalitrasRef,
+      enabledRef: pointStackEnabledRef,
+      generationRef: pointStackGenerationRef,
       cacheManagerRef,
       pointClustersRendererRef,
       pointsControllerRef,
@@ -183,6 +189,8 @@ export function PalitraPreviewDialog({ open, palitra, preview, loading, error, o
       {
         listenersRef,
         stateRef: previewPalitrasRef,
+        enabledRef: pointStackEnabledRef,
+        generationRef: pointStackGenerationRef,
         cacheManagerRef,
         pointClustersRendererRef,
         pointsControllerRef,
