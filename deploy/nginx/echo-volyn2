@@ -32,6 +32,14 @@ server {
     proxy_connect_timeout 1200;
     proxy_send_timeout 1200;
 
+    # PDF.js worker is emitted as .mjs; module scripts require a JavaScript MIME type.
+    location ~* \.mjs$ {
+        types {
+            application/javascript mjs;
+        }
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri /index.html;
     }
