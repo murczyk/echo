@@ -123,6 +123,11 @@ export class PalitraPointsController {
   }
 
   updatePoints(): void {
+    if (!this.stateAccessor.getEnabled()) {
+      this.pointClustersRenderer.clear();
+      return;
+    }
+
     if (!this.searchState.hasActiveSearch()) {
       this.pointsLoader.schedulePointsRequest();
       void this.renderVisiblePointsFromCache();
@@ -323,6 +328,9 @@ export class PalitraPointsController {
       !this.searchState.isCurrentRenderGeneration(currentGen) ||
       this.searchState.hasActiveSearch()
     ) {
+      return;
+    }
+    if (!this.stateAccessor.getEnabled()) {
       return;
     }
 

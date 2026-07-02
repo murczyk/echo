@@ -1,9 +1,10 @@
 import { L } from './leaflet-markercluster';
 import 'leaflet/dist/leaflet.css';
+import { getNavigationApi } from '../browser/navigation-api';
 import { kmzLayerFactory } from './leaflet-kmz';
-import './maps.css';
-import { MapPoint, MapPointShort } from './types';
 import '../web-components/range-date-selector';
+import './maps.css';
+import type { MapPointShort } from './types';
 
 export function initializeMap(
   containerId: string | HTMLElement,
@@ -40,10 +41,9 @@ export function addPointsToLayer(points: MapPointShort[]) {
       });
     },
   });
-  let bounds = L.latLngBounds(points);
+  const bounds = L.latLngBounds(points);
 
   const circles: L.CircleMarker[] = [];
-
   points.forEach((point) => {
     const circle = L.circleMarker([point.lat, point.lng], {
       color: '#f25769',
@@ -68,7 +68,6 @@ export function addPointsToLayer(points: MapPointShort[]) {
       });
     });
 
-    // Change color back on popup close
     circle.on('popupclose', function () {
       circle.setStyle({
         color: '#f25769',
@@ -79,14 +78,12 @@ export function addPointsToLayer(points: MapPointShort[]) {
     markers.addLayer(circle);
     circles.push(circle);
   });
-
   return {
     bounds,
     markersGroup: markers,
   };
 }
 
-// CONTROLS
 export function createFullScreenControl(toggleMapSize: () => void) {
   return L.Control.extend({
     onAdd: function (_: L.Map) {
@@ -100,7 +97,6 @@ export function createFullScreenControl(toggleMapSize: () => void) {
           ? '<i class="bi bi-fullscreen-exit" style="font-size: 12px;"></i>'
           : '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
       };
-
       button.href = '#';
       setExpanded(false);
       (this as L.Control & { setExpanded?: (isExpanded: boolean) => void }).setExpanded =
@@ -138,7 +134,6 @@ export function createExitControl(closeMap: () => void) {
   });
 }
 
-// UTILITY
 export function clearSmallMapFullscreenBodyLock() {
   document.body.classList.remove('small-map-fullscreen-open');
 }
@@ -160,7 +155,6 @@ export function toggleMapSize(
   }, 0);
 }
 
-//MAIN
 let cachedKmzData: string | null = null;
 let kmzResponseResolved = false;
 
@@ -191,6 +185,7 @@ export async function loadKmzData() {
   }
   return cachedKmzData;
 }
+
 export async function setupMap(
   data: { points: MapPointShort[]; containerId: string },
   exitCallback: () => void,
@@ -201,19 +196,7 @@ export async function setupMap(
     if (mapContainer) {
       const map = initializeMap(`map-container-${data.containerId}`, data.points[0]);
       let isCleanedUp = false;
-      const navigationApi =
-        'navigation' in window
-          ? (window.navigation as {
-              addEventListener: (
-                type: string,
-                listener: EventListenerOrEventListenerObject,
-              ) => void;
-              removeEventListener: (
-                type: string,
-                listener: EventListenerOrEventListenerObject,
-              ) => void;
-            })
-          : undefined;
+      const navigationApi = getNavigationApi();
       const cleanup = () => {
         if (isCleanedUp) {
           return;

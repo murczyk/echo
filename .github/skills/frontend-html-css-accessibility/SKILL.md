@@ -25,7 +25,10 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Correct element types for buttons/links/headings.
 - Labels/aria for form controls and icon-only actions.
 - Preserve visible focus indicators; do not remove outlines without replacement.
-- Keep contrast and readability aligned with existing theme variables.
+- Keep contrast and readability aligned with existing theme variables:
+- Prefer MUI palette tokens, theme CSS vars, or existing design-system tokens for all light/dark UI work.
+- Avoid raw `rgba(...)`, hard-coded dark/light hex values, and mode-only color branches unless no token-based option exists.
+- If translucency is needed, prefer `color-mix(...)` with CSS vars or an existing theme token before falling back to raw alpha values.
 - Reuse existing styling system in that file:
 - Elm/Tailwind utility classes when already present.
 - MUI `sx`/components in React files.
@@ -61,6 +64,7 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 ## Self-check
 - Review diff for unintended global class/style impact.
 - Re-check core flows touching changed UI surfaces.
+- Re-check that theme-aware styling uses tokens/CSS vars instead of hard-coded mode colors.
 - Confirm no keyboard traps in menus/dialogs.
 - Confirm REST-facing controls still trigger correct actions (no swapped buttons).
 - Confirm repo frontend build step passes.

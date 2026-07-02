@@ -6,9 +6,15 @@ import { AnalysisMapWindowControl } from './AnalysisMapWindowControl';
 class AnalysisMapWindowControlElement extends HTMLElement {
   private root: Root | null = null;
   private isFullscreen = false;
+  private showFullscreen = true;
   private pendingUnmountHandle: number | null = null;
 
+  static get observedAttributes() {
+    return ['show-fullscreen'];
+  }
+
   connectedCallback() {
+    this.showFullscreen = this.getAttribute('show-fullscreen') !== 'false';
     if (this.pendingUnmountHandle !== null) {
       window.clearTimeout(this.pendingUnmountHandle);
       this.pendingUnmountHandle = null;
@@ -23,6 +29,11 @@ class AnalysisMapWindowControlElement extends HTMLElement {
 
   disconnectedCallback() {
     this.scheduleRootUnmount();
+  }
+
+  attributeChangedCallback() {
+    this.showFullscreen = this.getAttribute('show-fullscreen') !== 'false';
+    this.renderComponent();
   }
 
   setFullscreen(isFullscreen: boolean) {
@@ -59,6 +70,7 @@ class AnalysisMapWindowControlElement extends HTMLElement {
             }),
           );
         }}
+        showFullscreen={this.showFullscreen}
       />,
     );
   }

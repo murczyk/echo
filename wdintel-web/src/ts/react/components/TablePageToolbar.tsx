@@ -28,6 +28,7 @@ type Props = {
   filtersDisabled?: boolean;
   columnsVisibilityDisabled?: boolean;
   additionalInternalActions?: ReactNode;
+  leadingInternalActions?: ReactNode;
   additionalActiveFilters?: ActiveFilterDescriptor[];
   onClearAdditionalActiveFilter?: (filterId: string) => void;
   onClearAdditionalActiveFilters?: () => void;
@@ -46,6 +47,7 @@ export function TablePageToolbar(props: Props) {
       columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}
       colOrderDisabled={props.internalActionsDisabled || props.colOrderDisabled}
       filtersDisabled={props.internalActionsDisabled || props.filtersDisabled}
+      leadingInternalActions={props.leadingInternalActions}
       additionalActiveFilters={props.additionalActiveFilters}
       onClearAdditionalActiveFilter={props.onClearAdditionalActiveFilter}
       onClearAdditionalActiveFilters={props.onClearAdditionalActiveFilters}

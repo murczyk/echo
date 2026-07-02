@@ -12,6 +12,7 @@ type AnalysisMapWindowControlProps = {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleFullscreen: () => void;
+  showFullscreen?: boolean;
 };
 
 const buttonSx: SxProps<Theme> = {
@@ -29,7 +30,10 @@ const buttonSx: SxProps<Theme> = {
   },
 };
 
-function AnalysisMapWindowControlInner(props: AnalysisMapWindowControlProps) {
+function AnalysisMapWindowControlInner({
+  showFullscreen = true,
+  ...props
+}: AnalysisMapWindowControlProps) {
   return (
     <Box
       className="analysis-map-window-control"
@@ -61,18 +65,20 @@ function AnalysisMapWindowControlInner(props: AnalysisMapWindowControlProps) {
       >
         <RemoveIcon sx={{ fontSize: 24 }} />
       </IconButton>
-      <IconButton
-        aria-label={props.isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
-        title={props.isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
-        onClick={props.onToggleFullscreen}
-        sx={buttonSx}
-      >
-        {props.isFullscreen ? (
-          <FullscreenExitIcon sx={{ fontSize: 24 }} />
-        ) : (
-          <FullscreenIcon sx={{ fontSize: 24 }} />
-        )}
-      </IconButton>
+      {showFullscreen ? (
+        <IconButton
+          aria-label={props.isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
+          title={props.isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'}
+          onClick={props.onToggleFullscreen}
+          sx={buttonSx}
+        >
+          {props.isFullscreen ? (
+            <FullscreenExitIcon sx={{ fontSize: 24 }} />
+          ) : (
+            <FullscreenIcon sx={{ fontSize: 24 }} />
+          )}
+        </IconButton>
+      ) : null}
     </Box>
   );
 }

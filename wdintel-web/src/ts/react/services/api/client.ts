@@ -28,6 +28,9 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
+const NETWORK_REQUEST_ERROR_MESSAGE =
+  'Не вдалося підключитися до сервера. Перевірте мережу та спробуйте ще раз.';
+
 export async function tryRunAndReturnNullExceptUnauthorized<T>(
   request: () => Promise<T>,
 ): Promise<T | null> {
@@ -88,7 +91,15 @@ async function requestJson<T>(
     init.body = body === undefined ? undefined : JSON.stringify(body);
   }
 
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new HttpRequestError(0, NETWORK_REQUEST_ERROR_MESSAGE);
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -129,7 +140,15 @@ async function requestBytes(
     init.body = body === undefined ? undefined : JSON.stringify(body);
   }
 
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new HttpRequestError(0, NETWORK_REQUEST_ERROR_MESSAGE);
+  }
 
   if (!response.ok) {
     if (response.status === 401) {

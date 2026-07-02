@@ -18,7 +18,7 @@ import './ts/web-components/freq-detail-chart';
 import './styles/style.css';
 import './styles/floating-popup.css';
 import { setupMap, addPointsToLayer } from './ts/maps/maps';
-import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types';
+import type { MapPointShort } from './ts/maps/types';
 import './ts/web-components/analysis-map';
 import './ts/react/analysis-map-search-element';
 import './ts/react/app-navbar-element';
@@ -63,6 +63,7 @@ import './ts/react/importer-beta-element';
 import './ts/react/updates-neo-element';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
 import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
+import { getNavigationApi, type NavigationNavigateEvent } from './ts/browser/navigation-api';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -378,15 +379,17 @@ import('../static/js-search').then((module) => {
   if (window.location.pathname.endsWith('/importer')) {
     loadDescriptionIconTitle(search);
   } else {
-    if (window.navigation) {
-      const navHandler = async (event) => {
-        if (event.destination.url.endsWith('/importer')) {
+    const navigation = getNavigationApi();
+    if (navigation) {
+      const navHandler = async (event: Event) => {
+        const navigateEvent = event as unknown as NavigationNavigateEvent;
+        if (navigateEvent.destination.url.endsWith('/importer')) {
           await loadDescriptionIconTitle(search);
-          window.navigation.removeEventListener('navigate', navHandler);
+          navigation.removeEventListener('navigate', navHandler);
         }
       };
 
-      window.navigation.addEventListener('navigate', navHandler);
+      navigation.addEventListener('navigate', navHandler);
     } else {
       // fallback for firefox and safari (Navigation API is not implemented there yet)
       loadDescriptionIconTitle(search);

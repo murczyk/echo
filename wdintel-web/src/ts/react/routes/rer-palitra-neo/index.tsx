@@ -7,6 +7,7 @@ import {
   Button,
   Checkbox,
   CircularProgress,
+  Badge,
   Dialog,
   DialogActions,
   DialogContent,
@@ -34,6 +35,7 @@ import { TableStateProvider } from '../../components/mui-customized/table/table-
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
 import { PalitraFolderActionDialog } from './components/PalitraFolderActionDialog';
+import { PalitraPreviewDialog } from './components/PalitraPreviewDialog';
 import {
   DEFAULT_PALITRA_COLUMN_ORDER,
   DEFAULT_PALITRA_COLUMN_VISIBILITY,
@@ -45,6 +47,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 const DEFAULT_PALITRA_SORTING: MRT_SortingState = [{ id: 'lastUploadedAtTs', desc: true }];
 
 type SelectedPalitraActionsMenuProps = {
+  hasSelectedPalitras: boolean;
   downloadDisabled: boolean;
   downloadInFlight: boolean;
   assignDisabled: boolean;
@@ -66,17 +69,24 @@ function SelectedPalitraActionsMenu(props: SelectedPalitraActionsMenuProps) {
   return (
     <>
       <Tooltip title="Дії з обраними палітрами">
-        <span>
-          <IconButton
-            aria-label="Дії з обраними палітрами"
-            aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
-            aria-expanded={open ? 'true' : undefined}
-            aria-haspopup="menu"
-            onClick={(event) => setAnchorEl(event.currentTarget)}
-          >
-            <MoreVertIcon />
-          </IconButton>
-        </span>
+        <Badge
+          color="error"
+          variant="dot"
+          overlap="circular"
+          invisible={!props.hasSelectedPalitras}
+        >
+          <span>
+            <IconButton
+              aria-label="Дії з обраними палітрами"
+              aria-controls={open ? 'selected-palitra-actions-menu' : undefined}
+              aria-expanded={open ? 'true' : undefined}
+              aria-haspopup="menu"
+              onClick={(event) => setAnchorEl(event.currentTarget)}
+            >
+              <MoreVertIcon />
+            </IconButton>
+          </span>
+        </Badge>
       </Tooltip>
       <Menu
         id="selected-palitra-actions-menu"
@@ -130,6 +140,7 @@ function RerPalitraNeoPageBody() {
   );
   const selectedPalitraActionsBlocked =
     page.selectedPalitraIds.length === 0 ||
+    page.loading ||
     page.folderActionsBlocked ||
     page.bulkDeleteInFlight ||
     page.bulkDownloadInFlight ||
@@ -203,8 +214,9 @@ function RerPalitraNeoPageBody() {
               </Button>
             </Stack>
           }
-          trailingActionsAfterInternal={
+          leadingInternalActions={
             <SelectedPalitraActionsMenu
+              hasSelectedPalitras={page.selectedPalitraIds.length > 0}
               downloadDisabled={selectedPalitraActionsBlocked}
               downloadInFlight={page.bulkDownloadInFlight}
               assignDisabled={selectedPalitraActionsBlocked || !hasSelectedModifiablePalitras}
@@ -232,6 +244,7 @@ function RerPalitraNeoPageBody() {
             onRequestAssignFolder={page.requestAssignFolderForPalitra}
             onRequestUnarchive={page.handleUnarchive}
             onDownload={page.handleDownload}
+            onRequestPreview={page.openPreview}
             onRequestUploadPoints={page.requestUploadPoints}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
@@ -251,6 +264,15 @@ function RerPalitraNeoPageBody() {
         onConfirm={page.confirmFolderAction}
         onNextFolderPathChange={page.setFolderDialogNextFolderPath}
         disableRestoreFocus
+      />
+
+      <PalitraPreviewDialog
+        open={page.previewPalitra !== null}
+        palitra={page.previewPalitra}
+        preview={page.previewData}
+        loading={page.previewLoading}
+        error={page.previewError}
+        onClose={page.closePreview}
       />
 
       <Dialog

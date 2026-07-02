@@ -98,10 +98,16 @@ export class PalitraPointsLoader {
     this.cacheManager.markRequested(filteredIds, tileKey);
     try {
       await this.cacheManager.fetchPoints(filteredIds, bounds, tileKey, () => {
+        if (!this.stateAccessor.getEnabled()) {
+          return;
+        }
         this.onPointsUpdated();
       });
     } finally {
       this.cacheManager.clearPending(filteredIds, tileKey);
+      if (!this.stateAccessor.getEnabled()) {
+        return;
+      }
       this.onViewportRequestSettled();
     }
   }
