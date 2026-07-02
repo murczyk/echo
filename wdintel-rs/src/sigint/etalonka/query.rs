@@ -1418,7 +1418,11 @@ pub async fn get_active_callsigns(
                 .eq_any(datasource_group_ids),
         )
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(
+            Condition::any()
+                .add(sigint_network_freq::Column::Deleted.eq(false))
+                .add(sigint_network_freq::Column::ActiveTo.is_not_null()),
+        )
         .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
         .filter(build_datetime_filter(filter)?);
 

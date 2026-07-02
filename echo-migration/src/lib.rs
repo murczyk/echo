@@ -266,6 +266,7 @@ mod m20260629_085034_signal_message_operator_tags;
 mod m20260630_094347_interseption_kind_and_unit_mask;
 mod m20260630_130141_signal_group_merge_network_assignment_flags;
 mod m20260701_073733_default_neo_analysis;
+mod m20260701_100000_backfill_deleted_freq_active_to;
 
 pub struct Migrator;
 
@@ -543,6 +544,9 @@ impl MigratorTrait for Migrator {
                 m20260630_130141_signal_group_merge_network_assignment_flags::Migration,
             ),
             Box::new(m20260701_073733_default_neo_analysis::Migration),
+            Box::new(
+                m20260701_100000_backfill_deleted_freq_active_to::Migration,
+            ),
         ]
     }
 }
