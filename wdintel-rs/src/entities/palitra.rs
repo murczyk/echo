@@ -31,10 +31,24 @@ pub struct Model {
     pub is_archived: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub folder: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub conversion_status: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub source_format: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub conversion_receipt: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub conversion_error: Option<String>,
+    pub conversion_attempt_count: i32,
+    pub conversion_last_attempt_at: Option<DateTimeWithTimeZone>,
+    pub missing_in_goi: bool,
+    pub imported_from_goi: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::goi_palitra_sync::Entity")]
+    GoiPalitraSync,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::Author",
@@ -49,6 +63,8 @@ pub enum Relation {
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
     PalitraAccessOrganism,
+    #[sea_orm(has_one = "super::palitra_conversion_job::Entity")]
+    PalitraConversionJob,
     #[sea_orm(has_many = "super::palitra_geometry::Entity")]
     PalitraGeometry,
     #[sea_orm(has_many = "super::palitra_goi_sync_job::Entity")]
@@ -57,6 +73,12 @@ pub enum Relation {
     PalitraPoint,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
     SigintInboxItemPointToken,
+}
+
+impl Related<super::goi_palitra_sync::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiPalitraSync.def()
+    }
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -80,6 +102,12 @@ impl Related<super::palitra_access_login::Entity> for Entity {
 impl Related<super::palitra_access_organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraAccessOrganism.def()
+    }
+}
+
+impl Related<super::palitra_conversion_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraConversionJob.def()
     }
 }
 

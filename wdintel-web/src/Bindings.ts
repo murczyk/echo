@@ -1155,6 +1155,11 @@ export type Palitra = {
   author: string | null;
   sourceFileName: string | null;
   lastUploadedAtTs: number | null;
+  conversionStatus: string;
+  sourceFormat: string | null;
+  conversionError: string | null;
+  missingInGoi: boolean;
+  importedFromGoi: boolean;
   geometry: Geometry | null;
   accessAorId: Array<number>;
   accessOrganismIds: Array<number>;

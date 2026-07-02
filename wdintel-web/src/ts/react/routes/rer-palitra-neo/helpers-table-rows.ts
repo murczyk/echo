@@ -19,6 +19,7 @@ export function mapPalitraToRowView({
   inFlightDeleteId,
   inFlightDownloadId,
   inFlightUploadId,
+  inFlightRetryId,
   depth = 0,
   hiddenByCollapsedFolder = false,
 }: {
@@ -31,6 +32,7 @@ export function mapPalitraToRowView({
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
   inFlightUploadId: number | null;
+  inFlightRetryId: number | null;
   depth?: number;
   hiddenByCollapsedFolder?: boolean;
 }): PalitraRowView {
@@ -39,6 +41,7 @@ export function mapPalitraToRowView({
   const deleteInFlight = inFlightDeleteId === palitra.id;
   const downloadInFlight = inFlightDownloadId === palitra.id;
   const uploadInFlight = inFlightUploadId === palitra.id;
+  const retryInFlight = inFlightRetryId === palitra.id;
 
   return {
     id: palitra.id,
@@ -58,11 +61,13 @@ export function mapPalitraToRowView({
       !archiveInFlight &&
       !deleteInFlight &&
       !downloadInFlight &&
-      !uploadInFlight,
+      !uploadInFlight &&
+      !retryInFlight,
     archiveInFlight,
     deleteInFlight,
     downloadInFlight,
     uploadInFlight,
+    retryInFlight,
   };
 }
 
@@ -77,6 +82,7 @@ export function buildTableRows(args: {
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
   inFlightUploadId: number | null;
+  inFlightRetryId: number | null;
   expandedFolderPaths: Set<string>;
 }): TableRowView[] {
   const {
@@ -90,6 +96,7 @@ export function buildTableRows(args: {
     inFlightDeleteId,
     inFlightDownloadId,
     inFlightUploadId,
+    inFlightRetryId,
     expandedFolderPaths,
   } = args;
   const visibleFolderTree = buildFolderTree(palitras, user);
@@ -161,6 +168,7 @@ export function buildTableRows(args: {
           inFlightDeleteId,
           inFlightDownloadId,
           inFlightUploadId,
+          inFlightRetryId,
           depth: node.depth + 1,
           hiddenByCollapsedFolder: !branchExpanded,
         }),
@@ -188,6 +196,7 @@ export function buildTableRows(args: {
         inFlightDeleteId,
         inFlightDownloadId,
         inFlightUploadId,
+        inFlightRetryId,
         depth: 0,
         hiddenByCollapsedFolder: false,
       }),

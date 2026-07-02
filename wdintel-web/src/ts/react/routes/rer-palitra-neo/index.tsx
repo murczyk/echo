@@ -246,6 +246,7 @@ function RerPalitraNeoPageBody() {
             onDownload={page.handleDownload}
             onRequestPreview={page.openPreview}
             onRequestUploadPoints={page.requestUploadPoints}
+            onRetryConversion={page.handleRetryConversion}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
             onToggleFolderExpanded={page.toggleFolderExpanded}
@@ -425,7 +426,7 @@ function RerPalitraNeoPageBody() {
       <input
         ref={page.uploadPointsInputRef}
         type="file"
-        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml"
+        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,application/geo+json,application/json,.kmz,.kml,.gpx,.trk,.ldk,.geojson,.rte,.wpt,.are"
         style={{ display: 'none' }}
         onChange={page.handleUploadPointsSelected}
       />
@@ -433,7 +434,7 @@ function RerPalitraNeoPageBody() {
       <input
         ref={page.uploadKmzInputRef}
         type="file"
-        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,.kmz,.kml"
+        accept="application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml,application/geo+json,application/json,.kmz,.kml,.gpx,.trk,.ldk,.geojson,.rte,.wpt,.are"
         style={{ display: 'none' }}
         onChange={page.handleKmzSelected}
       />

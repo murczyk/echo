@@ -43,6 +43,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DeltaLogin,
+    #[sea_orm(has_many = "super::goi_integration::Entity")]
+    GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
     GoiIntegrationAccessLogin,
     #[sea_orm(has_many = "super::log_users_report_generation::Entity")]
@@ -122,6 +124,12 @@ impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
 impl Related<super::delta_login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeltaLogin.def()
+    }
+}
+
+impl Related<super::goi_integration::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiIntegration.def()
     }
 }
 

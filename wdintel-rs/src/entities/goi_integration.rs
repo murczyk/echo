@@ -32,6 +32,9 @@ pub struct Model {
     pub api_login: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub api_password: Option<String>,
+    pub disable_goi_to_echo_palitra_sync: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub maintainer_login: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -44,6 +47,16 @@ pub enum Relation {
     GoiIntegrationAccessOrganism,
     #[sea_orm(has_many = "super::goi_knowledge::Entity")]
     GoiKnowledge,
+    #[sea_orm(has_many = "super::goi_palitra_sync::Entity")]
+    GoiPalitraSync,
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::MaintainerLogin",
+        to = "super::login::Column::Login",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Login,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OwnerOrganismId",
@@ -75,6 +88,18 @@ impl Related<super::goi_integration_access_organism::Entity> for Entity {
 impl Related<super::goi_knowledge::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::GoiKnowledge.def()
+    }
+}
+
+impl Related<super::goi_palitra_sync::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GoiPalitraSync.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
     }
 }
 

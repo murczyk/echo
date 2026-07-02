@@ -8,6 +8,7 @@ import {
   createPalitraWithKmz,
   deletePalitra,
   downloadPalitras,
+  retryPalitraConversion,
   unarchivePalitra,
   updatePalitra,
   uploadPalitraPoints,
@@ -65,6 +66,7 @@ type Props = {
   inFlightArchiveId: number | null;
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
+  inFlightRetryId: number | null;
   uploadPointsInputRef: MutableRefObject<HTMLInputElement | null>;
   uploadKmzInputRef: MutableRefObject<HTMLInputElement | null>;
   pendingUploadPalitraIdRef: MutableRefObject<number | null>;
@@ -88,6 +90,7 @@ type Props = {
   setInFlightDeleteId: SetState<number | null>;
   setInFlightDownloadId: SetState<number | null>;
   setInFlightUploadId: SetState<number | null>;
+  setInFlightRetryId: SetState<number | null>;
   setArchiveDialogPalitra: SetState<Palitra | null>;
   setArchiveDialogOpen: SetState<boolean>;
   setDownloadDialogPalitra: SetState<Palitra | null>;
@@ -479,6 +482,31 @@ export function createPalitraPageActionHandlers(props: Props) {
     }
   }
 
+  async function handleRetryConversion(palitra: Palitra) {
+    if (
+      props.inFlightRetryId !== null ||
+      props.folderActionsBlocked ||
+      palitra.conversionStatus !== 'error'
+    )
+      return;
+
+    props.setInFlightRetryId(palitra.id);
+    props.setStatus(null);
+
+    try {
+      const updatedPalitra = await retryPalitraConversion(palitra.id);
+      replacePalitra(updatedPalitra);
+      props.setStatus({ kind: 'success', text: 'Конвертацію палітри поставлено в чергу.' });
+    } catch (retryError) {
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося повторити конвертацію: ' + formatErrorMessage(retryError),
+      });
+    } finally {
+      props.setInFlightRetryId(null);
+    }
+  }
+
   function requestAnalyzeKmz() {
     if (!props.uploadKmzInputRef.current) return;
     props.uploadKmzInputRef.current.value = '';
@@ -512,7 +540,7 @@ export function createPalitraPageActionHandlers(props: Props) {
     } catch (analysisError) {
       props.setStatus({
         kind: 'error',
-        text: 'Не вдалося проаналізувати KMZ файл: ' + formatErrorMessage(analysisError),
+        text: 'Не вдалося проаналізувати файл: ' + formatErrorMessage(analysisError),
       });
     } finally {
       props.setKmzAnalyzing(false);
@@ -655,5 +683,6 @@ export function createPalitraPageActionHandlers(props: Props) {
     handleEditSave,
     handleUploadPointsSelected,
     handleKmzSelected,
+    handleRetryConversion,
   };
 }

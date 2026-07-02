@@ -1,5 +1,6 @@
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import { Box, Stack, Typography } from '@mui/material';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { Box, Stack, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef } from 'material-react-table';
 
 import type { Palitra } from '../../../../../Bindings';
@@ -61,6 +62,38 @@ function renderFolderNameCell(
   );
 }
 
+function renderConversionStatusChip(palitra: Palitra) {
+  if (palitra.conversionStatus === 'processing') {
+    return (
+      <PowerChip
+        label="Обробка"
+        size="small"
+        interactive={false}
+        selected
+        backgroundColor="info.light"
+        selectedBorderColor="info.main"
+        selectedTextColor="info.contrastText"
+        sx={{ '& .MuiChip-label': { px: 1 } }}
+      />
+    );
+  }
+  if (palitra.conversionStatus === 'error') {
+    return (
+      <PowerChip
+        label="Помилка конвертації"
+        size="small"
+        interactive={false}
+        selected
+        backgroundColor="error.light"
+        selectedBorderColor="error.main"
+        selectedTextColor="error.contrastText"
+        sx={{ '& .MuiChip-label': { px: 1 } }}
+      />
+    );
+  }
+  return null;
+}
+
 function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string) => void) {
   const leftPadding = row.depth * 3;
 
@@ -80,6 +113,12 @@ function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string
       <Typography variant="body2" fontWeight={600}>
         {formatText(row.name)}
       </Typography>
+      {row.palitra.missingInGoi ? (
+        <Tooltip title="Палітра відсутня на сервері ГОІ">
+          <WarningAmberIcon color="error" fontSize="small" />
+        </Tooltip>
+      ) : null}
+      {renderConversionStatusChip(row.palitra)}
       {row.palitra.isArchived ? (
         <PowerChip
           label="Архів"
@@ -107,6 +146,11 @@ export function buildLoadingRows(): TableRowView[] {
       sourceFileName: null,
       author: null,
       lastUploadedAtTs: null,
+      conversionStatus: 'ready',
+      sourceFormat: null,
+      conversionError: null,
+      missingInGoi: false,
+      importedFromGoi: false,
       accessLogins: [],
       accessOrganismIds: [],
       accessAorId: [],
@@ -126,6 +170,7 @@ export function buildLoadingRows(): TableRowView[] {
     deleteInFlight: false,
     downloadInFlight: false,
     uploadInFlight: false,
+    retryInFlight: false,
   }));
 }
 

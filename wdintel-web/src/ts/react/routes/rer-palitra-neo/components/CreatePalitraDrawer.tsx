@@ -60,7 +60,7 @@ type Props = {
   onCreate: (mode: PalitraCreateMode) => void;
 };
 
-const steps = ['KMZ файл', 'Параметри і доступ'];
+const steps = ['Файл', 'Параметри і доступ'];
 
 function CreatePalitraDrawerComponent({
   open,
@@ -215,7 +215,7 @@ function CreatePalitraDrawerComponent({
                       disabled={createInFlight}
                       sx={{ alignSelf: 'center' }}
                     >
-                      {kmzFile ? 'Замінити KMZ файл' : 'Обрати KMZ файл'}
+                      {kmzFile ? 'Замінити файл' : 'Обрати файл'}
                     </Button>
                   )}
 
@@ -227,7 +227,7 @@ function CreatePalitraDrawerComponent({
 
                   {kmzAnalysis ? (
                     <PowerAlert severity="success">
-                      KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}
+                      Файл прийнято, кольорів: {kmzAnalysis.topColors.length}
                     </PowerAlert>
                   ) : null}
                   {!referenceDataReady ? (
@@ -453,7 +453,7 @@ function CreatePalitraDrawerComponent({
               <Stack spacing={1.5} alignItems="center">
                 <CircularProgress color="inherit" />
                 <Typography variant="body2">
-                  {kmzAnalyzing ? `Аналіз KMZ${ELLIPSIS}` : `Додавання палітри${ELLIPSIS}`}
+                  {kmzAnalyzing ? `Аналіз файлу${ELLIPSIS}` : `Додавання палітри${ELLIPSIS}`}
                 </Typography>
               </Stack>
             </Box>

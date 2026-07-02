@@ -1,7 +1,9 @@
-use crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE;
+use crate::config::{
+    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_POINTS_INSERT_BATCH_SIZE,
+};
 use crate::entities::*;
-use crate::palitra::schedule_palitra_goi_delete;
 use crate::palitra::types::*;
+use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -783,6 +785,7 @@ pub async fn delete_palitra(
     existing_access: PalitraAccess,
     env: &Data<Env>,
 ) -> anyhow::Result<()> {
+    cancel_palitra_conversion(txn, id).await.c(h!())?;
     palitra::Entity::update_many()
         .filter(palitra::Column::Id.eq(id))
         .filter(palitra::Column::Deleted.eq(false))
@@ -2016,9 +2019,14 @@ where
     let access_organism_ids = collect_palitra_access_organisms(dbx, palitra_id)
         .await
         .c(h!())?;
-    let access_logins = collect_palitra_access_logins(dbx, palitra_id)
-        .await
-        .c(h!())?;
+    let access_logins =
+        if palitra_model.imported_from_goi && !access_organism_ids.is_empty() {
+            vec![]
+        } else {
+            collect_palitra_access_logins(dbx, palitra_id)
+                .await
+                .c(h!())?
+        };
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
@@ -2028,6 +2036,11 @@ where
         author: palitra_model.author,
         source_file_name,
         last_uploaded_at_ts,
+        conversion_status: palitra_model.conversion_status,
+        source_format: palitra_model.source_format,
+        conversion_error: palitra_model.conversion_error,
+        missing_in_goi: palitra_model.missing_in_goi,
+        imported_from_goi: palitra_model.imported_from_goi,
         geometry,
         access_aor_id: access_aor_ids,
         access_organism_ids,
@@ -2176,8 +2189,16 @@ where
     let mut filter = Condition::any()
         .add(palitra::Column::Author.eq(login.clone()))
         .add(
-            Expr::exists(build_palitra_access_login_exists(login))
+            Expr::exists(build_palitra_access_login_exists(login.clone()))
                 .into_condition(),
+        )
+        .add(
+            Condition::all()
+                .add(palitra::Column::ImportedFromGoi.eq(true))
+                .add(
+                    Expr::exists(build_goi_import_access_login_exists(login))
+                        .into_condition(),
+                ),
         );
     let organism_ids = scope.organism_ids.iter().copied().collect_vec();
     if !organism_ids.is_empty() {
@@ -2264,6 +2285,41 @@ fn build_palitra_access_login_exists(login: String) -> SelectStatement {
             ))
             .equals((palitra::Entity, palitra::Column::Id)),
         )
+        .select_only()
+        .expr(Expr::cust("1"))
+        .into_query()
+}
+
+fn build_goi_import_access_login_exists(login: String) -> SelectStatement {
+    let access_exists = goi_integration_access_login::Entity::find()
+        .filter(goi_integration_access_login::Column::Login.eq(login))
+        .filter(
+            Expr::col((
+                goi_integration_access_login::Entity,
+                goi_integration_access_login::Column::GoiIntegrationId,
+            ))
+            .equals((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::GoiIntegrationId,
+            )),
+        )
+        .select_only()
+        .expr(Expr::cust("1"))
+        .into_query();
+
+    goi_palitra_sync::Entity::find()
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            Expr::col((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::PalitraId,
+            ))
+            .equals((palitra::Entity, palitra::Column::Id)),
+        )
+        .filter(Expr::exists(access_exists))
         .select_only()
         .expr(Expr::cust("1"))
         .into_query()

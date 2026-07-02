@@ -128,6 +128,13 @@ pub async fn upsert_admin_goi_integration(
     )
     .await
     .c(h!())?;
+    ensure_goi_maintainer_exists(
+        &env.dbx,
+        req.maintainer_login.as_deref(),
+        !req.disable_goi_to_echo_palitra_sync,
+    )
+    .await
+    .c(h!())?;
 
     let (server_key, server_label) = normalized_server_key_and_label(&req)?;
     ensure_goi_server_unique(&env.dbx, req.id, &server_key)
@@ -176,6 +183,12 @@ pub async fn upsert_admin_goi_integration(
             api_port: Set(values.api_port),
             api_login: Set(values.api_login),
             api_password: Set(values.api_password),
+            disable_goi_to_echo_palitra_sync: Set(
+                req.disable_goi_to_echo_palitra_sync
+            ),
+            maintainer_login: Set(normalize_optional_trimmed(
+                req.maintainer_login.clone(),
+            )),
         }
         .insert(&tx)
         .await
@@ -303,6 +316,9 @@ pub async fn setup_goi_integration_worker(
         api_port: req.api_port,
         api_login: Some("goi".to_string()),
         api_password: Some(api_password),
+        disable_goi_to_echo_palitra_sync: integration
+            .disable_goi_to_echo_palitra_sync,
+        maintainer_login: integration.maintainer_login,
         access_organism_ids: collect_goi_access_organism_ids(
             &env.dbx,
             integration.id,
@@ -922,6 +938,91 @@ pub async fn load_user_goi_integrations(
         .collect())
 }
 
+pub async fn ensure_goi_integration_maintainers(
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let integrations = goi_integration::Entity::find()
+        .filter(goi_integration::Column::MaintainerLogin.is_null())
+        .order_by_asc(goi_integration::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for integration in integrations {
+        let Some(maintainer_login) =
+            pick_goi_maintainer_login(dbx, integration.owner_organism_id)
+                .await
+                .c(h!())?
+        else {
+            error!(
+                "GOI integration {} has no maintainer_login and no fallback user was found",
+                integration.id
+            );
+            continue;
+        };
+        error!(
+            "GOI integration {} had empty maintainer_login; assigning {} automatically",
+            integration.id, maintainer_login
+        );
+        let mut integration = integration.into_active_model();
+        integration.maintainer_login = Set(Some(maintainer_login));
+        integration.update(dbx).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn pick_goi_maintainer_login(
+    dbx: &DatabaseConnection,
+    owner_organism_id: i64,
+) -> Result<Option<String>, AppError> {
+    if let Some(login) =
+        pick_oldest_organism_login(dbx, owner_organism_id, false)
+            .await
+            .c(h!())?
+    {
+        return Ok(Some(login));
+    }
+    if let Some(login) =
+        pick_oldest_organism_login(dbx, owner_organism_id, true)
+            .await
+            .c(h!())?
+    {
+        return Ok(Some(login));
+    }
+    pick_oldest_admin_login(dbx).await
+}
+
+async fn pick_oldest_organism_login(
+    dbx: &DatabaseConnection,
+    owner_organism_id: i64,
+    include_inactive: bool,
+) -> Result<Option<String>, AppError> {
+    let mut query = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::OrganismId.eq(owner_organism_id));
+    if !include_inactive {
+        query = query.filter(login::Column::Deleted.eq(false));
+    }
+    Ok(query
+        .order_by_asc(login::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|login| login.login))
+}
+
+async fn pick_oldest_admin_login(
+    dbx: &DatabaseConnection,
+) -> Result<Option<String>, AppError> {
+    Ok(login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(Expr::cust("roles @> '[\"Admin\"]'::jsonb"))
+        .order_by_asc(login::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|login| login.login))
+}
+
 async fn upsert_goi_integration_internal(
     dbx: &DatabaseConnection,
     req: UpsertGoiAdminIntegrationReq,
@@ -934,6 +1035,13 @@ async fn upsert_goi_integration_internal(
         dbx,
         req.access_organism_ids.as_slice(),
         req.access_logins.as_slice(),
+    )
+    .await
+    .c(h!())?;
+    ensure_goi_maintainer_exists(
+        dbx,
+        req.maintainer_login.as_deref(),
+        !req.disable_goi_to_echo_palitra_sync,
     )
     .await
     .c(h!())?;
@@ -984,6 +1092,12 @@ async fn upsert_goi_integration_internal(
             api_port: Set(values.api_port),
             api_login: Set(values.api_login),
             api_password: Set(values.api_password),
+            disable_goi_to_echo_palitra_sync: Set(
+                req.disable_goi_to_echo_palitra_sync
+            ),
+            maintainer_login: Set(normalize_optional_trimmed(
+                req.maintainer_login.clone(),
+            )),
         }
         .insert(&tx)
         .await
@@ -1078,6 +1192,12 @@ async fn load_goi_admin_integration(
         } else {
             None
         },
+        disable_goi_to_echo_palitra_sync: item
+            .integration
+            .disable_goi_to_echo_palitra_sync,
+        maintainer_login: normalize_optional_trimmed(
+            item.integration.maintainer_login,
+        ),
         access_organism_ids,
         access_logins,
     })
@@ -1844,6 +1964,38 @@ async fn ensure_goi_access_references_exist(
     Ok(())
 }
 
+async fn ensure_goi_maintainer_exists(
+    dbx: &DatabaseConnection,
+    maintainer_login: Option<&str>,
+    is_required: bool,
+) -> Result<(), AppError> {
+    let Some(maintainer_login) = maintainer_login
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        if is_required {
+            return Err(AppError::BL {
+                msg: "Вкажіть відповідального за ГОІ для імпорту палітр"
+                    .to_string(),
+            });
+        }
+        return Ok(());
+    };
+    let exists = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::Login.eq(maintainer_login.to_string()))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if exists {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: "Логін відповідального за ГОІ не існує".to_string(),
+    })
+}
+
 fn normalized_server_key_and_label(
     req: &UpsertGoiAdminIntegrationReq,
 ) -> Result<(String, String), AppError> {
@@ -1899,6 +2051,10 @@ fn apply_goi_integration_patch(
     item.api_port = Set(values.api_port);
     item.api_login = Set(values.api_login);
     item.api_password = Set(values.api_password);
+    item.disable_goi_to_echo_palitra_sync =
+        Set(req.disable_goi_to_echo_palitra_sync);
+    item.maintainer_login =
+        Set(normalize_optional_trimmed(req.maintainer_login.clone()));
 }
 
 struct GoiIntegrationValues {

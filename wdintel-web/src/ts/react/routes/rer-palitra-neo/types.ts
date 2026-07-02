@@ -87,6 +87,7 @@ export type FolderTableRowView = {
   deleteInFlight: boolean;
   downloadInFlight: false;
   uploadInFlight: false;
+  retryInFlight: false;
   colorHex: null;
   sourceFileName: null;
   lastUploadedAtTs: null;
@@ -112,6 +113,7 @@ export type PalitraRowView = {
   deleteInFlight: boolean;
   downloadInFlight: boolean;
   uploadInFlight: boolean;
+  retryInFlight: boolean;
 };
 
 export type TableRowView = FolderTableRowView | PalitraRowView;

@@ -189,7 +189,33 @@ pub const PALITRA_GOI_SYNC_JOB_KIND_UPLOAD: &str = "upload";
 pub const PALITRA_GOI_SYNC_JOB_KIND_MOVE: &str = "move";
 pub const PALITRA_GOI_SYNC_JOB_KIND_DELETE: &str = "delete";
 pub const PALITRA_GOI_SYNC_WORKER_SLEEP_SEC: u64 = 5;
+pub const PALITRA_GOI_RECONCILE_INTERVAL_SEC: u64 = 300;
+pub const PALITRA_GOI_SYNC_LOCK_LIVE_TTL_SEC: i64 = 300;
+pub const PALITRA_GOI_SYNC_LOCK_MIN_DELAY_SEC: u64 = 2;
+pub const PALITRA_GOI_SYNC_LOCK_MAX_DELAY_SEC: u64 = 10;
 pub const PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC: u64 = 60;
+pub const PALITRA_CONVERSION_WORKER_SLEEP_SEC: u64 = 5;
+pub const PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC: u64 = 30 * 60;
+pub const PALITRA_CONVERSION_JOB_TIMEOUT_SEC: u64 = 30 * 60;
+pub const PALITRA_CONVERSION_STATUS_READY: &str = "ready";
+pub const PALITRA_CONVERSION_STATUS_PROCESSING: &str = "processing";
+pub const PALITRA_CONVERSION_STATUS_ERROR: &str = "error";
+pub const PALITRA_CONVERSION_JOB_STATUS_PENDING: &str = "pending";
+pub const PALITRA_CONVERSION_JOB_STATUS_PROCESSING: &str = "processing";
+pub const PALITRA_CONVERSION_JOB_STATUS_DONE: &str = "done";
+pub const PALITRA_CONVERSION_JOB_STATUS_ERROR: &str = "error";
+pub const PALITRA_GOI_SYNC_DIRECTION_ECHO: &str = "echo";
+pub const PALITRA_GOI_SYNC_DIRECTION_GOI: &str = "goi";
+pub const PALITRA_GOI_REMOTE_STATUS_PRESENT: &str = "present";
+pub const PALITRA_GOI_REMOTE_STATUS_MISSING: &str = "missing";
+pub const PALITRA_GOI_REMOTE_STATUS_ERROR: &str = "error";
+pub const PALITRA_ALLOWED_UPLOAD_EXTENSIONS: &[&str] = &[
+    "kmz", "kml", "gpx", "trk", "ldk", "geojson", "rte", "wpt", "are",
+];
+pub const PALITRA_DIRECT_PARSE_EXTENSIONS: &[&str] = &["kmz", "kml"];
+// PGD conversion exists upstream, but it is not stable enough yet, so Echo
+// does not permit PGD uploads for palitras for now.
+pub const PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS: &[&str] = &["pgd"];
 pub const ORGANISM_GOI_SSH_PORT_DEFAULT: i32 = 22;
 pub const ORGANISM_GOI_API_PORT_DEFAULT: i32 = 8088;
 pub const ORGANISM_GOI_PATH_DEFAULT: &str = "/etc/goi/data/palettes";
