@@ -900,7 +900,13 @@ fn get_related_tag_items_filter(
         }
         TagFilterOption::AllTags => {
             let subquery = q
-                .expr(Expr::col(sigint_inbox_item_tag::Column::Id).count())
+                .expr(
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Id,
+                    ))
+                    .count(),
+                )
                 .into_query()
                 .into_sub_query_statement();
             SimpleExpr::SubQuery(None, Box::new(subquery))
@@ -1141,7 +1147,7 @@ fn selected_tags_accessible_expr(
         .filter(tag::Column::Id.eq_any(unique_tags.into_iter().collect()))
         .filter(accessible_tag_owner_condition(user_id))
         .select_only()
-        .expr(Expr::col(tag::Column::Id).count())
+        .expr(Expr::col((tag::Entity, tag::Column::Id)).count())
         .into_query()
         .into_sub_query_statement();
 
