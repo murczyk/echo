@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "elm-land build",
-    "format:all": "prettier --write \"package.json\" \".prettierrc.json\" \"*config*.{js,ts,mjs,cjs}\" \"tsconfig*.json\" \"scripts/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs}\" \"tests/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs}\" \"src/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs}\"",
-    "format:staged": "pretty-quick --staged --pattern \"{package.json,.prettierrc.json,*config*.{js,ts,mjs,cjs},tsconfig*.json,scripts/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs},tests/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs},src/**/*.{js,jsx,ts,tsx,html,css,json,mjs,cjs}}\"",
+    "format:all": "node scripts/format-files.mjs all",
+    "format:staged": "node scripts/format-files.mjs staged",
     "postinstall": "node scripts/strip-use-client.mjs",
     "prepare": "git -C .. config core.hooksPath .githooks || true",
     "strip-use-client": "node scripts/strip-use-client.mjs",
