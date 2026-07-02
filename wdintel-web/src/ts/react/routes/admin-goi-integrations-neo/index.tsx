@@ -3,7 +3,9 @@ import {
   Card,
   CardActions,
   CardContent,
+  Checkbox,
   CircularProgress,
+  FormControlLabel,
   MenuItem,
   Stack,
   TextField,
@@ -53,6 +55,8 @@ type GoiForm = {
   apiPort: number;
   apiLogin: string;
   apiPassword: string;
+  disableGoiToEchoPalitraSync: boolean;
+  maintainerLogin: string;
   accessOrganismIds: number[];
   accessLogins: string[];
 };
@@ -69,6 +73,8 @@ const emptyForm: GoiForm = {
   apiPort: GOI_API_PORT_DEFAULT,
   apiLogin: '',
   apiPassword: '',
+  disableGoiToEchoPalitraSync: true,
+  maintainerLogin: '',
   accessOrganismIds: [],
   accessLogins: [],
 };
@@ -104,6 +110,8 @@ function toForm(integration: GoiAdminIntegration): GoiForm {
     apiPort: integration.apiPort,
     apiLogin: integration.apiLogin,
     apiPassword: integration.apiPassword,
+    disableGoiToEchoPalitraSync: integration.disableGoiToEchoPalitraSync,
+    maintainerLogin: integration.maintainerLogin,
     accessOrganismIds: integration.accessOrganismIds,
     accessLogins: integration.accessLogins,
   };
@@ -112,6 +120,14 @@ function toForm(integration: GoiAdminIntegration): GoiForm {
 function hasAnyApiSettings(form: GoiForm): boolean {
   if (form.integrationType !== GOI_INTEGRATION_TYPE_FULL) return false;
   return Boolean(form.apiHost.trim() || form.apiLogin.trim() || form.apiPassword.trim());
+}
+
+function hasMaintainerLogin(form: GoiForm): boolean {
+  return form.maintainerLogin.trim().length > 0;
+}
+
+function disableGoiToEchoPalitraSyncValue(form: GoiForm): boolean {
+  return hasMaintainerLogin(form) ? form.disableGoiToEchoPalitraSync : true;
 }
 
 function toSimpleGoiUrl(form: GoiForm): string {
@@ -132,6 +148,8 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
       apiPort: GOI_API_PORT_DEFAULT,
       apiLogin: '',
       apiPassword: '',
+      disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
+      maintainerLogin: form.maintainerLogin,
       accessOrganismIds: form.accessOrganismIds,
       accessLogins: form.accessLogins,
     };
@@ -148,6 +166,8 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
     apiPort: form.apiPort,
     apiLogin: form.apiLogin,
     apiPassword: form.apiPassword,
+    disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
+    maintainerLogin: form.maintainerLogin,
     accessOrganismIds: form.accessOrganismIds,
     accessLogins: form.accessLogins,
   };
@@ -363,6 +383,7 @@ export function AdminGoiIntegrationsNeoPage() {
 
   const ownerOptions = organisms;
   const selectedOwner = ownerOptions.find((item) => item.id === form.ownerOrganismId) ?? null;
+  const isGoiToEchoPalitraSyncToggleDisabled = !hasMaintainerLogin(form);
 
   return (
     <Stack spacing={3}>
@@ -440,6 +461,53 @@ export function AdminGoiIntegrationsNeoPage() {
               <MenuItem value={GOI_INTEGRATION_TYPE_SIMPLE}>Проста</MenuItem>
               <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
             </TextField>
+
+            <Autocomplete
+              options={logins}
+              value={form.maintainerLogin || null}
+              onChange={(_, value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  maintainerLogin: value ?? '',
+                  disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
+                }))
+              }
+              renderOption={(props, option) => (
+                <li {...props} key={option}>
+                  {option}
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField {...params} label="Відповідальний логін" fullWidth />
+              )}
+            />
+
+            <Stack spacing={1}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={
+                      isGoiToEchoPalitraSyncToggleDisabled ? true : form.disableGoiToEchoPalitraSync
+                    }
+                    disabled={isGoiToEchoPalitraSyncToggleDisabled}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        disableGoiToEchoPalitraSync: event.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="Вимкнути перенесення палітр з ГОІ в Echo"
+              />
+              {isGoiToEchoPalitraSyncToggleDisabled ? (
+                <PowerAlert severity="warning">
+                  Щоб увімкнути перенесення палітр з ГОІ в Echo, спочатку призначте окремий
+                  відповідальний логін для цієї інтеграції. Зверніться до адміністратора, щоб
+                  увімкнути цю можливість.
+                </PowerAlert>
+              ) : null}
+            </Stack>
 
             {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
               <TextField

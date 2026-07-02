@@ -6,6 +6,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ReplayIcon from '@mui/icons-material/Replay';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Box, CircularProgress, Tooltip } from '@mui/material';
@@ -27,6 +28,7 @@ type Props = {
   onDownload: (palitra: Palitra) => void;
   onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
+  onRetryConversion: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onToggleFolderExpanded: (path: string) => void;
   onRequestRenameFolder: (path: string) => void;
@@ -84,6 +86,7 @@ function isPalitraRowMutationDisabled(row: PalitraRowView, props: Props): boolea
     row.deleteInFlight ||
     row.downloadInFlight ||
     row.uploadInFlight ||
+    row.retryInFlight ||
     props.loading ||
     props.bulkDeleteInFlight ||
     props.externalBusy
@@ -98,6 +101,7 @@ function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean
     row.downloadInFlight ||
     row.uploadInFlight ||
     props.loading ||
+    row.retryInFlight ||
     props.bulkDeleteInFlight ||
     props.externalBusy
   );
@@ -198,6 +202,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             row.downloadInFlight ||
             row.uploadInFlight ||
             props.loading ||
+            row.retryInFlight ||
             props.bulkDeleteInFlight ||
             props.externalBusy
           }
@@ -221,6 +226,20 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             )
           }
         />
+        {row.palitra.conversionStatus === 'error' ? (
+          <MrtRowActionButton
+            label="Повторити конвертацію"
+            onClick={() => props.onRetryConversion(row.palitra)}
+            disabled={mutationDisabled}
+            icon={
+              row.retryInFlight ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <ReplayIcon fontSize="small" />
+              )
+            }
+          />
+        ) : null}
         <MrtRowActionButton
           label="Видалити"
           onClick={() => props.onDelete(row.palitra)}

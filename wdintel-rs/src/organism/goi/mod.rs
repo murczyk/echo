@@ -5,7 +5,8 @@ use crate::config::{
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
-    ORGANISM_GOI_SSH_TIMEOUT_MS,
+    ORGANISM_GOI_SSH_TIMEOUT_MS, PALITRA_GOI_SYNC_LOCK_LIVE_TTL_SEC,
+    PALITRA_GOI_SYNC_LOCK_MAX_DELAY_SEC, PALITRA_GOI_SYNC_LOCK_MIN_DELAY_SEC,
 };
 use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
@@ -29,9 +30,12 @@ use crate::utils::string::{
 };
 use actix_web::post;
 use actix_web::web::Json;
+use rand::Rng;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use uuid::Uuid;
 
 mod callsigns_sync;
 mod goi_ssh;
@@ -50,6 +54,11 @@ struct GoiSettingsInput {
     api_port: i32,
     api_login: Option<String>,
     api_password: Option<String>,
+}
+
+pub struct GoiSyncLock {
+    req: CheckOrganismGoiConnectionReq,
+    lock_id: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -417,6 +426,170 @@ pub async fn goi_list_relative_files(
     })
     .await
     .c(h!())?
+}
+
+pub async fn goi_try_acquire_sync_lock(
+    req: CheckOrganismGoiConnectionReq,
+) -> anyhow::Result<Option<GoiSyncLock>> {
+    goi_validate_connection_req(&req)?;
+    goi_ensure_sync_lock_table(req.clone()).await.c(h!())?;
+    if goi_has_live_sync_lock(req.clone(), None).await.c(h!())? {
+        info!(
+            "Skipping GOI sync for {}:{}: live sync lock exists",
+            req.ssh_host, req.ssh_port
+        );
+        return Ok(None);
+    }
+
+    let lock_id = Uuid::new_v4().to_string();
+    goi_insert_sync_lock(req.clone(), &lock_id).await.c(h!())?;
+    goi_random_sync_lock_delay().await;
+
+    if goi_has_live_sync_lock(req.clone(), Some(&lock_id))
+        .await
+        .c(h!())?
+    {
+        let lock = GoiSyncLock { req, lock_id };
+        lock.release().await.c(h!())?;
+        info!(
+            "Skipping GOI sync for {}: conflicting sync lock appeared",
+            lock.target()
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(GoiSyncLock { req, lock_id }))
+}
+
+impl GoiSyncLock {
+    pub fn target(&self) -> String {
+        format!("{}:{}", self.req.ssh_host, self.req.ssh_port)
+    }
+
+    pub async fn refresh(&self) -> anyhow::Result<()> {
+        goi_run_psql(
+            self.req.clone(),
+            format!(
+                "update sync_lock set updated_at = now() where id = {} and released_at is null",
+                goi_sql_quote_uuid(&self.lock_id),
+            ),
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    pub async fn release(&self) -> anyhow::Result<()> {
+        goi_run_psql(
+            self.req.clone(),
+            format!(
+                "update sync_lock set updated_at = now(), released_at = now() where id = {} and released_at is null",
+                goi_sql_quote_uuid(&self.lock_id),
+            ),
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+}
+
+async fn goi_ensure_sync_lock_table(
+    req: CheckOrganismGoiConnectionReq,
+) -> anyhow::Result<()> {
+    goi_run_psql(req, goi_sync_lock_table_sql()).await.c(h!())?;
+    Ok(())
+}
+
+async fn goi_insert_sync_lock(
+    req: CheckOrganismGoiConnectionReq,
+    lock_id: &str,
+) -> anyhow::Result<()> {
+    goi_run_psql(
+        req,
+        format!(
+            "insert into sync_lock (id, created_at, updated_at) values ({}, now(), now())",
+            goi_sql_quote_uuid(lock_id),
+        ),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn goi_has_live_sync_lock(
+    req: CheckOrganismGoiConnectionReq,
+    exclude_lock_id: Option<&str>,
+) -> anyhow::Result<bool> {
+    let mut sql = format!(
+        "select count(*) from sync_lock where released_at is null and updated_at >= now() - interval '{} seconds'",
+        PALITRA_GOI_SYNC_LOCK_LIVE_TTL_SEC
+    );
+    if let Some(exclude_lock_id) = exclude_lock_id {
+        sql.push_str(" and id <> ");
+        sql.push_str(&goi_sql_quote_uuid(exclude_lock_id));
+    }
+    let lines = goi_run_psql(req, sql).await.c(h!())?;
+    let count = lines
+        .first()
+        .map(|line| line.trim())
+        .unwrap_or("0")
+        .parse::<i64>()
+        .c(h!())?;
+    Ok(count > 0)
+}
+
+async fn goi_run_psql(
+    req: CheckOrganismGoiConnectionReq,
+    sql: String,
+) -> anyhow::Result<Vec<String>> {
+    let command = format!(
+        "sudo -n -u postgres psql -v ON_ERROR_STOP=1 -d goi -Atc {}",
+        goi_shell_quote_single(&sql),
+    );
+    tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_exec_command_sync_capped_strict(
+            req,
+            command,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
+            ORGANISM_GOI_FILE_LIST_LIMIT,
+        )
+    })
+    .await
+    .c(h!())?
+}
+
+async fn goi_random_sync_lock_delay() {
+    let delay_sec = {
+        let mut rng = rand::rng();
+        rng.random_range(
+            PALITRA_GOI_SYNC_LOCK_MIN_DELAY_SEC
+                ..=PALITRA_GOI_SYNC_LOCK_MAX_DELAY_SEC,
+        )
+    };
+    tokio::time::sleep(Duration::from_secs(delay_sec)).await;
+}
+
+fn goi_sql_quote_uuid(value: &str) -> String {
+    format!("{}::uuid", goi_sql_quote_single(value))
+}
+
+fn goi_sql_quote_single(value: &str) -> String {
+    let escaped = value.replace('\'', "''");
+    format!("'{escaped}'")
+}
+
+fn goi_sync_lock_table_sql() -> String {
+    r#"
+create table if not exists sync_lock (
+    id uuid primary key,
+    created_at timestamptz not null,
+    updated_at timestamptz not null,
+    released_at timestamptz
+);
+create index if not exists idx_sync_lock_live
+    on sync_lock (released_at, updated_at);
+"#
+    .to_string()
 }
 
 pub async fn goi_move_file_to_folder(
@@ -1497,6 +1670,17 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'goi'
   sudo -u postgres createdb -O goi goi
 fi
 sudo -u postgres psql -v ON_ERROR_STOP=1 postgres -c "ALTER DATABASE goi OWNER TO goi"
+sudo -u postgres psql -v ON_ERROR_STOP=1 goi <<'GOI_SQL'
+create table if not exists sync_lock (
+    id uuid primary key,
+    created_at timestamptz not null,
+    updated_at timestamptz not null,
+    released_at timestamptz
+);
+create index if not exists idx_sync_lock_live
+    on sync_lock (released_at, updated_at);
+alter table sync_lock owner to goi;
+GOI_SQL
 
 sudo install -d -m 0755 /etc/goi-echo-worker
 cat <<'GOI_ECHO_WORKER_CONFIG' | sudo tee /etc/goi-echo-worker/config.toml >/dev/null

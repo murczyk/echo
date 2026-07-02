@@ -204,6 +204,14 @@ async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     {
         warn!("Failed to ensure import group exists: {:?}", err);
     };
+    if let Err(err) =
+        crate::organism::goi::integrations::ensure_goi_integration_maintainers(
+            &env.dbx,
+        )
+        .await
+    {
+        error!("Failed to ensure GOI integration maintainers: {:?}", err);
+    }
     Ok(env)
 }
 
@@ -234,6 +242,15 @@ fn spawn_palitra_goi_sync_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_goi_sync_worker", bg_set, async move {
         crate::palitra::goi_sync_worker::palitra_goi_sync_worker_nofail(env)
             .await;
+    });
+}
+
+fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
+    spawn_named_worker("palitra_conversion_worker", bg_set, async move {
+        crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
+            env,
+        )
+        .await;
     });
 }
 
@@ -445,7 +462,8 @@ fn spawn_background_workers(
 
     // In debug/test, run only GOI folder sync to avoid API/report mutations.
     spawn_goi_folder_sync_worker(bg_set, env.clone());
-    spawn_palitra_goi_sync_worker(bg_set, env);
+    spawn_palitra_goi_sync_worker(bg_set, env.clone());
+    spawn_palitra_conversion_worker(bg_set, env);
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
@@ -456,7 +474,8 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
     }
     spawn_goi_worker(bg_set, env.clone());
     spawn_goi_folder_sync_worker(bg_set, env.clone());
-    spawn_palitra_goi_sync_worker(bg_set, env);
+    spawn_palitra_goi_sync_worker(bg_set, env.clone());
+    spawn_palitra_conversion_worker(bg_set, env);
 }
 
 fn configure_routes(cfg: &mut web::ServiceConfig) {
@@ -795,6 +814,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::palitra::download_palitras)
             .service(crate::palitra::download_palitras_delta_split)
             .service(crate::palitra::upload_palitra_points)
+            .service(crate::palitra::retry_palitra_conversion)
             .service(crate::palitra::analyze_kmz)
             .service(crate::alpine::convert_alpinequest_file)
             .service(crate::alpine::download_alpine_result)

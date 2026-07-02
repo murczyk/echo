@@ -545,6 +545,12 @@ mod tests {
             author: None,
             source_file_name: None,
             last_uploaded_at_ts: None,
+            conversion_status: crate::config::PALITRA_CONVERSION_STATUS_READY
+                .to_string(),
+            source_format: None,
+            conversion_error: None,
+            missing_in_goi: false,
+            imported_from_goi: false,
             geometry: None,
             access_aor_id: vec![],
             access_organism_ids: vec![],

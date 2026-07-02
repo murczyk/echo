@@ -1,7 +1,12 @@
 use crate::config::{
     ORGANISM_GOI_INTEGRATION_TYPE_FULL, ORGANISM_GOI_PATH_DEFAULT,
-    ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
-    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
+    PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS,
+    PALITRA_CONVERSION_JOB_STATUS_PENDING, PALITRA_CONVERSION_STATUS_ERROR,
+    PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
+    PALITRA_DIRECT_PARSE_EXTENSIONS, PALITRA_GOI_REMOTE_STATUS_PRESENT,
+    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
+    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -24,8 +29,9 @@ use anyhow::{bail, Context};
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use itertools::Itertools;
+use sea_orm::prelude::Expr;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use tempfile::tempdir;
@@ -33,6 +39,7 @@ use tokio_util::io::ReaderStream;
 use zip::write::FileOptions;
 
 pub(crate) mod bl;
+pub mod conversion_worker;
 mod download;
 pub mod goi_sync_worker;
 mod kmz;
@@ -47,13 +54,31 @@ struct UserScope {
     organism_ids: Vec<i64>,
 }
 
+struct ConnectedGoiTarget {
+    integration_id: i64,
+    req: CheckOrganismGoiConnectionReq,
+    disable_goi_to_echo_palitra_sync: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct GoiMoveTask {
+    palitra_id: i64,
+    source_file_names: Vec<String>,
+    target_file_name: String,
+    target_folder: Option<String>,
+    source_folder_hint: Option<String>,
+    tracked_source_relative_path: Option<String>,
+}
+
 struct CreatePalitraMultipartPayload {
     name: String,
     color_hex: Option<String>,
     access_type: String,
     access_values: String,
     filename: String,
-    kmz_data: Vec<u8>,
+    file_data: Vec<u8>,
+    content_type: Option<String>,
+    extension: String,
 }
 
 #[post("/api/palitra/create-with-kmz")]
@@ -95,12 +120,29 @@ pub async fn create_palitra_with_kmz(
     let palitra = bl::create_palitra(login.clone(), req, &env.dbx)
         .await
         .c(h!())?;
+    if !is_direct_palitra_upload_extension(&multipart_payload.extension) {
+        schedule_palitra_conversion(
+            &env.dbx,
+            palitra.id,
+            multipart_payload.filename,
+            multipart_payload.extension,
+            multipart_payload.content_type,
+            multipart_payload.file_data,
+        )
+        .await
+        .c(h!())?;
+        let palitra_response =
+            render_created_palitra_response(&env.dbx, palitra.id)
+                .await
+                .c(h!())?;
+        return Ok(Json(palitra_response));
+    }
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
-        multipart_payload.kmz_data.clone(),
+        multipart_payload.file_data.clone(),
         &env,
     )
     .await
@@ -127,10 +169,20 @@ pub async fn create_palitra_with_kmz(
         .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    update_palitra_conversion_status(
+        &env.dbx,
+        palitra.id,
+        PALITRA_CONVERSION_STATUS_READY,
+        Some(multipart_payload.extension.clone()),
+        None,
+        None,
+    )
+    .await
+    .c(h!())?;
     schedule_palitra_goi_upload(
         &env.dbx,
         palitra.id,
-        multipart_payload.kmz_data,
+        multipart_payload.file_data,
     )
     .await
     .c(h!())?;
@@ -161,9 +213,36 @@ pub async fn create_palitra_basic(
         .c(h!())?;
 
     let uploaded_at = Utc::now();
+    if !is_direct_palitra_upload_extension(&multipart_payload.extension) {
+        let req = CreatePalitraReq {
+            name: multipart_payload.name,
+            color_hex: normalize_color_hex_or_fallback(
+                multipart_payload.color_hex.clone(),
+            ),
+            access,
+            source_file_name: Some(multipart_payload.filename.clone()),
+            last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+        };
+        let palitra = bl::create_palitra(login, req, &env.dbx).await.c(h!())?;
+        schedule_palitra_conversion(
+            &env.dbx,
+            palitra.id,
+            multipart_payload.filename,
+            multipart_payload.extension,
+            multipart_payload.content_type,
+            multipart_payload.file_data,
+        )
+        .await
+        .c(h!())?;
+        let palitra_response =
+            render_created_palitra_response(&env.dbx, palitra.id)
+                .await
+                .c(h!())?;
+        return Ok(Json(palitra_response));
+    }
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
-        multipart_payload.kmz_data.clone(),
+        multipart_payload.file_data.clone(),
         &env,
     )
     .await
@@ -232,10 +311,20 @@ pub async fn create_palitra_basic(
 
     txn.commit().await.c(h!())?;
     for palitra_id in &created_palitra_ids {
+        update_palitra_conversion_status(
+            &env.dbx,
+            *palitra_id,
+            PALITRA_CONVERSION_STATUS_READY,
+            Some(multipart_payload.extension.clone()),
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
         schedule_palitra_goi_upload(
             &env.dbx,
             *palitra_id,
-            multipart_payload.kmz_data.clone(),
+            multipart_payload.file_data.clone(),
         )
         .await
         .c(h!())?;
@@ -268,9 +357,38 @@ pub async fn create_palitra_basic_v2(
         .await
         .c(h!())?;
 
+    let uploaded_at = Utc::now();
+    if !is_direct_palitra_upload_extension(&multipart_payload.extension) {
+        let color_hex = normalize_color_hex_or_fallback(
+            multipart_payload.color_hex.clone(),
+        );
+        let req = CreatePalitraReq {
+            name: multipart_payload.name,
+            color_hex,
+            access,
+            source_file_name: Some(multipart_payload.filename.clone()),
+            last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+        };
+        let palitra = bl::create_palitra(login, req, &env.dbx).await.c(h!())?;
+        schedule_palitra_conversion(
+            &env.dbx,
+            palitra.id,
+            multipart_payload.filename,
+            multipart_payload.extension,
+            multipart_payload.content_type,
+            multipart_payload.file_data,
+        )
+        .await
+        .c(h!())?;
+        let palitra_response =
+            render_created_palitra_response(&env.dbx, palitra.id)
+                .await
+                .c(h!())?;
+        return Ok(Json(palitra_response));
+    }
     let upload = kmz::load_coordinates_from_file(
         multipart_payload.filename.clone(),
-        multipart_payload.kmz_data.clone(),
+        multipart_payload.file_data.clone(),
         &env,
     )
     .await
@@ -278,7 +396,6 @@ pub async fn create_palitra_basic_v2(
     let mut points_by_color = group_palitra_points_by_color(upload.points);
     let mut line_strings_by_color =
         group_palitra_lines_by_color(upload.line_strings);
-    let uploaded_at = Utc::now();
     let selected_color_hex = multipart_payload
         .color_hex
         .map(|color_hex| normalize_color_hex_or_fallback(Some(color_hex)));
@@ -350,10 +467,20 @@ pub async fn create_palitra_basic_v2(
         .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    update_palitra_conversion_status(
+        &env.dbx,
+        palitra.id,
+        PALITRA_CONVERSION_STATUS_READY,
+        Some(multipart_payload.extension.clone()),
+        None,
+        None,
+    )
+    .await
+    .c(h!())?;
     schedule_palitra_goi_upload(
         &env.dbx,
         palitra.id,
-        multipart_payload.kmz_data,
+        multipart_payload.file_data,
     )
     .await
     .c(h!())?;
@@ -383,34 +510,29 @@ pub async fn analyze_kmz(
         .unwrap_or_else(|| "file.kmz".to_string());
     let filename = kmz::sanitize_upload_filename(&raw_filename);
 
-    // Save to temporary directory for analysis
-    let tmp_dir = tempdir().c(h!())?;
-    let tmp_path = tmp_dir.path().join(&filename);
-    tokio::fs::write(&tmp_path, val).await.c(h!())?;
-
-    // Extract top colors based on file extension
-    let extension = tmp_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("kmz")
-        .to_ascii_lowercase();
-
-    let top_colors = match extension.as_str() {
-        "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
-        "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
-        _ => {
-            return Err(AppError::BL {
-                msg: format!("Unsupported file extension: {extension}. Expected .kmz or .kml"),
-            });
-        }
-    };
-
-    // Clean filename (remove extension case-insensitively)
+    let extension = validate_palitra_upload_filename(&filename).c(h!())?;
     let name_without_ext = Path::new(&filename)
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or(&filename)
         .to_string();
+    if !is_direct_palitra_upload_extension(&extension) {
+        return Ok(Json(AnalyzeKmzResponse {
+            top_colors: vec![],
+            filename: name_without_ext,
+        }));
+    }
+
+    // Save to temporary directory for analysis
+    let tmp_dir = tempdir().c(h!())?;
+    let tmp_path = tmp_dir.path().join(&filename);
+    tokio::fs::write(&tmp_path, val).await.c(h!())?;
+
+    let top_colors = match extension.as_str() {
+        "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
+        "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
+        _ => vec![],
+    };
 
     Ok(Json(AnalyzeKmzResponse {
         top_colors,
@@ -451,17 +573,94 @@ pub async fn upload_palitra_points(
         .or_else(|| field.name().map(str::to_string))
         .unwrap_or_else(|| "file.kmz".to_string());
     let filename = kmz::sanitize_upload_filename(&raw_filename);
-    let raw_kmz_data = val;
-    let upload = kmz::load_coordinates_from_file(
-        filename.clone(),
-        raw_kmz_data.clone(),
-        &env,
+    let content_type = field.content_type().map(|ct| ct.to_string());
+    let extension = validate_palitra_upload_filename(&filename).c(h!())?;
+    let raw_file_data = val;
+    if !is_direct_palitra_upload_extension(&extension) {
+        let txn = env.dbx.begin().await.c(h!())?;
+        schedule_palitra_replacement_conversion_with_goi_upload(
+            &txn,
+            palitra.id,
+            filename,
+            extension,
+            content_type,
+            raw_file_data,
+            true,
+        )
+        .await
+        .c(h!())?;
+        txn.commit().await.c(h!())?;
+        env.palitra_worker_context.flush_cache(palitra_id).await;
+        return Ok(Json(()));
+    }
+    replace_existing_palitra_with_direct_file(
+        env.as_ref(),
+        &palitra,
+        filename,
+        extension,
+        raw_file_data,
     )
     .await
     .c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+
+    Ok(Json(()))
+}
+
+pub(crate) async fn replace_existing_palitra_with_direct_file(
+    env: &Env,
+    palitra: &palitra::Model,
+    filename: String,
+    extension: String,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    let upload = kmz::load_coordinates_from_file(
+        filename.clone(),
+        file_data.clone(),
+        env,
+    )
+    .await
+    .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    cancel_palitra_conversion(&txn, palitra.id).await.c(h!())?;
+    apply_loaded_palitra_file_to_existing_palitra(
+        env, &txn, palitra, &filename, upload, None,
+    )
+    .await
+    .c(h!())?;
+    update_palitra_conversion_status(
+        &txn,
+        palitra.id,
+        PALITRA_CONVERSION_STATUS_READY,
+        Some(extension),
+        None,
+        None,
+    )
+    .await
+    .c(h!())?;
+    schedule_palitra_goi_upload(&txn, palitra.id, file_data)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn apply_loaded_palitra_file_to_existing_palitra(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    palitra: &palitra::Model,
+    filename: &str,
+    upload: kmz::PalitraKmzData,
+    fallback_replacement_color_hex: Option<&str>,
+) -> anyhow::Result<()> {
     let mut points_by_color = group_palitra_points_by_color(upload.points);
     let mut line_strings_by_color =
         group_palitra_lines_by_color(upload.line_strings);
+    remap_fallback_geometry_color(
+        &mut points_by_color,
+        &mut line_strings_by_color,
+        fallback_replacement_color_hex,
+    );
     let uploaded_at = Utc::now();
     let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
     geometry_colors.extend(line_strings_by_color.keys().cloned().collect_vec());
@@ -473,20 +672,19 @@ pub async fn upload_palitra_points(
     }
     let parsed_points_total =
         points_by_color.values().map(Vec::len).sum::<usize>();
-    let txn = env.dbx.begin().await.c(h!())?;
     let existing_palitra_geometries = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
         .filter(palitra_geometry::Column::Deleted.eq(false))
-        .all(&txn)
+        .all(txn)
         .await
         .c(h!())?;
     let mut retained_geometry_ids: HashSet<i64> = HashSet::new();
     for color_hex in geometry_colors {
         let palitra_geometry = upsert_palitra_geometry_by_color(
-            &txn,
+            txn,
             palitra.id,
             &color_hex,
-            &filename,
+            filename,
             uploaded_at.naive_utc(),
         )
         .await
@@ -499,7 +697,7 @@ pub async fn upload_palitra_points(
         bl::rewrite_palitra_points(
             palitra_geometry.id,
             color_points,
-            &txn,
+            txn,
             &env.rq,
         )
         .await
@@ -507,7 +705,7 @@ pub async fn upload_palitra_points(
         bl::rewrite_palitra_line_strings(
             palitra_geometry.id,
             color_line_strings,
-            &txn,
+            txn,
         )
         .await
         .c(h!())?;
@@ -526,7 +724,7 @@ pub async fn upload_palitra_points(
         );
     }
     for stale_geometry_id in stale_geometry_ids {
-        bl::soft_delete_palitra_geometry(stale_geometry_id, &txn)
+        bl::soft_delete_palitra_geometry(stale_geometry_id, txn)
             .await
             .c(h!())?;
     }
@@ -538,17 +736,71 @@ pub async fn upload_palitra_points(
             retained_geometry_ids.len()
         );
     }
-    bl::update_palitra_s3_id(&txn, palitra.id, upload.s3_id)
+    bl::update_palitra_s3_id(txn, palitra.id, upload.s3_id)
         .await
         .c(h!())?;
 
-    txn.commit().await.c(h!())?;
-    schedule_palitra_goi_upload(&env.dbx, palitra.id, raw_kmz_data)
+    Ok(())
+}
+
+#[post("/api/palitra/retry-conversion/{palitra_id}")]
+pub async fn retry_palitra_conversion(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may retry palitra conversion".into(),
+        ));
+    }
+    let job = palitra_conversion_job::Entity::find()
+        .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    if job.file_data.is_none() {
+        return Err(AppError::BL {
+            msg: "Cannot retry palitra conversion: source file data is not available".to_string(),
+        });
+    }
+    let source_format = job.source_format.clone();
+    let mut job = job.into_active_model();
+    job.status = Set(PALITRA_CONVERSION_JOB_STATUS_PENDING.to_string());
+    job.last_attempt_at = Set(None);
+    job.last_error = Set(None);
+    job.update(&env.dbx).await.c(h!())?;
+    update_palitra_conversion_status(
+        &env.dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_PROCESSING,
+        Some(source_format),
+        None,
+        None,
+    )
+    .await
+    .c(h!())?;
     env.palitra_worker_context.flush_cache(palitra_id).await;
-
-    Ok(Json(()))
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
 }
 
 #[post("/api/palitra/list")]
@@ -1193,7 +1445,8 @@ async fn parse_create_palitra_multipart(
     let mut color_hex: Option<String> = None;
     let mut access_type: Option<String> = None;
     let mut access_values: Option<String> = None;
-    let mut kmz_file: Option<(String, Vec<u8>)> = None;
+    let mut upload_file: Option<(String, Vec<u8>, Option<String>, String)> =
+        None;
 
     while let Some(item) = payload.next().await {
         let mut field = item.map_err(|e| AppError::BL {
@@ -1229,8 +1482,13 @@ async fn parse_create_palitra_multipart(
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "file.kmz".to_string());
                 let filename = kmz::sanitize_upload_filename(&raw_filename);
-                let kmz_data = read_multipart_field_bytes(&mut field).await?;
-                kmz_file = Some((filename, kmz_data));
+                let content_type =
+                    field.content_type().map(|ct| ct.to_string());
+                let extension =
+                    validate_palitra_upload_filename(&filename).c(h!())?;
+                let file_data = read_multipart_field_bytes(&mut field).await?;
+                upload_file =
+                    Some((filename, file_data, content_type, extension));
             }
             _ => {
                 // Consume unknown fields to keep multipart stream in sync.
@@ -1242,15 +1500,45 @@ async fn parse_create_palitra_multipart(
     let name = name.c(h!())?;
     let access_type = access_type.c(h!())?;
     let access_values = access_values.unwrap_or_default();
-    let (filename, kmz_data) = kmz_file.c(h!())?;
+    let (filename, file_data, content_type, extension) = upload_file.c(h!())?;
     Ok(CreatePalitraMultipartPayload {
         name,
         color_hex,
         access_type,
         access_values,
         filename,
-        kmz_data,
+        file_data,
+        content_type,
+        extension,
     })
+}
+
+fn validate_palitra_upload_filename(filename: &str) -> anyhow::Result<String> {
+    let extension = upload_extension(filename).c(h!())?;
+    if PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS.contains(&extension.as_str())
+    {
+        bail!(
+            "PGD conversion is not stable enough yet, so PGD palitra uploads are not permitted for now"
+        );
+    }
+    if !PALITRA_ALLOWED_UPLOAD_EXTENSIONS.contains(&extension.as_str()) {
+        bail!("Unsupported palitra file extension: {extension}");
+    }
+    Ok(extension)
+}
+
+fn upload_extension(filename: &str) -> anyhow::Result<String> {
+    let extension = Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.trim().to_ascii_lowercase())
+        .filter(|ext| !ext.is_empty())
+        .c(h!())?;
+    Ok(extension)
+}
+
+fn is_direct_palitra_upload_extension(extension: &str) -> bool {
+    PALITRA_DIRECT_PARSE_EXTENSIONS.contains(&extension)
 }
 
 async fn read_multipart_field_bytes(
@@ -1303,6 +1591,29 @@ fn remap_fallback_color<T>(
         .entry(replacement_color_hex.to_string())
         .or_default()
         .append(&mut values);
+}
+
+fn remap_fallback_geometry_color(
+    points_by_color: &mut BTreeMap<String, Vec<PalitraPoint>>,
+    line_strings_by_color: &mut BTreeMap<String, Vec<kmz::PalitraLineString>>,
+    replacement_color_hex: Option<&str>,
+) {
+    let Some(replacement_color_hex) = replacement_color_hex else {
+        return;
+    };
+    let replacement_color_hex = normalize_color_hex_or_fallback(Some(
+        replacement_color_hex.to_string(),
+    ));
+    remap_fallback_color(
+        points_by_color,
+        crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX,
+        &replacement_color_hex,
+    );
+    remap_fallback_color(
+        line_strings_by_color,
+        crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX,
+        &replacement_color_hex,
+    );
 }
 
 fn pick_primary_color_hex(
@@ -1398,6 +1709,18 @@ async fn render_created_palitra_response(
         read_latest_palitra_geometry_with_warning(dbx, palitra_id)
             .await
             .c(h!())?;
+    let access_organism_ids =
+        bl::collect_palitra_access_organisms(dbx, palitra_id)
+            .await
+            .c(h!())?;
+    let access_logins =
+        if palitra.imported_from_goi && !access_organism_ids.is_empty() {
+            vec![]
+        } else {
+            bl::collect_palitra_access_logins(dbx, palitra_id)
+                .await
+                .c(h!())?
+        };
     Ok(Palitra {
         id: palitra.id,
         name: palitra.name,
@@ -1409,18 +1732,17 @@ async fn render_created_palitra_response(
         last_uploaded_at_ts: palitra_geometry
             .last_uploaded_at
             .map(|ts| ts.and_utc().timestamp_millis()),
+        conversion_status: palitra.conversion_status,
+        source_format: palitra.source_format,
+        conversion_error: palitra.conversion_error,
+        missing_in_goi: palitra.missing_in_goi,
+        imported_from_goi: palitra.imported_from_goi,
         geometry: None,
         access_aor_id: bl::collect_palitra_access_aors(dbx, palitra_id)
             .await
             .c(h!())?,
-        access_organism_ids: bl::collect_palitra_access_organisms(
-            dbx, palitra_id,
-        )
-        .await
-        .c(h!())?,
-        access_logins: bl::collect_palitra_access_logins(dbx, palitra_id)
-            .await
-            .c(h!())?,
+        access_organism_ids,
+        access_logins,
     })
 }
 
@@ -1515,10 +1837,10 @@ async fn has_role_or_false(
     }
 }
 
-async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+async fn read_latest_palitra_geometry<'a, 'async_trait, C>(
     dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<palitra_geometry::Model>
+) -> anyhow::Result<Option<palitra_geometry::Model>>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -1528,6 +1850,34 @@ where
         .order_by_desc(palitra_geometry::Column::UpdatedAt)
         .order_by_desc(palitra_geometry::Column::Id)
         .one(dbx)
+        .await
+        .c(h!())
+}
+
+async fn read_latest_palitra_geometry_including_deleted<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Option<palitra_geometry::Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .order_by_desc(palitra_geometry::Column::Id)
+        .one(dbx)
+        .await
+        .c(h!())
+}
+
+async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<palitra_geometry::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    read_latest_palitra_geometry(dbx, palitra_id)
         .await
         .c(h!())?
         .c(h!())
@@ -1582,11 +1932,11 @@ fn pick_access(
     organism_ids: Vec<i64>,
     aor_ids: Vec<i64>,
 ) -> anyhow::Result<PalitraAccess> {
-    if !logins.is_empty() {
-        return Ok(PalitraAccess::ByLogins { logins });
-    }
     if !organism_ids.is_empty() {
         return Ok(PalitraAccess::ByOrganisms { organism_ids });
+    }
+    if !logins.is_empty() {
+        return Ok(PalitraAccess::ByLogins { logins });
     }
     if !aor_ids.is_empty() {
         return Ok(PalitraAccess::ByAor { aor_ids });
@@ -1625,11 +1975,14 @@ fn parse_access(
     }
 }
 
-pub(crate) async fn schedule_palitra_goi_upload(
-    dbx: &DatabaseConnection,
+pub(crate) async fn schedule_palitra_goi_upload<'a, C>(
+    dbx: &'a C,
     palitra_id: i64,
     file_data: Vec<u8>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
     palitra_goi_sync_job::Entity::insert(palitra_goi_sync_job::ActiveModel {
         palitra_id: Set(palitra_id),
         kind: Set(PALITRA_GOI_SYNC_JOB_KIND_UPLOAD.to_string()),
@@ -1657,6 +2010,233 @@ pub(crate) async fn schedule_palitra_goi_upload(
     .exec(dbx)
     .await
     .c(h!())?;
+    Ok(())
+}
+
+async fn cancel_palitra_goi_upload<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    palitra_goi_sync_job::Entity::delete_many()
+        .filter(palitra_goi_sync_job::Column::PalitraId.eq(palitra_id))
+        .filter(
+            palitra_goi_sync_job::Column::Kind
+                .eq(PALITRA_GOI_SYNC_JOB_KIND_UPLOAD),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn schedule_palitra_conversion<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    schedule_palitra_conversion_with_goi_upload(
+        dbx,
+        palitra_id,
+        filename,
+        extension,
+        content_type,
+        file_data,
+        false,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn schedule_palitra_conversion_with_goi_upload<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+    should_schedule_goi_upload: bool,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    palitra_conversion_job::Entity::insert(
+        palitra_conversion_job::ActiveModel {
+            palitra_id: Set(palitra_id),
+            source_file_name: Set(filename.clone()),
+            source_format: Set(extension.clone()),
+            content_type: Set(content_type),
+            file_data: Set(Some(file_data)),
+            status: Set(PALITRA_CONVERSION_JOB_STATUS_PENDING.to_string()),
+            conversion_receipt: Set(None),
+            last_attempt_at: Set(None),
+            attempt_count: Set(0),
+            last_error: Set(None),
+            should_schedule_goi_upload: Set(should_schedule_goi_upload),
+            ..Default::default()
+        },
+    )
+    .on_conflict(
+        sea_orm::sea_query::OnConflict::column(
+            palitra_conversion_job::Column::PalitraId,
+        )
+        .update_columns([
+            palitra_conversion_job::Column::SourceFileName,
+            palitra_conversion_job::Column::SourceFormat,
+            palitra_conversion_job::Column::ContentType,
+            palitra_conversion_job::Column::FileData,
+            palitra_conversion_job::Column::Status,
+            palitra_conversion_job::Column::ConversionReceipt,
+            palitra_conversion_job::Column::LastAttemptAt,
+            palitra_conversion_job::Column::AttemptCount,
+            palitra_conversion_job::Column::LastError,
+            palitra_conversion_job::Column::ShouldScheduleGoiUpload,
+        ])
+        .to_owned(),
+    )
+    .exec(dbx)
+    .await
+    .c(h!())?;
+    update_palitra_conversion_status(
+        dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_PROCESSING,
+        Some(extension),
+        None,
+        None,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn schedule_palitra_replacement_conversion(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    schedule_palitra_replacement_conversion_with_goi_upload(
+        txn,
+        palitra_id,
+        filename,
+        extension,
+        content_type,
+        file_data,
+        false,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn schedule_palitra_replacement_conversion_with_goi_upload(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+    should_schedule_goi_upload: bool,
+) -> anyhow::Result<()> {
+    cancel_palitra_goi_upload(txn, palitra_id).await.c(h!())?;
+    schedule_palitra_conversion_with_goi_upload(
+        txn,
+        palitra_id,
+        filename,
+        extension,
+        content_type,
+        file_data,
+        should_schedule_goi_upload,
+    )
+    .await
+    .c(h!())?;
+    clear_active_palitra_geometries(txn, palitra_id)
+        .await
+        .c(h!())
+}
+
+async fn clear_active_palitra_geometries(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+) -> anyhow::Result<()> {
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for palitra_geometry in palitra_geometries {
+        bl::soft_delete_palitra_geometry(palitra_geometry.id, txn)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn cancel_palitra_conversion<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    palitra_conversion_job::Entity::delete_many()
+        .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn update_palitra_conversion_status<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+    status: &str,
+    source_format: Option<String>,
+    receipt: Option<String>,
+    error: Option<String>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    let now = Utc::now();
+    let mut update = palitra::Entity::update_many()
+        .filter(palitra::Column::Id.eq(palitra_id))
+        .col_expr(
+            palitra::Column::ConversionStatus,
+            Expr::value(status.to_string()),
+        )
+        .col_expr(
+            palitra::Column::ConversionLastAttemptAt,
+            Expr::value(Some(now)),
+        );
+    if let Some(source_format) = source_format {
+        update = update.col_expr(
+            palitra::Column::SourceFormat,
+            Expr::value(Some(source_format)),
+        );
+    }
+    update = update
+        .col_expr(palitra::Column::ConversionReceipt, Expr::value(receipt));
+    update =
+        update.col_expr(palitra::Column::ConversionError, Expr::value(error));
+    if status == PALITRA_CONVERSION_STATUS_ERROR {
+        update = update.col_expr(
+            palitra::Column::ConversionAttemptCount,
+            Expr::cust("conversion_attempt_count + 1"),
+        );
+    }
+    update.exec(dbx).await.c(h!())?;
     Ok(())
 }
 
@@ -1752,21 +2332,13 @@ async fn sync_move_palitra_files_to_connected_organisms<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    #[derive(Clone, PartialEq, Eq)]
-    struct GoiMoveTask {
-        source_file_names: Vec<String>,
-        target_file_name: String,
-        target_folder: Option<String>,
-        source_folder_hint: Option<String>,
-    }
-
     let mut palitra_ids = std::collections::BTreeSet::new();
     for item in sync_items {
         palitra_ids.insert(item.palitra_id);
     }
     let mut tasks_by_target: BTreeMap<
         String,
-        (CheckOrganismGoiConnectionReq, Vec<GoiMoveTask>),
+        (ConnectedGoiTarget, Vec<GoiMoveTask>),
     > = BTreeMap::new();
     for palitra_id in palitra_ids {
         let source_folder_hint = sync_items
@@ -1810,6 +2382,12 @@ where
             Some(&source_file_name),
         );
         let target_file_name = source_file_names.first().cloned().c(h!())?;
+        let tracked_relative_paths_by_integration =
+            read_tracked_goi_palitra_relative_paths_by_integration(
+                dbx, palitra.id,
+            )
+            .await
+            .c(h!())?;
         let goi_targets =
             collect_connected_goi_targets(dbx, organism_ids.as_slice())
                 .await
@@ -1817,54 +2395,160 @@ where
         for target in goi_targets {
             let target_key = format!(
                 "{}|{}|{}|{}",
-                target.ssh_host, target.ssh_user, target.ssh_port, target.path
+                target.req.ssh_host,
+                target.req.ssh_user,
+                target.req.ssh_port,
+                target.req.path
             );
-            let task = GoiMoveTask {
-                source_file_names: source_file_names.clone(),
-                target_file_name: target_file_name.clone(),
-                target_folder: target_folder.clone(),
-                source_folder_hint: source_folder_hint
-                    .as_deref()
-                    .map(str::trim)
-                    .map(|folder| folder.trim_matches('/').to_string()),
-            };
+            let tracked_relative_paths = tracked_relative_paths_by_integration
+                .get(&target.integration_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let tasks = goi_move_tasks_for_target(
+                palitra.id,
+                source_file_names.as_slice(),
+                &target_file_name,
+                target_folder.clone(),
+                source_folder_hint.as_deref(),
+                tracked_relative_paths,
+            );
             let task_list = &mut tasks_by_target
                 .entry(target_key)
                 .or_insert_with(|| (target, Vec::new()))
                 .1;
-            match task_list.iter().find(|existing| {
-                existing.target_file_name == task.target_file_name
-            }) {
-                None => task_list.push(task),
-                Some(existing) if existing == &task => {}
-                Some(existing) => {
-                    warn!(
-                        "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
-                        task.target_file_name,
-                        existing.target_folder,
-                        existing.source_folder_hint,
-                        task.target_folder,
-                        task.source_folder_hint
-                    );
+            for task in tasks {
+                match task_list.iter().find(|existing| {
+                    existing.target_file_name == task.target_file_name
+                }) {
+                    None => task_list.push(task),
+                    Some(existing) if existing == &task => {}
+                    Some(existing) => {
+                        warn!(
+                            "Skipping GOI file move task with duplicate target path '{}': conflicting tasks (existing folder {:?}, source hint {:?}; new folder {:?}, source hint {:?})",
+                            task.target_file_name,
+                            existing.target_folder,
+                            existing.source_folder_hint,
+                            task.target_folder,
+                            task.source_folder_hint
+                        );
+                    }
                 }
             }
         }
     }
 
+    let mut errors = Vec::new();
     for (_, (target, tasks)) in tasks_by_target {
-        let mut entries =
-            crate::organism::goi::goi_list_relative_files(target.clone())
+        if target.disable_goi_to_echo_palitra_sync {
+            if let Err(err) =
+                move_palitra_files_to_goi_target(dbx, &target, tasks).await
+            {
+                errors.push(format!(
+                    "{}:{} {err:#}",
+                    target.req.ssh_host, target.req.ssh_port
+                ));
+            }
+            continue;
+        }
+        let Some(lock) =
+            crate::organism::goi::goi_try_acquire_sync_lock(target.req.clone())
+                .await
+                .c(h!())?
+        else {
+            errors.push(format!(
+                "{}:{} sync lock is held by another worker",
+                target.req.ssh_host, target.req.ssh_port
+            ));
+            continue;
+        };
+        let sync_result = async {
+            let mut entries = crate::organism::goi::goi_list_relative_files(
+                target.req.clone(),
+            )
+            .await
+            .c(h!())?;
+            lock.refresh().await.c(h!())?;
+
+            for task in tasks {
+                let tracking_update = goi_move_task_tracking_update(&task);
+                let palitra_id = task.palitra_id;
+                crate::organism::goi::goi_move_file_to_folder_with_entries(
+                    target.req.clone(),
+                    task.source_file_names,
+                    task.target_file_name,
+                    task.target_folder,
+                    task.source_folder_hint,
+                    &mut entries,
+                )
                 .await
                 .c(h!())?;
+                if let Some((source_relative_path, target_relative_path)) =
+                    tracking_update
+                {
+                    update_tracked_goi_move_path(
+                        dbx,
+                        target.integration_id,
+                        palitra_id,
+                        &source_relative_path,
+                        &target_relative_path,
+                    )
+                    .await
+                    .c(h!())?;
+                }
+                lock.refresh().await.c(h!())?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let lock_target = lock.target();
+        if let Err(err) = lock.release().await {
+            warn!("Failed to release GOI sync lock for {lock_target}: {err:#}");
+        }
+        if let Err(err) = sync_result {
+            errors.push(format!(
+                "{}:{} {err:#}",
+                target.req.ssh_host, target.req.ssh_port
+            ));
+        }
+    }
+    if errors.is_empty() {
+        return Ok(());
+    }
+    bail!("palitra GOI move failed: {}", errors.join("; "));
+}
 
-        for task in tasks {
-            crate::organism::goi::goi_move_file_to_folder_with_entries(
-                target.clone(),
-                task.source_file_names,
-                task.target_file_name,
-                task.target_folder,
-                task.source_folder_hint,
-                &mut entries,
+async fn move_palitra_files_to_goi_target(
+    dbx: &impl ConnectionTrait,
+    target: &ConnectedGoiTarget,
+    tasks: Vec<GoiMoveTask>,
+) -> anyhow::Result<()> {
+    let mut entries =
+        crate::organism::goi::goi_list_relative_files(target.req.clone())
+            .await
+            .c(h!())?;
+
+    for task in tasks {
+        let tracking_update = goi_move_task_tracking_update(&task);
+        let palitra_id = task.palitra_id;
+        crate::organism::goi::goi_move_file_to_folder_with_entries(
+            target.req.clone(),
+            task.source_file_names,
+            task.target_file_name,
+            task.target_folder,
+            task.source_folder_hint,
+            &mut entries,
+        )
+        .await
+        .c(h!())?;
+        if let Some((source_relative_path, target_relative_path)) =
+            tracking_update
+        {
+            update_tracked_goi_move_path(
+                dbx,
+                target.integration_id,
+                palitra_id,
+                &source_relative_path,
+                &target_relative_path,
             )
             .await
             .c(h!())?;
@@ -1873,10 +2557,192 @@ where
     Ok(())
 }
 
+fn goi_move_tasks_for_target(
+    palitra_id: i64,
+    source_file_names: &[String],
+    target_file_name: &str,
+    target_folder: Option<String>,
+    source_folder_hint: Option<&str>,
+    tracked_relative_paths: &[String],
+) -> Vec<GoiMoveTask> {
+    let mut tracked_tasks = Vec::new();
+    let mut used_tracked_paths = BTreeSet::new();
+    for tracked_relative_path in tracked_relative_paths {
+        let Some((source_folder_hint, file_name, tracked_relative_path)) =
+            split_goi_relative_path(tracked_relative_path)
+        else {
+            continue;
+        };
+        if !used_tracked_paths.insert(tracked_relative_path.clone()) {
+            continue;
+        }
+        tracked_tasks.push(GoiMoveTask {
+            palitra_id,
+            source_file_names: vec![file_name.clone()],
+            target_file_name: file_name,
+            target_folder: target_folder.clone(),
+            source_folder_hint: Some(source_folder_hint),
+            tracked_source_relative_path: Some(tracked_relative_path),
+        });
+    }
+    if !tracked_tasks.is_empty() {
+        return tracked_tasks;
+    }
+    vec![GoiMoveTask {
+        palitra_id,
+        source_file_names: source_file_names.to_vec(),
+        target_file_name: target_file_name.to_string(),
+        target_folder,
+        source_folder_hint: normalize_goi_source_folder_hint(
+            source_folder_hint,
+        ),
+        tracked_source_relative_path: None,
+    }]
+}
+
+fn goi_move_task_tracking_update(
+    task: &GoiMoveTask,
+) -> Option<(String, String)> {
+    let source_relative_path = task.tracked_source_relative_path.clone()?;
+    let target_relative_path = compose_goi_relative_path(
+        task.target_folder.as_deref(),
+        &task.target_file_name,
+    );
+    Some((source_relative_path, target_relative_path))
+}
+
+async fn update_tracked_goi_move_path(
+    dbx: &impl ConnectionTrait,
+    goi_integration_id: i64,
+    palitra_id: i64,
+    source_relative_path: &str,
+    target_relative_path: &str,
+) -> anyhow::Result<()> {
+    if source_relative_path == target_relative_path {
+        return Ok(());
+    }
+    goi_palitra_sync::Entity::delete_many()
+        .filter(
+            goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
+        )
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::RemoteRelativePath
+                .eq(target_relative_path.to_string()),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+
+    let now = Utc::now().fixed_offset();
+    goi_palitra_sync::Entity::update_many()
+        .filter(
+            goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
+        )
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::RemoteRelativePath
+                .eq(source_relative_path.to_string()),
+        )
+        .col_expr(
+            goi_palitra_sync::Column::RemoteRelativePath,
+            Expr::value(target_relative_path.to_string()),
+        )
+        .col_expr(
+            goi_palitra_sync::Column::RemoteStatus,
+            Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+        )
+        .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn read_tracked_goi_palitra_relative_paths_by_integration<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<BTreeMap<i64, Vec<String>>>
+where
+    C: ConnectionTrait + 'a,
+{
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut paths_by_integration = BTreeMap::<i64, BTreeSet<String>>::new();
+    for row in rows {
+        let Some(path) =
+            normalize_goi_remote_relative_path(&row.remote_relative_path)
+        else {
+            continue;
+        };
+        paths_by_integration
+            .entry(row.goi_integration_id)
+            .or_default()
+            .insert(path);
+    }
+    Ok(paths_by_integration
+        .into_iter()
+        .map(|(integration_id, paths)| {
+            (integration_id, paths.into_iter().collect_vec())
+        })
+        .collect())
+}
+
+fn split_goi_relative_path(path: &str) -> Option<(String, String, String)> {
+    let path = normalize_goi_remote_relative_path(path)?;
+    if let Some((folder, file_name)) = path.rsplit_once('/') {
+        let file_name = file_name.trim();
+        if file_name.is_empty() {
+            return None;
+        }
+        return Some((
+            folder.trim_matches('/').to_string(),
+            file_name.to_string(),
+            path,
+        ));
+    }
+    Some((String::new(), path.clone(), path))
+}
+
+fn normalize_goi_remote_relative_path(path: &str) -> Option<String> {
+    let path = path.trim().trim_start_matches("./").trim_matches('/');
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn normalize_goi_source_folder_hint(
+    source_folder_hint: Option<&str>,
+) -> Option<String> {
+    source_folder_hint
+        .map(str::trim)
+        .map(|folder| folder.trim_matches('/').to_string())
+}
+
+fn compose_goi_relative_path(
+    target_folder: Option<&str>,
+    file_name: &str,
+) -> String {
+    let file_name = file_name.trim().trim_start_matches('/');
+    match target_folder
+        .map(str::trim)
+        .map(|folder| folder.trim_matches('/'))
+        .filter(|folder| !folder.is_empty())
+    {
+        Some(folder) => format!("{folder}/{file_name}"),
+        None => file_name.to_string(),
+    }
+}
+
 async fn collect_connected_goi_targets<'a, C>(
     dbx: &'a C,
     organism_ids: &[i64],
-) -> anyhow::Result<Vec<CheckOrganismGoiConnectionReq>>
+) -> anyhow::Result<Vec<ConnectedGoiTarget>>
 where
     C: ConnectionTrait + 'a,
 {
@@ -1937,7 +2803,12 @@ where
             path,
         };
         match goi_validate_connection_req(&req) {
-            Ok(()) => goi_targets.push(req),
+            Ok(()) => goi_targets.push(ConnectedGoiTarget {
+                integration_id,
+                req,
+                disable_goi_to_echo_palitra_sync: integration
+                    .disable_goi_to_echo_palitra_sync,
+            }),
             Err(err) => {
                 warn!(
                     "Skipping GOI sync target for integration {} ({}): {err:#}",
@@ -2116,6 +2987,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pick_access_preserves_organism_scope_when_login_rows_exist() {
+        let access =
+            pick_access(vec!["extra-login".to_string()], vec![10], vec![])
+                .unwrap();
+
+        assert!(matches!(
+            access,
+            PalitraAccess::ByOrganisms { organism_ids } if organism_ids == vec![10]
+        ));
+    }
+
+    #[test]
     fn groups_points_by_normalized_color_with_fallback() {
         let points = vec![
             PalitraPoint {
@@ -2149,6 +3032,54 @@ mod tests {
             grouped
                 .get(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX)
                 .map(Vec::len),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn remaps_fallback_geometry_color_to_selected_color() {
+        let fallback_color =
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string();
+        let selected_color = "#112233";
+        let mut points_by_color = BTreeMap::from([(
+            fallback_color.clone(),
+            vec![PalitraPoint {
+                coords: Coords {
+                    lat: 50.0,
+                    lng: 30.0,
+                },
+                label: None,
+                color: Some(fallback_color.clone()),
+            }],
+        )]);
+        let mut line_strings_by_color = BTreeMap::from([(
+            fallback_color.clone(),
+            vec![kmz::PalitraLineString {
+                coords: vec![
+                    Coords {
+                        lat: 50.0,
+                        lng: 30.0,
+                    },
+                    Coords {
+                        lat: 50.1,
+                        lng: 30.1,
+                    },
+                ],
+                color: Some(fallback_color.clone()),
+            }],
+        )]);
+
+        remap_fallback_geometry_color(
+            &mut points_by_color,
+            &mut line_strings_by_color,
+            Some(selected_color),
+        );
+
+        assert!(!points_by_color.contains_key(&fallback_color));
+        assert!(!line_strings_by_color.contains_key(&fallback_color));
+        assert_eq!(points_by_color.get(selected_color).map(Vec::len), Some(1));
+        assert_eq!(
+            line_strings_by_color.get(selected_color).map(Vec::len),
             Some(1)
         );
     }
@@ -2281,5 +3212,58 @@ mod tests {
                 "palitra_000418.kmz".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn goi_move_task_preserves_tracked_original_file_path() {
+        let generated_file_names =
+            palitra_goi_remote_file_names(418, Some("foo"), Some("foo.kmz"));
+        let tracked_paths = vec!["sector/foo.gpx".to_string()];
+
+        let tasks = goi_move_tasks_for_target(
+            418,
+            generated_file_names.as_slice(),
+            generated_file_names.first().unwrap(),
+            Some("new-sector".to_string()),
+            Some("sector"),
+            tracked_paths.as_slice(),
+        );
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.source_file_names, vec!["foo.gpx".to_string()]);
+        assert_eq!(task.target_file_name, "foo.gpx");
+        assert_eq!(task.target_folder.as_deref(), Some("new-sector"));
+        assert_eq!(task.source_folder_hint.as_deref(), Some("sector"));
+        assert_eq!(
+            goi_move_task_tracking_update(task),
+            Some((
+                "sector/foo.gpx".to_string(),
+                "new-sector/foo.gpx".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn goi_move_task_uses_generated_names_without_tracked_path() {
+        let generated_file_names =
+            palitra_goi_remote_file_names(418, Some("foo"), Some("foo.kmz"));
+
+        let tasks = goi_move_tasks_for_target(
+            418,
+            generated_file_names.as_slice(),
+            generated_file_names.first().unwrap(),
+            Some("new-sector".to_string()),
+            Some("sector"),
+            &[],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.source_file_names, generated_file_names);
+        assert_eq!(task.target_file_name, "foo.kmz");
+        assert_eq!(task.target_folder.as_deref(), Some("new-sector"));
+        assert_eq!(task.source_folder_hint.as_deref(), Some("sector"));
+        assert_eq!(goi_move_task_tracking_update(task), None);
     }
 }

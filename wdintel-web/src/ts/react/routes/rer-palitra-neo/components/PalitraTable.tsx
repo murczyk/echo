@@ -60,6 +60,7 @@ type Props = {
   onDownload: (palitra: Palitra) => void;
   onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
+  onRetryConversion: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onSetSelectedPalitraIds: (palitraIds: number[]) => void;
   onToggleFolderExpanded: (path: string) => void;
@@ -87,6 +88,7 @@ export function PalitraTable({
   onDownload,
   onRequestPreview,
   onRequestUploadPoints,
+  onRetryConversion,
   onDelete,
   onSetSelectedPalitraIds,
   onToggleFolderExpanded,
@@ -205,6 +207,7 @@ export function PalitraTable({
         onDownload,
         onRequestPreview,
         onRequestUploadPoints,
+        onRetryConversion,
         onDelete,
         onToggleFolderExpanded,
         onRequestRenameFolder,
@@ -297,7 +300,8 @@ export function PalitraTable({
           (row.original.archiveInFlight ||
             row.original.deleteInFlight ||
             row.original.downloadInFlight ||
-            row.original.uploadInFlight)
+            row.original.uploadInFlight ||
+            row.original.retryInFlight)
             ? 0.6
             : 1,
       },

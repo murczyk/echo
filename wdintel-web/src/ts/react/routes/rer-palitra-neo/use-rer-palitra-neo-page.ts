@@ -63,6 +63,7 @@ export function useRerPalitraNeoPage() {
   const [inFlightDeleteId, setInFlightDeleteId] = useState<number | null>(null);
   const [inFlightDownloadId, setInFlightDownloadId] = useState<number | null>(null);
   const [inFlightUploadId, setInFlightUploadId] = useState<number | null>(null);
+  const [inFlightRetryId, setInFlightRetryId] = useState<number | null>(null);
   const [archiveDialogPalitra, setArchiveDialogPalitra] = useState<Palitra | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [downloadDialogPalitra, setDownloadDialogPalitra] = useState<Palitra | null>(null);
@@ -136,6 +137,7 @@ export function useRerPalitraNeoPage() {
         inFlightDeleteId,
         inFlightDownloadId,
         inFlightUploadId,
+        inFlightRetryId,
         expandedFolderPaths: expandedFolderPathSet,
       }),
     [
@@ -148,6 +150,7 @@ export function useRerPalitraNeoPage() {
       inFlightDeleteId,
       inFlightDownloadId,
       inFlightUploadId,
+      inFlightRetryId,
       expandedFolderPathSet,
     ],
   );
@@ -383,6 +386,7 @@ export function useRerPalitraNeoPage() {
     handleEditSave,
     handleUploadPointsSelected,
     handleKmzSelected,
+    handleRetryConversion,
   } = createPalitraPageActionHandlers({
     user,
     myScope,
@@ -413,6 +417,7 @@ export function useRerPalitraNeoPage() {
     inFlightArchiveId,
     inFlightDeleteId,
     inFlightDownloadId,
+    inFlightRetryId,
     uploadPointsInputRef,
     uploadKmzInputRef,
     pendingUploadPalitraIdRef,
@@ -436,6 +441,7 @@ export function useRerPalitraNeoPage() {
     setInFlightDeleteId,
     setInFlightDownloadId,
     setInFlightUploadId,
+    setInFlightRetryId,
     setArchiveDialogPalitra,
     setArchiveDialogOpen,
     setDownloadDialogPalitra,
@@ -605,6 +611,7 @@ export function useRerPalitraNeoPage() {
     handleEditSave,
     handleUploadPointsSelected,
     handleKmzSelected,
+    handleRetryConversion,
     handleBulkDownload,
     openPreview,
     closePreview,

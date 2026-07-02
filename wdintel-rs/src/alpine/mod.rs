@@ -33,6 +33,13 @@ struct ConversionResult {
     body: Bytes,
     content_type: Option<String>,
     name: Option<String>,
+    receipt: String,
+}
+
+pub struct AlpineConversionOutput {
+    pub body: Bytes,
+    pub name: Option<String>,
+    pub receipt: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -313,11 +320,35 @@ async fn convert_file(
     );
 
     wait_for_completion(env, &receipt, host).await.c(h!())?;
-    let result = download_file(env, &receipt, host, &upload.output_format)
+    let mut result = download_file(env, &receipt, host, &upload.output_format)
         .await
         .c(h!())?;
+    result.receipt = receipt.clone();
     info!("✅ Conversion successful, receipt: {receipt}");
     Ok(result)
+}
+
+pub async fn convert_bytes_to_kmz(
+    env: &Env,
+    file_bytes: Vec<u8>,
+    file_name: Option<String>,
+    content_type: Option<String>,
+) -> anyhow::Result<AlpineConversionOutput> {
+    let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
+    let upload = UploadData {
+        hide_titles: false,
+        file_bytes,
+        field_name: Some("src_file".to_string()),
+        file_name,
+        content_type,
+        output_format: "kmz".to_string(),
+    };
+    let result = convert_file(env, &converter_url, &upload).await.c(h!())?;
+    Ok(AlpineConversionOutput {
+        body: result.body,
+        name: result.name,
+        receipt: result.receipt,
+    })
 }
 
 async fn wait_for_completion(
@@ -421,6 +452,7 @@ async fn download_file(
         body: file_bytes,
         content_type: download_ct,
         name: Some(filename),
+        receipt: String::new(),
     })
 }
 

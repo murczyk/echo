@@ -146,6 +146,7 @@ export function mapFolderNodeToRowView(
     deleteInFlight: false,
     downloadInFlight: false,
     uploadInFlight: false,
+    retryInFlight: false,
     colorHex: null,
     sourceFileName: null,
     lastUploadedAtTs: null,

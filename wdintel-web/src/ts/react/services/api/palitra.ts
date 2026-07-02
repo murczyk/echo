@@ -79,6 +79,16 @@ type PalitraLike = {
   source_file_name?: string | null;
   lastUploadedAtTs?: number | string | null;
   last_uploaded_at_ts?: number | string | null;
+  conversionStatus?: string;
+  conversion_status?: string;
+  sourceFormat?: string | null;
+  source_format?: string | null;
+  conversionError?: string | null;
+  conversion_error?: string | null;
+  missingInGoi?: boolean;
+  missing_in_goi?: boolean;
+  importedFromGoi?: boolean;
+  imported_from_goi?: boolean;
   geometry?: GeometryLike | null;
   accessAorId?: Array<number | string> | null;
   access_aor_id?: Array<number | string> | null;
@@ -235,6 +245,11 @@ function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
     author: raw?.author ?? null,
     sourceFileName: raw?.sourceFileName ?? raw?.source_file_name ?? null,
     lastUploadedAtTs: normalizeOptionalNumber(raw?.lastUploadedAtTs ?? raw?.last_uploaded_at_ts),
+    conversionStatus: raw?.conversionStatus ?? raw?.conversion_status ?? 'ready',
+    sourceFormat: raw?.sourceFormat ?? raw?.source_format ?? null,
+    conversionError: raw?.conversionError ?? raw?.conversion_error ?? null,
+    missingInGoi: raw?.missingInGoi ?? raw?.missing_in_goi ?? false,
+    importedFromGoi: raw?.importedFromGoi ?? raw?.imported_from_goi ?? false,
     geometry: normalizeGeometry(raw?.geometry),
     accessAorId: normalizeNumberArray(raw?.accessAorId ?? raw?.access_aor_id),
     accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
@@ -551,6 +566,11 @@ export async function uploadPalitraPoints(palitraId: number, file: File): Promis
   const formData = new FormData();
   formData.append(file.name, file);
   await postMultipartVoid(`/api/palitra/upload-points/${palitraId}`, formData);
+}
+
+export async function retryPalitraConversion(palitraId: number): Promise<Palitra> {
+  const data = await postJson<PalitraLike>(`/api/palitra/retry-conversion/${palitraId}`);
+  return normalizePalitra(data);
 }
 
 export async function analyzePalitraKmz(file: File): Promise<AnalyzeKmzResponse> {
