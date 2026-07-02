@@ -112,7 +112,7 @@ fn scan_marker_comment(lines: &[&str]) -> Option<String> {
                 block.push(rest);
             }
             for l in &lines[i + 1..] {
-                if l.trim().is_empty() {
+                if is_marker_comment_boundary(l) {
                     break;
                 }
                 block.push(l);
@@ -123,6 +123,14 @@ fn scan_marker_comment(lines: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+fn is_marker_comment_boundary(line: &str) -> bool {
+    let line = line.trim();
+    line.is_empty()
+        || is_header_line(line)
+        || is_datetime_header_line(line)
+        || is_dialog_line(line)
 }
 
 fn parse_top(pre: &[&str]) -> Option<String> {
@@ -266,6 +274,13 @@ mod tests {
         let body = "Дата: 2024-02-21;\nЧастота: 408.500;\nЛокація: Авдіївка;\nПідрозділ: УКХ р/м;\nЧас: 17:28;\nХто: Змей;\nКому: Чёрный;\nТекст:\n- Чёрный я Змей ответь по керосину\n- 3 мсб? правильно?;\n.\nКоментар: ( запит на зв'язок );";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("запит на зв'язок"));
+    }
+
+    #[test]
+    fn buran_empty_comment_marker_stops_at_header_fields() {
+        let body = "Дата: 2024-02-21;\nЧастота: 408.500;\nКоментар:\nПост: Альфа\nКоординати: 48.123, 37.456\nТекст:\n- Чёрный я Змей ответь по керосину\n- 3 мсб? правильно?;";
+        let res = parse_comments(body);
+        assert!(res.is_empty());
     }
 
     #[test]
