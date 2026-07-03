@@ -7,13 +7,9 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import { ELLIPSIS } from '../../../utils/misc';
 
-const autocompleteSpy = vi.fn();
+const powerAutocompleteSpy = vi.fn();
 
 vi.mock('@mui/material', () => ({
-  Autocomplete: (props: unknown) => {
-    autocompleteSpy(props);
-    return <div data-testid="autocomplete" />;
-  },
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Chip: ({ label, title }: { label?: ReactNode; title?: string }) => (
     <div title={title}>{label}</div>
@@ -22,6 +18,13 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children, title }: { children: ReactNode; title?: string }) => (
     <span title={title}>{children}</span>
   ),
+}));
+
+vi.mock('../../../components/PowerAutocomplete', () => ({
+  PowerAutocomplete: (props: unknown) => {
+    powerAutocompleteSpy(props);
+    return <div data-testid="power-autocomplete" />;
+  },
 }));
 
 import { AnalysisFilterField } from './AnalysisFilterField';
@@ -39,13 +42,17 @@ describe('AnalysisFilterField', () => {
   }
 
   function latestAutocompleteProps() {
-    return autocompleteSpy.mock.calls.at(-1)?.[0] as {
+    return powerAutocompleteSpy.mock.calls.at(-1)?.[0] as {
       disableCloseOnSelect?: boolean;
       onChange: (
         _event: unknown,
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
         reason: 'createOption' | 'selectOption' | 'removeOption' | 'blur' | 'clear' | 'escape',
       ) => void;
+      onBulkPasteChange?: (
+        next: Array<{ value: string; label: string; count: number; values: string[] }>,
+      ) => void;
+      bulkPasteSeparators?: string[];
       onInputChange: (
         _event: unknown,
         nextInputValue: string,
@@ -117,6 +124,19 @@ describe('AnalysisFilterField', () => {
     act(() => {
       root.unmount();
     });
+  });
+
+  it('passes bulk paste separators through to PowerAutocomplete', () => {
+    renderFilterField({
+      label: 'Частоти',
+      options: [{ value: '100.0000', label: '100.0000', count: 1 }],
+      value: [],
+      bulkPaste: true,
+      bulkPasteSeparators: [',', '\n'],
+      onChange: vi.fn(),
+    });
+
+    expect(latestAutocompleteProps().bulkPasteSeparators).toEqual([',', '\n']);
   });
 
   it('preserves already selected grouped values when requested', () => {
@@ -340,6 +360,43 @@ describe('AnalysisFilterField', () => {
       props.onClose?.();
     });
     expect(onChange).toHaveBeenCalledWith(['u1', 'u2', 'u3']);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('commits bulk paste immediately even when deferred commit is enabled', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Частоти',
+      options: [
+        { value: '111.1111', label: '111.1111', count: 1 },
+        { value: '222.2222', label: '222.2222', count: 2 },
+      ],
+      value: ['111.1111'],
+      deferredCommit: true,
+      bulkPaste: true,
+      onChange,
+    });
+    const props = latestAutocompleteProps();
+
+    act(() => {
+      props.onOpen?.();
+    });
+    const openedProps = latestAutocompleteProps();
+    act(() => {
+      openedProps.onBulkPasteChange?.([openedProps.options[0], openedProps.options[1]]);
+    });
+
+    expect(onChange).toHaveBeenCalledWith(['111.1111', '222.2222']);
+    expect(latestAutocompleteProps().inputValue).toBe('');
+
+    act(() => {
+      openedProps.onClose?.();
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
 
     act(() => {
       root.unmount();

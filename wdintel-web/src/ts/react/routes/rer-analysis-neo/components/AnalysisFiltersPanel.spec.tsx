@@ -345,6 +345,34 @@ describe('AnalysisFiltersPanel', () => {
     expect(networkField?.disabled).toBe(true);
   });
 
+  it('enables bulk paste only for the frequency filter', async () => {
+    rendered.push(await renderComponent(buildProps()));
+
+    const frequencyField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; bulkPaste?: boolean })
+      .find((callProps) => callProps.label === 'Частоти');
+    const callsignsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; bulkPaste?: boolean })
+      .find((callProps) => callProps.label === 'Позивні');
+    const unitsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; bulkPaste?: boolean })
+      .find((callProps) => callProps.label === 'Підрозділи');
+
+    expect(frequencyField?.bulkPaste).toBe(true);
+    expect(callsignsField?.bulkPaste ?? false).toBe(false);
+    expect(unitsField?.bulkPaste ?? false).toBe(false);
+  });
+
+  it('passes comma and newline separators to the frequency filter bulk paste', async () => {
+    rendered.push(await renderComponent(buildProps()));
+
+    const frequencyField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; bulkPasteSeparators?: string[] })
+      .find((callProps) => callProps.label === 'Частоти');
+
+    expect(frequencyField?.bulkPasteSeparators).toEqual([',', '\n']);
+  });
+
   it('keeps server-backed filter fields interactive while the page reloads', async () => {
     const props = buildProps({
       filtersLoading: true,
@@ -530,8 +558,22 @@ describe('AnalysisFiltersPanel', () => {
         { id: 3, name: 'Вся смуга' },
       ],
       tagsMap: {
-        1: { label: 'Бета', extra: false, ord: null, keywords: null, isPalitra: false, ownerOrganismId: null },
-        2: { label: 'Альфа', extra: false, ord: null, keywords: null, isPalitra: false, ownerOrganismId: null },
+        1: {
+          label: 'Бета',
+          extra: false,
+          ord: null,
+          keywords: null,
+          isPalitra: false,
+          ownerOrganismId: null,
+        },
+        2: {
+          label: 'Альфа',
+          extra: false,
+          ord: null,
+          keywords: null,
+          isPalitra: false,
+          ownerOrganismId: null,
+        },
       } as AnalysisPageState['tagsMap'],
       options: {
         ...buildOptions(),

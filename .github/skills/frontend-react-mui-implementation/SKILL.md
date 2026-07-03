@@ -75,6 +75,9 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
 - Reuse the existing date-picker patterns in `DateTimeRangeControl.tsx` and `NetworkFreqDatePickerField.tsx` instead of adding ad hoc native inputs.
 - Run frontend verification:
+- Format touched frontend files before final verification:
+- `cd wdintel-web && npm run format:staged`
+- Use `npm run format:all` only for intentional whole-tree formatting.
 - `just build-front`
 - Run targeted TS tests if touched:
 - `cd wdintel-web && npm run test:ts`
@@ -102,6 +105,7 @@ if (isUnauthorizedError(error)) {
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
+- Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON/Markdown edits.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Check public URL tab values against internal ids; keep aliases only for intentional legacy compatibility.

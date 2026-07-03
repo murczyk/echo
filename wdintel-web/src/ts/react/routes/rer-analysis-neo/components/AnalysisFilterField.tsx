@@ -1,7 +1,7 @@
-import { Autocomplete, Chip, TextField } from '@mui/material';
-import { Box, Typography } from '@mui/material';
+import { Box, Chip, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { ELLIPSIS } from '../../../utils/misc';
+import { PowerAutocomplete } from '../../../components/PowerAutocomplete';
 
 export type AnalysisFilterOption =
   | string
@@ -31,6 +31,8 @@ type Props = {
   deferredCommit?: boolean;
   preserveSelectionOrder?: boolean;
   preserveSelectedOptionValuesOnChange?: boolean;
+  bulkPaste?: boolean;
+  bulkPasteSeparators?: string[];
   onChange: (next: string[]) => void;
 };
 
@@ -149,6 +151,8 @@ export function AnalysisFilterField({
   deferredCommit = false,
   preserveSelectionOrder = false,
   preserveSelectedOptionValuesOnChange = false,
+  bulkPaste = false,
+  bulkPasteSeparators,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -194,13 +198,22 @@ export function AnalysisFilterField({
     onChange(nextValue);
   };
 
+  const handleBulkPasteChange = (next: AutocompleteOption[]) => {
+    const nextValues = buildCommittedValues(
+      next,
+      effectiveValue,
+      preserveSelectedOptionValuesOnChange,
+    );
+    commitValue(nextValues);
+    clearInputValue();
+  };
+
   const clearInputValue = () => {
     setInputValue('');
   };
 
   return (
-    <Autocomplete<AutocompleteOption, true, false, false>
-      multiple
+    <PowerAutocomplete<AutocompleteOption>
       disableCloseOnSelect
       open={open}
       size="small"
@@ -212,6 +225,9 @@ export function AnalysisFilterField({
       loadingText={`Завантаження${ELLIPSIS}`}
       getOptionLabel={(option) => option.label}
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
+      bulkPaste={bulkPaste}
+      bulkPasteSeparators={bulkPasteSeparators}
+      onBulkPasteChange={bulkPaste ? handleBulkPasteChange : undefined}
       openText="Відкрити"
       closeText="Закрити"
       clearText="Очистити"
