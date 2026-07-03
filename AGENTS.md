@@ -5,6 +5,9 @@
 ## Code style and checking
 
 - keep code formatted with `cargo fmt`
+- keep front-end code formatted with Prettier via `cd wdintel-web && npm run format:staged`
+  after editing TS/TSX/JS/CSS/JSON/Markdown files; use `npm run format:all`
+  only when intentionally formatting the whole front-end tree
 - keep `cargo clippy` clean
 - run `cargo check` for rust check
 - run `just build-front` to build front-end code
