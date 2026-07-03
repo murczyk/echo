@@ -360,6 +360,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
+    loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     applyFilter: feedState.applyFilter,
     addFrequencyToFilter,
     toggleGroup: feedState.toggleGroup,

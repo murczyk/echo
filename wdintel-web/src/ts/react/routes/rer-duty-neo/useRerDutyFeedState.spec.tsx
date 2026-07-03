@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
-import { emptyFilter } from './utils';
+import { DUTY_FEED_MESSAGE_WINDOW_LIMIT, emptyFilter } from './utils';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const hoisted = vi.hoisted(() => ({
@@ -375,6 +375,169 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(70000);
   });
 
+  it('windows initial messages to the newest fixed-size batch', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT + 5 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const ids = apiRef.current!.messageFeeds[0].items.map(([id]) => id);
+    expect(ids).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(ids[0]).toBe(6);
+    expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 5);
+    expect([...apiRef.current!.messageFeeds[0].readIds].sort((a, b) => a - b)[0]).toBe(6);
+  });
+
+  it('prepends older messages and trims the newest side of the fixed window', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 21,
+          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    const ids = feed.items.map(([id]) => id);
+    expect(ids).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(ids[0]).toBe(1);
+    expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(feed.readIds.has(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20)).toBe(true);
+  });
+
+  it('appends newer messages and trims the oldest side of the fixed window', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+        ]),
+      ),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { markAllReadAfterAppend: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    const ids = feed.items.map(([id]) => id);
+    expect(ids).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(ids[0]).toBe(21);
+    expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20);
+    expect(feed.readIds.has(1)).toBe(true);
+    expect(feed.readIds.has(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20)).toBe(true);
+  });
+
+  it('keeps returning seen chunk messages read when scrolling back toward newer messages', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 21,
+          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(60)).toBe(true);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.map(([id]) => id).slice(-3)).toEqual([58, 59, 60]);
+    expect(feed.unreadCount).toBe(0);
+    expect(feed.readIds.has(60)).toBe(true);
+  });
+
   it('does not call get-inbox for newer when column has no items (loadFeedNewerMessages no-op)', async () => {
     hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
@@ -405,6 +568,45 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses automatic newer get-inbox after the current newest cursor is exhausted', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[80, minimalInboxMessage({ timestamp: 8000 })]]),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(80);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(81);
   });
 
   it('does not start a second get-inbox-count for a feed while the first is still in flight', async () => {

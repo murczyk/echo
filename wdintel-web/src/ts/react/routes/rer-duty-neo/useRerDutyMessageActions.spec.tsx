@@ -108,7 +108,6 @@ function buildFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState 
     loading: false,
     loadingOlder: false,
     hasReachedStart: false,
-    firstItemIndex: 0,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     unreadCount: 70000,

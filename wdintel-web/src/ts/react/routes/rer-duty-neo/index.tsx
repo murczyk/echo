@@ -193,6 +193,7 @@ export function RerDutyNeoPage({
     },
     actions: {
       onLoadOlder: () => loadFeedOlderMessages(feed.id),
+      onLoadNewer: () => loadFeedNewerMessages(feed.id, { skipIfNewestExhausted: true }),
       onRemoveColumn: () => removeMessageFeed(feed.id),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
@@ -246,6 +247,7 @@ export function RerDutyNeoPage({
     removeMessageFeed,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
+    loadFeedNewerMessages,
     handleSaveFilter,
     handleApplySavedFilter,
     handleUpdateSelectedSavedFilter,

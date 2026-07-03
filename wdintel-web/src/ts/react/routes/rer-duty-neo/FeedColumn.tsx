@@ -1,7 +1,6 @@
 import { Box } from '@mui/material';
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import type { VirtuosoHandle } from 'react-virtuoso';
 
 import type {
   CallsignInfoRes,
@@ -22,13 +21,13 @@ import {
   setStoredDutyNotificationSettingsForFeed,
 } from './notifications';
 import { FeedColumnHeader } from './FeedColumnHeader';
-import { FeedColumnContent } from './FeedColumnContent';
+import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
 
 export type FeedColumnModel = {
   feed: MessageFeedState;
   view: {
-    /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible Virtuoso min-height. */
+    /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible feed min-height. */
     narrowScreen?: boolean;
     /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
     feedCount?: number;
@@ -62,6 +61,7 @@ export type FeedColumnModel = {
   };
   actions: {
     onLoadOlder: () => void;
+    onLoadNewer?: () => void;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
@@ -75,9 +75,9 @@ export type FeedColumnModel = {
     onReachedBottom?: () => void;
     /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
     onLeftBottom?: () => void;
-    /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
+    /** Called when the scroller enters or leaves the near-bottom pixel zone. Used so polling can load newer messages while the user follows the tail. */
     onNearBottomChange?: (near: boolean) => void;
-    /** Virtuoso pixel at-bottom (see DUTY_FEED_AT_BOTTOM_THRESHOLD_PX); used so auto-scroll follow only runs when the scroller is actually at the bottom. */
+    /** Pixel-level at-bottom state; used so auto-scroll follow only runs when the scroller is actually at the bottom. */
     onAtBottomChange?: (atBottom: boolean) => void;
     onArrowClick?: () => void;
     /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
@@ -136,7 +136,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     },
     [feed.id, bumpNotificationStorageSync],
   );
-  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const contentRef = useRef<FeedColumnContentHandle | null>(null);
   const closeFilters = useCallback(() => {
     setShowFilters(false);
   }, []);
@@ -206,11 +206,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     () => ({
       scrollToEnd() {
         if (feed.items.length === 0) return;
-        virtuosoRef.current?.scrollToIndex({
-          index: feed.items.length - 1,
-          align: 'end',
-          behavior: 'smooth',
-        });
+        contentRef.current?.scrollToBottom('smooth');
       },
     }),
     [feed.items.length],
@@ -255,7 +251,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         notificationStorageSyncKey={notificationStorageSyncKey}
         onNotificationPersisted={bumpNotificationStorageSync}
       />
-      <FeedColumnContent column={column} virtuosoRef={virtuosoRef} />
+      <FeedColumnContent ref={contentRef} column={column} />
     </Box>
   );
 });

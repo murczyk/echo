@@ -1,34 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, forwardRef } from 'react';
-import type { ReactNode } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef(function Virtuoso(
-    {
-      data,
-      itemContent,
-    }: {
-      data?: Array<[number, unknown]>;
-      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-    },
-    ref,
-  ) {
-    return (
-      <div ref={ref} data-testid="virtuoso">
-        {(data ?? []).map((item, index) => (
-          <div key={String(index)}>{itemContent?.(index, item)}</div>
-        ))}
-      </div>
-    );
-  }),
-}));
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -77,7 +56,6 @@ function buildProps(): FeedColumnProps {
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
-        firstItemIndex: 0,
         referenceTimeMs: null,
         readIds: new Set<number>(),
         unreadCount: 0,
@@ -406,6 +384,7 @@ describe('FeedColumn', () => {
       root.render(<FeedColumn column={props.column} />);
     });
 
-    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroller="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-list="true"]')).not.toBeNull();
   });
 });

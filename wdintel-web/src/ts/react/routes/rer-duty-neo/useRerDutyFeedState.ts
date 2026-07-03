@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
-import type {
-  RerDutyQueryStateWf as RerDutyFeedFilterState,
-  SignalGroupEntry,
-  SignalProfileEntry,
-} from '../../../../Bindings';
+import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import {
   fetchInboxCount,
   fetchInboxMessages,
@@ -15,20 +11,19 @@ import {
 } from '../../services/api/inbox';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
+  appendWindowedMessageItems,
   buildInboxReq,
-  dedupeMessageItems,
   emptyFilter,
   findAllAdjacentFreqs,
   getShortStateIdFromUrl,
-  INBOX_COUNT_POLL_INTERVAL_MS,
   parseStateFromUrl,
+  prependWindowedMessageItems,
   pushShortStateToUrl,
   pushStateToUrl,
   stableStringify,
-  sortMessageItemsByTime,
   toRerDutyStateFromShort,
   toShortQueryState,
-  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+  windowInitialMessageItems,
 } from './utils';
 import type { MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
@@ -61,7 +56,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       loading: true,
       loadingOlder: false,
       hasReachedStart: false,
-      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,
@@ -86,9 +80,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
   const scrollToEndAfterNewerRef = useRef<string | null>(null);
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const newestExhaustedCursorByFeedIdRef = useRef<Record<string, number>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, number>>({});
   const lastFilterSignatureByFeedIdRef = useRef<Record<string, string>>({});
-  /** Virtuoso "at bottom" (pixel threshold); used so poll only auto-scrolls when the scroller is actually at the bottom. */
+  /** Pixel-level at-bottom state; used so poll only auto-scrolls when the scroller is actually at the bottom. */
   const atBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const shortStateRef = useRef<{ id: string | null; hash: string | null }>({
     id: null,
@@ -135,6 +130,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       ...loadGenerationByFeedIdRef.current,
       [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
     };
+    delete newestExhaustedCursorByFeedIdRef.current[feedId];
     pendingReloadFeedIdsRef.current = new Set([...pendingReloadFeedIdsRef.current, feedId]);
   }, []);
 
@@ -172,7 +168,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,
-                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
                 referenceTimeMs: null,
                 readIds: new Set<number>(),
                 unreadCount: 0,
@@ -264,16 +259,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         const rsp = await fetchInboxMessages(req);
         if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
         mergeInboxCallsigns(feedId, rsp.callsigns, { replace: true });
-        const deduped = dedupeMessageItems(rsp.inboxItems);
-        const initialReadIds = new Set<number>(deduped.map(([id]) => id));
+        const items = windowInitialMessageItems(rsp.inboxItems);
+        const initialReadIds = new Set<number>(items.map(([id]) => id));
         setMessageFeeds((prev) =>
           prev.map((x) =>
             x.id === feedId
               ? {
                   ...x,
-                  items: sortMessageItemsByTime(deduped),
+                  items,
                   loading: false,
-                  firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
                   referenceTimeMs: Date.now(),
                   readIds: initialReadIds,
                   unreadCount: 0,
@@ -324,21 +318,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         setMessageFeeds((prev) =>
           prev.map((x) => {
             if (x.id !== feedId) return x;
-            const existingIds = new Set(x.items.map(([id]) => id));
-            const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
-            const hasReachedStart = newItems.length === 0;
-            const prevFirst = x.firstItemIndex ?? VIRTUOSO_FIRST_ITEM_INDEX_INITIAL;
-            const firstItemIndex = Math.max(0, prevFirst - newItems.length);
-            const combined = dedupeMessageItems([...newItems, ...x.items]);
-            const olderIds = newItems.map(([id]) => id);
-            const nextReadIds = new Set([...x.readIds, ...olderIds]);
+            const windowed = prependWindowedMessageItems(x.items, rsp.inboxItems);
+            const hasReachedStart = windowed.addedItems.length === 0;
+            const readIdsWithOlder = new Set<number>([
+              ...x.readIds,
+              ...windowed.addedItems.map(([id]) => id),
+            ]);
             return {
               ...x,
-              items: sortMessageItemsByTime(combined),
-              readIds: nextReadIds,
+              items: windowed.items,
+              readIds: readIdsWithOlder,
               loadingOlder: false,
               hasReachedStart,
-              firstItemIndex,
             };
           }),
         );
@@ -359,15 +350,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         nolimit?: boolean;
         scrollToEndAfterLoad?: boolean;
         markAllReadAfterAppend?: boolean;
+        skipIfNewestExhausted?: boolean;
       },
     ) => {
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed || feed.items.length === 0) return;
       const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
+      const lastId = feed.items[feed.items.length - 1][0];
+      if (opts?.skipIfNewestExhausted && newestExhaustedCursorByFeedIdRef.current[feedId] === lastId) {
+        return;
+      }
       loadNewerInFlightRef.current.add(feedId);
       setLoadingNewerFeedId(feedId);
-      const lastId = feed.items[feed.items.length - 1][0];
       try {
         const req = buildReqForFeed(feed, {
           sinceIdNoninclusive: lastId,
@@ -384,42 +379,41 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           });
           setGroupInfos((prev) => ({ ...prev, ...map }));
         }
+        let addedCount = 0;
         if (rsp.inboxItems.length > 0) {
-          const feedNow = messageFeeds.find((x) => x.id === feedId);
-          if (feedNow) {
-            const newItems = rsp.inboxItems.filter(
-              ([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id),
-            );
-            if (newItems.length > 0) {
-              setMessageFeeds((prev) =>
-                prev.map((x) => {
-                  if (x.id !== feedId) return x;
-                  const existingIds = new Set(x.items.map(([id]) => id));
-                  const toAdd = newItems.filter(([id]) => !existingIds.has(id));
-                  if (toAdd.length === 0) return x;
-                  const combined = dedupeMessageItems([...x.items, ...toAdd]);
-                  const markAllRead =
-                    opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
-                  const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
-                  const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, toAdd.length);
-                  delete lastServerCountByFeedIdRef.current[feedId];
-                  return {
-                    ...x,
-                    items: sortMessageItemsByTime(combined),
-                    readIds,
-                    unreadCount,
-                  };
-                }),
-              );
-              if (opts?.scrollToEndAfterLoad === true) {
-                scrollToEndAfterNewerRef.current = feedId;
-                nearBottomByFeedIdRef.current = {
-                  ...nearBottomByFeedIdRef.current,
-                  [feedId]: true,
-                };
-              }
-            }
-          }
+          setMessageFeeds((prev) =>
+            prev.map((x) => {
+              if (x.id !== feedId) return x;
+              const windowed = appendWindowedMessageItems(x.items, rsp.inboxItems);
+              if (windowed.addedItems.length === 0) return x;
+              addedCount = windowed.addedItems.length;
+              const markAllRead =
+                opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+              const unreadAddedCount = windowed.addedItems.filter(([id]) => !x.readIds.has(id)).length;
+              const readIds = markAllRead
+                ? new Set<number>([...x.readIds, ...windowed.items.map(([id]) => id)])
+                : x.readIds;
+              const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, unreadAddedCount);
+              delete newestExhaustedCursorByFeedIdRef.current[feedId];
+              delete lastServerCountByFeedIdRef.current[feedId];
+              return {
+                ...x,
+                items: windowed.items,
+                readIds,
+                unreadCount,
+              };
+            }),
+          );
+        }
+        if (addedCount === 0) {
+          newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
+        }
+        if (addedCount > 0 && opts?.scrollToEndAfterLoad === true) {
+          scrollToEndAfterNewerRef.current = feedId;
+          nearBottomByFeedIdRef.current = {
+            ...nearBottomByFeedIdRef.current,
+            [feedId]: true,
+          };
         }
       } catch {
         // ignore single failure to keep polling and prev messages
@@ -512,9 +506,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         continue;
       }
       if (entry.quantity <= 0) {
+        const feed = messageFeeds.find((item) => item.id === feedId);
+        const lastItem = feed?.items.at(-1);
+        if (isPresent(lastItem)) newestExhaustedCursorByFeedIdRef.current[feedId] = lastItem[0];
         lastServerCountByFeedIdRef.current[feedId] = 0;
         continue;
       }
+      delete newestExhaustedCursorByFeedIdRef.current[feedId];
       const prevServerCount =
         lastServerCountByFeedIdRef.current[feedId] ?? (entry.hasItems ? 0 : null);
       const nextCount = entry.quantity;
@@ -531,6 +529,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           !deps.disableAutoScroll && (watchModeByFeedId[feedId] ?? false) && atBottom;
         await loadFeedNewerMessages(feedId, {
           scrollToEndAfterLoad: shouldFollowScroll,
+          skipIfNewestExhausted: true,
         });
       }
     }

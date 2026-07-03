@@ -27,7 +27,6 @@ function buildFeed(id: string): MessageFeedState {
     loading: true,
     loadingOlder: false,
     hasReachedStart: false,
-    firstItemIndex: 0,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     unreadCount: 0,
