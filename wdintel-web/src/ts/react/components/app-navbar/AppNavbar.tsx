@@ -57,12 +57,16 @@ export function AppNavbar({
 }: AppNavbarProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(null);
+  const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.defaultNeoAnalysis : null
+  );
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (shared?.systemSettings) {
-      setLoadedNeoAnalysis(shared.systemSettings.defaultNeoAnalysis);
+      setLoadedNeoAnalysis((prev) => 
+        prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev
+      );
     }
   }, [shared?.systemSettings]);
 
