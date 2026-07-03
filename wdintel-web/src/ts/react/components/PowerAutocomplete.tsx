@@ -262,13 +262,23 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     });
     onBulkPasteResolved?.(result);
 
+    if (result.added.length === 0) {
+      bulkStateRef.current?.setBulkInputValue(
+        result.missing.length > 0 ? result.missing.join(bulkPasteSeparators[0] ?? ',') : '',
+      );
+      return;
+    }
+
     const nextValue = result.finalValue;
     if (onBulkPasteChange) {
       onBulkPasteChange(nextValue);
     } else {
       onChange?.(null as never, nextValue, 'selectOption', undefined);
     }
-    setBulkInputValue('');
+
+    bulkStateRef.current?.setBulkInputValue(
+      result.missing.length > 0 ? result.missing.join(bulkPasteSeparators[0] ?? ',') : '',
+    );
   };
 
   bulkStateRef.current = {

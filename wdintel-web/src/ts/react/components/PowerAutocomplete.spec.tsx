@@ -382,6 +382,7 @@ describe('PowerAutocomplete', () => {
     const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
     renderPopup();
     const event = pasteBulkValue('111.1111,222.2222');
+    renderPopup();
 
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(onBulkPasteResolved).toHaveBeenCalledWith({
@@ -394,6 +395,44 @@ describe('PowerAutocomplete', () => {
     });
     expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
     expect(getBulkTextField().value).toBe('');
+  });
+
+  it('keeps missing tokens visible after a mixed paste', () => {
+    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
+    renderPopup();
+    const event = pasteBulkValue('111.1111,BAD');
+    renderPopup();
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(onBulkPasteResolved).toHaveBeenCalledWith({
+      tokens: ['111.1111', 'BAD'],
+      found: [options[0]],
+      missing: ['BAD'],
+      added: [options[0]],
+      alreadySelected: [],
+      finalValue: [options[0]],
+    });
+    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0]]);
+    expect(getBulkTextField().value).toBe('BAD');
+  });
+
+  it('keeps all-missing paste visible without changing selection', () => {
+    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
+    renderPopup();
+    const event = pasteBulkValue('BAD,UGLY');
+    renderPopup();
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(onBulkPasteResolved).toHaveBeenCalledWith({
+      tokens: ['BAD', 'UGLY'],
+      found: [],
+      missing: ['BAD', 'UGLY'],
+      added: [],
+      alreadySelected: [],
+      finalValue: [],
+    });
+    expect(onBulkPasteChange).not.toHaveBeenCalled();
+    expect(getBulkTextField().value).toBe('BAD,UGLY');
   });
 
   it('keeps single-token paste visible in the bulk field', () => {
@@ -444,15 +483,18 @@ describe('PowerAutocomplete', () => {
     expect(getBulkTextField().value).toBe('');
   });
 
-  it('preserves existing selections and removes duplicates', () => {
+  it('preserves existing selections and leaves missing tokens visible', () => {
     const { onBulkPasteChange } = renderAutocomplete({
       bulkPaste: true,
       value: [options[0]],
     });
     renderPopup();
-    pasteBulkValue('111.1111,111.1111,222.2222');
+    const event = pasteBulkValue('111.1111,111.1111,BAD');
+    renderPopup();
 
-    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(onBulkPasteChange).not.toHaveBeenCalled();
+    expect(getBulkTextField().value).toBe('BAD');
   });
 
   it('does not select fuzzy matches', () => {
