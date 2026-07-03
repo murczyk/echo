@@ -1,8 +1,8 @@
-import { Autocomplete, Box, Paper, TextField } from '@mui/material';
+import { Autocomplete, Box, Paper, Popper, TextField } from '@mui/material';
 import type { AutocompleteCloseReason, AutocompleteProps } from '@mui/material/Autocomplete';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ClipboardEvent } from 'react';
-import type { HTMLAttributes } from 'react';
+import type { PopperProps } from '@mui/material/Popper';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent, ReactNode } from 'react';
 
 type BulkPasteResolution<T> = {
   tokens: string[];
@@ -151,10 +151,6 @@ function eventTargetIsInside(target: EventTarget | null, element: HTMLElement | 
   }
 }
 
-function isBulkPasteActiveElementInListbox(listboxRef: { current: HTMLElement | null }): boolean {
-  return listboxRef.current?.contains(document.activeElement) ?? false;
-}
-
 function mergeBulkSelection<T>(
   currentValue: readonly T[],
   matchedOptions: T[],
@@ -225,6 +221,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     onBulkPasteChange,
     onBulkPasteResolved,
     PaperComponent,
+    PopperComponent,
     renderInput,
     ...autocompleteProps
   } = props;
@@ -236,7 +233,6 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const getOptionLabel = autocompleteProps.getOptionLabel;
   const isOptionEqualToValue = autocompleteProps.isOptionEqualToValue;
   const onChange = autocompleteProps.onChange;
-  const unstableIsActiveElementInListbox = autocompleteProps.unstable_isActiveElementInListbox;
   const selectedValue = value ?? [];
   const optionLabel = getOptionLabel ?? (() => '');
   const bulkPasteLabel = getBulkPasteOptionLabel ?? optionLabel;
@@ -316,55 +312,69 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     bulkState.processBulkPaste(pastedValue);
   };
 
-  const BulkPastePaper = useMemo(
+  const BulkPastePopper = useMemo(
     () =>
-      function BulkPastePaper(paperProps: HTMLAttributes<HTMLElement>) {
+      forwardRef<HTMLDivElement, PopperProps>(function BulkPastePopper(popperProps, ref) {
         const bulkState = bulkStateRef.current;
-        if (!bulkPaste || !bulkState) {
-          return <Paper {...paperProps} />;
+        if (!bulkState) {
+          return <Popper {...popperProps} ref={ref} />;
         }
+        const { children, ...popperPropsRest } = popperProps;
+        const popperChildren = children as ReactNode;
 
         return (
-          <Paper
-            {...paperProps}
-            ref={bulkPastePaperRef}
-            elevation={8}
-            sx={{
-              overflow: 'hidden',
-              backgroundColor: 'background.paper',
-              color: 'text.primary',
-              border: 1,
-              borderColor: 'divider',
-            }}
-          >
-            <Box
-              ref={bulkPasteContainerRef}
-              data-bulk-paste-container="true"
-              sx={{
-                p: 1,
-                borderBottom: 1,
-                borderColor: 'divider',
-                backgroundColor: 'background.paper',
-              }}
-            >
-              <TextField
-                size="small"
-                value={bulkState.bulkInputValue}
-                placeholder={bulkState.placeholder}
-                onPaste={handleBulkInputPaste}
-                onChange={(event) => bulkState.setBulkInputValue(event.target.value)}
-                inputProps={{
-                  onPaste: handleBulkInputPaste,
+          <Popper {...popperPropsRest} ref={ref}>
+            <Box ref={bulkPastePaperRef}>
+              <Paper
+                elevation={8}
+                sx={{
+                  overflow: 'hidden',
+                  backgroundColor: 'background.paper',
+                  color: 'text.primary',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderBottom: 0,
+                  borderBottomLeftRadius: 0,
+                  borderBottomRightRadius: 0,
                 }}
-                disabled={bulkState.loading}
-                fullWidth
-              />
+              >
+                <Box
+                  ref={bulkPasteContainerRef}
+                  data-bulk-paste-container="true"
+                  sx={{
+                    p: 1,
+                    backgroundColor: 'background.paper',
+                  }}
+                >
+                  <TextField
+                    size="small"
+                    value={bulkState.bulkInputValue}
+                    placeholder={bulkState.placeholder}
+                    onPaste={handleBulkInputPaste}
+                    onChange={(event) => bulkState.setBulkInputValue(event.target.value)}
+                    inputProps={{
+                      onPaste: handleBulkInputPaste,
+                    }}
+                    disabled={bulkState.loading}
+                    fullWidth
+                  />
+                </Box>
+              </Paper>
+              <Box
+                sx={{
+                  '& .MuiAutocomplete-paper': {
+                    borderTopLeftRadius: 0,
+                    borderTopRightRadius: 0,
+                  },
+                }}
+              >
+                {popperChildren}
+              </Box>
             </Box>
-            {paperProps.children}
-          </Paper>
+          </Popper>
         );
-      },
-    [bulkPaste, bulkPasteSeparators],
+      }),
+    [bulkPasteSeparators],
   );
 
   const handleClose = (event: unknown, reason: AutocompleteCloseReason) => {
@@ -405,11 +415,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
         multiple
         {...autocompletePropsWithoutClose}
         onClose={handleClose}
-        unstable_isActiveElementInListbox={
-          bulkPaste ? isBulkPasteActiveElementInListbox : unstableIsActiveElementInListbox
-        }
         renderInput={renderInput}
-        PaperComponent={bulkPaste ? BulkPastePaper : PaperComponent}
+        PaperComponent={PaperComponent}
+        PopperComponent={bulkPaste ? BulkPastePopper : PopperComponent}
       />
     </Box>
   );
