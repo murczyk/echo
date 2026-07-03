@@ -16,6 +16,40 @@ import {
 import { parseUtcDateTime } from '../../services/api/report-history';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
+const TRANSLATIONS = {
+  pageTitle: 'Загублені повідомлення',
+  resolveManually: 'Відновити вручну',
+  messageId: 'ID повідомлення',
+  body: 'Текст повідомлення',
+  status: 'Статус',
+  createdAt: 'Створено',
+  isResolved: 'Відновлено',
+  resolvedAt: 'Час відновлення',
+  scheduledBy: 'Запланував',
+  error: 'Помилка',
+  schedule: 'Запланувати',
+  scheduled: 'Заплановано',
+  yes: 'так',
+  no: 'ні',
+  refresh: 'Оновити',
+  statusPending: 'очікує',
+  statusScheduled: 'заплановано',
+  statusError: 'помилка',
+  statusResolved: 'відновлено',
+} as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: TRANSLATIONS.statusPending,
+  scheduled: TRANSLATIONS.statusScheduled,
+  error: TRANSLATIONS.statusError,
+  resolved: TRANSLATIONS.statusResolved,
+};
+
+const STATUS_FILTER_OPTIONS = Object.values(STATUS_LABELS).map((label) => ({
+  text: label,
+  value: label,
+}));
+
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -38,6 +72,10 @@ function statusChipColor(status: string): ChipProps['color'] {
   return 'default';
 }
 
+function formatStatus(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
 type MissingMessageTableProps = {
   rows: EchoMissingMessageRow[];
   loading: boolean;
@@ -57,16 +95,14 @@ function MissingMessageTable({
     () => [
       {
         id: 'resolveManually',
-        header: 'Resolve Manually',
+        header: TRANSLATIONS.resolveManually,
         size: 180,
         enableSorting: false,
         enableColumnFilter: false,
         Cell: ({ row }) => {
           const item = row.original;
           const disabled =
-            item.isResolved ||
-            item.status === 'scheduled' ||
-            resolvingIds.has(item.id);
+            item.isResolved || item.status === 'scheduled' || resolvingIds.has(item.id);
           return (
             <Button
               size="small"
@@ -75,19 +111,19 @@ function MissingMessageTable({
               disabled={disabled}
               onClick={() => onResolve(item.id)}
             >
-              {item.status === 'scheduled' ? 'заплановано' : 'запланувати'}
+              {item.status === 'scheduled' ? TRANSLATIONS.scheduled : TRANSLATIONS.schedule}
             </Button>
           );
         },
       },
       {
         accessorKey: 'messageId',
-        header: 'Message ID',
+        header: TRANSLATIONS.messageId,
         size: 120,
       },
       {
         accessorKey: 'body',
-        header: 'Body',
+        header: TRANSLATIONS.body,
         size: 420,
         Cell: ({ cell }) => (
           <Typography
@@ -107,15 +143,18 @@ function MissingMessageTable({
         ),
       },
       {
-        accessorKey: 'status',
-        header: 'Status',
+        id: 'status',
+        header: TRANSLATIONS.status,
+        accessorFn: (row) => formatStatus(row.status),
+        filterVariant: 'select',
+        filterSelectOptions: STATUS_FILTER_OPTIONS,
         size: 130,
-        Cell: ({ cell }) => {
-          const status = cell.getValue<string>();
+        Cell: ({ row }) => {
+          const status = row.original.status;
           return (
             <Chip
               size="small"
-              label={status}
+              label={formatStatus(status)}
               color={statusChipColor(status)}
               variant={status === 'pending' ? 'outlined' : 'filled'}
             />
@@ -124,31 +163,31 @@ function MissingMessageTable({
       },
       {
         accessorKey: 'createdAt',
-        header: 'Created At',
+        header: TRANSLATIONS.createdAt,
         size: 180,
         Cell: ({ cell }) => formatDateTime(cell.getValue<string>()),
       },
       {
         accessorKey: 'isResolved',
-        header: 'Resolved',
+        header: TRANSLATIONS.isResolved,
         size: 120,
-        Cell: ({ cell }) => (cell.getValue<boolean>() ? 'так' : 'ні'),
+        Cell: ({ cell }) => (cell.getValue<boolean>() ? TRANSLATIONS.yes : TRANSLATIONS.no),
       },
       {
         accessorKey: 'resolvedAt',
-        header: 'Resolved At',
+        header: TRANSLATIONS.resolvedAt,
         size: 180,
         Cell: ({ cell }) => formatDateTime(cell.getValue<string | null>()),
       },
       {
         accessorKey: 'scheduledBy',
-        header: 'Scheduled By',
+        header: TRANSLATIONS.scheduledBy,
         size: 160,
         Cell: ({ cell }) => cell.getValue<string | null>() ?? '',
       },
       {
         accessorKey: 'error',
-        header: 'Error',
+        header: TRANSLATIONS.error,
         size: 360,
         Cell: ({ cell }) => (
           <Typography
@@ -200,13 +239,13 @@ function MissingMessageTable({
         toolbarFiltersHidden
         toolbarFullScreenEnabled
         toolbarAdditionalActions={
-          <Tooltip title="Оновити">
+          <Tooltip title={TRANSLATIONS.refresh}>
             <span>
               <IconButton
                 size="small"
                 onClick={onRefresh}
                 disabled={loading}
-                aria-label="Оновити"
+                aria-label={TRANSLATIONS.refresh}
               >
                 <RefreshIcon fontSize="small" />
               </IconButton>
@@ -224,9 +263,7 @@ export function AdminEchoMissingMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [resolvingIds, setResolvingIds] = useState<Set<number>>(
-    () => new Set(),
-  );
+  const [resolvingIds, setResolvingIds] = useState<Set<number>>(() => new Set());
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -234,9 +271,7 @@ export function AdminEchoMissingMessagesPage() {
     try {
       setRows(await listEchoMissingMessages());
     } catch (error) {
-      setLoadError(
-        `Помилка завантаження відсутніх повідомлень: ${formatErrorMessage(error)}`,
-      );
+      setLoadError(`Помилка завантаження відсутніх повідомлень: ${formatErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }
@@ -253,9 +288,7 @@ export function AdminEchoMissingMessagesPage() {
       const row = await resolveEchoMissingMessage(id);
       setRows((prev) => prev.map((item) => (item.id === row.id ? row : item)));
     } catch (error) {
-      setActionError(
-        `Помилка планування відновлення: ${formatErrorMessage(error)}`,
-      );
+      setActionError(`Помилка планування відновлення: ${formatErrorMessage(error)}`);
     } finally {
       setResolvingIds((prev) => {
         const next = new Set(prev);
@@ -268,11 +301,9 @@ export function AdminEchoMissingMessagesPage() {
   return (
     <Box className="w-full h-full min-h-0">
       <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-        <PageHeader title="Відсутні Echo IM повідомлення" />
+        <PageHeader title={TRANSLATIONS.pageTitle} />
         {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-        {actionError ? (
-          <PowerAlert severity="error">{actionError}</PowerAlert>
-        ) : null}
+        {actionError ? <PowerAlert severity="error">{actionError}</PowerAlert> : null}
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <MissingMessageTable
             rows={rows}
