@@ -25,6 +25,7 @@ type TextFieldProps = {
 };
 
 type PaperComponent = (props: { children?: ReactNode }) => ReactNode;
+type PopperComponent = (props: { children?: ReactNode }) => ReactNode;
 type BoxProps = {
   onMouseDown?: (event: { preventDefault: () => void }) => void;
   children?: ReactNode;
@@ -33,6 +34,7 @@ type BoxProps = {
 
 let latestAutocompleteProps: {
   PaperComponent?: PaperComponent;
+  PopperComponent?: PopperComponent;
   renderInput?: (params: unknown) => ReactNode;
   value?: unknown;
   loading?: boolean;
@@ -40,7 +42,6 @@ let latestAutocompleteProps: {
   isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
   onChange?: (...args: unknown[]) => void;
   onClose?: (event: unknown, reason: string) => void;
-  unstable_isActiveElementInListbox?: (listbox: { current: HTMLElement | null }) => boolean;
 } | null = null;
 let latestRenderInputParams: { inputProps?: { onPaste?: (event: unknown) => void } } | null = null;
 let textFieldProps: TextFieldProps[] = [];
@@ -49,6 +50,7 @@ let boxProps: BoxProps[] = [];
 vi.mock('@mui/material', () => ({
   Autocomplete: (props: {
     PaperComponent?: PaperComponent;
+    PopperComponent?: PopperComponent;
     renderInput?: (params: unknown) => ReactNode;
     value?: unknown;
     loading?: boolean;
@@ -56,7 +58,6 @@ vi.mock('@mui/material', () => ({
     isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
     onChange?: (...args: unknown[]) => void;
     onClose?: (event: unknown, reason: string) => void;
-    unstable_isActiveElementInListbox?: (listbox: { current: HTMLElement | null }) => boolean;
   }) => {
     latestAutocompleteProps = props;
     latestRenderInputParams = { inputProps: {} };
@@ -71,6 +72,9 @@ vi.mock('@mui/material', () => ({
     );
   }),
   Paper: forwardRef<HTMLDivElement, { children: ReactNode }>((props, ref) => (
+    <div ref={ref}>{props.children}</div>
+  )),
+  Popper: forwardRef<HTMLDivElement, { children?: ReactNode }>((props, ref) => (
     <div ref={ref}>{props.children}</div>
   )),
   TextField: (props: TextFieldProps) => {
@@ -151,15 +155,15 @@ function renderAutocomplete(overrides: Record<string, unknown> = {}) {
 }
 
 function renderPopup(children: ReactNode = <ul data-testid="options" />) {
-  const PaperComponent = latestAutocompleteProps?.PaperComponent;
-  if (!PaperComponent) throw new Error('PaperComponent not available');
+  const PopperComponent = latestAutocompleteProps?.PopperComponent;
+  if (!PopperComponent) throw new Error('PopperComponent not available');
 
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
   act(() => {
-    root.render(createElement(PaperComponent, null, children));
+    root.render(createElement(PopperComponent, null, children));
   });
 
   rendered.push({ root, container });
@@ -228,14 +232,37 @@ describe('PowerAutocomplete', () => {
     expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
   });
 
-  it('uses the bulk paste paper when bulk paste is enabled', () => {
+  it('forwards a caller paper component when bulk paste is enabled', () => {
     const callerPaperComponent = vi.fn(({ children }: { children: ReactNode }) => (
       <div>{children}</div>
     ));
 
     renderAutocomplete({ bulkPaste: true, PaperComponent: callerPaperComponent });
 
-    expect(latestAutocompleteProps?.PaperComponent).not.toBe(callerPaperComponent);
+    expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
+  });
+
+  it('forwards a caller popper component when bulk paste is disabled', () => {
+    const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
+      <div>{children}</div>
+    ));
+
+    renderAutocomplete({ bulkPaste: false, PopperComponent: callerPopperComponent });
+
+    expect(latestAutocompleteProps?.PopperComponent).toBe(callerPopperComponent);
+  });
+
+  it('composes the caller popper component when bulk paste is enabled', () => {
+    const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
+      <div>{children}</div>
+    ));
+
+    renderAutocomplete({ bulkPaste: true, PopperComponent: callerPopperComponent });
+    renderPopup();
+
+    expect(latestAutocompleteProps?.PopperComponent).not.toBe(callerPopperComponent);
+    expect(callerPopperComponent).toHaveBeenCalledTimes(1);
+    expect(textFieldProps).toHaveLength(1);
   });
 
   it('forwards controlled autocomplete props to MUI', () => {
@@ -259,41 +286,10 @@ describe('PowerAutocomplete', () => {
     expect(latestAutocompleteProps?.onChange).toBe(onChange);
   });
 
-  it('overrides active-element-in-listbox check in bulk mode', () => {
+  it('does not forward the unstable active-element-in-listbox prop in bulk mode', () => {
     renderAutocomplete({ bulkPaste: true });
 
-    const bulkInput = document.createElement('input');
-    const listbox = document.createElement('div');
-    const listboxOption = document.createElement('button');
-    listbox.appendChild(listboxOption);
-    document.body.appendChild(bulkInput);
-    document.body.appendChild(listbox);
-
-    bulkInput.focus();
-    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox?.({ current: listbox })).toBe(
-      false,
-    );
-
-    listboxOption.focus();
-    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox?.({ current: listbox })).toBe(
-      true,
-    );
-
-    bulkInput.remove();
-    listbox.remove();
-  });
-
-  it('forwards caller active-element-in-listbox check when bulk paste is disabled', () => {
-    const unstable_isActiveElementInListbox = vi.fn(() => true);
-
-    renderAutocomplete({
-      bulkPaste: false,
-      unstable_isActiveElementInListbox,
-    });
-
-    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox).toBe(
-      unstable_isActiveElementInListbox,
-    );
+    expect('unstable_isActiveElementInListbox' in (latestAutocompleteProps ?? {})).toBe(false);
   });
 
   it('does not block mousedown on the bulk field wrapper', () => {
