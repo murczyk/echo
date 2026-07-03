@@ -251,9 +251,14 @@ where
         .context(h!())?;
     let q = add_inbox_message_columns(q);
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
+    let owner_organism_id =
+        crate::tags::query::current_user_organism_id(dbx, login)
+            .await
+            .c(h!())?;
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
+        .join(JoinType::InnerJoin, sigint_inbox_item_tag::Relation::Tag.def())
         .join(JoinType::LeftJoin, sigint_inbox_item_tag::Relation::Login.def())
         .expr_as(
             Expr::cust_with_exprs(
@@ -321,6 +326,9 @@ where
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
+        .filter(crate::tags::query::accessible_tag_condition(
+            owner_organism_id,
+        ))
         .apply_if(
             req.without_model_tags.and_then(|flag| {
                 if flag {

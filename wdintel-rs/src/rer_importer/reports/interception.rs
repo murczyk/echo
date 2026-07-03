@@ -354,6 +354,17 @@ async fn build_inbox_messages_report_sql(
     let logins = crate::users::get_organism_logins_by_login(&read_db, login)
         .await
         .context(h!())?;
+    let owner_organism_id =
+        crate::tags::query::current_user_organism_id(&read_db, login)
+            .await
+            .c(h!())?;
+    let mut visible_tag_query = Query::select();
+    visible_tag_query
+        .column(tag::Column::Id)
+        .from(tag::Entity)
+        .cond_where(crate::tags::query::accessible_tag_condition(
+            owner_organism_id,
+        ));
     let report_tags_only_this_unit =
         req.report_tags_only_this_unit == Some(true);
     let logins2 = logins.clone();
@@ -378,6 +389,13 @@ async fn build_inbox_messages_report_sql(
             ))
             .gte(TAG_MINIMUM_CONFIDENCE)
             .into_condition();
+            condition = condition.add(
+                Expr::col((
+                    right.clone(),
+                    sigint_inbox_item_tag::Column::TagId,
+                ))
+                .in_subquery(visible_tag_query.clone()),
+            );
             if report_tags_only_this_unit {
                 condition = condition.add(
                     Expr::col((right, sigint_inbox_item_tag::Column::Login))

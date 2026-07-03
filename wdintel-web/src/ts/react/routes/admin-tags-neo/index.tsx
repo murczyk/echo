@@ -78,6 +78,7 @@ function buildTagLoadingRows(): TagAdmin[] {
     enabled: false,
     keywords: [],
     isPalitra: false,
+    ownerOrganismId: null,
   }));
 }
 

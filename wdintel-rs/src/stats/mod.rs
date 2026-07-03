@@ -1083,6 +1083,7 @@ pub async fn read_callsign_stats_aggregated(
 
 pub async fn read_tag_stats_aggregated(
     env: &actix_web::web::Data<Env>,
+    login: &str,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
@@ -1102,6 +1103,22 @@ pub async fn read_tag_stats_aggregated(
         .await
         .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    let owner_organism_id =
+        crate::tags::query::current_user_organism_id(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let accessible_tag_ids: HashSet<i64> = tag::Entity::find()
+        .filter(crate::tags::query::accessible_tag_condition(
+            owner_organism_id,
+        ))
+        .select_only()
+        .column(tag::Column::Id)
+        .into_tuple::<i64>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect();
 
     let mut stats: HashMap<i64, i64> = stats_group_tag_5min::Entity::find()
         .filter(interval_5mins_filter)
@@ -1140,7 +1157,9 @@ pub async fn read_tag_stats_aggregated(
     };
     let mut result = vec![];
     for (tag_id, count) in stats {
-        result.push(AnalysisStatsTag { tag_id, count });
+        if accessible_tag_ids.contains(&tag_id) {
+            result.push(AnalysisStatsTag { tag_id, count });
+        }
     }
     Ok(result)
 }

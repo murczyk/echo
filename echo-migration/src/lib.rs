@@ -276,6 +276,7 @@ mod m20260702_145245_create_sigint_comment;
 mod m20260702_155737_echo_im_sync_since;
 mod m20260702_173206_echo_missing_messages;
 mod m20260702_192716_signal_message_echo_inbox_message_id;
+mod m20260703_095738_add_organism_to_tags;
 
 pub struct Migrator;
 
@@ -523,9 +524,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260507_151045_add_palitra_goi_sync_job::Migration),
             Box::new(m20260510_101006_operator_dmr_metadata::Migration),
             Box::new(m20260511_145205_delta_login_lower_unique::Migration),
-            Box::new(
-                m20260513_102326_add_sigint_network_description_topic::Migration,
-            ),
+            Box::new(m20260513_102326_add_sigint_network_description_topic::Migration),
             Box::new(m20260702_145245_create_sigint_comment::Migration),
             Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
             Box::new(
@@ -534,8 +533,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
             Box::new(m20260529_110000_add_short_url_to_admin_config::Migration),
-            Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260601_000000_add_release_news_viewed::Migration),
+            Box::new(m20260602_153344_add_signal_group_admin::Migration),
             Box::new(m20260605_162305_echo_swapp_sync_state::Migration),
             Box::new(m20260609_115925_add_api_integration::Migration),
             Box::new(m20260610_123823_add_api_integration_sync::Migration),
@@ -575,6 +574,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260702_192716_signal_message_echo_inbox_message_id::Migration,
             ),
+            Box::new(m20260703_095738_add_organism_to_tags::Migration),
         ]
     }
 }

@@ -151,6 +151,7 @@ async fn get_tags_to_predict<C: ConnectionTrait>(
         .column(tag::Column::Label)
         .column(tag::Column::Id)
         .filter(tag::Column::Enabled.eq(true))
+        .filter(tag::Column::OwnerOrganismId.is_null())
         .into_tuple::<(String, i64)>()
         .all(dbx)
         .await

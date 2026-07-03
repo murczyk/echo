@@ -19,10 +19,19 @@ pub struct Model {
     pub title: Option<String>,
     pub enabled: bool,
     pub is_palitra: bool,
+    pub owner_organism_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::organism::Entity",
+        from = "Column::OwnerOrganismId",
+        to = "super::organism::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Organism,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -33,6 +42,12 @@ pub enum Relation {
     StatsGroupTagDay,
     #[sea_orm(has_many = "super::tag_keyword::Entity")]
     TagKeyword,
+}
+
+impl Related<super::organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organism.def()
+    }
 }
 
 impl Related<super::sigint_inbox_item_tag::Entity> for Entity {

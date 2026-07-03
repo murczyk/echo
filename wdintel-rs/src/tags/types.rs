@@ -12,6 +12,7 @@ pub struct Tag {
     pub ord: Option<f64>,
     pub keywords: Option<Vec<TagKeyword>>,
     pub is_palitra: bool,
+    pub owner_organism_id: Option<i64>,
 }
 
 #[derive(
@@ -25,6 +26,7 @@ pub struct TagAdmin {
     pub enabled: bool,
     pub keywords: Vec<TagKeyword>,
     pub is_palitra: bool,
+    pub owner_organism_id: Option<i64>,
 }
 
 #[derive(
@@ -36,6 +38,7 @@ pub struct TagUpsertReq {
     pub ord: Option<f64>,
     pub enabled: bool,
     pub is_palitra: bool,
+    pub owner_organism_id: Option<i64>,
 }
 
 #[derive(

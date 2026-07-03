@@ -93,10 +93,11 @@ function buildUpsertRequest(form: TagFormState): {
     errors: {},
     req: {
       label,
-      extra: form.extra ? true : null,
+      extra: form.extra,
       ord: ordValue,
       enabled: form.enabled,
       isPalitra: form.isPalitra,
+      ownerOrganismId: null,
     },
   };
 }

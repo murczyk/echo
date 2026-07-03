@@ -1877,6 +1877,7 @@ export type Tag = {
   ord: number | null;
   keywords: Array<TagKeyword> | null;
   isPalitra: boolean;
+  ownerOrganismId: number | null;
 };
 
 export type TagKeyword = {
@@ -1902,6 +1903,7 @@ export type TagAdmin = {
   enabled: boolean;
   keywords: Array<TagKeyword>;
   isPalitra: boolean;
+  ownerOrganismId: number | null;
 };
 
 export type TagUpsertReq = {
@@ -1910,6 +1912,7 @@ export type TagUpsertReq = {
   ord: number | null;
   enabled: boolean;
   isPalitra: boolean;
+  ownerOrganismId: number | null;
 };
 
 export type InboxMessageTagsAddReq = {
