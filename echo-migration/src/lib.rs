@@ -276,7 +276,7 @@ mod m20260702_145245_create_sigint_comment;
 mod m20260702_155737_echo_im_sync_since;
 mod m20260702_173206_echo_missing_messages;
 mod m20260702_192716_signal_message_echo_inbox_message_id;
-mod m20260701_155738_add_organism_to_tags;
+mod m20260703_095738_add_organism_to_tags;
 
 pub struct Migrator;
 
@@ -574,7 +574,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260702_192716_signal_message_echo_inbox_message_id::Migration,
             ),
-            Box::new(m20260701_155738_add_organism_to_tags::Migration),
+            Box::new(m20260703_095738_add_organism_to_tags::Migration),
         ]
     }
 }
