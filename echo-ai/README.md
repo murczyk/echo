@@ -31,6 +31,14 @@ journalctl --user -u echo-ai-train -f
 # one time setup requires Tailscale and SSH access
 cd echo-ai
 ssh echo@ct-echo-kherson2-dev.alpines-banded.ts.net "bash -s" -- < db-ct.sh $(tailscale ip -4)
+
+# Re-registering access after a major PostgreSQL upgrade (e.g. to PG 18)
+# pg_upgrade writes a fresh config, dropping listen_addresses / pg_hba.conf entries,
+# so echo-ai-train can no longer connect. pg-access.sh re-runs itself on echo-ai-train
+# (so the hop to the DB servers uses the keys stored there, not ProxyJump),
+# auto-detects the running cluster/version, and re-adds echo-ai-train's tailscale IP.
+# Run it via just (jump server defaults to echo-ai-train):
+just setup-echo-ai-train-db ct-echo-kherson2-dev.alpines-banded.ts.net echo-skhid-dev.serengeti-porbeagle.ts.net
 ```
 
 `echo-ai-train.service` is also started using `echo-ai-train.timer`.
