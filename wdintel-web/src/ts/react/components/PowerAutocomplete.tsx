@@ -151,6 +151,10 @@ function eventTargetIsInside(target: EventTarget | null, element: HTMLElement | 
   }
 }
 
+function isBulkPasteActiveElementInListbox(listboxRef: { current: HTMLElement | null }): boolean {
+  return listboxRef.current?.contains(document.activeElement) ?? false;
+}
+
 function mergeBulkSelection<T>(
   currentValue: readonly T[],
   matchedOptions: T[],
@@ -232,6 +236,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const getOptionLabel = autocompleteProps.getOptionLabel;
   const isOptionEqualToValue = autocompleteProps.isOptionEqualToValue;
   const onChange = autocompleteProps.onChange;
+  const unstableIsActiveElementInListbox = autocompleteProps.unstable_isActiveElementInListbox;
   const selectedValue = value ?? [];
   const optionLabel = getOptionLabel ?? (() => '');
   const bulkPasteLabel = getBulkPasteOptionLabel ?? optionLabel;
@@ -400,6 +405,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
         multiple
         {...autocompletePropsWithoutClose}
         onClose={handleClose}
+        unstable_isActiveElementInListbox={
+          bulkPaste ? isBulkPasteActiveElementInListbox : unstableIsActiveElementInListbox
+        }
         renderInput={renderInput}
         PaperComponent={bulkPaste ? BulkPastePaper : PaperComponent}
       />

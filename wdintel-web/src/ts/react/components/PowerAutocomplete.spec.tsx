@@ -40,6 +40,7 @@ let latestAutocompleteProps: {
   isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
   onChange?: (...args: unknown[]) => void;
   onClose?: (event: unknown, reason: string) => void;
+  unstable_isActiveElementInListbox?: (listbox: { current: HTMLElement | null }) => boolean;
 } | null = null;
 let latestRenderInputParams: { inputProps?: { onPaste?: (event: unknown) => void } } | null = null;
 let textFieldProps: TextFieldProps[] = [];
@@ -55,6 +56,7 @@ vi.mock('@mui/material', () => ({
     isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
     onChange?: (...args: unknown[]) => void;
     onClose?: (event: unknown, reason: string) => void;
+    unstable_isActiveElementInListbox?: (listbox: { current: HTMLElement | null }) => boolean;
   }) => {
     latestAutocompleteProps = props;
     latestRenderInputParams = { inputProps: {} };
@@ -255,6 +257,43 @@ describe('PowerAutocomplete', () => {
     expect(latestAutocompleteProps?.getOptionLabel).toBe(getOptionLabel);
     expect(latestAutocompleteProps?.isOptionEqualToValue).toBe(isOptionEqualToValue);
     expect(latestAutocompleteProps?.onChange).toBe(onChange);
+  });
+
+  it('overrides active-element-in-listbox check in bulk mode', () => {
+    renderAutocomplete({ bulkPaste: true });
+
+    const bulkInput = document.createElement('input');
+    const listbox = document.createElement('div');
+    const listboxOption = document.createElement('button');
+    listbox.appendChild(listboxOption);
+    document.body.appendChild(bulkInput);
+    document.body.appendChild(listbox);
+
+    bulkInput.focus();
+    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox?.({ current: listbox })).toBe(
+      false,
+    );
+
+    listboxOption.focus();
+    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox?.({ current: listbox })).toBe(
+      true,
+    );
+
+    bulkInput.remove();
+    listbox.remove();
+  });
+
+  it('forwards caller active-element-in-listbox check when bulk paste is disabled', () => {
+    const unstable_isActiveElementInListbox = vi.fn(() => true);
+
+    renderAutocomplete({
+      bulkPaste: false,
+      unstable_isActiveElementInListbox,
+    });
+
+    expect(latestAutocompleteProps?.unstable_isActiveElementInListbox).toBe(
+      unstable_isActiveElementInListbox,
+    );
   });
 
   it('does not block mousedown on the bulk field wrapper', () => {
