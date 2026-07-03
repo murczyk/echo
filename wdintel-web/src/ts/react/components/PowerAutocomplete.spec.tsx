@@ -252,14 +252,17 @@ describe('PowerAutocomplete', () => {
     expect(latestAutocompleteProps?.PopperComponent).toBe(callerPopperComponent);
   });
 
-  it('uses the bulk paste popper when bulk paste is enabled', () => {
+  it('composes the caller popper component when bulk paste is enabled', () => {
     const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
       <div>{children}</div>
     ));
 
     renderAutocomplete({ bulkPaste: true, PopperComponent: callerPopperComponent });
+    renderPopup();
 
     expect(latestAutocompleteProps?.PopperComponent).not.toBe(callerPopperComponent);
+    expect(callerPopperComponent).toHaveBeenCalledTimes(1);
+    expect(textFieldProps).toHaveLength(1);
   });
 
   it('forwards controlled autocomplete props to MUI', () => {
