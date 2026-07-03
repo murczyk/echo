@@ -71,6 +71,8 @@ pub async fn bl_babak_report(
         or_without_coords: inbox_req.or_without_coords,
         search: inbox_req.search,
         selected_tags: inbox_req.selected_tags,
+        denied_tags: inbox_req.denied_tags,
+        tag_presence: inbox_req.tag_presence,
         selected_networks: inbox_req.selected_networks,
         without_network: inbox_req.without_network,
         metadata_cc: inbox_req.metadata_cc,
@@ -865,6 +867,8 @@ pub async fn get_inbox_messages_report_unit(
     let mut q = filter_selected_tags(
         q,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,

@@ -90,6 +90,8 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     orWithoutCoords: null,
     search: null,
     selectedTags: null,
+    deniedTags: null,
+    tagPresence: null,
     selectedNetworks: null,
     withoutNetwork: null,
     metadataCc: null,

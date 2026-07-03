@@ -108,6 +108,8 @@ fn mk_analysis_stats_req(
         or_without_coords: None,
         search: None,
         selected_tags: None,
+        denied_tags: None,
+        tag_presence: None,
         selected_networks: None,
         without_network: None,
         metadata_cc: None,

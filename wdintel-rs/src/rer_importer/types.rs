@@ -311,6 +311,22 @@ pub enum TagFilterOption {
 }
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+)]
+pub enum TagPresenceFilter {
+    WithTags,
+    WithoutTags,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct MessageIdsReq {
@@ -364,6 +380,8 @@ pub struct InboxMessagesReq {
     pub highlight_points: Option<bool>,
     pub highlight_keyword_set_id: Option<i64>,
     pub selected_tags: Option<Vec<i64>>,
+    pub denied_tags: Option<Vec<i64>>,
+    pub tag_presence: Option<TagPresenceFilter>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
     pub without_network: Option<bool>,
@@ -754,6 +772,8 @@ pub struct AnalysisStatsReq {
     pub or_without_coords: Option<bool>,
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
+    pub denied_tags: Option<Vec<i64>>,
+    pub tag_presence: Option<TagPresenceFilter>,
     pub selected_networks: Option<Vec<i64>>,
     pub without_network: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
@@ -790,6 +810,8 @@ pub struct CallsignsGraphReq {
     pub nolimit: Option<bool>,
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
+    pub denied_tags: Option<Vec<i64>>,
+    pub tag_presence: Option<TagPresenceFilter>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
     pub without_network: Option<bool>,

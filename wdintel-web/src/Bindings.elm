@@ -1195,6 +1195,19 @@ tagFilterOptionEncoder enum =
         AllTags ->
             Json.Encode.string "AllTags"
 
+type TagPresenceFilter
+    = WithTags
+    | WithoutTags
+
+
+tagPresenceFilterEncoder : TagPresenceFilter -> Json.Encode.Value
+tagPresenceFilterEncoder enum =
+    case enum of
+        WithTags ->
+            Json.Encode.string "WithTags"
+        WithoutTags ->
+            Json.Encode.string "WithoutTags"
+
 type alias InboxMessagesReq =
     { sinceIdNoninclusive : Maybe (Int)
     , beforeIdNoninclusive : Maybe (Int)
@@ -1231,6 +1244,8 @@ type alias InboxMessagesReq =
     , highlightPoints : Maybe (Bool)
     , highlightKeywordSetId : Maybe (Int)
     , selectedTags : Maybe (List (Int))
+    , deniedTags : Maybe (List (Int))
+    , tagPresence : Maybe (TagPresenceFilter)
     , selectedAors : Maybe (List (Int))
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
@@ -1292,6 +1307,8 @@ inboxMessagesReqEncoder struct =
         , ( "highlight_points", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightPoints )
         , ( "highlight_keyword_set_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.highlightKeywordSetId )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
+        , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
+        , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
@@ -1843,6 +1860,8 @@ type alias AnalysisStatsReq =
     , orWithoutCoords : Maybe (Bool)
     , search : Maybe (String)
     , selectedTags : Maybe (List (Int))
+    , deniedTags : Maybe (List (Int))
+    , tagPresence : Maybe (TagPresenceFilter)
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
     , metadataCc : Maybe (List (String))
@@ -1879,6 +1898,8 @@ analysisStatsReqEncoder struct =
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
+        , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
+        , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataCc )
@@ -2187,6 +2208,8 @@ type alias CallsignsGraphReq =
     , nolimit : Maybe (Bool)
     , search : Maybe (String)
     , selectedTags : Maybe (List (Int))
+    , deniedTags : Maybe (List (Int))
+    , tagPresence : Maybe (TagPresenceFilter)
     , selectedAors : Maybe (List (Int))
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
@@ -2224,6 +2247,8 @@ callsignsGraphReqEncoder struct =
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
+        , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
+        , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
@@ -9443,6 +9468,29 @@ tagFilterOptionDecoder =
                 )
         ]
 
+tagPresenceFilterDecoder : Json.Decode.Decoder TagPresenceFilter
+tagPresenceFilterDecoder = 
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "WithTags" ->
+                            Json.Decode.succeed WithTags
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "WithoutTags" ->
+                            Json.Decode.succeed WithoutTags
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 inboxMessagesReqDecoder : Json.Decode.Decoder InboxMessagesReq
 inboxMessagesReqDecoder =
     Json.Decode.succeed InboxMessagesReq
@@ -9481,6 +9529,8 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_points" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
@@ -9702,6 +9752,8 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -9874,6 +9926,8 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))

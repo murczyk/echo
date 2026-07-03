@@ -272,6 +272,8 @@ fn build_groups_query(
     let groups_res = filter_selected_tags(
         groups_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -555,6 +557,8 @@ fn build_senders_query(
     let senders_res = filter_selected_tags(
         senders_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -662,6 +666,8 @@ where
     let query = filter_selected_tags(
         query,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -814,6 +820,8 @@ fn build_posts_query(
     let post_res = filter_selected_tags(
         post_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -1035,6 +1043,8 @@ fn build_freqs_query(
     let freqs_res = filter_selected_tags(
         freqs_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -1353,6 +1363,8 @@ fn build_callsigns_query(
     let callsigns_res = filter_selected_tags(
         callsigns_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -1535,6 +1547,8 @@ fn build_tags_query(
     let tags_res = filter_selected_tags(
         tags_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -1711,6 +1725,8 @@ fn build_units_query(
     let units_res = filter_selected_tags(
         units_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -1904,6 +1920,8 @@ fn build_locations_query_for_login(
     let locations_res = filter_selected_tags(
         locations_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -2073,6 +2091,8 @@ fn build_aors_query(
     let messages_q = filter_selected_tags(
         messages_q,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -2635,6 +2655,8 @@ fn build_networks_query_for_login(
     let messages_q = filter_selected_tags(
         messages_q,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
@@ -2983,6 +3005,8 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res = filter_selected_tags(
         selected_count_res,
         &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,

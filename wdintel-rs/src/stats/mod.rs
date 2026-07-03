@@ -230,6 +230,12 @@ fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_tags) {
         return false;
     }
+    if !is_filter_empty(&req.denied_tags) {
+        return false;
+    }
+    if req.tag_presence.is_some() {
+        return false;
+    }
     if !is_filter_empty(&req.selected_networks) {
         return false;
     }
@@ -3511,6 +3517,8 @@ mod tests {
             or_without_coords: None,
             search: None,
             selected_tags: None,
+            denied_tags: None,
+            tag_presence: None,
             selected_networks: None,
             without_network: None,
             metadata_cc: None,
@@ -3626,6 +3634,18 @@ mod tests {
             },
             AnalysisStatsReq {
                 report_tags_only_this_unit: Some(true),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                denied_tags: Some(vec![1]),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                tag_presence: Some(TagPresenceFilter::WithoutTags),
+                ..analysis_stats_req0()
+            },
+            AnalysisStatsReq {
+                tag_presence: Some(TagPresenceFilter::WithTags),
                 ..analysis_stats_req0()
             },
         ];

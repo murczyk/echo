@@ -439,6 +439,11 @@ export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp';
 
 export type TagFilterOption = 'OneOfTags' | 'AllTags';
 
+export type TagPresenceFilter =
+  | 'WithTags'
+  | 'WithoutTags'
+;
+
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
   beforeIdNoninclusive: number | null;
@@ -475,6 +480,8 @@ export type InboxMessagesReq = {
   highlightPoints: boolean | null;
   highlightKeywordSetId: number | null;
   selectedTags: Array<number> | null;
+  deniedTags: Array<number> | null;
+  tagPresence: TagPresenceFilter | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
@@ -700,6 +707,8 @@ export type AnalysisStatsReq = {
   orWithoutCoords: boolean | null;
   search: string | null;
   selectedTags: Array<number> | null;
+  deniedTags: Array<number> | null;
+  tagPresence: TagPresenceFilter | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
   metadataCc: Array<string> | null;
@@ -836,6 +845,8 @@ export type CallsignsGraphReq = {
   nolimit: boolean | null;
   search: string | null;
   selectedTags: Array<number> | null;
+  deniedTags: Array<number> | null;
+  tagPresence: TagPresenceFilter | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;

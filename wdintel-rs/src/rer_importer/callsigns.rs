@@ -1448,6 +1448,8 @@ pub async fn callsigns_graph(
         or_without_coords: req.or_without_coords,
         search: req.search.clone(),
         selected_tags: req.selected_tags.clone(),
+        denied_tags: req.denied_tags.clone(),
+        tag_presence: req.tag_presence,
         metadata_cc: req.metadata_cc.clone(),
         metadata_sender: req.metadata_sender.clone(),
         metadata_receiver: req.metadata_receiver.clone(),
