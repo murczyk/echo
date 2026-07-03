@@ -16,8 +16,8 @@ import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
-/** Treat the feed as "near bottom" inside this pixel range so polling can fetch newer messages. */
-const LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX = 320;
+/** Start loading newer messages before the user gets close to the bottom edge. */
+const LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX = 800;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 
