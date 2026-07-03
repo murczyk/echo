@@ -1516,6 +1516,19 @@ setup-echo-ai-train server='echo-ai-train':
     echo-install-utils bw-sync "$SERVER" "echo-ai-$SERVER-models-dotenv" "/usr/local/echo-ai-train/.env.train" --no-restart
     ssh -t "$SERVER" echo-ai/deploy.sh
 
+# restore echo-ai-train postgres connectivity to one or more db servers after a major PG upgrade (e.g. PG 18)
+# connects to each target through the jump server and re-registers its tailscale IP in pg_hba.conf / listen_addresses
+
+# override the jump server (default echo-ai-train) with --train-host <host>
+[arg('train_host', long='train-host')]
+setup-echo-ai-train-db train_host='echo-ai-train' *targets:
+    #!/bin/bash
+    set -euo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "train_host" "{{ train_host }}"
+    ensure_nonempty "targets" "{{ targets }}"
+    TRAIN_HOST="{{ train_host }}" echo-ai/pg-access.sh {{ targets }}
+
 # [positional-arguments]
 [arg('builder', long='builder')]
 [arg('server', long='server')]

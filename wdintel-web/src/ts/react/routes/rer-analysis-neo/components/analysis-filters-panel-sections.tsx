@@ -194,6 +194,8 @@ export function AnalysisFiltersPanelSections({
             emptyLoading={isSectionEmptyLoading('freqs', options.freqs.length)}
             value={queryState.freqsSelected}
             deferredCommit
+            bulkPaste
+            bulkPasteSeparators={[',', '\n']}
             preserveSelectionOrder
             onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
           />
