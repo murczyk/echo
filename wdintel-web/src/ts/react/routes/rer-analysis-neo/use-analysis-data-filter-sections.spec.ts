@@ -246,17 +246,17 @@ describe('buildFilterSectionsToLoad', () => {
 });
 
 describe('loadFilterSectionData', () => {
-  it('does not overwrite network display labels during a late networks load', async () => {
+  it('drops stale network filter options during a late networks load', async () => {
     analysisApiMocks.fetchAnalysisNetworks.mockResolvedValue({
       networks: [{ networkId: 11, count: 3 }],
-      networkNames: [{ id: 11, name: 'Network 11' }],
+      networkNames: [{ id: 11, name: 'new network' }],
     });
-    analysisApiMocks.fetchNetworksByIds.mockResolvedValue([{ id: 11, name: 'Network 11' }]);
+    analysisApiMocks.fetchNetworksByIds.mockResolvedValue([{ id: 11, name: 'new network' }]);
     const setNetworks = vi.fn((update) => {
       if (typeof update === 'function') {
         expect(update([{ id: 7, name: 'Network 7' }])).toEqual([
           { id: 7, name: 'Network 7' },
-          { id: 11, name: 'Network 11' },
+          { id: 11, name: 'new network' },
         ]);
       }
     });
@@ -274,7 +274,10 @@ describe('loadFilterSectionData', () => {
             units: [],
             locations: [],
             posts: [],
-            networks: [{ value: '11', label: 'управління', count: 0 }],
+            networks: [
+              { value: '7', label: 'old selected', count: 9 },
+              { value: '8', label: 'old unselected', count: 5 },
+            ],
             metadataCcs: [],
             metadataSenders: [],
             metadataReceivers: [],
@@ -291,7 +294,10 @@ describe('loadFilterSectionData', () => {
           units: [],
           locations: [],
           posts: [],
-          networks: [{ value: '11', label: 'управління', count: 3, values: ['11'] }],
+          networks: [
+            { value: '11', label: 'new network', count: 3 },
+            { value: '7', label: 'old selected', count: 0, values: ['7'] },
+          ],
           metadataCcs: [],
           metadataSenders: [],
           metadataReceivers: [],
@@ -307,11 +313,18 @@ describe('loadFilterSectionData', () => {
             ...emptyQueryState(),
             fromDateTimeStr: '2026-03-30T08:00',
             toDateTimeStr: '2026-03-31T08:00',
+            networksSelected: ['7'],
           },
           [],
         )!,
         loadVersion: 0,
         loadVersionRef: { current: 0 },
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-03-30T08:00',
+          toDateTimeStr: '2026-03-31T08:00',
+          networksSelected: ['7'],
+        },
         setAorEntries: vi.fn(),
         setGroupInfos: vi.fn(),
         setNetworks,

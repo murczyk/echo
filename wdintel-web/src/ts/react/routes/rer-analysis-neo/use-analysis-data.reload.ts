@@ -65,6 +65,7 @@ type FilterSectionLoadContext = {
   loadVersionRef: React.MutableRefObject<number>;
   networkStatsCache?: Map<string, ReturnType<typeof fetchAnalysisNetworks>>;
   signal?: AbortSignal;
+  queryState: AnalysisQueryState;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setNetworks: Setter<Network[]>;
@@ -145,6 +146,51 @@ export function mergeNetworkFilterOptions(
   }
 
   return Array.from(merged.values()).sort(
+    (left, right) => left.label.localeCompare(right.label) || left.value.localeCompare(right.value),
+  );
+}
+
+export function replaceNetworkFilterOptionsPreservingSelectedLabels(
+  current: AnalysisFilterOption[],
+  nextStatsOptions: AnalysisFilterOption[],
+  selectedNetworkValues: string[],
+): AnalysisFilterOption[] {
+  const nextByValue = new Map(nextStatsOptions.map((option) => [option.value, option]));
+  const selectedValueSet = new Set(selectedNetworkValues);
+  const selectedCurrentOptions = current.filter((option) => selectedValueSet.has(option.value));
+
+  const replaced = nextStatsOptions.map((option) => {
+    const currentOption = selectedCurrentOptions.find((item) => item.value === option.value);
+    if (currentOption == null) {
+      return option;
+    }
+
+    const currentIsFallback = isFallbackNetworkLabel(currentOption);
+    const nextIsFallback = isFallbackNetworkLabel(option);
+    const label =
+      currentIsFallback && !nextIsFallback
+        ? option.label
+        : !currentIsFallback && nextIsFallback
+          ? currentOption.label
+          : option.label;
+
+    return {
+      value: option.value,
+      label,
+      count: option.count,
+      values: mergeNetworkOptionValues(currentOption, option),
+    };
+  });
+
+  const appendedSelected = selectedCurrentOptions
+    .filter((option) => !nextByValue.has(option.value))
+    .map((option) => ({
+      ...option,
+      count: 0,
+      values: option.values ?? [option.value],
+    }));
+
+  return [...replaced, ...appendedSelected].sort(
     (left, right) => left.label.localeCompare(right.label) || left.value.localeCompare(right.value),
   );
 }
@@ -442,7 +488,7 @@ export async function loadFilterSectionData(
       context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setOptions((current) => ({
         ...current,
-        networks: mergeNetworkFilterOptions(
+        networks: replaceNetworkFilterOptionsPreservingSelectedLabels(
           current.networks,
           toFilterOptions(
             networksStatsRsp.networks,
@@ -451,6 +497,7 @@ export async function loadFilterSectionData(
               normalizeFilterLabel(networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
             (item) => item.count,
           ),
+          context.queryState.networksSelected,
         ),
       }));
       return;

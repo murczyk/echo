@@ -9,6 +9,7 @@ import {
   loadFilterSectionData,
   mergeSignalProfiles,
   mergeNetworkFilterOptions,
+  replaceNetworkFilterOptionsPreservingSelectedLabels,
   reloadAnalysisData,
 } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
@@ -611,6 +612,42 @@ describe('reloadAnalysisData', () => {
     ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852', '2852-alt'] }]);
   });
 
+  it('keeps selected-only appended options labeled but resets their count', () => {
+    expect(
+      replaceNetworkFilterOptionsPreservingSelectedLabels(
+        [
+          { value: '7', label: 'old selected', count: 9 },
+          { value: '8', label: 'old unselected', count: 5 },
+        ],
+        [{ value: '11', label: 'new network', count: 3 }],
+        ['7'],
+      ),
+    ).toEqual([
+      { value: '11', label: 'new network', count: 3 },
+      { value: '7', label: 'old selected', count: 0, values: ['7'] },
+    ]);
+  });
+
+  it('uses fresh stats counts for selected options that remain in the new result set', () => {
+    expect(
+      replaceNetworkFilterOptionsPreservingSelectedLabels(
+        [{ value: '7', label: 'old selected', count: 9 }],
+        [{ value: '7', label: 'new network', count: 3 }],
+        ['7'],
+      ),
+    ).toEqual([{ value: '7', label: 'new network', count: 3, values: ['7'] }]);
+  });
+
+  it('keeps the old real label when fresh stats fall back to a placeholder', () => {
+    expect(
+      replaceNetworkFilterOptionsPreservingSelectedLabels(
+        [{ value: '7', label: 'old selected', count: 9 }],
+        [{ value: '7', label: 'Network 7', count: 3 }],
+        ['7'],
+      ),
+    ).toEqual([{ value: '7', label: 'old selected', count: 3, values: ['7'] }]);
+  });
+
   it('hydrates selected network labels through reloadAnalysisData', async () => {
     const networksDeferred = deferred<Array<{ id: number; name: string }>>();
     let currentOptions = structuredClone(emptyOptions);
@@ -856,6 +893,7 @@ describe('reloadAnalysisData', () => {
         loadVersion: 0,
         loadVersionRef: { current: 0 },
         networkStatsCache,
+        queryState,
         setAorEntries: vi.fn(),
         setGroupInfos: vi.fn(),
         setNetworks: vi.fn(),
