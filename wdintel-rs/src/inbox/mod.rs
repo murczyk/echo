@@ -242,6 +242,7 @@ where
         datetime: NotSet,
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
+        computer_name_id: Set(None),
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
     }

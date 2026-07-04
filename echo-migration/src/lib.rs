@@ -285,6 +285,7 @@ mod m20260707_164344_echo_missing_message_duplicate_status;
 mod m20260707_170000_signal_message_attachments_hash;
 mod m20260707_212500_echo_missing_message_duplicate_backfill;
 mod m20260704_083252_add_cyber_echo_enabled_to_settings;
+mod m20260704_130958_add_computer_name;
 
 pub struct Migrator;
 
@@ -293,6 +294,7 @@ impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
             Box::new(m20220101_000001_create_table::Migration),
+            Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
             Box::new(m20231227_163602_sigint_unit::Migration),
             Box::new(m20240205_115451_etalonka::Migration),
             Box::new(m20240207_101323_etalonka_template_rm::Migration),
@@ -533,11 +535,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260510_101006_operator_dmr_metadata::Migration),
             Box::new(m20260511_145205_delta_login_lower_unique::Migration),
             Box::new(m20260513_102326_add_sigint_network_description_topic::Migration),
-            Box::new(m20260702_145245_create_sigint_comment::Migration),
-            Box::new(m20231226_134526_index_sigint_comment_signal_message_id::Migration),
-            Box::new(
-                m20260515_120000_add_sigint_post_id_to_sigint_comment::Migration,
-            ),
+            Box::new(m20260515_120000_add_sigint_post_id_to_sigint_comment::Migration),
             Box::new(m20260519_091147_add_command_control_to_sigint_network_callsign::Migration),
             Box::new(m20260520_120000_create_organism_keyword_set::Migration),
             Box::new(m20260529_110000_add_short_url_to_admin_config::Migration),
@@ -560,28 +558,17 @@ impl MigratorTrait for Migrator {
             Box::new(m20260629_080533_unit_tags_on_sigint_network::Migration),
             Box::new(m20260629_085034_signal_message_operator_tags::Migration),
             Box::new(m20260630_094347_interseption_kind_and_unit_mask::Migration),
-            Box::new(
-                m20260630_130141_signal_group_merge_network_assignment_flags::Migration,
-            ),
-            Box::new(m20260701_073733_default_neo_analysis::Migration),
-            Box::new(
-                m20260701_100000_backfill_deleted_freq_active_to::Migration,
-            ),
+            Box::new(m20260630_130141_signal_group_merge_network_assignment_flags::Migration),
             Box::new(m20260630_210912_goi_palitra_sync_upgrade::Migration),
-            Box::new(
-                m20260701_120000_goi_palitra_sync_multi_palitra::Migration,
-            ),
-            Box::new(
-                m20260701_152707_goi_palitra_sync_side_checksums::Migration,
-            ),
-            Box::new(
-                m20260701_160523_palitra_conversion_job_goi_upload_flag::Migration,
-            ),
+            Box::new(m20260701_073733_default_neo_analysis::Migration),
+            Box::new(m20260701_100000_backfill_deleted_freq_active_to::Migration),
+            Box::new(m20260701_120000_goi_palitra_sync_multi_palitra::Migration),
+            Box::new(m20260701_152707_goi_palitra_sync_side_checksums::Migration),
+            Box::new(m20260701_160523_palitra_conversion_job_goi_upload_flag::Migration),
+            Box::new(m20260702_145245_create_sigint_comment::Migration),
             Box::new(m20260702_155737_echo_im_sync_since::Migration),
             Box::new(m20260702_173206_echo_missing_messages::Migration),
-            Box::new(
-                m20260702_192716_signal_message_echo_inbox_message_id::Migration,
-            ),
+            Box::new(m20260702_192716_signal_message_echo_inbox_message_id::Migration),
             Box::new(m20260703_095738_add_organism_to_tags::Migration),
             Box::new(
                 m20260705_230242_operator_datasource_group_perf::Migration,
@@ -605,6 +592,7 @@ impl MigratorTrait for Migrator {
                 m20260707_170000_signal_message_attachments_hash::Migration,
             ),
             Box::new(m20260704_083252_add_cyber_echo_enabled_to_settings::Migration),
+            Box::new(m20260704_130958_add_computer_name::Migration),
         ]
     }
 }

@@ -362,6 +362,7 @@ async fn replay_source_message(
         unit_v2: Set(source.inbox_item.unit_v2.clone()),
         parsed_unit_v2: Set(source.inbox_item.parsed_unit_v2),
         post_id: Set(source.inbox_item.post_id),
+        computer_name_id: Set(source.inbox_item.computer_name_id),
     }
     .insert(&txn)
     .await
