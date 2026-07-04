@@ -32,8 +32,5 @@ class AdminEchoMissingMessagesElement extends HTMLElement {
 }
 
 if (!customElements.get('admin-echo-missing-messages')) {
-  customElements.define(
-    'admin-echo-missing-messages',
-    AdminEchoMissingMessagesElement,
-  );
+  customElements.define('admin-echo-missing-messages', AdminEchoMissingMessagesElement);
 }

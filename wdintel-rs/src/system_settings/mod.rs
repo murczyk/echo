@@ -82,6 +82,7 @@ fn map_system_settings_item(
         peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
+        cyber_echo_enabled: settings.cyber_echo_enabled,
     })
 }
 
@@ -358,6 +359,7 @@ fn system_settings_active_model(
         peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
+        cyber_echo_enabled: Set(req.cyber_echo_enabled),
     }
 }
 
@@ -466,6 +468,7 @@ pub async fn current_system_settings(
                 .peleng_bounds_bottom_right_lat,
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
+            cyber_echo_enabled: settings.cyber_echo_enabled,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -484,6 +487,7 @@ pub async fn current_system_settings(
             peleng_bounds_top_left_lng: None,
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
+            cyber_echo_enabled: false,
         },
     }))
 }
@@ -700,6 +704,7 @@ mod tests {
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
+            cyber_echo_enabled: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -754,6 +759,7 @@ mod tests {
             peleng_bounds_bottom_right_lng: Set(None),
             default_neo_analysis: Set(false),
             autofix_echoim_missing_messages: Set(false),
+            cyber_echo_enabled: Set(false),
         }
         .insert(dbx)
         .await

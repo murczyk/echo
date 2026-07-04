@@ -3159,6 +3159,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3182,6 +3183,7 @@ export type SystemSettingsItem = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3204,6 +3206,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3462,3 +3465,4 @@ export type UserDutySettingsDto = {
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
 };
+

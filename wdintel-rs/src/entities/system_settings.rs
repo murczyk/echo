@@ -36,6 +36,7 @@ pub struct Model {
     pub echo_im_sync_since: DateTime,
     pub autofix_echoim_missing_messages: bool,
     pub echo_im_sync_since_inbox_message_id: i32,
+    pub cyber_echo_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
