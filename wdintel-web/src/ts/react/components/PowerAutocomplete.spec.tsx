@@ -33,6 +33,7 @@ type AutocompletePropsCapture = {
   PaperComponent?: PaperComponent;
   PopperComponent?: PopperComponent;
   renderInput?: (params: unknown) => ReactNode;
+  sx?: unknown;
   value?: unknown;
   loading?: boolean;
   getOptionLabel?: (option: unknown) => string;
@@ -228,7 +229,7 @@ function renderAutocomplete(overrides: Record<string, unknown> = {}) {
 
 function getBulkMenuButton(
   container: HTMLElement,
-  label: string = 'Додати значення зі списку',
+  label: string = 'Додати кілька значень',
 ): HTMLButtonElement | null {
   return container.querySelector(`button[aria-label="${label}"]`);
 }
@@ -281,13 +282,44 @@ describe('PowerAutocomplete', () => {
     expect(getBulkMenuButton(container)).not.toBeNull();
   });
 
+  it('adds bulk adornment styles while preserving caller sx', () => {
+    const callerSx = { minWidth: 240 };
+
+    renderAutocomplete({ bulkPaste: true, sx: callerSx });
+
+    expect(latestAutocompleteProps?.sx).toEqual([
+      expect.objectContaining({
+        '& .MuiAutocomplete-endAdornment': expect.objectContaining({
+          display: 'flex',
+          alignItems: 'center',
+        }),
+        '& .MuiAutocomplete-clearIndicator': expect.objectContaining({
+          display: 'none',
+        }),
+        '&:hover .MuiAutocomplete-clearIndicator, &.Mui-focused .MuiAutocomplete-clearIndicator':
+          expect.objectContaining({
+            display: 'inline-flex',
+          }),
+      }),
+      callerSx,
+    ]);
+  });
+
+  it('does not add bulk adornment styles when disabled', () => {
+    const callerSx = { minWidth: 240 };
+
+    renderAutocomplete({ bulkPaste: false, sx: callerSx });
+
+    expect(latestAutocompleteProps?.sx).toBe(callerSx);
+  });
+
   it('uses generic default labels for the bulk flow', () => {
     const { container } = renderAutocomplete({ bulkPaste: true });
 
     openBulkDialog(container);
 
     expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
-    expect(container.textContent).toContain('Додати значення зі списку');
+    expect(container.textContent).toContain('Додати кілька значень');
     expect(container.textContent).toContain('Додати');
   });
 
@@ -328,11 +360,25 @@ describe('PowerAutocomplete', () => {
     expect(powerMenuProps.at(-1)?.open).toBe(false);
   });
 
-  it('shows preview for added, already selected and missing tokens', () => {
+  it('shows already selected values when the dialog opens', () => {
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      value: [options[0]],
+      bulkPasteInputLabel: 'Частоти',
+    });
+
+    openBulkDialog(container);
+
+    expect(container.textContent).toContain('Вже у фільтрі');
+    expect(container.textContent).toContain('111.1111');
+  });
+
+  it('shows preview for existing selections and missing tokens', () => {
     const { onBulkPasteResolved, container } = renderAutocomplete({
       bulkPaste: true,
       bulkPasteSeparators: [',', '\n'],
       bulkPasteInputLabel: 'Частоти',
+      value: [options[0]],
     });
 
     openBulkDialog(container);
@@ -342,11 +388,11 @@ describe('PowerAutocomplete', () => {
       tokens: ['111.1111', 'BAD'],
       found: [options[0]],
       missing: ['BAD'],
-      added: [options[0]],
-      alreadySelected: [],
+      added: [],
+      alreadySelected: [options[0]],
       finalValue: [options[0]],
     });
-    expect(container.textContent).toContain('Буде додано');
+    expect(container.textContent).toContain('Вже у фільтрі');
     expect(container.textContent).toContain('111.1111');
     expect(container.textContent).toContain('Не знайдено');
     expect(container.textContent).toContain('BAD');
@@ -363,6 +409,29 @@ describe('PowerAutocomplete', () => {
     expect(container.textContent).not.toContain('Буде додано');
     expect(container.textContent).not.toContain('Вже обрано');
     expect(container.textContent).not.toContain('Не знайдено');
+  });
+
+  it('keeps pasted duplicates in the already-selected preview without duplicating values', () => {
+    const { onBulkPasteResolved, onBulkPasteChange, container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteInputLabel: 'Частоти',
+      value: [options[0]],
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, '111.1111');
+
+    expect(onBulkPasteResolved).toHaveBeenCalledWith({
+      tokens: ['111.1111'],
+      found: [options[0]],
+      missing: [],
+      added: [],
+      alreadySelected: [options[0]],
+      finalValue: [options[0]],
+    });
+    expect(container.textContent).toContain('Вже у фільтрі');
+    expect(container.textContent).toContain('111.1111');
+    expect(onBulkPasteChange).not.toHaveBeenCalled();
   });
 
   it('submits merged values without duplicates', () => {

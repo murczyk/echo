@@ -6,13 +6,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  InputAdornment,
   MenuItem,
   TextField,
   Typography,
 } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material';
 import type { AutocompleteProps } from '@mui/material/Autocomplete';
-import { useEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, isValidElement, useEffect, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { PowerButton } from './PowerButton';
 import { PowerIconButton } from './PowerIconButton';
@@ -196,6 +196,62 @@ function formatPreviewTokens(tokens: string[]): string {
   return tokens.join(', ');
 }
 
+function composeEndAdornment(endAdornment: ReactNode, menuButton: ReactNode): ReactNode {
+  if (!isValidElement(endAdornment)) {
+    return (
+      <>
+        {menuButton}
+        {endAdornment}
+      </>
+    );
+  }
+
+  const children = Children.toArray(endAdornment.props.children);
+
+  if (children.length === 0) {
+    return cloneElement(endAdornment, {
+      children: menuButton,
+    });
+  }
+
+  const insertIndex = Math.max(children.length - 1, 0);
+  const nextChildren = [
+    ...children.slice(0, insertIndex),
+    menuButton,
+    ...children.slice(insertIndex),
+  ];
+
+  return cloneElement(endAdornment, {
+    children: nextChildren,
+  });
+}
+
+const BULK_AUTOCOMPLETE_SX: SxProps<Theme> = {
+  '& .MuiAutocomplete-endAdornment': {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0,
+    top: '50%',
+    transform: 'translateY(-50%)',
+  },
+  '& .MuiAutocomplete-clearIndicator': {
+    display: 'none',
+  },
+  '&:hover .MuiAutocomplete-clearIndicator, &.Mui-focused .MuiAutocomplete-clearIndicator': {
+    display: 'inline-flex',
+  },
+};
+
+function mergeBulkAutocompleteSx(sx: AutocompleteProps<unknown, true, false, false>['sx']) {
+  if (Array.isArray(sx)) {
+    return [BULK_AUTOCOMPLETE_SX, ...sx];
+  }
+  if (sx == null) {
+    return BULK_AUTOCOMPLETE_SX;
+  }
+  return [BULK_AUTOCOMPLETE_SX, sx];
+}
+
 export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const {
     bulkPaste = false,
@@ -209,7 +265,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     renderInput,
     ...autocompleteProps
   } = props;
-  const { onClose } = autocompleteProps;
+  const { onClose, sx } = autocompleteProps;
   const options = autocompleteProps.options;
   const value = autocompleteProps.value;
   const getOptionLabel = autocompleteProps.getOptionLabel ?? (() => '');
@@ -217,8 +273,8 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const onChange = autocompleteProps.onChange;
   const selectedValue = value ?? [];
   const bulkPasteLabel = getBulkPasteOptionLabel ?? getOptionLabel;
-  const menuLabel = bulkPasteMenuLabel ?? 'Додати значення зі списку';
-  const dialogTitle = bulkPasteDialogTitle ?? 'Додати значення зі списку';
+  const menuLabel = bulkPasteMenuLabel ?? 'Додати кілька значень';
+  const dialogTitle = bulkPasteDialogTitle ?? 'Додати кілька значень';
   const inputLabel = bulkPasteInputLabel ?? 'Значення';
   const [bulkMenuAnchorEl, setBulkMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -302,29 +358,25 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
 
   const renderInputWithBulkAction = (params: Parameters<typeof renderInput>[0]) => {
     const endAdornment = params.InputProps?.endAdornment;
+    const menuButton = (
+      <PowerIconButton
+        aria-label={menuLabel}
+        disabled={autocompleteProps.disabled}
+        size="small"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={openBulkMenu}
+      >
+        <MoreVertIcon fontSize="small" />
+      </PowerIconButton>
+    );
     return renderInput({
       ...params,
       InputProps: {
         ...params.InputProps,
-        endAdornment: bulkPaste ? (
-          <InputAdornment position="end">
-            <PowerIconButton
-              aria-label={menuLabel}
-              disabled={autocompleteProps.disabled}
-              size="small"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={openBulkMenu}
-            >
-              <MoreVertIcon fontSize="small" />
-            </PowerIconButton>
-            {endAdornment}
-          </InputAdornment>
-        ) : (
-          endAdornment
-        ),
+        endAdornment: bulkPaste ? composeEndAdornment(endAdornment, menuButton) : endAdornment,
       },
     });
   };
@@ -335,6 +387,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
         multiple
         {...autocompleteProps}
         onClose={onClose}
+        sx={bulkPaste ? mergeBulkAutocompleteSx(sx) : sx}
         renderInput={bulkPaste ? renderInputWithBulkAction : renderInput}
       />
       {bulkPaste ? (
@@ -361,6 +414,14 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
                   onChange={(event) => setBulkDialogInputValue(event.target.value)}
                 />
                 <Box sx={{ display: 'grid', gap: 1 }}>
+                  {selectedValue.length > 0 ? (
+                    <>
+                      <Typography variant="subtitle2">Вже у фільтрі</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatPreviewValues(selectedValue, bulkPasteLabel)}
+                      </Typography>
+                    </>
+                  ) : null}
                   {bulkPreview.added.length > 0 ? (
                     <>
                       <Typography variant="subtitle2">Буде додано</Typography>
