@@ -16,6 +16,7 @@ const hoisted = vi.hoisted(() => ({
   rerDutyShortStateGet: vi.fn(),
   fetchServerInfo: vi.fn(),
   systemSettingsCurrent: vi.fn(),
+  notifyDutyNewMessages: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -27,6 +28,10 @@ vi.mock('../../services/api/inbox', () => ({
 
 vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: hoisted.systemSettingsCurrent,
+}));
+
+vi.mock('./notifications', () => ({
+  notifyDutyNewMessages: hoisted.notifyDutyNewMessages,
 }));
 
 vi.mock('../../services/api/networks', () => ({
@@ -81,6 +86,7 @@ describe('useRerDutyFeedState — loading', () => {
     vi.clearAllMocks();
     hoisted.fetchInboxMessages.mockReset();
     hoisted.fetchInboxCount.mockReset();
+    hoisted.notifyDutyNewMessages.mockReset();
     window.history.replaceState({}, '', '/');
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValue(
@@ -375,6 +381,67 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(70000);
   });
 
+  it('resets the count notification baseline when older paging changes the poll cursor', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 21,
+          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: 60 }),
+    );
+    hoisted.notifyDutyNewMessages.mockReset();
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(40);
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 25, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: 40 }),
+    );
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+  });
+
   it('windows initial messages to the newest fixed-size batch', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
@@ -483,6 +550,50 @@ describe('useRerDutyFeedState — loading', () => {
     expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20);
     expect(feed.readIds.has(1)).toBe(true);
     expect(feed.readIds.has(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20)).toBe(true);
+  });
+
+  it('clears start exhaustion when newer append evicts older rows from the fixed window', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+    });
+
+    expect(apiRef.current!.messageFeeds[0].hasReachedStart).toBe(true);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { markAllReadAfterAppend: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items[0][0]).toBe(21);
+    expect(feed.hasReachedStart).toBe(false);
   });
 
   it('keeps returning seen chunk messages read when scrolling back toward newer messages', async () => {
