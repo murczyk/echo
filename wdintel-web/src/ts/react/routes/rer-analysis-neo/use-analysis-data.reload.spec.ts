@@ -4,9 +4,11 @@ import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
 import {
   buildAnalysisReqForFilterSection,
+  buildHydratedNetworkFilterOptions,
   filterSectionsForInitialLoad,
   loadFilterSectionData,
   mergeSignalProfiles,
+  mergeNetworkFilterOptions,
   reloadAnalysisData,
 } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
@@ -561,23 +563,63 @@ describe('reloadAnalysisData', () => {
     );
   });
 
-  it('hydrates reference data while leaving top sidebar dictionaries lazy', async () => {
-    mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
-    mocks.fetchAnalysisLocations.mockResolvedValue({
-      locations: [{ location: 'LOC-1', count: 13 }],
-    });
-    mocks.fetchAnalysisNetworks.mockResolvedValue({
-      networks: [{ networkId: 11, count: 2 }],
-      networkNames: [{ id: 11, name: 'Network 11' }],
-    });
-    mocks.fetchNetworksByIds.mockResolvedValue([
-      { id: 11, name: 'Network 11' },
-      { id: 12, name: 'Network 12' },
-    ]);
-    mocks.getUnitsList.mockResolvedValue([{ id: 1, name: 'Unit One' }]);
+  it('hydrates selected network labels into filter options', () => {
+    expect(
+      buildHydratedNetworkFilterOptions(
+        [
+          { id: 2852, name: 'управління' },
+          { id: 11, name: 'Network 11' },
+        ] as Array<{ id: number; name: string | null }>,
+        [2852],
+      ),
+    ).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
+  });
+
+  it('keeps hydrated labels when stats later provide fallback labels', () => {
+    expect(
+      mergeNetworkFilterOptions(
+        [{ value: '2852', label: 'управління', count: 0 }],
+        [{ value: '2852', label: 'Network 2852', count: 3 }],
+      ),
+    ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852'] }]);
+  });
+
+  it('prefers stats labels over hydrated placeholders when stats provide a real name', () => {
+    expect(
+      mergeNetworkFilterOptions(
+        [{ value: '2852', label: 'управління', count: 0 }],
+        [{ value: '2852', label: 'р/м управління 2 гсад', count: 3 }],
+      ),
+    ).toEqual([{ value: '2852', label: 'р/м управління 2 гсад', count: 3, values: ['2852'] }]);
+  });
+
+  it('updates fallback labels when hydration arrives after stats', () => {
+    expect(
+      mergeNetworkFilterOptions(
+        [{ value: '2852', label: 'Network 2852', count: 3 }],
+        [{ value: '2852', label: 'управління', count: 0 }],
+      ),
+    ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852'] }]);
+  });
+
+  it('merges option values when both inputs provide them', () => {
+    expect(
+      mergeNetworkFilterOptions(
+        [{ value: '2852', label: 'управління', count: 0, values: ['2852'] }],
+        [{ value: '2852', label: 'управління', count: 3, values: ['2852', '2852-alt'] }],
+      ),
+    ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852', '2852-alt'] }]);
+  });
+
+  it('hydrates selected network labels through reloadAnalysisData', async () => {
+    const networksDeferred = deferred<Array<{ id: number; name: string }>>();
+    let currentOptions = structuredClone(emptyOptions);
+
+    mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
+    mocks.fetchNetworksByIds.mockImplementationOnce(() => networksDeferred.promise);
     mocks.fetchInboxMessages.mockResolvedValue({
-      inboxItems: [[1, { networkIds: [12] }]],
-      callsigns: [{ callsign: 'alpha', res: [] }],
+      inboxItems: [],
+      callsigns: [],
       pageLimit: 20,
     });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
@@ -587,11 +629,9 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
 
-    const setSummaryCallsignsInfo = vi.fn();
-    const setNetworks = vi.fn((update) => {
-      if (typeof update === 'function') update([]);
+    const setOptions = vi.fn((update) => {
+      currentOptions = typeof update === 'function' ? update(currentOptions) : update;
     });
-    const setUnitsMap = vi.fn();
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
@@ -606,8 +646,7 @@ describe('reloadAnalysisData', () => {
         ...emptyQueryState(),
         fromDateTimeStr: '2026-04-01T00:00',
         toDateTimeStr: '2026-04-02T00:00',
-        freqsSelected: ['150.100'],
-        adjacentFreqsRange: 0.002,
+        networksSelected: ['2852'],
       },
       reloadRequestRef: { current: 0 },
       setAorEntries: vi.fn(),
@@ -622,8 +661,8 @@ describe('reloadAnalysisData', () => {
       setMapPoints: vi.fn(),
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
-      setNetworks,
-      setUnitsMap,
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
       setNewCallsigns: vi.fn(),
       setHasLoadedInitialMessages: vi.fn(),
       setNewCallsignsLoading: vi.fn(),
@@ -631,9 +670,9 @@ describe('reloadAnalysisData', () => {
       shouldLoadNewCallsigns: false,
       setNoMoreToLoad: vi.fn(),
       setNolimitShown: vi.fn(),
-      setOptions: vi.fn(),
+      setOptions,
       setProfiles: vi.fn(),
-      setSummaryCallsignsInfo,
+      setSummaryCallsignsInfo: vi.fn(),
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
@@ -647,19 +686,12 @@ describe('reloadAnalysisData', () => {
 
     await reloadPromise;
     await flushPromises();
+    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([2852], undefined);
+
+    networksDeferred.resolve([{ id: 2852, name: 'управління' }]);
     await flushPromises();
 
-    expect(mocks.fetchAnalysisNetworks).toHaveBeenCalled();
-    expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([11, 12], undefined);
-    expect(setUnitsMap).toHaveBeenCalledWith({ 1: { id: 1, name: 'Unit One' } });
-    expect(setNetworks).toHaveBeenCalled();
-    expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
-      buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
-    );
-    expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
-    expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
-    expect(mocks.fetchAnalysisUnits).not.toHaveBeenCalled();
-    expect(mocks.fetchAnalysisLocations).not.toHaveBeenCalled();
+    expect(currentOptions.networks).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
   });
 
   it('does not load map points when the map is hidden', async () => {

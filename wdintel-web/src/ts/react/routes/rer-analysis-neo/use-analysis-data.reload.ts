@@ -96,6 +96,73 @@ function mergeNetworks(existing: Network[], next: Network[]): Network[] {
   return Array.from(merged.values());
 }
 
+function isFallbackNetworkLabel(option: AnalysisFilterOption): boolean {
+  return option.label === `Network ${option.value}`;
+}
+
+function mergeNetworkOptionValues(
+  existing: AnalysisFilterOption,
+  next: AnalysisFilterOption,
+): string[] | undefined {
+  const existingValues = existing.values ?? [existing.value];
+  const nextValues = next.values ?? [next.value];
+  const mergedValues = Array.from(new Set([...existingValues, ...nextValues]));
+  return mergedValues.length > 0 ? mergedValues : undefined;
+}
+
+export function mergeNetworkFilterOptions(
+  existing: AnalysisFilterOption[],
+  next: AnalysisFilterOption[],
+): AnalysisFilterOption[] {
+  const merged = new Map<string, AnalysisFilterOption>();
+
+  for (const option of existing) {
+    merged.set(option.value, option);
+  }
+
+  for (const option of next) {
+    const current = merged.get(option.value);
+    if (current == null) {
+      merged.set(option.value, option);
+      continue;
+    }
+
+    const currentIsFallback = isFallbackNetworkLabel(current);
+    const nextIsFallback = isFallbackNetworkLabel(option);
+    const label =
+      currentIsFallback && !nextIsFallback
+        ? option.label
+        : !currentIsFallback && nextIsFallback
+          ? current.label
+          : option.label;
+
+    merged.set(option.value, {
+      value: option.value,
+      label,
+      count: Math.max(current.count, option.count),
+      values: mergeNetworkOptionValues(current, option),
+    });
+  }
+
+  return Array.from(merged.values()).sort(
+    (left, right) => left.label.localeCompare(right.label) || left.value.localeCompare(right.value),
+  );
+}
+
+export function buildHydratedNetworkFilterOptions(
+  networks: Network[],
+  selectedNetworkIds: number[],
+): AnalysisFilterOption[] {
+  const selectedNetworkIdSet = new Set(selectedNetworkIds);
+  return networks
+    .filter((network) => selectedNetworkIdSet.has(network.id))
+    .map((network) => ({
+      value: String(network.id),
+      label: normalizeFilterLabel(network.name ?? `Network ${network.id}`),
+      count: 0,
+    }));
+}
+
 export function mergeSignalProfiles(
   current: Record<string, SignalProfileEntry | null>,
   next: Record<string, SignalProfileEntry | null>,
@@ -375,13 +442,16 @@ export async function loadFilterSectionData(
       context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setOptions((current) => ({
         ...current,
-        networks: toFilterOptions(
-          networksStatsRsp.networks,
-          (item) => String(item.networkId),
-          (item) =>
-            normalizeFilterLabel(networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
-          (item) => item.count,
-        ).sort((a, b) => a.label.localeCompare(b.label) || a.value.localeCompare(b.value)),
+        networks: mergeNetworkFilterOptions(
+          current.networks,
+          toFilterOptions(
+            networksStatsRsp.networks,
+            (item) => String(item.networkId),
+            (item) =>
+              normalizeFilterLabel(networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
+            (item) => item.count,
+          ),
+        ),
       }));
       return;
     }
@@ -768,12 +838,16 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         if (isStaleReload() || params.signal?.aborted) return;
         const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
         params.setUnitsMap(unitsMap);
+        const selectedNetworkIds = params.queryState.networksSelected
+          .map((value) => Number(value))
+          .filter(Number.isFinite);
         const networkIds = Array.from(
           new Set([
             ...networksStatsRsp.networks.map((item) => item.networkId),
             ...(criticalData.inboxRsp.inboxItems ?? []).flatMap(
               ([, message]) => message.networkIds ?? [],
             ),
+            ...selectedNetworkIds,
           ]),
         );
         const networksByAnalysisIds =
@@ -787,6 +861,16 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);
         });
+        const hydratedNetworkOptions = buildHydratedNetworkFilterOptions(
+          networksByAnalysisIds,
+          selectedNetworkIds,
+        );
+        if (hydratedNetworkOptions.length > 0) {
+          params.setOptions((current) => ({
+            ...current,
+            networks: mergeNetworkFilterOptions(current.networks, hydratedNetworkOptions),
+          }));
+        }
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));

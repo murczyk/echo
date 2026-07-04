@@ -260,7 +260,45 @@ describe('loadFilterSectionData', () => {
         ]);
       }
     });
-    const setOptions = vi.fn();
+    const setOptions = vi.fn((update) => {
+      if (typeof update === 'function') {
+        expect(
+          update({
+            tags: [],
+            aors: [],
+            groups: [],
+            senders: [],
+            freqs: [],
+            newFreqs: [],
+            callsigns: [],
+            units: [],
+            locations: [],
+            posts: [],
+            networks: [{ value: '11', label: 'управління', count: 0 }],
+            metadataCcs: [],
+            metadataSenders: [],
+            metadataReceivers: [],
+            metadataHashes: [],
+          }),
+        ).toEqual({
+          tags: [],
+          aors: [],
+          groups: [],
+          senders: [],
+          freqs: [],
+          newFreqs: [],
+          callsigns: [],
+          units: [],
+          locations: [],
+          posts: [],
+          networks: [{ value: '11', label: 'управління', count: 3, values: ['11'] }],
+          metadataCcs: [],
+          metadataSenders: [],
+          metadataReceivers: [],
+          metadataHashes: [],
+        });
+      }
+    });
 
     await act(async () => {
       await loadFilterSectionData('networks', {
