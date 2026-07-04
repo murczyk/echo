@@ -2598,6 +2598,7 @@ version = "0.1.1-rc.202607031056"
 dependencies = [
  "actix-web",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "echo-im 0.1.1-rc.202607031318",
  "env_logger 0.11.9",
