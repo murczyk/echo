@@ -5592,6 +5592,44 @@ signalUnitStatRowEncoder struct =
         ]
 
 
+type alias ComputerNameSearchReq =
+    { search : String
+    }
+
+
+computerNameSearchReqEncoder : ComputerNameSearchReq -> Json.Encode.Value
+computerNameSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias ComputerNameSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+computerNameSearchResultEncoder : ComputerNameSearchResult -> Json.Encode.Value
+computerNameSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias ComputerNameSearchRsp =
+    { computers : List (ComputerNameSearchResult)
+    }
+
+
+computerNameSearchRspEncoder : ComputerNameSearchRsp -> Json.Encode.Value
+computerNameSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "computers", (Json.Encode.list (computerNameSearchResultEncoder)) struct.computers )
+        ]
+
+
 type alias AddAsKnownNetworkCallsignReq =
     { networkId : Int
     , knownCallsignIds : List (Int)
@@ -12077,6 +12115,25 @@ signalUnitStatRowDecoder =
     Json.Decode.succeed SignalUnitStatRow
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+computerNameSearchReqDecoder : Json.Decode.Decoder ComputerNameSearchReq
+computerNameSearchReqDecoder =
+    Json.Decode.succeed ComputerNameSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+computerNameSearchResultDecoder : Json.Decode.Decoder ComputerNameSearchResult
+computerNameSearchResultDecoder =
+    Json.Decode.succeed ComputerNameSearchResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+computerNameSearchRspDecoder : Json.Decode.Decoder ComputerNameSearchRsp
+computerNameSearchRspDecoder =
+    Json.Decode.succeed ComputerNameSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computers" (Json.Decode.list (computerNameSearchResultDecoder))))
 
 
 addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq

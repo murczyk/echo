@@ -29,6 +29,7 @@ pub mod aor;
 pub mod callsign;
 pub mod comment_review_tui;
 pub mod comments;
+pub mod computer_name;
 pub mod etalonka;
 pub mod freq;
 pub(crate) mod import;

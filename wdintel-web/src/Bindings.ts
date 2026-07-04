@@ -2146,6 +2146,19 @@ export type SignalUnitStatRow = {
   count: number;
 };
 
+export type ComputerNameSearchReq = {
+  search: string;
+};
+
+export type ComputerNameSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type ComputerNameSearchRsp = {
+  computers: Array<ComputerNameSearchResult>;
+};
+
 export type AddAsKnownNetworkCallsignReq = {
   networkId: number;
   knownCallsignIds: Array<number>;

@@ -165,6 +165,7 @@ pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
 pub const FEATURE_SIGINT_COMMENT_PARSING_DEFAULT: bool = false;
 pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
     "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
+pub const COMPUTER_NAME_SEARCH_LIMIT: u64 = 20;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
 pub const SETTLEMENTS_REGION_FILE_EXTENSION: &str = "json";
