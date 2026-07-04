@@ -15,6 +15,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub login: String,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "custom(\"tsvector\")", nullable)]
+    pub search_tsv: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
