@@ -158,6 +158,7 @@ type Params = {
   setOptions: Dispatch<SetStateAction<AnalysisFilterOptions>>;
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setTagsMap: Dispatch<SetStateAction<Record<number, Tag>>>;
+  setTagsOrder: Dispatch<SetStateAction<number[]>>;
 };
 
 export function useAnalysisFilterSections({
@@ -172,6 +173,7 @@ export function useAnalysisFilterSections({
   setOptions,
   setProfiles,
   setTagsMap,
+  setTagsOrder,
 }: Params) {
   const filterSectionLoadVersionRef = useRef(0);
   const nextFilterSectionLoadIdRef = useRef(0);
@@ -302,6 +304,7 @@ export function useAnalysisFilterSections({
           setOptions,
           setProfiles,
           setTagsMap,
+          setTagsOrder,
           unitsMap: unitsMapRef.current,
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
@@ -331,6 +334,7 @@ export function useAnalysisFilterSections({
       setOptions,
       setProfiles,
       setTagsMap,
+      setTagsOrder,
       unitsMapRef,
       filterSectionLoadStates,
       setSectionLoadState,
@@ -394,6 +398,7 @@ export function useAnalysisFilterSections({
               setOptions,
               setProfiles,
               setTagsMap,
+              setTagsOrder,
               networkStatsCache,
               unitsMap: unitsMapRef.current,
             });
@@ -433,6 +438,7 @@ export function useAnalysisFilterSections({
       setOptions,
       setProfiles,
       setTagsMap,
+      setTagsOrder,
       unitsMapRef,
       filterSectionLoadStates,
       setSectionLoadState,

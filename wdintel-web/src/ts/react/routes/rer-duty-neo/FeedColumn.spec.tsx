@@ -165,6 +165,7 @@ function buildProps(): FeedColumnProps {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        tagsOrder: [],
       },
       actions: {
         onLoadOlder: vi.fn(),

@@ -89,6 +89,7 @@ export function useAnalysisData({
     setOptions: referenceState.setOptions,
     setProfiles: referenceState.setProfiles,
     setTagsMap: referenceState.setTagsMap,
+    setTagsOrder: referenceState.setTagsOrder,
   });
 
   const mapData = useAnalysisMapData({
@@ -178,6 +179,7 @@ export function useAnalysisData({
       setProfiles: referenceState.setProfiles,
       setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
       setTagsMap: referenceState.setTagsMap,
+      setTagsOrder: referenceState.setTagsOrder,
       setTopCallsigns: sidebarData.setTopCallsigns,
       setTopFreqs: sidebarData.setTopFreqs,
       setTopLocations: sidebarData.setTopLocations,
@@ -261,6 +263,7 @@ export function useAnalysisData({
     summaryCallsignsInfo: referenceState.summaryCallsignsInfo,
     unitsMap: referenceState.unitsMap,
     tagsMap: referenceState.tagsMap,
+    tagsOrder: referenceState.tagsOrder,
     topCallsigns: sidebarData.topCallsigns,
     topFreqs: sidebarData.topFreqs,
     groupInfos: referenceState.groupInfos,

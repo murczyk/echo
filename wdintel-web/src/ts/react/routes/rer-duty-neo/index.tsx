@@ -190,6 +190,7 @@ export function RerDutyNeoPage({
       featureStrictNetworks,
       tagsLayout,
       tagsMap,
+      tagsOrder,
     },
     actions: {
       onLoadOlder: () => loadFeedOlderMessages(feed.id),
@@ -278,6 +279,7 @@ export function RerDutyNeoPage({
     groupsList,
     groupInfos,
     tagsMap,
+    tagsOrder,
     savedFilters,
     selectedSavedIdByFeedId,
     setSelectedSavedIdByFeedId,

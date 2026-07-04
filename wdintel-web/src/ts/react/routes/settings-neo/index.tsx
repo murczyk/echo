@@ -6,6 +6,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
+import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { SettingsMyReportsSection } from './SettingsMyReportsSection';
@@ -13,7 +14,8 @@ import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
-export type SettingsSection = 'general' | 'myGroups' | 'duty' | 'analysis' | 'myReports';
+export type SettingsSection =
+  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -23,6 +25,7 @@ const SETTINGS_SECTION_QUERY_PARAM = 'section';
 
 function serializeSettingsSection(section: SettingsSection): string {
   if (section === 'myGroups') return 'my-groups';
+  if (section === 'myOrganism') return 'my-organism';
   if (section === 'myReports') return 'my-reports';
   return section;
 }
@@ -30,6 +33,9 @@ function serializeSettingsSection(section: SettingsSection): string {
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
   if (section === 'my-groups') {
     return 'myGroups';
+  }
+  if (section === 'my-organism') {
+    return 'myOrganism';
   }
   if (section === 'my-reports') {
     return 'myReports';
@@ -188,6 +194,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               aria-controls="settings-neo-panel-my-groups"
             />
             <Tab
+              value="myOrganism"
+              label="Мій організм"
+              id="settings-neo-tab-my-organism"
+              aria-controls="settings-neo-panel-my-organism"
+            />
+            <Tab
               value="duty"
               label="Оперативний"
               id="settings-neo-tab-duty"
@@ -216,6 +228,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onGroupsChanged={() => loadMyGroups()}
             />
           ) : null}
+
+          {settingsSection === 'myOrganism' ? <SettingsMyOrganismSection /> : null}
 
           {settingsSection === 'duty' ? (
             <SettingsDutySection

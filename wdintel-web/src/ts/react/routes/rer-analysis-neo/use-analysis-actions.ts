@@ -55,6 +55,7 @@ type Params = {
   setSummaryLoaded: Setter<boolean>;
   setSummaryLoading: Setter<boolean>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -101,6 +102,7 @@ export function useAnalysisActions(params: Params) {
     setSummaryLoading: params.setSummaryLoading,
     setSummaryRows: params.setSummaryRows,
     setTagsMap: params.setTagsMap,
+    setTagsOrder: params.setTagsOrder,
     setTopCallsigns: params.setTopCallsigns,
     setTopFreqs: params.setTopFreqs,
     setTopLocations: params.setTopLocations,

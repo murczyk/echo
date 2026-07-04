@@ -51,6 +51,7 @@ type Params = {
   setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -93,6 +94,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
@@ -131,6 +133,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setProfiles({});
     setGroupInfos({});
     setTagsMap({});
+    setTagsOrder([]);
     setNetworks([]);
     setUnitsMap({});
     setNetworkDisplayMap({});
@@ -185,6 +188,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,

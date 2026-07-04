@@ -84,6 +84,7 @@ export function buildAnalysisActionsParams({
     setSummaryLoaded: sidebarData.setSummaryLoaded,
     setSummaryLoading: sidebarData.setSummaryLoading,
     setTagsMap: referenceState.setTagsMap,
+    setTagsOrder: referenceState.setTagsOrder,
     setTopCallsigns: sidebarData.setTopCallsigns,
     setTopFreqs: sidebarData.setTopFreqs,
     setTopLocations: sidebarData.setTopLocations,
@@ -157,6 +158,7 @@ type BuildReloadParamsInput = {
   setProfiles: ReferenceState['setProfiles'];
   setSummaryCallsignsInfo: ReferenceState['setSummaryCallsignsInfo'];
   setTagsMap: ReferenceState['setTagsMap'];
+  setTagsOrder: ReferenceState['setTagsOrder'];
   setTopCallsigns: SidebarData['setTopCallsigns'];
   setTopFreqs: SidebarData['setTopFreqs'];
   setTopLocations: SidebarData['setTopLocations'];
@@ -218,6 +220,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     setProfiles: input.setProfiles,
     setSummaryCallsignsInfo: input.setSummaryCallsignsInfo,
     setTagsMap: input.setTagsMap,
+    setTagsOrder: input.setTagsOrder,
     setTopCallsigns: input.setTopCallsigns,
     setTopFreqs: input.setTopFreqs,
     setTopLocations: input.setTopLocations,

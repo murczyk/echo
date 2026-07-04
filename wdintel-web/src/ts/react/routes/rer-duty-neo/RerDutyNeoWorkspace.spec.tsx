@@ -132,6 +132,7 @@ describe('RerDutyNeoWorkspace', () => {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        tagsOrder: [],
       },
       actions: {
         onLoadOlder: () => {},

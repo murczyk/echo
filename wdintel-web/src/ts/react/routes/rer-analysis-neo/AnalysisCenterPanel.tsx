@@ -201,6 +201,7 @@ export function AnalysisCenterPanel({
             profiles={page.profiles}
             users={page.users}
             tagsMap={page.tagsMap}
+            tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
             searchText={page.queryState.search}

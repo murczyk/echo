@@ -28,7 +28,7 @@ import {
   fetchInboxMessages,
   fetchNetworksByIds,
   getLatestSenders,
-  getTagsMapForDisplay,
+  getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { getUnitsList } from '../../services/api/units';
@@ -71,6 +71,7 @@ type FilterSectionLoadContext = {
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   unitsMap: Record<number, Unit>;
 };
 
@@ -222,18 +223,19 @@ export async function loadFilterSectionData(
 
   switch (section) {
     case 'tags': {
-      const [tagsRsp, tagsDisplayMap] = await Promise.all([
+      const [tagsRsp, tagsDisplay] = await Promise.all([
         fetchAnalysisTags(context.analysisReq, requestOptions),
-        getTagsMapForDisplay(requestOptions),
+        getTagsForDisplay(requestOptions),
       ]);
       if (isStale() || isAborted()) return;
-      context.setTagsMap(tagsDisplayMap);
+      context.setTagsMap(tagsDisplay.tagsMap);
+      context.setTagsOrder(tagsDisplay.tagsOrder);
       context.setOptions((current) => ({
         ...current,
         tags: toFilterOptions(
           tagsRsp.tags,
           (item) => String(item.tagId),
-          (item) => tagsDisplayMap[item.tagId]?.label ?? String(item.tagId),
+          (item) => tagsDisplay.tagsMap[item.tagId]?.label ?? String(item.tagId),
           (item) => item.count,
         ),
       }));

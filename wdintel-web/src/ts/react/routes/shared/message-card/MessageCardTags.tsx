@@ -8,68 +8,19 @@ import { Box, Button, Tooltip } from '@mui/material';
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
+import { buildMessageCardTagRows } from './MessageCardTags.helpers';
+import type { MessageCardTagRow } from './MessageCardTags.helpers';
 
 const TAG_CHIP_GAP_PX = 4;
 const COMPACT_EXPAND_BTN_RESERVE_PX = 92;
 const COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX = 44;
 const TAG_CHIP_BADGE_TOP_PADDING_THEME = 1.75;
 
-type MessageCardTagRow = {
-  tagId: number;
-  label: string;
-  isSet: boolean;
-  tip: string | null;
-  showBadge: boolean;
-  humanContribsLen: number;
-  botContribsLen: number;
-};
-
 function estimateTagChipWidthPx(label: string): number {
   return Math.min(180, Math.max(28, Math.round(label.length * 6.5 + 26)));
 }
 
-function buildMessageCardTagRows(
-  msg: InboxMessage,
-  tagsMap: Record<number, Tag>,
-): MessageCardTagRow[] {
-  return Object.keys(tagsMap).map((tagId) => {
-    const tag = tagsMap[tagId];
-    const numericTagId = Number(tagId);
-    const label = tag.label ?? `#${tagId}`;
-    const inboxTagList = msg.inboxTags ?? [];
-    const isSet =
-      inboxTagList.length > 0
-        ? inboxTagList.some((t) => t.tagId === numericTagId)
-        : (msg.tags ?? []).includes(numericTagId);
-    const contribs = inboxTagList.filter((t) => t.tagId === numericTagId);
-    const humanContribs = contribs.filter((t) => !t.model);
-    const botContribs = contribs.filter((t) => t.model);
-    const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
-    const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
-    const tip =
-      isSet && (humanContribs.length > 0 || botContribs.length > 0)
-        ? [
-            ...(humanLogins.length > 0
-              ? [`Користувачі: ${humanLogins.join(', ')}`]
-              : humanContribs.length > 0
-                ? ['Користувачі: (ваш вибір)']
-                : []),
-            ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
-          ].join('\n')
-        : null;
-    return {
-      tagId: numericTagId,
-      label,
-      isSet,
-      tip,
-      showBadge: isSet && (humanContribs.length > 0 || botContribs.length > 0),
-      humanContribsLen: humanContribs.length,
-      botContribsLen: botContribs.length,
-    };
-  });
-}
-
-function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
+export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
   return [...rows.filter((row) => row.isSet), ...rows.filter((row) => !row.isSet)].map(
     (row) => row.tagId,
   );
@@ -78,17 +29,22 @@ function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
 export function MessageCardTags({
   msg,
   tagsMap,
+  tagsOrder,
   onToggleTag,
   tagsLayout,
 }: {
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
   onToggleTag: (tagId: number) => void;
   tagsLayout: TagsLayoutVariant;
 }) {
   const [showCompactRest, setShowCompactRest] = useState(false);
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
-  const rows = useMemo(() => buildMessageCardTagRows(msg, tagsMap), [msg, tagsMap]);
+  const rows = useMemo(
+    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder),
+    [msg, tagsMap, tagsOrder],
+  );
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.tagId, row] as const)), [rows]);
   const rowIdKey = useMemo(
     () =>

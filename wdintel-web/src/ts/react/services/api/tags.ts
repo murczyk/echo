@@ -1,6 +1,7 @@
 import { TagAdmin, TagKeyword, TagKeywordAddReq, TagUpsertReq } from '../../../../Bindings';
 
 import { deleteVoid, getJson, postJson, putJson, putVoid } from './client';
+import type { RequestOptions } from './client';
 
 export type TagModelErrorFE = {
   id: number;
@@ -69,8 +70,7 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
     ord: raw.ord ?? null,
     enabled: raw.enabled ?? false,
     isPalitra: raw.isPalitra ?? raw.is_palitra ?? false,
-    ownerOrganismId:
-      raw.ownerOrganismId ?? raw.owner_organism_id ?? null,
+    ownerOrganismId: raw.ownerOrganismId ?? raw.owner_organism_id ?? null,
     keywords: (raw.keywords ?? []).map(normalizeTagKeyword),
   };
 }
@@ -99,9 +99,12 @@ export async function listTags(): Promise<TagAdmin[]> {
 }
 
 export async function listOrganismTags(organismId: number): Promise<TagAdmin[]> {
-  const data = await postJson<TagAdminLike[]>(
-    `/api/admin/organisms/${organismId}/tags/list`,
-  );
+  const data = await postJson<TagAdminLike[]>(`/api/admin/organisms/${organismId}/tags/list`);
+  return (data || []).map(normalizeTagAdmin);
+}
+
+export async function listCurrentOrganismTags(options?: RequestOptions): Promise<TagAdmin[]> {
+  const data = await postJson<TagAdminLike[]>('/api/tags/organism/list', {}, options);
   return (data || []).map(normalizeTagAdmin);
 }
 
@@ -110,7 +113,10 @@ export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[
   return data.map(normalizeTagModelError);
 }
 
-function toTagUpsertReqBody(req: TagUpsertReq, ownerOrganismId = req.ownerOrganismId): Record<string, any> {
+function toTagUpsertReqBody(
+  req: TagUpsertReq,
+  ownerOrganismId = req.ownerOrganismId,
+): Record<string, any> {
   return {
     label: req.label,
     extra: req.extra,
@@ -139,7 +145,11 @@ export async function createOrganismTag(organismId: number, req: TagUpsertReq): 
   return normalizeTagAdmin(data);
 }
 
-export async function updateOrganismTag(organismId: number, tagId: number, req: TagUpsertReq): Promise<TagAdmin> {
+export async function updateOrganismTag(
+  organismId: number,
+  tagId: number,
+  req: TagUpsertReq,
+): Promise<TagAdmin> {
   const data = await putJson<TagAdminLike>(
     `/api/admin/organisms/${organismId}/tags/${tagId}`,
     toTagUpsertReqBody(req, organismId),

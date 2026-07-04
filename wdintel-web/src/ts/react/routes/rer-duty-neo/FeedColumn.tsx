@@ -59,6 +59,7 @@ export type FeedColumnModel = {
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
     tagsMap: Record<number, Tag>;
+    tagsOrder: number[];
   };
   actions: {
     onLoadOlder: () => void;

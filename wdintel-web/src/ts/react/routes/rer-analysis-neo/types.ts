@@ -204,6 +204,7 @@ export type AnalysisPageState = {
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   topCallsigns: AnalysisCountItem[];
   topFreqs: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];

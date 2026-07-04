@@ -85,6 +85,7 @@ export type MessageCardProps = {
   /** When false, allow `msg.unit` fallback when network ids are empty. */
   featureStrictNetworks?: boolean;
   tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -128,6 +129,7 @@ export function MessageCard({
   networkMap = {},
   featureStrictNetworks = false,
   tagsMap,
+  tagsOrder,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -303,6 +305,7 @@ export function MessageCard({
         <MessageCardContent
           msg={msg}
           tagsMap={tagsMap}
+          tagsOrder={tagsOrder}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           tagsLayout={tagsLayout}
