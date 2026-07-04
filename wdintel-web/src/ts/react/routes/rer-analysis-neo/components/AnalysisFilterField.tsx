@@ -33,6 +33,9 @@ type Props = {
   preserveSelectedOptionValuesOnChange?: boolean;
   bulkPaste?: boolean;
   bulkPasteSeparators?: string[];
+  bulkPasteMenuLabel?: string;
+  bulkPasteDialogTitle?: string;
+  bulkPasteInputLabel?: string;
   onChange: (next: string[]) => void;
 };
 
@@ -153,6 +156,9 @@ export function AnalysisFilterField({
   preserveSelectedOptionValuesOnChange = false,
   bulkPaste = false,
   bulkPasteSeparators,
+  bulkPasteMenuLabel,
+  bulkPasteDialogTitle,
+  bulkPasteInputLabel,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -227,6 +233,9 @@ export function AnalysisFilterField({
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
       bulkPaste={bulkPaste}
       bulkPasteSeparators={bulkPasteSeparators}
+      bulkPasteMenuLabel={bulkPasteMenuLabel}
+      bulkPasteDialogTitle={bulkPasteDialogTitle}
+      bulkPasteInputLabel={bulkPasteInputLabel}
       onBulkPasteChange={bulkPaste ? handleBulkPasteChange : undefined}
       openText="Відкрити"
       closeText="Закрити"

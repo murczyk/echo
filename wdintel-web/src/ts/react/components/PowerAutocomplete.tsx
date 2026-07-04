@@ -1,8 +1,23 @@
-import { Autocomplete, Box, Paper, Popper, TextField } from '@mui/material';
-import type { AutocompleteCloseReason, AutocompleteProps } from '@mui/material/Autocomplete';
-import type { PopperProps } from '@mui/material/Popper';
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import type { ClipboardEvent, ReactNode } from 'react';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import {
+  Autocomplete,
+  Box,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
+  MenuItem,
+  TextField,
+  Typography,
+} from '@mui/material';
+import type { AutocompleteProps } from '@mui/material/Autocomplete';
+import { useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import { PowerButton } from './PowerButton';
+import { PowerIconButton } from './PowerIconButton';
+import { PowerMenu } from './PowerMenu';
+import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 type BulkPasteResolution<T> = {
   tokens: string[];
@@ -20,6 +35,9 @@ type PowerAutocompleteProps<T> = Omit<
   renderInput: AutocompleteProps<T, true, false, false>['renderInput'];
   bulkPaste?: boolean;
   bulkPasteSeparators?: string[];
+  bulkPasteMenuLabel?: string;
+  bulkPasteDialogTitle?: string;
+  bulkPasteInputLabel?: string;
   getBulkPasteOptionLabel?: (option: T) => string;
   onBulkPasteChange?: (nextValue: T[]) => void;
   onBulkPasteResolved?: (result: BulkPasteResolution<T>) => void;
@@ -109,48 +127,6 @@ function containsOption<T>(
   return selection.some((value) => areOptionsEqual(option, value, isOptionEqualToValue));
 }
 
-function eventRelatedTarget(event: unknown): unknown {
-  if (typeof event !== 'object' || event === null || !('relatedTarget' in event)) {
-    return null;
-  }
-
-  return (event as { relatedTarget?: unknown }).relatedTarget ?? null;
-}
-
-function isInsideBulkPasteContainer(
-  relatedTarget: unknown,
-  bulkPasteContainer: HTMLDivElement | null,
-): boolean {
-  if (relatedTarget == null || typeof relatedTarget !== 'object') {
-    return false;
-  }
-
-  try {
-    if (bulkPasteContainer?.contains(relatedTarget as Node)) {
-      return true;
-    }
-  } catch {
-    // Ignore non-Node blur targets.
-  }
-
-  return (
-    typeof (relatedTarget as Element).closest === 'function' &&
-    (relatedTarget as Element).closest('[data-bulk-paste-container="true"]') !== null
-  );
-}
-
-function eventTargetIsInside(target: EventTarget | null, element: HTMLElement | null): boolean {
-  if (target == null || element == null) {
-    return false;
-  }
-
-  try {
-    return element.contains(target as Node);
-  } catch {
-    return false;
-  }
-}
-
 function mergeBulkSelection<T>(
   currentValue: readonly T[],
   matchedOptions: T[],
@@ -173,13 +149,16 @@ function mergeBulkSelection<T>(
 }
 
 function buildBulkResolution<T>(args: {
-  tokens: string[];
+  inputValue: string;
   options: readonly T[];
   selectedValue: readonly T[];
   getOptionLabel: (option: T) => string;
   isOptionEqualToValue?: (option: T, value: T) => boolean;
+  separators: string[];
 }): BulkPasteResolution<T> {
-  const { tokens, options, selectedValue, getOptionLabel, isOptionEqualToValue } = args;
+  const { inputValue, options, selectedValue, getOptionLabel, isOptionEqualToValue, separators } =
+    args;
+  const tokens = splitBulkPasteValue(inputValue, separators);
   const lookup = new Map<string, T>();
 
   options.forEach((option) => {
@@ -209,216 +188,219 @@ function buildBulkResolution<T>(args: {
   };
 }
 
-function splitBulkPasteTokens(pastedValue: string, separators: string[]): string[] {
-  return splitBulkPasteValue(pastedValue, separators);
+function formatPreviewValues<T>(values: T[], getOptionLabel: (option: T) => string): string {
+  return values.map(getOptionLabel).join(', ');
+}
+
+function formatPreviewTokens(tokens: string[]): string {
+  return tokens.join(', ');
 }
 
 export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const {
     bulkPaste = false,
     bulkPasteSeparators = [','],
+    bulkPasteMenuLabel,
+    bulkPasteDialogTitle,
+    bulkPasteInputLabel,
     getBulkPasteOptionLabel,
     onBulkPasteChange,
     onBulkPasteResolved,
-    PaperComponent,
-    PopperComponent,
     renderInput,
     ...autocompleteProps
   } = props;
-  const { onClose, ...autocompletePropsWithoutClose } = autocompleteProps;
+  const { onClose } = autocompleteProps;
   const options = autocompleteProps.options;
   const value = autocompleteProps.value;
-  const loading = autocompleteProps.loading;
-  const open = autocompleteProps.open;
-  const getOptionLabel = autocompleteProps.getOptionLabel;
+  const getOptionLabel = autocompleteProps.getOptionLabel ?? (() => '');
   const isOptionEqualToValue = autocompleteProps.isOptionEqualToValue;
   const onChange = autocompleteProps.onChange;
   const selectedValue = value ?? [];
-  const optionLabel = getOptionLabel ?? (() => '');
-  const bulkPasteLabel = getBulkPasteOptionLabel ?? optionLabel;
-  const autocompleteRootRef = useRef<HTMLDivElement | null>(null);
-  const bulkPastePaperRef = useRef<HTMLDivElement | null>(null);
-  const bulkPasteContainerRef = useRef<HTMLDivElement | null>(null);
-  const [bulkInputValue, setBulkInputValue] = useState('');
-  const bulkStateRef = useRef<{
-    bulkInputValue: string;
-    setBulkInputValue: (nextValue: string) => void;
-    processBulkPaste: (pastedValue: string) => void;
-    placeholder: string;
-    loading: boolean;
-  } | null>(null);
+  const bulkPasteLabel = getBulkPasteOptionLabel ?? getOptionLabel;
+  const menuLabel = bulkPasteMenuLabel ?? 'Додати значення зі списку';
+  const dialogTitle = bulkPasteDialogTitle ?? 'Додати значення зі списку';
+  const inputLabel = bulkPasteInputLabel ?? 'Значення';
+  const [bulkMenuAnchorEl, setBulkMenuAnchorEl] = useState<HTMLElement | null>(null);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkDialogInputValue, setBulkDialogInputValue] = useState('');
+  const [pendingBulkDialogOpen, setPendingBulkDialogOpen] = useState(false);
 
-  const processBulkPaste = (pastedValue: string) => {
-    if (loading) return;
-
-    const tokens = splitBulkPasteValue(pastedValue, bulkPasteSeparators);
-    if (tokens.length < 2) return;
-
-    const result = buildBulkResolution({
-      tokens,
+  const bulkPreview = useMemo(
+    () =>
+      buildBulkResolution({
+        inputValue: bulkDialogInputValue,
+        options,
+        selectedValue,
+        getOptionLabel: bulkPasteLabel,
+        isOptionEqualToValue,
+        separators: bulkPasteSeparators,
+      }),
+    [
+      bulkDialogInputValue,
+      bulkPasteLabel,
+      bulkPasteSeparators,
+      isOptionEqualToValue,
       options,
       selectedValue,
-      getOptionLabel: bulkPasteLabel,
-      isOptionEqualToValue,
-    });
-    onBulkPasteResolved?.(result);
-
-    if (result.added.length === 0) {
-      bulkStateRef.current?.setBulkInputValue(
-        result.missing.length > 0 ? result.missing.join(bulkPasteSeparators[0] ?? ',') : '',
-      );
-      return;
-    }
-
-    const nextValue = result.finalValue;
-    if (onBulkPasteChange) {
-      onBulkPasteChange(nextValue);
-    } else {
-      onChange?.(null as never, nextValue, 'selectOption', undefined);
-    }
-
-    bulkStateRef.current?.setBulkInputValue(
-      result.missing.length > 0 ? result.missing.join(bulkPasteSeparators[0] ?? ',') : '',
-    );
-  };
-
-  bulkStateRef.current = {
-    bulkInputValue,
-    setBulkInputValue,
-    processBulkPaste,
-    placeholder: formatBulkPastePlaceholder(bulkPasteSeparators),
-    loading: Boolean(loading),
-  };
-
-  const handleBulkInputPaste = (event: ClipboardEvent<HTMLInputElement>) => {
-    if (event.defaultPrevented) {
-      return;
-    }
-
-    const bulkState = bulkStateRef.current;
-    if (!bulkState) {
-      return;
-    }
-
-    const pastedValue = event.clipboardData.getData('text/plain');
-    const tokens = splitBulkPasteTokens(pastedValue, bulkPasteSeparators);
-    if (bulkState.loading || tokens.length < 2) {
-      event.preventDefault();
-      bulkState.setBulkInputValue(pastedValue);
-      return;
-    }
-
-    event.preventDefault();
-    bulkState.processBulkPaste(pastedValue);
-  };
-
-  const BulkPastePopper = useMemo(() => {
-    const BasePopper = PopperComponent ?? Popper;
-
-    return forwardRef<HTMLDivElement, PopperProps>(function BulkPastePopper(popperProps, ref) {
-      const bulkState = bulkStateRef.current;
-      if (!bulkState) {
-        return <BasePopper {...popperProps} ref={ref} />;
-      }
-      const { children, ...popperPropsRest } = popperProps;
-      const popperChildren = children as ReactNode;
-
-      return (
-        <BasePopper {...popperPropsRest} ref={ref}>
-          <Box ref={bulkPastePaperRef}>
-            <Paper
-              elevation={8}
-              sx={{
-                overflow: 'hidden',
-                backgroundColor: 'background.paper',
-                color: 'text.primary',
-                border: 1,
-                borderColor: 'divider',
-                borderBottom: 0,
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: 0,
-              }}
-            >
-              <Box
-                ref={bulkPasteContainerRef}
-                data-bulk-paste-container="true"
-                sx={{
-                  p: 1,
-                  backgroundColor: 'background.paper',
-                }}
-              >
-                <TextField
-                  size="small"
-                  value={bulkState.bulkInputValue}
-                  placeholder={bulkState.placeholder}
-                  onPaste={handleBulkInputPaste}
-                  onChange={(event) => bulkState.setBulkInputValue(event.target.value)}
-                  inputProps={{
-                    onPaste: handleBulkInputPaste,
-                  }}
-                  disabled={bulkState.loading}
-                  fullWidth
-                />
-              </Box>
-            </Paper>
-            <Box
-              sx={{
-                '& .MuiAutocomplete-paper': {
-                  borderTopLeftRadius: 0,
-                  borderTopRightRadius: 0,
-                },
-              }}
-            >
-              {popperChildren}
-            </Box>
-          </Box>
-        </BasePopper>
-      );
-    });
-  }, [PopperComponent, bulkPasteSeparators]);
-
-  const handleClose = (event: unknown, reason: AutocompleteCloseReason) => {
-    if (reason === 'blur') {
-      const relatedTarget = eventRelatedTarget(event);
-      if (isInsideBulkPasteContainer(relatedTarget, bulkPasteContainerRef.current)) {
-        return;
-      }
-    }
-
-    onClose?.(event as never, reason);
-  };
+    ],
+  );
 
   useEffect(() => {
-    if (!bulkPaste || !open) return undefined;
+    if (!bulkPaste || !pendingBulkDialogOpen || bulkMenuAnchorEl != null) {
+      return;
+    }
+    setPendingBulkDialogOpen(false);
+    setBulkDialogInputValue('');
+    setBulkDialogOpen(true);
+  }, [bulkMenuAnchorEl, bulkPaste, pendingBulkDialogOpen]);
 
-    const handleDocumentPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (
-        eventTargetIsInside(target, autocompleteRootRef.current) ||
-        eventTargetIsInside(target, bulkPastePaperRef.current)
-      ) {
-        return;
-      }
+  useEffect(() => {
+    if (!bulkPaste || !bulkDialogOpen) {
+      return;
+    }
+    if (bulkDialogInputValue.trim().length === 0) {
+      return;
+    }
+    onBulkPasteResolved?.(bulkPreview);
+  }, [bulkDialogInputValue, bulkDialogOpen, bulkPaste, bulkPreview, onBulkPasteResolved]);
 
-      onClose?.(event as never, 'blur');
-    };
+  const openBulkMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setBulkMenuAnchorEl(event.currentTarget);
+  };
 
-    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-    return () => {
-      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-    };
-  }, [bulkPaste, onClose, open]);
+  const closeBulkMenu = () => {
+    setBulkMenuAnchorEl(null);
+  };
+
+  const openBulkDialog = () => {
+    bulkMenuAnchorEl?.focus();
+    closeBulkMenu();
+    setPendingBulkDialogOpen(true);
+  };
+
+  const closeBulkDialog = () => {
+    setBulkDialogOpen(false);
+    setBulkDialogInputValue('');
+    setPendingBulkDialogOpen(false);
+  };
+
+  const submitBulkDialog = () => {
+    if (bulkPreview.added.length === 0) {
+      return;
+    }
+
+    if (onBulkPasteChange) {
+      onBulkPasteChange(bulkPreview.finalValue);
+    } else {
+      onChange?.(null as never, bulkPreview.finalValue, 'selectOption', undefined);
+    }
+
+    closeBulkDialog();
+  };
+
+  const renderInputWithBulkAction = (params: Parameters<typeof renderInput>[0]) => {
+    const endAdornment = params.InputProps?.endAdornment;
+    return renderInput({
+      ...params,
+      InputProps: {
+        ...params.InputProps,
+        endAdornment: bulkPaste ? (
+          <InputAdornment position="end">
+            <PowerIconButton
+              aria-label={menuLabel}
+              disabled={autocompleteProps.disabled}
+              size="small"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={openBulkMenu}
+            >
+              <MoreVertIcon fontSize="small" />
+            </PowerIconButton>
+            {endAdornment}
+          </InputAdornment>
+        ) : (
+          endAdornment
+        ),
+      },
+    });
+  };
 
   return (
-    <Box ref={autocompleteRootRef}>
+    <>
       <Autocomplete<T, true, false, false>
         multiple
-        {...autocompletePropsWithoutClose}
-        onClose={handleClose}
-        renderInput={renderInput}
-        PaperComponent={PaperComponent}
-        PopperComponent={bulkPaste ? BulkPastePopper : PopperComponent}
+        {...autocompleteProps}
+        onClose={onClose}
+        renderInput={bulkPaste ? renderInputWithBulkAction : renderInput}
       />
-    </Box>
+      {bulkPaste ? (
+        <>
+          <PowerMenu
+            anchorEl={bulkMenuAnchorEl}
+            open={bulkMenuAnchorEl != null}
+            onClose={closeBulkMenu}
+          >
+            <MenuItem onClick={openBulkDialog}>{menuLabel}</MenuItem>
+          </PowerMenu>
+          <Dialog open={bulkDialogOpen} onClose={closeBulkDialog} fullWidth maxWidth="sm">
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
+              <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
+                <TextField
+                  autoFocus
+                  fullWidth
+                  label={inputLabel}
+                  multiline
+                  minRows={4}
+                  placeholder={formatBulkPastePlaceholder(bulkPasteSeparators)}
+                  value={bulkDialogInputValue}
+                  onChange={(event) => setBulkDialogInputValue(event.target.value)}
+                />
+                <Box sx={{ display: 'grid', gap: 1 }}>
+                  {bulkPreview.added.length > 0 ? (
+                    <>
+                      <Typography variant="subtitle2">Буде додано</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatPreviewValues(bulkPreview.added, bulkPasteLabel)}
+                      </Typography>
+                    </>
+                  ) : null}
+                  {bulkPreview.alreadySelected.length > 0 ? (
+                    <>
+                      <Typography variant="subtitle2">Вже обрано</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatPreviewValues(bulkPreview.alreadySelected, bulkPasteLabel)}
+                      </Typography>
+                    </>
+                  ) : null}
+                  {bulkPreview.missing.length > 0 ? (
+                    <>
+                      <Typography variant="subtitle2">Не знайдено</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatPreviewTokens(bulkPreview.missing)}
+                      </Typography>
+                    </>
+                  ) : null}
+                </Box>
+              </Box>
+            </DialogContent>
+            <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+              <PowerButton onClick={closeBulkDialog}>Скасувати</PowerButton>
+              <PowerButton
+                variant="contained"
+                disabled={bulkPreview.added.length === 0}
+                onClick={submitBulkDialog}
+              >
+                Додати
+              </PowerButton>
+            </DialogActions>
+          </Dialog>
+        </>
+      ) : null}
+    </>
   );
 }

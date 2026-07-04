@@ -53,6 +53,9 @@ describe('AnalysisFilterField', () => {
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
       ) => void;
       bulkPasteSeparators?: string[];
+      bulkPasteMenuLabel?: string;
+      bulkPasteDialogTitle?: string;
+      bulkPasteInputLabel?: string;
       onInputChange: (
         _event: unknown,
         nextInputValue: string,
@@ -133,10 +136,14 @@ describe('AnalysisFilterField', () => {
       value: [],
       bulkPaste: true,
       bulkPasteSeparators: [',', '\n'],
+      bulkPasteInputLabel: 'Частоти',
       onChange: vi.fn(),
     });
 
     expect(latestAutocompleteProps().bulkPasteSeparators).toEqual([',', '\n']);
+    expect(latestAutocompleteProps().bulkPasteInputLabel).toBe('Частоти');
+    expect(latestAutocompleteProps().bulkPasteMenuLabel).toBeUndefined();
+    expect(latestAutocompleteProps().bulkPasteDialogTitle).toBeUndefined();
   });
 
   it('preserves already selected grouped values when requested', () => {

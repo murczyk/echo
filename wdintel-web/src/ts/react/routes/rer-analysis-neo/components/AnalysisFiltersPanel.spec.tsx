@@ -367,10 +367,22 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(await renderComponent(buildProps()));
 
     const frequencyField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; bulkPasteSeparators?: string[] })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            bulkPasteSeparators?: string[];
+            bulkPasteMenuLabel?: string;
+            bulkPasteDialogTitle?: string;
+            bulkPasteInputLabel?: string;
+          },
+      )
       .find((callProps) => callProps.label === 'Частоти');
 
     expect(frequencyField?.bulkPasteSeparators).toEqual([',', '\n']);
+    expect(frequencyField?.bulkPasteInputLabel).toBe('Частоти');
+    expect(frequencyField?.bulkPasteMenuLabel).toBeUndefined();
+    expect(frequencyField?.bulkPasteDialogTitle).toBeUndefined();
   });
 
   it('keeps server-backed filter fields interactive while the page reloads', async () => {

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, forwardRef, type ReactNode } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,11 +11,13 @@ type TextFieldProps = {
   value?: string;
   disabled?: boolean;
   fullWidth?: boolean;
+  multiline?: boolean;
+  minRows?: number;
+  onChange?: (event: { target: { value: string } }) => void;
   onPaste?: (event: {
     clipboardData: { getData: (type: string) => string };
     preventDefault: () => void;
   }) => void;
-  onChange?: (event: { target: { value: string } }) => void;
   inputProps?: {
     onPaste?: (event: {
       clipboardData: { getData: (type: string) => string };
@@ -26,13 +28,8 @@ type TextFieldProps = {
 
 type PaperComponent = (props: { children?: ReactNode }) => ReactNode;
 type PopperComponent = (props: { children?: ReactNode }) => ReactNode;
-type BoxProps = {
-  onMouseDown?: (event: { preventDefault: () => void }) => void;
-  children?: ReactNode;
-  'data-bulk-paste-container'?: string;
-};
 
-let latestAutocompleteProps: {
+type AutocompletePropsCapture = {
   PaperComponent?: PaperComponent;
   PopperComponent?: PopperComponent;
   renderInput?: (params: unknown) => ReactNode;
@@ -42,54 +39,122 @@ let latestAutocompleteProps: {
   isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
   onChange?: (...args: unknown[]) => void;
   onClose?: (event: unknown, reason: string) => void;
+};
+
+type PowerIconButtonProps = {
+  'aria-label'?: string;
+  children?: ReactNode;
+  disabled?: boolean;
+  onClick?: (event: {
+    currentTarget: HTMLButtonElement;
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => void;
+  onMouseDown?: (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
+  size?: string;
+};
+
+type PowerMenuProps = {
+  anchorEl?: HTMLElement | null;
+  children?: ReactNode;
+  open?: boolean;
+  onClose?: () => void;
+};
+
+type PowerButtonProps = {
+  children?: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+};
+
+let latestAutocompleteProps: AutocompletePropsCapture | null = null;
+let latestRenderInputParams: {
+  InputProps?: { endAdornment?: ReactNode };
+  inputProps?: { onPaste?: () => void };
 } | null = null;
-let latestRenderInputParams: { inputProps?: { onPaste?: (event: unknown) => void } } | null = null;
 let textFieldProps: TextFieldProps[] = [];
-let boxProps: BoxProps[] = [];
+let powerMenuProps: PowerMenuProps[] = [];
 
 vi.mock('@mui/material', () => ({
-  Autocomplete: (props: {
-    PaperComponent?: PaperComponent;
-    PopperComponent?: PopperComponent;
-    renderInput?: (params: unknown) => ReactNode;
-    value?: unknown;
-    loading?: boolean;
-    getOptionLabel?: (option: unknown) => string;
-    isOptionEqualToValue?: (option: unknown, value: unknown) => boolean;
-    onChange?: (...args: unknown[]) => void;
-    onClose?: (event: unknown, reason: string) => void;
-  }) => {
+  Autocomplete: (props: AutocompletePropsCapture) => {
     latestAutocompleteProps = props;
-    latestRenderInputParams = { inputProps: {} };
-    return <div>{props.renderInput?.(latestRenderInputParams as never)}</div>;
+    const params = { InputProps: { endAdornment: <span /> }, inputProps: {} };
+    latestRenderInputParams = params;
+    return <div>{props.renderInput?.(params)}</div>;
   },
-  Box: forwardRef<HTMLDivElement, BoxProps>((props, ref) => {
-    boxProps.push(props);
-    return (
-      <div ref={ref} data-bulk-paste-container={props['data-bulk-paste-container']}>
-        {props.children}
-      </div>
-    );
-  }),
-  Paper: forwardRef<HTMLDivElement, { children: ReactNode }>((props, ref) => (
-    <div ref={ref}>{props.children}</div>
-  )),
-  Popper: forwardRef<HTMLDivElement, { children?: ReactNode }>((props, ref) => (
-    <div ref={ref}>{props.children}</div>
-  )),
+  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div data-testid="dialog">{children}</div> : null,
+  DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
+  InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
   TextField: (props: TextFieldProps) => {
     textFieldProps.push(props);
+    const fieldProps = {
+      'aria-label': String(props.label ?? props.placeholder ?? 'input'),
+      placeholder: props.placeholder,
+      disabled: props.disabled,
+      value: props.value ?? '',
+      onChange: (event: { currentTarget: { value: string } }) =>
+        props.onChange?.({ target: { value: event.currentTarget.value } }),
+      onPaste: props.onPaste as never,
+    };
+
     return (
-      <input
-        aria-label={String(props.label ?? props.placeholder ?? 'input')}
-        placeholder={props.placeholder}
-        disabled={props.disabled}
-        value={props.value ?? ''}
-        onPaste={props.onPaste as never}
-        onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
-      />
+      <label>
+        <span>{props.label}</span>
+        {props.multiline ? <textarea {...fieldProps} /> : <input {...fieldProps} />}
+      </label>
     );
   },
+  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('@mui/icons-material/MoreVert', () => ({
+  default: () => <span data-testid="more-vert-icon" />,
+}));
+
+vi.mock('./PowerIconButton', () => ({
+  PowerIconButton: (props: PowerIconButtonProps) => {
+    return (
+      <button
+        type="button"
+        aria-label={props['aria-label']}
+        disabled={props.disabled}
+        onMouseDown={props.onMouseDown as never}
+        onClick={() =>
+          props.onClick?.({
+            currentTarget: document.createElement('button'),
+            preventDefault: () => undefined,
+            stopPropagation: () => undefined,
+          })
+        }
+      >
+        {props.children}
+      </button>
+    );
+  },
+}));
+
+vi.mock('./PowerMenu', () => ({
+  PowerMenu: (props: PowerMenuProps) => {
+    powerMenuProps.push(props);
+    return props.open ? <div data-testid="bulk-menu">{props.children}</div> : null;
+  },
+}));
+
+vi.mock('./PowerButton', () => ({
+  PowerButton: (props: PowerButtonProps) => (
+    <button type="button" disabled={props.disabled} onClick={props.onClick}>
+      {props.children}
+    </button>
+  ),
 }));
 
 import { PowerAutocomplete } from './PowerAutocomplete';
@@ -121,7 +186,7 @@ afterEach(() => {
   latestAutocompleteProps = null;
   latestRenderInputParams = null;
   textFieldProps = [];
-  boxProps = [];
+  powerMenuProps = [];
   vi.clearAllMocks();
 });
 
@@ -144,301 +209,135 @@ function renderAutocomplete(overrides: Record<string, unknown> = {}) {
         onBulkPasteChange={onBulkPasteChange}
         onBulkPasteResolved={onBulkPasteResolved}
         getOptionLabel={(option) => option.label}
-        renderInput={(params) => <input data-testid="main-input" {...(params as never)} />}
+        renderInput={(params) => (
+          <div data-testid="input-root">
+            <input data-testid="main-input" />
+            <span data-testid="end-adornment">
+              {(params as { InputProps?: { endAdornment?: ReactNode } }).InputProps?.endAdornment}
+            </span>
+          </div>
+        )}
         {...(overrides as never)}
       />,
     );
   });
 
   rendered.push({ root, container });
-  return { onChange, onBulkPasteChange, onBulkPasteResolved, onClose };
+  return { onChange, onBulkPasteChange, onBulkPasteResolved, onClose, container };
 }
 
-function renderPopup(children: ReactNode = <ul data-testid="options" />) {
-  const PopperComponent = latestAutocompleteProps?.PopperComponent;
-  if (!PopperComponent) throw new Error('PopperComponent not available');
+function getBulkMenuButton(
+  container: HTMLElement,
+  label: string = 'Додати значення зі списку',
+): HTMLButtonElement | null {
+  return container.querySelector(`button[aria-label="${label}"]`);
+}
 
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  const root = createRoot(container);
+function getBulkDialogInput(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement {
+  const input = container.querySelector(
+    'input[aria-label="Частоти"], textarea[aria-label="Частоти"]',
+  );
+  if (!input) throw new Error('Dialog input not found');
+  return input as HTMLInputElement | HTMLTextAreaElement;
+}
+
+function openBulkDialog(container: HTMLElement, label?: string) {
+  const menuButton = getBulkMenuButton(container, label);
+  if (!menuButton) throw new Error('Bulk menu button not found');
 
   act(() => {
-    root.render(createElement(PopperComponent, null, children));
+    menuButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    menuButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 
-  rendered.push({ root, container });
-}
-
-function getBulkTextField(): TextFieldProps {
-  const bulkTextField = [...textFieldProps]
-    .reverse()
-    .find((props) => props.placeholder?.includes('Вставте'));
-  if (!bulkTextField) throw new Error('Bulk text field not found');
-  return bulkTextField;
-}
-
-function pasteBulkValue(
-  value: string,
-  options: { route?: 'onPaste' | 'inputProps' | 'both' } = {},
-) {
-  const bulkTextField = getBulkTextField();
-  const event = {
-    defaultPrevented: false,
-    preventDefault: vi.fn(() => {
-      event.defaultPrevented = true;
-    }),
-    clipboardData: {
-      getData: () => value,
-    },
-  };
+  const menuItem = container.querySelector('[data-testid="bulk-menu"] button');
+  if (!menuItem) throw new Error('Bulk menu item not found');
 
   act(() => {
-    if (options.route === 'onPaste' || options.route === 'both' || options.route === undefined) {
-      bulkTextField.onPaste?.(event);
-    }
-    if (options.route === 'inputProps' || options.route === 'both' || options.route === undefined) {
-      bulkTextField.inputProps?.onPaste?.(event);
-    }
+    menuItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
 
-  return event;
+function typeDialogValue(container: HTMLElement, value: string) {
+  const dialogTextField = textFieldProps.at(-1);
+  if (!dialogTextField?.onChange) {
+    throw new Error('Dialog onChange not found');
+  }
+  act(() => {
+    dialogTextField.onChange?.({ target: { value } });
+  });
 }
 
 describe('PowerAutocomplete', () => {
-  it('does not intercept native input paste', () => {
-    renderAutocomplete({ bulkPaste: true });
+  it('does not add the bulk menu when disabled', () => {
+    const { container } = renderAutocomplete({ bulkPaste: false });
 
-    expect(latestRenderInputParams?.inputProps?.onPaste).toBeUndefined();
-    expect(textFieldProps).toHaveLength(0);
+    expect(getBulkMenuButton(container)).toBeNull();
   });
 
-  it('renders the bulk field only inside the popup paper', () => {
-    renderAutocomplete({ bulkPaste: true });
-    expect(textFieldProps).toHaveLength(0);
+  it('adds the bulk menu button inside the input adornment when enabled', () => {
+    const { container } = renderAutocomplete({ bulkPaste: true });
 
-    renderPopup();
-    expect(boxProps.some((props) => props['data-bulk-paste-container'] === 'true')).toBe(true);
-    expect(textFieldProps).toHaveLength(1);
-    expect(getBulkTextField().placeholder).toBe('Вставте значення через ","');
+    expect(getBulkMenuButton(container)).not.toBeNull();
   });
 
-  it('forwards a caller paper component when bulk paste is disabled', () => {
+  it('uses generic default labels for the bulk flow', () => {
+    const { container } = renderAutocomplete({ bulkPaste: true });
+
+    openBulkDialog(container);
+
+    expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain('Додати значення зі списку');
+    expect(container.textContent).toContain('Додати');
+  });
+
+  it('forwards caller paper and popper components unchanged', () => {
     const callerPaperComponent = vi.fn(({ children }: { children: ReactNode }) => (
       <div>{children}</div>
     ));
-
-    renderAutocomplete({ bulkPaste: false, PaperComponent: callerPaperComponent });
-
-    expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
-  });
-
-  it('forwards a caller paper component when bulk paste is enabled', () => {
-    const callerPaperComponent = vi.fn(({ children }: { children: ReactNode }) => (
-      <div>{children}</div>
-    ));
-
-    renderAutocomplete({ bulkPaste: true, PaperComponent: callerPaperComponent });
-
-    expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
-  });
-
-  it('forwards a caller popper component when bulk paste is disabled', () => {
     const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
       <div>{children}</div>
     ));
-
-    renderAutocomplete({ bulkPaste: false, PopperComponent: callerPopperComponent });
-
-    expect(latestAutocompleteProps?.PopperComponent).toBe(callerPopperComponent);
-  });
-
-  it('composes the caller popper component when bulk paste is enabled', () => {
-    const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
-      <div>{children}</div>
-    ));
-
-    renderAutocomplete({ bulkPaste: true, PopperComponent: callerPopperComponent });
-    renderPopup();
-
-    expect(latestAutocompleteProps?.PopperComponent).not.toBe(callerPopperComponent);
-    expect(callerPopperComponent).toHaveBeenCalledTimes(1);
-    expect(textFieldProps).toHaveLength(1);
-  });
-
-  it('forwards controlled autocomplete props to MUI', () => {
-    const isOptionEqualToValue = vi.fn();
-    const getOptionLabel = vi.fn((option: Option) => option.label);
-    const onChange = vi.fn();
 
     renderAutocomplete({
       bulkPaste: true,
-      value: [options[0]],
-      loading: true,
-      getOptionLabel,
-      isOptionEqualToValue,
-      onChange,
+      PaperComponent: callerPaperComponent,
+      PopperComponent: callerPopperComponent,
     });
 
-    expect(latestAutocompleteProps?.value).toEqual([options[0]]);
-    expect(latestAutocompleteProps?.loading).toBe(true);
-    expect(latestAutocompleteProps?.getOptionLabel).toBe(getOptionLabel);
-    expect(latestAutocompleteProps?.isOptionEqualToValue).toBe(isOptionEqualToValue);
-    expect(latestAutocompleteProps?.onChange).toBe(onChange);
+    expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
+    expect(latestAutocompleteProps?.PopperComponent).toBe(callerPopperComponent);
   });
 
-  it('does not forward the unstable active-element-in-listbox prop in bulk mode', () => {
+  it('keeps native autocomplete paste untouched', () => {
     renderAutocomplete({ bulkPaste: true });
 
-    expect('unstable_isActiveElementInListbox' in (latestAutocompleteProps ?? {})).toBe(false);
+    expect(latestRenderInputParams?.inputProps?.onPaste).toBeUndefined();
   });
 
-  it('does not block mousedown on the bulk field wrapper', () => {
-    renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-
-    const bulkBox = boxProps.find((props) => props['data-bulk-paste-container'] === 'true');
-    expect(bulkBox?.onMouseDown).toBeUndefined();
-  });
-
-  it('keeps the popup open for blur into the bulk field', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-
-    const popupContainer = rendered.at(-1)?.container;
-    const bulkInput = popupContainer?.querySelector('input');
-    const bulkWrapper = bulkInput?.parentElement;
-    if (!bulkWrapper) throw new Error('Bulk wrapper not found');
-
-    act(() => {
-      latestAutocompleteProps?.onClose?.({ relatedTarget: bulkWrapper } as never, 'blur');
+  it('opens the bulk dialog from the input menu', () => {
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteInputLabel: 'Частоти',
     });
 
-    expect(onClose).not.toHaveBeenCalled();
+    openBulkDialog(container);
+
+    expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
+    expect(getBulkDialogInput(container)).not.toBeNull();
+    expect(powerMenuProps.at(-1)?.open).toBe(false);
   });
 
-  it('forwards blur close events outside the bulk field', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-
-    act(() => {
-      latestAutocompleteProps?.onClose?.(
-        { relatedTarget: document.createElement('button') } as never,
-        'blur',
-      );
-    });
-
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('forwards non-blur close events', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-
-    act(() => {
-      latestAutocompleteProps?.onClose?.({} as never, 'escape');
-    });
-
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes on outside pointer down while controlled open', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true, open: true });
-    renderPopup();
-    const outsideButton = document.createElement('button');
-    document.body.appendChild(outsideButton);
-
-    act(() => {
-      outsideButton.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-    });
-
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not close on pointer down inside the autocomplete root', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true, open: true });
-    const mainInput = rendered.at(-1)?.container.querySelector('input');
-    if (!mainInput) throw new Error('Main input not found');
-
-    act(() => {
-      mainInput.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-    });
-
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('does not close on pointer down inside the popup paper', () => {
-    const { onClose } = renderAutocomplete({ bulkPaste: true, open: true });
-    renderPopup();
-    const bulkInput = rendered.at(-1)?.container.querySelector('input');
-    if (!bulkInput) throw new Error('Bulk input not found');
-
-    act(() => {
-      bulkInput.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-    });
-
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('formats the placeholder by separators', () => {
-    renderAutocomplete({ bulkPaste: true, bulkPasteSeparators: [',', ';'] });
-    renderPopup();
-
-    expect(getBulkTextField().placeholder).toBe('Вставте значення через "," або ";"');
-  });
-
-  it('uses the newline-aware placeholder when separators include line breaks', () => {
-    renderAutocomplete({ bulkPaste: true, bulkPasteSeparators: [',', '\n'] });
-    renderPopup();
-
-    expect(getBulkTextField().placeholder).toBe('Вставте CSV або список з нового рядка');
-  });
-
-  it('processes newline-separated paste from the popup bulk field', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({
+  it('shows preview for added, already selected and missing tokens', () => {
+    const { onBulkPasteResolved, container } = renderAutocomplete({
       bulkPaste: true,
       bulkPasteSeparators: [',', '\n'],
+      bulkPasteInputLabel: 'Частоти',
     });
-    renderPopup();
-    const event = pasteBulkValue('111.1111\n222.2222', { route: 'both' });
 
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteResolved).toHaveBeenCalledWith({
-      tokens: ['111.1111', '222.2222'],
-      found: [options[0], options[1]],
-      missing: [],
-      added: [options[0], options[1]],
-      alreadySelected: [],
-      finalValue: [options[0], options[1]],
-    });
-    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
-  });
+    openBulkDialog(container);
+    typeDialogValue(container, '111.1111\nBAD');
 
-  it('processes CSV paste from the popup bulk field', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,222.2222');
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteResolved).toHaveBeenCalledWith({
-      tokens: ['111.1111', '222.2222'],
-      found: [options[0], options[1]],
-      missing: [],
-      added: [options[0], options[1]],
-      alreadySelected: [],
-      finalValue: [options[0], options[1]],
-    });
-    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
-    expect(getBulkTextField().value).toBe('');
-  });
-
-  it('keeps missing tokens visible after a mixed paste', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,BAD');
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(onBulkPasteResolved).toHaveBeenCalledWith({
       tokens: ['111.1111', 'BAD'],
       found: [options[0]],
@@ -447,123 +346,63 @@ describe('PowerAutocomplete', () => {
       alreadySelected: [],
       finalValue: [options[0]],
     });
+    expect(container.textContent).toContain('Буде додано');
+    expect(container.textContent).toContain('111.1111');
+    expect(container.textContent).toContain('Не знайдено');
+    expect(container.textContent).toContain('BAD');
+  });
+
+  it('hides empty preview sections before input', () => {
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteInputLabel: 'Частоти',
+    });
+
+    openBulkDialog(container);
+
+    expect(container.textContent).not.toContain('Буде додано');
+    expect(container.textContent).not.toContain('Вже обрано');
+    expect(container.textContent).not.toContain('Не знайдено');
+  });
+
+  it('submits merged values without duplicates', () => {
+    const { onBulkPasteChange, container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: [',', '\n'],
+      bulkPasteInputLabel: 'Частоти',
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, '111.1111,111.1111,BAD');
+
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+
+    act(() => {
+      submitButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
     expect(onBulkPasteChange).toHaveBeenCalledWith([options[0]]);
-    expect(getBulkTextField().value).toBe('BAD');
+    expect(container.querySelector('[data-testid="dialog"]')).toBeNull();
   });
 
-  it('keeps all-missing paste visible without changing selection', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('BAD,UGLY');
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteResolved).toHaveBeenCalledWith({
-      tokens: ['BAD', 'UGLY'],
-      found: [],
-      missing: ['BAD', 'UGLY'],
-      added: [],
-      alreadySelected: [],
-      finalValue: [],
-    });
-    expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(getBulkTextField().value).toBe('BAD,UGLY');
-  });
-
-  it('keeps single-token paste visible in the bulk field', () => {
-    const { onBulkPasteChange } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('111.1111', { route: 'both' });
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(getBulkTextField().value).toBe('111.1111');
-  });
-
-  it('keeps wrong-separator paste visible in the bulk field', () => {
-    const { onBulkPasteChange } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('111.1111;222.2222', { route: 'both' });
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(getBulkTextField().value).toBe('111.1111;222.2222');
-  });
-
-  it('keeps loading paste visible without selecting options', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({
+  it('keeps input visible for an all-missing preview and does not submit', () => {
+    const { onBulkPasteChange, container } = renderAutocomplete({
       bulkPaste: true,
-      loading: true,
+      bulkPasteInputLabel: 'Значення',
     });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,222.2222', { route: 'both' });
-    renderPopup();
 
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    openBulkDialog(container);
+    typeDialogValue(container, 'BAD,UGLY');
+
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+
+    expect(submitButton.disabled).toBe(true);
     expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(onBulkPasteResolved).not.toHaveBeenCalled();
-    expect(getBulkTextField().value).toBe('111.1111,222.2222');
-  });
-
-  it('does not duplicate bulk paste handling when both handlers are wired', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,222.2222', { route: 'both' });
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteResolved).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteChange).toHaveBeenCalledTimes(1);
-    expect(getBulkTextField().value).toBe('');
-  });
-
-  it('preserves existing selections and leaves missing tokens visible', () => {
-    const { onBulkPasteChange } = renderAutocomplete({
-      bulkPaste: true,
-      value: [options[0]],
-    });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,111.1111,BAD');
-    renderPopup();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(getBulkTextField().value).toBe('BAD');
-  });
-
-  it('does not select fuzzy matches', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({ bulkPaste: true });
-    renderPopup();
-    pasteBulkValue('111.111,222.2222');
-
-    expect(onBulkPasteResolved).toHaveBeenCalledWith({
-      tokens: ['111.111', '222.2222'],
-      found: [options[1]],
-      missing: ['111.111'],
-      added: [options[1]],
-      alreadySelected: [],
-      finalValue: [options[1]],
-    });
-    expect(onBulkPasteChange).toHaveBeenCalledWith([options[1]]);
-  });
-
-  it('keeps native search behavior untouched', () => {
-    renderAutocomplete({ bulkPaste: true });
-
-    expect(latestRenderInputParams?.inputProps?.onPaste).toBeUndefined();
-  });
-
-  it('disables bulk resolution while loading', () => {
-    const { onBulkPasteChange, onBulkPasteResolved } = renderAutocomplete({
-      bulkPaste: true,
-      loading: true,
-    });
-    renderPopup();
-    const event = pasteBulkValue('111.1111,222.2222');
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(onBulkPasteChange).not.toHaveBeenCalled();
-    expect(onBulkPasteResolved).not.toHaveBeenCalled();
   });
 });
