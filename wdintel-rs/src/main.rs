@@ -714,6 +714,7 @@ enum Cmd {
     OneoffRefreshAiModels,
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
+    OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
 }
 
@@ -1226,6 +1227,9 @@ async fn async_main(
         },
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await
+        }
+        Cmd::OneoffCompactDatasourceGroup => {
+            operator::oneoff::oneoff_compact_datasource_group(mode).await
         }
         Cmd::OneoffEnsureApiIntegrationIggyTopics => {
             api_integrations::oneoff_ensure_iggy_topics(mode).await
