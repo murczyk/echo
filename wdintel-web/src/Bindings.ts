@@ -2159,6 +2159,14 @@ export type ComputerNameSearchRsp = {
   computers: Array<ComputerNameSearchResult>;
 };
 
+export type CreateComputerNameReq = {
+  name: string;
+};
+
+export type CreateComputerNameRsp = {
+  computer: ComputerNameSearchResult;
+};
+
 export type AddAsKnownNetworkCallsignReq = {
   networkId: number;
   knownCallsignIds: Array<number>;

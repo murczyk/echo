@@ -5630,6 +5630,30 @@ computerNameSearchRspEncoder struct =
         ]
 
 
+type alias CreateComputerNameReq =
+    { name : String
+    }
+
+
+createComputerNameReqEncoder : CreateComputerNameReq -> Json.Encode.Value
+createComputerNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias CreateComputerNameRsp =
+    { computer : ComputerNameSearchResult
+    }
+
+
+createComputerNameRspEncoder : CreateComputerNameRsp -> Json.Encode.Value
+createComputerNameRspEncoder struct =
+    Json.Encode.object
+        [ ( "computer", (computerNameSearchResultEncoder) struct.computer )
+        ]
+
+
 type alias AddAsKnownNetworkCallsignReq =
     { networkId : Int
     , knownCallsignIds : List (Int)
@@ -12134,6 +12158,18 @@ computerNameSearchRspDecoder : Json.Decode.Decoder ComputerNameSearchRsp
 computerNameSearchRspDecoder =
     Json.Decode.succeed ComputerNameSearchRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computers" (Json.Decode.list (computerNameSearchResultDecoder))))
+
+
+createComputerNameReqDecoder : Json.Decode.Decoder CreateComputerNameReq
+createComputerNameReqDecoder =
+    Json.Decode.succeed CreateComputerNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+createComputerNameRspDecoder : Json.Decode.Decoder CreateComputerNameRsp
+createComputerNameRspDecoder =
+    Json.Decode.succeed CreateComputerNameRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computer" (computerNameSearchResultDecoder)))
 
 
 addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq

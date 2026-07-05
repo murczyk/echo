@@ -620,6 +620,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::user_settings::user_settings_put)
             .service(crate::users::user_sigint_groups)
             .service(crate::users::user_sigint_groups_detailed)
+            .service(crate::sigint::computer_name::computer_name_create)
             .service(crate::sigint::computer_name::computer_name_search)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)

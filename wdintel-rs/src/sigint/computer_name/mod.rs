@@ -1,5 +1,6 @@
 use self::types::{
     ComputerNameSearchReq, ComputerNameSearchResult, ComputerNameSearchRsp,
+    CreateComputerNameReq, CreateComputerNameRsp,
 };
 use crate::config::COMPUTER_NAME_SEARCH_LIMIT;
 use crate::entities::computer_name;
@@ -11,6 +12,49 @@ use sea_orm::sea_query::Expr;
 use sea_orm::*;
 
 pub mod types;
+
+#[post("/api/sigint/computer-name/create")]
+pub async fn computer_name_create(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateComputerNameReq>,
+) -> Result<Json<CreateComputerNameRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let name = req.name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::BL {
+            msg: "computer name cannot be empty".to_string(),
+        });
+    }
+
+    if let Some(computer) = find_computer_name_by_exact_name(&env.dbx, &name)
+        .await
+        .c(h!())?
+    {
+        return Ok(Json(CreateComputerNameRsp {
+            computer: render_computer_name(computer).c(h!())?,
+        }));
+    }
+
+    let computer = computer_name::ActiveModel {
+        id: NotSet,
+        name: Set(Some(name)),
+        login: Set(login),
+        created_at: NotSet,
+        search_tsv: NotSet,
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?;
+
+    Ok(Json(CreateComputerNameRsp {
+        computer: render_computer_name(computer).c(h!())?,
+    }))
+}
 
 #[post("/api/sigint/computer-name/search")]
 pub async fn computer_name_search(
@@ -51,6 +95,34 @@ pub async fn computer_name_search(
         .collect();
 
     Ok(Json(ComputerNameSearchRsp { computers }))
+}
+
+async fn find_computer_name_by_exact_name<C>(
+    dbx: &C,
+    name: &str,
+) -> Result<Option<computer_name::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(computer_name::Entity::find()
+        .filter(Expr::cust_with_values(
+            "lower(coalesce(\"computer_name\".\"name\", '')) = lower($1)",
+            vec![name.to_string()],
+        ))
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+fn render_computer_name(
+    computer: computer_name::Model,
+) -> Result<ComputerNameSearchResult, AppError> {
+    Ok(ComputerNameSearchResult {
+        id: computer.id,
+        name: computer.name.ok_or_else(|| AppError::BL {
+            msg: format!("computer name #{} has empty name", computer.id),
+        })?,
+    })
 }
 
 fn escape_like(input: &str) -> String {

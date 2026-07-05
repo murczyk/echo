@@ -22,3 +22,17 @@ pub struct ComputerNameSearchResult {
 pub struct ComputerNameSearchRsp {
     pub computers: Vec<ComputerNameSearchResult>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateComputerNameReq {
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateComputerNameRsp {
+    pub computer: ComputerNameSearchResult,
+}
