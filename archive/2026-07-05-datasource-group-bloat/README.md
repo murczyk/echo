@@ -163,3 +163,30 @@ These were visible in `pg_stat_statements`, but were not the primary
   `stats_group_5min(dt)` index is included for that.
 - Several analysis/count queries over `signal_message` and inbox joins remained
   expensive and should be profiled separately after the operator fix lands.
+
+## Post-Deploy Follow-Up
+
+After deploying the first fix to `echo-pivnich`, the old operator join query
+and repeated `datasource_group` update were gone from the hot path.
+`datasource_group` compacted to about 80 kB heap / 200 kB total.
+
+The new top recurring query was:
+
+```sql
+SELECT account_id, MAX(created_at) AS last_inbox_at
+FROM echo_inbox_message
+GROUP BY account_id;
+```
+
+It ran about 25 times per second and averaged about 36 ms on production. A
+local `/api/monitoring` cache reduces browser/API pressure for this endpoint,
+but most calls come from the `echo-im` worker dependency, where
+`do_restart_clients_in_invalid_state` calls full `collect_monitoring_data` on
+each tick. The best follow-up is an `echo-im` change: use live client data for
+restart checks, or cache monitoring data inside the worker.
+
+Logs also showed `session activity queue is full` warnings and repeated bad
+password attempts for `echo-operator-151-2` and `echo-operator-151-5`. The
+session activity worker was changed to drain and insert bounded Greptime batches
+instead of one row per database round trip. The bad operator credentials still
+need an operational fix.
