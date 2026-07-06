@@ -246,6 +246,48 @@ fn apply_network_status(
     }
 }
 
+async fn reactivate_network_freqs_for_do_not_archive<'a, 'async_trait, C>(
+    dbx: &'a C,
+    network_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let network_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut active_freqs = network_freqs
+        .iter()
+        .filter(|network_freq| network_freq.active_to.is_none())
+        .map(|network_freq| network_freq.freq.clone())
+        .collect::<HashSet<_>>();
+    let mut inactive_freqs = network_freqs
+        .into_iter()
+        .filter(|network_freq| network_freq.active_to.is_some())
+        .collect::<Vec<_>>();
+    inactive_freqs.sort_by(|a, b| {
+        b.active_to
+            .cmp(&a.active_to)
+            .then(b.active_from.cmp(&a.active_from))
+            .then(b.id.cmp(&a.id))
+    });
+
+    for network_freq in inactive_freqs {
+        if !active_freqs.insert(network_freq.freq.clone()) {
+            continue;
+        }
+        let mut network_freq = network_freq.into_active_model();
+        network_freq.active_from = Set(Utc::now().naive_utc());
+        network_freq.active_to = Set(None);
+        network_freq.update(dbx).await.context(h!())?;
+    }
+
+    Ok(())
+}
+
 #[post("/api/sigint/network-info-batch-freq")]
 pub async fn network_info_batch_freq(
     user: actix_identity::Identity,
@@ -1020,6 +1062,8 @@ pub async fn update_network(
         network
     };
 
+    let should_reactivate_for_do_not_archive =
+        !network.do_not_archive && req.do_not_archive;
     let mut network_model = network.into_active_model();
     network_model.name = Set(req.name.clone());
     network_model.location = Set(req.location.clone());
@@ -1036,8 +1080,25 @@ pub async fn update_network(
     network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
     apply_network_status(&mut network_model, req.status.clone());
+    if should_reactivate_for_do_not_archive {
+        network_model.active_to = Set(None);
+    }
 
-    let network = network_model.update(&txn).await.context(h!())?;
+    let mut network = network_model.update(&txn).await.context(h!())?;
+
+    if should_reactivate_for_do_not_archive {
+        reactivate_network_freqs_for_do_not_archive(&txn, network.id)
+            .await
+            .context(h!())?;
+        let (network_active_from, network_active_to) =
+            get_network_activity_range(&txn, network.id)
+                .await
+                .context(h!())?;
+        let mut network_model = network.into_active_model();
+        network_model.active_from = Set(network_active_from);
+        network_model.active_to = Set(network_active_to);
+        network = network_model.update(&txn).await.context(h!())?;
+    }
 
     if let Some(aor_ids) = req.area_of_responsibility_ids.clone() {
         // Replace existing AOR links with the provided set
@@ -1092,7 +1153,7 @@ pub async fn update_network(
     )
     .await
     .c(h!())?;
-    if is_restore_network {
+    if is_restore_network || should_reactivate_for_do_not_archive {
         refresh_network_last_seen_after_state_change(&env.dbx, [network.id])
             .await
             .c(h!())?;
@@ -3005,7 +3066,6 @@ async fn cleanup_networks_worker_1(
         pub freq: String,
         pub location: String,
         pub name: String,
-        pub do_not_archive: bool,
     }
 
     let networks_freqs_to_remove = sigint_network_freq::Entity::find()
@@ -3019,7 +3079,6 @@ async fn cleanup_networks_worker_1(
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::Name)
-        .column(sigint_network::Column::DoNotArchive)
         .filter(
             Expr::exists(
                 Query::select()
@@ -3071,6 +3130,7 @@ async fn cleanup_networks_worker_1(
         )
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::DoNotArchive.eq(false))
         .into_model::<NetworkFreqDesc>()
         .all(dbx)
         .await
@@ -3177,9 +3237,6 @@ async fn cleanup_networks_worker_1(
 
     for sigint_network_freq in networks_freqs_to_remove {
         if recent_network_ids.contains(&sigint_network_freq.network_id) {
-            continue;
-        }
-        if sigint_network_freq.do_not_archive {
             continue;
         }
 
@@ -4796,6 +4853,112 @@ mod tests {
     fn cleanup_old_dt() -> NaiveDateTime {
         Utc::now().naive_utc()
             - Duration::days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS + 2)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn do_not_archive_reactivation_reopens_closed_frequency_rows() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        let closed_dt = old_dt + Duration::days(1);
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Protected reactivation".to_string()),
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                active_to: Set(Some(closed_dt)),
+                do_not_archive: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let closed_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.7000".to_string()),
+                active_from: Set(old_dt),
+                active_to: Set(Some(closed_dt)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let active_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.8000".to_string()),
+                active_from: Set(old_dt),
+                active_to: Set(None),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let closed_duplicate_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(active_freq.freq.clone()),
+                active_from: Set(old_dt),
+                active_to: Set(Some(closed_dt)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.9000".to_string()),
+                active_from: Set(old_dt),
+                active_to: Set(Some(closed_dt)),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        reactivate_network_freqs_for_do_not_archive(&env.dbx, network.id)
+            .await
+            .unwrap();
+        let (_, network_active_to) =
+            get_network_activity_range(&env.dbx, network.id)
+                .await
+                .unwrap();
+
+        let closed_freq =
+            sigint_network_freq::Entity::find_by_id(closed_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let closed_duplicate_freq =
+            sigint_network_freq::Entity::find_by_id(closed_duplicate_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let deleted_freq =
+            sigint_network_freq::Entity::find_by_id(deleted_freq.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(network_active_to, None);
+        assert_eq!(closed_freq.active_to, None);
+        assert!(closed_duplicate_freq.active_to.is_some());
+        assert!(deleted_freq.active_to.is_some());
     }
 
     #[tokio::test]

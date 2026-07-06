@@ -279,6 +279,7 @@ mod m20260702_192716_signal_message_echo_inbox_message_id;
 mod m20260703_095738_add_organism_to_tags;
 mod m20260705_230242_operator_datasource_group_perf;
 mod m20260706_142937_add_goi_integration_pause_worker;
+mod m20260706_153312_tag_unique_enabled_organism_label;
 
 pub struct Migrator;
 
@@ -582,6 +583,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260706_142937_add_goi_integration_pause_worker::Migration,
+            ),
+            Box::new(
+                m20260706_153312_tag_unique_enabled_organism_label::Migration,
             ),
         ]
     }

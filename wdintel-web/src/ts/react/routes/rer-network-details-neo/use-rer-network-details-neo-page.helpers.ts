@@ -3,6 +3,7 @@ import { NO_DATA_LABEL } from '../../utils/misc';
 import { FREQUENCY_FORMAT_ERROR } from './use-rer-network-details-neo-page.constants';
 import type { DisplayNetworkStatus } from './use-rer-network-details-neo-page.types';
 import { NETWORK_STATUS_ACTIVE } from './network-status';
+import { hasAnyRole, hasRole } from '../../utils/roles';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== '') return error.message;
@@ -134,54 +135,42 @@ export function buildLookupMap<T extends { id: number; name: string }>(
 }
 
 export function canDeleteNetwork(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
-  return canManageNetworkActions(roles);
+  return canManageNetworkActions(user?.roles);
 }
 
 export function canEditNetwork(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
-  return canManageNetworkActions(roles);
+  return canManageNetworkActions(user?.roles);
 }
 
 export function canManageDescriptions(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
   return (
-    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
+    hasRole(user?.roles, 'Admin') ||
+    (hasRole(user?.roles, 'UnitsEditor') && hasRole(user?.roles, 'Rer'))
   );
 }
 
 export function canManageNetworkCallsignActions(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
   return (
-    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
+    hasRole(user?.roles, 'Admin') ||
+    (hasRole(user?.roles, 'UnitsEditor') && hasRole(user?.roles, 'Rer'))
   );
 }
 
 export function canDeleteCatalogCallsign(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
   return (
-    roles.has('Admin') || (roles.has('CallsignsEditor') && (roles.has('Rer') || roles.has('Full')))
+    hasRole(user?.roles, 'Admin') ||
+    (hasRole(user?.roles, 'CallsignsEditor') && hasRole(user?.roles, 'Rer'))
   );
 }
 
 export function canViewNetworkActivityTab(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
-  return roles.has('Admin') || roles.has('Full') || roles.has('Rer');
+  return hasRole(user?.roles, 'Rer');
 }
 
 export function canViewNetworkRelationsTab(user: User | null): boolean {
-  const roles = new Set(user?.roles ?? []);
-  return (
-    roles.has('Admin') ||
-    roles.has('Full') ||
-    roles.has('Rer') ||
-    roles.has('Api') ||
-    roles.has('ApiAgent')
-  );
+  return hasAnyRole(user?.roles, ['Rer', 'Api', 'ApiAgent']);
 }
 
-function canManageNetworkActions(roles: Set<string>): boolean {
-  return (
-    roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full')))
-  );
+function canManageNetworkActions(roles: readonly string[] | null | undefined): boolean {
+  return hasRole(roles, 'Admin') || (hasRole(roles, 'UnitsEditor') && hasRole(roles, 'Rer'));
 }
