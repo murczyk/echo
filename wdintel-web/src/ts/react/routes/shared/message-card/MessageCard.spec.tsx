@@ -1743,12 +1743,12 @@ describe('MessageCard', () => {
       view.container
         .querySelector('[data-audio-player-host]')
         ?.getAttribute('data-audio-player-min-height-px'),
-    ).toBe('120');
+    ).toBe('72');
     expect(
       view.container
         .querySelector('[data-audio-player-host]')
         ?.getAttribute('data-audio-player-top-padding-px'),
-    ).toBe('12');
+    ).toBe('0');
     expect(
       view.container
         .querySelector('[data-audio-player-host]')
@@ -1801,8 +1801,8 @@ describe('MessageCard', () => {
     expect(player?.getAttribute('storage-key')).toBe('echo-inbox-audio-1');
     expect(player?.getAttribute('wave-src')).toBe('/api/messenger/media/audio-1/wave');
     expect(player?.getAttribute('spectrum-src')).toBe('/api/messenger/media/audio-1/spectrogram');
+    expect(player?.getAttribute('file-name')).toBe('recording.mp3');
     expect(view.container.querySelector('audio')).toBeNull();
-    expect(view.container.textContent).toContain('recording.mp3');
     expect(
       Array.from(view.container.querySelectorAll('button')).some((button) =>
         button.textContent?.includes('recording.mp3'),
