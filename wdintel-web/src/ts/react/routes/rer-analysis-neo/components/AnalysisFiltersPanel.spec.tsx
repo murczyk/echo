@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
-import type { ComponentProps, ReactNode } from 'react';
+import { act, Children, cloneElement, isValidElement } from 'react';
+import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -78,14 +78,32 @@ vi.mock('@mui/material', () => ({
   }: {
     children: ReactNode;
     onChange?: (_event: unknown, value: string | null) => void;
+  }) => {
+    // Bind each button to its own group's onChange so multiple groups on the page
+    // (metadata mode, tag mode) can be driven independently in tests.
+    toggleButtonGroupOnChange = onChange;
+    return (
+      <div data-testid="toggle-button-group">
+        {Children.map(children, (child) =>
+          isValidElement(child)
+            ? cloneElement(child as ReactElement<{ __onChange?: typeof onChange }>, {
+                __onChange: onChange,
+              })
+            : child,
+        )}
+      </div>
+    );
+  },
+  ToggleButton: ({
+    children,
+    value,
+    __onChange,
+  }: {
+    children: ReactNode;
+    value: string;
+    __onChange?: (_event: unknown, value: string | null) => void;
   }) => (
-    <div data-testid="toggle-button-group">
-      {children}
-      {void (toggleButtonGroupOnChange = onChange)}
-    </div>
-  ),
-  ToggleButton: ({ children, value }: { children: ReactNode; value: string }) => (
-    <button type="button" onClick={() => toggleButtonGroupOnChange?.(null, value)}>
+    <button type="button" onClick={() => (__onChange ?? toggleButtonGroupOnChange)?.(null, value)}>
       {children}
     </button>
   ),
@@ -745,11 +763,7 @@ describe('AnalysisFiltersPanel', () => {
       )
       .find((callProps) => callProps.label === 'Метадані отримувача');
 
-    expect(tagsField?.options.map((option) => option.label)).toEqual([
-      'Без тегів',
-      'Альфа',
-      'Бета',
-    ]);
+    expect(tagsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Бета']);
     expect(aorsField?.options.map((option) => option.label)).toEqual([
       'Вся смуга',
       'Смуга А',
@@ -977,6 +991,61 @@ describe('AnalysisFiltersPanel', () => {
       onlyWithMetadata: false,
       withoutMetadata: true,
     });
+  });
+
+  it('wires the tag mode buttons into updateQueryState', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: { ...emptyQueryState(), tags: [1], tagsExcludeMode: true },
+      }),
+    );
+    rendered.push(view);
+
+    const toggleButton = (labelText: string) => {
+      const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+        item.textContent?.includes(labelText),
+      );
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error(`Button not found for label: ${labelText}`);
+      }
+      return button;
+    };
+
+    await act(async () => {
+      toggleButton('Лише обрані').click();
+    });
+    await act(async () => {
+      toggleButton('Крім обраних').click();
+    });
+    await act(async () => {
+      toggleButton('Без тегів').click();
+    });
+
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: false, tagPresence: null });
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: true, tagPresence: null });
+    expect(updateQueryState).toHaveBeenCalledWith({
+      tags: [],
+      tagsExcludeMode: false,
+      tagPresence: 'WithoutTags',
+    });
+  });
+
+  it('disables the tags input when the "Без тегів" mode is active', async () => {
+    const view = await renderComponent(
+      buildProps({
+        queryState: { ...emptyQueryState(), tagPresence: 'WithoutTags' },
+      }),
+    );
+    rendered.push(view);
+
+    const tagsField = analysisFilterFieldSpy.mock.calls
+      .map(([callProps]) => callProps as { label: string; disabled?: boolean; value: string[] })
+      .find((callProps) => callProps.label === 'Теги');
+
+    expect(tagsField?.disabled).toBe(true);
+    expect(tagsField?.value).toEqual([]);
   });
 
   it('clears without-coords when the peleng checkbox is disabled', async () => {

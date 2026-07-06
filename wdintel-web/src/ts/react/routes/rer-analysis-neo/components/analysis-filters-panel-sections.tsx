@@ -53,10 +53,30 @@ type Props = Pick<
 
 type FilterSectionLoadTarget = AnalysisFilterSectionId | 'freqs';
 
-// Synthetic entry injected into the tags picker so "no tag at all" reads as just
-// another selectable option. It maps to `tagPresence = 'WithoutTags'` and is mutually
-// exclusive with picking real tags (a specific tag + "no tags" would match nothing).
-const WITHOUT_TAGS_OPTION_VALUE = '__without_tags__';
+// The tags filter has three mutually exclusive modes on a single axis, so they live in
+// one ToggleButtonGroup instead of mixing a synthetic list option with a separate toggle:
+//   include  → keep only messages carrying a selected tag  (tagsExcludeMode = false)
+//   exclude  → drop messages carrying a selected tag       (tagsExcludeMode = true)
+//   without  → keep only messages with no tag at all       (tagPresence = 'WithoutTags')
+// In `without` mode picking specific tags is meaningless, so the input is disabled/cleared.
+type TagFilterMode = 'include' | 'exclude' | 'without';
+
+function tagFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): TagFilterMode {
+  if (queryState.tagPresence === 'WithoutTags') return 'without';
+  return queryState.tagsExcludeMode ? 'exclude' : 'include';
+}
+
+function tagFilterModeHint(mode: TagFilterMode): string {
+  switch (mode) {
+    case 'exclude':
+      return 'Показувати записи без вибраних тегів';
+    case 'without':
+      return 'Показувати лише записи без жодного тегу';
+    case 'include':
+    default:
+      return 'Показувати лише записи з вибраними тегами';
+  }
+}
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
 
@@ -143,6 +163,18 @@ export function AnalysisFiltersPanelSections({
     });
   };
 
+  const handleTagFilterModeChange = (
+    _event: MouseEvent<HTMLElement>,
+    nextMode: TagFilterMode | null,
+  ) => {
+    if (nextMode == null) return;
+    if (nextMode === 'without') {
+      updateQueryState({ tags: [], tagsExcludeMode: false, tagPresence: 'WithoutTags' });
+      return;
+    }
+    updateQueryState({ tagsExcludeMode: nextMode === 'exclude', tagPresence: null });
+  };
+
   const effectiveUnitsExactMatchOnly =
     queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
   const unitsExactMatchLabel =
@@ -155,6 +187,7 @@ export function AnalysisFiltersPanelSections({
       : null;
 
   const metadataFilterMode = metadataFilterModeFromState(queryState);
+  const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
       <FilterSection
@@ -517,53 +550,50 @@ export function AnalysisFiltersPanelSections({
         onLoad={loadSection('tags')}
       >
         <Stack spacing={1.25}>
-          <AnalysisFilterField
-            label="Теги"
-            options={[
-              { value: WITHOUT_TAGS_OPTION_VALUE, label: 'Без тегів', count: 0 },
-              ...derived.tagOptions,
-            ]}
-            loading={isFilterSectionLoading('tags') || isFilterSectionStale('tags')}
-            emptyLoading={isFilterSectionEmptyLoading('tags', derived.tagOptions.length)}
-            value={
-              queryState.tagPresence === 'WithoutTags'
-                ? [WITHOUT_TAGS_OPTION_VALUE]
-                : queryState.tags.map((tagId) => String(tagId))
-            }
-            onChange={(next) => {
-              // "Без тегів" is mutually exclusive with real tags. If the user just added it,
-              // drop every real tag; otherwise ignore it and keep only the real selections.
-              const justPickedWithoutTags =
-                next.includes(WITHOUT_TAGS_OPTION_VALUE) &&
-                queryState.tagPresence !== 'WithoutTags';
-              if (justPickedWithoutTags) {
-                updateQueryState({ tags: [], tagPresence: 'WithoutTags' });
-                return;
-              }
-              updateQueryState({
-                tags: next
-                  .filter((item) => item !== WITHOUT_TAGS_OPTION_VALUE)
-                  .map((item) => Number(item))
-                  .filter((tagId) => Number.isFinite(tagId)),
-                tagPresence: null,
-              });
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              minWidth: 0,
             }}
-          />
-          {queryState.tagPresence !== 'WithoutTags' ? (
+          >
             <ToggleButtonGroup
-              size="small"
               exclusive
               fullWidth
-              value={queryState.tagsExcludeMode ? 'exclude' : 'include'}
-              onChange={(_event, value: 'include' | 'exclude' | null) => {
-                if (value == null) return;
-                updateQueryState({ tagsExcludeMode: value === 'exclude' });
+              size="small"
+              color="primary"
+              value={tagFilterMode}
+              onChange={handleTagFilterModeChange}
+              aria-label="Режим тегів"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  py: 0.75,
+                },
               }}
             >
               <ToggleButton value="include">Лише обрані</ToggleButton>
               <ToggleButton value="exclude">Крім обраних</ToggleButton>
+              <ToggleButton value="without">Без тегів</ToggleButton>
             </ToggleButtonGroup>
-          ) : null}
+            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+              {tagFilterModeHint(tagFilterMode)}
+            </Typography>
+          </Box>
+          <AnalysisFilterField
+            label="Теги"
+            options={derived.tagOptions}
+            disabled={tagFilterMode === 'without'}
+            loading={isFilterSectionLoading('tags') || isFilterSectionStale('tags')}
+            emptyLoading={isFilterSectionEmptyLoading('tags', derived.tagOptions.length)}
+            value={tagFilterMode === 'without' ? [] : queryState.tags.map((tagId) => String(tagId))}
+            onChange={(next) =>
+              updateQueryState({
+                tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)),
+              })
+            }
+          />
           <Stack spacing={0.5}>
             <FormControlLabel
               control={
