@@ -142,6 +142,59 @@ describe('buildXlsxPreview', () => {
     expect(preview.sheets[0]?.rows[0]).toEqual(['3']);
   });
 
+  it('normalizes empty inline string cells before parsing', async () => {
+    const preview = await buildXlsxPreview(
+      makeWorkbookBuffer([
+        {
+          name: 'Inline',
+          rows: [['Keep']],
+          rawSheetXml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Keep</t></is></c>
+    </row>
+    <row r="4">
+      <c r="A4" t="inlineStr"><is><t>Still keep</t></is></c>
+      <c r="F4" s="3" t="inlineStr"></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+        },
+      ]),
+    );
+
+    expect(preview.sheets).toHaveLength(1);
+    expect(preview.sheets[0]?.rows[0]).toEqual(['Keep']);
+    expect(preview.sheets[0]?.truncated).toBe(false);
+  });
+
+  it('normalizes self-closing empty inline string cells before parsing', async () => {
+    const preview = await buildXlsxPreview(
+      makeWorkbookBuffer([
+        {
+          name: 'Inline',
+          rows: [['Keep']],
+          rawSheetXml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Keep</t></is></c>
+    </row>
+    <row r="4">
+      <c r="F4" s="3" t="inlineStr"/>
+    </row>
+  </sheetData>
+</worksheet>`,
+        },
+      ]),
+    );
+
+    expect(preview.sheets).toHaveLength(1);
+    expect(preview.sheets[0]?.rows[0]).toEqual(['Keep']);
+    expect(preview.sheets[0]?.truncated).toBe(false);
+  });
+
   it('rejects oversized files before parsing', async () => {
     expect(MAX_XLSX_FILE_MB).toBe(10);
     await expect(buildXlsxPreview(new ArrayBuffer(MAX_XLSX_FILE_BYTES + 1))).rejects.toBeInstanceOf(
@@ -187,7 +240,7 @@ describe('buildXlsxPreview', () => {
 });
 
 function makeWorkbookBuffer(
-  sheets: Array<{ name: string; rows: Array<Array<WorkbookCell>> }>,
+  sheets: Array<{ name: string; rows: Array<Array<WorkbookCell>>; rawSheetXml?: string }>,
   options: { omitSheetFiles?: boolean } = {},
 ): ArrayBuffer {
   const files: Record<string, Uint8Array> = {
@@ -199,7 +252,9 @@ function makeWorkbookBuffer(
 
   if (!options.omitSheetFiles) {
     for (const [index, sheet] of sheets.entries()) {
-      files[`xl/worksheets/sheet${index + 1}.xml`] = strToU8(buildSheetXml(sheet.rows));
+      files[`xl/worksheets/sheet${index + 1}.xml`] = strToU8(
+        sheet.rawSheetXml ?? buildSheetXml(sheet.rows),
+      );
     }
   }
 

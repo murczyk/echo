@@ -160,7 +160,20 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
           }}
         >
           <TypographyLike>{title}</TypographyLike>
-          <Tooltip title="Дії">
+          {canOpenMenu ? (
+            <Tooltip title="Дії">
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={(event) => setMenuAnchorEl(event.currentTarget)}
+                  disabled={!canOpenMenu}
+                  aria-label="Дії зі збереженими фільтрами"
+                >
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : (
             <span>
               <IconButton
                 size="small"
@@ -171,7 +184,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
                 <MoreVertIcon fontSize="small" />
               </IconButton>
             </span>
-          </Tooltip>
+          )}
         </Box>
 
         <Box sx={{ minWidth: 0 }}>

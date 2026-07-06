@@ -44,6 +44,7 @@ describe('AnalysisFilterField', () => {
   function latestAutocompleteProps() {
     return powerAutocompleteSpy.mock.calls.at(-1)?.[0] as {
       disableCloseOnSelect?: boolean;
+      getOptionKey?: (option: { key: string }) => string;
       onChange: (
         _event: unknown,
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
@@ -53,6 +54,9 @@ describe('AnalysisFilterField', () => {
         next: Array<{ value: string; label: string; count: number; values: string[] }>,
       ) => void;
       bulkPasteSeparators?: string[];
+      bulkPasteMenuLabel?: string;
+      bulkPasteDialogTitle?: string;
+      bulkPasteInputLabel?: string;
       onInputChange: (
         _event: unknown,
         nextInputValue: string,
@@ -126,6 +130,23 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('uses stable option keys for duplicate labels', () => {
+    renderFilterField({
+      label: 'Позивні',
+      options: [
+        { value: 'alpha-a', label: 'ALPHA', count: 1 },
+        { value: 'alpha-b', label: 'ALPHA', count: 2 },
+      ],
+      value: [],
+      onChange: vi.fn(),
+    });
+
+    const props = latestAutocompleteProps();
+
+    expect(props.getOptionKey?.(props.options[0])).toBe('alpha-a-0');
+    expect(props.getOptionKey?.(props.options[1])).toBe('alpha-b-1');
+  });
+
   it('passes bulk paste separators through to PowerAutocomplete', () => {
     renderFilterField({
       label: 'Частоти',
@@ -133,10 +154,14 @@ describe('AnalysisFilterField', () => {
       value: [],
       bulkPaste: true,
       bulkPasteSeparators: [',', '\n'],
+      bulkPasteInputLabel: 'Частоти',
       onChange: vi.fn(),
     });
 
     expect(latestAutocompleteProps().bulkPasteSeparators).toEqual([',', '\n']);
+    expect(latestAutocompleteProps().bulkPasteInputLabel).toBe('Частоти');
+    expect(latestAutocompleteProps().bulkPasteMenuLabel).toBeUndefined();
+    expect(latestAutocompleteProps().bulkPasteDialogTitle).toBeUndefined();
   });
 
   it('preserves already selected grouped values when requested', () => {
@@ -171,6 +196,25 @@ describe('AnalysisFilterField', () => {
 
     expect(latestAutocompleteProps().value).toEqual([
       { key: '2852-0', label: 'управління', value: '2852', count: 0, values: ['2852'] },
+    ]);
+  });
+
+  it('uses a stable prefixed key for unknown selected fallback values', () => {
+    renderFilterField({
+      label: 'Підрозділи',
+      options: [],
+      value: ['missing-unit'],
+      onChange: vi.fn(),
+    });
+
+    expect(latestAutocompleteProps().value).toEqual([
+      {
+        key: 'selected:missing-unit',
+        label: 'missing-unit',
+        value: 'missing-unit',
+        count: 0,
+        values: ['missing-unit'],
+      },
     ]);
   });
 
@@ -328,7 +372,7 @@ describe('AnalysisFilterField', () => {
     const props = latestAutocompleteProps();
 
     expect(props.value).toEqual([
-      { key: '99', value: '99', label: '99', count: 0, values: ['99'] },
+      { key: 'selected:99', value: '99', label: '99', count: 0, values: ['99'] },
     ]);
 
     act(() => {

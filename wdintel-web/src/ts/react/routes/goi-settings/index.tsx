@@ -7,7 +7,9 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   CircularProgress,
+  FormControlLabel,
   Link,
   Stack,
   Table,
@@ -33,6 +35,7 @@ import {
   fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
   unlinkCurrentUserGoiWhatsapp,
+  updateCurrentUserGoiPauseWorker,
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
@@ -53,6 +56,10 @@ function formatErrorMessage(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function hasRerAccess(user: User): boolean {
+  return user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
@@ -100,6 +107,7 @@ type IntegrationCardProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
   onDownloadPalettes: (integrationId: number) => void;
   onUploadCategories: (integrationId: number, file: File) => void;
+  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
 };
 
 type ShowMoreTableRowProps = {
@@ -122,6 +130,13 @@ type ServiceTableRowProps = {
   disabled: boolean;
   onRestart: (integrationId: number, service: GoiRestartService) => void;
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
+};
+
+type GoiAdditionalSettingsPanelProps = {
+  integration: GoiUserIntegration;
+  disabled: boolean;
+  pendingKey: string | null;
+  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
 };
 
 type GoiDataControlPanelProps = {
@@ -256,6 +271,42 @@ function ServiceTableRow(props: ServiceTableRowProps) {
   );
 }
 
+function GoiAdditionalSettingsPanel(props: GoiAdditionalSettingsPanelProps) {
+  const pendingKey = `${props.integration.id}:pause-worker`;
+  const pending = props.pendingKey === pendingKey;
+  const controlDisabled = props.disabled || !props.integration.canChangePauseWorker;
+
+  return (
+    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
+        Додаткові Налаштування
+      </Typography>
+      <Stack spacing={1} sx={{ mt: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={props.integration.pauseWorker}
+                disabled={controlDisabled}
+                onChange={(event) =>
+                  props.onUpdatePauseWorker(props.integration.id, event.target.checked)
+                }
+              />
+            }
+            label="Призупинити воркер"
+          />
+          {pending ? <CircularProgress size={18} /> : null}
+        </Stack>
+        {!props.integration.canChangePauseWorker ? (
+          <Typography variant="body2" color="text.secondary">
+            Змінити може відповідальний за інтеграцію або адміністратор.
+          </Typography>
+        ) : null}
+      </Stack>
+    </Box>
+  );
+}
+
 function GoiDataControlPanel(props: GoiDataControlPanelProps) {
   const [categoriesFile, setCategoriesFile] = React.useState<File | null>(null);
   const categoriesInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -367,7 +418,8 @@ function IntegrationCard(props: IntegrationCardProps) {
   const swappUnlinkKey = `${integration.id}:unlink:swapp`;
   const swappAltKey = `${integration.id}:restart:swapp_alt`;
   const swappAltUnlinkKey = `${integration.id}:unlink:swapp_alt`;
-  const disabled = !integration.canRestart || props.pendingKey !== null;
+  const actionDisabled = !integration.canRestart || props.pendingKey !== null;
+  const settingsDisabled = props.pendingKey !== null;
 
   return (
     <Card variant="outlined">
@@ -401,7 +453,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="goi"
                   pendingKey={props.pendingKey}
                   restartPendingKey={goiKey}
-                  disabled={disabled}
+                  disabled={actionDisabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
                 />
@@ -415,7 +467,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="echo_swapp"
                   pendingKey={props.pendingKey}
                   restartPendingKey={echoSwappKey}
-                  disabled={disabled}
+                  disabled={actionDisabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
                 />
@@ -436,7 +488,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                       pendingKey={props.pendingKey}
                       restartPendingKey={swappKey}
                       unlinkPendingKey={swappUnlinkKey}
-                      disabled={disabled}
+                      disabled={actionDisabled}
                       onRestart={props.onRestart}
                       onUnlink={props.onUnlink}
                     />
@@ -451,7 +503,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                       pendingKey={props.pendingKey}
                       restartPendingKey={swappAltKey}
                       unlinkPendingKey={swappAltUnlinkKey}
-                      disabled={disabled}
+                      disabled={actionDisabled}
                       onRestart={props.onRestart}
                       onUnlink={props.onUnlink}
                     />
@@ -461,9 +513,16 @@ function IntegrationCard(props: IntegrationCardProps) {
             </Table>
           </TableContainer>
 
+          <GoiAdditionalSettingsPanel
+            integration={integration}
+            disabled={settingsDisabled}
+            pendingKey={props.pendingKey}
+            onUpdatePauseWorker={props.onUpdatePauseWorker}
+          />
+
           <GoiDataControlPanel
             integration={integration}
-            disabled={disabled}
+            disabled={actionDisabled}
             pendingKey={props.pendingKey}
             onDownloadPalettes={props.onDownloadPalettes}
             onUploadCategories={props.onUploadCategories}
@@ -500,7 +559,7 @@ export function GoiSettingsPage() {
         if (abortController.signal.aborted) return;
         setCurrentUser(nextCurrentUser);
 
-        const nextIntegrations = nextCurrentUser.roles.includes('Rer')
+        const nextIntegrations = hasRerAccess(nextCurrentUser)
           ? await fetchCurrentUserGoiIntegrations(abortController.signal)
           : [];
         if (abortController.signal.aborted) return;
@@ -559,6 +618,32 @@ export function GoiSettingsPage() {
         kind: 'success',
         integrationId,
         message: `${whatsappServiceLabel(service)} успішно відв'язано`,
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        integrationId,
+        message: formatErrorMessage(error),
+      });
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function handleUpdatePauseWorker(integrationId: number, pauseWorker: boolean) {
+    const nextPendingKey = `${integrationId}:pause-worker`;
+    if (pendingKey) return;
+
+    setPendingKey(nextPendingKey);
+    setActionStatus(null);
+
+    try {
+      const updated = await updateCurrentUserGoiPauseWorker(integrationId, pauseWorker);
+      setIntegrations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setActionStatus({
+        kind: 'success',
+        integrationId,
+        message: 'Налаштування синхронізації оновлено',
       });
     } catch (error) {
       setActionStatus({
@@ -647,6 +732,7 @@ export function GoiSettingsPage() {
           onUnlink={handleUnlink}
           onDownloadPalettes={handleDownloadPalettes}
           onUploadCategories={handleUploadCategories}
+          onUpdatePauseWorker={handleUpdatePauseWorker}
         />
       ))}
 
