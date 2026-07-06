@@ -55,6 +55,10 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
+function hasRerAccess(user: User): boolean {
+  return user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
+}
+
 function restartServiceLabel(service: GoiRestartService): string {
   if (service === 'swapp') return 'Swapp';
   if (service === 'swapp_alt') return 'Swapp Додатковий';
@@ -500,7 +504,7 @@ export function GoiSettingsPage() {
         if (abortController.signal.aborted) return;
         setCurrentUser(nextCurrentUser);
 
-        const nextIntegrations = nextCurrentUser.roles.includes('Rer')
+        const nextIntegrations = hasRerAccess(nextCurrentUser)
           ? await fetchCurrentUserGoiIntegrations(abortController.signal)
           : [];
         if (abortController.signal.aborted) return;
