@@ -196,6 +196,7 @@ export function AnalysisFiltersPanelSections({
             deferredCommit
             bulkPaste
             bulkPasteSeparators={[',', '\n']}
+            bulkPasteInputLabel="Частоти"
             preserveSelectionOrder
             onChange={(freqsSelected) => updateQueryState({ freqsSelected })}
           />

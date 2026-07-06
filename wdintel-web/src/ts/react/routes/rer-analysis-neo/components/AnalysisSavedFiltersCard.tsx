@@ -4,6 +4,7 @@ import { SavedFiltersControl } from '../../../components/SavedFiltersControl';
 type Props = {
   isDirty: boolean;
   loadedSavedFilter: SavedFilter | null;
+  canSaveAsNew: boolean;
   saveInFlight: boolean;
   savedFilterName: string;
   savedFilters: SavedFilter[];
@@ -18,6 +19,7 @@ type Props = {
 export function AnalysisSavedFiltersCard({
   isDirty,
   loadedSavedFilter,
+  canSaveAsNew,
   saveInFlight,
   savedFilterName,
   savedFilters,
@@ -34,6 +36,7 @@ export function AnalysisSavedFiltersCard({
       selectedSavedFilter={loadedSavedFilter}
       savedFilterName={savedFilterName}
       isDirty={isDirty}
+      canSaveAsNew={canSaveAsNew}
       saveInFlight={saveInFlight}
       onApplySavedFilter={onApplySavedFilter}
       onSavedFilterNameChange={onSavedFilterNameChange}
