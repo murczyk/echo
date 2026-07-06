@@ -302,6 +302,7 @@ export function useAnalysisFilterSections({
           setOptions,
           setProfiles,
           setTagsMap,
+          queryState,
           unitsMap: unitsMapRef.current,
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
@@ -394,6 +395,7 @@ export function useAnalysisFilterSections({
               setOptions,
               setProfiles,
               setTagsMap,
+              queryState,
               networkStatsCache,
               unitsMap: unitsMapRef.current,
             });

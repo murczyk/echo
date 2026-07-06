@@ -19,17 +19,29 @@ vi.mock('@mui/material', () => ({
     children,
     onClick,
     href,
+    component,
+    target,
+    rel,
+    disabled,
   }: {
     children: ReactNode;
     onClick?: () => void;
     href?: string;
+    component?: string;
+    target?: string;
+    rel?: string;
+    disabled?: boolean;
   }) =>
-    href ? (
-      <a href={href} onClick={onClick as any}>
+    component === 'a' ? (
+      <a href={href} target={target} rel={rel} aria-disabled={disabled ? 'true' : undefined}>
+        {children}
+      </a>
+    ) : href ? (
+      <a href={href} target={target} rel={rel} aria-disabled={disabled ? 'true' : undefined}>
         {children}
       </a>
     ) : (
-      <button type="button" onClick={onClick}>
+      <button type="button" onClick={onClick} disabled={disabled}>
         {children}
       </button>
     ),
@@ -37,12 +49,14 @@ vi.mock('@mui/material', () => ({
     children,
     onClick,
     disabled,
+    'aria-label': ariaLabel,
   }: {
     children: ReactNode;
     onClick?: (event: MouseEvent) => void;
     disabled?: boolean;
+    'aria-label'?: string;
   }) => (
-    <button type="button" onClick={onClick as any} disabled={disabled}>
+    <button type="button" onClick={onClick as any} disabled={disabled} aria-label={ariaLabel}>
       {children}
     </button>
   ),
@@ -56,7 +70,9 @@ vi.mock('@mui/material', () => ({
   CircularProgress: () => <div data-testid="circular-progress" />,
   Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Tooltip: ({ children, title }: { children: ReactNode; title: ReactNode }) => (
+    <span title={typeof title === 'string' ? title : undefined}>{children}</span>
+  ),
   Typography: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   useMediaQuery: () => false,
 }));
@@ -147,6 +163,7 @@ vi.mock('./components/NetworkEtalonkaReportDialog', () => ({
 }));
 
 vi.mock('@mui/icons-material/ContentCopyOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/ArrowBack', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Delete', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Edit', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/MoreVertOutlined', () => ({ default: () => <span /> }));
@@ -155,7 +172,7 @@ vi.mock('../../utils/browser', () => ({
   navigateWithinSpa: vi.fn(),
 }));
 
-import { RerNetworkDetailsNeoPage } from './index';
+import { buildRerNetworkAnalysisHref, RerNetworkDetailsNeoPage } from './index';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -385,6 +402,7 @@ describe('RerNetworkDetailsNeoPage', () => {
 
   afterEach(() => {
     useRerNetworkDetailsNeoPageMock.mockReset();
+    vi.mocked(navigateWithinSpa).mockReset();
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -421,6 +439,61 @@ describe('RerNetworkDetailsNeoPage', () => {
     expect(toggleButton?.hasAttribute('disabled')).toBe(true);
   });
 
+  it('renders a back icon with tooltip and navigates to the network list', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(
+      buildPage({
+        network: { name: 'Тестова мережа', status: NETWORK_STATUS_ACTIVE, deleted: false },
+        unitNames: [],
+        currentUserLoaded: true,
+      }),
+    );
+    const view = await renderPage();
+    rendered.push(view);
+
+    const backButton = view.container.querySelector('button[aria-label="До списку мереж"]');
+    expect(backButton).not.toBeNull();
+    expect(view.container.querySelector('span[title="До списку мереж"]')).not.toBeNull();
+    expect(view.container.textContent).not.toContain('До списку мереж');
+
+    await act(async () => {
+      (backButton as HTMLButtonElement).click();
+    });
+
+    expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo');
+  });
+
+  it('renders the back icon while loading and navigates to the network list', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(buildPage({ network: null }));
+    const view = await renderPage();
+    rendered.push(view);
+
+    const backButton = view.container.querySelector('button[aria-label="До списку мереж"]');
+    expect(backButton).not.toBeNull();
+    expect(view.container.querySelector('span[title="До списку мереж"]')).not.toBeNull();
+    expect(view.container.querySelector('span[title="Завантаження"]')).toBeNull();
+
+    await act(async () => {
+      (backButton as HTMLButtonElement).click();
+    });
+
+    expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo');
+  });
+
+  it('disables the analysis link until the network exists', async () => {
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(buildPage({ network: null }));
+    const view = await renderPage();
+    rendered.push(view);
+
+    const analysisButton = view.container.querySelector('a');
+    expect(analysisButton?.textContent).toBe('Переглянути в Аналізі');
+    expect(analysisButton?.getAttribute('aria-disabled')).toBe('true');
+    expect(analysisButton?.getAttribute('href')).toBeNull();
+  });
+
+  it('builds the analysis href from the network id', () => {
+    expect(buildRerNetworkAnalysisHref(42)).toBe('/rer-analysis-neo?networks=42');
+  });
+
   it('shows the empty-network fallback for loaded unnamed networks', async () => {
     useRerNetworkDetailsNeoPageMock.mockReturnValue(
       buildPage({
@@ -453,11 +526,16 @@ describe('RerNetworkDetailsNeoPage', () => {
   });
 
   it('stores classic preference before navigating to the classic page', async () => {
-    useRerNetworkDetailsNeoPageMock.mockReturnValue(buildPage());
+    useRerNetworkDetailsNeoPageMock.mockReturnValue(
+      buildPage({
+        network: { name: 'Тестова мережа', status: NETWORK_STATUS_ACTIVE, deleted: false },
+        unitNames: [],
+        currentUserLoaded: true,
+      }),
+    );
     const view = await renderPage();
     rendered.push(view);
 
-    const listLink = view.container.querySelector('a[href="/rer-networks-neo"]');
     const classicButton = Array.from(view.container.querySelectorAll('button, a')).find((element) =>
       element.textContent?.includes('До класичної версії'),
     );
@@ -469,7 +547,9 @@ describe('RerNetworkDetailsNeoPage', () => {
 
     expect(window.localStorage.getItem('rer-network-details.preferredView')).toBe('classic');
     expect(navigateWithinSpa).toHaveBeenCalledWith('/rer-networks/42?view=classic');
-    expect(listLink?.textContent).toBe('До списку мереж');
-    expect(listLink?.getAttribute('href')).toBe('/rer-networks-neo');
+    const analysisButton = view.container.querySelector('a[href^="/rer-analysis-neo?"]');
+    expect(analysisButton?.getAttribute('href')).toBe('/rer-analysis-neo?networks=42');
+    expect(analysisButton?.getAttribute('target')).toBe('_blank');
+    expect(analysisButton?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 });

@@ -1,3 +1,4 @@
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -22,6 +23,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
+import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-query-state';
 import { formatClassicNetworkHeaderName } from './use-rer-network-details-neo-page.shared';
 import { NetworkDetailsNeoPageBody } from './components/NetworkDetailsNeoPageBody';
 import { NetworkDetailsNeoPageDialogs } from './components/NetworkDetailsNeoPageDialogs';
@@ -57,37 +59,55 @@ function readStoredTopPanelCollapsed(): boolean {
   return window.localStorage.getItem(TOP_PANEL_COLLAPSED_STORAGE_KEY) === 'true';
 }
 
+export function buildRerNetworkAnalysisHref(networkId: number): string {
+  const params = new URLSearchParams();
+  writeRerAnalysisQueryStateToSearchParams(params, { networksSelected: [String(networkId)] });
+  return `/rer-analysis-neo?${params.toString()}`;
+}
+
 function buildPageTitle(
   network: { name?: string | null } | null,
   unitNames: string[],
   status: { label: string; tone: 'success' | 'warning' },
 ) {
-  if (!network) {
-    return <Skeleton width={240} />;
-  }
-
   return (
     <Box
       component="span"
       sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}
     >
-      <Tooltip title={status.label} arrow placement="bottom-start">
-        <Box
-          component="span"
-          aria-label={status.label}
-          sx={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            bgcolor: status.tone === 'success' ? 'success.main' : 'warning.main',
-            flexShrink: 0,
-            cursor: 'default',
-          }}
-        />
+      <Tooltip title="До списку мереж" arrow placement="bottom-start">
+        <IconButton
+          aria-label="До списку мереж"
+          onClick={() => navigateWithinSpa('/rer-networks-neo')}
+          size="small"
+          sx={{ flexShrink: 0 }}
+        >
+          <ArrowBackIcon fontSize="small" />
+        </IconButton>
       </Tooltip>
-      <Box component="span" sx={{ display: 'block', minWidth: 0, lineHeight: 'inherit' }}>
-        {formatClassicNetworkHeaderName(network?.name, unitNames)}
-      </Box>
+      {!network ? (
+        <Skeleton width={240} />
+      ) : (
+        <>
+          <Tooltip title={status.label} arrow placement="bottom-start">
+            <Box
+              component="span"
+              aria-label={status.label}
+              sx={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                bgcolor: status.tone === 'success' ? 'success.main' : 'warning.main',
+                flexShrink: 0,
+                cursor: 'default',
+              }}
+            />
+          </Tooltip>
+          <Box component="span" sx={{ display: 'block', minWidth: 0, lineHeight: 'inherit' }}>
+            {formatClassicNetworkHeaderName(network?.name, unitNames)}
+          </Box>
+        </>
+      )}
     </Box>
   );
 }
@@ -116,6 +136,7 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
   const isTopPanel = panelPlacement === 'top';
   const leftPanelVisible = !isTopPanel && (isMobileLayout || leftPanelOpen);
   const classicHref = buildRerNetworkDetailsHref(networkId, 'classic');
+  const analysisHref = page.network ? buildRerNetworkAnalysisHref(networkId) : '';
   const aorVisible = showAllAors ? page.aorItems : page.aorItems.slice(0, 5);
   const aorCollapsedCount = Math.max(page.aorItems.length - aorVisible.length, 0);
   const title = buildPageTitle(page.network, page.unitNames, page.status);
@@ -158,8 +179,14 @@ export function RerNetworkDetailsNeoPage({ networkId }: Props) {
         titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button component="a" href="/rer-networks-neo">
-              До списку мереж
+            <Button
+              component="a"
+              href={analysisHref || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              disabled={!page.network}
+            >
+              Переглянути в Аналізі
             </Button>
             <Button
               onClick={() => {

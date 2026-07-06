@@ -56,6 +56,10 @@ const mrtMock = vi.hoisted(() => ({
   ),
 }));
 
+const browserMock = vi.hoisted(() => ({
+  navigateWithinSpa: vi.fn(),
+}));
+
 let capturedOptions: Record<string, unknown> | null = null;
 let capturedToolbarProps: Record<string, unknown> | null = null;
 let capturedInternalActionsProps: Record<string, unknown> | null = null;
@@ -86,6 +90,37 @@ vi.mock('@mui/material', async () => {
     useMediaQuery: () => true,
   };
 });
+
+vi.mock('../../utils/browser', () => ({
+  navigateWithinSpa: browserMock.navigateWithinSpa,
+  handleNavigateWithinSpaClick: (
+    event: {
+      defaultPrevented: boolean;
+      button: number;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      shiftKey: boolean;
+      altKey: boolean;
+      preventDefault: () => void;
+    },
+    href: string,
+  ) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    browserMock.navigateWithinSpa(href);
+  },
+  withBackTo: (path: string) => path,
+  windowWidth: () => 0,
+}));
 
 vi.mock('../../components/TablePageToolbar', () => ({
   TablePageToolbar: (props: Record<string, unknown>) => {
@@ -158,6 +193,7 @@ beforeEach(() => {
   capturedToolbarProps = null;
   capturedInternalActionsProps = null;
   capturedTableStateProviderProps = null;
+  browserMock.navigateWithinSpa.mockReset();
   tableStateMock.globalFilter = '';
   tableStateMock.columnFilters = [];
   tableStateMock.sorting = [];
@@ -424,6 +460,19 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   expect(networkAnchor.props.title).not.toContain('в дорозвідці');
   expect(networkAnchor.props.target).toBeUndefined();
   expect(networkAnchor.props.rel).toBeUndefined();
+  expect(networkAnchor.props.onClick).toEqual(expect.any(Function));
+  const preventDefault = vi.fn();
+  networkAnchor.props.onClick({
+    defaultPrevented: false,
+    button: 0,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    preventDefault,
+  });
+  expect(preventDefault).toHaveBeenCalledTimes(1);
+  expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/42');
   expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
   expect(networkAnchor.props.children.props.text).toBe('р/м Network 1 1 АК');
   expect(developingChip.props.label).toBe('В дорозвідці');
