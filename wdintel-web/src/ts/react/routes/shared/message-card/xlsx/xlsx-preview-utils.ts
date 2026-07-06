@@ -1,5 +1,7 @@
 import readXlsxFile from 'read-excel-file/web-worker';
+import { debugDocumentPreview } from '../document-preview-debug';
 import { extractWorkbookSheetNames } from './xlsx-preview-metadata';
+import { normalizeXlsxPreviewWorkbook } from './xlsx-preview-normalize';
 
 // read-excel-file's runtime parser supports options.sheets and filters sheet
 // IDs before parseSheet(), but the package typings omit that option. Keep this
@@ -82,11 +84,27 @@ export async function buildXlsxPreview(buffer: ArrayBuffer): Promise<XlsxPreview
     throw new XlsxPreviewError('XLSX_FILE_TOO_LARGE', 'XLSX file is too large');
   }
 
+  const sheetNames = extractWorkbookSheetNames(buffer);
+  debugDocumentPreview('xlsx', 'sheet names extracted', { sheetNames });
+
   try {
-    const sheetNames = extractWorkbookSheetNames(buffer);
     return await buildXlsxPreviewFromWorkbook(buffer, sheetNames);
   } catch (error) {
-    throw error;
+    if (!isEmptyInlineStringCellError(error)) {
+      throw error;
+    }
+
+    const normalizedWorkbook = normalizeXlsxPreviewWorkbook(buffer);
+    if (normalizedWorkbook.changedCellCount === 0) {
+      throw error;
+    }
+
+    debugDocumentPreview('xlsx', 'normalized empty inline string cells', {
+      changedWorksheetCount: normalizedWorkbook.changedWorksheetCount,
+      changedCellCount: normalizedWorkbook.changedCellCount,
+    });
+
+    return await buildXlsxPreviewFromWorkbook(normalizedWorkbook.buffer, sheetNames);
   }
 }
 
@@ -102,15 +120,35 @@ async function buildXlsxPreviewFromWorkbook(
       ? sheetNames.slice(0, MAX_XLSX_SHEETS)
       : Array.from({ length: MAX_XLSX_SHEETS }, (_, index) => index + 1);
   let sourceSheetCount: number | null = sheetNames.length > 0 ? sheetNames.length : null;
+  debugDocumentPreview('xlsx', 'sheets selected', { sheetNames, sheetsToRead });
 
   let workbookSheets: Array<{ sheet: string; data: unknown[][] }>;
   try {
     workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, { sheets: sheetsToRead });
   } catch (error) {
+    debugDocumentPreview(
+      'xlsx',
+      'parser failed before classification',
+      {
+        message: error instanceof Error ? error.message : String(error),
+        rawError: error,
+        sheetNames,
+        sheetsToRead,
+      },
+      'warn',
+    );
     if (sheetNames.length === 0) {
       const availableSheetCount = parseAvailableSheetCount(error);
       if (availableSheetCount != null && availableSheetCount > 0) {
         sourceSheetCount = availableSheetCount;
+        debugDocumentPreview(
+          'xlsx',
+          'retrying fallback probe',
+          {
+            availableSheetCount,
+          },
+          'warn',
+        );
         try {
           workbookSheets = await readXlsxFileWithRuntimeSheetsOption(buffer, {
             sheets: Array.from(
@@ -138,12 +176,28 @@ async function buildXlsxPreviewFromWorkbook(
     }
   }
 
+  debugDocumentPreview('xlsx', 'parsed sheets', {
+    sheets: workbookSheets.map((sheet) => ({
+      name: sheet.sheet,
+      rowCount: sheet.data.length,
+      columnCount: sheet.data.reduce((max, row) => Math.max(max, row.length), 0),
+    })),
+  });
+
   if (
     sheetNames.length === 0 &&
     workbookSheets.length === MAX_XLSX_SHEETS &&
     sourceSheetCount == null
   ) {
     try {
+      debugDocumentPreview(
+        'xlsx',
+        'probing for additional sheets',
+        {
+          probeSheetIndex: MAX_XLSX_SHEETS + 1,
+        },
+        'warn',
+      );
       await readXlsxFileWithRuntimeSheetsOption(buffer, { sheets: [MAX_XLSX_SHEETS + 1] });
       sourceSheetCount = MAX_XLSX_SHEETS + 1;
     } catch {
@@ -214,6 +268,11 @@ function classifyXlsxError(error: unknown): XlsxPreviewErrorCode {
   }
 
   return 'XLSX_UNSUPPORTED_WORKBOOK_STRUCTURE';
+}
+
+function isEmptyInlineStringCellError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unsupported\s+"inline string"\s+cell value structure/i.test(message);
 }
 
 function parseAvailableSheetCount(error: unknown): number | null {
