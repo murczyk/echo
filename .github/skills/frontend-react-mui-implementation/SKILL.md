@@ -6,15 +6,18 @@ description: Implement or refactor React + MUI features in wdintel-web/src/ts/re
 # Frontend React+MUI Implementation
 
 ## Short description (for triggering)
+
 Use when editing TSX React routes/components or custom element wrappers in `wdintel-web/src/ts/react`.
 
 ## When to use / When NOT to use
+
 - Use: React pages/components, MUI UI updates, API service usage in TS.
 - Use: Files under `wdintel-web/src/ts/react/routes`, `components`, `services/api`, `*-element.tsx`.
 - Do not use: Elm-only changes.
 - Do not use: Commit/changelog-only requests.
 
 ## Inputs the agent should request or derive
+
 - Derive target custom element tag from related Elm page (for hybrid pages).
 - Derive existing theme/style conventions from nearby component.
 - Derive API shape from `Bindings` types and `services/api/*`.
@@ -22,6 +25,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Ask only if the mount target element/tag is unclear.
 
 ## Procedure (checklist)
+
 - Keep hybrid mount pattern:
 - `createRoot(this)` in custom element class.
 - Wrap route root with `ThemeProvider` + `useNeoMuiTheme`.
@@ -62,14 +66,18 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `SavedFiltersControl` for saved filter CRUD.
 - `PageHeader` and existing top-action styles for neo page headers/actions.
 - **Power wrappers** (`wdintel-web/src/ts/react/components/`): prefer these over raw MUI when the use case matches.
-  | MUI | Use instead |
-  | --- | --- |
-  | `Alert` | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
-  | `Button` | `PowerButton` — debounced double-submit guard |
-  | `IconButton` | `PowerIconButton` |
-  | `Chip` (selectable/filter tags) | `PowerChip` or `CompactPowerChip` |
-  | `Menu` | `PowerMenu` — Escape does not bubble to parent drawers |
-  | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI.
+  | MUI                                                                                                                                            | Use instead                                                                          |
+  | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+  | `Alert`                                                                                                                                        | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
+  | `Button`                                                                                                                                       | `PowerButton` — debounced double-submit guard                                        |
+  | `IconButton`                                                                                                                                   | `PowerIconButton`                                                                    |
+  | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                    |
+  | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                               |
+  | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI. |
+- MUI `Dialog`, `Modal`, `Menu`, and `Popover` can surface `Blocked aria-hidden... retained focus` warnings when focus is restored into an `aria-hidden` subtree.
+- When chaining modal surfaces, close the current surface first, move or blur focus before hiding the focused subtree, and defer opening the next surface to the next tick/frame if needed.
+- For dialogs opened from menus, close the menu first, then open the dialog after state settles; use `disableRestoreFocus` when MUI would otherwise restore focus into an `aria-hidden` ancestor.
+- Restore focus manually only after modal cleanup, and browser-check the console for `Blocked aria-hidden`.
 - Avoid MUI `Menu` for hover-only popups when it can focus or `aria-hide` surrounding content; prefer non-modal `Popper`/`Tooltip`-style patterns there.
 - For React pages that need date selection, prefer MUI X `DatePicker` / `DateTimePicker` with the app locale/theme conventions.
 - Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
@@ -83,6 +91,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `cd wdintel-web && npm run test:ts`
 
 ## Definition of Done (checklist)
+
 - Custom element still mounts/unmounts correctly.
 - Theme stays synced via `useNeoMuiTheme`.
 - API errors, including 401, are handled explicitly.
@@ -92,24 +101,27 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `just build-front` passes.
 
 ## Tiny examples
+
 ```ts
 if (isUnauthorizedError(error)) {
-  window.location.assign('/login');
+  window.location.assign("/login");
   return;
 }
 ```
 
 ## Self-check
+
 - Inspect diff for endpoint/method/path changes in `services/api/*`.
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
-- Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON/Markdown edits.
+- Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Check public URL tab values against internal ids; keep aliases only for intentional legacy compatibility.
 - Confirm mobile/tablet/desktop layout still works for touched route.
 
 ## Assumptions
+
 - React features are embedded as custom elements and mounted from Elm pages in this repo.

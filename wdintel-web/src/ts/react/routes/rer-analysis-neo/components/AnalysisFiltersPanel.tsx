@@ -216,6 +216,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
 
               <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 1.5 }}>
                 <AnalysisSavedFiltersCard
+                  canSaveAsNew={canResetFilters}
                   isDirty={isDirty}
                   loadedSavedFilter={loadedSavedFilter}
                   saveInFlight={saveInFlight}
@@ -279,6 +280,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
 
               <Box sx={{ pb: 1.5 }}>
                 <AnalysisSavedFiltersCard
+                  canSaveAsNew={canResetFilters}
                   isDirty={isDirty}
                   loadedSavedFilter={loadedSavedFilter}
                   saveInFlight={saveInFlight}

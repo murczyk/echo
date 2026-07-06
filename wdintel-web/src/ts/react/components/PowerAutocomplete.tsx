@@ -188,6 +188,17 @@ function buildBulkResolution<T>(args: {
   };
 }
 
+function emptyBulkResolution<T>(selectedValue: readonly T[]): BulkPasteResolution<T> {
+  return {
+    tokens: [],
+    found: [],
+    missing: [],
+    added: [],
+    alreadySelected: [],
+    finalValue: [...selectedValue],
+  };
+}
+
 function formatPreviewValues<T>(values: T[], getOptionLabel: (option: T) => string): string {
   return values.map(getOptionLabel).join(', ');
 }
@@ -230,7 +241,7 @@ const BULK_AUTOCOMPLETE_SX: SxProps<Theme> = {
   '& .MuiAutocomplete-endAdornment': {
     display: 'flex',
     alignItems: 'center',
-    gap: 0,
+    gap: 0.5,
     top: '50%',
     transform: 'translateY(-50%)',
   },
@@ -281,25 +292,29 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const [bulkDialogInputValue, setBulkDialogInputValue] = useState('');
   const [pendingBulkDialogOpen, setPendingBulkDialogOpen] = useState(false);
 
-  const bulkPreview = useMemo(
-    () =>
-      buildBulkResolution({
-        inputValue: bulkDialogInputValue,
-        options,
-        selectedValue,
-        getOptionLabel: bulkPasteLabel,
-        isOptionEqualToValue,
-        separators: bulkPasteSeparators,
-      }),
-    [
-      bulkDialogInputValue,
-      bulkPasteLabel,
-      bulkPasteSeparators,
-      isOptionEqualToValue,
+  const bulkPreview = useMemo(() => {
+    if (!bulkPaste || !bulkDialogOpen) {
+      return emptyBulkResolution(selectedValue);
+    }
+
+    return buildBulkResolution({
+      inputValue: bulkDialogInputValue,
       options,
       selectedValue,
-    ],
-  );
+      getOptionLabel: bulkPasteLabel,
+      isOptionEqualToValue,
+      separators: bulkPasteSeparators,
+    });
+  }, [
+    bulkDialogInputValue,
+    bulkDialogOpen,
+    bulkPaste,
+    bulkPasteLabel,
+    bulkPasteSeparators,
+    isOptionEqualToValue,
+    options,
+    selectedValue,
+  ]);
 
   useEffect(() => {
     if (!bulkPaste || !pendingBulkDialogOpen || bulkMenuAnchorEl != null) {
@@ -337,9 +352,21 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   };
 
   const closeBulkDialog = () => {
+    if (
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.closest('[role="dialog"]') != null
+    ) {
+      document.activeElement.blur();
+    }
+
     setBulkDialogOpen(false);
     setBulkDialogInputValue('');
     setPendingBulkDialogOpen(false);
+
+    const restoreFocusTarget = bulkMenuAnchorEl;
+    window.setTimeout(() => {
+      restoreFocusTarget?.focus();
+    }, 0);
   };
 
   const submitBulkDialog = () => {
@@ -360,6 +387,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     const endAdornment = params.InputProps?.endAdornment;
     const menuButton = (
       <PowerIconButton
+        key="bulk-paste-menu"
         aria-label={menuLabel}
         disabled={autocompleteProps.disabled}
         size="small"
@@ -399,9 +427,15 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
           >
             <MenuItem onClick={openBulkDialog}>{menuLabel}</MenuItem>
           </PowerMenu>
-          <Dialog open={bulkDialogOpen} onClose={closeBulkDialog} fullWidth maxWidth="sm">
+          <Dialog
+            open={bulkDialogOpen}
+            onClose={closeBulkDialog}
+            fullWidth
+            maxWidth="sm"
+            disableRestoreFocus
+          >
             <DialogTitle>{dialogTitle}</DialogTitle>
-            <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
+            <DialogContent sx={{ pt: 2.5, pb: 0, overflow: 'visible' }}>
               <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
                 <TextField
                   autoFocus

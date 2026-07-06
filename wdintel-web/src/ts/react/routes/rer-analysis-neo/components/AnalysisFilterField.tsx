@@ -52,6 +52,17 @@ function toAutocompleteOption(option: AnalysisFilterOption, index: number): Auto
   };
 }
 
+function buildFallbackSelectedOption(selected: string, labelCache: Record<string, string>) {
+  const label = labelCache[selected] ?? selected;
+  return {
+    key: `selected:${selected}`,
+    label,
+    value: selected,
+    count: 0,
+    values: [selected],
+  };
+}
+
 function optionContainsValue(
   option: AutocompleteOption,
   selected: string,
@@ -89,8 +100,7 @@ function buildSelectedOptions(
             ),
         )
         .map((selected) => {
-          const label = labelCache[selected] ?? selected;
-          return { key: selected, label, value: selected, count: 0, values: [selected] };
+          return buildFallbackSelectedOption(selected, labelCache);
         }),
     ];
   }
@@ -110,8 +120,7 @@ function buildSelectedOptions(
 
     if (seenKeys.has(selected)) return;
     seenKeys.add(selected);
-    const label = labelCache[selected] ?? selected;
-    selectedOptions.push({ key: selected, label, value: selected, count: 0, values: [selected] });
+    selectedOptions.push(buildFallbackSelectedOption(selected, labelCache));
   });
 
   return selectedOptions;
@@ -230,6 +239,7 @@ export function AnalysisFilterField({
       loading={loading}
       loadingText={`Завантаження${ELLIPSIS}`}
       getOptionLabel={(option) => option.label}
+      getOptionKey={(option) => option.key}
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
       bulkPaste={bulkPaste}
       bulkPasteSeparators={bulkPasteSeparators}
