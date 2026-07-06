@@ -38,16 +38,23 @@ export function resolveTagDisplayOrder(
   }
 
   const isCustom = (tagId: number): boolean => tagsMap[tagId]?.ownerOrganismId != null;
+  const isExtra = (tagId: number): boolean => Boolean(tagsMap[tagId]?.extra);
   const ordValue = (tagId: number): number => tagsMap[tagId]?.ord ?? Number.POSITIVE_INFINITY;
 
-  // Stable sort: organism (custom) tags first, sorted by ord ascending (null ord last);
-  // global tags keep their backend order.
+  // Stable sort that keeps the backend grouping: organism (custom) tags first, then global.
+  // Within custom tags, primary (non-extra) tags come before extra tags — matching how the
+  // backend appends extra tags after primary ones — and only tags in the same group are
+  // reordered by ord ascending (null ord last). This prevents a low-ord extra tag from
+  // jumping ahead of primary custom tags in the main chip order.
   return ordered.slice().sort((a, b) => {
     const aCustom = isCustom(a);
     const bCustom = isCustom(b);
     if (aCustom !== bCustom) return aCustom ? -1 : 1;
-    if (aCustom && bCustom) return ordValue(a) - ordValue(b);
-    return 0;
+    if (!aCustom) return 0;
+    const aExtra = isExtra(a);
+    const bExtra = isExtra(b);
+    if (aExtra !== bExtra) return aExtra ? 1 : -1;
+    return ordValue(a) - ordValue(b);
   });
 }
 

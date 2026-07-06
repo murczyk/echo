@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
+  getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
 }));
@@ -56,6 +57,7 @@ vi.mock('../../services/api/analysis', () => ({
   fetchInboxMessages: mocks.fetchInboxMessages,
   fetchNetworksByIds: mocks.fetchNetworksByIds,
   getLatestSenders: mocks.getLatestSenders,
+  getTagsForDisplay: mocks.getTagsForDisplay,
   getTagsMapForDisplay: mocks.getTagsMapForDisplay,
 }));
 

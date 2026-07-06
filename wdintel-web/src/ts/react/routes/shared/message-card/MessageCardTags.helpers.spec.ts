@@ -99,6 +99,40 @@ describe('buildMessageCardTagRows', () => {
     expect(rows.map((row) => row.tagId)).toEqual([11, 13, 10, 12, 2]);
   });
 
+  it('keeps extra custom tags after primary custom tags even with a lower ord', () => {
+    const extraOrderingTagsMap = {
+      20: {
+        label: 'орг-екстра-ord0',
+        extra: true,
+        ord: 0,
+        keywords: null,
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+      21: {
+        label: 'орг-основний-ord5',
+        extra: false,
+        ord: 5,
+        keywords: null,
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+      22: {
+        label: 'орг-екстра-ord1',
+        extra: true,
+        ord: 1,
+        keywords: null,
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+    } as Record<number, Tag>;
+
+    const rows = buildMessageCardTagRows(buildMessage(), extraOrderingTagsMap, [20, 21, 22]);
+
+    // Primary tag (21) first despite its higher ord; extras (20, 22) follow, sorted by ord.
+    expect(rows.map((row) => row.tagId)).toEqual([21, 20, 22]);
+  });
+
   it('shows human contributors and bot contributors for a selected tag', () => {
     const rows = buildMessageCardTagRows(
       buildMessage({
