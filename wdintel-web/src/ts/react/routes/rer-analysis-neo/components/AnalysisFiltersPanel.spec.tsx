@@ -276,6 +276,7 @@ function buildProps(
       savedFilterName: '',
       savedFilters: [],
       tagsMap: {},
+      tagsOrder: [],
       applySavedFilter: vi.fn(),
       deleteLoadedSavedFilter: vi.fn(),
       renameExistingSavedFilter: vi.fn(),
@@ -593,6 +594,7 @@ describe('AnalysisFiltersPanel', () => {
           ownerOrganismId: null,
         },
       } as AnalysisPageState['tagsMap'],
+      tagsOrder: [2, 1],
       options: {
         ...buildOptions(),
         tags: [
@@ -1019,33 +1021,9 @@ describe('AnalysisFiltersPanel', () => {
     await act(async () => {
       toggleButton('Крім обраних').click();
     });
-    await act(async () => {
-      toggleButton('Без тегів').click();
-    });
 
-    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: false, tagPresence: null });
-    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: true, tagPresence: null });
-    expect(updateQueryState).toHaveBeenCalledWith({
-      tags: [],
-      tagsExcludeMode: false,
-      tagPresence: 'WithoutTags',
-    });
-  });
-
-  it('disables the tags input when the "Без тегів" mode is active', async () => {
-    const view = await renderComponent(
-      buildProps({
-        queryState: { ...emptyQueryState(), tagPresence: 'WithoutTags' },
-      }),
-    );
-    rendered.push(view);
-
-    const tagsField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; disabled?: boolean; value: string[] })
-      .find((callProps) => callProps.label === 'Теги');
-
-    expect(tagsField?.disabled).toBe(true);
-    expect(tagsField?.value).toEqual([]);
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: true });
   });
 
   it('clears without-coords when the peleng checkbox is disabled', async () => {

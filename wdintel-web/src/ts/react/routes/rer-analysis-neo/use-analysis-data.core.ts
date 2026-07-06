@@ -75,6 +75,7 @@ export function useAnalysisData({
     getReloadFilterSections,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
+    invalidateTagFacetLoad,
     loadFilterSection,
     loadInitialFilterSections,
   } = useAnalysisFilterSections({
@@ -118,6 +119,7 @@ export function useAnalysisData({
       onError,
       onUnauthorized,
       queryState,
+      invalidateTagFacetLoad,
       reloadRef,
       referenceState,
       messageList,

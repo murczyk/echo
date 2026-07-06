@@ -248,6 +248,53 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
     ]);
   });
 
+  it('lists every backend tag with the current organism user tags first and facet counts merged', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      counts: null,
+      groupInfos: {},
+      options: {
+        // Facet only carries counts for the tags on the visible messages.
+        tags: [
+          { value: '2', label: '2', count: 4 },
+          { value: '7', label: '7', count: 9 },
+        ],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [],
+        units: [],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: emptyQueryState(),
+      // Backend order: global 7, user 2, user 5, global 3.
+      tagsOrder: [7, 2, 5, 3],
+      tagsMap: {
+        2: { id: 2, label: 'Оброблено', ownerOrganismId: 1 } as never,
+        3: { id: 3, label: 'Глобальний', ownerOrganismId: null } as never,
+        5: { id: 5, label: 'Мій тег', ownerOrganismId: 1 } as never,
+        7: { id: 7, label: 'Зв’язок', ownerOrganismId: null } as never,
+      },
+    });
+
+    // User/organism tags (ownerOrganismId != null) come first in backend order,
+    // then every other tag. All tags appear; facet counts fill in, 0 otherwise.
+    expect(derived.tagOptions).toEqual([
+      { value: '2', label: 'Оброблено', count: 4 },
+      { value: '5', label: 'Мій тег', count: 0 },
+      { value: '7', label: 'Зв’язок', count: 9 },
+      { value: '3', label: 'Глобальний', count: 0 },
+    ]);
+  });
+
   it('keeps the selected count when a selected group key is missing from the current options', () => {
     const derived = buildAnalysisFiltersPanelDerivedData({
       aorEntries: [],

@@ -224,27 +224,16 @@ describe('rer-analysis-neo helpers', () => {
     expect(inboxReq?.deniedTags).toEqual([3, 7]);
   });
 
-  it('passes the tag presence filter through to both requests', () => {
-    const state = createQueryState({ tagPresence: 'WithoutTags' });
-    const analysisReq = buildAnalysisReq(state);
-    const inboxReq = buildInboxReq(state);
-
-    expect(analysisReq?.tagPresence).toBe('WithoutTags');
-    expect(inboxReq?.tagPresence).toBe('WithoutTags');
-  });
-
-  it('round-trips exclude mode and tag presence through saved filters', () => {
+  it('round-trips exclude mode through saved filters', () => {
     const state = createQueryState({
       tags: [3, 7],
       tagsExcludeMode: true,
-      tagPresence: 'WithoutTags',
     });
     const savedFilter = createSavedFilter(state);
     const restored = queryStateFromSavedFilter(savedFilter, createResetQueryState());
 
     expect(restored.tags).toEqual([3, 7]);
     expect(restored.tagsExcludeMode).toBe(true);
-    expect(restored.tagPresence).toBe('WithoutTags');
   });
 
   it('preserves selected callsign casing for case-sensitive backend filtering', () => {

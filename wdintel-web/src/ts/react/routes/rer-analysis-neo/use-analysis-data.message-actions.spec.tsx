@@ -49,6 +49,7 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   setMapOpenMessages: Dispatch<SetStateAction<Array<[number, InboxMessage]>>>;
   onError: ReturnType<typeof vi.fn>;
   reload: ReturnType<typeof vi.fn>;
+  invalidateTagFacetLoad: ReturnType<typeof vi.fn>;
 };
 
 function buildUser(): User {
@@ -102,6 +103,7 @@ function TestHarness(props: {
   currentUser?: User | null;
   onError?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
+  invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -111,6 +113,7 @@ function TestHarness(props: {
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
   const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
+  const [invalidateTagFacetLoad] = useState(() => props.invalidateTagFacetLoad ?? vi.fn());
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
@@ -130,6 +133,7 @@ function TestHarness(props: {
     onUnauthorized,
     patchMessages,
     queryState: emptyQueryState(),
+    invalidateTagFacetLoad,
     reload,
     setMapOpenMessages,
     setMessages,
@@ -145,6 +149,7 @@ function TestHarness(props: {
     setMapOpenMessages,
     onError,
     reload,
+    invalidateTagFacetLoad,
   };
 
   return null;
@@ -178,6 +183,7 @@ describe('useAnalysisDataMessageActions', () => {
       authUserName?: string | null;
       currentUser?: User | null;
       reload?: ReturnType<typeof vi.fn>;
+      invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
     } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
@@ -189,6 +195,7 @@ describe('useAnalysisDataMessageActions', () => {
           authUserName={options.authUserName}
           currentUser={options.currentUser}
           reload={options.reload}
+          invalidateTagFacetLoad={options.invalidateTagFacetLoad}
         />,
       );
     });
@@ -313,11 +320,12 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });
 
-  it('reloads after a successful tag toggle so an active filter re-syncs the list', async () => {
+  it('reloads and refreshes the tag facet after a successful tag toggle', async () => {
     const reload = vi.fn(() => Promise.resolve());
+    const invalidateTagFacetLoad = vi.fn();
     const apiRef = await renderHarness(
       [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      { reload },
+      { reload, invalidateTagFacetLoad },
     );
 
     await act(async () => {
@@ -325,15 +333,17 @@ describe('useAnalysisDataMessageActions', () => {
     });
 
     expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(invalidateTagFacetLoad).toHaveBeenCalledTimes(1);
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('does not reload when the tag toggle fails and rolls back', async () => {
+  it('does not reload or invalidate the tag facet when the tag toggle fails', async () => {
     hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('boom'));
     const reload = vi.fn(() => Promise.resolve());
+    const invalidateTagFacetLoad = vi.fn();
     const apiRef = await renderHarness(
       [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      { reload },
+      { reload, invalidateTagFacetLoad },
     );
 
     await act(async () => {
@@ -342,6 +352,7 @@ describe('useAnalysisDataMessageActions', () => {
 
     expect(apiRef.current!.onError).toHaveBeenCalledWith('boom');
     expect(reload).not.toHaveBeenCalled();
+    expect(invalidateTagFacetLoad).not.toHaveBeenCalled();
   });
 
   it('uses the auth user fallback when currentUser is unavailable', async () => {

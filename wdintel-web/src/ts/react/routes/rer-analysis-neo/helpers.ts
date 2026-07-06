@@ -87,7 +87,6 @@ export function emptyQueryState(): AnalysisQueryState {
     withoutModelTags: false,
     filterTagsOption: 'OneOfTags',
     tagsExcludeMode: false,
-    tagPresence: null,
     reportTagsOnlyThisUnit: false,
     onlyWithMedia: false,
   };
@@ -255,7 +254,7 @@ export function buildAnalysisReq(
     search: query.search.trim() === '' ? null : query.search.trim(),
     selectedTags: query.tags.length && !query.tagsExcludeMode ? query.tags : null,
     deniedTags: query.tags.length && query.tagsExcludeMode ? query.tags : null,
-    tagPresence: query.tagPresence,
+    tagPresence: null,
     selectedNetworks: query.withoutNetwork
       ? null
       : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
@@ -400,7 +399,6 @@ export function queryStateFromSavedFilter(
     withoutMetadata: req.withoutMetadata ?? false,
     tags: (req.deniedTags?.length ? req.deniedTags : req.selectedTags) ?? [],
     tagsExcludeMode: Boolean(req.deniedTags?.length),
-    tagPresence: req.tagPresence ?? null,
     includePelengLocations: req.includePelengLocations ?? true,
     unitsExactMatchOnly: req.unitsExactMatchOnly,
     withoutModelTags: req.withoutModelTags ?? false,
@@ -484,7 +482,6 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     withoutMetadata: normalized.withoutMetadata,
     tags: (normalized.deniedTags?.length ? normalized.deniedTags : normalized.selectedTags) ?? [],
     tagsExcludeMode: Boolean(normalized.deniedTags?.length),
-    tagPresence: normalized.tagPresence ?? null,
     includePelengLocations: normalized.includePelengLocations,
     unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? null,
     withoutModelTags: normalized.withoutModelTags,

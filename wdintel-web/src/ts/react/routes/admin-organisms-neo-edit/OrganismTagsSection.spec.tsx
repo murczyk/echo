@@ -120,6 +120,30 @@ vi.mock('../../components/MrtRowActionButton', () => ({
   ),
 }));
 
+vi.mock('../../components/ConfirmDangerDialog', () => ({
+  ConfirmDangerDialog: ({
+    open,
+    onConfirm,
+    onClose,
+    confirmLabel,
+  }: {
+    open: boolean;
+    onConfirm: () => void;
+    onClose: () => void;
+    confirmLabel?: ReactNode;
+  }) =>
+    open ? (
+      <div role="alertdialog">
+        <button type="button" onClick={onConfirm}>
+          {confirmLabel ?? 'Видалити'}
+        </button>
+        <button type="button" onClick={onClose}>
+          Скасувати
+        </button>
+      </div>
+    ) : null,
+}));
+
 vi.mock('../../components/PowerButton', () => ({
   PowerButton: ({
     children,
@@ -214,6 +238,41 @@ describe('OrganismTagsSection', () => {
     expect(view.container.textContent).toContain('оброблено');
   });
 
+  it('hides soft-deleted (disabled) tags from the admin list on load', async () => {
+    view = renderSection(7);
+    listOrganismTagsMock.mockResolvedValueOnce([
+      {
+        tagId: 10,
+        label: 'активний',
+        extra: false,
+        ord: 1,
+        enabled: true,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+      {
+        tagId: 11,
+        label: 'видалений',
+        extra: false,
+        ord: 2,
+        enabled: false,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+    ]);
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(view.container.textContent).toContain('активний');
+    expect(view.container.textContent).not.toContain('видалений');
+  });
+
   it('creates an organism tag through the organism endpoint', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([]);
@@ -268,7 +327,53 @@ describe('OrganismTagsSection', () => {
     );
   });
 
-  it('disables an organism tag through the delete endpoint', async () => {
+  it('disables an organism tag through the update endpoint without deleting it', async () => {
+    view = renderSection(7);
+    listOrganismTagsMock.mockResolvedValueOnce([
+      {
+        tagId: 10,
+        label: 'оброблено',
+        extra: false,
+        ord: 1,
+        enabled: true,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+    ]);
+    updateOrganismTagMock.mockResolvedValueOnce({
+      tagId: 10,
+      label: 'оброблено',
+      extra: false,
+      ord: 1,
+      enabled: false,
+      keywords: [],
+      isPalitra: false,
+      ownerOrganismId: 7,
+    });
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(view.container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Вимкнути'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(deleteOrganismTagMock).not.toHaveBeenCalled();
+    expect(updateOrganismTagMock).toHaveBeenCalledWith(
+      7,
+      10,
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it('deletes an organism tag through the delete endpoint after confirmation', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([
       {
@@ -290,30 +395,55 @@ describe('OrganismTagsSection', () => {
       await Promise.resolve();
     });
 
+    // Open the confirmation dialog from the row action.
     await act(async () => {
       Array.from(view.container.querySelectorAll('button'))
-        .find((button) => button.textContent?.includes('Вимкнути'))
+        .find((button) => button.textContent === 'Видалити')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
+    // Confirm inside the danger dialog.
+    await act(async () => {
+      const dialog = view.container.querySelector('[role="alertdialog"]');
+      Array.from(dialog?.querySelectorAll('button') ?? [])
+        .find((button) => button.textContent === 'Видалити')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
     expect(deleteOrganismTagMock).toHaveBeenCalledWith(7, 10);
+    expect(view.container.textContent).not.toContain('оброблено');
   });
 
-  it('re-enables a disabled organism tag through the update endpoint', async () => {
+  it('re-enables a within-session disabled organism tag through the update endpoint', async () => {
     view = renderSection(7);
+    // Disabled tags are filtered out of a fresh load, so re-enabling is only reachable
+    // in-session: disable an active tag (it stays in the session list as inactive), then
+    // re-enable it.
     listOrganismTagsMock.mockResolvedValueOnce([
       {
         tagId: 10,
         label: 'оброблено',
         extra: false,
         ord: 1,
-        enabled: false,
+        enabled: true,
         keywords: [],
         isPalitra: false,
         ownerOrganismId: 7,
       },
     ]);
+    updateOrganismTagMock.mockResolvedValueOnce({
+      tagId: 10,
+      label: 'оброблено',
+      extra: false,
+      ord: 1,
+      enabled: false,
+      keywords: [],
+      isPalitra: false,
+      ownerOrganismId: 7,
+    });
     updateOrganismTagMock.mockResolvedValueOnce({
       tagId: 10,
       label: 'оброблено',
@@ -333,13 +463,21 @@ describe('OrganismTagsSection', () => {
 
     await act(async () => {
       Array.from(view.container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Вимкнути'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(view.container.querySelectorAll('button'))
         .find((button) => button.textContent?.includes('Увімкнути'))
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
     expect(deleteOrganismTagMock).not.toHaveBeenCalled();
-    expect(updateOrganismTagMock).toHaveBeenCalledWith(
+    expect(updateOrganismTagMock).toHaveBeenNthCalledWith(
+      2,
       7,
       10,
       expect.objectContaining({ enabled: true }),

@@ -267,6 +267,20 @@ export function useAnalysisFilterSections({
     [hasLoadedSection, invalidateFilterSectionLoads, isSectionLoading, setSectionLoadState],
   );
 
+  // Toggling a tag on a message never changes `analysisReq`, so the cached 'tags'
+  // facet (keyed on `analysisReq`) is otherwise reused verbatim and its counters go
+  // stale. Dropping only the 'tags' cache key forces the next reload to re-fetch that
+  // one facet — the reload's "full" plan always includes 'tags' — while every other
+  // section stays a cache hit.
+  const invalidateTagFacetLoad = useCallback(() => {
+    const tagsSection: AnalysisFilterSectionId = 'tags';
+    if (!hasLoadedSection(tagsSection) && !isSectionLoading(tagsSection)) return;
+    const loadedKeys: Partial<Record<AnalysisFilterSectionId, string>> =
+      loadedFilterSectionKeyRef.current;
+    delete loadedKeys[tagsSection];
+    setSectionLoadState(tagsSection, 'stale');
+  }, [hasLoadedSection, isSectionLoading, setSectionLoadState]);
+
   const getLoadedFilterSections = useCallback(
     () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
     [],
@@ -459,6 +473,7 @@ export function useAnalysisFilterSections({
     getReloadFilterSections,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
+    invalidateTagFacetLoad,
     loadFilterSection,
     loadInitialFilterSections,
   };

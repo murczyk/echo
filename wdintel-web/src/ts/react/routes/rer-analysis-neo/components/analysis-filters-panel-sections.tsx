@@ -53,16 +53,13 @@ type Props = Pick<
 
 type FilterSectionLoadTarget = AnalysisFilterSectionId | 'freqs';
 
-// The tags filter has three mutually exclusive modes on a single axis, so they live in
+// The tags filter has two mutually exclusive modes on a single axis, so they live in
 // one ToggleButtonGroup instead of mixing a synthetic list option with a separate toggle:
 //   include  → keep only messages carrying a selected tag  (tagsExcludeMode = false)
 //   exclude  → drop messages carrying a selected tag       (tagsExcludeMode = true)
-//   without  → keep only messages with no tag at all       (tagPresence = 'WithoutTags')
-// In `without` mode picking specific tags is meaningless, so the input is disabled/cleared.
-type TagFilterMode = 'include' | 'exclude' | 'without';
+type TagFilterMode = 'include' | 'exclude';
 
 function tagFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): TagFilterMode {
-  if (queryState.tagPresence === 'WithoutTags') return 'without';
   return queryState.tagsExcludeMode ? 'exclude' : 'include';
 }
 
@@ -70,8 +67,6 @@ function tagFilterModeHint(mode: TagFilterMode): string {
   switch (mode) {
     case 'exclude':
       return 'Показувати записи без вибраних тегів';
-    case 'without':
-      return 'Показувати лише записи без жодного тегу';
     case 'include':
     default:
       return 'Показувати лише записи з вибраними тегами';
@@ -168,11 +163,7 @@ export function AnalysisFiltersPanelSections({
     nextMode: TagFilterMode | null,
   ) => {
     if (nextMode == null) return;
-    if (nextMode === 'without') {
-      updateQueryState({ tags: [], tagsExcludeMode: false, tagPresence: 'WithoutTags' });
-      return;
-    }
-    updateQueryState({ tagsExcludeMode: nextMode === 'exclude', tagPresence: null });
+    updateQueryState({ tagsExcludeMode: nextMode === 'exclude' });
   };
 
   const effectiveUnitsExactMatchOnly =
@@ -575,7 +566,6 @@ export function AnalysisFiltersPanelSections({
             >
               <ToggleButton value="include">Лише обрані</ToggleButton>
               <ToggleButton value="exclude">Крім обраних</ToggleButton>
-              <ToggleButton value="without">Без тегів</ToggleButton>
             </ToggleButtonGroup>
             <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
               {tagFilterModeHint(tagFilterMode)}
@@ -584,10 +574,9 @@ export function AnalysisFiltersPanelSections({
           <AnalysisFilterField
             label="Теги"
             options={derived.tagOptions}
-            disabled={tagFilterMode === 'without'}
             loading={isFilterSectionLoading('tags') || isFilterSectionStale('tags')}
             emptyLoading={isFilterSectionEmptyLoading('tags', derived.tagOptions.length)}
-            value={tagFilterMode === 'without' ? [] : queryState.tags.map((tagId) => String(tagId))}
+            value={queryState.tags.map((tagId) => String(tagId))}
             onChange={(next) =>
               updateQueryState({
                 tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)),
@@ -599,7 +588,7 @@ export function AnalysisFiltersPanelSections({
               control={
                 <Checkbox
                   checked={queryState.filterTagsOption === 'AllTags'}
-                  disabled={queryState.tagsExcludeMode || queryState.tagPresence === 'WithoutTags'}
+                  disabled={queryState.tagsExcludeMode}
                   onChange={(_event, value) =>
                     updateQueryState({ filterTagsOption: value ? 'AllTags' : 'OneOfTags' })
                   }

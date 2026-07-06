@@ -16,7 +16,6 @@ import type {
   SummaryTableFreqRow,
   Tag,
   TagFilterOption,
-  TagPresenceFilter,
   User,
   Unit,
   ReportHistoryRow,
@@ -70,9 +69,6 @@ export type AnalysisQueryState = Omit<
   // When true, the selected `tags` become an exclusion list (denied_tags) instead of
   // an inclusion list (selected_tags). The tag picker stays a single list either way.
   tagsExcludeMode: boolean;
-  // `null` keeps the server default (messages with and without tags). `'WithoutTags'`
-  // limits results to messages with no valid tag. `'WithTags'` is reserved for completeness.
-  tagPresence: TagPresenceFilter | null;
   includeOnlyNewFreqs: boolean;
   onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;

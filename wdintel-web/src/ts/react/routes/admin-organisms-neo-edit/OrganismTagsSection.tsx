@@ -1,5 +1,6 @@
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
+import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import {
   Box,
@@ -18,6 +19,7 @@ import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { TagAdmin, TagUpsertReq } from '../../../../Bindings';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -54,6 +56,10 @@ const emptyTagForm: TagFormState = {
   enabled: true,
   isPalitra: false,
 };
+
+// Wide enough for the inline "Редагувати" button plus the overflow menu trigger
+// so neither is clipped.
+const ORGANISM_TAGS_ACTIONS_COLUMN_SIZE = 81;
 
 const ORGANISM_TAGS_COLUMN_ORDER = [
   'mrt-row-numbers',
@@ -147,6 +153,8 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
   const [form, setForm] = useState<TagFormState>(emptyTagForm);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [labelTouched, setLabelTouched] = useState(false);
+  const [deletingTag, setDeletingTag] = useState<TagAdmin | null>(null);
+  const [deleteInFlight, setDeleteInFlight] = useState(false);
 
   const isLabelValid = form.label.trim().length > 0;
   const showLabelError = labelTouched && !isLabelValid;
@@ -166,7 +174,10 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
       try {
         const data = await listOrganismTags(id);
         if (abortController.signal.aborted) return;
-        setTags(data);
+        // The DELETE endpoint soft-deletes by setting `enabled = false`, and the admin
+        // list returns disabled rows too, so a deleted tag would otherwise reappear on
+        // reload. Show only active tags to keep deletions sticky.
+        setTags(data.filter((tag) => tag.enabled));
         setStatus('success');
       } catch (loadError) {
         if (abortController.signal.aborted) return;
@@ -240,25 +251,18 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
 
       setError(null);
       try {
-        if (tag.enabled) {
-          await deleteOrganismTag(organismId, tag.tagId);
-          setTags((current) =>
-            current.map((item) => (item.tagId === tag.tagId ? { ...item, enabled: false } : item)),
-          );
-        } else {
-          const req: TagUpsertReq = {
-            label: tag.label,
-            extra: tag.extra,
-            ord: tag.ord,
-            enabled: true,
-            isPalitra: tag.isPalitra,
-            ownerOrganismId: organismId,
-          };
-          const updated = await updateOrganismTag(organismId, tag.tagId, req);
-          setTags((current) =>
-            current.map((item) => (item.tagId === updated.tagId ? updated : item)),
-          );
-        }
+        const req: TagUpsertReq = {
+          label: tag.label,
+          extra: tag.extra,
+          ord: tag.ord,
+          enabled: !tag.enabled,
+          isPalitra: tag.isPalitra,
+          ownerOrganismId: organismId,
+        };
+        const updated = await updateOrganismTag(organismId, tag.tagId, req);
+        setTags((current) =>
+          current.map((item) => (item.tagId === updated.tagId ? updated : item)),
+        );
       } catch (toggleError) {
         const action = tag.enabled ? 'вимкнення' : 'увімкнення';
         setError(`Помилка ${action} тегу: ${formatErrorMessage(toggleError)}`);
@@ -266,6 +270,32 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     },
     [organismId],
   );
+
+  const openDeleteDialog = useCallback((tag: TagAdmin) => {
+    setError(null);
+    setDeletingTag(tag);
+  }, []);
+
+  const closeDeleteDialog = useCallback(() => {
+    setDeletingTag(null);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (organismId == null || deletingTag == null) return;
+
+    const tagId = deletingTag.tagId;
+    setDeleteInFlight(true);
+    setError(null);
+    try {
+      await deleteOrganismTag(organismId, tagId);
+      setTags((current) => current.filter((item) => item.tagId !== tagId));
+      setDeletingTag(null);
+    } catch (deleteError) {
+      setError(`Помилка видалення тегу: ${formatErrorMessage(deleteError)}`);
+    } finally {
+      setDeleteInFlight(false);
+    }
+  }, [deletingTag, organismId]);
 
   const columns = useMemo<MRT_ColumnDef<TagAdmin>[]>(() => {
     const noWrapCellProps = { sx: { ...CUSTOM_CELL_STYLES, whiteSpace: 'nowrap' } };
@@ -311,31 +341,42 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     ({ row }: { row: { original: TagAdmin } }) => {
       const tag = row.original;
       return (
-        <MrtRowActions>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {/* Editing is the frequent action, so it stays inline in the "Дії" column. */}
           <MrtRowActionButton
             label="Редагувати"
             icon={<EditOutlinedIcon fontSize="small" />}
             opensModal
             onClick={() => openEditDialog(tag)}
           />
-          {tag.enabled ? (
+          {/* Less-frequent actions live behind the overflow (three-dots) menu. */}
+          <MrtRowActions forceMenu>
+            {tag.enabled ? (
+              <MrtRowActionButton
+                label="Вимкнути"
+                icon={<BlockOutlinedIcon fontSize="small" />}
+                tone="warning"
+                onClick={() => void handleToggleEnabled(tag)}
+              />
+            ) : (
+              <MrtRowActionButton
+                label="Увімкнути"
+                icon={<CheckCircleOutlinedIcon fontSize="small" />}
+                onClick={() => void handleToggleEnabled(tag)}
+              />
+            )}
             <MrtRowActionButton
-              label="Вимкнути"
-              icon={<BlockOutlinedIcon fontSize="small" />}
+              label="Видалити"
+              icon={<DeleteOutlineOutlinedIcon fontSize="small" />}
               tone="danger"
-              onClick={() => void handleToggleEnabled(tag)}
+              opensModal
+              onClick={() => openDeleteDialog(tag)}
             />
-          ) : (
-            <MrtRowActionButton
-              label="Увімкнути"
-              icon={<CheckCircleOutlinedIcon fontSize="small" />}
-              onClick={() => void handleToggleEnabled(tag)}
-            />
-          )}
-        </MrtRowActions>
+          </MrtRowActions>
+        </Stack>
       );
     },
-    [handleToggleEnabled, openEditDialog],
+    [handleToggleEnabled, openDeleteDialog, openEditDialog],
   );
 
   if (organismId == null) {
@@ -401,6 +442,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
                 layoutMode="grid"
                 enableRowActions
                 renderRowActions={renderRowActions}
+                rowActionsColumnSize={ORGANISM_TAGS_ACTIONS_COLUMN_SIZE}
               />
             </Stack>
           </TableStateProvider>
@@ -483,6 +525,18 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
           </PowerButton>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDangerDialog
+        open={deletingTag != null}
+        onClose={closeDeleteDialog}
+        onConfirm={() => void handleConfirmDelete()}
+        submitting={deleteInFlight}
+        title="Видалити тег"
+        description={
+          deletingTag != null ? `Тег «${deletingTag.label}» буде видалено. Продовжити?` : undefined
+        }
+        confirmLabel="Видалити"
+      />
     </Box>
   );
 }

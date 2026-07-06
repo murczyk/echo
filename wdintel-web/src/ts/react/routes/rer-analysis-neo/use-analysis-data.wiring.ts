@@ -24,6 +24,7 @@ type BuildActionParamsInput = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
+  invalidateTagFacetLoad: () => void;
   reloadRef: React.MutableRefObject<() => Promise<void>>;
   referenceState: ReferenceState;
   messageList: MessageList;
@@ -38,6 +39,7 @@ export function buildAnalysisActionsParams({
   onError,
   onUnauthorized,
   queryState,
+  invalidateTagFacetLoad,
   reloadRef,
   referenceState,
   messageList,
@@ -53,6 +55,7 @@ export function buildAnalysisActionsParams({
     onError,
     onUnauthorized,
     queryState,
+    invalidateTagFacetLoad,
     reload: () => reloadRef.current(),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,

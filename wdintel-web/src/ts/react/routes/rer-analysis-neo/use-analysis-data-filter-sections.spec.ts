@@ -417,6 +417,43 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
   });
 
+  it('marks the loaded tags facet stale and drops its cache so a reload refetches it', async () => {
+    await renderHook();
+
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+      await Promise.resolve();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(1);
+    expect(latest?.isFilterSectionStale('tags')).toBe(false);
+
+    act(() => {
+      latest?.invalidateTagFacetLoad();
+    });
+
+    expect(latest?.isFilterSectionStale('tags')).toBe(true);
+
+    // Cache key was dropped, so loading tags again re-hits the API.
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+      await Promise.resolve();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the tags facet untouched when it was never loaded', async () => {
+    await renderHook();
+
+    act(() => {
+      latest?.invalidateTagFacetLoad();
+    });
+
+    expect(latest?.isFilterSectionStale('tags')).toBe(false);
+    expect(analysisApiMocks.fetchAnalysisTags).not.toHaveBeenCalled();
+  });
+
   it('moves an in-flight invalidated section to stale and keeps it queued for reload', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
     analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);

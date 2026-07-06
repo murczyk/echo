@@ -24,6 +24,7 @@ type Params = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
+  invalidateTagFacetLoad: () => void;
   reload: () => Promise<void>;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
@@ -126,6 +127,7 @@ export function useAnalysisActions(params: Params) {
     onUnauthorized: params.onUnauthorized,
     patchMessages: patchMessagesInternal,
     queryState: params.queryState,
+    invalidateTagFacetLoad: params.invalidateTagFacetLoad,
     reload: params.reload,
     setMapOpenMessages: params.setMapOpenMessages,
     setMessages: params.setMessages,

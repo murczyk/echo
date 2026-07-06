@@ -33,6 +33,7 @@ type Params = {
   onUnauthorized: (error: unknown) => boolean;
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
+  invalidateTagFacetLoad: () => void;
   reload: () => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -253,7 +254,10 @@ export function useAnalysisDataMessageActions(params: Params) {
         // Re-run the filtered query after the optimistic patch: when a tag filter is
         // active, changing a message's tag can move it in or out of the result set and
         // recompute the tag facet. The patch keeps the toggle instant; the reload keeps
-        // the list and filter options correct.
+        // the list and filter options correct. The tag toggle leaves `analysisReq`
+        // unchanged, so the cached 'tags' facet would otherwise be reused with stale
+        // counters — invalidate it before the reload so its counts re-fetch.
+        params.invalidateTagFacetLoad();
         await params.reload();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {

@@ -48,7 +48,6 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'withoutModelTags', param: 'withoutModelTags', type: 'boolean' },
   { key: 'filterTagsOption', param: 'filterTagsOption', type: 'string' },
   { key: 'tagsExcludeMode', param: 'tagsExcludeMode', type: 'boolean' },
-  { key: 'tagPresence', param: 'tagPresence', type: 'string' },
   { key: 'reportTagsOnlyThisUnit', param: 'reportTagsOnlyThisUnit', type: 'boolean' },
 ];
 
@@ -92,7 +91,6 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   withoutModelTags: false,
   filterTagsOption: 'OneOfTags',
   tagsExcludeMode: false,
-  tagPresence: null,
   reportTagsOnlyThisUnit: false,
 };
 
