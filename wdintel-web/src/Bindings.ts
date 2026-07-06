@@ -187,7 +187,8 @@ export type Node =
   | { StyleMap: StyleMap }
   | { author: Author }
   | { link: AtomLinkData }
-  | { CascadingStyle: CascadingStyle };
+  | { CascadingStyle: CascadingStyle }
+;
 
 export type Kml = {
   nodes: Array<Node>;
@@ -297,7 +298,9 @@ export type UploadPdfRes = {
   rows: Array<RowInfo>;
 };
 
-export type BgtaskErrorCode = 'no_default_aor';
+export type BgtaskErrorCode =
+  | 'no_default_aor'
+;
 
 export type BgtaskStatusAndLogsRsp = {
   running: boolean;
@@ -435,9 +438,15 @@ export type InboxMessageTag = {
   organismId: number | null;
 };
 
-export type InboxMessagesSortBy = 'IMSDatetime' | 'IMSTimestamp';
+export type InboxMessagesSortBy =
+  | 'IMSDatetime'
+  | 'IMSTimestamp'
+;
 
-export type TagFilterOption = 'OneOfTags' | 'AllTags';
+export type TagFilterOption =
+  | 'OneOfTags'
+  | 'AllTags'
+;
 
 export type TagPresenceFilter =
   | 'WithTags'
@@ -1147,7 +1156,8 @@ export type InboxGroupStats = {
 export type PalitraAccess =
   | { ByLogins: { logins: Array<string> } }
   | { ByOrganisms: { organismIds: Array<number> } }
-  | { ByAor: { aorIds: Array<number> } };
+  | { ByAor: { aorIds: Array<number> } }
+;
 
 export type CreatePalitraReq = {
   name: string;
@@ -1331,7 +1341,8 @@ export type ContentNode =
   | { CNCallsignC: CnCallsign }
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
-  | { CNPointC: CnPoint };
+  | { CNPointC: CnPoint }
+;
 
 export type CnSignal = {
   begin: number;
@@ -1368,6 +1379,8 @@ export type GoiUserIntegration = {
   goiUrl: string | null;
   swappUrl: string | null;
   hasDataAccess: boolean;
+  pauseWorker: boolean;
+  canChangePauseWorker: boolean;
   canRestart: boolean;
   restartUnavailableReason: string | null;
 };
@@ -1414,7 +1427,10 @@ export type Login = {
   deactivationReason: DeactivationReasonType | null;
 };
 
-export type ListLoginsSortBy = 'LoginCreatedAtDesc' | 'LoginCreatedAtAsc';
+export type ListLoginsSortBy =
+  | 'LoginCreatedAtDesc'
+  | 'LoginCreatedAtAsc'
+;
 
 export type ListLoginsReq = {
   sortBy: ListLoginsSortBy | null;
@@ -1456,7 +1472,10 @@ export type MarkReleaseSeenReq = {
   releaseId: string;
 };
 
-export type DeactivationReasonType = 'Admin' | 'Inactive';
+export type DeactivationReasonType =
+  | 'Admin'
+  | 'Inactive'
+;
 
 export type ApiIntegration = {
   id: number;
@@ -1529,7 +1548,11 @@ export type MyScope = {
 };
 
 export type ListOrganismsSortBy =
-  'OrganismCreatedAtDesc' | 'OrganismCreatedAtAsc' | 'OrganismNameAsc' | 'OrganismNameDesc';
+  | 'OrganismCreatedAtDesc'
+  | 'OrganismCreatedAtAsc'
+  | 'OrganismNameAsc'
+  | 'OrganismNameDesc'
+;
 
 export type ListOrganismsReq = {
   sortBy: ListOrganismsSortBy | null;
@@ -1609,7 +1632,8 @@ export type ListGoiAssociationsSortBy =
   | 'GoiAssociationAuthorAsc'
   | 'GoiAssociationAuthorDesc'
   | 'GoiAssociationCreatedAtDesc'
-  | 'GoiAssociationCreatedAtAsc';
+  | 'GoiAssociationCreatedAtAsc'
+;
 
 export type ListGoiAssociationsReq = {
   limit: number | null;
@@ -1673,7 +1697,8 @@ export type ListGoiKnowledgeSortBy =
   | 'GoiKnowledgeSourceDateDesc'
   | 'GoiKnowledgeSourceDateAsc'
   | 'GoiKnowledgeCreatedAtDesc'
-  | 'GoiKnowledgeCreatedAtAsc';
+  | 'GoiKnowledgeCreatedAtAsc'
+;
 
 export type ListGoiKnowledgeReq = {
   limit: number | null;
@@ -1734,7 +1759,10 @@ export type SigintZone = {
   createdAt: number;
 };
 
-export type InterseptionKind = 'rer' | 'other';
+export type InterseptionKind =
+  | 'rer'
+  | 'other'
+;
 
 export type ZoneDatasourceGroup = {
   sigintZoneDatasourceId: number;
@@ -1940,7 +1968,10 @@ export type ReoReportSettings = {
   noComments: boolean;
 };
 
-export type ReoReportFileType = 'Docx' | 'Xlsx';
+export type ReoReportFileType =
+  | 'Docx'
+  | 'Xlsx'
+;
 
 export type ActiveNetworksReportSettings = {
   aorIds: Array<number>;
@@ -1950,7 +1981,10 @@ export type NetworkFrequenciesReportSettings = {
   aorIds: Array<number>;
 };
 
-export type ReportAggregation = 'ByProfile' | 'ByPost';
+export type ReportAggregation =
+  | 'ByProfile'
+  | 'ByPost'
+;
 
 export type ReportPreviewReq = {
   kind: string;
@@ -1979,16 +2013,24 @@ export type ReportType =
   | 'Digest'
   | 'Rer'
   | { ActiveNetworks: ActiveNetworksReportSettings }
-  | { NetworkFrequencies: NetworkFrequenciesReportSettings };
+  | { NetworkFrequencies: NetworkFrequenciesReportSettings }
+;
 
 export type SenderReportSettings = {
   aggregation: ReportAggregation;
   advancedFreqs: boolean;
 };
 
-export type TagReportSortBy = 'ByTime' | 'ByFreqThenTime';
+export type TagReportSortBy =
+  | 'ByTime'
+  | 'ByFreqThenTime'
+;
 
-export type ListUnitsSortBy = 'CreatedAtDesc' | 'CreatedAtAsc' | 'NaturalMilitarySortAsc';
+export type ListUnitsSortBy =
+  | 'CreatedAtDesc'
+  | 'CreatedAtAsc'
+  | 'NaturalMilitarySortAsc'
+;
 
 export type Unit = {
   id: number;
@@ -2042,7 +2084,10 @@ export type UnitSearchReq = {
   search: string;
 };
 
-export type ListSignalsSortBy = 'SignalsCreatedAtAsc' | 'SignalsCreatedAtDesc';
+export type ListSignalsSortBy =
+  | 'SignalsCreatedAtAsc'
+  | 'SignalsCreatedAtDesc'
+;
 
 export type Signal = {
   id: number;
@@ -2137,9 +2182,14 @@ export type ListCallsignsSortBy =
   | 'CallsignCreatedAtAsc'
   | 'CallsignCreatedAtDesc'
   | 'CallsignUnitAsc'
-  | 'CallsignUnitDesc';
+  | 'CallsignUnitDesc'
+;
 
-export type DevelopingFilter = 'OnlyDeveloping' | 'OnlyNonDeveloping' | 'All';
+export type DevelopingFilter =
+  | 'OnlyDeveloping'
+  | 'OnlyNonDeveloping'
+  | 'All'
+;
 
 export type ListCallsignsReq = {
   afterId: number | null;
@@ -2170,7 +2220,8 @@ export type ListNetworkCallsignsSortBy =
   | 'NetworkCallsignAsc'
   | 'NetworkCallsignDesc'
   | 'NetworkCallsignCreatedAtAsc'
-  | 'NetworkCallsignCreatedAtDesc';
+  | 'NetworkCallsignCreatedAtDesc'
+;
 
 export type ListNetworkCallsignsReq = {
   networkId: number;
@@ -2317,7 +2368,9 @@ export type EtalonkaSettings = {
 };
 
 export type EtalonkaReportType =
-  { AccordingToTheForm: EtalonkaSettings } | { ExtendedReport: EtalonkaExtendedSettings };
+  | { AccordingToTheForm: EtalonkaSettings }
+  | { ExtendedReport: EtalonkaExtendedSettings }
+;
 
 export type NetworkFreqsRes = {
   networkFreqId: number;
@@ -2405,7 +2458,12 @@ export type ListFreqsRsp = {
   freqs: Array<Freq>;
 };
 
-export type ListFreqsSortBy = 'FreqAsc' | 'FreqDesc' | 'MessageCountAsc' | 'MessageCountDesc';
+export type ListFreqsSortBy =
+  | 'FreqAsc'
+  | 'FreqDesc'
+  | 'MessageCountAsc'
+  | 'MessageCountDesc'
+;
 
 export type FreqUnitStatsRsp = {
   units: Array<FreqUnitStatRow>;
@@ -2533,10 +2591,16 @@ export type Network = {
   status: NetworkStatus;
 };
 
-export type NetworkStatus = 'NetworkActive' | 'NetworkInactive';
+export type NetworkStatus =
+  | 'NetworkActive'
+  | 'NetworkInactive'
+;
 
 export type ListNetworksStatusFilter =
-  'ListNetworksActive' | 'ListNetworksInactive' | 'ListNetworksArchived';
+  | 'ListNetworksActive'
+  | 'ListNetworksInactive'
+  | 'ListNetworksArchived'
+;
 
 export type ListNetworksStatusCountsRsp = {
   active: number;
@@ -2804,7 +2868,8 @@ export type ListNetworksSortBy =
   | 'FreqAsc'
   | 'FreqDesc'
   | 'LocationAsc'
-  | 'LocationDesc';
+  | 'LocationDesc'
+;
 
 export type NetworkUnitStatRow = {
   unitId: number;
@@ -2852,7 +2917,11 @@ export type NetworkFreqCallsignsBatchRsp = {
   callsignsByNetworkFreqId: Record<string, Array<string>>;
 };
 
-export type SingleNetworkCallsignsSection = 'Everything' | 'Catalog' | 'Intercepted';
+export type SingleNetworkCallsignsSection =
+  | 'Everything'
+  | 'Catalog'
+  | 'Intercepted'
+;
 
 export type SingleNetworkCallsignsReq = {
   networkId: number;
@@ -2894,7 +2963,10 @@ export type Post = {
   createdAt: number;
 };
 
-export type ListPostsSortBy = 'PostNameDesc' | 'PostNameAsc';
+export type ListPostsSortBy =
+  | 'PostNameDesc'
+  | 'PostNameAsc'
+;
 
 export type ListPostsReq = {
   sortBy: ListPostsSortBy | null;
@@ -2916,7 +2988,10 @@ export type DeletePostReq = {
   id: number;
 };
 
-export type NetworkDescrType = 'Confirmation' | 'Sign';
+export type NetworkDescrType =
+  | 'Confirmation'
+  | 'Sign'
+;
 
 export type NetworkDescription = {
   id: number;
@@ -3162,7 +3237,8 @@ export type EventType =
   | 'ETCallsignChanged'
   | 'ETSignalChanged'
   | 'ETUnitChanged'
-  | { ETInboxChanged: number };
+  | { ETInboxChanged: number }
+;
 
 export type EventMsg = {
   id: string;
@@ -3347,7 +3423,9 @@ export type UpdateAreaOfResponsibilityReportOrderReq = {
 };
 
 export type ListAreasOfResponsibilitySortBy =
-  'AreaOfResponsibilityNameDesc' | 'AreaOfResponsibilityNameAsc';
+  | 'AreaOfResponsibilityNameDesc'
+  | 'AreaOfResponsibilityNameAsc'
+;
 
 export type ListAreasOfResponsibilityReq = {
   sortBy: ListAreasOfResponsibilitySortBy | null;
@@ -3361,7 +3439,11 @@ export type SigintKeySharePolicy = {
   createdAt: number;
 };
 
-export type DutyTagsLayout = 'Full' | 'Compact' | 'Hidden';
+export type DutyTagsLayout =
+  | 'Full'
+  | 'Compact'
+  | 'Hidden'
+;
 
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
