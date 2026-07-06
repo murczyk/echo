@@ -22,7 +22,7 @@ pub async fn aor_list(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Admin", "UnitsEditor", "Rer"],
+        vec!["Admin", "UnitsEditor", "Rer", "Api"],
     )
     .await?;
 
