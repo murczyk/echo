@@ -84,6 +84,7 @@ let dialogContentProps: { sx?: unknown }[] = [];
 let dialogProps: DialogPropsCapture[] = [];
 let textFieldProps: TextFieldProps[] = [];
 let powerMenuProps: PowerMenuProps[] = [];
+let lastPowerIconButtonTrigger: { focus: ReturnType<typeof vi.fn> } | null = null;
 
 vi.mock('@mui/material', () => ({
   Autocomplete: (props: AutocompletePropsCapture) => {
@@ -155,6 +156,10 @@ vi.mock('@mui/icons-material/MoreVert', () => ({
 
 vi.mock('./PowerIconButton', () => ({
   PowerIconButton: (props: PowerIconButtonProps) => {
+    if (!lastPowerIconButtonTrigger) {
+      lastPowerIconButtonTrigger = { focus: vi.fn() };
+    }
+    const trigger = lastPowerIconButtonTrigger;
     return (
       <button
         type="button"
@@ -163,7 +168,7 @@ vi.mock('./PowerIconButton', () => ({
         onMouseDown={props.onMouseDown as never}
         onClick={() =>
           props.onClick?.({
-            currentTarget: document.createElement('button'),
+            currentTarget: trigger as never,
             preventDefault: () => undefined,
             stopPropagation: () => undefined,
           })
@@ -223,6 +228,7 @@ afterEach(() => {
   dialogProps = [];
   textFieldProps = [];
   powerMenuProps = [];
+  lastPowerIconButtonTrigger = null;
   vi.clearAllMocks();
 });
 
@@ -478,6 +484,35 @@ describe('PowerAutocomplete', () => {
 
     typeDialogValue(container, '111.1111');
     expect(getOptionLabel.mock.calls.length).toBeGreaterThan(callsAfterOpen);
+  });
+
+  it('restores focus to the bulk menu trigger after closing the dialog', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderAutocomplete({
+        bulkPaste: true,
+        bulkPasteInputLabel: 'Частоти',
+      });
+
+      openBulkDialog(container);
+      const callsAfterOpen = lastPowerIconButtonTrigger?.focus.mock.calls.length ?? 0;
+
+      const cancelButton = [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Скасувати',
+      );
+      if (!cancelButton) throw new Error('Cancel button not found');
+
+      act(() => {
+        cancelButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        vi.runAllTimers();
+      });
+
+      expect(lastPowerIconButtonTrigger).not.toBeNull();
+      expect(lastPowerIconButtonTrigger?.focus).toHaveBeenCalled();
+      expect(lastPowerIconButtonTrigger?.focus.mock.calls.length).toBeGreaterThan(callsAfterOpen);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('disables dialog restore focus for the bulk dialog', () => {

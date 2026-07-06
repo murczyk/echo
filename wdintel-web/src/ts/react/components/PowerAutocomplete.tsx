@@ -12,7 +12,15 @@ import {
 } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
 import type { AutocompleteProps } from '@mui/material/Autocomplete';
-import { Children, cloneElement, isValidElement, useEffect, useMemo, useState } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { PowerButton } from './PowerButton';
 import { PowerIconButton } from './PowerIconButton';
@@ -291,6 +299,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkDialogInputValue, setBulkDialogInputValue] = useState('');
   const [pendingBulkDialogOpen, setPendingBulkDialogOpen] = useState(false);
+  const bulkMenuTriggerRef = useRef<HTMLElement | null>(null);
 
   const bulkPreview = useMemo(() => {
     if (!bulkPaste || !bulkDialogOpen) {
@@ -338,6 +347,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const openBulkMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    bulkMenuTriggerRef.current = event.currentTarget;
     setBulkMenuAnchorEl(event.currentTarget);
   };
 
@@ -346,7 +356,8 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   };
 
   const openBulkDialog = () => {
-    bulkMenuAnchorEl?.focus();
+    bulkMenuTriggerRef.current = bulkMenuAnchorEl ?? bulkMenuTriggerRef.current;
+    bulkMenuTriggerRef.current?.focus();
     closeBulkMenu();
     setPendingBulkDialogOpen(true);
   };
@@ -363,7 +374,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     setBulkDialogInputValue('');
     setPendingBulkDialogOpen(false);
 
-    const restoreFocusTarget = bulkMenuAnchorEl;
+    const restoreFocusTarget = bulkMenuTriggerRef.current;
     window.setTimeout(() => {
       restoreFocusTarget?.focus();
     }, 0);
