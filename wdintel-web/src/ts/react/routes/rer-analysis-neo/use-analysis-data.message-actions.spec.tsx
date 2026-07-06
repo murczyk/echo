@@ -337,6 +337,25 @@ describe('useAnalysisDataMessageActions', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {
+    const reload = vi.fn(() => Promise.reject(new Error('reload boom')));
+    const invalidateTagFacetLoad = vi.fn();
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      { reload, invalidateTagFacetLoad },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    // The mutation succeeded, so the optimistic patch must stick even though reload failed.
+    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
+    expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
+    expect(apiRef.current!.onError).toHaveBeenCalledWith('reload boom');
+  });
+
   it('does not reload or invalidate the tag facet when the tag toggle fails', async () => {
     hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('boom'));
     const reload = vi.fn(() => Promise.resolve());

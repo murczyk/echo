@@ -190,6 +190,22 @@ describe('OrganismTagsSection', () => {
     createOrganismTagMock.mockReset();
     updateOrganismTagMock.mockReset();
     deleteOrganismTagMock.mockReset();
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        clear: () => {
+          storage.clear();
+        },
+      },
+    });
   });
 
   afterEach(async () => {
@@ -238,7 +254,7 @@ describe('OrganismTagsSection', () => {
     expect(view.container.textContent).toContain('оброблено');
   });
 
-  it('hides soft-deleted (disabled) tags from the admin list on load', async () => {
+  it('shows disabled organism tags on load so admins can recover them', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([
       {
@@ -253,7 +269,7 @@ describe('OrganismTagsSection', () => {
       },
       {
         tagId: 11,
-        label: 'видалений',
+        label: 'вимкнений',
         extra: false,
         ord: 2,
         enabled: false,
@@ -270,6 +286,79 @@ describe('OrganismTagsSection', () => {
     });
 
     expect(view.container.textContent).toContain('активний');
+    expect(view.container.textContent).toContain('вимкнений');
+  });
+
+  it('hides a tag deleted from this browser across a reload', async () => {
+    view = renderSection(7);
+    const tagsFromBackend = [
+      {
+        tagId: 10,
+        label: 'оброблено',
+        extra: false,
+        ord: 1,
+        enabled: true,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+      {
+        tagId: 11,
+        label: 'видалений',
+        extra: false,
+        ord: 2,
+        // The backend soft-deletes by flipping `enabled` to false, so the "deleted" row
+        // still comes back from the list endpoint after a reload.
+        enabled: false,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+    ];
+    listOrganismTagsMock.mockResolvedValueOnce(tagsFromBackend);
+    deleteOrganismTagMock.mockResolvedValueOnce(undefined);
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      const targetRow = Array.from(view.container.querySelectorAll('tr')).find((row) =>
+        row.textContent?.includes('видалений'),
+      );
+      Array.from(targetRow?.querySelectorAll('button') ?? [])
+        .find((button) => button.textContent === 'Видалити')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      const dialog = view.container.querySelector('[role="alertdialog"]');
+      Array.from(dialog?.querySelectorAll('button') ?? [])
+        .find((button) => button.textContent === 'Видалити')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(deleteOrganismTagMock).toHaveBeenCalledWith(7, 11);
+
+    // Simulate a reload: unmount and render a fresh instance, backend still returns the
+    // soft-deleted row.
+    await act(async () => {
+      view.root.unmount();
+    });
+    view = renderSection(7);
+    listOrganismTagsMock.mockResolvedValueOnce(tagsFromBackend);
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(view.container.textContent).toContain('оброблено');
     expect(view.container.textContent).not.toContain('видалений');
   });
 
@@ -417,11 +506,8 @@ describe('OrganismTagsSection', () => {
     expect(view.container.textContent).not.toContain('оброблено');
   });
 
-  it('re-enables a within-session disabled organism tag through the update endpoint', async () => {
+  it('re-enables a disabled organism tag through the update endpoint', async () => {
     view = renderSection(7);
-    // Disabled tags are filtered out of a fresh load, so re-enabling is only reachable
-    // in-session: disable an active tag (it stays in the session list as inactive), then
-    // re-enable it.
     listOrganismTagsMock.mockResolvedValueOnce([
       {
         tagId: 10,

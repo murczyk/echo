@@ -105,6 +105,46 @@ function formatYesNo(value: boolean | null | undefined): string {
   return value ? 'так' : 'ні';
 }
 
+// The DELETE endpoint soft-deletes by setting `enabled = false`, and the admin list
+// returns disabled rows too — the same DB state as a tag disabled via "Вимкнути" or
+// created with "Активний" off. Blanket-filtering `enabled === false` would keep
+// deletions sticky but also hide those legitimately-disabled tags, making them
+// unreachable via "Увімкнути". Instead, track explicitly-deleted tag ids client-side
+// (per organism) so only actual deletions stay hidden across reloads.
+const DELETED_TAG_IDS_STORAGE_PREFIX = 'echo:organism-tags:deleted:';
+
+function deletedTagIdsStorageKey(organismId: number): string {
+  return `${DELETED_TAG_IDS_STORAGE_PREFIX}${organismId}`;
+}
+
+function readDeletedTagIds(organismId: number): Set<number> {
+  try {
+    const raw = localStorage.getItem(deletedTagIdsStorageKey(organismId));
+    if (raw == null) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((id): id is number => typeof id === 'number'))
+      : new Set();
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function writeDeletedTagIds(organismId: number, ids: Set<number>): void {
+  try {
+    localStorage.setItem(deletedTagIdsStorageKey(organismId), JSON.stringify(Array.from(ids)));
+  } catch (_) {
+    // Ignore storage failures (private mode, quota, etc.) — the deletion just won't
+    // stay hidden across a reload in that case.
+  }
+}
+
+function markTagDeleted(organismId: number, tagId: number): void {
+  const ids = readDeletedTagIds(organismId);
+  ids.add(tagId);
+  writeDeletedTagIds(organismId, ids);
+}
+
 function TagsSearchField() {
   const tableStateContext = useTableStateContext();
   return (
@@ -174,10 +214,12 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
       try {
         const data = await listOrganismTags(id);
         if (abortController.signal.aborted) return;
-        // The DELETE endpoint soft-deletes by setting `enabled = false`, and the admin
-        // list returns disabled rows too, so a deleted tag would otherwise reappear on
-        // reload. Show only active tags to keep deletions sticky.
-        setTags(data.filter((tag) => tag.enabled));
+        // Hide only tags explicitly deleted from this browser (see
+        // DELETED_TAG_IDS_STORAGE_PREFIX above) — legitimately-disabled tags
+        // (enabled === false via "Вимкнути" or "Активний" off) still show up so admins
+        // can recover them through "Увімкнути".
+        const deletedTagIds = readDeletedTagIds(id);
+        setTags(data.filter((tag) => !deletedTagIds.has(tag.tagId)));
         setStatus('success');
       } catch (loadError) {
         if (abortController.signal.aborted) return;
@@ -288,6 +330,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     setError(null);
     try {
       await deleteOrganismTag(organismId, tagId);
+      markTagDeleted(organismId, tagId);
       setTags((current) => current.filter((item) => item.tagId !== tagId));
       setDeletingTag(null);
     } catch (deleteError) {
