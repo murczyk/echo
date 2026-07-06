@@ -4,7 +4,6 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 
 import type {
   InboxMessage,
-  InboxMessageTag,
   InboxMessagesReq,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
@@ -21,6 +20,7 @@ import {
   importantAdd,
   importantRemove,
   inboxMessageTagsAdd,
+  inboxMessageTagsModelError,
   inboxMessageTagsRm,
   savedFilterDelete,
   savedFilterRename,
@@ -28,6 +28,13 @@ import {
 } from '../../services/api/inbox';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import type { FeedColumnHandle } from './FeedColumn';
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import {
+  hasBotTag,
+  hasUserTag,
+  removeBotTags,
+  toggleHumanTag,
+} from '../shared/message-card/message-card-tag-actions';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import { buildInboxReq, buildSenderOptions, normalizeFeed } from './utils';
 import type { MessageFeedState } from './utils';
@@ -74,6 +81,34 @@ export type MessageActionsDeps = {
   dutyDisableAutoScroll: boolean;
 };
 
+function getMessageByFeedId(
+  messageFeeds: MessageFeedState[],
+  feedId: string,
+  msgId: number,
+): InboxMessage | null {
+  return (
+    messageFeeds.find((feed) => feed.id === feedId)?.items.find(([id]) => id === msgId)?.[1] ?? null
+  );
+}
+
+function replaceMessageInFeed(
+  messageFeeds: MessageFeedState[],
+  feedId: string,
+  msgId: number,
+  updater: (message: InboxMessage) => InboxMessage,
+): MessageFeedState[] {
+  return messageFeeds.map((feed) =>
+    feed.id !== feedId
+      ? feed
+      : {
+          ...feed,
+          items: feed.items.map(([id, message]) =>
+            id === msgId ? [id, updater(message)] : [id, message],
+          ),
+        },
+  );
+}
+
 export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const {
     messageFeeds,
@@ -106,6 +141,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
   const [commentFeedId, setCommentFeedId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
+  const [botTagAction, setBotTagAction] = useState<MessageCardBotTagAction | null>(null);
   const copiedFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedSavedIdByFeedIdRef = useRef(selectedSavedIdByFeedId);
 
@@ -458,54 +494,56 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
 
   const handleToggleTag = useCallback(
     async (feedId: string, msgId: number, tagId: number) => {
-      const w = messageFeeds.find((x) => x.id === feedId);
-      if (!w) return;
-      const pair = w.items.find(([id]) => id === msgId);
-      if (!pair) return;
-      const [, msg] = pair;
-      const hasTag =
-        (msg.tags ?? []).includes(tagId) || (msg.inboxTags ?? []).some((t) => t.tagId === tagId);
-      const nextTags = hasTag
-        ? (msg.tags ?? []).filter((id) => id !== tagId)
-        : [...(msg.tags ?? []), tagId];
-      let nextInboxTags: InboxMessageTag[] | null;
-      if (hasTag) {
-        const filtered = (msg.inboxTags ?? []).filter((t) => t.tagId !== tagId);
-        nextInboxTags = filtered.length ? filtered : null;
-      } else {
-        nextInboxTags = [
-          ...(msg.inboxTags ?? []),
-          { id: 0, tagId, confidence: 1, login: authUserName, model: null, organismId: null },
-        ];
-      }
-      const updated: InboxMessage = {
-        ...msg,
-        tags: nextTags.length ? nextTags : null,
-        inboxTags: nextInboxTags?.length ? nextInboxTags : null,
-      };
-      setMessageFeeds((prev) =>
-        prev.map((x) =>
-          x.id === feedId
-            ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updated] : [id, m])) }
-            : x,
-        ),
-      );
+      const sourceMessage = getMessageByFeedId(messageFeeds, feedId, msgId);
+      if (isNullOrUndefined(sourceMessage)) return;
+
+      const currentUserName = authUserName ?? null;
+      const currentUserOrganismId = null;
+      const userHasTag = hasUserTag(sourceMessage, tagId, currentUserName);
+      const botHasTag = hasBotTag(sourceMessage, tagId);
+
+      setBotTagAction(userHasTag && botHasTag ? { messageId: msgId, tagId } : null);
       try {
-        if (hasTag) await inboxMessageTagsRm({ messageId: msgId, tagId });
-        else await inboxMessageTagsAdd({ messageId: msgId, tagId });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        if (userHasTag) {
+          await inboxMessageTagsRm({ messageId: msgId, tagId });
+        } else {
+          await inboxMessageTagsAdd({ messageId: msgId, tagId });
+        }
         setMessageFeeds((prev) =>
-          prev.map((x) =>
-            x.id === feedId
-              ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, msg] : [id, m])) }
-              : x,
+          replaceMessageInFeed(prev, feedId, msgId, (message) =>
+            toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId),
           ),
         );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
       }
     },
     [messageFeeds, authUserName, setMessageFeeds, setError],
   );
+
+  const onMarkBotTagWrong = useCallback(
+    async (messageId: number, tagId: number) => {
+      try {
+        await inboxMessageTagsModelError({ messageId, tagId });
+        setBotTagAction(null);
+        setMessageFeeds((prev) =>
+          prev.map((feed) => ({
+            ...feed,
+            items: feed.items.map(([id, message]) =>
+              id === messageId ? [id, removeBotTags(message, tagId)] : [id, message],
+            ),
+          })),
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [setMessageFeeds, setError],
+  );
+
+  const onCancelBotTagAction = useCallback(() => {
+    setBotTagAction(null);
+  }, []);
 
   const handleArrowClick = useCallback(
     async (feedId: string) => {
@@ -600,6 +638,9 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     commentMessagePreview,
     handleCommentSave,
     handleToggleTag,
+    botTagAction,
+    onCancelBotTagAction,
+    onMarkBotTagWrong,
     handleArrowClick,
     handleVisibleMessageIds,
     commentMessageId,
