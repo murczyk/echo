@@ -319,6 +319,7 @@ export function useAnalysisFilterSections({
           setProfiles,
           setTagsMap,
           setTagsOrder,
+          queryState,
           unitsMap: unitsMapRef.current,
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
@@ -413,6 +414,7 @@ export function useAnalysisFilterSections({
               setProfiles,
               setTagsMap,
               setTagsOrder,
+              queryState,
               networkStatsCache,
               unitsMap: unitsMapRef.current,
             });

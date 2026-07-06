@@ -60,6 +60,9 @@ const tableStateMock = vi.hoisted(() => ({
 }));
 
 const downloadBlobMock = vi.hoisted(() => vi.fn());
+const browserMock = vi.hoisted(() => ({
+  navigateWithinSpa: vi.fn(),
+}));
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -102,6 +105,14 @@ vi.mock('../../services/api/networks', () => ({
   updateNetworkPosts: apiMock.updateNetworkPosts,
   updateNetworkUnits: apiMock.updateNetworkUnits,
 }));
+
+vi.mock('../../utils/browser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/browser')>();
+  return {
+    ...actual,
+    navigateWithinSpa: browserMock.navigateWithinSpa,
+  };
+});
 
 vi.mock('../../services/api/bgtask', () => ({
   fetchBgtaskStatusAndLogs: bgtaskMock.fetchBgtaskStatusAndLogs,
@@ -148,7 +159,6 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
 let locationReplaceSpy: any = null;
-let locationAssignSpy: any = null;
 let authUserRoles: string[] = ['Rer', 'Full'];
 
 function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
@@ -289,10 +299,10 @@ describe('useRerNetworksNeoPage', () => {
     tableStateMock.onSortingChange.mockReset();
 
     downloadBlobMock.mockReset();
+    browserMock.navigateWithinSpa.mockReset();
     authUserRoles = ['Rer', 'Full'];
 
     locationReplaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
-    locationAssignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -305,8 +315,6 @@ describe('useRerNetworksNeoPage', () => {
     latest = null;
     locationReplaceSpy?.mockRestore();
     locationReplaceSpy = null;
-    locationAssignSpy?.mockRestore();
-    locationAssignSpy = null;
     vi.useRealTimers();
   });
 
@@ -432,7 +440,7 @@ describe('useRerNetworksNeoPage', () => {
     });
     expect(latest?.createDialog).toBeNull();
     expect(latest?.status).toEqual({ kind: 'success', text: 'Мережу створено.' });
-    expect(locationAssignSpy).toHaveBeenCalledWith('/rer-networks-neo/3');
+    expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
     expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
   });
 
@@ -489,7 +497,7 @@ describe('useRerNetworksNeoPage', () => {
         name: 'Радіомережа без частоти',
       }),
     );
-    expect(locationAssignSpy).toHaveBeenCalledWith('/rer-networks-neo/3');
+    expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
   });
 
   it('keeps backend row order when the server returns a custom sort', async () => {

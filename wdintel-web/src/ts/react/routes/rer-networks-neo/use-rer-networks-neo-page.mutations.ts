@@ -23,6 +23,7 @@ import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-netwo
 import type { NetworksFilterState } from './helpers';
 import { formatErrorMessage } from './use-rer-networks-neo-page.shared';
 import { redirectToLogin } from '../../auth-redirect';
+import { navigateWithinSpa } from '../../utils/browser';
 import type { NetworksQuerySnapshot, UiMessage } from './use-rer-networks-neo-page.types';
 
 type MutationArgs = {
@@ -193,7 +194,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
       );
       args.setCreateDialog(null);
       args.setStatus({ kind: 'success', text: 'Мережу створено.' });
-      window.location.assign(`/rer-networks-neo/${network.id}`);
+      navigateWithinSpa(`/rer-networks-neo/${network.id}`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         redirectToLogin();

@@ -33,6 +33,9 @@ type Props = {
   preserveSelectedOptionValuesOnChange?: boolean;
   bulkPaste?: boolean;
   bulkPasteSeparators?: string[];
+  bulkPasteMenuLabel?: string;
+  bulkPasteDialogTitle?: string;
+  bulkPasteInputLabel?: string;
   onChange: (next: string[]) => void;
 };
 
@@ -46,6 +49,17 @@ function toAutocompleteOption(option: AnalysisFilterOption, index: number): Auto
     value: option.value,
     count: option.count,
     values: option.values ?? [option.value],
+  };
+}
+
+function buildFallbackSelectedOption(selected: string, labelCache: Record<string, string>) {
+  const label = labelCache[selected] ?? selected;
+  return {
+    key: `selected:${selected}`,
+    label,
+    value: selected,
+    count: 0,
+    values: [selected],
   };
 }
 
@@ -86,8 +100,7 @@ function buildSelectedOptions(
             ),
         )
         .map((selected) => {
-          const label = labelCache[selected] ?? selected;
-          return { key: selected, label, value: selected, count: 0, values: [selected] };
+          return buildFallbackSelectedOption(selected, labelCache);
         }),
     ];
   }
@@ -107,8 +120,7 @@ function buildSelectedOptions(
 
     if (seenKeys.has(selected)) return;
     seenKeys.add(selected);
-    const label = labelCache[selected] ?? selected;
-    selectedOptions.push({ key: selected, label, value: selected, count: 0, values: [selected] });
+    selectedOptions.push(buildFallbackSelectedOption(selected, labelCache));
   });
 
   return selectedOptions;
@@ -153,6 +165,9 @@ export function AnalysisFilterField({
   preserveSelectedOptionValuesOnChange = false,
   bulkPaste = false,
   bulkPasteSeparators,
+  bulkPasteMenuLabel,
+  bulkPasteDialogTitle,
+  bulkPasteInputLabel,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -224,9 +239,13 @@ export function AnalysisFilterField({
       loading={loading}
       loadingText={`Завантаження${ELLIPSIS}`}
       getOptionLabel={(option) => option.label}
+      getOptionKey={(option) => option.key}
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
       bulkPaste={bulkPaste}
       bulkPasteSeparators={bulkPasteSeparators}
+      bulkPasteMenuLabel={bulkPasteMenuLabel}
+      bulkPasteDialogTitle={bulkPasteDialogTitle}
+      bulkPasteInputLabel={bulkPasteInputLabel}
       onBulkPasteChange={bulkPaste ? handleBulkPasteChange : undefined}
       openText="Відкрити"
       closeText="Закрити"

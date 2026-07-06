@@ -13,6 +13,7 @@ import { emptyQueryState } from '../helpers';
 const analysisFilterFieldSpy = vi.fn();
 const accordionSpy = vi.fn();
 const powerChipSpy = vi.fn();
+const savedFiltersCardSpy = vi.fn();
 
 function uniqueInOrder(values: string[]): string[] {
   return values.filter((value, index, array) => array.indexOf(value) === index);
@@ -157,7 +158,10 @@ vi.mock('./AnalysisFilterField', () => ({
 }));
 
 vi.mock('./AnalysisSavedFiltersCard', () => ({
-  AnalysisSavedFiltersCard: () => <div data-testid="saved-filters-card" />,
+  AnalysisSavedFiltersCard: (props: unknown) => {
+    savedFiltersCardSpy(props);
+    return <div data-testid="saved-filters-card" />;
+  },
 }));
 
 vi.mock('../../../components/PowerChip', () => ({
@@ -330,6 +334,7 @@ describe('AnalysisFiltersPanel', () => {
     analysisFilterFieldSpy.mockClear();
     accordionSpy.mockClear();
     powerChipSpy.mockClear();
+    savedFiltersCardSpy.mockClear();
     toggleButtonGroupOnChange = undefined;
   });
 
@@ -382,14 +387,40 @@ describe('AnalysisFiltersPanel', () => {
     expect(unitsField?.bulkPaste ?? false).toBe(false);
   });
 
+  it('passes canResetFilters through to saved filters save-as-new availability', async () => {
+    rendered.push(await renderComponent(buildProps({ canResetFilters: false })));
+    const disabledProps = savedFiltersCardSpy.mock.calls.at(-1)?.[0] as
+      { canSaveAsNew?: boolean } | undefined;
+    expect(disabledProps?.canSaveAsNew).toBe(false);
+
+    savedFiltersCardSpy.mockClear();
+
+    rendered.push(await renderComponent(buildProps({ canResetFilters: true })));
+    const enabledProps = savedFiltersCardSpy.mock.calls.at(-1)?.[0] as
+      { canSaveAsNew?: boolean } | undefined;
+    expect(enabledProps?.canSaveAsNew).toBe(true);
+  });
+
   it('passes comma and newline separators to the frequency filter bulk paste', async () => {
     rendered.push(await renderComponent(buildProps()));
 
     const frequencyField = analysisFilterFieldSpy.mock.calls
-      .map(([callProps]) => callProps as { label: string; bulkPasteSeparators?: string[] })
+      .map(
+        ([callProps]) =>
+          callProps as {
+            label: string;
+            bulkPasteSeparators?: string[];
+            bulkPasteMenuLabel?: string;
+            bulkPasteDialogTitle?: string;
+            bulkPasteInputLabel?: string;
+          },
+      )
       .find((callProps) => callProps.label === 'Частоти');
 
     expect(frequencyField?.bulkPasteSeparators).toEqual([',', '\n']);
+    expect(frequencyField?.bulkPasteInputLabel).toBe('Частоти');
+    expect(frequencyField?.bulkPasteMenuLabel).toBeUndefined();
+    expect(frequencyField?.bulkPasteDialogTitle).toBeUndefined();
   });
 
   it('keeps server-backed filter fields interactive while the page reloads', async () => {
