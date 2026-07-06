@@ -202,6 +202,51 @@ describe('rer-analysis-neo helpers', () => {
     expect(emptyQueryState().unitsExactMatchOnly).toBeNull();
   });
 
+  it('routes selected tags to selectedTags in include mode', () => {
+    const state = createQueryState({ tags: [3, 7], tagsExcludeMode: false });
+    const analysisReq = buildAnalysisReq(state);
+    const inboxReq = buildInboxReq(state);
+
+    expect(analysisReq?.selectedTags).toEqual([3, 7]);
+    expect(analysisReq?.deniedTags).toBeNull();
+    expect(inboxReq?.selectedTags).toEqual([3, 7]);
+    expect(inboxReq?.deniedTags).toBeNull();
+  });
+
+  it('routes selected tags to deniedTags in exclude mode', () => {
+    const state = createQueryState({ tags: [3, 7], tagsExcludeMode: true });
+    const analysisReq = buildAnalysisReq(state);
+    const inboxReq = buildInboxReq(state);
+
+    expect(analysisReq?.selectedTags).toBeNull();
+    expect(analysisReq?.deniedTags).toEqual([3, 7]);
+    expect(inboxReq?.selectedTags).toBeNull();
+    expect(inboxReq?.deniedTags).toEqual([3, 7]);
+  });
+
+  it('passes the tag presence filter through to both requests', () => {
+    const state = createQueryState({ tagPresence: 'WithoutTags' });
+    const analysisReq = buildAnalysisReq(state);
+    const inboxReq = buildInboxReq(state);
+
+    expect(analysisReq?.tagPresence).toBe('WithoutTags');
+    expect(inboxReq?.tagPresence).toBe('WithoutTags');
+  });
+
+  it('round-trips exclude mode and tag presence through saved filters', () => {
+    const state = createQueryState({
+      tags: [3, 7],
+      tagsExcludeMode: true,
+      tagPresence: 'WithoutTags',
+    });
+    const savedFilter = createSavedFilter(state);
+    const restored = queryStateFromSavedFilter(savedFilter, createResetQueryState());
+
+    expect(restored.tags).toEqual([3, 7]);
+    expect(restored.tagsExcludeMode).toBe(true);
+    expect(restored.tagPresence).toBe('WithoutTags');
+  });
+
   it('preserves selected callsign casing for case-sensitive backend filtering', () => {
     expect(
       normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo'] }))

@@ -184,7 +184,11 @@ export function buildAnalysisReqForFilterSection(
 ): AnalysisStatsReq {
   switch (section) {
     case 'tags':
-      return { ...analysisReq, selectedTags: null };
+      // The tags facet must show every tag regardless of the current tag filter, so
+      // strip all self-referential tag conditions — not just `selectedTags`. Leaving
+      // `deniedTags`/`tagPresence` in place would compute the option list from messages
+      // that already exclude the denied tag, dropping it from its own picker.
+      return { ...analysisReq, selectedTags: null, deniedTags: null, tagPresence: null };
     case 'aors':
       return { ...analysisReq, selectedAors: null };
     case 'groups':

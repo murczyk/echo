@@ -130,14 +130,30 @@ export function buildAnalysisFiltersPanelDerivedData({
     })),
   );
 
-  const tagOptions = sortFilterOptionsByLabel(
-    options.tags.map((option) => ({
-      ...option,
-      label: normalizeFilterLabel(
-        tagsMap[Number(option.value)]?.label ?? option.label ?? option.value,
-      ),
-    })),
+  const tagOptionByValue = new Map<string, AnalysisFilterOption>(
+    options.tags.map((option) => [
+      option.value,
+      {
+        ...option,
+        label: normalizeFilterLabel(
+          tagsMap[Number(option.value)]?.label ?? option.label ?? option.value,
+        ),
+      },
+    ]),
   );
+  // Selected tags must stay pickable even when the backend facet drops them: in
+  // exclude mode the excluded tag no longer appears on any visible message, so it
+  // would otherwise vanish from `options.tags` while still being selected.
+  queryState.tags.forEach((tagId) => {
+    const value = String(tagId);
+    if (tagOptionByValue.has(value)) return;
+    tagOptionByValue.set(value, {
+      value,
+      label: normalizeFilterLabel(tagsMap[tagId]?.label ?? value),
+      count: 0,
+    });
+  });
+  const tagOptions = sortFilterOptionsByLabel(Array.from(tagOptionByValue.values()));
 
   const metadataCcsOptions = sortFilterOptionsByLabel(
     options.metadataCcs.map((option) => ({
@@ -200,6 +216,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   const tagsSelectedCount =
     queryState.tags.length +
     Number(queryState.filterTagsOption !== 'OneOfTags') +
+    Number(queryState.tagPresence != null) +
     Number(queryState.withoutModelTags) +
     Number(queryState.reportTagsOnlyThisUnit);
 

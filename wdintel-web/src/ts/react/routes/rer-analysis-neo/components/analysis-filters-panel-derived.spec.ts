@@ -213,6 +213,41 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
     ).toBe(1);
   });
 
+  it('keeps a selected tag as an option even when the backend facet drops it', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      counts: null,
+      groupInfos: {},
+      options: {
+        tags: [{ value: '5', label: '5', count: 3 }],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [],
+        units: [],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: { ...emptyQueryState(), tags: [9], tagsExcludeMode: true },
+      tagsMap: {
+        5: { id: 5, label: 'Зв’язок' } as never,
+        9: { id: 9, label: 'Оброблено' } as never,
+      },
+    });
+
+    expect(derived.tagOptions).toEqual([
+      { value: '5', label: 'Зв’язок', count: 3 },
+      { value: '9', label: 'Оброблено', count: 0 },
+    ]);
+  });
+
   it('keeps the selected count when a selected group key is missing from the current options', () => {
     const derived = buildAnalysisFiltersPanelDerivedData({
       aorEntries: [],

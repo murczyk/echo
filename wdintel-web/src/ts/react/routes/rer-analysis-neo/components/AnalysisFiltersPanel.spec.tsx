@@ -745,7 +745,11 @@ describe('AnalysisFiltersPanel', () => {
       )
       .find((callProps) => callProps.label === 'Метадані отримувача');
 
-    expect(tagsField?.options.map((option) => option.label)).toEqual(['Альфа', 'Бета']);
+    expect(tagsField?.options.map((option) => option.label)).toEqual([
+      'Без тегів',
+      'Альфа',
+      'Бета',
+    ]);
     expect(aorsField?.options.map((option) => option.label)).toEqual([
       'Вся смуга',
       'Смуга А',

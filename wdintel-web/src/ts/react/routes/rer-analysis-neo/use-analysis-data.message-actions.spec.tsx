@@ -48,6 +48,7 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   setMessages: Dispatch<SetStateAction<Array<[number, InboxMessage]>>>;
   setMapOpenMessages: Dispatch<SetStateAction<Array<[number, InboxMessage]>>>;
   onError: ReturnType<typeof vi.fn>;
+  reload: ReturnType<typeof vi.fn>;
 };
 
 function buildUser(): User {
@@ -100,6 +101,7 @@ function TestHarness(props: {
   authUserName?: string | null;
   currentUser?: User | null;
   onError?: ReturnType<typeof vi.fn>;
+  reload?: ReturnType<typeof vi.fn>;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -108,6 +110,7 @@ function TestHarness(props: {
     props.initialMessages ?? [[1, buildMessage()]],
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
+  const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
@@ -127,7 +130,7 @@ function TestHarness(props: {
     onUnauthorized,
     patchMessages,
     queryState: emptyQueryState(),
-    reload: vi.fn(() => Promise.resolve()),
+    reload,
     setMapOpenMessages,
     setMessages,
     setSummaryRows: vi.fn() as unknown as Dispatch<SetStateAction<SummaryTableFreqRow[]>>,
@@ -141,6 +144,7 @@ function TestHarness(props: {
     setMessages,
     setMapOpenMessages,
     onError,
+    reload,
   };
 
   return null;
@@ -170,7 +174,11 @@ describe('useAnalysisDataMessageActions', () => {
 
   async function renderHarness(
     initialMessages?: Array<[number, InboxMessage]>,
-    options: { authUserName?: string | null; currentUser?: User | null } = {},
+    options: {
+      authUserName?: string | null;
+      currentUser?: User | null;
+      reload?: ReturnType<typeof vi.fn>;
+    } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
@@ -180,6 +188,7 @@ describe('useAnalysisDataMessageActions', () => {
           initialMessages={initialMessages}
           authUserName={options.authUserName}
           currentUser={options.currentUser}
+          reload={options.reload}
         />,
       );
     });
@@ -302,6 +311,37 @@ describe('useAnalysisDataMessageActions', () => {
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
+  });
+
+  it('reloads after a successful tag toggle so an active filter re-syncs the list', async () => {
+    const reload = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      { reload },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload when the tag toggle fails and rolls back', async () => {
+    hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('boom'));
+    const reload = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      { reload },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(apiRef.current!.onError).toHaveBeenCalledWith('boom');
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('uses the auth user fallback when currentUser is unavailable', async () => {

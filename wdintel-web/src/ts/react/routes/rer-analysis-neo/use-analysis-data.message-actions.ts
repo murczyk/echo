@@ -250,6 +250,11 @@ export function useAnalysisDataMessageActions(params: Params) {
           if (id !== messageId) return message;
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
+        // Re-run the filtered query after the optimistic patch: when a tag filter is
+        // active, changing a message's tag can move it in or out of the result set and
+        // recompute the tag facet. The patch keeps the toggle instant; the reload keeps
+        // the list and filter options correct.
+        await params.reload();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.patchMessages((id, message) => (id === messageId ? sourceMessage : message));

@@ -53,6 +53,11 @@ type Props = Pick<
 
 type FilterSectionLoadTarget = AnalysisFilterSectionId | 'freqs';
 
+// Synthetic entry injected into the tags picker so "no tag at all" reads as just
+// another selectable option. It maps to `tagPresence = 'WithoutTags'` and is mutually
+// exclusive with picking real tags (a specific tag + "no tags" would match nothing).
+const WITHOUT_TAGS_OPTION_VALUE = '__without_tags__';
+
 type MetadataFilterMode = 'all' | 'with' | 'without';
 
 function metadataFilterModeFromState(
@@ -514,21 +519,57 @@ export function AnalysisFiltersPanelSections({
         <Stack spacing={1.25}>
           <AnalysisFilterField
             label="Теги"
-            options={derived.tagOptions}
+            options={[
+              { value: WITHOUT_TAGS_OPTION_VALUE, label: 'Без тегів', count: 0 },
+              ...derived.tagOptions,
+            ]}
             loading={isFilterSectionLoading('tags') || isFilterSectionStale('tags')}
             emptyLoading={isFilterSectionEmptyLoading('tags', derived.tagOptions.length)}
-            value={queryState.tags.map((tagId) => String(tagId))}
-            onChange={(next) =>
-              updateQueryState({
-                tags: next.map((item) => Number(item)).filter((tagId) => Number.isFinite(tagId)),
-              })
+            value={
+              queryState.tagPresence === 'WithoutTags'
+                ? [WITHOUT_TAGS_OPTION_VALUE]
+                : queryState.tags.map((tagId) => String(tagId))
             }
+            onChange={(next) => {
+              // "Без тегів" is mutually exclusive with real tags. If the user just added it,
+              // drop every real tag; otherwise ignore it and keep only the real selections.
+              const justPickedWithoutTags =
+                next.includes(WITHOUT_TAGS_OPTION_VALUE) &&
+                queryState.tagPresence !== 'WithoutTags';
+              if (justPickedWithoutTags) {
+                updateQueryState({ tags: [], tagPresence: 'WithoutTags' });
+                return;
+              }
+              updateQueryState({
+                tags: next
+                  .filter((item) => item !== WITHOUT_TAGS_OPTION_VALUE)
+                  .map((item) => Number(item))
+                  .filter((tagId) => Number.isFinite(tagId)),
+                tagPresence: null,
+              });
+            }}
           />
+          {queryState.tagPresence !== 'WithoutTags' ? (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              fullWidth
+              value={queryState.tagsExcludeMode ? 'exclude' : 'include'}
+              onChange={(_event, value: 'include' | 'exclude' | null) => {
+                if (value == null) return;
+                updateQueryState({ tagsExcludeMode: value === 'exclude' });
+              }}
+            >
+              <ToggleButton value="include">Лише обрані</ToggleButton>
+              <ToggleButton value="exclude">Крім обраних</ToggleButton>
+            </ToggleButtonGroup>
+          ) : null}
           <Stack spacing={0.5}>
             <FormControlLabel
               control={
                 <Checkbox
                   checked={queryState.filterTagsOption === 'AllTags'}
+                  disabled={queryState.tagsExcludeMode || queryState.tagPresence === 'WithoutTags'}
                   onChange={(_event, value) =>
                     updateQueryState({ filterTagsOption: value ? 'AllTags' : 'OneOfTags' })
                   }
