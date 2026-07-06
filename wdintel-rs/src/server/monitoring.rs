@@ -1,3 +1,4 @@
+use crate::config::SERVER_MONITORING_CACHE_TTL_SEC;
 use crate::error::AppError;
 use crate::types::*;
 use actix_web::web::Json;
@@ -6,6 +7,9 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use fs2::available_space;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 #[get("/api/ping")]
 async fn ping() -> impl Responder {
@@ -68,10 +72,41 @@ pub struct Monitoring {
     pub free_space_root_mb: i64,
 }
 
+#[derive(Clone)]
+struct MonitoringCache {
+    updated_at: Instant,
+    monitoring: Monitoring,
+}
+
+static MONITORING_CACHE: OnceLock<Mutex<Option<MonitoringCache>>> =
+    OnceLock::new();
+
 #[post("/api/monitoring")]
 async fn monitoring(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Monitoring>, AppError> {
+    let cache = MONITORING_CACHE.get_or_init(|| Mutex::new(None));
+    let mut cache = cache.lock().await;
+    if let Some(cache) = cache.as_ref() {
+        if cache.updated_at.elapsed()
+            < Duration::from_secs(SERVER_MONITORING_CACHE_TTL_SEC)
+        {
+            return Ok(Json(cache.monitoring.clone()));
+        }
+    }
+
+    let monitoring = load_monitoring(env).await.c(h!())?;
+    *cache = Some(MonitoringCache {
+        updated_at: Instant::now(),
+        monitoring: monitoring.clone(),
+    });
+
+    Ok(Json(monitoring))
+}
+
+async fn load_monitoring(
+    env: actix_web::web::Data<Env>,
+) -> Result<Monitoring, AppError> {
     let data = echo_im::collect_monitoring_data(&env.dbx).await.c(h!())?;
     let mut datasources = vec![];
     for d in data {
@@ -82,10 +117,10 @@ async fn monitoring(
                 .unwrap_or(d.last_sync_at_ms),
         });
     }
-    Ok(Json(Monitoring {
+    Ok(Monitoring {
         datasources,
         free_space_root_mb: root_free_space_mb(),
-    }))
+    })
 }
 
 fn root_free_space_mb() -> i64 {

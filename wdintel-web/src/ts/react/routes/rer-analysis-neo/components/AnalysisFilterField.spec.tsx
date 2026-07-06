@@ -168,6 +168,19 @@ describe('AnalysisFilterField', () => {
     });
   });
 
+  it('uses hydrated network option labels for selected chips', () => {
+    renderFilterField({
+      label: 'Мережі',
+      options: [{ value: '2852', label: 'управління', count: 0 }],
+      value: ['2852'],
+      onChange: vi.fn(),
+    });
+
+    expect(latestAutocompleteProps().value).toEqual([
+      { key: '2852-0', label: 'управління', value: '2852', count: 0, values: ['2852'] },
+    ]);
+  });
+
   it('preserves typed input across loading and option refreshes', () => {
     const { root } = renderFilterField({
       label: 'Підрозділи',

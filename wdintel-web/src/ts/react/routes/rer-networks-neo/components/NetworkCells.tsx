@@ -2,6 +2,7 @@ import { Box, Stack, Tooltip } from '@mui/material';
 import type { PointerEvent } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
+import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
   buildNetworkFrequencyDisplayGroups,
   getActivityBarHeight,
@@ -82,6 +83,7 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
       <Box
         component="a"
         href={`/rer-networks-neo/${network.id}`}
+        onClick={(event) => handleNavigateWithinSpaClick(event, `/rer-networks-neo/${network.id}`)}
         title={network.networkLabel}
         aria-label={network.networkLabel}
         sx={{
