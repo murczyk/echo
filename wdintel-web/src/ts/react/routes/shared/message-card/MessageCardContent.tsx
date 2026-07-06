@@ -16,6 +16,7 @@ import {
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
 import { renderMarkedText } from './MarkedText';
+import { renderLinkifiedText } from './message-card-linkify';
 import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
@@ -321,7 +322,7 @@ function useMemoText(
     : (() => {
         const text = msg.text?.trim() ?? '';
         if (text === '' || text === '—' || text === '-') return null;
-        return msg.text;
+        return renderLinkifiedText(msg.text);
       })();
 }
 

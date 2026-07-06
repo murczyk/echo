@@ -107,6 +107,12 @@ pub fn goi_integration_has_api_config(
             .is_some()
 }
 
+pub fn goi_integration_worker_paused(
+    integration: &goi_integration::Model,
+) -> bool {
+    integration.pause_worker
+}
+
 pub fn goi_integration_has_config(
     integration: &goi_integration::Model,
 ) -> bool {

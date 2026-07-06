@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Link,
   Menu,
@@ -14,6 +14,7 @@ import {
 import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { hasRole } from '../../utils/roles';
 
 export interface AppNavbarProps {
   user: {
@@ -58,14 +59,14 @@ export function AppNavbar({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(
-    shared?.systemSettings ? shared.systemSettings.defaultNeoAnalysis : null
+    shared?.systemSettings ? shared.systemSettings.defaultNeoAnalysis : null,
   );
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (shared?.systemSettings) {
-      setLoadedNeoAnalysis((prev) => 
-        prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev
+      setLoadedNeoAnalysis((prev) =>
+        prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev,
       );
     }
   }, [shared?.systemSettings]);
@@ -114,43 +115,11 @@ export function AppNavbar({
     setMobileNavOpen(!mobileNavOpen);
   };
 
-  const hasRole = useCallback(
-    (role: string) => {
-      const roles = user?.roles ?? [];
-      const has = (r: string) => roles.includes(r);
-      switch (role) {
-        case 'Admin':
-          return has('Admin');
-        case 'Full':
-          return has('Admin') || has('Full');
-        case 'Rer':
-          return has('Admin') || has('Full') || has('Rer');
-        case 'Bpla':
-          return has('Admin') || has('Full') || has('Bpla');
-        case 'Basic':
-          return has('Admin') || has('Full') || has('Bpla') || has('Rer') || has('Basic');
-        case 'UnitsEditor':
-          return has('Admin') || has('UnitsEditor');
-        case 'CallsignsEditor':
-          return has('Admin') || has('CallsignsEditor');
-        case 'AdvancedReports':
-          return has('Admin') || has('AdvancedReports');
-        case 'DeleteMsg':
-          return has('DeleteMsg');
-        case 'NoAutoLogout':
-          return has('NoAutoLogout');
-        default:
-          return false;
-      }
-    },
-    [user],
-  );
-
   const serverModeIsLive =
     shared?.serverInfo?.mode === 'live' || shared?.serverInfo?.mode === 'debug';
-  const isAdminMenuVisible = hasRole('Admin');
-  const isBasic = hasRole('Basic');
-  const isRer = hasRole('Rer');
+  const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
+  const isBasic = hasRole(user?.roles, 'Basic');
+  const isRer = hasRole(user?.roles, 'Rer');
 
   const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
 

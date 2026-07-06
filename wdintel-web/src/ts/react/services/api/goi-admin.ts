@@ -21,6 +21,7 @@ export type GoiAdminIntegration = {
   apiLogin: string;
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
+  pauseWorker: boolean;
   maintainerLogin: string;
   accessOrganismIds: number[];
   accessLogins: string[];
@@ -39,6 +40,7 @@ export type UpsertGoiAdminIntegrationReq = {
   apiLogin: string;
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
+  pauseWorker: boolean;
   maintainerLogin: string;
   accessOrganismIds: number[];
   accessLogins: string[];
@@ -96,6 +98,8 @@ type GoiAdminIntegrationLike = {
   api_password?: string | null;
   disableGoiToEchoPalitraSync?: boolean;
   disable_goi_to_echo_palitra_sync?: boolean;
+  pauseWorker?: boolean;
+  pause_worker?: boolean;
   maintainerLogin?: string | null;
   maintainer_login?: string | null;
   accessOrganismIds?: Array<number | string> | null;
@@ -168,6 +172,7 @@ function normalizeGoiAdminIntegration(
     apiPassword: normalizeString(raw?.apiPassword ?? raw?.api_password),
     disableGoiToEchoPalitraSync:
       raw?.disableGoiToEchoPalitraSync ?? raw?.disable_goi_to_echo_palitra_sync ?? true,
+    pauseWorker: raw?.pauseWorker ?? raw?.pause_worker ?? false,
     maintainerLogin: normalizeString(raw?.maintainerLogin ?? raw?.maintainer_login),
     accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
     accessLogins: normalizeStringArray(raw?.accessLogins ?? raw?.access_logins),
@@ -188,6 +193,7 @@ function toUpsertReqBody(req: UpsertGoiAdminIntegrationReq) {
     api_login: normalizeString(req.apiLogin) || null,
     api_password: normalizeString(req.apiPassword) || null,
     disable_goi_to_echo_palitra_sync: req.disableGoiToEchoPalitraSync,
+    pause_worker: req.pauseWorker,
     maintainer_login: normalizeString(req.maintainerLogin) || null,
     access_organism_ids: req.accessOrganismIds,
     access_logins: req.accessLogins,
