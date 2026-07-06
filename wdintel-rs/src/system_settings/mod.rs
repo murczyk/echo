@@ -227,6 +227,29 @@ where
     }
 }
 
+pub async fn cyber_echo_enabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.cyber_echo_enabled)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_cyber_echo_enabled<C>(dbx: &C) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if cyber_echo_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "cyber_echo_enabled is disabled".to_string(),
+        ))
+    }
+}
+
 fn peleng_bounds_from_settings(
     settings: &system_settings::Model,
 ) -> Option<PelengBounds> {
