@@ -149,9 +149,17 @@ export function PowerDatePicker({
     clearPendingChange();
   }, [props.value]);
 
-  useEffect(() => {
+  const syncDraftFromControlledValueIfIdle = () => {
+    if (open) return;
+    if (selectedSectionsRef.current != null) return;
+    if (debounceTimerRef.current != null) return;
+
     setDraftValue(props.value);
-  }, [props.value]);
+  };
+
+  useEffect(() => {
+    syncDraftFromControlledValueIfIdle();
+  }, [open, props.value]);
 
   const isManualFieldEdit = () => selectedSectionsRef.current != null;
 
@@ -197,6 +205,7 @@ export function PowerDatePicker({
   const handleClose = () => {
     setOpen(false);
     if (!acceptingRef.current) {
+      clearPendingChange();
       setDraftValue(props.value);
     }
     acceptingRef.current = false;
@@ -237,8 +246,17 @@ export function PowerDatePicker({
         onClose={handleClose}
         onAccept={handleAccept}
         onSelectedSectionsChange={(nextSelectedSections) => {
+          const previousSelectedSections = selectedSectionsRef.current;
           selectedSectionsRef.current = nextSelectedSections;
           props.onSelectedSectionsChange?.(nextSelectedSections);
+          if (
+            previousSelectedSections != null &&
+            nextSelectedSections == null &&
+            !open &&
+            debounceTimerRef.current == null
+          ) {
+            setDraftValue(props.value);
+          }
         }}
         onChange={(value, context) => {
           if (context.validationError != null) return;
@@ -330,9 +348,17 @@ export function PowerDateTimePicker({
     clearPendingChange();
   }, [props.value]);
 
-  useEffect(() => {
+  const syncDraftFromControlledValueIfIdle = () => {
+    if (open) return;
+    if (selectedSectionsRef.current != null) return;
+    if (debounceTimerRef.current != null) return;
+
     setDraftValue(props.value);
-  }, [props.value]);
+  };
+
+  useEffect(() => {
+    syncDraftFromControlledValueIfIdle();
+  }, [open, props.value]);
 
   const isManualFieldEdit = () => selectedSectionsRef.current != null;
 
@@ -378,6 +404,7 @@ export function PowerDateTimePicker({
   const handleClose = () => {
     setOpen(false);
     if (!acceptingRef.current) {
+      clearPendingChange();
       setDraftValue(props.value);
     }
     acceptingRef.current = false;
@@ -441,8 +468,17 @@ export function PowerDateTimePicker({
         onClose={handleClose}
         onAccept={handleAccept}
         onSelectedSectionsChange={(nextSelectedSections) => {
+          const previousSelectedSections = selectedSectionsRef.current;
           selectedSectionsRef.current = nextSelectedSections;
           props.onSelectedSectionsChange?.(nextSelectedSections);
+          if (
+            previousSelectedSections != null &&
+            nextSelectedSections == null &&
+            !open &&
+            debounceTimerRef.current == null
+          ) {
+            setDraftValue(props.value);
+          }
         }}
         onChange={handleChange}
         slots={{
