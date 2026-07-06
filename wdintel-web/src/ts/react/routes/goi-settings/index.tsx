@@ -39,6 +39,7 @@ import {
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
+import { hasRole } from '../../utils/roles';
 import { GoiReportTabOrderSection } from './GoiReportTabOrderSection';
 
 const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
@@ -56,10 +57,6 @@ function formatErrorMessage(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function hasRerAccess(user: User): boolean {
-  return user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
@@ -548,7 +545,7 @@ export function GoiSettingsPage() {
   const [loading, setLoading] = React.useState(true);
   const [pendingKey, setPendingKey] = React.useState<string | null>(null);
   const [actionStatus, setActionStatus] = React.useState<ActionStatus>(null);
-  const isAdmin = currentUser?.roles.includes('Admin') ?? false;
+  const isAdmin = currentUser ? hasRole(currentUser.roles, 'Admin') : false;
 
   React.useEffect(() => {
     const abortController = new AbortController();
@@ -559,7 +556,7 @@ export function GoiSettingsPage() {
         if (abortController.signal.aborted) return;
         setCurrentUser(nextCurrentUser);
 
-        const nextIntegrations = hasRerAccess(nextCurrentUser)
+        const nextIntegrations = hasRole(nextCurrentUser.roles, 'Rer')
           ? await fetchCurrentUserGoiIntegrations(abortController.signal)
           : [];
         if (abortController.signal.aborted) return;

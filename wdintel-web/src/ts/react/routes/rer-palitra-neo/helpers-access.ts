@@ -10,6 +10,7 @@ import {
 } from '../../../../Bindings';
 
 import { AccessType, KmzColorOption, PalitraFormState } from './types';
+import { hasAnyRole, hasRole } from '../../utils/roles';
 
 export const DEFAULT_COLOR_HEX = '#00bcd4';
 
@@ -20,16 +21,15 @@ export function formatErrorMessage(error: unknown): string {
 }
 
 export function isAdmin(user: User | null): boolean {
-  return Boolean(user?.roles.includes('Admin'));
+  return hasRole(user?.roles, 'Admin');
 }
 
 export function isEditor(user: User | null): boolean {
-  if (!user) return false;
-  return user.roles.includes('UnitsEditor') || user.roles.includes('CallsignsEditor');
+  return hasAnyRole(user?.roles, ['UnitsEditor', 'CallsignsEditor']);
 }
 
 export function isRer(user: User | null): boolean {
-  return Boolean(user?.roles.some((role) => role === 'Admin' || role === 'Full' || role === 'Rer'));
+  return hasRole(user?.roles, 'Rer');
 }
 
 export function canEditScopedLogins(user: User | null): boolean {
