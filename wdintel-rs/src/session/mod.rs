@@ -4,13 +4,19 @@ use crate::types::*;
 use chrono::prelude::*;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
+use std::fmt::Write as _;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::error::{TryRecvError, TrySendError};
+use tokio::sync::mpsc::Receiver;
+use tokio_postgres::types::ToSql;
 use tokio_util::sync::CancellationToken;
 
 pub mod types;
 
+const ACTIVITY_PAGE_VISIT_INSERT_COLUMNS: &str =
+    "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
+     VALUES ";
 const ACTIVITY_PAGE_VISIT_INSERT_SQL: &str =
     "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
      VALUES ($1, $2, $3, $4, $5, $6)";
@@ -150,9 +156,12 @@ async fn run_activity_worker(
                     info!("session activity worker queue closed");
                     break;
                 };
-                if let Err(err) = write_activity_page_visit(
+                let mut events = Vec::with_capacity(SESSION_ACTIVITY_GREPTIME_BATCH_SIZE);
+                events.push(event);
+                drain_session_activity_batch(&mut rx, &mut events);
+                if let Err(err) = write_activity_page_visits(
                     &greptime,
-                    &event,
+                    &events,
                     get_timeout,
                     query_timeout,
                 )
@@ -162,6 +171,78 @@ async fn run_activity_worker(
             }
         }
     }
+    Ok(())
+}
+
+fn drain_session_activity_batch(
+    rx: &mut Receiver<SessionActivityEvent>,
+    events: &mut Vec<SessionActivityEvent>,
+) {
+    let Some(first_event) = events.first() else {
+        return;
+    };
+    let mut min_ts = first_event.ts;
+    let mut max_ts = first_event.ts;
+    while events.len() < SESSION_ACTIVITY_GREPTIME_BATCH_SIZE {
+        match rx.try_recv() {
+            Ok(event) => {
+                min_ts = min_ts.min(event.ts);
+                max_ts = max_ts.max(event.ts);
+                events.push(event);
+                if max_ts.signed_duration_since(min_ts).num_milliseconds()
+                    > SESSION_ACTIVITY_GREPTIME_BATCH_MAX_SPAN_MS
+                {
+                    break;
+                }
+            }
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => break,
+        }
+    }
+}
+
+async fn write_activity_page_visits(
+    greptime: &deadpool_postgres::Pool,
+    events: &[SessionActivityEvent],
+    get_timeout: Duration,
+    query_timeout: Duration,
+) -> anyhow::Result<()> {
+    if events.is_empty() {
+        return Ok(());
+    }
+    if events.len() == 1 {
+        return write_activity_page_visit(
+            greptime,
+            &events[0],
+            get_timeout,
+            query_timeout,
+        )
+        .await;
+    }
+
+    if let Err(err) = write_activity_page_visit_batch(
+        greptime,
+        events,
+        get_timeout,
+        query_timeout,
+    )
+    .await
+    {
+        warn!(
+            "session activity batch insert failed; retrying one-by-one: {:?}",
+            err
+        );
+        for event in events {
+            write_activity_page_visit(
+                greptime,
+                event,
+                get_timeout,
+                query_timeout,
+            )
+            .await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -199,6 +280,72 @@ async fn write_activity_page_visit(
     .c(h!())?;
 
     Ok(())
+}
+
+async fn write_activity_page_visit_batch(
+    greptime: &deadpool_postgres::Pool,
+    events: &[SessionActivityEvent],
+    get_timeout: Duration,
+    query_timeout: Duration,
+) -> anyhow::Result<()> {
+    let client = tokio::time::timeout(get_timeout, greptime.get())
+        .await
+        .context("greptime get connection timeout")
+        .c(h!())?
+        .context("greptime get connection failed")
+        .c(h!())?;
+    let sql = activity_page_visit_batch_sql(events.len());
+    let mut params: Vec<&(dyn ToSql + Sync)> =
+        Vec::with_capacity(events.len() * 6);
+    for event in events {
+        push_activity_page_visit_params(&mut params, event);
+    }
+
+    tokio::time::timeout(
+        query_timeout,
+        client.execute(sql.as_str(), params.as_slice()),
+    )
+    .await
+    .context("greptime batch insert timeout")
+    .c(h!())?
+    .context("greptime batch insert failed")
+    .c(h!())?;
+
+    Ok(())
+}
+
+fn activity_page_visit_batch_sql(events_len: usize) -> String {
+    let mut sql = String::from(ACTIVITY_PAGE_VISIT_INSERT_COLUMNS);
+    for i in 0..events_len {
+        if i > 0 {
+            sql.push_str(", ");
+        }
+        let base = i * 6;
+        write!(
+            sql,
+            "(${}, ${}, ${}, ${}, ${}, ${})",
+            base + 1,
+            base + 2,
+            base + 3,
+            base + 4,
+            base + 5,
+            base + 6
+        )
+        .expect("write to String cannot fail");
+    }
+    sql
+}
+
+fn push_activity_page_visit_params<'a>(
+    params: &mut Vec<&'a (dyn ToSql + Sync)>,
+    event: &'a SessionActivityEvent,
+) {
+    params.push(&event.ts);
+    params.push(&event.id);
+    params.push(&event.public_host);
+    params.push(&event.username);
+    params.push(&event.page);
+    params.push(&event.payload);
 }
 
 pub async fn get_all_sessions(

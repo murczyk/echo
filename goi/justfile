@@ -8,15 +8,39 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.4.8"
+goi_version := "1.5.1"
 goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr"
 
 default:
     @just --list
 
+_require-linux-goi-deploy-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ "$(uname -s)" == "Linux" ]]; then
+      exit 0
+    fi
+
+    {
+      echo "============================================================"
+      echo "ERROR: GOI deploy must be run from Linux."
+      echo
+      echo "This recipe downloads Debian packages with apt-get and builds/uploads"
+      echo "a fresh echo-swapp .deb. Running it on macOS is blocked because it"
+      echo "would otherwise skip the freshly built echo-swapp artifact."
+      echo
+      echo "Run this command from a Linux builder/workstation."
+      echo "============================================================"
+    } >&2
+    exit 1
+
 checkout-messenger-debs:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
+
     sudo apt-get update
     mkdir -p "{{ goi_dir }}/.deb"
     cd "{{ goi_dir }}/.deb" && apt-get download echo-im-signal echo-im-whatsapp
@@ -24,6 +48,8 @@ checkout-messenger-debs:
 build-echo-swapp:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
 
     BRANCH="main"
 
@@ -318,6 +344,7 @@ deploy-echo-swapp server:
     WHATSAPP_DEB_PATH=""
     WHATSAPP_DEB_NAME=""
 
+    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
     just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs
 
     SIGNAL_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
@@ -432,6 +459,8 @@ deploy server:
     #!/usr/bin/env bash
     set -euo pipefail
 
+    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
+
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
@@ -537,6 +566,8 @@ deploy server:
 deploy-first server:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
 
     SERVER="{{ server }}"
     APP_DIR="{{ goi_app_dir }}"

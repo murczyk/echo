@@ -1,3 +1,4 @@
+use crate::config::DATASOURCE_GROUP_LAST_SYNC_TOUCH_MINUTES;
 use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::error::*;
@@ -216,6 +217,7 @@ pub async fn sync_groups(
         datasource_group::Entity::update_many()
             .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
+            .filter(datasource_group::Column::Deleted.eq(false))
             .col_expr(datasource_group::Column::Deleted, Expr::value(true))
             .exec(txn)
             .await
@@ -265,10 +267,13 @@ pub async fn sync_groups(
                 .c(h!())?;
             }
             Some(rec) => {
-                let mut rec = rec.into_active_model();
-                rec.last_sync_at = Set(Utc::now().naive_utc());
-                rec.name = Set(g.name);
-                rec.update(txn).await.c(h!())?;
+                if should_sync_datasource_group(&rec, &g.name, now) {
+                    let mut rec = rec.into_active_model();
+                    rec.last_sync_at = Set(now);
+                    rec.name = Set(g.name);
+                    rec.deleted = Set(false);
+                    rec.update(txn).await.c(h!())?;
+                }
             }
         }
     }
@@ -305,4 +310,16 @@ pub async fn sync_groups(
         rec.update(txn).await.c(h!())?;
     }
     Ok(())
+}
+
+fn should_sync_datasource_group(
+    datasource_group: &datasource_group::Model,
+    group_name: &str,
+    now: NaiveDateTime,
+) -> bool {
+    datasource_group.deleted
+        || datasource_group.name != group_name
+        || datasource_group.last_sync_at
+            <= now
+                - TimeDelta::minutes(DATASOURCE_GROUP_LAST_SYNC_TOUCH_MINUTES)
 }
