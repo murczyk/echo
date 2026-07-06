@@ -33,6 +33,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
+    pub disable_sync: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub maintainer_login: Option<String>,
 }

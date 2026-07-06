@@ -18,6 +18,8 @@ export type GoiUserIntegration = {
   goiUrl: string | null;
   swappUrl: string | null;
   hasDataAccess: boolean;
+  disableSync: boolean;
+  canChangeDisableSync: boolean;
   canRestart: boolean;
   restartUnavailableReason: string | null;
 };
@@ -38,6 +40,10 @@ type GoiUserIntegrationLike = {
   swapp_url?: string | null;
   hasDataAccess?: boolean;
   has_data_access?: boolean;
+  disableSync?: boolean;
+  disable_sync?: boolean;
+  canChangeDisableSync?: boolean;
+  can_change_disable_sync?: boolean;
   canRestart?: boolean;
   can_restart?: boolean;
   restartUnavailableReason?: string | null;
@@ -60,6 +66,11 @@ type UnlinkCurrentUserGoiWhatsappReqBody = {
 
 type DownloadGoiIntegrationPalettesReqBody = {
   integration_id: number;
+};
+
+type UpdateGoiIntegrationDisableSyncReqBody = {
+  integration_id: number;
+  disable_sync: boolean;
 };
 
 type GoiReportTabOrderItemLike = {
@@ -104,6 +115,8 @@ function normalizeGoiUserIntegration(
     goiUrl: normalizeOptionalString(raw?.goiUrl ?? raw?.goi_url),
     swappUrl: normalizeOptionalString(raw?.swappUrl ?? raw?.swapp_url),
     hasDataAccess: raw?.hasDataAccess ?? raw?.has_data_access ?? false,
+    disableSync: raw?.disableSync ?? raw?.disable_sync ?? false,
+    canChangeDisableSync: raw?.canChangeDisableSync ?? raw?.can_change_disable_sync ?? false,
     canRestart: raw?.canRestart ?? raw?.can_restart ?? false,
     restartUnavailableReason: normalizeOptionalString(
       raw?.restartUnavailableReason ?? raw?.restart_unavailable_reason,
@@ -163,6 +176,17 @@ export async function updateGoiReportTabOrder(
     toGoiReportTabOrderUpdateReqBody(req),
   );
   return (data?.items ?? []).map(normalizeGoiReportTabOrderItem);
+}
+
+export async function updateCurrentUserGoiDisableSync(
+  integrationId: number,
+  disableSync: boolean,
+): Promise<GoiUserIntegration> {
+  const data = await postJson<GoiUserIntegrationLike>('/api/goi/disable-sync/update', {
+    integration_id: integrationId,
+    disable_sync: disableSync,
+  } satisfies UpdateGoiIntegrationDisableSyncReqBody);
+  return normalizeGoiUserIntegration(data);
 }
 
 export async function restartCurrentUserGoiService(

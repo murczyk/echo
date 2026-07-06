@@ -29,6 +29,7 @@ vi.mock('../../services/api/goi-settings', () => ({
   fetchGoiReportTabOrder: vi.fn().mockResolvedValue([]),
   restartCurrentUserGoiService: vi.fn(),
   unlinkCurrentUserGoiWhatsapp: vi.fn(),
+  updateCurrentUserGoiDisableSync: vi.fn(),
   updateGoiReportTabOrder: vi.fn(),
   uploadCurrentUserGoiCategories: vi.fn(),
 }));
@@ -91,6 +92,8 @@ describe('GoiSettingsPage', () => {
         goiUrl: 'https://goi.example',
         swappUrl: null,
         hasDataAccess: true,
+        disableSync: false,
+        canChangeDisableSync: true,
         canRestart: true,
         restartUnavailableReason: null,
       },
@@ -112,5 +115,7 @@ describe('GoiSettingsPage', () => {
 
     expect(mocks.fetchCurrentUserGoiIntegrations).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('Сервер ГОІ');
+    expect(container.textContent).toContain('Додаткові Налаштування');
+    expect(container.textContent).toContain('Відключити синхронізацію');
   });
 });

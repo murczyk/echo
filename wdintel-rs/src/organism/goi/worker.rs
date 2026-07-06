@@ -12,7 +12,7 @@ use crate::entities::{goi_association, goi_integration, goi_knowledge};
 use crate::error::AppError;
 use crate::organism::goi::shared::{
     goi_integration_api_host, goi_integration_api_port,
-    goi_integration_has_api_config,
+    goi_integration_has_api_config, goi_integration_sync_disabled,
 };
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
@@ -100,7 +100,9 @@ async fn run_goi_api_jobs(
 ) {
     let mut job_set = JoinSet::new();
     for integration in integrations {
-        if !goi_integration_has_api_config(&integration) {
+        if goi_integration_sync_disabled(&integration)
+            || !goi_integration_has_api_config(&integration)
+        {
             continue;
         }
         let job = plan_goi_api_job(state, integration);
@@ -202,7 +204,9 @@ async fn sync_goi_palitra_folders_if_due(
     integration: &goi_integration::Model,
     state: &mut GoiWorkerState,
 ) -> Result<(), AppError> {
-    if !goi_palitra_folder_sync_is_due(state, integration.id) {
+    if goi_integration_sync_disabled(integration)
+        || !goi_palitra_folder_sync_is_due(state, integration.id)
+    {
         return Ok(());
     }
     state
@@ -242,14 +246,19 @@ async fn load_goi_worker_integrations(
     let has_api_password = Condition::all()
         .add(goi_integration::Column::ApiPassword.is_not_null())
         .add(goi_integration::Column::ApiPassword.ne(""));
+    let sync_enabled = Condition::any()
+        .add(goi_integration::Column::DisableSync.is_null())
+        .add(goi_integration::Column::DisableSync.eq(false));
     let filter = if with_api_jobs {
         Condition::all()
+            .add(sync_enabled)
             .add(is_full_integration)
             .add(has_host_for_api)
             .add(has_api_login)
             .add(has_api_password)
     } else {
         Condition::all()
+            .add(sync_enabled)
             .add(is_full_integration)
             .add(has_ssh_host)
             .add(has_ssh_user)

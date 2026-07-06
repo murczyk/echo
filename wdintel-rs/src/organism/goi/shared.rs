@@ -107,6 +107,12 @@ pub fn goi_integration_has_api_config(
             .is_some()
 }
 
+pub fn goi_integration_sync_disabled(
+    integration: &goi_integration::Model,
+) -> bool {
+    integration.disable_sync.unwrap_or(false)
+}
+
 pub fn goi_integration_has_config(
     integration: &goi_integration::Model,
 ) -> bool {

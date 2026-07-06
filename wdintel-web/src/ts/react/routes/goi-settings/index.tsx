@@ -7,7 +7,9 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   CircularProgress,
+  FormControlLabel,
   Link,
   Stack,
   Table,
@@ -33,6 +35,7 @@ import {
   fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
   unlinkCurrentUserGoiWhatsapp,
+  updateCurrentUserGoiDisableSync,
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
@@ -104,6 +107,7 @@ type IntegrationCardProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
   onDownloadPalettes: (integrationId: number) => void;
   onUploadCategories: (integrationId: number, file: File) => void;
+  onUpdateDisableSync: (integrationId: number, disableSync: boolean) => void;
 };
 
 type ShowMoreTableRowProps = {
@@ -126,6 +130,13 @@ type ServiceTableRowProps = {
   disabled: boolean;
   onRestart: (integrationId: number, service: GoiRestartService) => void;
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
+};
+
+type GoiAdditionalSettingsPanelProps = {
+  integration: GoiUserIntegration;
+  disabled: boolean;
+  pendingKey: string | null;
+  onUpdateDisableSync: (integrationId: number, disableSync: boolean) => void;
 };
 
 type GoiDataControlPanelProps = {
@@ -260,6 +271,42 @@ function ServiceTableRow(props: ServiceTableRowProps) {
   );
 }
 
+function GoiAdditionalSettingsPanel(props: GoiAdditionalSettingsPanelProps) {
+  const pendingKey = `${props.integration.id}:disable-sync`;
+  const pending = props.pendingKey === pendingKey;
+  const controlDisabled = props.disabled || !props.integration.canChangeDisableSync;
+
+  return (
+    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
+        Додаткові Налаштування
+      </Typography>
+      <Stack spacing={1} sx={{ mt: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={props.integration.disableSync}
+                disabled={controlDisabled}
+                onChange={(event) =>
+                  props.onUpdateDisableSync(props.integration.id, event.target.checked)
+                }
+              />
+            }
+            label="Відключити синхронізацію"
+          />
+          {pending ? <CircularProgress size={18} /> : null}
+        </Stack>
+        {!props.integration.canChangeDisableSync ? (
+          <Typography variant="body2" color="text.secondary">
+            Змінити може відповідальний за інтеграцію або адміністратор.
+          </Typography>
+        ) : null}
+      </Stack>
+    </Box>
+  );
+}
+
 function GoiDataControlPanel(props: GoiDataControlPanelProps) {
   const [categoriesFile, setCategoriesFile] = React.useState<File | null>(null);
   const categoriesInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -371,7 +418,8 @@ function IntegrationCard(props: IntegrationCardProps) {
   const swappUnlinkKey = `${integration.id}:unlink:swapp`;
   const swappAltKey = `${integration.id}:restart:swapp_alt`;
   const swappAltUnlinkKey = `${integration.id}:unlink:swapp_alt`;
-  const disabled = !integration.canRestart || props.pendingKey !== null;
+  const actionDisabled = !integration.canRestart || props.pendingKey !== null;
+  const settingsDisabled = props.pendingKey !== null;
 
   return (
     <Card variant="outlined">
@@ -405,7 +453,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="goi"
                   pendingKey={props.pendingKey}
                   restartPendingKey={goiKey}
-                  disabled={disabled}
+                  disabled={actionDisabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
                 />
@@ -419,7 +467,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                   restartService="echo_swapp"
                   pendingKey={props.pendingKey}
                   restartPendingKey={echoSwappKey}
-                  disabled={disabled}
+                  disabled={actionDisabled}
                   onRestart={props.onRestart}
                   onUnlink={props.onUnlink}
                 />
@@ -440,7 +488,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                       pendingKey={props.pendingKey}
                       restartPendingKey={swappKey}
                       unlinkPendingKey={swappUnlinkKey}
-                      disabled={disabled}
+                      disabled={actionDisabled}
                       onRestart={props.onRestart}
                       onUnlink={props.onUnlink}
                     />
@@ -455,7 +503,7 @@ function IntegrationCard(props: IntegrationCardProps) {
                       pendingKey={props.pendingKey}
                       restartPendingKey={swappAltKey}
                       unlinkPendingKey={swappAltUnlinkKey}
-                      disabled={disabled}
+                      disabled={actionDisabled}
                       onRestart={props.onRestart}
                       onUnlink={props.onUnlink}
                     />
@@ -465,9 +513,16 @@ function IntegrationCard(props: IntegrationCardProps) {
             </Table>
           </TableContainer>
 
+          <GoiAdditionalSettingsPanel
+            integration={integration}
+            disabled={settingsDisabled}
+            pendingKey={props.pendingKey}
+            onUpdateDisableSync={props.onUpdateDisableSync}
+          />
+
           <GoiDataControlPanel
             integration={integration}
-            disabled={disabled}
+            disabled={actionDisabled}
             pendingKey={props.pendingKey}
             onDownloadPalettes={props.onDownloadPalettes}
             onUploadCategories={props.onUploadCategories}
@@ -575,6 +630,32 @@ export function GoiSettingsPage() {
     }
   }
 
+  async function handleUpdateDisableSync(integrationId: number, disableSync: boolean) {
+    const nextPendingKey = `${integrationId}:disable-sync`;
+    if (pendingKey) return;
+
+    setPendingKey(nextPendingKey);
+    setActionStatus(null);
+
+    try {
+      const updated = await updateCurrentUserGoiDisableSync(integrationId, disableSync);
+      setIntegrations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setActionStatus({
+        kind: 'success',
+        integrationId,
+        message: 'Налаштування синхронізації оновлено',
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        integrationId,
+        message: formatErrorMessage(error),
+      });
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
   async function handleDownloadPalettes(integrationId: number) {
     const nextPendingKey = `${integrationId}:download-palettes`;
     if (pendingKey) return;
@@ -651,6 +732,7 @@ export function GoiSettingsPage() {
           onUnlink={handleUnlink}
           onDownloadPalettes={handleDownloadPalettes}
           onUploadCategories={handleUploadCategories}
+          onUpdateDisableSync={handleUpdateDisableSync}
         />
       ))}
 

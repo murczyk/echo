@@ -15,8 +15,8 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::organism::goi::shared::{
     goi_external_url, goi_integration_has_api_config,
-    goi_integration_model_type, goi_integration_web_host,
-    goi_server_key_and_label, goi_swapp_url,
+    goi_integration_model_type, goi_integration_sync_disabled,
+    goi_integration_web_host, goi_server_key_and_label, goi_swapp_url,
 };
 use crate::organism::goi::types::{
     DeleteGoiAdminIntegrationReq, DownloadGoiIntegrationPalettesReq,
@@ -27,7 +27,8 @@ use crate::organism::goi::types::{
     ListGoiAssociationsRsp, ListGoiAssociationsSortBy, ListGoiKnowledgeReq,
     ListGoiKnowledgeRsp, ListGoiKnowledgeSortBy,
     RestartGoiIntegrationServiceReq, SetupGoiIntegrationWorkerReq,
-    UnlinkGoiIntegrationWhatsappReq, UpsertGoiAdminIntegrationReq,
+    UnlinkGoiIntegrationWhatsappReq, UpdateGoiIntegrationDisableSyncReq,
+    UpsertGoiAdminIntegrationReq,
 };
 use crate::organism::types::{
     CheckOrganismGoiConnectionReq, CheckOrganismGoiConnectionRsp,
@@ -186,6 +187,7 @@ pub async fn upsert_admin_goi_integration(
             disable_goi_to_echo_palitra_sync: Set(
                 req.disable_goi_to_echo_palitra_sync
             ),
+            disable_sync: Set(Some(req.disable_sync)),
             maintainer_login: Set(normalize_optional_trimmed(
                 req.maintainer_login.clone(),
             )),
@@ -318,6 +320,7 @@ pub async fn setup_goi_integration_worker(
         api_password: Some(api_password),
         disable_goi_to_echo_palitra_sync: integration
             .disable_goi_to_echo_palitra_sync,
+        disable_sync: goi_integration_sync_disabled(&integration),
         maintainer_login: integration.maintainer_login,
         access_organism_ids: collect_goi_access_organism_ids(
             &env.dbx,
@@ -344,15 +347,55 @@ pub async fn list_current_user_goi_integrations(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
 
     let user_id = user.id().c(h!())?;
+    let is_admin = goi_disable_sync_user_is_admin(&env.dbx, &user_id).await;
     let items = load_accessible_integrations_for_user(&env.dbx, &user_id)
         .await
         .c(h!())?;
     Ok(Json(ListCurrentUserGoiIntegrationsRsp {
         items: items
             .into_iter()
-            .map(|item| user_goi_integration_from_item(&item))
+            .map(|item| {
+                user_goi_integration_from_item(&item, &user_id, is_admin)
+            })
             .collect(),
     }))
+}
+
+#[post("/api/goi/disable-sync/update")]
+pub async fn update_current_user_goi_disable_sync(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateGoiIntegrationDisableSyncReq>,
+) -> Result<Json<GoiUserIntegration>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+
+    let user_id = user.id().c(h!())?;
+    let req = req.into_inner();
+    let item = load_accessible_integration_for_user(
+        &env.dbx,
+        &user_id,
+        req.integration_id,
+    )
+    .await
+    .c(h!())?;
+    let is_admin = goi_disable_sync_user_is_admin(&env.dbx, &user_id).await;
+    if !goi_disable_sync_can_change(&item.integration, &user_id, is_admin) {
+        return Err(AppError::Forbidden(
+            "Only GOI integration maintainer or Admin can change sync setting"
+                .to_string(),
+        ));
+    }
+
+    let mut integration = item.integration.into_active_model();
+    integration.disable_sync = Set(Some(req.disable_sync));
+    let integration = integration.update(&env.dbx).await.c(h!())?;
+    let item = load_integration_with_owner(&env.dbx, integration.id)
+        .await
+        .c(h!())?;
+
+    Ok(Json(user_goi_integration_from_item(
+        &item, &user_id, is_admin,
+    )))
 }
 
 #[post("/api/goi/report-tab-order")]
@@ -930,11 +973,12 @@ pub async fn load_user_goi_integrations(
     if organism_id.is_none() {
         return Ok(Vec::new());
     }
+    let is_admin = goi_disable_sync_user_is_admin(dbx, user_id).await;
     Ok(load_accessible_integrations_for_user(dbx, user_id)
         .await
         .c(h!())?
         .into_iter()
-        .map(|item| user_goi_integration_from_item(&item))
+        .map(|item| user_goi_integration_from_item(&item, user_id, is_admin))
         .collect())
 }
 
@@ -1095,6 +1139,7 @@ async fn upsert_goi_integration_internal(
             disable_goi_to_echo_palitra_sync: Set(
                 req.disable_goi_to_echo_palitra_sync
             ),
+            disable_sync: Set(Some(req.disable_sync)),
             maintainer_login: Set(normalize_optional_trimmed(
                 req.maintainer_login.clone(),
             )),
@@ -1195,6 +1240,7 @@ async fn load_goi_admin_integration(
         disable_goi_to_echo_palitra_sync: item
             .integration
             .disable_goi_to_echo_palitra_sync,
+        disable_sync: item.integration.disable_sync.unwrap_or(false),
         maintainer_login: normalize_optional_trimmed(
             item.integration.maintainer_login,
         ),
@@ -1363,8 +1409,28 @@ async fn load_accessible_integration_ids_for_login(
     Ok(integration_ids)
 }
 
+async fn goi_disable_sync_user_is_admin(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+) -> bool {
+    crate::users::has_role(dbx, user_id, "Admin").await.is_ok()
+}
+
+fn goi_disable_sync_can_change(
+    integration: &goi_integration::Model,
+    user_id: &str,
+    is_admin: bool,
+) -> bool {
+    is_admin
+        || normalize_optional_trimmed(integration.maintainer_login.clone())
+            .as_deref()
+            == Some(user_id)
+}
+
 fn user_goi_integration_from_item(
     item: &GoiIntegrationWithOwner,
+    user_id: &str,
+    is_admin: bool,
 ) -> GoiUserIntegration {
     let can_restart =
         goi_connection_req_from_integration(&item.integration).is_ok();
@@ -1375,6 +1441,7 @@ fn user_goi_integration_from_item(
                 AppError::BL { msg } => Some(msg),
                 _ => None,
             });
+    let disable_sync = goi_integration_sync_disabled(&item.integration);
     GoiUserIntegration {
         id: item.integration.id,
         owner_organism_id: item.integration.owner_organism_id,
@@ -1383,7 +1450,14 @@ fn user_goi_integration_from_item(
         server_label: item.integration.server_label.clone(),
         goi_url: goi_external_url(goi_integration_web_host(&item.integration)),
         swapp_url: goi_swapp_url(goi_integration_web_host(&item.integration)),
-        has_data_access: goi_integration_has_api_config(&item.integration),
+        has_data_access: !disable_sync
+            && goi_integration_has_api_config(&item.integration),
+        disable_sync,
+        can_change_disable_sync: goi_disable_sync_can_change(
+            &item.integration,
+            user_id,
+            is_admin,
+        ),
         can_restart,
         restart_unavailable_reason,
     }
@@ -2053,6 +2127,7 @@ fn apply_goi_integration_patch(
     item.api_password = Set(values.api_password);
     item.disable_goi_to_echo_palitra_sync =
         Set(req.disable_goi_to_echo_palitra_sync);
+    item.disable_sync = Set(Some(req.disable_sync));
     item.maintainer_login =
         Set(normalize_optional_trimmed(req.maintainer_login.clone()));
 }
