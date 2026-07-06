@@ -159,8 +159,8 @@ pub struct GoiUserIntegration {
     pub goi_url: Option<String>,
     pub swapp_url: Option<String>,
     pub has_data_access: bool,
-    pub disable_sync: bool,
-    pub can_change_disable_sync: bool,
+    pub pause_worker: bool,
+    pub can_change_pause_worker: bool,
     pub can_restart: bool,
     pub restart_unavailable_reason: Option<String>,
 }
@@ -213,7 +213,7 @@ pub struct GoiAdminIntegration {
     pub api_login: Option<String>,
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
-    pub disable_sync: bool,
+    pub pause_worker: bool,
     pub maintainer_login: Option<String>,
     pub access_organism_ids: Vec<i64>,
     pub access_logins: Vec<String>,
@@ -243,7 +243,7 @@ pub struct UpsertGoiAdminIntegrationReq {
     pub api_login: Option<String>,
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
-    pub disable_sync: bool,
+    pub pause_worker: bool,
     pub maintainer_login: Option<String>,
     pub access_organism_ids: Vec<i64>,
     pub access_logins: Vec<String>,
@@ -278,9 +278,9 @@ pub struct UnlinkGoiIntegrationWhatsappReq {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct UpdateGoiIntegrationDisableSyncReq {
+pub struct UpdateGoiIntegrationPauseWorkerReq {
     pub integration_id: i64,
-    pub disable_sync: bool,
+    pub pause_worker: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

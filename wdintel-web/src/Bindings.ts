@@ -1379,8 +1379,8 @@ export type GoiUserIntegration = {
   goiUrl: string | null;
   swappUrl: string | null;
   hasDataAccess: boolean;
-  disableSync: boolean;
-  canChangeDisableSync: boolean;
+  pauseWorker: boolean;
+  canChangePauseWorker: boolean;
   canRestart: boolean;
   restartUnavailableReason: string | null;
 };

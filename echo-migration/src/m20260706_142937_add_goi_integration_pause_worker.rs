@@ -10,19 +10,20 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
             alter table goi_integration
-                add column if not exists disable_sync bool;
+                add column if not exists pause_worker bool;
 
             update goi_integration
-            set disable_sync = case
+            set pause_worker = case
                 when nullif(trim(coalesce(ssh_host, '')), '') is not null
                     and nullif(trim(coalesce(ssh_user, '')), '') is not null
                 then false
                 else true
             end
-            where disable_sync is null;
+            where pause_worker is null;
 
             alter table goi_integration
-                alter column disable_sync set default false;
+                alter column pause_worker set default false,
+                alter column pause_worker set not null;
             "#,
         )
         .await?;
@@ -34,7 +35,7 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
             alter table goi_integration
-                drop column if exists disable_sync;
+                drop column if exists pause_worker;
             "#,
         )
         .await?;

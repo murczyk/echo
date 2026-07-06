@@ -56,7 +56,7 @@ type GoiForm = {
   apiLogin: string;
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
-  disableSync: boolean;
+  pauseWorker: boolean;
   maintainerLogin: string;
   accessOrganismIds: number[];
   accessLogins: string[];
@@ -75,7 +75,7 @@ const emptyForm: GoiForm = {
   apiLogin: '',
   apiPassword: '',
   disableGoiToEchoPalitraSync: true,
-  disableSync: false,
+  pauseWorker: false,
   maintainerLogin: '',
   accessOrganismIds: [],
   accessLogins: [],
@@ -113,7 +113,7 @@ function toForm(integration: GoiAdminIntegration): GoiForm {
     apiLogin: integration.apiLogin,
     apiPassword: integration.apiPassword,
     disableGoiToEchoPalitraSync: integration.disableGoiToEchoPalitraSync,
-    disableSync: integration.disableSync,
+    pauseWorker: integration.pauseWorker,
     maintainerLogin: integration.maintainerLogin,
     accessOrganismIds: integration.accessOrganismIds,
     accessLogins: integration.accessLogins,
@@ -152,7 +152,7 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
       apiLogin: '',
       apiPassword: '',
       disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
-      disableSync: form.disableSync,
+      pauseWorker: form.pauseWorker,
       maintainerLogin: form.maintainerLogin,
       accessOrganismIds: form.accessOrganismIds,
       accessLogins: form.accessLogins,
@@ -171,7 +171,7 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
     apiLogin: form.apiLogin,
     apiPassword: form.apiPassword,
     disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
-    disableSync: form.disableSync,
+    pauseWorker: form.pauseWorker,
     maintainerLogin: form.maintainerLogin,
     accessOrganismIds: form.accessOrganismIds,
     accessLogins: form.accessLogins,
@@ -517,16 +517,16 @@ export function AdminGoiIntegrationsNeoPage() {
             <FormControlLabel
               control={
                 <Checkbox
-                  checked={form.disableSync}
+                  checked={form.pauseWorker}
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      disableSync: event.target.checked,
+                      pauseWorker: event.target.checked,
                     }))
                   }
                 />
               }
-              label="Відключити синхронізацію"
+              label="Призупинити воркер"
             />
 
             {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (

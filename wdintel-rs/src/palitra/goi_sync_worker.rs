@@ -12,7 +12,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::organism::goi;
-use crate::organism::goi::shared::goi_integration_sync_disabled;
+use crate::organism::goi::shared::goi_integration_worker_paused;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::palitra::types::{CreatePalitraReq, PalitraAccess};
 use crate::types::*;
@@ -1500,11 +1500,9 @@ fn remote_path_is_in_archive_folder(remote_path: &str) -> bool {
 async fn collect_all_goi_sync_targets(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<GoiSyncTarget>> {
-    let sync_enabled = Condition::any()
-        .add(goi_integration::Column::DisableSync.is_null())
-        .add(goi_integration::Column::DisableSync.eq(false));
+    let worker_active = goi_integration::Column::PauseWorker.eq(false);
     let integrations = goi_integration::Entity::find()
-        .filter(sync_enabled)
+        .filter(worker_active)
         .filter(
             goi_integration::Column::IntegrationType
                 .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
@@ -1522,11 +1520,9 @@ async fn collect_goi_sync_targets_for_organisms(
     if organism_ids.is_empty() {
         return Ok(vec![]);
     }
-    let sync_enabled = Condition::any()
-        .add(goi_integration::Column::DisableSync.is_null())
-        .add(goi_integration::Column::DisableSync.eq(false));
+    let worker_active = goi_integration::Column::PauseWorker.eq(false);
     let integrations = goi_integration::Entity::find()
-        .filter(sync_enabled)
+        .filter(worker_active)
         .filter(
             goi_integration::Column::OwnerOrganismId
                 .is_in(organism_ids.to_vec()),
@@ -1559,7 +1555,7 @@ fn collect_valid_goi_sync_targets(
 fn goi_sync_target_from_integration(
     integration: goi_integration::Model,
 ) -> anyhow::Result<Option<GoiSyncTarget>> {
-    if goi_integration_sync_disabled(&integration) {
+    if goi_integration_worker_paused(&integration) {
         return Ok(None);
     }
     let ssh_host = integration

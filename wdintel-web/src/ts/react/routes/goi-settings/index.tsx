@@ -35,7 +35,7 @@ import {
   fetchCurrentUserGoiIntegrations,
   restartCurrentUserGoiService,
   unlinkCurrentUserGoiWhatsapp,
-  updateCurrentUserGoiDisableSync,
+  updateCurrentUserGoiPauseWorker,
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
@@ -107,7 +107,7 @@ type IntegrationCardProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
   onDownloadPalettes: (integrationId: number) => void;
   onUploadCategories: (integrationId: number, file: File) => void;
-  onUpdateDisableSync: (integrationId: number, disableSync: boolean) => void;
+  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
 };
 
 type ShowMoreTableRowProps = {
@@ -136,7 +136,7 @@ type GoiAdditionalSettingsPanelProps = {
   integration: GoiUserIntegration;
   disabled: boolean;
   pendingKey: string | null;
-  onUpdateDisableSync: (integrationId: number, disableSync: boolean) => void;
+  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
 };
 
 type GoiDataControlPanelProps = {
@@ -272,9 +272,9 @@ function ServiceTableRow(props: ServiceTableRowProps) {
 }
 
 function GoiAdditionalSettingsPanel(props: GoiAdditionalSettingsPanelProps) {
-  const pendingKey = `${props.integration.id}:disable-sync`;
+  const pendingKey = `${props.integration.id}:pause-worker`;
   const pending = props.pendingKey === pendingKey;
-  const controlDisabled = props.disabled || !props.integration.canChangeDisableSync;
+  const controlDisabled = props.disabled || !props.integration.canChangePauseWorker;
 
   return (
     <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
@@ -286,18 +286,18 @@ function GoiAdditionalSettingsPanel(props: GoiAdditionalSettingsPanelProps) {
           <FormControlLabel
             control={
               <Checkbox
-                checked={props.integration.disableSync}
+                checked={props.integration.pauseWorker}
                 disabled={controlDisabled}
                 onChange={(event) =>
-                  props.onUpdateDisableSync(props.integration.id, event.target.checked)
+                  props.onUpdatePauseWorker(props.integration.id, event.target.checked)
                 }
               />
             }
-            label="Відключити синхронізацію"
+            label="Призупинити воркер"
           />
           {pending ? <CircularProgress size={18} /> : null}
         </Stack>
-        {!props.integration.canChangeDisableSync ? (
+        {!props.integration.canChangePauseWorker ? (
           <Typography variant="body2" color="text.secondary">
             Змінити може відповідальний за інтеграцію або адміністратор.
           </Typography>
@@ -517,7 +517,7 @@ function IntegrationCard(props: IntegrationCardProps) {
             integration={integration}
             disabled={settingsDisabled}
             pendingKey={props.pendingKey}
-            onUpdateDisableSync={props.onUpdateDisableSync}
+            onUpdatePauseWorker={props.onUpdatePauseWorker}
           />
 
           <GoiDataControlPanel
@@ -630,15 +630,15 @@ export function GoiSettingsPage() {
     }
   }
 
-  async function handleUpdateDisableSync(integrationId: number, disableSync: boolean) {
-    const nextPendingKey = `${integrationId}:disable-sync`;
+  async function handleUpdatePauseWorker(integrationId: number, pauseWorker: boolean) {
+    const nextPendingKey = `${integrationId}:pause-worker`;
     if (pendingKey) return;
 
     setPendingKey(nextPendingKey);
     setActionStatus(null);
 
     try {
-      const updated = await updateCurrentUserGoiDisableSync(integrationId, disableSync);
+      const updated = await updateCurrentUserGoiPauseWorker(integrationId, pauseWorker);
       setIntegrations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setActionStatus({
         kind: 'success',
@@ -732,7 +732,7 @@ export function GoiSettingsPage() {
           onUnlink={handleUnlink}
           onDownloadPalettes={handleDownloadPalettes}
           onUploadCategories={handleUploadCategories}
-          onUpdateDisableSync={handleUpdateDisableSync}
+          onUpdatePauseWorker={handleUpdatePauseWorker}
         />
       ))}
 

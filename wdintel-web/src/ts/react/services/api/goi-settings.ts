@@ -18,8 +18,8 @@ export type GoiUserIntegration = {
   goiUrl: string | null;
   swappUrl: string | null;
   hasDataAccess: boolean;
-  disableSync: boolean;
-  canChangeDisableSync: boolean;
+  pauseWorker: boolean;
+  canChangePauseWorker: boolean;
   canRestart: boolean;
   restartUnavailableReason: string | null;
 };
@@ -40,10 +40,10 @@ type GoiUserIntegrationLike = {
   swapp_url?: string | null;
   hasDataAccess?: boolean;
   has_data_access?: boolean;
-  disableSync?: boolean;
-  disable_sync?: boolean;
-  canChangeDisableSync?: boolean;
-  can_change_disable_sync?: boolean;
+  pauseWorker?: boolean;
+  pause_worker?: boolean;
+  canChangePauseWorker?: boolean;
+  can_change_pause_worker?: boolean;
   canRestart?: boolean;
   can_restart?: boolean;
   restartUnavailableReason?: string | null;
@@ -68,9 +68,9 @@ type DownloadGoiIntegrationPalettesReqBody = {
   integration_id: number;
 };
 
-type UpdateGoiIntegrationDisableSyncReqBody = {
+type UpdateGoiIntegrationPauseWorkerReqBody = {
   integration_id: number;
-  disable_sync: boolean;
+  pause_worker: boolean;
 };
 
 type GoiReportTabOrderItemLike = {
@@ -115,8 +115,8 @@ function normalizeGoiUserIntegration(
     goiUrl: normalizeOptionalString(raw?.goiUrl ?? raw?.goi_url),
     swappUrl: normalizeOptionalString(raw?.swappUrl ?? raw?.swapp_url),
     hasDataAccess: raw?.hasDataAccess ?? raw?.has_data_access ?? false,
-    disableSync: raw?.disableSync ?? raw?.disable_sync ?? false,
-    canChangeDisableSync: raw?.canChangeDisableSync ?? raw?.can_change_disable_sync ?? false,
+    pauseWorker: raw?.pauseWorker ?? raw?.pause_worker ?? false,
+    canChangePauseWorker: raw?.canChangePauseWorker ?? raw?.can_change_pause_worker ?? false,
     canRestart: raw?.canRestart ?? raw?.can_restart ?? false,
     restartUnavailableReason: normalizeOptionalString(
       raw?.restartUnavailableReason ?? raw?.restart_unavailable_reason,
@@ -178,14 +178,14 @@ export async function updateGoiReportTabOrder(
   return (data?.items ?? []).map(normalizeGoiReportTabOrderItem);
 }
 
-export async function updateCurrentUserGoiDisableSync(
+export async function updateCurrentUserGoiPauseWorker(
   integrationId: number,
-  disableSync: boolean,
+  pauseWorker: boolean,
 ): Promise<GoiUserIntegration> {
-  const data = await postJson<GoiUserIntegrationLike>('/api/goi/disable-sync/update', {
+  const data = await postJson<GoiUserIntegrationLike>('/api/goi/pause-worker/update', {
     integration_id: integrationId,
-    disable_sync: disableSync,
-  } satisfies UpdateGoiIntegrationDisableSyncReqBody);
+    pause_worker: pauseWorker,
+  } satisfies UpdateGoiIntegrationPauseWorkerReqBody);
   return normalizeGoiUserIntegration(data);
 }
 
