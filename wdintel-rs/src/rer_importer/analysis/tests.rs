@@ -3479,6 +3479,18 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     )
     .await
     .unwrap();
+    let _short_parent_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("2 бат".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let child_unit = mk_sigint_unit(
         db,
         sigint_unit::ActiveModel {
@@ -3597,6 +3609,22 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     );
 
     let req = crate::rer_importer::types::InboxMessagesReq {
+        selected_units: Some(vec!["2 бат".to_string()]),
+        ..base_req.clone()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_child.id]
+    );
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
         units_exact_match_only: Some(true),
         ..base_req
     };
@@ -3612,7 +3640,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     let req = crate::rer_importer::types::InboxMessagesReq {
         since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
         till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
-        denied_units: Some(vec!["2 бат 1 полк".to_string()]),
+        denied_units: Some(vec!["2 бат".to_string()]),
         units_exact_match_only: Some(false),
         nolimit: Some(true),
         ..Default::default()

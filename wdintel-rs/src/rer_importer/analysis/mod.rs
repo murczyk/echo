@@ -627,17 +627,80 @@ fn linked_unit_matches_selected_units(
         return unit_matches;
     }
 
-    let hierarchy_column_matches = sigint_unit_hierarchy_columns()
-        .into_iter()
-        .fold(unit_matches, |expr, column| {
-            expr.or(Expr::col((unit_alias.clone(), column))
-                .is_in(selected_units.clone()))
-        });
+    unit_matches
+        .or(unresolved_hierarchy_column_matches_selected_units(
+            &selected_units,
+            unit_alias.clone(),
+        ))
+        .or(selected_parent_unit_matches_linked_unit(
+            selected_units,
+            unit_alias,
+        ))
+}
 
-    hierarchy_column_matches.or(selected_parent_unit_matches_linked_unit(
-        selected_units,
-        unit_alias,
-    ))
+fn unresolved_hierarchy_column_matches_selected_units(
+    selected_units: &[String],
+    linked_unit_alias: Alias,
+) -> SimpleExpr {
+    let columns = sigint_unit_hierarchy_columns();
+    columns[1..].iter().fold(
+        unresolved_hierarchy_column_matches_selected_unit(
+            selected_units,
+            linked_unit_alias.clone(),
+            columns[0],
+        ),
+        |expr, column| {
+            expr.or(unresolved_hierarchy_column_matches_selected_unit(
+                selected_units,
+                linked_unit_alias.clone(),
+                *column,
+            ))
+        },
+    )
+}
+
+fn unresolved_hierarchy_column_matches_selected_unit(
+    selected_units: &[String],
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    Expr::col((linked_unit_alias.clone(), column))
+        .is_in(selected_units.to_vec())
+        .and(
+            catalog_hierarchy_unit_exists_for_column_value(
+                linked_unit_alias,
+                column,
+            )
+            .not(),
+        )
+}
+
+fn catalog_hierarchy_unit_exists_for_column_value(
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    let catalog_unit_alias = Alias::new("selected_hierarchy_unit");
+    Expr::exists(
+        Query::select()
+            .expr(Expr::value(1))
+            .from_as(sigint_unit::Entity, catalog_unit_alias.clone())
+            .and_where(
+                Expr::col((
+                    catalog_unit_alias.clone(),
+                    sigint_unit::Column::Name,
+                ))
+                .equals((linked_unit_alias, column)),
+            )
+            .and_where(
+                Expr::col((
+                    catalog_unit_alias.clone(),
+                    sigint_unit::Column::Deleted,
+                ))
+                .eq(false),
+            )
+            .and_where(sigint_unit_has_any_hierarchy_value(catalog_unit_alias))
+            .to_owned(),
+    )
 }
 
 fn selected_parent_unit_matches_linked_unit(
