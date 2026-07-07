@@ -1,10 +1,11 @@
 use crate::entities::{
-    computer_name, datasource_group, signal_group, signal_message,
-    signal_message_group,
+    computer_name, datasource_group, sigint_inbox_item, signal_group,
+    signal_message, signal_message_group, signal_profile,
 };
 use crate::error::AppError;
 use crate::types::*;
 use chrono::NaiveDateTime;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 
 pub async fn find_available_signal_group<C>(
@@ -36,6 +37,32 @@ where
     Ok(signal_group)
 }
 
+pub async fn ensure_current_user_sender<C>(
+    dbx: &C,
+    login: &str,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait,
+{
+    if signal_profile::Entity::find_by_id(login.to_string())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        signal_profile::ActiveModel {
+            uuid: Set(login.to_string()),
+            given_name: Set(Some(login.to_string())),
+            family_name: Set(None),
+            created_at: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(login.to_string())
+}
+
 pub async fn validate_computer_name_id<C>(
     dbx: &C,
     computer_name_id: i64,
@@ -48,6 +75,29 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+}
+
+pub async fn set_inbox_items_computer_name<C>(
+    dbx: &C,
+    inbox_item_ids: Vec<i64>,
+    computer_name_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if inbox_item_ids.is_empty() {
+        return Ok(());
+    }
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::ComputerNameId,
+            Expr::value(computer_name_id),
+        )
+        .filter(sigint_inbox_item::Column::Id.is_in(inbox_item_ids))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 pub async fn resolve_datasource_id_for_group<C>(
