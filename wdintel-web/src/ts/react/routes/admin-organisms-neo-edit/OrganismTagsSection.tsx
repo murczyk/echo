@@ -1,6 +1,5 @@
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
-import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import {
   Box,
@@ -13,14 +12,15 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { TagAdmin, TagUpsertReq } from '../../../../Bindings';
-import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
-import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
+import { MrtRowActionButton } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
@@ -31,15 +31,15 @@ import {
   TableStateProvider,
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
-import {
-  createOrganismTag,
-  deleteOrganismTag,
-  listOrganismTags,
-  updateOrganismTag,
-} from '../../services/api/tags';
+import { createOrganismTag, listOrganismTags, updateOrganismTag } from '../../services/api/tags';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
+
+// `enabled` doubles as our soft-delete flag — the "Архів" view surfaces disabled tags so
+// admins can still find and re-enable them, with no distinct deleted state and no
+// client-only (localStorage) tracking.
+type TagsView = 'active' | 'archived';
 
 type TagFormState = {
   label: string;
@@ -57,7 +57,7 @@ const emptyTagForm: TagFormState = {
   isPalitra: false,
 };
 
-// Wide enough for the inline "Редагувати" button plus the overflow menu trigger
+// Wide enough for the inline "Редагувати" button plus the "Вимкнути"/"Увімкнути" toggle
 // so neither is clipped.
 const ORGANISM_TAGS_ACTIONS_COLUMN_SIZE = 81;
 
@@ -68,7 +68,6 @@ const ORGANISM_TAGS_COLUMN_ORDER = [
   'label',
   'extra',
   'ord',
-  'enabled',
   'isPalitra',
 ];
 
@@ -77,7 +76,6 @@ const ORGANISM_TAGS_COLUMN_VISIBILITY = {
   label: true,
   extra: true,
   ord: true,
-  enabled: true,
   isPalitra: true,
 };
 
@@ -103,46 +101,6 @@ function formatErrorMessage(error: unknown): string {
 
 function formatYesNo(value: boolean | null | undefined): string {
   return value ? 'так' : 'ні';
-}
-
-// The DELETE endpoint soft-deletes by setting `enabled = false`, and the admin list
-// returns disabled rows too — the same DB state as a tag disabled via "Вимкнути" or
-// created with "Активний" off. Blanket-filtering `enabled === false` would keep
-// deletions sticky but also hide those legitimately-disabled tags, making them
-// unreachable via "Увімкнути". Instead, track explicitly-deleted tag ids client-side
-// (per organism) so only actual deletions stay hidden across reloads.
-const DELETED_TAG_IDS_STORAGE_PREFIX = 'echo:organism-tags:deleted:';
-
-function deletedTagIdsStorageKey(organismId: number): string {
-  return `${DELETED_TAG_IDS_STORAGE_PREFIX}${organismId}`;
-}
-
-function readDeletedTagIds(organismId: number): Set<number> {
-  try {
-    const raw = localStorage.getItem(deletedTagIdsStorageKey(organismId));
-    if (raw == null) return new Set();
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? new Set(parsed.filter((id): id is number => typeof id === 'number'))
-      : new Set();
-  } catch (_) {
-    return new Set();
-  }
-}
-
-function writeDeletedTagIds(organismId: number, ids: Set<number>): void {
-  try {
-    localStorage.setItem(deletedTagIdsStorageKey(organismId), JSON.stringify(Array.from(ids)));
-  } catch (_) {
-    // Ignore storage failures (private mode, quota, etc.) — the deletion just won't
-    // stay hidden across a reload in that case.
-  }
-}
-
-function markTagDeleted(organismId: number, tagId: number): void {
-  const ids = readDeletedTagIds(organismId);
-  ids.add(tagId);
-  writeDeletedTagIds(organismId, ids);
 }
 
 function TagsSearchField() {
@@ -193,8 +151,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
   const [form, setForm] = useState<TagFormState>(emptyTagForm);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [labelTouched, setLabelTouched] = useState(false);
-  const [deletingTag, setDeletingTag] = useState<TagAdmin | null>(null);
-  const [deleteInFlight, setDeleteInFlight] = useState(false);
+  const [view, setView] = useState<TagsView>('active');
 
   const isLabelValid = form.label.trim().length > 0;
   const showLabelError = labelTouched && !isLabelValid;
@@ -214,12 +171,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
       try {
         const data = await listOrganismTags(id);
         if (abortController.signal.aborted) return;
-        // Hide only tags explicitly deleted from this browser (see
-        // DELETED_TAG_IDS_STORAGE_PREFIX above) — legitimately-disabled tags
-        // (enabled === false via "Вимкнути" or "Активний" off) still show up so admins
-        // can recover them through "Увімкнути".
-        const deletedTagIds = readDeletedTagIds(id);
-        setTags(data.filter((tag) => !deletedTagIds.has(tag.tagId)));
+        setTags(data);
         setStatus('success');
       } catch (loadError) {
         if (abortController.signal.aborted) return;
@@ -313,32 +265,10 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     [organismId],
   );
 
-  const openDeleteDialog = useCallback((tag: TagAdmin) => {
-    setError(null);
-    setDeletingTag(tag);
-  }, []);
-
-  const closeDeleteDialog = useCallback(() => {
-    setDeletingTag(null);
-  }, []);
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (organismId == null || deletingTag == null) return;
-
-    const tagId = deletingTag.tagId;
-    setDeleteInFlight(true);
-    setError(null);
-    try {
-      await deleteOrganismTag(organismId, tagId);
-      markTagDeleted(organismId, tagId);
-      setTags((current) => current.filter((item) => item.tagId !== tagId));
-      setDeletingTag(null);
-    } catch (deleteError) {
-      setError(`Помилка видалення тегу: ${formatErrorMessage(deleteError)}`);
-    } finally {
-      setDeleteInFlight(false);
-    }
-  }, [deletingTag, organismId]);
+  const visibleTags = useMemo(
+    () => tags.filter((tag) => (view === 'active' ? tag.enabled : !tag.enabled)),
+    [tags, view],
+  );
 
   const columns = useMemo<MRT_ColumnDef<TagAdmin>[]>(() => {
     const noWrapCellProps = { sx: { ...CUSTOM_CELL_STYLES, whiteSpace: 'nowrap' } };
@@ -362,14 +292,6 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
         muiTableBodyCellProps: noWrapCellProps,
       },
       {
-        header: 'Активний',
-        id: 'enabled',
-        accessorFn: (row) => formatYesNo(row.enabled),
-        size: 140,
-        muiTableHeadCellProps: noWrapCellProps,
-        muiTableBodyCellProps: noWrapCellProps,
-      },
-      {
         header: 'Палітра',
         id: 'isPalitra',
         accessorFn: (row) => formatYesNo(row.isPalitra),
@@ -385,41 +307,29 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
       const tag = row.original;
       return (
         <Stack direction="row" alignItems="center" gap={0.5}>
-          {/* Editing is the frequent action, so it stays inline in the "Дії" column. */}
           <MrtRowActionButton
             label="Редагувати"
             icon={<EditOutlinedIcon fontSize="small" />}
             opensModal
             onClick={() => openEditDialog(tag)}
           />
-          {/* Less-frequent actions live behind the overflow (three-dots) menu. */}
-          <MrtRowActions forceMenu>
-            {tag.enabled ? (
-              <MrtRowActionButton
-                label="Вимкнути"
-                icon={<BlockOutlinedIcon fontSize="small" />}
-                tone="warning"
-                onClick={() => void handleToggleEnabled(tag)}
-              />
-            ) : (
-              <MrtRowActionButton
-                label="Увімкнути"
-                icon={<CheckCircleOutlinedIcon fontSize="small" />}
-                onClick={() => void handleToggleEnabled(tag)}
-              />
-            )}
+          {tag.enabled ? (
             <MrtRowActionButton
-              label="Видалити"
-              icon={<DeleteOutlineOutlinedIcon fontSize="small" />}
-              tone="danger"
-              opensModal
-              onClick={() => openDeleteDialog(tag)}
+              label="Вимкнути"
+              icon={<BlockOutlinedIcon fontSize="small" />}
+              onClick={() => void handleToggleEnabled(tag)}
             />
-          </MrtRowActions>
+          ) : (
+            <MrtRowActionButton
+              label="Увімкнути"
+              icon={<CheckCircleOutlinedIcon fontSize="small" />}
+              onClick={() => void handleToggleEnabled(tag)}
+            />
+          )}
         </Stack>
       );
     },
-    [handleToggleEnabled, openDeleteDialog, openEditDialog],
+    [handleToggleEnabled, openEditDialog],
   );
 
   if (organismId == null) {
@@ -427,15 +337,20 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
   }
 
   const isLoading = status === 'loading' || status === 'idle';
+  const hasAnyTags = status === 'success' && tags.length > 0;
   const isEmpty = status === 'success' && tags.length === 0;
-  const hasTags = status === 'success' && tags.length > 0;
+  const isEmptyView = hasAnyTags && visibleTags.length === 0;
+  const emptyViewMessage =
+    view === 'active'
+      ? 'Немає активних тегів. Перемкніться на «Архів», щоб побачити вимкнені.'
+      : 'Архів порожній — немає вимкнених тегів.';
 
   return (
     <Box sx={{ pb: 1 }}>
       <Stack spacing={2}>
         {error != null ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
-        {!hasTags ? (
+        {!hasAnyTags ? (
           <Stack
             direction="row"
             alignItems="center"
@@ -457,7 +372,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
 
         {isEmpty ? <SectionEmptyState message="У цього організму ще немає тегів." /> : null}
 
-        {hasTags ? (
+        {hasAnyTags ? (
           <TableStateProvider
             tableId="admin-organism-tags-neo"
             defaultColumnOrder={ORGANISM_TAGS_COLUMN_ORDER}
@@ -472,21 +387,60 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
                 gap={2}
                 flexWrap="wrap"
               >
-                <Box sx={{ flex: 1, maxWidth: 320 }}>
-                  <TagsSearchField />
-                </Box>
+                <Stack direction="row" alignItems="center" gap={2} flexWrap="wrap">
+                  <Box sx={{ flex: 1, maxWidth: 320 }}>
+                    <TagsSearchField />
+                  </Box>
+                  <ToggleButtonGroup
+                    value={view}
+                    exclusive
+                    size="small"
+                    color="primary"
+                    onChange={(_event, value: TagsView | null) => {
+                      if (value) setView(value);
+                    }}
+                    sx={{
+                      flexShrink: 0,
+                      borderRadius: 1,
+                      '& .MuiToggleButton-root': {
+                        textTransform: 'none',
+                        px: 1.75,
+                        py: 0.625,
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        lineHeight: 1.25,
+                        borderRadius: 0,
+                      },
+                      '& .MuiToggleButtonGroup-firstButton': {
+                        borderTopLeftRadius: 8,
+                        borderBottomLeftRadius: 8,
+                      },
+                      '& .MuiToggleButtonGroup-lastButton': {
+                        borderTopRightRadius: 8,
+                        borderBottomRightRadius: 8,
+                      },
+                    }}
+                  >
+                    <ToggleButton value="active">Активні</ToggleButton>
+                    <ToggleButton value="archived">Архів</ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
                 <PowerButton variant="contained" onClick={openCreateDialog}>
                   Додати тег
                 </PowerButton>
               </Stack>
-              <SettingsNeoTable
-                columns={columns}
-                data={tags}
-                layoutMode="grid"
-                enableRowActions
-                renderRowActions={renderRowActions}
-                rowActionsColumnSize={ORGANISM_TAGS_ACTIONS_COLUMN_SIZE}
-              />
+              {isEmptyView ? (
+                <SectionEmptyState message={emptyViewMessage} />
+              ) : (
+                <SettingsNeoTable
+                  columns={columns}
+                  data={visibleTags}
+                  layoutMode="grid"
+                  enableRowActions
+                  renderRowActions={renderRowActions}
+                  rowActionsColumnSize={ORGANISM_TAGS_ACTIONS_COLUMN_SIZE}
+                />
+              )}
             </Stack>
           </TableStateProvider>
         ) : null}
@@ -568,18 +522,6 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
           </PowerButton>
         </DialogActions>
       </Dialog>
-
-      <ConfirmDangerDialog
-        open={deletingTag != null}
-        onClose={closeDeleteDialog}
-        onConfirm={() => void handleConfirmDelete()}
-        submitting={deleteInFlight}
-        title="Видалити тег"
-        description={
-          deletingTag != null ? `Тег «${deletingTag.label}» буде видалено. Продовжити?` : undefined
-        }
-        confirmLabel="Видалити"
-      />
     </Box>
   );
 }

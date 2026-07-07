@@ -1,16 +1,14 @@
 /**
  * @vitest-environment happy-dom
  */
-import React from 'react';
-import { act } from 'react';
+import { Children, act, cloneElement, isValidElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listOrganismTagsMock = vi.hoisted(() => vi.fn());
 const createOrganismTagMock = vi.hoisted(() => vi.fn());
 const updateOrganismTagMock = vi.hoisted(() => vi.fn());
-const deleteOrganismTagMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -48,6 +46,36 @@ vi.mock('@mui/material', () => ({
         onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
       />
     </label>
+  ),
+  ToggleButtonGroup: ({
+    children,
+    onChange,
+  }: {
+    children: ReactNode;
+    onChange?: (event: unknown, value: string | null) => void;
+  }) => (
+    <div>
+      {Children.map(children, (child) =>
+        isValidElement(child)
+          ? cloneElement(child as ReactElement<{ __onChange?: typeof onChange }>, {
+              __onChange: onChange,
+            })
+          : child,
+      )}
+    </div>
+  ),
+  ToggleButton: ({
+    children,
+    value,
+    __onChange,
+  }: {
+    children: ReactNode;
+    value: string;
+    __onChange?: (event: unknown, value: string | null) => void;
+  }) => (
+    <button type="button" onClick={() => __onChange?.(null, value)}>
+      {children}
+    </button>
   ),
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -104,7 +132,6 @@ vi.mock(
 );
 
 vi.mock('../../components/MrtRowActionButton', () => ({
-  MrtRowActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   MrtRowActionButton: ({
     label,
     onClick,
@@ -118,30 +145,6 @@ vi.mock('../../components/MrtRowActionButton', () => ({
       {label}
     </button>
   ),
-}));
-
-vi.mock('../../components/ConfirmDangerDialog', () => ({
-  ConfirmDangerDialog: ({
-    open,
-    onConfirm,
-    onClose,
-    confirmLabel,
-  }: {
-    open: boolean;
-    onConfirm: () => void;
-    onClose: () => void;
-    confirmLabel?: ReactNode;
-  }) =>
-    open ? (
-      <div role="alertdialog">
-        <button type="button" onClick={onConfirm}>
-          {confirmLabel ?? 'Видалити'}
-        </button>
-        <button type="button" onClick={onClose}>
-          Скасувати
-        </button>
-      </div>
-    ) : null,
 }));
 
 vi.mock('../../components/PowerButton', () => ({
@@ -170,7 +173,6 @@ vi.mock('../../services/api/tags', () => ({
   listOrganismTags: listOrganismTagsMock,
   createOrganismTag: createOrganismTagMock,
   updateOrganismTag: updateOrganismTagMock,
-  deleteOrganismTag: deleteOrganismTagMock,
 }));
 
 import { OrganismTagsSection } from './OrganismTagsSection';
@@ -182,6 +184,12 @@ function renderSection(organismId: number | null) {
   return { container, root, organismId };
 }
 
+function switchToArchiveView(view: ReturnType<typeof renderSection>) {
+  Array.from(view.container.querySelectorAll('button'))
+    .find((button) => button.textContent === 'Архів')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
 describe('OrganismTagsSection', () => {
   let view: ReturnType<typeof renderSection>;
 
@@ -189,23 +197,6 @@ describe('OrganismTagsSection', () => {
     listOrganismTagsMock.mockReset();
     createOrganismTagMock.mockReset();
     updateOrganismTagMock.mockReset();
-    deleteOrganismTagMock.mockReset();
-    const storage = new Map<string, string>();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-        removeItem: (key: string) => {
-          storage.delete(key);
-        },
-        clear: () => {
-          storage.clear();
-        },
-      },
-    });
   });
 
   afterEach(async () => {
@@ -254,7 +245,7 @@ describe('OrganismTagsSection', () => {
     expect(view.container.textContent).toContain('оброблено');
   });
 
-  it('shows disabled organism tags on load so admins can recover them', async () => {
+  it('shows only active tags by default and hides disabled ones', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([
       {
@@ -286,12 +277,52 @@ describe('OrganismTagsSection', () => {
     });
 
     expect(view.container.textContent).toContain('активний');
-    expect(view.container.textContent).toContain('вимкнений');
+    expect(view.container.textContent).not.toContain('вимкнений');
   });
 
-  it('hides a tag deleted from this browser across a reload', async () => {
+  it('shows only disabled tags in the archive view', async () => {
     view = renderSection(7);
-    const tagsFromBackend = [
+    listOrganismTagsMock.mockResolvedValueOnce([
+      {
+        tagId: 10,
+        label: 'активний',
+        extra: false,
+        ord: 1,
+        enabled: true,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+      {
+        tagId: 11,
+        label: 'вимкнений',
+        extra: false,
+        ord: 2,
+        enabled: false,
+        keywords: [],
+        isPalitra: false,
+        ownerOrganismId: 7,
+      },
+    ]);
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      switchToArchiveView(view);
+      await Promise.resolve();
+    });
+
+    expect(view.container.textContent).toContain('вимкнений');
+    expect(view.container.textContent).not.toContain('активний');
+  });
+
+  it('does not render an "Активний" column or a "Видалити" action', async () => {
+    view = renderSection(7);
+    listOrganismTagsMock.mockResolvedValueOnce([
       {
         tagId: 10,
         label: 'оброблено',
@@ -302,21 +333,7 @@ describe('OrganismTagsSection', () => {
         isPalitra: false,
         ownerOrganismId: 7,
       },
-      {
-        tagId: 11,
-        label: 'видалений',
-        extra: false,
-        ord: 2,
-        // The backend soft-deletes by flipping `enabled` to false, so the "deleted" row
-        // still comes back from the list endpoint after a reload.
-        enabled: false,
-        keywords: [],
-        isPalitra: false,
-        ownerOrganismId: 7,
-      },
-    ];
-    listOrganismTagsMock.mockResolvedValueOnce(tagsFromBackend);
-    deleteOrganismTagMock.mockResolvedValueOnce(undefined);
+    ]);
 
     await act(async () => {
       view.root.render(<OrganismTagsSection organismId={7} />);
@@ -324,42 +341,9 @@ describe('OrganismTagsSection', () => {
       await Promise.resolve();
     });
 
-    await act(async () => {
-      const targetRow = Array.from(view.container.querySelectorAll('tr')).find((row) =>
-        row.textContent?.includes('видалений'),
-      );
-      Array.from(targetRow?.querySelectorAll('button') ?? [])
-        .find((button) => button.textContent === 'Видалити')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      const dialog = view.container.querySelector('[role="alertdialog"]');
-      Array.from(dialog?.querySelectorAll('button') ?? [])
-        .find((button) => button.textContent === 'Видалити')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(deleteOrganismTagMock).toHaveBeenCalledWith(7, 11);
-
-    // Simulate a reload: unmount and render a fresh instance, backend still returns the
-    // soft-deleted row.
-    await act(async () => {
-      view.root.unmount();
-    });
-    view = renderSection(7);
-    listOrganismTagsMock.mockResolvedValueOnce(tagsFromBackend);
-
-    await act(async () => {
-      view.root.render(<OrganismTagsSection organismId={7} />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(view.container.textContent).toContain('оброблено');
-    expect(view.container.textContent).not.toContain('видалений');
+    expect(view.container.textContent).not.toContain('Активний');
+    const buttons = Array.from(view.container.querySelectorAll('button'));
+    expect(buttons.some((button) => button.textContent === 'Видалити')).toBe(false);
   });
 
   it('creates an organism tag through the organism endpoint', async () => {
@@ -416,7 +400,7 @@ describe('OrganismTagsSection', () => {
     );
   });
 
-  it('disables an organism tag through the update endpoint without deleting it', async () => {
+  it('disables an organism tag through the update endpoint and moves it out of the active view', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([
       {
@@ -454,59 +438,15 @@ describe('OrganismTagsSection', () => {
       await Promise.resolve();
     });
 
-    expect(deleteOrganismTagMock).not.toHaveBeenCalled();
     expect(updateOrganismTagMock).toHaveBeenCalledWith(
       7,
       10,
       expect.objectContaining({ enabled: false }),
     );
-  });
-
-  it('deletes an organism tag through the delete endpoint after confirmation', async () => {
-    view = renderSection(7);
-    listOrganismTagsMock.mockResolvedValueOnce([
-      {
-        tagId: 10,
-        label: 'оброблено',
-        extra: false,
-        ord: 1,
-        enabled: true,
-        keywords: [],
-        isPalitra: false,
-        ownerOrganismId: 7,
-      },
-    ]);
-    deleteOrganismTagMock.mockResolvedValueOnce(undefined);
-
-    await act(async () => {
-      view.root.render(<OrganismTagsSection organismId={7} />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // Open the confirmation dialog from the row action.
-    await act(async () => {
-      Array.from(view.container.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Видалити')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    // Confirm inside the danger dialog.
-    await act(async () => {
-      const dialog = view.container.querySelector('[role="alertdialog"]');
-      Array.from(dialog?.querySelectorAll('button') ?? [])
-        .find((button) => button.textContent === 'Видалити')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(deleteOrganismTagMock).toHaveBeenCalledWith(7, 10);
     expect(view.container.textContent).not.toContain('оброблено');
   });
 
-  it('re-enables a disabled organism tag through the update endpoint', async () => {
+  it('re-enables a disabled organism tag from the archive view through the update endpoint', async () => {
     view = renderSection(7);
     listOrganismTagsMock.mockResolvedValueOnce([
       {
@@ -514,22 +454,12 @@ describe('OrganismTagsSection', () => {
         label: 'оброблено',
         extra: false,
         ord: 1,
-        enabled: true,
+        enabled: false,
         keywords: [],
         isPalitra: false,
         ownerOrganismId: 7,
       },
     ]);
-    updateOrganismTagMock.mockResolvedValueOnce({
-      tagId: 10,
-      label: 'оброблено',
-      extra: false,
-      ord: 1,
-      enabled: false,
-      keywords: [],
-      isPalitra: false,
-      ownerOrganismId: 7,
-    });
     updateOrganismTagMock.mockResolvedValueOnce({
       tagId: 10,
       label: 'оброблено',
@@ -548,9 +478,7 @@ describe('OrganismTagsSection', () => {
     });
 
     await act(async () => {
-      Array.from(view.container.querySelectorAll('button'))
-        .find((button) => button.textContent?.includes('Вимкнути'))
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      switchToArchiveView(view);
       await Promise.resolve();
     });
 
@@ -561,9 +489,7 @@ describe('OrganismTagsSection', () => {
       await Promise.resolve();
     });
 
-    expect(deleteOrganismTagMock).not.toHaveBeenCalled();
-    expect(updateOrganismTagMock).toHaveBeenNthCalledWith(
-      2,
+    expect(updateOrganismTagMock).toHaveBeenCalledWith(
       7,
       10,
       expect.objectContaining({ enabled: true }),
