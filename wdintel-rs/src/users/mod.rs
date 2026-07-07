@@ -231,6 +231,14 @@ where
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"CallsignsEditor".to_string())
             }
+            "Cyber" => {
+                roles.contains(&"Admin".to_string())
+                    || roles.contains(&"Cyber".to_string())
+            }
+            "DevicesEditor" => {
+                roles.contains(&"Admin".to_string())
+                    || roles.contains(&"DevicesEditor".to_string())
+            }
             "AdvancedReports" => {
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"AdvancedReports".to_string())

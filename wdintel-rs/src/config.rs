@@ -95,6 +95,20 @@ pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_ORBIT: &str = "Orbit";
+pub const ROLE_CYBER: &str = "Cyber";
+pub const ROLE_DEVICES_EDITOR: &str = "DevicesEditor";
+pub const DEVICE_NAME_MAX_CHARS: usize = 255;
+pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
+pub const DEVICE_CUSTOM_FIELD_LABEL_MAX_CHARS: usize = 128;
+pub const DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS: usize = 4096;
+pub const DEVICE_EXTERNAL_URL_MAX_CHARS: usize = 4096;
+pub const DEVICE_LIST_DEFAULT_LIMIT: u64 = 100;
+pub const DEVICE_LIST_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_LIST_DEFAULT_LIMIT: u64 = 100;
+pub const DEVICE_FILE_LIST_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_CREATE_BATCH_MAX_COUNT: usize = 100;
+pub const DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS: usize = 1024;
+pub const DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS: usize = 4096;
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend

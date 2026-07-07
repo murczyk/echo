@@ -44,6 +44,8 @@ pub enum Relation {
     Login,
     #[sea_orm(has_many = "super::orbit_unit_sigint_unit::Entity")]
     OrbitUnitSigintUnit,
+    #[sea_orm(has_many = "super::device::Entity")]
+    Device,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
@@ -75,6 +77,12 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::orbit_unit_sigint_unit::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrbitUnitSigintUnit.def()
+    }
+}
+
+impl Related<super::device::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Device.def()
     }
 }
 

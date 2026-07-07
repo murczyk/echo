@@ -25,6 +25,7 @@ pub mod backup;
 pub mod config;
 pub mod datasource;
 pub mod delta;
+pub mod devices;
 pub mod elm;
 pub mod entities;
 pub mod error;
