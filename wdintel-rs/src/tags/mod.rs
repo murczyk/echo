@@ -176,9 +176,7 @@ async fn create_organism_tag(
         .await
         .c(h!())?;
 
-    let tag = bl::create_organism_tag(&env.dbx, path.0, req.0)
-        .await
-        .c(h!())?;
+    let tag = bl::create_organism_tag(&env.dbx, path.0, req.0).await?;
 
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 
@@ -198,9 +196,8 @@ async fn update_organism_tag(
         .c(h!())?;
 
     let (organism_id, tag_id) = path.into_inner();
-    let tag = bl::update_organism_tag(&env.dbx, organism_id, tag_id, req.0)
-        .await
-        .c(h!())?;
+    let tag =
+        bl::update_organism_tag(&env.dbx, organism_id, tag_id, req.0).await?;
 
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
 

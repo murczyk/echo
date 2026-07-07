@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 import type { ActivityByNetworkId } from './use-rer-networks-neo-page.types';
+import { hasRole } from '../../utils/roles';
 
 export function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -53,12 +54,12 @@ export function isSameSidebarUnitFilter(
 }
 
 export function getNetworkPermissionsFromRoles(rolesList: string[]) {
-  const roles = new Set(rolesList);
+  const canManage =
+    hasRole(rolesList, 'Admin') || (hasRole(rolesList, 'UnitsEditor') && hasRole(rolesList, 'Rer'));
+
   return {
-    canEdit:
-      roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
-    canExport: roles.has('Admin') || roles.has('Rer') || roles.has('Full'),
-    canDelete:
-      roles.has('Admin') || (roles.has('UnitsEditor') && (roles.has('Rer') || roles.has('Full'))),
+    canEdit: canManage,
+    canExport: hasRole(rolesList, 'Rer'),
+    canDelete: canManage,
   };
 }

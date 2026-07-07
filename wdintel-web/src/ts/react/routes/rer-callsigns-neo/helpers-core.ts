@@ -16,6 +16,7 @@ import type {
   UnitHierarchyFilter,
 } from './types';
 import { normalizeUnitSearchValue } from '../../utils/unit-search';
+import { hasRole } from '../../utils/roles';
 
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -31,10 +32,8 @@ export const CALLSIGN_FORM_HINT =
   'Заповніть "Позивний" або "ПІП". Якщо їх немає, залиште інші змістовні дані запису.';
 export const UNIT_SELECTION_REQUIRED_ERROR = 'Оберіть підрозділ зі списку.';
 
-function hasCallsignEditorAccess(roles: Set<string>): boolean {
-  return (
-    roles.has('Admin') || ((roles.has('Rer') || roles.has('Full')) && roles.has('CallsignsEditor'))
-  );
+function hasCallsignEditorAccess(roles: readonly string[] | null | undefined): boolean {
+  return hasRole(roles, 'Admin') || (hasRole(roles, 'Rer') && hasRole(roles, 'CallsignsEditor'));
 }
 
 export function toUpperCaseCallsign(value: string): string {
@@ -73,18 +72,16 @@ export function createDefaultFilters(now = new Date()): CallsignsFilterState {
 }
 
 export function getExportPermission(user: User | null): ExportPermission {
-  const roles = new Set(user?.roles ?? []);
   return {
-    canEdit: hasCallsignEditorAccess(roles),
-    canExport: roles.has('Admin') || roles.has('Rer') || roles.has('Full'),
+    canEdit: hasCallsignEditorAccess(user?.roles),
+    canExport: hasRole(user?.roles, 'Rer'),
   };
 }
 
 export function getExportPermissionFromRoles(rolesList: string[]): ExportPermission {
-  const roles = new Set(rolesList);
   return {
-    canEdit: hasCallsignEditorAccess(roles),
-    canExport: roles.has('Admin') || roles.has('Rer') || roles.has('Full'),
+    canEdit: hasCallsignEditorAccess(rolesList),
+    canExport: hasRole(rolesList, 'Rer'),
   };
 }
 

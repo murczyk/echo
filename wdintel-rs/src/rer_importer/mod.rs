@@ -491,6 +491,44 @@ pub async fn signal_group_info_batch(
     Ok(Json(SignalGroupsRsp { data }))
 }
 
+#[post("/api/rer-importer/groups")]
+pub async fn signal_groups(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<SignalGroupsRsp>, AppError> {
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+    let is_admin =
+        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+            .await
+            .is_ok();
+    let keys = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .into_tuple::<String>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let data = crate::messenger::group::collect_groups(
+        keys,
+        &env.dbx,
+        is_admin,
+        crate::messenger::group::CollectGroupsOpts {
+            skip_group_stats: false,
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(SignalGroupsRsp { data }))
+}
+
 #[post("/api/rer-importer/signal-profile")]
 pub async fn signal_profile_info(
     user: actix_identity::Identity,
@@ -912,6 +950,41 @@ pub async fn latest_senders(
         .collect();
     let data = collect_profiles_data(&txn, sender_uuids).await.c(h!())?;
     txn.commit().await.c(h!())?;
+    Ok(Json(SignalProfilesRsp { data }))
+}
+
+#[post("/api/rer-importer/senders")]
+pub async fn senders(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<SignalProfilesRsp>, AppError> {
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+
+    let sender_uuids = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalMessage.def(),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Sender)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message_group::Column::Sender.is_not_null())
+        .filter(signal_message_group::Column::Sender.ne(""))
+        .group_by(signal_message_group::Column::Sender)
+        .order_by_asc(signal_message_group::Column::Sender)
+        .into_tuple::<String>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let data = collect_profiles_data(&env.dbx, sender_uuids)
+        .await
+        .c(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 

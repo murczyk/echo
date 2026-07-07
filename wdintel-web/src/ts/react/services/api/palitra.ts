@@ -23,6 +23,7 @@ import {
 } from './client';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { hasRole } from '../../utils/roles';
 import { listLogins } from './logins';
 import { listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
@@ -635,7 +636,7 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
 }> {
-  const isAdmin = user.roles.includes('Admin');
+  const isAdmin = hasRole(user.roles, 'Admin');
 
   const [myScope, logins, organismLogins, organisms, aors] = await Promise.all([
     fetchMyScopeOptional(),

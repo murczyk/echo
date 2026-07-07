@@ -1,0 +1,54 @@
+export type UserRole =
+  | 'Admin'
+  | 'Api'
+  | 'ApiAgent'
+  | 'Full'
+  | 'DeleteMsg'
+  | 'Rer'
+  | 'Bpla'
+  | 'Basic'
+  | 'UnitsEditor'
+  | 'NetworkEditor'
+  | 'CallsignsEditor'
+  | 'AdvancedReports'
+  | 'NoAutoLogout';
+
+export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
+  const has = (target: UserRole) => Boolean(roles?.includes(target));
+
+  switch (role) {
+    case 'Admin':
+      return has('Admin');
+    case 'Api':
+      return has('Api');
+    case 'ApiAgent':
+      return has('ApiAgent');
+    case 'Full':
+      return has('Admin') || has('Full');
+    case 'DeleteMsg':
+      return has('Admin') || has('Full') || has('DeleteMsg');
+    case 'Rer':
+      return has('Admin') || has('Full') || has('Rer');
+    case 'Bpla':
+      return has('Admin') || has('Full') || has('Bpla');
+    case 'Basic':
+      return has('Admin') || has('Full') || has('Bpla') || has('Rer') || has('Basic');
+    case 'UnitsEditor':
+      return has('Admin') || has('UnitsEditor');
+    case 'NetworkEditor':
+      return has('Admin') || has('NetworkEditor');
+    case 'CallsignsEditor':
+      return has('Admin') || has('CallsignsEditor');
+    case 'AdvancedReports':
+      return has('Admin') || has('AdvancedReports');
+    case 'NoAutoLogout':
+      return has('NoAutoLogout');
+  }
+}
+
+export function hasAnyRole(
+  roles: readonly string[] | null | undefined,
+  requiredRoles: readonly UserRole[],
+): boolean {
+  return requiredRoles.some((role) => hasRole(roles, role));
+}

@@ -9,7 +9,6 @@ import {
   CardContent,
   Checkbox,
   CircularProgress,
-  FormControlLabel,
   Link,
   Stack,
   Table,
@@ -26,6 +25,7 @@ import type { User } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { fetchCurrentUser } from '../../services/api/user';
 import {
   downloadCurrentUserGoiPalettes,
@@ -39,6 +39,7 @@ import {
   uploadCurrentUserGoiCategories,
 } from '../../services/api/goi-settings';
 import { downloadBlob } from '../../utils/download-blob';
+import { hasRole } from '../../utils/roles';
 import { GoiReportTabOrderSection } from './GoiReportTabOrderSection';
 
 const ECHO_MESSENGERS_DOC_URL = '/docs/goi-messengers/';
@@ -56,10 +57,6 @@ function formatErrorMessage(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function hasRerAccess(user: User): boolean {
-  return user.roles.includes('Admin') || user.roles.includes('Full') || user.roles.includes('Rer');
 }
 
 function restartServiceLabel(service: GoiRestartService): string {
@@ -132,19 +129,13 @@ type ServiceTableRowProps = {
   onUnlink: (integrationId: number, service: GoiWhatsappService) => void;
 };
 
-type GoiAdditionalSettingsPanelProps = {
-  integration: GoiUserIntegration;
-  disabled: boolean;
-  pendingKey: string | null;
-  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
-};
-
 type GoiDataControlPanelProps = {
   integration: GoiUserIntegration;
   disabled: boolean;
   pendingKey: string | null;
   onDownloadPalettes: (integrationId: number) => void;
   onUploadCategories: (integrationId: number, file: File) => void;
+  onUpdatePauseWorker: (integrationId: number, pauseWorker: boolean) => void;
 };
 
 type AdditionalFunctionRowProps = {
@@ -271,52 +262,34 @@ function ServiceTableRow(props: ServiceTableRowProps) {
   );
 }
 
-function GoiAdditionalSettingsPanel(props: GoiAdditionalSettingsPanelProps) {
-  const pendingKey = `${props.integration.id}:pause-worker`;
-  const pending = props.pendingKey === pendingKey;
-  const controlDisabled = props.disabled || !props.integration.canChangePauseWorker;
-
-  return (
-    <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
-      <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
-        Додаткові Налаштування
-      </Typography>
-      <Stack spacing={1} sx={{ mt: 1 }}>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={props.integration.pauseWorker}
-                disabled={controlDisabled}
-                onChange={(event) =>
-                  props.onUpdatePauseWorker(props.integration.id, event.target.checked)
-                }
-              />
-            }
-            label="Призупинити воркер"
-          />
-          {pending ? <CircularProgress size={18} /> : null}
-        </Stack>
-        {!props.integration.canChangePauseWorker ? (
-          <Typography variant="body2" color="text.secondary">
-            Змінити може відповідальний за інтеграцію або адміністратор.
-          </Typography>
-        ) : null}
-      </Stack>
-    </Box>
-  );
-}
-
 function GoiDataControlPanel(props: GoiDataControlPanelProps) {
   const [categoriesFile, setCategoriesFile] = React.useState<File | null>(null);
+  const [pauseDialogValue, setPauseDialogValue] = React.useState<boolean | null>(null);
   const categoriesInputRef = React.useRef<HTMLInputElement | null>(null);
+  const pausePendingKey = `${props.integration.id}:pause-worker`;
   const downloadPendingKey = `${props.integration.id}:download-palettes`;
   const uploadPendingKey = `${props.integration.id}:upload-categories`;
+  const pausePending = props.pendingKey === pausePendingKey;
   const downloading = props.pendingKey === downloadPendingKey;
   const uploading = props.pendingKey === uploadPendingKey;
+  const pauseWorkerDisabled = props.pendingKey !== null || !props.integration.canChangePauseWorker;
+  const pauseDialogDescription =
+    pauseDialogValue === true
+      ? "Дана дія зупинить підвантаження нових палітр, позивних, прив'язок частот із ЕХО"
+      : "Дана дія може стерти ваші дані (позивні, прив'язки частот) із ГОІ";
 
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     setCategoriesFile(event.target.files?.[0] ?? null);
+  }
+
+  function closePauseDialog() {
+    setPauseDialogValue(null);
+  }
+
+  function confirmPauseDialog() {
+    if (pauseDialogValue === null) return;
+    props.onUpdatePauseWorker(props.integration.id, pauseDialogValue);
+    setPauseDialogValue(null);
   }
 
   return (
@@ -326,20 +299,41 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
       </Typography>
       <Stack spacing={0.5} sx={{ mt: 1.5 }}>
         <AdditionalFunctionRow
-          title="Завантажити палітри"
-          description="Завантажує ZIP-архів папки palettes з цього ГОІ."
+          title="Призупинити синхронізацію"
+          description={
+            props.integration.canChangePauseWorker
+              ? 'Тимчасово зупиняє синхронізацію для цього ГОІ.'
+              : 'Змінити може відповідальний за інтеграцію або адміністратор.'
+          }
         >
-          <PowerButton
-            variant="outlined"
-            startIcon={
-              downloading ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />
-            }
-            disabled={props.disabled}
-            onClick={() => props.onDownloadPalettes(props.integration.id)}
-          >
-            Завантажити
-          </PowerButton>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Checkbox
+              checked={props.integration.pauseWorker}
+              disabled={pauseWorkerDisabled}
+              inputProps={{ 'aria-label': 'Призупинити синхронізацію' }}
+              onChange={(event) => setPauseDialogValue(event.target.checked)}
+            />
+            {pausePending ? <CircularProgress size={18} /> : null}
+          </Stack>
         </AdditionalFunctionRow>
+
+        <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
+          <AdditionalFunctionRow
+            title="Завантажити палітри"
+            description="Завантажує ZIP-архів папки palettes з цього ГОІ."
+          >
+            <PowerButton
+              variant="outlined"
+              startIcon={
+                downloading ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />
+              }
+              disabled={props.disabled}
+              onClick={() => props.onDownloadPalettes(props.integration.id)}
+            >
+              Завантажити
+            </PowerButton>
+          </AdditionalFunctionRow>
+        </Box>
 
         <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
           <AdditionalFunctionRow
@@ -403,6 +397,15 @@ function GoiDataControlPanel(props: GoiDataControlPanelProps) {
           </AdditionalFunctionRow>
         </Box>
       </Stack>
+      <ConfirmDangerDialog
+        open={pauseDialogValue !== null}
+        title="Ви впевнені?"
+        description={pauseDialogDescription}
+        cancelLabel="Скасувати"
+        confirmLabel="Підтвердити"
+        onClose={closePauseDialog}
+        onConfirm={confirmPauseDialog}
+      />
     </Box>
   );
 }
@@ -419,7 +422,6 @@ function IntegrationCard(props: IntegrationCardProps) {
   const swappAltKey = `${integration.id}:restart:swapp_alt`;
   const swappAltUnlinkKey = `${integration.id}:unlink:swapp_alt`;
   const actionDisabled = !integration.canRestart || props.pendingKey !== null;
-  const settingsDisabled = props.pendingKey !== null;
 
   return (
     <Card variant="outlined">
@@ -513,19 +515,13 @@ function IntegrationCard(props: IntegrationCardProps) {
             </Table>
           </TableContainer>
 
-          <GoiAdditionalSettingsPanel
-            integration={integration}
-            disabled={settingsDisabled}
-            pendingKey={props.pendingKey}
-            onUpdatePauseWorker={props.onUpdatePauseWorker}
-          />
-
           <GoiDataControlPanel
             integration={integration}
             disabled={actionDisabled}
             pendingKey={props.pendingKey}
             onDownloadPalettes={props.onDownloadPalettes}
             onUploadCategories={props.onUploadCategories}
+            onUpdatePauseWorker={props.onUpdatePauseWorker}
           />
 
           {!integration.canRestart && integration.restartUnavailableReason ? (
@@ -548,7 +544,7 @@ export function GoiSettingsPage() {
   const [loading, setLoading] = React.useState(true);
   const [pendingKey, setPendingKey] = React.useState<string | null>(null);
   const [actionStatus, setActionStatus] = React.useState<ActionStatus>(null);
-  const isAdmin = currentUser?.roles.includes('Admin') ?? false;
+  const isAdmin = currentUser ? hasRole(currentUser.roles, 'Admin') : false;
 
   React.useEffect(() => {
     const abortController = new AbortController();
@@ -559,7 +555,7 @@ export function GoiSettingsPage() {
         if (abortController.signal.aborted) return;
         setCurrentUser(nextCurrentUser);
 
-        const nextIntegrations = hasRerAccess(nextCurrentUser)
+        const nextIntegrations = hasRole(nextCurrentUser.roles, 'Rer')
           ? await fetchCurrentUserGoiIntegrations(abortController.signal)
           : [];
         if (abortController.signal.aborted) return;

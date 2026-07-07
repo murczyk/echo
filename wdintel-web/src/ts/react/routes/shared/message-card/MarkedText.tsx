@@ -23,6 +23,7 @@ import {
   getCallsignHintResult,
   isCallsignRelatedToNetworks,
 } from '../../rer-analysis-neo/callsign-hints';
+import { renderLinkifiedText } from './message-card-linkify';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -549,7 +550,7 @@ export function renderMarkedText(
     }
 
     if ('CNTextC' in node) {
-      renderedNodes.push(<span key={i}>{node.CNTextC.text}</span>);
+      renderedNodes.push(<span key={i}>{renderLinkifiedText(node.CNTextC.text)}</span>);
       continue;
     }
 
