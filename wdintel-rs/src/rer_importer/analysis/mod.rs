@@ -506,16 +506,16 @@ where
         if !selected_units.is_empty() {
             let selected_units =
                 selected_units.clone().into_iter().collect_vec();
-            let in_subquery_condition = message_has_linked_unit(
-                Expr::col((
-                    Alias::new("selected_unit"),
-                    sigint_unit::Column::Name,
-                ))
-                .is_in(selected_units.clone()),
+            let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let linked_unit_match = linked_unit_matches_selected_units(
+                selected_units.clone(),
+                !exact_match_only,
             );
+            let in_subquery_condition =
+                message_has_linked_unit(linked_unit_match);
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
-            let expr = if units_exact_match_only.unwrap_or(false) {
+            let expr = if exact_match_only {
                 in_subquery_condition
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
@@ -581,17 +581,15 @@ where
         }
         if !denied_units.is_empty() {
             let selected_units = denied_units.into_iter().collect_vec();
+            let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let linked_unit_match = linked_unit_matches_selected_units(
+                selected_units.clone(),
+                !exact_match_only,
+            );
+            let in_subquery_condition =
+                message_has_linked_unit(linked_unit_match).not();
 
-            let in_subquery_condition = message_has_linked_unit(
-                Expr::col((
-                    Alias::new("selected_unit"),
-                    sigint_unit::Column::Name,
-                ))
-                .is_in(selected_units.clone()),
-            )
-            .not();
-
-            let expr = if units_exact_match_only.unwrap_or(false) {
+            let expr = if exact_match_only {
                 in_subquery_condition
             } else {
                 // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -614,6 +612,33 @@ where
         (Some(f), None) => Ok(q.filter(f)),
         (Some(f1), Some(f2)) => Ok(q.filter(f1.and(f2))),
     }
+}
+
+fn linked_unit_matches_selected_units(
+    selected_units: Vec<String>,
+    include_hierarchy: bool,
+) -> SimpleExpr {
+    let unit_alias = Alias::new("selected_unit");
+    let unit_matches =
+        Expr::col((unit_alias.clone(), sigint_unit::Column::Name))
+            .is_in(selected_units.clone());
+
+    if !include_hierarchy {
+        return unit_matches;
+    }
+
+    [
+        sigint_unit::Column::Company,
+        sigint_unit::Column::Battalion,
+        sigint_unit::Column::Regiment,
+        sigint_unit::Column::Division,
+        sigint_unit::Column::Army,
+    ]
+    .into_iter()
+    .fold(unit_matches, |expr, column| {
+        expr.or(Expr::col((unit_alias.clone(), column))
+            .is_in(selected_units.clone()))
+    })
 }
 
 fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
