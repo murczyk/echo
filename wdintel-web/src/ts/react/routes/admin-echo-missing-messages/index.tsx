@@ -36,6 +36,7 @@ const TRANSLATIONS = {
   statusScheduled: 'заплановано',
   statusError: 'помилка',
   statusResolved: 'відновлено',
+  statusDeleted: 'видалено',
 } as const;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,6 +44,7 @@ const STATUS_LABELS: Record<string, string> = {
   scheduled: TRANSLATIONS.statusScheduled,
   error: TRANSLATIONS.statusError,
   resolved: TRANSLATIONS.statusResolved,
+  deleted: TRANSLATIONS.statusDeleted,
 };
 
 const STATUS_FILTER_OPTIONS = Object.values(STATUS_LABELS).map((label) => ({
@@ -102,7 +104,10 @@ function MissingMessageTable({
         Cell: ({ row }) => {
           const item = row.original;
           const disabled =
-            item.isResolved || item.status === 'scheduled' || resolvingIds.has(item.id);
+            item.isResolved ||
+            item.status === 'scheduled' ||
+            item.status === 'deleted' ||
+            resolvingIds.has(item.id);
           return (
             <Button
               size="small"
@@ -111,7 +116,11 @@ function MissingMessageTable({
               disabled={disabled}
               onClick={() => onResolve(item.id)}
             >
-              {item.status === 'scheduled' ? TRANSLATIONS.scheduled : TRANSLATIONS.schedule}
+              {item.status === 'scheduled'
+                ? TRANSLATIONS.scheduled
+                : item.status === 'deleted'
+                  ? TRANSLATIONS.statusDeleted
+                  : TRANSLATIONS.schedule}
             </Button>
           );
         },

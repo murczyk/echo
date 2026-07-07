@@ -161,6 +161,8 @@ pub enum EchoMissingMessageStatus {
     Error,
     #[sea_orm(string_value = "resolved")]
     Resolved,
+    #[sea_orm(string_value = "deleted")]
+    Deleted,
 }
 #[derive(
     Debug,
