@@ -147,9 +147,6 @@ pub async fn collect_inbox_item_pelengs(
     let mut sigint_pelengs = vec![];
     for item in messages {
         let id = item.id;
-        if item.coords.is_none() {
-            continue;
-        }
         item_ids.push(id);
         if item_ids.len() > 1000 {
             let pelengs = collect_inbox_pelengs(item_ids, dbx).await.c(h!())?;
