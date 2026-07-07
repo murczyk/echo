@@ -23,8 +23,8 @@ function hasClipboardWriteSupport(): boolean {
   );
 }
 
-function hasImageDimensions(image: HTMLImageElement | null): boolean {
-  return image != null && image.naturalWidth > 0 && image.naturalHeight > 0;
+function hasImageDimensions(image: HTMLImageElement): boolean {
+  return image.naturalWidth > 0 && image.naturalHeight > 0;
 }
 
 function isClipboardImageMimeTypeSupported(mimeType: string): boolean {
@@ -43,6 +43,21 @@ async function writeBlobToClipboard(blob: Blob, mimeType: string): Promise<void>
   }
 
   const clipboardItem = new window.ClipboardItem({ [mimeType]: blob });
+  await navigator.clipboard.write([clipboardItem]);
+}
+
+async function writeBlobPromiseToClipboard(
+  blobPromise: Promise<Blob>,
+  mimeType: string,
+): Promise<void> {
+  if (!hasClipboardWriteSupport()) {
+    throw new Error('Копіювання зображень недоступне.');
+  }
+  if (!isClipboardImageMimeTypeSupported(mimeType)) {
+    throw new Error('Копіювання зображень недоступне.');
+  }
+
+  const clipboardItem = new window.ClipboardItem({ [mimeType]: blobPromise });
   await navigator.clipboard.write([clipboardItem]);
 }
 
@@ -78,7 +93,7 @@ async function fetchImageBlob(href: string): Promise<{ blob: Blob; mimeType: str
   return { blob, mimeType };
 }
 
-export function canCopyImageToClipboard(image: HTMLImageElement | null): boolean {
+export function canCopyImageToClipboard(image: HTMLImageElement): boolean {
   return hasClipboardWriteSupport() && hasImageDimensions(image);
 }
 
@@ -87,16 +102,17 @@ export async function copyImageToClipboard(image: HTMLImageElement, href: string
     throw new Error('Копіювання зображень недоступне.');
   }
 
-  let blob: Blob;
   let mimeType = 'image/png';
+  const canvasBlobPromise = createCanvasImageBlob(image);
 
   try {
-    blob = await createCanvasImageBlob(image);
+    await writeBlobPromiseToClipboard(canvasBlobPromise, mimeType);
+    return;
   } catch {
+    canvasBlobPromise.catch(() => undefined);
     const fetched = await fetchImageBlob(href);
-    blob = fetched.blob;
+    const blob = fetched.blob;
     mimeType = fetched.mimeType;
+    await writeBlobToClipboard(blob, mimeType);
   }
-
-  await writeBlobToClipboard(blob, mimeType);
 }

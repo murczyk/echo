@@ -473,7 +473,9 @@ export function MessageImagePreviewDialog({
           hasCarousel={hasCarousel}
           copyStatus={copyStatus}
           canCopyImage={
-            loadedImageKey === currentPreviewKey && canCopyImageToClipboard(loadedImage)
+            loadedImage !== null &&
+            loadedImageKey === currentPreviewKey &&
+            canCopyImageToClipboard(loadedImage)
           }
           resolvedIndex={resolvedIndex}
           imageCount={imageCount}

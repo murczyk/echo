@@ -8,7 +8,7 @@ import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-c
 class FakeClipboardItem {
   static supports = vi.fn((type: string) => type.startsWith('image/'));
 
-  items: Record<string, Blob>;
+  items: Record<string, Blob | Promise<Blob>>;
 
   constructor(items: Record<string, Blob>) {
     this.items = items;
@@ -31,10 +31,16 @@ describe('copyImageToClipboard', () => {
 
   it('copies the canvas PNG blob when the preview image is loaded', async () => {
     const image = createLoadedImage();
-    const write = vi.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
+      await item.items['image/png'];
+    });
     const drawImage = vi.fn();
-    const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
-      callback?.(new Blob(['png'], { type }));
+    let resolveToBlob: ((blob: Blob) => void) | null = null;
+    const canvasBlob = new Promise<Blob>((resolve) => {
+      resolveToBlob = resolve;
+    });
+    const toBlob = vi.fn((callback: BlobCallback) => {
+      canvasBlob.then((blob) => callback?.(blob));
     });
     const originalCreateElement = document.createElement.bind(document);
     const createElement = vi.spyOn(document, 'createElement');
@@ -57,18 +63,69 @@ describe('copyImageToClipboard', () => {
     });
     vi.stubGlobal('ClipboardItem', FakeClipboardItem);
 
-    await copyImageToClipboard(image, 'https://example.test/image.png');
+    const copyPromise = copyImageToClipboard(image, 'https://example.test/image.png');
+    await Promise.resolve();
 
-    expect(drawImage).toHaveBeenCalledWith(image, 0, 0, 12, 8);
     expect(write).toHaveBeenCalledTimes(1);
+    expect(drawImage).toHaveBeenCalledWith(image, 0, 0, 12, 8);
     const clipboardItem = write.mock.calls[0]?.[0]?.[0] as FakeClipboardItem;
-    expect(clipboardItem.items['image/png']).toBeInstanceOf(Blob);
-    expect(clipboardItem.items['image/png'].type).toBe('image/png');
+    expect(clipboardItem.items['image/png']).toBeInstanceOf(Promise);
+
+    resolveToBlob?.(new Blob(['png'], { type: 'image/png' }));
+    await copyPromise;
+
+    await expect(clipboardItem.items['image/png']).resolves.toBeInstanceOf(Blob);
+  });
+
+  it('calls clipboard.write before the canvas blob promise resolves', async () => {
+    const image = createLoadedImage();
+    const write = vi.fn().mockResolvedValue(undefined);
+    const drawImage = vi.fn();
+    let resolveToBlob: ((blob: Blob) => void) | null = null;
+    const canvasBlob = new Promise<Blob>((resolve) => {
+      resolveToBlob = resolve;
+    });
+    const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
+      canvasBlob.then((blob) => callback?.(blob));
+      return type;
+    });
+    const originalCreateElement = document.createElement.bind(document);
+    const createElement = vi.spyOn(document, 'createElement');
+    createElement.mockImplementation(((tagName: string) => {
+      if (tagName === 'canvas') {
+        return {
+          width: 0,
+          height: 0,
+          getContext: () => ({ drawImage }) as CanvasRenderingContext2D,
+          toBlob,
+        } as never;
+      }
+
+      return originalCreateElement(tagName);
+    }) as typeof document.createElement);
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { write },
+    });
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+
+    const copyPromise = copyImageToClipboard(image, 'https://example.test/image.png');
+    await Promise.resolve();
+
+    expect(write).toHaveBeenCalledTimes(1);
+
+    resolveToBlob?.(new Blob(['png'], { type: 'image/png' }));
+    await copyPromise;
+
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the fetched blob when canvas export fails', async () => {
     const image = createLoadedImage();
-    const write = vi.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
+      await item.items['image/png'];
+    });
     const toBlob = vi.fn((callback: BlobCallback) => {
       callback?.(null);
     });
@@ -106,15 +163,21 @@ describe('copyImageToClipboard', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://example.test/image.jpg', {
       credentials: 'include',
     });
-    expect(write).toHaveBeenCalledTimes(1);
-    const clipboardItem = write.mock.calls[0]?.[0]?.[0] as FakeClipboardItem;
+    expect(write).toHaveBeenCalledTimes(2);
+    const clipboardItem = write.mock.calls[1]?.[0]?.[0] as FakeClipboardItem;
     expect(clipboardItem.items['image/jpeg']).toBeInstanceOf(Blob);
     expect(clipboardItem.items['image/jpeg'].type).toBe('image/jpeg');
   });
 
-  it('does not fall back to fetch when clipboard write fails', async () => {
+  it('falls back to fetch when clipboard write fails', async () => {
     const image = createLoadedImage();
-    const write = vi.fn().mockRejectedValue(new Error('clipboard write denied'));
+    let writeCalls = 0;
+    const write = vi.fn().mockImplementation(async () => {
+      writeCalls += 1;
+      if (writeCalls === 1) {
+        throw new Error('clipboard write denied');
+      }
+    });
     const drawImage = vi.fn();
     const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
       callback?.(new Blob(['png'], { type }));
@@ -139,20 +202,28 @@ describe('copyImageToClipboard', () => {
       value: { write },
     });
     vi.stubGlobal('ClipboardItem', FakeClipboardItem);
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'image/jpeg' : null),
+      },
+    });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(copyImageToClipboard(image, 'https://example.test/image.png')).rejects.toThrow(
-      'clipboard write denied',
-    );
+    await copyImageToClipboard(image, 'https://example.test/image.png');
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(write).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('https://example.test/image.png', {
+      credentials: 'include',
+    });
+    expect(write).toHaveBeenCalledTimes(2);
   });
 
   it('rejects non-image fetched content even when ClipboardItem supports it', async () => {
     const image = createLoadedImage();
-    const write = vi.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
+      await item.items['image/png'];
+    });
     const toBlob = vi.fn((callback: BlobCallback) => {
       callback?.(null);
     });
@@ -190,7 +261,7 @@ describe('copyImageToClipboard', () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(write).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
   it('reports image copying as unavailable when the browser lacks clipboard support', () => {
