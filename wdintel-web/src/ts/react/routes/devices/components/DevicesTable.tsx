@@ -16,6 +16,7 @@ import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton'
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
+import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
   CUSTOM_STYLES,
   FULL_HEIGHT_LOADING_ROW_COUNT,
@@ -67,11 +68,19 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         accessorKey: 'name',
         header: 'Назва',
         size: 260,
-        Cell: ({ row }) => (
-          <Link href={`/devices/${row.original.id}`} underline="hover" fontWeight={600}>
-            {row.original.name || '—'}
-          </Link>
-        ),
+        Cell: ({ row }) => {
+          const href = `/devices/${row.original.id}`;
+          return (
+            <Link
+              href={href}
+              underline="hover"
+              fontWeight={600}
+              onClick={(event) => handleNavigateWithinSpaClick(event, href)}
+            >
+              {row.original.name || '—'}
+            </Link>
+          );
+        },
       },
       {
         id: 'createdBy',
