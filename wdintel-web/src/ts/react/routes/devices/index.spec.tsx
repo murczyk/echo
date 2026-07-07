@@ -202,6 +202,8 @@ describe('DevicesPage layout', () => {
     });
     expect(capturedPageToolbarProps).not.toHaveProperty('withGlobalTextFilter');
     expect(capturedPageToolbarProps).not.toHaveProperty('filter');
+    expect(container?.textContent).not.toContain('Оновити');
+    expect(container?.textContent).toContain('Створити пристрій');
 
     expect(capturedUnitSidebarProps).toMatchObject({
       showInvestigatingFilter: false,

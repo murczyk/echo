@@ -1,5 +1,4 @@
 import AddIcon from '@mui/icons-material/Add';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, Button, CircularProgress, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useMemo } from 'react';
 
@@ -120,26 +119,16 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           titleLeadingGap={2}
           internalActionsHidden
           actions={
-            <>
+            page.permissions.canEdit ? (
               <Button
-                variant="outlined"
-                onClick={() => void page.reload()}
-                disabled={page.loading || page.refreshing || page.loadingMore}
-                startIcon={page.refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
+                variant="contained"
+                onClick={page.openCreateDialog}
+                disabled={page.creating || page.loading}
+                startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
               >
-                Оновити
+                Створити пристрій
               </Button>
-              {page.permissions.canEdit ? (
-                <Button
-                  variant="contained"
-                  onClick={page.openCreateDialog}
-                  disabled={page.creating || page.loading}
-                  startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
-                >
-                  Створити пристрій
-                </Button>
-              ) : null}
-            </>
+            ) : null
           }
         />
 

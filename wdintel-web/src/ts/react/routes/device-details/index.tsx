@@ -1,8 +1,6 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import RestoreIcon from '@mui/icons-material/Restore';
 import {
   Box,
@@ -27,7 +25,6 @@ import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
-import { isSafeExternalUrl } from '../devices/helpers';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { DeviceFileBatchCreateDialog } from './components/DeviceFileBatchCreateDialog';
@@ -35,10 +32,6 @@ import { DeviceFilesSection } from './components/DeviceFilesSection';
 import { fileDisplayName, formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
 import { useDeviceFiles } from './use-device-files';
-
-function openExternalUrl(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
 
 function DeviceHeaderTitle({
   deviceName,
@@ -119,8 +112,6 @@ export function DeviceDetailsPage({
   }
 
   const device = page.device;
-  const externalUrl = device?.externalUrl?.trim() ?? '';
-  const canOpenExternalUrl = isSafeExternalUrl(externalUrl);
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
   const showArchiveAction = page.permissions.canEdit && device !== null && !device.archived;
   const showRestoreAction = page.permissions.canEdit && device !== null && device.archived;
@@ -181,22 +172,6 @@ export function DeviceDetailsPage({
         titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
-            {canOpenExternalUrl ? (
-              <Button
-                startIcon={<OpenInNewIcon fontSize="small" />}
-                onClick={() => openExternalUrl(externalUrl)}
-              >
-                Зовнішнє посилання
-              </Button>
-            ) : null}
-            <Button
-              variant="outlined"
-              onClick={() => void page.reload()}
-              disabled={page.loading || page.refreshing || page.mutating || page.editSubmitting}
-              startIcon={page.refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
-            >
-              Оновити
-            </Button>
             {showEditAction ? (
               <Button
                 variant="outlined"

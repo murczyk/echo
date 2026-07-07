@@ -182,7 +182,8 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Теги');
     expect(leftPanelText).toContain('IP');
     expect(leftPanelText).toContain('10.0.0.1');
-    expect(leftPanelText).not.toContain('Зовнішнє посилання');
+    expect(container?.textContent).not.toContain('Зовнішнє посилання');
+    expect(container?.textContent).not.toContain('Оновити');
     expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
     expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
     expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
