@@ -218,7 +218,11 @@ export function buildAnalysisReq(
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
-  if (isNullOrUndefined(sinceDateInclusiveMs) || isNullOrUndefined(tillDateNoninclusiveMs)) {
+  if (
+    isNullOrUndefined(sinceDateInclusiveMs) ||
+    isNullOrUndefined(tillDateNoninclusiveMs) ||
+    sinceDateInclusiveMs > tillDateNoninclusiveMs
+  ) {
     return null;
   }
 

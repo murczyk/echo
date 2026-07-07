@@ -14,15 +14,18 @@ type PowerDateTimePickerMockInstance = {
   value: dayjs.Dayjs | null;
 };
 
-const powerDateTimePickerInstances: Array<PowerDateTimePickerMockInstance | undefined> = [];
-const powerDateTimePickerMock = vi.fn(
-  (props: { value: dayjs.Dayjs | null; onChange: (value: dayjs.Dayjs | null) => void }) => null,
-);
-
-function PowerDateTimePickerMock(props: {
+type PowerDateTimePickerMockProps = {
   value: dayjs.Dayjs | null;
   onChange: (value: dayjs.Dayjs | null) => void;
-}) {
+  allowEmpty?: boolean;
+  minDateTime?: dayjs.Dayjs;
+  maxDateTime?: dayjs.Dayjs;
+};
+
+const powerDateTimePickerInstances: Array<PowerDateTimePickerMockInstance | undefined> = [];
+const powerDateTimePickerMock = vi.fn((_props: PowerDateTimePickerMockProps) => null);
+
+function PowerDateTimePickerMock(props: PowerDateTimePickerMockProps) {
   const instanceIdRef = useRef<number | null>(null);
   powerDateTimePickerMock(props);
   const [draftValue, setDraftValue] = useState(props.value);
@@ -64,17 +67,17 @@ function PowerDateTimePickerMock(props: {
 }
 
 vi.mock('./PowerDateTimePicker', () => ({
-  PowerDateTimePicker: (props: {
-    value: dayjs.Dayjs | null;
-    onChange: (value: unknown) => void;
-  }) => (
-    <PowerDateTimePickerMock
-      {...(props as { value: dayjs.Dayjs | null; onChange: (value: dayjs.Dayjs | null) => void })}
-    />
+  PowerDateTimePicker: (props: PowerDateTimePickerMockProps) => (
+    <PowerDateTimePickerMock {...props} />
   ),
 }));
 
 import { DateTimeRangeControl, getDateTimeRangeControlTextFieldSx } from './DateTimeRangeControl';
+import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
+
+const fixedNow = new Date('2026-05-01T12:00:00Z');
+const fixedToday = dayjs(fixedNow).tz(APP_TIME_ZONE).startOf('day');
+const fixedTomorrow = fixedToday.add(1, 'day');
 
 describe('DateTimeRangeControl', () => {
   afterEach(() => {
@@ -95,6 +98,7 @@ describe('DateTimeRangeControl', () => {
         <DateTimeRangeControl
           value={{ fromDateTimeStr: '2026-05-01T10:00', toDateTimeStr: '2026-05-02T10:00' }}
           onChange={onChange}
+          now={fixedNow}
         />,
       );
     });
@@ -109,6 +113,18 @@ describe('DateTimeRangeControl', () => {
     expect(toPickerProps).toBeDefined();
     expect(fromPickerProps?.allowEmpty).toBe(false);
     expect(toPickerProps?.allowEmpty).toBe(false);
+    expect((fromPickerProps?.minDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE).format('YYYY-MM-DDTHH:mm'),
+    );
+    expect((fromPickerProps?.maxDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      fixedTomorrow.format('YYYY-MM-DDTHH:mm'),
+    );
+    expect((toPickerProps?.minDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      dayjs.tz('2026-05-01T10:00', APP_TIME_ZONE).format('YYYY-MM-DDTHH:mm'),
+    );
+    expect((toPickerProps?.maxDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      fixedTomorrow.format('YYYY-MM-DDTHH:mm'),
+    );
 
     act(() => {
       fromPickerProps?.onChange(dayjs('2026-05-03T12:30'));
@@ -133,6 +149,44 @@ describe('DateTimeRangeControl', () => {
     });
   });
 
+  it('keeps the default today-to-tomorrow range valid on expand', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <DateTimeRangeControl
+          value={{
+            fromDateTimeStr: fixedToday.format('YYYY-MM-DDTHH:mm'),
+            toDateTimeStr: fixedTomorrow.format('YYYY-MM-DDTHH:mm'),
+          }}
+          onChange={onChange}
+          now={fixedNow}
+        />,
+      );
+    });
+
+    act(() => {
+      container.querySelector('input')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const fromPickerProps = powerDateTimePickerMock.mock.calls[0]?.[0];
+    const toPickerProps = powerDateTimePickerMock.mock.calls[1]?.[0];
+
+    expect((fromPickerProps?.maxDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      fixedTomorrow.format('YYYY-MM-DDTHH:mm'),
+    );
+    expect((toPickerProps?.minDateTime as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      fixedToday.format('YYYY-MM-DDTHH:mm'),
+    );
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('keeps the active datetime draft across a stale parent rerender', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -144,6 +198,7 @@ describe('DateTimeRangeControl', () => {
         <DateTimeRangeControl
           value={{ fromDateTimeStr: '2026-05-01T10:00', toDateTimeStr: '2026-05-02T10:00' }}
           onChange={onChange}
+          now={fixedNow}
         />,
       );
     });
@@ -176,6 +231,7 @@ describe('DateTimeRangeControl', () => {
         <DateTimeRangeControl
           value={{ fromDateTimeStr: '2026-05-01T10:00', toDateTimeStr: '2026-05-02T10:00' }}
           onChange={onChange}
+          now={fixedNow}
         />,
       );
     });

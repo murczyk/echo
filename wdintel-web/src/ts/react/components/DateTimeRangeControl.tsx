@@ -19,6 +19,7 @@ export type DateTimeRangeControlProps = {
   onChange: (value: DateTimeRangeValue) => void;
   className?: string;
   disabled?: boolean;
+  now?: Date;
 };
 
 function formatDisplayValue(value: string): string {
@@ -83,12 +84,19 @@ export function DateTimeRangeControl({
   onChange,
   className,
   disabled = false,
+  now = new Date(),
 }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
   const valueRef = useRef(value);
   const open = Boolean(anchorEl);
+  const minDateTime = dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs;
+  const maxDateTime = dayjs(now).tz(APP_TIME_ZONE).startOf('day').add(1, 'day') as Dayjs;
+  const fromValue = parseDateTimeInAppTimeZone(value.fromDateTimeStr);
+  const toValue = parseDateTimeInAppTimeZone(value.toDateTimeStr);
+  const fromMaxDateTime = toValue && toValue.isBefore(maxDateTime) ? toValue : maxDateTime;
+  const toMinDateTime = fromValue && fromValue.isAfter(minDateTime) ? fromValue : minDateTime;
 
   useEffect(() => {
     valueRef.current = value;
@@ -206,7 +214,7 @@ export function DateTimeRangeControl({
               <Stack spacing={1.25}>
                 <CompactTitle component="div">Від</CompactTitle>
                 <PowerDateTimePicker
-                  value={parseDateTimeInAppTimeZone(value.fromDateTimeStr)}
+                  value={fromValue}
                   allowEmpty={false}
                   onChange={(nextValue) => {
                     const nextRange = {
@@ -217,7 +225,8 @@ export function DateTimeRangeControl({
                     valueRef.current = nextRange;
                     onChange(nextRange);
                   }}
-                  minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                  minDateTime={minDateTime}
+                  maxDateTime={fromMaxDateTime}
                   format="DD.MM.YYYY HH:mm"
                   slotProps={{
                     textField: {
@@ -246,7 +255,7 @@ export function DateTimeRangeControl({
               <Stack spacing={1.25}>
                 <CompactTitle component="div">До</CompactTitle>
                 <PowerDateTimePicker
-                  value={parseDateTimeInAppTimeZone(value.toDateTimeStr)}
+                  value={toValue}
                   allowEmpty={false}
                   onChange={(nextValue) => {
                     const nextRange = {
@@ -257,7 +266,8 @@ export function DateTimeRangeControl({
                     valueRef.current = nextRange;
                     onChange(nextRange);
                   }}
-                  minDateTime={dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs}
+                  minDateTime={toMinDateTime}
+                  maxDateTime={maxDateTime}
                   format="DD.MM.YYYY HH:mm"
                   slotProps={{
                     textField: {
