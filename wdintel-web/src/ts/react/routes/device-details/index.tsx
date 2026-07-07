@@ -1,17 +1,16 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
+import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import RestoreIcon from '@mui/icons-material/Restore';
 import {
   Box,
-  Button,
-  Chip,
-  CircularProgress,
   IconButton,
+  Menu,
+  MenuItem,
   Skeleton,
   Stack,
   Tooltip,
-  Typography,
   useMediaQuery,
 } from '@mui/material';
 import { useState } from 'react';
@@ -40,6 +39,8 @@ function DeviceHeaderTitle({
   deviceName: string | null;
   archived: boolean;
 }) {
+  const lifecycleLabel = formatDeviceLifecycleLabel(archived);
+
   return (
     <Box
       component="span"
@@ -59,19 +60,26 @@ function DeviceHeaderTitle({
         <Skeleton width={240} />
       ) : (
         <>
-          <Typography
+          <Tooltip title={lifecycleLabel} arrow placement="bottom-start">
+            <Box
+              component="span"
+              aria-label={lifecycleLabel}
+              sx={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                bgcolor: archived ? 'warning.main' : 'success.main',
+                flexShrink: 0,
+                cursor: 'default',
+              }}
+            />
+          </Tooltip>
+          <Box
             component="span"
-            variant="h5"
-            sx={{ fontWeight: 600, overflowWrap: 'anywhere', minWidth: 0 }}
+            sx={{ display: 'block', minWidth: 0, lineHeight: 'inherit', overflowWrap: 'anywhere' }}
           >
             {deviceName}
-          </Typography>
-          <Chip
-            size="small"
-            color={archived ? 'warning' : 'success'}
-            label={formatDeviceLifecycleLabel(archived)}
-            sx={{ flexShrink: 0 }}
-          />
+          </Box>
         </>
       )}
     </Box>
@@ -92,9 +100,10 @@ export function DeviceDetailsPage({
     canEdit: page.permissions.canEdit,
     parentArchived: page.device?.archived ?? false,
   });
-  const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
+  const isMobileLayout = useMediaQuery((theme) => theme.breakpoints.down('sm'));
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('description');
+  const [actionsMenuAnchorEl, setActionsMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   if (!page.permissions.canRead) {
     return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
@@ -115,8 +124,29 @@ export function DeviceDetailsPage({
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
   const showArchiveAction = page.permissions.canEdit && device !== null && !device.archived;
   const showRestoreAction = page.permissions.canEdit && device !== null && device.archived;
-  const leftPanelVisible = !isDesktopLayout || leftPanelOpen;
+  const leftPanelVisible = isMobileLayout || leftPanelOpen;
   const sidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
+  const actionsMenuOpen = actionsMenuAnchorEl !== null;
+  const actionsDisabled = page.mutating || page.editSubmitting;
+
+  function closeActionsMenu() {
+    setActionsMenuAnchorEl(null);
+  }
+
+  function openEditDrawer() {
+    closeActionsMenu();
+    page.openEditDrawer();
+  }
+
+  function openArchiveDialog() {
+    closeActionsMenu();
+    page.openArchiveDialog();
+  }
+
+  function restoreDevice() {
+    closeActionsMenu();
+    void page.restoreCurrentDevice();
+  }
 
   const filesPanel = device ? (
     <DeviceFilesSection
@@ -160,7 +190,7 @@ export function DeviceDetailsPage({
           />
         }
         titleLeadingActions={
-          isDesktopLayout ? (
+          !isMobileLayout ? (
             <SidePanelToggleButton
               side="left"
               active={leftPanelVisible}
@@ -172,38 +202,54 @@ export function DeviceDetailsPage({
         titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
-            {showEditAction ? (
-              <Button
-                variant="outlined"
-                onClick={page.openEditDrawer}
-                disabled={page.mutating || page.editSubmitting}
-                startIcon={<EditIcon />}
+            <Tooltip title="Дії">
+              <IconButton
+                onClick={(event) => setActionsMenuAnchorEl(event.currentTarget)}
+                aria-haspopup="true"
+                aria-controls={actionsMenuOpen ? 'device-details-actions-menu' : undefined}
+                aria-label="Дії з пристроєм"
               >
-                Редагувати
-              </Button>
-            ) : null}
-            {showArchiveAction ? (
-              <Button
-                color="error"
-                variant="outlined"
-                onClick={page.openArchiveDialog}
-                disabled={page.mutating || page.editSubmitting}
-                startIcon={page.mutating ? <CircularProgress size={16} /> : <ArchiveOutlinedIcon />}
-              >
-                Архівувати
-              </Button>
-            ) : null}
-            {showRestoreAction ? (
-              <Button
-                color="primary"
-                variant="contained"
-                onClick={() => void page.restoreCurrentDevice()}
-                disabled={page.mutating || page.editSubmitting}
-                startIcon={page.mutating ? <CircularProgress size={16} /> : <RestoreIcon />}
-              >
-                Відновити
-              </Button>
-            ) : null}
+                <MoreVertOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Menu
+              id="device-details-actions-menu"
+              open={actionsMenuOpen}
+              anchorEl={actionsMenuAnchorEl}
+              onClose={closeActionsMenu}
+            >
+              {device?.archived ? (
+                <MenuItem
+                  onClick={restoreDevice}
+                  disabled={!showRestoreAction || actionsDisabled}
+                  sx={{ color: showRestoreAction ? 'primary.main' : undefined }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <RestoreIcon fontSize="small" />
+                    <span>Відновити</span>
+                  </Stack>
+                </MenuItem>
+              ) : (
+                <>
+                  <MenuItem onClick={openEditDrawer} disabled={!showEditAction || actionsDisabled}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <EditIcon fontSize="small" />
+                      <span>Редагувати</span>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={openArchiveDialog}
+                    disabled={!showArchiveAction || actionsDisabled}
+                    sx={{ color: showArchiveAction ? 'error.main' : undefined }}
+                  >
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <ArchiveOutlinedIcon fontSize="small" />
+                      <span>Архівувати</span>
+                    </Stack>
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
           </Stack>
         }
       />
@@ -234,7 +280,7 @@ export function DeviceDetailsPage({
               gap: 2,
               gridTemplateColumns: {
                 xs: '1fr',
-                lg: leftPanelVisible ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+                lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)',
               },
               overflow: 'hidden',
             }}
@@ -255,7 +301,7 @@ export function DeviceDetailsPage({
               gap: 2,
               gridTemplateColumns: {
                 xs: '1fr',
-                lg: leftPanelVisible ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+                lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)',
               },
               overflow: 'hidden',
             }}

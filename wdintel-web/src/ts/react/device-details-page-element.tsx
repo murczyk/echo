@@ -44,13 +44,7 @@ function DeviceDetailsPageRoot({
 
   return (
     <NeoMuiThemeProvider>
-      <div
-        className="h-full w-full min-w-0"
-        data-auth-user-roles={authUserRoles.join(',')}
-        data-device-id={deviceId}
-      >
-        <DeviceDetailsPage deviceId={deviceId} authUserRoles={authUserRoles} />
-      </div>
+      <DeviceDetailsPage deviceId={deviceId} authUserRoles={authUserRoles} />
     </NeoMuiThemeProvider>
   );
 }

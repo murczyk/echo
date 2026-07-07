@@ -163,6 +163,20 @@ function clickTab(label: string) {
   });
 }
 
+function openDeviceActionsMenu() {
+  const menuButton = container?.querySelector('button[aria-label="Дії з пристроєм"]');
+  if (!(menuButton instanceof HTMLElement)) throw new Error('device actions menu button not found');
+  act(() => {
+    menuButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+}
+
+function actionMenuLabels() {
+  return Array.from(document.querySelectorAll('[role="menuitem"]')).map((element) =>
+    element.textContent?.trim(),
+  );
+}
+
 describe('DeviceDetailsPage layout', () => {
   it('renders main information in the left panel and exactly two main tabs', () => {
     renderPage();
@@ -184,6 +198,10 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('10.0.0.1');
     expect(container?.textContent).not.toContain('Зовнішнє посилання');
     expect(container?.textContent).not.toContain('Оновити');
+    expect(container?.textContent).not.toContain('Редагувати');
+    expect(container?.textContent).not.toContain('Архівувати');
+    expect(container?.querySelector('[aria-label="Активний"]')).not.toBeNull();
+    expect(container?.querySelector('button[aria-label="Дії з пристроєм"]')).not.toBeNull();
     expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
     expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
     expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
@@ -201,6 +219,9 @@ describe('DeviceDetailsPage layout', () => {
         ?.textContent?.trim(),
     ).toBe('');
     expect(container?.textContent).not.toContain('Метадані файлів');
+
+    openDeviceActionsMenu();
+    expect(actionMenuLabels()).toEqual(['Редагувати', 'Архівувати']);
 
     clickTab('Файли');
 
@@ -226,7 +247,11 @@ describe('DeviceDetailsPage layout', () => {
     );
     expect(container?.textContent).toContain('Пристрій архівовано');
     expect(container?.textContent).not.toContain('Редагувати');
-    expect(container?.textContent).toContain('Відновити');
+    expect(container?.textContent).not.toContain('Відновити');
+    expect(container?.querySelector('[aria-label="Архівний"]')).not.toBeNull();
+
+    openDeviceActionsMenu();
+    expect(actionMenuLabels()).toEqual(['Відновити']);
 
     clickTab('Файли');
 

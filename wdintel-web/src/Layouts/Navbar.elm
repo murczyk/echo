@@ -204,13 +204,16 @@ view user activeName shared route { toContentMsg, model, content } =
         isDevicesPath =
             route.url.path == "/devices" || String.startsWith "/devices/" route.url.path
 
+        isDevicesListPath =
+            route.url.path == "/devices"
+
         usesShellContentGap =
             route.url.path
                 == "/rer-palitra-neo"
                 || route.url.path
                 == "/rer-callsigns-neo"
                 || route.url.path == "/rer-networks-neo"
-                || isDevicesPath
+                || isDevicesListPath
 
         usesFixedViewportLayout =
             usesShellContentGap

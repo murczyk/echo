@@ -82,8 +82,6 @@ describe('device-details-page custom element', () => {
     await mount(element);
 
     expect(document.body.textContent).not.toContain('Некоректний ID пристрою.');
-    expect(document.body.querySelector('[data-device-id]')?.getAttribute('data-device-id')).toBe(
-      DEVICE_ID,
-    );
+    expect(document.body.querySelector('[data-device-id]')).toBeNull();
   });
 });
