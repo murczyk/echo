@@ -5,6 +5,7 @@ import type {
   NetworkCallsignRelationsRsp,
 } from '../../../../Bindings';
 import {
+  buildNetworkCallsignRelationFreqState,
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
   limitGraphEdgesByWeight,
@@ -87,6 +88,28 @@ describe('network relations helpers', () => {
     expect(normalizeNetworkCallsignRelationSearch('  сокіл-1 ')).toBe('СОКІЛ-1');
   });
 
+  it('derives frequency state from raw response frequencies', () => {
+    const state = buildNetworkCallsignRelationFreqState(createGraph(), ['652.111']);
+
+    expect(state.availableFreqs.map((freq) => freq.freq)).toEqual(['652.111', '852.111']);
+    expect(state.defaultEnabledFreqs).toEqual(['652.111', '852.111']);
+    expect(state.resolvedEnabledFreqs).toEqual(['652.111']);
+  });
+
+  it('derives frequency state from edge buckets when response frequencies are missing', () => {
+    const state = buildNetworkCallsignRelationFreqState(
+      {
+        ...createGraph(),
+        freqs: [],
+      },
+      [],
+    );
+
+    expect(state.availableFreqs.map((freq) => freq.freq)).toEqual(['652.111', '852.111']);
+    expect(state.defaultEnabledFreqs).toEqual(['652.111', '852.111']);
+    expect(state.resolvedEnabledFreqs).toEqual(['652.111', '852.111']);
+  });
+
   it('filters edges by frequency selection and minimum intensity', () => {
     const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', ['652.111'], 2);
 
@@ -151,15 +174,17 @@ describe('network relations helpers', () => {
     expect(graph.visibleNodeIds.has('CHARLIE')).toBe(true);
   });
 
-  it('hides frequency-bucket edges when no frequencies are enabled', () => {
+  it('falls back to default frequencies when the selection is empty', () => {
     const graph = buildNetworkCallsignRelationsGraphView(createGraph(), '', [], 1);
 
-    expect(graph.edges).toHaveLength(0);
-    expect(graph.visibleEdgeIds.size).toBe(0);
-    expect(graph.visibleNodeIds.size).toBe(0);
+    expect(graph.edges).toHaveLength(2);
+    expect(graph.visibleEdgeIds.size).toBe(2);
+    expect(graph.visibleNodeIds.has('ALPHA')).toBe(true);
+    expect(graph.visibleNodeIds.has('BRAVO')).toBe(true);
+    expect(graph.visibleNodeIds.has('CHARLIE')).toBe(true);
   });
 
-  it('excludes edges when active frequency filters match no buckets', () => {
+  it('falls back to the default selection when active frequency filters match no buckets', () => {
     const graph = buildNetworkCallsignRelationsGraphView(
       {
         ...createGraph(),
@@ -181,8 +206,23 @@ describe('network relations helpers', () => {
       1,
     );
 
-    expect(graph.edges).toHaveLength(0);
-    expect(graph.visibleEdgeIds.has('ALPHA__BRAVO')).toBe(false);
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.visibleEdgeIds.has('ALPHA__BRAVO')).toBe(true);
+  });
+
+  it('uses edge buckets when the backend omits explicit relation frequencies', () => {
+    const graph = buildNetworkCallsignRelationsGraphView(
+      {
+        ...createGraph(),
+        freqs: [],
+      },
+      '',
+      [],
+      1,
+    );
+
+    expect(graph.freqs.map((freq) => freq.freq)).toEqual(['652.111', '852.111']);
+    expect(graph.edges).toHaveLength(2);
   });
 
   it('falls back to edge weight when no frequency buckets exist', () => {

@@ -78,7 +78,7 @@ export function NetworkCallsignRelationsPanel({
           sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}
         >
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв'язків
+            Граф зв&apos;язків позивних
           </Typography>
           <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>
             {relationsError}
@@ -106,9 +106,9 @@ export function NetworkCallsignRelationsPanel({
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв'язків
+            Граф зв&apos;язків позивних
           </Typography>
-          <NetworkDetailsLoadingState message={`Завантажуємо граф зв'язків${ELLIPSIS}`} />
+          <NetworkDetailsLoadingState message={`Завантажуємо граф зв'язків позивних${ELLIPSIS}`} />
         </Stack>
       </Box>
     );
@@ -129,12 +129,12 @@ export function NetworkCallsignRelationsPanel({
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв'язків
+            Граф зв&apos;язків позивних
           </Typography>
           <NetworkDetailsEmptyState
             icon={<AccountTreeOutlinedIcon />}
-            title="Немає графових даних"
-            description="Граф будується після першого зв'язку між позивними"
+            title="Немає даних про зв'язки"
+            description="Граф будується, коли у вибраному періоді є спільні позивні."
             minHeight={360}
             action={
               <Button variant="outlined" onClick={onReload}>
@@ -160,6 +160,7 @@ export function NetworkCallsignRelationsPanel({
       relationsSince={relationsSince}
       relationsTill={relationsTill}
       relationsLoading={relationsLoading}
+      onReload={onReload}
       onSearchChange={onSearchChange}
       onEnabledFreqsChange={onEnabledFreqsChange}
       onMinIntensityChange={onMinIntensityChange}

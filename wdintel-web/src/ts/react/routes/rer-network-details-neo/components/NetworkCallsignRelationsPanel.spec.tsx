@@ -17,7 +17,6 @@ vi.mock('./NetworkDatePickerField', () => ({
 }));
 
 import { NetworkCallsignRelationsPanel } from './NetworkCallsignRelationsPanel';
-import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 
 type Rendered = {
@@ -253,11 +252,33 @@ describe('NetworkCallsignRelationsPanel', () => {
       view.container.querySelector<HTMLButtonElement>('[id$="-filters"]')?.click();
     });
 
+    const filtersPopover = document.body.querySelector('[data-testid="graph-filters-popover"]');
+    const checkboxes = filtersPopover?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+
     act(() => {
-      const checkboxes = document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-      checkboxes[1]?.click();
+      checkboxes?.[1]?.click();
     });
-    expect(view.props.onEnabledFreqsChange).toHaveBeenLastCalledWith([]);
+    expect(view.props.onEnabledFreqsChange).toHaveBeenLastCalledWith(['652.111', '852.111']);
+  });
+
+  it('disables the last selected frequency so it cannot be unchecked', () => {
+    const view = renderPanel();
+    rendered.push(view);
+
+    act(() => {
+      view.container.querySelector<HTMLButtonElement>('[id$="-filters"]')?.click();
+    });
+
+    const filtersPopover = document.body.querySelector('[data-testid="graph-filters-popover"]');
+    const checkboxes = filtersPopover?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkboxes[0]?.disabled).toBe(true);
+    expect(checkboxes[1]?.disabled).toBe(false);
+
+    act(() => {
+      checkboxes[0]?.click();
+    });
+
+    expect(view.props.onEnabledFreqsChange).not.toHaveBeenCalled();
   });
 
   it('keeps filter controls available when filters hide all graph data', () => {
@@ -274,7 +295,7 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.textContent).toContain("Фільтри приховали всі зв'язки");
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
   });
@@ -297,7 +318,7 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.textContent).toContain("Фільтри приховали всі зв'язки");
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).not.toBeNull();
   });
 
@@ -350,7 +371,7 @@ describe('NetworkCallsignRelationsPanel', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.textContent).toContain("Немає даних про зв'язки");
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).toBeNull();
   });
 
@@ -388,8 +409,8 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain("Завантажуємо граф зв'язків");
-    expect(view.container.textContent).toContain("Граф зв'язків");
+    expect(view.container.textContent).toContain("Завантажуємо граф зв'язків позивних");
+    expect(view.container.textContent).toContain("Граф зв'язків позивних");
   });
 
   it('shows a no-data card before relations arrive', () => {
@@ -408,9 +429,9 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain('Немає графових даних');
+    expect(view.container.textContent).toContain("Немає даних про зв'язки");
     expect(view.container.textContent).toContain(
-      "Граф будується після першого зв'язку між позивними",
+      'Граф будується, коли у вибраному періоді є спільні позивні.',
     );
     expect(
       [...view.container.querySelectorAll('button')].some((button) =>
@@ -429,7 +450,9 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
-    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.textContent).toContain(
+      "Немає даних про зв'язки для вибраних мережі, періоду та частот.",
+    );
   });
 
   it('keeps the graph shell available when relations contain nodes but no edges', () => {
@@ -449,7 +472,7 @@ describe('NetworkCallsignRelationsPanel', () => {
 
     expect(view.container.querySelector('[aria-label="Очистити пошук"]')).not.toBeNull();
     expect(view.container.querySelector('[id$="-filters"]')).not.toBeNull();
-    expect(view.container.textContent).toContain(EMPTY_STATE_NO_RESULTS_TEXT);
+    expect(view.container.textContent).toContain("Немає зв'язків між позивними за вибраний період");
   });
 
   it('keeps the graph visible while refreshing relations', () => {
@@ -462,9 +485,9 @@ describe('NetworkCallsignRelationsPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain("Граф зв'язків");
-    expect(view.container.textContent).toContain("Оновлюємо граф зв'язків");
-    expect(view.container.textContent).not.toContain("Завантажуємо граф зв'язків");
+    expect(view.container.textContent).toContain("Граф зв'язків позивних");
+    expect(view.container.textContent).toContain("Оновлюємо граф зв'язків позивних");
+    expect(view.container.textContent).not.toContain("Завантажуємо граф зв'язків позивних");
   });
 
   it('shows the dense-graph warning while keeping graph controls visible', () => {

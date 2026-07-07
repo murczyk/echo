@@ -36,6 +36,7 @@ import { getNetworkCallsignRelationMessages } from '../../../services/api/networ
 import {
   buildRelationNeighborIds,
   buildNetworkCallsignRelationsGraphView,
+  buildNetworkCallsignRelationFreqState,
   buildRenderableNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
   getRelationEdgeBounds,
@@ -60,6 +61,7 @@ type Props = {
   relationsTill: string;
   networkId: number | null;
   relationsLoading: boolean;
+  onReload: () => void;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
   onMinIntensityChange: (value: number) => void;
@@ -73,6 +75,18 @@ type Props = {
 const GRAPH_WHEEL_ZOOM_IN_FACTOR = 0.88;
 const GRAPH_WHEEL_ZOOM_OUT_FACTOR = 1.14;
 
+function formatRelationFreqButtonLabel(selectedFreqs: string[], availableFreqs: string[]): string {
+  if (availableFreqs.length === 0) {
+    return 'Частоти';
+  }
+
+  if (selectedFreqs.length === 0 || selectedFreqs.length === availableFreqs.length) {
+    return 'Частоти: усі';
+  }
+
+  return `Частоти: ${selectedFreqs.length}/${availableFreqs.length}`;
+}
+
 export function NetworkCallsignRelationsGraph({
   relations,
   relationsSearch,
@@ -85,6 +99,7 @@ export function NetworkCallsignRelationsGraph({
   relationsTill,
   networkId,
   relationsLoading,
+  onReload,
   onSearchChange,
   onEnabledFreqsChange,
   onMinIntensityChange,
@@ -124,6 +139,12 @@ export function NetworkCallsignRelationsGraph({
       ),
     [relations, relationsEnabledFreqs, relationsMinIntensity, relationsSearch],
   );
+  const relationFreqState = useMemo(
+    () => buildNetworkCallsignRelationFreqState(relations, relationsEnabledFreqs),
+    [relations.edges, relations.freqs, relationsEnabledFreqs],
+  );
+  const legendFreqs = useMemo(() => graphView.freqs, [graphView.freqs]);
+  const { availableFreqs, resolvedEnabledFreqs } = relationFreqState;
   const visibleNodes = useMemo(
     () => graphView.nodes.filter((node) => node.visible),
     [graphView.nodes],
@@ -218,7 +239,6 @@ export function NetworkCallsignRelationsGraph({
   const totalIntensity = summaryEdges.reduce((total, edge) => total + edge.visibleWeight, 0);
   const maxIntensity = Math.max(1, ...summaryEdges.map((edge) => edge.visibleWeight));
   const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
-  const legendFreqs = graphView.freqs;
   const denseGraph =
     renderGraphView.nodes.length > 40 ||
     renderGraphView.edges.length > 90 ||
@@ -267,7 +287,7 @@ export function NetworkCallsignRelationsGraph({
             callsign: selection.callsign,
             source: selection.source,
             target: selection.target,
-            freqs: relationsEnabledFreqs,
+            freqs: resolvedEnabledFreqs,
             limit: 24,
           },
           { signal: controller.signal },
@@ -288,9 +308,9 @@ export function NetworkCallsignRelationsGraph({
     };
   }, [
     networkId,
-    relationsEnabledFreqs,
     relationsSince,
     relationsTill,
+    resolvedEnabledFreqs,
     selectedMessageSelection?.callsign,
     selectedMessageSelection?.source,
     selectedMessageSelection?.target,
@@ -372,8 +392,9 @@ export function NetworkCallsignRelationsGraph({
 
   const handleFilterToggle = (freq: string, checked: boolean) => {
     const nextFreqs = checked
-      ? [...new Set([...relationsEnabledFreqs, freq])]
-      : relationsEnabledFreqs.filter((item) => item !== freq);
+      ? [...new Set([...resolvedEnabledFreqs, freq])]
+      : resolvedEnabledFreqs.filter((item) => item !== freq);
+    if (nextFreqs.length === 0) return;
     onEnabledFreqsChange(nextFreqs);
   };
 
@@ -483,12 +504,18 @@ export function NetworkCallsignRelationsGraph({
           sx={{ flexWrap: 'wrap' }}
         >
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв'язків
+            Граф зв&apos;язків позивних
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
-            {displayGraphCounts.nodes} вузлів · {displayGraphCounts.edges} зв'язків ·{' '}
-            {totalIntensity} перехоплень
-          </Typography>
+          <Stack spacing={0.25} sx={{ textAlign: 'right', alignItems: 'flex-end' }}>
+            <Typography variant="body2" color="text.secondary">
+              {displayGraphCounts.nodes} вузлів · {displayGraphCounts.edges} зв&apos;язків ·{' '}
+              {totalIntensity} перехоплень
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Позивні, зв&apos;язки та перехоплення у вибраних мережі, періоді, інтенсивності й
+              частотах.
+            </Typography>
+          </Stack>
         </Stack>
 
         <Stack
@@ -615,10 +642,16 @@ export function NetworkCallsignRelationsGraph({
                   fontWeight: 700,
                 }}
               >
-                Частоти
+                {formatRelationFreqButtonLabel(
+                  resolvedEnabledFreqs,
+                  availableFreqs.map((freq) => freq.freq),
+                )}
               </Button>
             </Stack>
           </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 720 }}>
+            Поточний граф оновлюється без втрати вже завантажених зв&apos;язків.
+          </Typography>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
@@ -627,6 +660,9 @@ export function NetworkCallsignRelationsGraph({
           graphView={renderGraphView}
           layout={layout}
           viewBox={viewBox}
+          graphNodeCount={relations.nodes.length}
+          graphEdgeCount={relations.edges.length}
+          onReload={onReload}
           selectedNodeId={relationsSelectedNodeId}
           selectedEdgeId={relationsSelectedEdgeId}
           selectedNode={selectedNode}
@@ -641,11 +677,11 @@ export function NetworkCallsignRelationsGraph({
           visibleNodeIdsForRender={visibleNodeIdsForRender}
           relationsShowLabels={relationsShowLabels}
           denseGraph={denseGraph}
-          graphIsFilteredEmpty={!hasRenderableGraph}
+          graphIsFilteredEmpty={relations.edges.length > 0 && !hasRenderableGraph}
           relationsSearch={relationsSearch}
           graphWarning={renderGraphView.warning}
           legendFreqs={legendFreqs}
-          relationsEnabledFreqs={relationsEnabledFreqs}
+          relationFreqState={relationFreqState}
           relationsMinIntensity={relationsMinIntensity}
           intensityAnchorEl={intensityAnchorEl}
           filterPopoverId={filterPopoverId}
@@ -674,7 +710,7 @@ export function NetworkCallsignRelationsGraph({
         anchorEl={filterAnchorEl}
         popoverId={filterPopoverId}
         legendFreqs={legendFreqs}
-        enabledFreqs={relationsEnabledFreqs}
+        enabledFreqs={resolvedEnabledFreqs}
         isFullscreen={isFullscreen}
         onClose={() => setFilterAnchorEl(null)}
         onEnabledFreqToggle={handleFilterToggle}
