@@ -6,6 +6,7 @@ pub struct CreateCyberEchoSignalMessagePayload {
     pub body: String,
     pub signal_group_master_key: String,
     pub computer_name_id: i64,
+    pub upload_urls: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
