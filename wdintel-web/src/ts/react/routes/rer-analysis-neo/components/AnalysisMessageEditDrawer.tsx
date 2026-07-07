@@ -3,8 +3,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import { Box, Button, Chip, Drawer, IconButton, Stack, TextField, Typography } from '@mui/material';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { PowerForm } from '../../../components/PowerForm';
 import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
-import { getFormKeyboardSubmitHandler } from '../../../utils/formKeyboardSubmit';
 
 import type { InboxMessage } from '../../../../../Bindings';
 
@@ -98,10 +98,9 @@ function AnalysisMessageEditDrawerComponent({
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose} ModalProps={{ disableRestoreFocus: true }}>
-      <Box
-        component="form"
+      <PowerForm
+        canSubmit={canSave}
         onSubmit={handleSubmit}
-        onKeyDown={getFormKeyboardSubmitHandler(canSave)}
         sx={{
           width: { xs: '100vw', sm: 420 },
           display: 'flex',
@@ -226,7 +225,7 @@ function AnalysisMessageEditDrawerComponent({
             {saveInFlight ? `Зберігаємо${ELLIPSIS}` : 'Зберегти'}
           </Button>
         </Stack>
-      </Box>
+      </PowerForm>
     </Drawer>
   );
 }

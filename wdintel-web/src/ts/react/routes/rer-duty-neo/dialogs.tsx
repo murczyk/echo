@@ -14,7 +14,7 @@ import {
   STANDARD_DIALOG_ACTIONS_SX,
   STANDARD_DIALOG_FORM_STACK_SX,
 } from '../../components/dialogStyles';
-import { getFormKeyboardSubmitHandler } from '../../utils/formKeyboardSubmit';
+import { PowerForm } from '../../components/PowerForm';
 import { ELLIPSIS } from '../../utils/misc';
 import { blurActiveElement } from '../../utils/focus';
 
@@ -145,11 +145,8 @@ export function CommentDialog({
   onClose,
   onSave,
 }: CommentDialogProps) {
-  const canSave = true;
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSave) return;
     blurActiveElement();
     onSave();
   };
@@ -166,11 +163,7 @@ export function CommentDialog({
       disableRestoreFocus
     >
       <DialogTitle>Коментар</DialogTitle>
-      <Box
-        component="form"
-        onSubmit={handleSubmit}
-        onKeyDown={getFormKeyboardSubmitHandler(canSave)}
-      >
+      <PowerForm onSubmit={handleSubmit}>
         <DialogContent>
           <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
             {renderCommentPreview(messagePreview)}
@@ -199,7 +192,7 @@ export function CommentDialog({
             Зберегти
           </Button>
         </DialogActions>
-      </Box>
+      </PowerForm>
     </Dialog>
   );
 }
