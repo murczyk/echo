@@ -4302,10 +4302,25 @@ listDevicesReqEncoder struct =
         ]
 
 
+type alias DeviceStatusCountsRsp =
+    { active : Int
+    , deleted : Int
+    }
+
+
+deviceStatusCountsRspEncoder : DeviceStatusCountsRsp -> Json.Encode.Value
+deviceStatusCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "active", (Json.Encode.int) struct.active )
+        , ( "deleted", (Json.Encode.int) struct.deleted )
+        ]
+
+
 type alias ListDevicesRsp =
     { list : List (DeviceListItem)
     , total : Int
     , hasMore : Bool
+    , statusCounts : DeviceStatusCountsRsp
     }
 
 
@@ -4315,6 +4330,33 @@ listDevicesRspEncoder struct =
         [ ( "list", (Json.Encode.list (deviceListItemEncoder)) struct.list )
         , ( "total", (Json.Encode.int) struct.total )
         , ( "has_more", (Json.Encode.bool) struct.hasMore )
+        , ( "status_counts", (deviceStatusCountsRspEncoder) struct.statusCounts )
+        ]
+
+
+type alias DeviceUnitStatsRsp =
+    { units : List (DeviceUnitStatRow)
+    }
+
+
+deviceUnitStatsRspEncoder : DeviceUnitStatsRsp -> Json.Encode.Value
+deviceUnitStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (deviceUnitStatRowEncoder)) struct.units )
+        ]
+
+
+type alias DeviceUnitStatRow =
+    { unitId : Int
+    , count : Int
+    }
+
+
+deviceUnitStatRowEncoder : DeviceUnitStatRow -> Json.Encode.Value
+deviceUnitStatRowEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "count", (Json.Encode.int) struct.count )
         ]
 
 
@@ -12839,12 +12881,33 @@ listDevicesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.list (deviceListSortByDecoder))))
 
 
+deviceStatusCountsRspDecoder : Json.Decode.Decoder DeviceStatusCountsRsp
+deviceStatusCountsRspDecoder =
+    Json.Decode.succeed DeviceStatusCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.int)))
+
+
 listDevicesRspDecoder : Json.Decode.Decoder ListDevicesRsp
 listDevicesRspDecoder =
     Json.Decode.succeed ListDevicesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (deviceListItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_counts" (deviceStatusCountsRspDecoder)))
+
+
+deviceUnitStatsRspDecoder : Json.Decode.Decoder DeviceUnitStatsRsp
+deviceUnitStatsRspDecoder =
+    Json.Decode.succeed DeviceUnitStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (deviceUnitStatRowDecoder))))
+
+
+deviceUnitStatRowDecoder : Json.Decode.Decoder DeviceUnitStatRow
+deviceUnitStatRowDecoder =
+    Json.Decode.succeed DeviceUnitStatRow
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
 deviceDetailReqDecoder : Json.Decode.Decoder DeviceDetailReq

@@ -9,6 +9,7 @@ import type {
   DeviceDetailReq,
   DeviceDetails,
   DeviceFileEntry,
+  DeviceUnitStatRow,
   ListDeviceFilesReq,
   ListDeviceFilesRsp,
   ListDevicesReq,
@@ -78,6 +79,16 @@ export async function listDevices(
     options,
   );
   return transformSnakeToCamel<ListDevicesRsp>(data);
+}
+
+export async function getDeviceUnitStats(options?: RequestOptions): Promise<DeviceUnitStatRow[]> {
+  const data = await postJson<{ units: Array<{ unit_id: number; count: number }> }>(
+    '/api/device/unit-stats',
+    undefined,
+    options,
+  );
+  const normalized = transformSnakeToCamel<{ units: DeviceUnitStatRow[] }>(data);
+  return normalized.units ?? [];
 }
 
 export async function getDeviceDetail(

@@ -9,6 +9,7 @@ import {
   deleteDevice,
   deleteDeviceFile,
   getDeviceDetail,
+  getDeviceUnitStats,
   listDeviceFiles,
   listDevices,
   restoreDevice,
@@ -33,6 +34,7 @@ function fetchMock() {
 
 function requestBody(index = 0) {
   const init = fetchMock().mock.calls[index][1] as RequestInit;
+  if (init.body === undefined) return undefined;
   return JSON.parse(String(init.body));
 }
 
@@ -79,6 +81,21 @@ function mockListDevicesResponse() {
     ],
     total: 1,
     has_more: false,
+    status_counts: {
+      active: 3,
+      deleted: 1,
+    },
+  };
+}
+
+function mockDeviceUnitStatsResponse() {
+  return {
+    units: [
+      {
+        unit_id: 7,
+        count: 3,
+      },
+    ],
   };
 }
 
@@ -146,7 +163,20 @@ describe('devices API service routes', () => {
       sort_by: ['updated_at_desc'],
     });
     expect(rsp.list[0].createdBy).toBe('operator');
+    expect(rsp.statusCounts).toEqual({ active: 3, deleted: 1 });
     expect(rsp.hasMore).toBe(false);
+  });
+
+  it('getDeviceUnitStats uses /api/device/unit-stats and transforms response', async () => {
+    const controller = new AbortController();
+    fetchMock().mockResolvedValueOnce(jsonResponse(mockDeviceUnitStatsResponse()));
+
+    const rsp = await getDeviceUnitStats({ signal: controller.signal });
+
+    expect(fetchMock()).toHaveBeenCalledWith('/api/device/unit-stats', expect.any(Object));
+    expect(requestSignal()).toBe(controller.signal);
+    expect(requestBody()).toBeUndefined();
+    expect(rsp).toEqual([{ unitId: 7, count: 3 }]);
   });
 
   it('getDeviceDetail uses /api/device/detail', async () => {

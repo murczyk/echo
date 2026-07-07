@@ -1656,10 +1656,25 @@ export type ListDevicesReq = {
   sortBy: Array<DeviceListSortBy>;
 };
 
+export type DeviceStatusCountsRsp = {
+  active: number;
+  deleted: number;
+};
+
 export type ListDevicesRsp = {
   list: Array<DeviceListItem>;
   total: number;
   hasMore: boolean;
+  statusCounts: DeviceStatusCountsRsp;
+};
+
+export type DeviceUnitStatsRsp = {
+  units: Array<DeviceUnitStatRow>;
+};
+
+export type DeviceUnitStatRow = {
+  unitId: number;
+  count: number;
 };
 
 export type DeviceDetailReq = {

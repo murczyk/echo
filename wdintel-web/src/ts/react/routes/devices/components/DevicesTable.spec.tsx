@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DeviceRowView } from '../helpers';
+import { DeviceRowActions } from './DeviceRowActions';
 import { DevicesTable } from './DevicesTable';
 
 const mrtMock = vi.hoisted(() => ({
@@ -79,6 +80,7 @@ function renderTable() {
         showLifecycle={false}
         hasFilters={false}
         tableStateContext={tableStateContext as never}
+        onEdit={vi.fn()}
         onDelete={vi.fn()}
         onRestore={vi.fn()}
         onLoadMore={() => Promise.resolve()}
@@ -126,6 +128,48 @@ describe('DevicesTable', () => {
     expect(columns.map((column) => column.header)).not.toEqual(
       expect.arrayContaining(['ID', 'Посилання', 'Створено', 'Видалено', 'AOR ID', 'Unit ID']),
     );
+  });
+
+  it('provides edit/delete row actions for active rows', () => {
+    renderTable();
+    const row = buildDeviceRow();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const onRestore = vi.fn();
+
+    act(() => {
+      root?.render(
+        <DeviceRowActions
+          row={row}
+          canEdit
+          disabled={false}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onRestore={onRestore}
+        />,
+      );
+    });
+
+    const menuButton = container?.querySelector('button[aria-label="Дії"]');
+    expect(menuButton).not.toBeNull();
+
+    act(() => {
+      menuButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+
+    const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
+    const editItem = menuItems.find((item) => item.textContent?.includes('Редагувати'));
+    const deleteItem = menuItems.find((item) => item.textContent?.includes('Видалити'));
+    expect(editItem).not.toBeUndefined();
+    expect(deleteItem).not.toBeUndefined();
+
+    act(() => {
+      editItem?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+
+    expect(onEdit).toHaveBeenCalledWith(row.id);
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onRestore).not.toHaveBeenCalled();
   });
 
   it('navigates to detail through SPA history from the name link', () => {

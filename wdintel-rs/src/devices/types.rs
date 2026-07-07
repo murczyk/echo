@@ -126,10 +126,34 @@ pub struct ListDevicesReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct DeviceStatusCountsRsp {
+    pub active: i64,
+    pub deleted: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListDevicesRsp {
     pub list: Vec<DeviceListItem>,
     pub total: u64,
     pub has_more: bool,
+    pub status_counts: DeviceStatusCountsRsp,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeviceUnitStatsRsp {
+    pub units: Vec<DeviceUnitStatRow>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeviceUnitStatRow {
+    pub unit_id: i64,
+    pub count: i64,
 }
 
 #[derive(

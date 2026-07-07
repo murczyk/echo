@@ -1,11 +1,12 @@
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useMemo } from 'react';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { buildDefaultColumnOrder } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -13,10 +14,11 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import type { ActiveFilterDescriptor } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
-import { DEFAULT_DEVICES_SORTING, type DeviceLookupOption } from './helpers';
+import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
+import { DEFAULT_DEVICES_SORTING } from './helpers';
 import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
 import { DevicesTable } from './components/DevicesTable';
-import { DevicesToolbarFilters } from './components/DevicesToolbarFilters';
+import { DevicesToolbar } from './components/DevicesToolbar';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
@@ -34,14 +36,10 @@ const defaultColumnVisibility = {
   lifecycle: false,
 };
 
-function optionLabels(options: DeviceLookupOption[], ids: number[]) {
-  const byId = new Map(options.map((option) => [option.id, option.label]));
-  return ids.map((id) => byId.get(id) ?? `#${id}`);
-}
-
 function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useDevicesPage({ authUserRoles });
   const tableStateContext = useTableStateContext();
+  const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
 
   const additionalActiveFilters = useMemo<ActiveFilterDescriptor[]>(() => {
     const filters: ActiveFilterDescriptor[] = [];
@@ -56,56 +54,39 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
       });
     }
 
-    if (page.filters.aorIds.length > 0) {
-      const labels = optionLabels(page.aorOptions, page.filters.aorIds);
-      filters.push({
-        id: 'aor',
-        label: 'Смуги',
-        value: page.filters.aorIds,
-        valuePreview: labels.join(', '),
-        isGlobalFilter: false,
-      });
-    }
-
-    if (page.filters.unitIds.length > 0) {
-      const labels = optionLabels(page.unitOptions, page.filters.unitIds);
+    if (page.selectedSidebarUnitFilter) {
       filters.push({
         id: 'unit',
-        label: 'Підрозділи',
-        value: page.filters.unitIds,
-        valuePreview: labels.join(', '),
-        isGlobalFilter: false,
-      });
-    }
-
-    if (page.filters.createdBy.trim() !== '') {
-      filters.push({
-        id: 'createdBy',
-        label: 'Створив',
-        value: page.filters.createdBy,
-        valuePreview: page.filters.createdBy.trim(),
+        label: 'Підрозділ',
+        value:
+          page.selectedSidebarUnitFilter.kind === 'leaf'
+            ? page.selectedSidebarUnitFilter.unitName
+            : page.selectedSidebarUnitFilter.label,
+        valuePreview:
+          page.selectedSidebarUnitFilter.kind === 'leaf'
+            ? page.selectedSidebarUnitFilter.unitName
+            : page.selectedSidebarUnitFilter.label,
         isGlobalFilter: false,
       });
     }
 
     return filters;
-  }, [page.aorOptions, page.filters, page.unitOptions]);
+  }, [page.filters.deletedFilter, page.selectedSidebarUnitFilter]);
 
   function clearAdditionalActiveFilter(filterId: string) {
     switch (filterId) {
       case 'deleted':
         page.setDeletedFilter('active');
         break;
-      case 'aor':
-        page.setAorIds([]);
-        break;
       case 'unit':
-        page.setUnitIds([]);
-        break;
-      case 'createdBy':
-        page.setCreatedBy('');
+        page.onClearUnitFilter();
         break;
     }
+  }
+
+  function clearAdditionalActiveFilters() {
+    page.setDeletedFilter('active');
+    page.onClearUnitFilter();
   }
 
   if (!page.permissions.canRead) {
@@ -113,8 +94,12 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   }
 
   return (
-    <Box sx={{ minHeight: 0, height: '100%', overflow: 'hidden' }}>
-      <Stack spacing={3} useFlexGap sx={{ minHeight: 0, height: '100%', overflow: 'hidden' }}>
+    <Box sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}>
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}
+      >
         <TablePageToolbar
           title="Пристрої"
           titleInfo={
@@ -122,19 +107,18 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
               {page.total > 0 ? `Знайдено: ${page.total}` : null}
             </Typography>
           }
-          withGlobalTextFilter
-          filter={
-            <DevicesToolbarFilters
-              filters={page.filters}
-              aorOptions={page.aorOptions}
-              unitOptions={page.unitOptions}
-              disabled={page.loading}
-              onDeletedFilterChange={page.setDeletedFilter}
-              onAorIdsChange={page.setAorIds}
-              onUnitIdsChange={page.setUnitIds}
-              onCreatedByChange={page.setCreatedBy}
-            />
+          titleLeadingActions={
+            !isDesktopLayout ? null : (
+              <SidePanelToggleButton
+                side="left"
+                active={page.sidebarOpen}
+                label={page.sidebarOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+                onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
+              />
+            )
           }
+          titleLeadingGap={2}
+          internalActionsHidden
           actions={
             <>
               <Button
@@ -157,10 +141,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
               ) : null}
             </>
           }
-          additionalActiveFilters={additionalActiveFilters}
-          onClearAdditionalActiveFilter={clearAdditionalActiveFilter}
-          onClearAdditionalActiveFilters={page.clearFilters}
-          rowNumberAppearanceControl
         />
 
         {page.status ? (
@@ -184,6 +164,24 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           onSave={(form) => void page.submitCreateDialog(form)}
         />
 
+        <DeviceUpsertDrawer
+          open={page.editDialogOpen}
+          mode="edit"
+          form={page.editForm}
+          saving={page.editSubmitting}
+          error={page.editError}
+          serverFieldErrors={page.editServerFieldErrors}
+          referenceLoading={
+            page.loading && page.aorOptions.length === 0 && page.unitOptions.length === 0
+          }
+          aorOptions={page.aorOptions}
+          unitOptions={page.unitOptions}
+          hasChanges={page.editHasChanges}
+          onClose={page.closeEditDialog}
+          onChange={page.setEditForm}
+          onSave={(form) => void page.submitEditDialog(form)}
+        />
+
         <ConfirmDangerDialog
           open={page.deleteDialogDevice !== null}
           onClose={page.closeDeleteDialog}
@@ -194,34 +192,99 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           disabled={page.deleteDialogDevice === null}
         />
 
-        {page.initialLoadFailed ? (
-          <PageErrorState
-            message={page.status?.text ?? 'Помилка завантаження пристроїв.'}
-            actionLabel="Спробувати ще раз"
-            onAction={() => void page.reload()}
-            minHeight="100%"
-          />
-        ) : (
-          <DevicesTable
-            rows={page.rows}
-            loading={page.loading}
-            refreshing={page.refreshing}
-            loadingMore={page.loadingMore}
-            hasMore={page.hasMore}
-            total={page.total}
-            canEdit={page.permissions.canEdit}
-            mutatingDeviceId={page.mutatingDeviceId}
-            showLifecycle={page.filters.deletedFilter !== 'active'}
-            hasFilters={page.hasFilters}
-            tableStateContext={tableStateContext}
-            onDelete={page.deleteRow}
-            onRestore={page.restoreRow}
-            onLoadMore={page.loadMore}
-            onClearFilters={page.clearFilters}
-            onTableInitialized={tableStateContext.onTableInitialized}
-            columnOrder={columnOrder}
-          />
-        )}
+        <Stack
+          direction={isDesktopLayout ? 'row' : 'column'}
+          spacing={2}
+          useFlexGap
+          sx={{ flex: 1, minHeight: 0, alignItems: 'stretch' }}
+        >
+          {isDesktopLayout ? (
+            page.sidebarOpen ? (
+              <Box
+                sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0, minHeight: 0 }}
+              >
+                <UnitStatsSidebar
+                  stats={page.unitStatsView}
+                  open={page.sidebarOpen}
+                  isDesktopLayout={isDesktopLayout}
+                  loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+                  onPickUnitFilter={page.onPickUnitFilter}
+                  showInvestigatingFilter={false}
+                  selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
+                  countLabel="Пристроїв"
+                />
+              </Box>
+            ) : null
+          ) : (
+            <UnitStatsSidebar
+              stats={page.unitStatsView}
+              open={page.sidebarOpen}
+              isDesktopLayout={isDesktopLayout}
+              loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+              onPickUnitFilter={page.onPickUnitFilter}
+              showInvestigatingFilter={false}
+              onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
+              selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
+              countLabel="Пристроїв"
+            />
+          )}
+
+          <Stack
+            spacing={2}
+            useFlexGap
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <DevicesToolbar
+              loading={page.loading}
+              globalFilter={tableStateContext.globalFilter}
+              onChangeGlobalFilter={tableStateContext.onChangeGlobalFilter}
+              filters={page.filters}
+              setFilters={page.setFilters}
+              statusCounts={page.statusCounts}
+              additionalActiveFilters={additionalActiveFilters}
+              onClearAdditionalActiveFilter={clearAdditionalActiveFilter}
+              onClearAdditionalActiveFilters={clearAdditionalActiveFilters}
+              table={tableStateContext.tableInstance as never}
+            />
+
+            {page.initialLoadFailed ? (
+              <PageErrorState
+                message={page.status?.text ?? 'Помилка завантаження пристроїв.'}
+                actionLabel="Спробувати ще раз"
+                onAction={() => void page.reload()}
+                minHeight="100%"
+              />
+            ) : (
+              <DevicesTable
+                rows={page.rows}
+                loading={page.loading}
+                refreshing={page.refreshing}
+                loadingMore={page.loadingMore}
+                hasMore={page.hasMore}
+                total={page.total}
+                canEdit={page.permissions.canEdit}
+                mutatingDeviceId={page.busyDeviceId}
+                showLifecycle={page.filters.deletedFilter !== 'active'}
+                hasFilters={page.hasFilters}
+                tableStateContext={tableStateContext}
+                onEdit={page.openEditRow}
+                onDelete={page.deleteRow}
+                onRestore={page.restoreRow}
+                onLoadMore={page.loadMore}
+                onClearFilters={page.clearFilters}
+                onTableInitialized={tableStateContext.onTableInitialized}
+                columnOrder={columnOrder}
+              />
+            )}
+          </Stack>
+        </Stack>
       </Stack>
     </Box>
   );

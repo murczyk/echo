@@ -14,7 +14,9 @@ import {
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useState } from 'react';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -22,16 +24,14 @@ import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
 import { isSafeExternalUrl } from '../devices/helpers';
+import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
+import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { DeviceFileBatchCreateDialog } from './components/DeviceFileBatchCreateDialog';
 import { DeviceFilesSection } from './components/DeviceFilesSection';
-import {
-  DeviceCustomFieldsSection,
-  DeviceRegistrySection,
-  DeviceSummarySection,
-} from './components/DeviceInfoSections';
 import { fileDisplayName, formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
 import { useDeviceFiles } from './use-device-files';
@@ -48,26 +48,40 @@ function DeviceHeaderTitle({
   deleted: boolean;
 }) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+    <Box
+      component="span"
+      sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}
+    >
+      <Tooltip title="До списку пристроїв" arrow placement="bottom-start">
+        <IconButton
+          aria-label="До списку пристроїв"
+          onClick={() => navigateWithinSpa('/devices')}
+          size="small"
+          sx={{ flexShrink: 0 }}
+        >
+          <ArrowBackIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
       {deviceName === null ? (
         <Skeleton width={240} />
       ) : (
-        <Typography
-          component="span"
-          variant="h5"
-          sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}
-        >
-          {deviceName}
-        </Typography>
+        <>
+          <Typography
+            component="span"
+            variant="h5"
+            sx={{ fontWeight: 600, overflowWrap: 'anywhere', minWidth: 0 }}
+          >
+            {deviceName}
+          </Typography>
+          <Chip
+            size="small"
+            color={deleted ? 'warning' : 'success'}
+            label={formatDeviceLifecycleLabel(deleted)}
+            sx={{ flexShrink: 0 }}
+          />
+        </>
       )}
-      {deviceName !== null ? (
-        <Chip
-          size="small"
-          color={deleted ? 'warning' : 'success'}
-          label={formatDeviceLifecycleLabel(deleted)}
-        />
-      ) : null}
-    </Stack>
+    </Box>
   );
 }
 
@@ -85,6 +99,9 @@ export function DeviceDetailsPage({
     canEdit: page.permissions.canEdit,
     parentDeleted: page.device?.deleted ?? false,
   });
+  const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('description');
 
   if (!page.permissions.canRead) {
     return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
@@ -107,6 +124,31 @@ export function DeviceDetailsPage({
   const showEditAction = page.permissions.canEdit && device !== null && !device.deleted;
   const showDeleteAction = page.permissions.canEdit && device !== null && !device.deleted;
   const showRestoreAction = page.permissions.canEdit && device !== null && device.deleted;
+  const leftPanelVisible = !isDesktopLayout || leftPanelOpen;
+  const sidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
+
+  const filesPanel = device ? (
+    <DeviceFilesSection
+      files={files.files}
+      deletedFilter={files.deletedFilter}
+      total={files.total}
+      hasMore={files.hasMore}
+      loading={files.loading}
+      refreshing={files.refreshing}
+      loadingMore={files.loadingMore}
+      status={files.status}
+      mutatingFileId={files.mutatingFileId}
+      canEdit={page.permissions.canEdit}
+      parentDeleted={device.deleted}
+      hasFilters={files.hasFilters}
+      onDeletedFilterChange={files.setDeletedFilter}
+      onCreate={files.openCreateDialog}
+      onReload={files.reload}
+      onLoadMore={files.loadMore}
+      onDelete={files.deleteFile}
+      onRestore={files.restoreFile}
+    />
+  ) : null;
 
   return (
     <Box
@@ -115,6 +157,7 @@ export function DeviceDetailsPage({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        gap: 2,
         overflow: 'hidden',
       }}
     >
@@ -123,16 +166,16 @@ export function DeviceDetailsPage({
           <DeviceHeaderTitle deviceName={device?.name ?? null} deleted={device?.deleted ?? false} />
         }
         titleLeadingActions={
-          <Tooltip title="До списку пристроїв">
-            <IconButton
-              aria-label="До списку пристроїв"
-              size="small"
-              onClick={() => navigateWithinSpa('/devices')}
-            >
-              <ArrowBackIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          isDesktopLayout ? (
+            <SidePanelToggleButton
+              side="left"
+              active={leftPanelVisible}
+              label={sidePanelLabel}
+              onClick={() => setLeftPanelOpen((current) => !current)}
+            />
+          ) : null
         }
+        titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
             {canOpenExternalUrl ? (
@@ -187,53 +230,79 @@ export function DeviceDetailsPage({
         }
       />
 
-      <Box sx={{ position: 'relative', minHeight: 0, flex: 1, overflow: 'auto', pt: 2, pb: 4 }}>
-        {page.status ? (
-          <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
-        ) : null}
-        {device?.deleted ? (
-          <PowerAlert severity="warning" autoHideDuration={null}>
-            Пристрій видалено. Редактори можуть відновити пристрій; життєвий цикл файлів заблоковано
-            до відновлення.
-          </PowerAlert>
-        ) : null}
+      {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
+      {device?.deleted ? (
+        <PowerAlert severity="warning" autoHideDuration={null}>
+          Пристрій видалено. Редактори можуть відновити пристрій; життєвий цикл файлів заблоковано
+          до відновлення.
+        </PowerAlert>
+      ) : null}
 
+      <Box
+        sx={{
+          position: 'relative',
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          overflow: 'hidden',
+        }}
+      >
         {page.loading && device === null ? (
-          <PageLoadingState minHeight={360} />
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: {
+                xs: '1fr',
+                lg: leftPanelVisible ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+              },
+              overflow: 'hidden',
+            }}
+          >
+            {leftPanelVisible ? (
+              <Box sx={{ minHeight: 0, overflow: 'auto' }}>
+                <DeviceDetailsLeftPanel
+                  device={null}
+                  loading={page.loading}
+                  onOpenExternalUrl={openExternalUrl}
+                />
+              </Box>
+            ) : null}
+            <PageLoadingState minHeight="100%" />
+          </Box>
         ) : device ? (
-          <Stack spacing={2.5} sx={{ pt: page.status || device.deleted ? 2 : 0 }}>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(0, 1fr)' },
-                gap: 2.5,
-              }}
-            >
-              <DeviceSummarySection device={device} />
-              <DeviceRegistrySection device={device} onOpenExternalUrl={openExternalUrl} />
-            </Box>
-            <DeviceCustomFieldsSection device={device} />
-            <DeviceFilesSection
-              files={files.files}
-              deletedFilter={files.deletedFilter}
-              total={files.total}
-              hasMore={files.hasMore}
-              loading={files.loading}
-              refreshing={files.refreshing}
-              loadingMore={files.loadingMore}
-              status={files.status}
-              mutatingFileId={files.mutatingFileId}
-              canEdit={page.permissions.canEdit}
-              parentDeleted={device.deleted}
-              hasFilters={files.hasFilters}
-              onDeletedFilterChange={files.setDeletedFilter}
-              onCreate={files.openCreateDialog}
-              onReload={files.reload}
-              onLoadMore={files.loadMore}
-              onDelete={files.deleteFile}
-              onRestore={files.restoreFile}
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: {
+                xs: '1fr',
+                lg: leftPanelVisible ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+              },
+              overflow: 'hidden',
+            }}
+          >
+            {leftPanelVisible ? (
+              <Box sx={{ minHeight: 0, overflow: 'auto' }}>
+                <DeviceDetailsLeftPanel
+                  device={device}
+                  loading={page.loading}
+                  onOpenExternalUrl={openExternalUrl}
+                />
+              </Box>
+            ) : null}
+            <DeviceDetailsTabPanel
+              device={device}
+              activeTab={activeTab}
+              onActiveTabChange={setActiveTab}
+              onOpenExternalUrl={openExternalUrl}
+              filesPanel={filesPanel}
             />
-          </Stack>
+          </Box>
         ) : null}
 
         <SectionLoadingOverlay

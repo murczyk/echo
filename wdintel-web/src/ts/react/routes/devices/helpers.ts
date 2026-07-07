@@ -5,23 +5,33 @@ import type {
   DeviceDetails,
   DeviceListItem,
   DeviceListSortBy,
+  DeviceUnitStatRow,
   ListDevicesReq,
   Unit,
 } from '../../../../Bindings';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
+import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
 export type DeviceDeletedFilterValue = 'active' | 'deleted' | 'all';
 
 export type DevicesFilterState = {
   deletedFilter: DeviceDeletedFilterValue;
-  aorIds: number[];
   unitIds: number[];
-  createdBy: string;
 };
 
 export type DeviceLookupOption = {
   id: number;
   label: string;
+};
+
+export type DeviceUnitStatView = {
+  unitId: number;
+  unitName: string;
+  army: string;
+  division: string;
+  regiment: string;
+  battalion: string;
+  count: number;
 };
 
 export type DeviceRowView = DeviceListItem & {
@@ -34,13 +44,12 @@ export type DeviceRowView = DeviceListItem & {
 
 export const DEVICES_LIST_PAGE_SIZE = 100;
 export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [{ id: 'updatedAt', desc: true }];
+const DEVICE_UNIT_HIERARCHY_KEYS = ['army', 'division', 'regiment', 'battalion'] as const;
 
 export function createDefaultDevicesFilterState(): DevicesFilterState {
   return {
     deletedFilter: 'active',
-    aorIds: [],
     unitIds: [],
-    createdBy: '',
   };
 }
 
@@ -73,7 +82,6 @@ export function buildDevicesListReq(params: {
   offset: number | null;
 }): ListDevicesReq {
   const filterText = params.searchText.trim();
-  const createdBy = params.filters.createdBy.trim();
 
   return {
     filterText: filterText === '' ? null : filterText,
@@ -83,9 +91,9 @@ export function buildDevicesListReq(params: {
         : params.filters.deletedFilter === 'all'
           ? 'all'
           : 'active_only',
-    aorIds: params.filters.aorIds.length > 0 ? params.filters.aorIds : null,
+    aorIds: null,
     unitIds: params.filters.unitIds.length > 0 ? params.filters.unitIds : null,
-    createdBy: createdBy === '' ? null : createdBy,
+    createdBy: null,
     ids: null,
     limit: params.limit,
     offset: params.offset,
@@ -95,11 +103,7 @@ export function buildDevicesListReq(params: {
 
 export function hasActiveDevicesFilters(searchText: string, filters: DevicesFilterState): boolean {
   return (
-    searchText.trim() !== '' ||
-    filters.deletedFilter !== 'active' ||
-    filters.aorIds.length > 0 ||
-    filters.unitIds.length > 0 ||
-    filters.createdBy.trim() !== ''
+    searchText.trim() !== '' || filters.deletedFilter !== 'active' || filters.unitIds.length > 0
   );
 }
 
@@ -143,6 +147,75 @@ export function resolveUnitOptions(units: Unit[]): DeviceLookupOption[] {
     id: unit.id,
     label: getUnitDisplayLabel(unit),
   }));
+}
+
+export function mergeDeviceUnitStatsWithUnits(
+  unitStats: DeviceUnitStatRow[],
+  unitsById: Map<number, Unit>,
+): DeviceUnitStatView[] {
+  return unitStats
+    .map((stat) => {
+      const unit = unitsById.get(stat.unitId);
+      if (!unit) return null;
+
+      return {
+        unitId: stat.unitId,
+        unitName: unit.name,
+        army: unit.army,
+        division: unit.division,
+        regiment: unit.regiment,
+        battalion: unit.battalion,
+        count: stat.count,
+      };
+    })
+    .filter((row): row is DeviceUnitStatView => row !== null)
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.unitName.localeCompare(right.unitName, 'uk'),
+    );
+}
+
+function matchesDeviceUnitHierarchy(unit: Unit, hierarchy: UnitHierarchyFilter): boolean {
+  return DEVICE_UNIT_HIERARCHY_KEYS.every((key) => {
+    const expected = hierarchy[key];
+    return expected === null || unit[key] === expected;
+  });
+}
+
+export function resolveDeviceSidebarUnitIds(
+  filter: SelectedSidebarUnitFilter | null,
+  units: Unit[],
+): number[] {
+  if (filter === null) return [];
+
+  if (filter.kind === 'leaf') {
+    if (typeof filter.unitId === 'number') return [filter.unitId];
+    return units
+      .filter((unit) => unit.name === filter.unitName)
+      .map((unit) => unit.id)
+      .sort((left, right) => left - right);
+  }
+
+  return units
+    .filter((unit) => matchesDeviceUnitHierarchy(unit, filter.hierarchy))
+    .map((unit) => unit.id)
+    .sort((left, right) => left - right);
+}
+
+export function isSameDeviceSidebarUnitFilter(
+  left: SelectedSidebarUnitFilter | null,
+  right: SelectedSidebarUnitFilter,
+): boolean {
+  if (left === null || left.kind !== right.kind) return false;
+  if (left.kind === 'leaf' && right.kind === 'leaf') {
+    if (left.unitId !== undefined || right.unitId !== undefined)
+      return left.unitId === right.unitId;
+    return left.unitName === right.unitName;
+  }
+  if (left.kind === 'group' && right.kind === 'group') {
+    return DEVICE_UNIT_HIERARCHY_KEYS.every((key) => left.hierarchy[key] === right.hierarchy[key]);
+  }
+  return false;
 }
 
 export function formatDeviceErrorMessage(error: unknown): string {

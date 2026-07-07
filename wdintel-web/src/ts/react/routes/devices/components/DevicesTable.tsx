@@ -39,6 +39,7 @@ type Props = {
   showLifecycle: boolean;
   hasFilters: boolean;
   tableStateContext: ReturnType<typeof useTableStateContext>;
+  onEdit: (deviceId: string) => void;
   onDelete: (deviceId: string, deviceName: string) => void;
   onRestore: (deviceId: string) => void;
   onLoadMore: () => Promise<void>;
@@ -145,6 +146,7 @@ export function DevicesTable({
   showLifecycle,
   hasFilters,
   tableStateContext,
+  onEdit,
   onDelete,
   onRestore,
   onLoadMore,
@@ -194,6 +196,7 @@ export function DevicesTable({
         row={row.original}
         canEdit={canEdit}
         disabled={mutatingDeviceId !== null}
+        onEdit={onEdit}
         onDelete={onDelete}
         onRestore={onRestore}
       />
@@ -210,7 +213,7 @@ export function DevicesTable({
       },
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(1),
+        size: mrtRowActionsColumnSize(2),
         enableResizing: false,
       },
     },

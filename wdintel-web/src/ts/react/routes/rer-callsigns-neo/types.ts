@@ -52,6 +52,7 @@ export type SelectedSidebarUnitFilter =
       kind: 'leaf';
       label: string;
       unitName: string;
+      unitId?: number;
     }
   | {
       kind: 'group';

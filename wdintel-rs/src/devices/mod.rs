@@ -34,6 +34,15 @@ pub async fn device_detail(
     Ok(Json(query::get_device_details(&env.dbx, &req).await?))
 }
 
+#[post("/api/device/unit-stats")]
+pub async fn device_unit_stats(
+    user: Identity,
+    env: Data<Env>,
+) -> Result<Json<DeviceUnitStatsRsp>, AppError> {
+    access::ensure_device_reader(&env.dbx, &user).await?;
+    Ok(Json(query::list_device_unit_stats(&env.dbx).await?))
+}
+
 #[post("/api/device/create")]
 pub async fn device_create(
     user: Identity,

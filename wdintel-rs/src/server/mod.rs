@@ -739,6 +739,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::api_integrations::test_iggy_connection)
             .service(crate::devices::device_list)
             .service(crate::devices::device_detail)
+            .service(crate::devices::device_unit_stats)
             .service(crate::devices::device_create)
             .service(crate::devices::device_update)
             .service(crate::devices::device_delete)

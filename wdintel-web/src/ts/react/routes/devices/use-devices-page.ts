@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AreaOfResponsibility, DeviceListItem, Unit } from '../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  DeviceDetails,
+  DeviceListItem,
+  DeviceStatusCountsRsp,
+  DeviceUnitStatRow,
+  Unit,
+} from '../../../../Bindings';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
-import { createDevice, deleteDevice, restoreDevice } from '../../services/api/devices';
+import {
+  createDevice,
+  deleteDevice,
+  getDeviceDetail,
+  restoreDevice,
+  updateDevice,
+} from '../../services/api/devices';
 import { navigateWithinSpa } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import {
@@ -11,7 +24,10 @@ import {
   deviceDetailsToListItem,
   formatDeviceErrorMessage,
   hasActiveDevicesFilters,
+  isSameDeviceSidebarUnitFilter,
+  mergeDeviceUnitStatsWithUnits,
   resolveAorOptions,
+  resolveDeviceSidebarUnitIds,
   resolveUnitOptions,
   type DeviceDeletedFilterValue,
   type DeviceLookupOption,
@@ -19,7 +35,10 @@ import {
 } from './helpers';
 import {
   buildCreateDeviceReq,
+  buildUpdateDevicePatch,
   createDefaultDeviceUpsertForm,
+  deviceDetailsToUpsertForm,
+  hasDeviceUpdatePatchChanges,
   parseDeviceServerFieldErrors,
   validateDeviceUpsertForm,
   type DeviceServerFieldErrors,
@@ -30,6 +49,7 @@ import {
   type DevicesQuerySnapshot,
   type DevicesUiMessage,
 } from './use-devices-page.load';
+import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
   const tableStateContext = useTableStateContext();
@@ -47,13 +67,18 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [devices, setDevices] = useState<DeviceListItem[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [unitStats, setUnitStats] = useState<DeviceUnitStatRow[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [statusCounts, setStatusCounts] = useState<DeviceStatusCountsRsp | null>(null);
   const [filters, setFilters] = useState<DevicesFilterState>(() =>
     createDefaultDevicesFilterState(),
   );
   const [status, setStatus] = useState<DevicesUiMessage>(null);
   const [bootstrapLoaded, setBootstrapLoaded] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
+    useState<SelectedSidebarUnitFilter | null>(null);
   const [mutatingDeviceId, setMutatingDeviceId] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState<DeviceUpsertForm | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -61,6 +86,12 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     {},
   );
   const [creating, setCreating] = useState(false);
+  const [editDevice, setEditDevice] = useState<DeviceDetails | null>(null);
+  const [editLoadingDeviceId, setEditLoadingDeviceId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<DeviceUpsertForm | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
+  const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteDialogDevice, setDeleteDialogDevice] = useState<{ id: string; name: string } | null>(
     null,
   );
@@ -83,8 +114,17 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   }, [filters]);
 
   const rows = useMemo(() => devices.map(buildDeviceRowView), [devices]);
+  const unitsById = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
   const aorOptions = useMemo<DeviceLookupOption[]>(() => resolveAorOptions(aors), [aors]);
   const unitOptions = useMemo<DeviceLookupOption[]>(() => resolveUnitOptions(units), [units]);
+  const unitStatsView = useMemo(
+    () => mergeDeviceUnitStatsWithUnits(unitStats, unitsById),
+    [unitStats, unitsById],
+  );
+  const editHasChanges = useMemo(() => {
+    if (editDevice === null || editForm === null) return false;
+    return hasDeviceUpdatePatchChanges(buildUpdateDevicePatch(editDevice, editForm));
+  }, [editDevice, editForm]);
 
   const querySnapshot = useMemo<DevicesQuerySnapshot>(
     () => ({
@@ -120,8 +160,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setDevices,
         setAors,
         setUnits,
+        setUnitStats,
         setTotal,
         setHasMore,
+        setStatusCounts,
         setStatus,
         setBootstrapLoaded,
       }),
@@ -150,20 +192,31 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     setFilters((current) => ({ ...current, deletedFilter }));
   }, []);
 
-  const setAorIds = useCallback((aorIds: number[]) => {
-    setFilters((current) => ({ ...current, aorIds }));
-  }, []);
+  const onPickUnitFilter = useCallback(
+    (filter: SelectedSidebarUnitFilter) => {
+      if (isSameDeviceSidebarUnitFilter(selectedSidebarUnitFilter, filter)) {
+        setSelectedSidebarUnitFilter(null);
+        setFilters((current) => ({ ...current, unitIds: [] }));
+        return;
+      }
 
-  const setUnitIds = useCallback((unitIds: number[]) => {
-    setFilters((current) => ({ ...current, unitIds }));
-  }, []);
+      setSelectedSidebarUnitFilter(filter);
+      setFilters((current) => ({
+        ...current,
+        unitIds: resolveDeviceSidebarUnitIds(filter, units),
+      }));
+    },
+    [selectedSidebarUnitFilter, units],
+  );
 
-  const setCreatedBy = useCallback((createdBy: string) => {
-    setFilters((current) => ({ ...current, createdBy }));
+  const onClearUnitFilter = useCallback(() => {
+    setSelectedSidebarUnitFilter(null);
+    setFilters((current) => ({ ...current, unitIds: [] }));
   }, []);
 
   const clearFilters = useCallback(() => {
     tableStateContext.onChangeGlobalFilter('');
+    setSelectedSidebarUnitFilter(null);
     setFilters(createDefaultDevicesFilterState());
   }, [tableStateContext]);
 
@@ -227,17 +280,110 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         if (!exists) return current;
         return current.map((item) => (item.id === device.id ? device : item));
       });
-      await loadActions.reloadDevices();
+      await loadActions.reloadDevices({ includeUnitStats: true });
     },
     [loadActions],
   );
 
+  const openEditRow = useCallback(
+    async (deviceId: string) => {
+      if (
+        !permissions.canEdit ||
+        mutatingDeviceId !== null ||
+        editLoadingDeviceId !== null ||
+        editSubmitting
+      ) {
+        return;
+      }
+
+      setEditLoadingDeviceId(deviceId);
+      setStatus(null);
+      setEditError(null);
+      setEditServerFieldErrors({});
+      try {
+        const device = await getDeviceDetail({ deviceId, includeDeleted: true });
+        if (device.deleted) {
+          setStatus({ kind: 'error', text: 'Видалений пристрій потрібно спочатку відновити.' });
+          return;
+        }
+        setEditDevice(device);
+        setEditForm(deviceDetailsToUpsertForm(device));
+      } catch (error) {
+        setStatus({
+          kind: 'error',
+          text: `Помилка завантаження пристрою для редагування: ${formatDeviceErrorMessage(error)}`,
+        });
+      } finally {
+        setEditLoadingDeviceId(null);
+      }
+    },
+    [editLoadingDeviceId, editSubmitting, mutatingDeviceId, permissions.canEdit],
+  );
+
+  const closeEditDialog = useCallback(() => {
+    if (editSubmitting) return;
+    setEditDevice(null);
+    setEditForm(null);
+    setEditError(null);
+    setEditServerFieldErrors({});
+  }, [editSubmitting]);
+
+  const changeEditForm = useCallback((form: DeviceUpsertForm | null) => {
+    setEditForm(form);
+    setEditError(null);
+    setEditServerFieldErrors({});
+  }, []);
+
+  const submitEditDialog = useCallback(
+    async (form: DeviceUpsertForm) => {
+      if (!permissions.canEdit || editDevice === null || editDevice.deleted || editSubmitting) {
+        return;
+      }
+      if (validateDeviceUpsertForm(form) !== null) {
+        setEditError('Перевірте поля форми.');
+        return;
+      }
+
+      const patch = buildUpdateDevicePatch(editDevice, form);
+      if (!hasDeviceUpdatePatchChanges(patch)) {
+        setEditError('Немає змін для збереження.');
+        return;
+      }
+
+      setEditSubmitting(true);
+      setEditError(null);
+      setEditServerFieldErrors({});
+      setStatus(null);
+      try {
+        const device = await updateDevice(patch);
+        setDevices((current) =>
+          current.map((item) => (item.id === device.id ? deviceDetailsToListItem(device) : item)),
+        );
+        setEditDevice(null);
+        setEditForm(null);
+        setStatus({ kind: 'success', text: 'Пристрій оновлено.' });
+        await loadActions.reloadDevices({ includeUnitStats: true });
+      } catch (error) {
+        const fieldErrors = parseDeviceServerFieldErrors(error);
+        setEditServerFieldErrors(fieldErrors);
+        setEditError(
+          Object.keys(fieldErrors).length > 0
+            ? null
+            : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
+        );
+      } finally {
+        setEditSubmitting(false);
+      }
+    },
+    [editDevice, editSubmitting, loadActions, permissions.canEdit],
+  );
+
   const deleteRow = useCallback(
     (deviceId: string, deviceName: string) => {
-      if (!permissions.canEdit || mutatingDeviceId !== null) return;
+      if (!permissions.canEdit || mutatingDeviceId !== null || editLoadingDeviceId !== null) return;
       setDeleteDialogDevice({ id: deviceId, name: deviceName });
     },
-    [mutatingDeviceId, permissions.canEdit],
+    [editLoadingDeviceId, mutatingDeviceId, permissions.canEdit],
   );
 
   const closeDeleteDialog = useCallback(() => {
@@ -289,6 +435,8 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
   const hasFilters = hasActiveDevicesFilters(tableStateContext.globalFilter, filters);
   const initialLoadFailed = !loading && rows.length === 0 && status?.kind === 'error';
+  const busyDeviceId =
+    mutatingDeviceId ?? editLoadingDeviceId ?? (editSubmitting ? (editDevice?.id ?? null) : null);
 
   return {
     permissions,
@@ -299,25 +447,38 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     total,
     hasMore,
     noMoreToLoad: !hasMore,
+    sidebarOpen,
+    setSidebarOpen,
     filters,
+    setFilters,
     status,
+    statusCounts,
     bootstrapLoaded,
     creating,
     createDialogOpen: createForm !== null,
     createForm,
     createError,
     createServerFieldErrors,
+    editDialogOpen: editForm !== null,
+    editForm,
+    editError,
+    editServerFieldErrors,
+    editSubmitting,
+    editHasChanges,
+    editLoadingDeviceId,
     deleteDialogDevice,
     mutatingDeviceId,
+    busyDeviceId,
     aorOptions,
     unitOptions,
+    unitStatsView,
+    selectedSidebarUnitFilter,
     hasFilters,
     initialLoadFailed,
     tableStateContext,
     setDeletedFilter,
-    setAorIds,
-    setUnitIds,
-    setCreatedBy,
+    onPickUnitFilter,
+    onClearUnitFilter,
     clearFilters,
     reload,
     loadMore,
@@ -325,6 +486,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     closeCreateDialog,
     setCreateForm: changeCreateForm,
     submitCreateDialog,
+    openEditRow,
+    closeEditDialog,
+    setEditForm: changeEditForm,
+    submitEditDialog,
     deleteRow,
     closeDeleteDialog,
     confirmDeleteRow,

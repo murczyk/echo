@@ -2,8 +2,9 @@
 
 use crate::devices::types::{
     DeviceDeletedFilter, DeviceDetailReq, DeviceDetails, DeviceFileEntry,
-    DeviceListItem, DeviceListSortBy, ListDeviceFilesReq, ListDeviceFilesRsp,
-    ListDevicesReq, ListDevicesRsp,
+    DeviceListItem, DeviceListSortBy, DeviceStatusCountsRsp, DeviceUnitStatRow,
+    DeviceUnitStatsRsp, ListDeviceFilesReq, ListDeviceFilesRsp, ListDevicesReq,
+    ListDevicesRsp,
 };
 use crate::devices::validation::{
     normalize_device_list_pagination, normalize_file_list_pagination,
@@ -15,10 +16,11 @@ use crate::entities::{
 use crate::h;
 use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext, Uuid};
 use chrono::NaiveDateTime;
-use sea_orm::sea_query::{Expr, Order};
+use sea_orm::sea_query::{Alias, Expr, Order};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, IntoSimpleExpr, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr,
+    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait, Select,
 };
 
 #[derive(Clone)]
@@ -110,12 +112,14 @@ where
             list: Vec::new(),
             total: 0,
             has_more: false,
+            status_counts: empty_device_status_counts(),
         });
     }
 
     let pagination = normalize_device_list_pagination(req.limit, req.offset)?;
-    let query = apply_device_filters(device::Entity::find(), req)?;
+    let query = apply_device_filters(device::Entity::find(), req, true)?;
     let total = query.clone().count(db).await.c(h!())?;
+    let status_counts = load_device_status_counts(db, req).await?;
     let devices = apply_device_sorting(query, &req.sort_by)
         .offset(pagination.offset)
         .limit(pagination.limit)
@@ -136,7 +140,111 @@ where
         list,
         total,
         has_more: next_offset < total,
+        status_counts,
     })
+}
+
+pub async fn list_device_unit_stats<C>(
+    db: &C,
+) -> Result<DeviceUnitStatsRsp, AppError>
+where
+    C: ConnectionTrait,
+{
+    let units = build_device_unit_stats_query()
+        .into_model::<DeviceUnitStatSqlRow>()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| DeviceUnitStatRow {
+            unit_id: row.unit_id,
+            count: row.count,
+        })
+        .collect();
+
+    Ok(DeviceUnitStatsRsp { units })
+}
+
+#[derive(FromQueryResult)]
+struct DeviceStatusCountsSqlRow {
+    active: i64,
+    deleted: i64,
+}
+
+#[derive(FromQueryResult)]
+struct DeviceUnitStatSqlRow {
+    unit_id: i64,
+    count: i64,
+}
+
+fn empty_device_status_counts() -> DeviceStatusCountsRsp {
+    DeviceStatusCountsRsp {
+        active: 0,
+        deleted: 0,
+    }
+}
+
+async fn load_device_status_counts<C>(
+    db: &C,
+    req: &ListDevicesReq,
+) -> Result<DeviceStatusCountsRsp, AppError>
+where
+    C: ConnectionTrait,
+{
+    let row = build_device_status_counts_query(req)?
+        .into_model::<DeviceStatusCountsSqlRow>()
+        .one(db)
+        .await
+        .c(h!())?
+        .unwrap_or(DeviceStatusCountsSqlRow {
+            active: 0,
+            deleted: 0,
+        });
+
+    Ok(DeviceStatusCountsRsp {
+        active: row.active,
+        deleted: row.deleted,
+    })
+}
+
+fn build_device_status_counts_query(
+    req: &ListDevicesReq,
+) -> Result<Select<device::Entity>, AppError> {
+    Ok(apply_device_filters(device::Entity::find(), req, false)?
+        .select_only()
+        .column_as(
+            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."deleted" = false)"#),
+            "active",
+        )
+        .column_as(
+            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."deleted" = true)"#),
+            "deleted",
+        ))
+}
+
+fn build_device_unit_stats_query() -> Select<device::Entity> {
+    device::Entity::find()
+        .filter(device::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .join_as(
+            JoinType::InnerJoin,
+            device::Relation::SigintUnit.def(),
+            Alias::new("sigint_unit"),
+        )
+        .select_only()
+        .column_as(device::Column::Id.count(), "count")
+        .column_as(sigint_unit::Column::Id, "unit_id")
+        .order_by_asc(sigint_unit::Column::Army)
+        .order_by_asc(sigint_unit::Column::Division)
+        .order_by_asc(sigint_unit::Column::Regiment)
+        .order_by_asc(sigint_unit::Column::Battalion)
+        .order_by_asc(sigint_unit::Column::Company)
+        .group_by(sigint_unit::Column::Id)
+        .group_by(sigint_unit::Column::Army)
+        .group_by(sigint_unit::Column::Division)
+        .group_by(sigint_unit::Column::Regiment)
+        .group_by(sigint_unit::Column::Battalion)
+        .group_by(sigint_unit::Column::Company)
 }
 
 pub async fn get_device_details<C>(
@@ -196,12 +304,15 @@ where
 fn apply_device_filters(
     mut query: Select<device::Entity>,
     req: &ListDevicesReq,
+    include_deleted_filter: bool,
 ) -> Result<Select<device::Entity>, AppError> {
-    query = apply_deleted_filter(
-        query,
-        req.deleted_filter,
-        device::Column::Deleted,
-    );
+    if include_deleted_filter {
+        query = apply_deleted_filter(
+            query,
+            req.deleted_filter,
+            device::Column::Deleted,
+        );
+    }
 
     if let Some(ids) = &req.ids {
         query =
@@ -418,7 +529,22 @@ fn datetime_ms(datetime: NaiveDateTime) -> i64 {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use sea_orm::{DbBackend, QueryTrait};
     use serde_json::json;
+
+    fn empty_list_devices_req() -> ListDevicesReq {
+        ListDevicesReq {
+            filter_text: None,
+            deleted_filter: None,
+            aor_ids: None,
+            unit_ids: None,
+            created_by: None,
+            ids: None,
+            limit: None,
+            offset: None,
+            sort_by: Vec::new(),
+        }
+    }
 
     fn fixture_device() -> device::Model {
         let now = NaiveDate::from_ymd_opt(2026, 7, 7)
@@ -437,6 +563,35 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn device_status_counts_query_ignores_selected_deleted_filter() {
+        let mut req = empty_list_devices_req();
+        req.deleted_filter = Some(DeviceDeletedFilter::DeviceDeletedOnly);
+
+        let sql = build_device_status_counts_query(&req)
+            .unwrap()
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert_eq!(sql.matches("WHERE").count(), 2);
+        assert!(sql
+            .contains(r#"COUNT(*) FILTER (WHERE "device"."deleted" = false)"#));
+        assert!(sql
+            .contains(r#"COUNT(*) FILTER (WHERE "device"."deleted" = true)"#));
+    }
+
+    #[test]
+    fn device_unit_stats_query_counts_active_devices_with_active_units() {
+        let sql = build_device_unit_stats_query()
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains(r#"INNER JOIN "sigint_unit" AS "sigint_unit""#));
+        assert!(sql.contains(r#""device"."deleted" = FALSE"#));
+        assert!(sql.contains(r#""sigint_unit"."deleted" = FALSE"#));
+        assert!(sql.contains(r#"GROUP BY "sigint_unit"."id""#));
     }
 
     #[test]

@@ -1,11 +1,17 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { MRT_SortingState } from 'material-react-table';
 
-import type { AreaOfResponsibility, DeviceListItem, Unit } from '../../../../Bindings';
+import type {
+  AreaOfResponsibility,
+  DeviceListItem,
+  DeviceStatusCountsRsp,
+  DeviceUnitStatRow,
+  Unit,
+} from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
 import { listAors } from '../../services/api/aor';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
-import { listDevices } from '../../services/api/devices';
+import { getDeviceUnitStats, listDevices } from '../../services/api/devices';
 import { getUnitsList } from '../../services/api/units';
 import {
   buildDevicesListReq,
@@ -40,8 +46,10 @@ type LoadArgs = {
   setDevices: Dispatch<SetStateAction<DeviceListItem[]>>;
   setAors: Dispatch<SetStateAction<AreaOfResponsibility[]>>;
   setUnits: Dispatch<SetStateAction<Unit[]>>;
+  setUnitStats: Dispatch<SetStateAction<DeviceUnitStatRow[]>>;
   setTotal: Dispatch<SetStateAction<number>>;
   setHasMore: Dispatch<SetStateAction<boolean>>;
+  setStatusCounts: Dispatch<SetStateAction<DeviceStatusCountsRsp | null>>;
   setStatus: Dispatch<SetStateAction<DevicesUiMessage>>;
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
@@ -49,9 +57,15 @@ type LoadArgs = {
 export function createDevicesLoadActions(args: LoadArgs) {
   const loadDevices = async (
     snapshot: DevicesQuerySnapshot,
-    options?: { includeLookups?: boolean; append?: boolean; force?: boolean },
+    options?: {
+      includeLookups?: boolean;
+      includeUnitStats?: boolean;
+      append?: boolean;
+      force?: boolean;
+    },
   ) => {
     const includeLookups = options?.includeLookups ?? false;
+    const includeUnitStats = options?.includeUnitStats ?? includeLookups;
     const append = options?.append ?? false;
     const force = options?.force ?? false;
 
@@ -98,14 +112,20 @@ export function createDevicesLoadActions(args: LoadArgs) {
         ? Promise.all([
             listAors({ sortBy: null }, controller.signal),
             getUnitsList({ signal: controller.signal }),
+            getDeviceUnitStats({ signal: controller.signal }),
           ])
         : null;
+      const unitStatsPromise =
+        !includeLookups && includeUnitStats
+          ? getDeviceUnitStats({ signal: controller.signal })
+          : null;
       const rsp = await listDevices(req, { signal: controller.signal });
 
       if (args.requestSeqRef.current !== seq) return;
 
       args.setTotal(rsp.total);
       args.setHasMore(rsp.hasMore);
+      args.setStatusCounts(rsp.statusCounts);
       args.setDevices((current) => (append ? [...current, ...rsp.list] : rsp.list));
 
       if (!append) {
@@ -114,10 +134,11 @@ export function createDevicesLoadActions(args: LoadArgs) {
 
       if (lookupsPromise !== null) {
         try {
-          const [aors, units] = await lookupsPromise;
+          const [aors, units, unitStats] = await lookupsPromise;
           if (args.requestSeqRef.current !== seq) return;
           args.setAors(aors);
           args.setUnits(units);
+          args.setUnitStats(unitStats);
           args.bootstrapLoadedRef.current = true;
           args.setBootstrapLoaded(true);
         } catch (error) {
@@ -129,6 +150,24 @@ export function createDevicesLoadActions(args: LoadArgs) {
           args.setStatus({
             kind: 'error',
             text: `Помилка завантаження довідників пристроїв: ${formatDeviceErrorMessage(error)}`,
+          });
+        }
+      }
+
+      if (unitStatsPromise !== null) {
+        try {
+          const unitStats = await unitStatsPromise;
+          if (args.requestSeqRef.current !== seq) return;
+          args.setUnitStats(unitStats);
+        } catch (error) {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          if (isUnauthorizedError(error)) {
+            redirectToLogin();
+            return;
+          }
+          args.setStatus({
+            kind: 'error',
+            text: `Помилка оновлення статистики підрозділів: ${formatDeviceErrorMessage(error)}`,
           });
         }
       }
@@ -164,10 +203,14 @@ export function createDevicesLoadActions(args: LoadArgs) {
     await loadDevices(snapshot, { append: true });
   };
 
-  const reloadDevices = async () => {
+  const reloadDevices = async (options?: { includeUnitStats?: boolean }) => {
     const snapshot = args.latestQuerySnapshotRef.current;
     if (snapshot === null) return;
-    await loadDevices(snapshot, { includeLookups: !args.bootstrapLoadedRef.current, force: true });
+    await loadDevices(snapshot, {
+      includeLookups: !args.bootstrapLoadedRef.current,
+      includeUnitStats: options?.includeUnitStats,
+      force: true,
+    });
   };
 
   const dispose = () => {

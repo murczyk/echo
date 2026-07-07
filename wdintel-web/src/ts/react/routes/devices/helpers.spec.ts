@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Unit } from '../../../../Bindings';
 import {
   buildDevicesListReq,
   buildDevicesSortBy,
   createDefaultDevicesFilterState,
   formatAorsLabel,
   hasActiveDevicesFilters,
+  resolveDeviceSidebarUnitIds,
 } from './helpers';
+
+function buildUnit(overrides: Partial<Unit>): Unit {
+  return {
+    id: 1,
+    company: '',
+    battalion: '',
+    regiment: '',
+    division: '',
+    army: '',
+    comment: '',
+    name: 'Unit',
+    active: true,
+    createdAt: 0,
+    createdBy: 'tester',
+    ...overrides,
+  };
+}
 
 describe('devices list query mapping', () => {
   it('maps default query to active-only updated-at-desc first page', () => {
@@ -53,15 +72,13 @@ describe('devices list query mapping', () => {
     ).toBe('all');
   });
 
-  it('trims text filters and preserves selected lookup ids', () => {
+  it('trims search/status/unit filters and sends removed smuha/creator filters as null', () => {
     expect(
       buildDevicesListReq({
         searchText: '  drone  ',
         filters: {
           deletedFilter: 'all',
-          aorIds: [10, 20],
           unitIds: [30],
-          createdBy: '  cyber-user  ',
         },
         sorting: [{ id: 'name', desc: false }],
         limit: 50,
@@ -70,9 +87,9 @@ describe('devices list query mapping', () => {
     ).toMatchObject({
       filterText: 'drone',
       deletedFilter: 'all',
-      aorIds: [10, 20],
+      aorIds: null,
       unitIds: [30],
-      createdBy: 'cyber-user',
+      createdBy: null,
       limit: 50,
       offset: 100,
       sortBy: ['name_asc'],
@@ -94,14 +111,42 @@ describe('devices list query mapping', () => {
     expect(buildDevicesSortBy([{ id: 'createdBy', desc: true }])).toEqual(['updated_at_desc']);
   });
 
+  it('resolves sidebar leaf and hierarchy filters to deterministic unit ids', () => {
+    const units = [
+      buildUnit({ id: 4, name: 'Beta', army: 'A', division: 'D1' }),
+      buildUnit({ id: 2, name: 'Alpha', army: 'A', division: 'D2' }),
+      buildUnit({ id: 3, name: 'Beta', army: 'B', division: 'D3' }),
+    ];
+
+    expect(
+      resolveDeviceSidebarUnitIds(
+        { kind: 'leaf', label: 'Beta', unitName: 'Beta', unitId: 4 },
+        units,
+      ),
+    ).toEqual([4]);
+    expect(
+      resolveDeviceSidebarUnitIds({ kind: 'leaf', label: 'Beta', unitName: 'Beta' }, units),
+    ).toEqual([3, 4]);
+    expect(
+      resolveDeviceSidebarUnitIds(
+        {
+          kind: 'group',
+          label: 'A',
+          hierarchy: { army: 'A', division: null, regiment: null, battalion: null },
+        },
+        units,
+      ),
+    ).toEqual([2, 4]);
+  });
+
   it('detects active filters for empty states', () => {
     expect(hasActiveDevicesFilters('', createDefaultDevicesFilterState())).toBe(false);
     expect(hasActiveDevicesFilters('device', createDefaultDevicesFilterState())).toBe(true);
     expect(
       hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), deletedFilter: 'all' }),
     ).toBe(true);
-    expect(hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), aorIds: [1] })).toBe(
-      true,
-    );
+    expect(
+      hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), unitIds: [1] }),
+    ).toBe(true);
   });
 });
