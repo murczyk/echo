@@ -25,11 +25,11 @@ canReadDevices user =
 
 init : Auth.User -> () -> ( Model, Effect Msg )
 init user _ =
-    if user.name == "anonymous" || not (canReadDevices user) then
-        ( {}, E.replaceRoutePath Route.Path.Home_ )
+    if user.name == "anonymous" || canReadDevices user then
+        ( {}, E.none )
 
     else
-        ( {}, E.none )
+        ( {}, E.replaceRoutePath Route.Path.Home_ )
 
 
 type Msg
