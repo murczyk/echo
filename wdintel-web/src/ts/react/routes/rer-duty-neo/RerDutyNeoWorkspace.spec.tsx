@@ -132,6 +132,9 @@ describe('RerDutyNeoWorkspace', () => {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        botTagAction: null,
+        onCancelBotTagAction: () => {},
+        onMarkBotTagWrong: async () => {},
       },
       actions: {
         onLoadOlder: () => {},
