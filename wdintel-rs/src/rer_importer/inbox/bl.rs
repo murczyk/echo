@@ -1,7 +1,7 @@
 use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
-use milgeo_rs::coordinates::{parse_latlng_f64, Coords, Wgs84};
+use milgeo_rs::coordinates::{is_wgs84_ok, parse_latlng_f64, Coords, Wgs84};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::error::AppError;
@@ -782,32 +782,7 @@ pub async fn submit_upsert_inbox_item(
         );
     }
 
-    let (lat, lng) = match message
-        .coords
-        .clone()
-        .map(|c| parse_latlng_f64(&c.clone()[..]))
-        .and_then(|x| x.ok())
-    {
-        None => (None, None),
-        Some((lat, lng)) => (Some(lat), Some(lng)),
-    };
-
-    let coords_s = match (lat, lng) {
-        (Some(lat), Some(lng)) => {
-            let text = format!("{lat}, {lng}");
-            let mgrs: String =
-                Mgrs::from_latlon(&LatLon::create(lat, lng).context(h!())?, 6)
-                    .to_string();
-            Some(Coords {
-                text: text.clone(),
-                lat,
-                lng,
-                mgrs,
-                capture: text.clone(),
-            })
-        }
-        _ => None,
-    };
+    let coords_s = parse_submitted_coords(message.coords.as_deref()).await;
 
     let mut coords_vec = match &message.no_headers_body.clone().map(|n| n.body)
     {
@@ -1021,6 +996,41 @@ pub async fn submit_upsert_inbox_item(
     Ok(inbox_id)
 }
 
+async fn parse_submitted_coords(coords: Option<&str>) -> Option<Coords> {
+    let coords = coords?.trim();
+    if coords.is_empty() {
+        return None;
+    }
+
+    if let Ok((lat, lng)) = parse_latlng_f64(coords) {
+        if let Some(coords) = coords_from_latlng(lat, lng) {
+            return Some(coords);
+        }
+    }
+
+    crate::rer_importer::coordinates::extract_coords(coords)
+        .await
+        .into_iter()
+        .next()
+}
+
+fn coords_from_latlng(lat: f64, lng: f64) -> Option<Coords> {
+    if !is_wgs84_ok(lat, lng) {
+        return None;
+    }
+
+    let text = format!("{lat}, {lng}");
+    let latlon = LatLon::create(lat, lng).ok()?;
+    let mgrs = Mgrs::from_latlon(&latlon, 6).to_string();
+    Some(Coords {
+        text: text.clone(),
+        lat,
+        lng,
+        mgrs,
+        capture: text,
+    })
+}
+
 fn format_manual_location_v2(
     location: String,
     locations: Vec<crate::location::SettlementDetails>,
@@ -1042,5 +1052,38 @@ mod tests {
             format_manual_location_v2("район 1".to_string(), vec![]),
             "|район 1|"
         );
+    }
+
+    #[tokio::test]
+    async fn parse_submitted_coords_keeps_decimal_wgs84() {
+        let coords = parse_submitted_coords(Some("50.4494874, 30.6658124"))
+            .await
+            .unwrap();
+
+        assert_eq!(coords.text, "50.4494874, 30.6658124");
+        assert_eq!(coords.lat, 50.4494874);
+        assert_eq!(coords.lng, 30.6658124);
+    }
+
+    #[tokio::test]
+    async fn parse_submitted_coords_falls_back_to_main_parser_for_usk2000() {
+        let coords = parse_submitted_coords(Some("52-20714 65-51696"))
+            .await
+            .unwrap();
+
+        assert_eq!(coords.capture.trim(), "52-20714 65-51696");
+        assert!((coords.lat - 47.11815353886478).abs() < 0.000001);
+        assert!((coords.lng - 33.67970217653172).abs() < 0.000001);
+    }
+
+    #[tokio::test]
+    async fn parse_submitted_coords_falls_back_for_invalid_integer_latlng() {
+        let coords = parse_submitted_coords(Some("4494874 6658124"))
+            .await
+            .unwrap();
+
+        assert_eq!(coords.capture.trim(), "4494874 6658124");
+        assert!(is_wgs84_ok(coords.lat, coords.lng));
+        assert_ne!(coords.text, "4494874, 6658124");
     }
 }
