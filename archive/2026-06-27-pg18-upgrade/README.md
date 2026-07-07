@@ -62,6 +62,11 @@ ssh $SERVER "sudo -u postgres pgbackrest --config=/etc/pgbackrest/pgbackrest.con
 ssh $SERVER "sudo -u postgres pgbackrest --config=/etc/pgbackrest/pgbackrest.conf --config-include-path=/etc/pgbackrest/conf.d --stanza=$STANZA check"
 ssh $SERVER "sudo echo-install-utils pg18-migration --phase verify --stanza $STANZA"
 
+ssh $SERVER 'sudo sed -i -E "s/^(auto|manual|disabled)$/disabled/" /etc/postgresql/14/main/start.conf'
+ssh $SERVER 'sudo sed -i -E "s/^(auto|manual|disabled)$/auto/" /etc/postgresql/18/main/start.conf'
+ssh $SERVER 'sudo systemctl daemon-reload && sudo systemctl reset-failed postgresql@14-main || true'
+ssh $SERVER 'systemctl list-dependencies postgresql.service --no-pager --plain | grep postgresql@18-main'
+
 ssh $SERVER 'cd /var/lib/postgresql && sudo -u postgres /usr/lib/postgresql/18/bin/psql -f update_extensions.sql || true'
 ssh $SERVER "sudo -u postgres psql -Atqc \"select current_setting('max_connections'), current_setting('shared_buffers'), current_setting('shared_preload_libraries')\""
 ssh $SERVER 'sudo -u postgres /usr/lib/postgresql/18/bin/vacuumdb --all --analyze-in-stages --missing-stats-only'

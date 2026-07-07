@@ -324,6 +324,26 @@ describe('rer-analysis-neo helpers', () => {
     ).toBeNull();
   });
 
+  it('rejects inverted analysis date ranges but allows equal bounds', () => {
+    expect(
+      buildAnalysisReq(
+        createQueryState({
+          fromDateTimeStr: '2026-03-31T08:00',
+          toDateTimeStr: '2026-03-31T08:00',
+        }),
+      ),
+    ).not.toBeNull();
+
+    expect(
+      buildAnalysisReq(
+        createQueryState({
+          fromDateTimeStr: '2026-03-31T09:00',
+          toDateTimeStr: '2026-03-31T08:00',
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('resets adjacent frequency expansion when applying a saved filter', () => {
     const savedFilter = createSavedFilter(createQueryState({ freqsSelected: ['123.4'] }));
     const currentState = createQueryState({

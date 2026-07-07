@@ -3873,6 +3873,43 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
         .1,
         1
     );
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let map_req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_freqs: Some(vec!["998.8".to_string()]),
+        or_with_coords: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let inbox_items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &map_req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        inbox_items.iter().map(|item| item.id).collect_vec(),
+        vec![peleng_only_msg.id]
+    );
+    assert_eq!(inbox_items[0].coords, None);
+    let pelengs = crate::location::peleng::collect_inbox_item_pelengs(
+        &inbox_items,
+        &fixture.env.dbx,
+    )
+    .await
+    .unwrap();
+    let points = crate::rer_importer::inbox::bl::collect_map_points(
+        inbox_items,
+        pelengs,
+    )
+    .unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].message_id, peleng_only_msg.id);
+    assert_eq!(points[0].lat, 48.0);
+    assert_eq!(points[0].lng, 37.0);
 }
 
 #[tokio::test]

@@ -198,6 +198,167 @@ describe('PowerDateTimePicker', () => {
     });
   });
 
+  it('syncs the controlled date value after a committed manual edit', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('day');
+      pickerProps?.onChange(dayjs('2026-05-03'), { validationError: null });
+      vi.advanceTimersByTime(250);
+      pickerProps?.onSelectedSectionsChange?.(null);
+    });
+
+    expect(onChange).toHaveBeenCalledWith(dayjs('2026-05-03'));
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-04')} onChange={onChange} label="Дата" />);
+    });
+
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-04');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('syncs the controlled date value when keyboard editing ends', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('day');
+      pickerProps?.onChange(dayjs('2026-05-03'), { validationError: null });
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-03');
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-04')} onChange={onChange} label="Дата" />);
+    });
+
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-03');
+
+    act(() => {
+      datePickerMock.mock.calls.at(-1)?.[0]?.onSelectedSectionsChange?.(null);
+    });
+
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-04');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('clears the open date draft when the controlled value becomes null', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onOpen?.();
+    });
+
+    act(() => {
+      datePickerMock.mock.calls.at(-1)?.[0]?.onChange(dayjs('2026-05-03'), {
+        validationError: null,
+      });
+    });
+
+    expect(
+      (datePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD'),
+    ).toBe('2026-05-03');
+
+    act(() => {
+      root.render(<PowerDatePicker value={null} onChange={onChange} label="Дата" />);
+    });
+
+    expect(datePickerMock.mock.calls.at(-1)?.[0]?.value).toBeNull();
+
+    act(() => {
+      datePickerMock.mock.calls.at(-1)?.[0]?.onAccept?.(null, { validationError: null });
+    });
+
+    expect(onChange).not.toHaveBeenCalledWith(dayjs('2026-05-03'));
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('clears pending manual date input when the controlled value becomes null', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('day');
+      pickerProps?.onChange(dayjs('2026-05-03'), { validationError: null });
+    });
+
+    act(() => {
+      root.render(<PowerDatePicker value={null} onChange={onChange} label="Дата" />);
+    });
+
+    expect(datePickerMock.mock.calls.at(-1)?.[0]?.value).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onChange).not.toHaveBeenCalledWith(dayjs('2026-05-03'));
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('applies expanded date selections only after ok', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -398,6 +559,189 @@ describe('PowerDateTimePicker', () => {
     });
   });
 
+  it('syncs the controlled datetime value after a committed manual edit', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('hours');
+      pickerProps?.onChange(dayjs('2026-05-03T15:20'), { validationError: null });
+      vi.advanceTimersByTime(250);
+      pickerProps?.onSelectedSectionsChange?.(null);
+    });
+
+    expect(onChange).toHaveBeenCalledWith(dayjs('2026-05-03T15:20'));
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-04T16:30')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-04T16:30');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('syncs the controlled datetime value when keyboard editing ends', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('hours');
+      pickerProps?.onChange(dayjs('2026-05-03T15:20'), { validationError: null });
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-03T15:20');
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-04T16:30')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-03T15:20');
+
+    act(() => {
+      dateTimePickerMock.mock.calls.at(-1)?.[0]?.onSelectedSectionsChange?.(null);
+    });
+
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-04T16:30');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('clears the open datetime draft when the controlled value becomes null', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onOpen?.();
+    });
+
+    act(() => {
+      dateTimePickerMock.mock.calls.at(-1)?.[0]?.onChange(dayjs('2026-05-03T15:20'), {
+        validationError: null,
+      });
+    });
+
+    expect(
+      (dateTimePickerMock.mock.calls.at(-1)?.[0]?.value as dayjs.Dayjs | null)?.format(
+        'YYYY-MM-DDTHH:mm',
+      ),
+    ).toBe('2026-05-03T15:20');
+
+    act(() => {
+      root.render(<PowerDateTimePicker value={null} onChange={onChange} label="Час" />);
+    });
+
+    expect(dateTimePickerMock.mock.calls.at(-1)?.[0]?.value).toBeNull();
+
+    act(() => {
+      dateTimePickerMock.mock.calls.at(-1)?.[0]?.onAccept?.(null, { validationError: null });
+    });
+
+    expect(onChange).not.toHaveBeenCalledWith(dayjs('2026-05-03T15:20'));
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('clears pending manual datetime input when the controlled value becomes null', () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onSelectedSectionsChange?.('hours');
+      pickerProps?.onChange(dayjs('2026-05-03T15:20'), { validationError: null });
+    });
+
+    act(() => {
+      root.render(<PowerDateTimePicker value={null} onChange={onChange} label="Час" />);
+    });
+
+    expect(dateTimePickerMock.mock.calls.at(-1)?.[0]?.value).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onChange).not.toHaveBeenCalledWith(dayjs('2026-05-03T15:20'));
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('applies expanded picker ui selections only after ok', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -444,6 +788,59 @@ describe('PowerDateTimePicker', () => {
     });
   });
 
+  it('keeps an open datetime draft when the parent rerenders with a stale value', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const pickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onOpen?.();
+    });
+
+    const openPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect((openPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
+
+    act(() => {
+      openPickerProps?.onChange(dayjs('2026-05-02T11:30'), { validationError: null });
+    });
+
+    act(() => {
+      root.render(
+        <PowerDateTimePicker value={dayjs('2026-05-01T10:00')} onChange={onChange} label="Час" />,
+      );
+    });
+
+    const rerenderedPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect((rerenderedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-02T11:30',
+    );
+
+    act(() => {
+      rerenderedPickerProps?.onClose?.();
+    });
+
+    const closedPickerProps = dateTimePickerMock.mock.calls.at(-1)?.[0];
+    expect((closedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DDTHH:mm')).toBe(
+      '2026-05-01T10:00',
+    );
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('applies only the latest collapsed datetime change', () => {
     vi.useFakeTimers();
     const container = document.createElement('div');
@@ -482,6 +879,53 @@ describe('PowerDateTimePicker', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls.at(-1)?.[0]?.format('YYYY-MM-DDTHH:mm')).toBe('2026-05-03T12:30');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps an open date draft when the parent rerenders with a stale value', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect(pickerProps).toBeDefined();
+
+    act(() => {
+      pickerProps?.onOpen?.();
+    });
+
+    const openPickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect((openPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe('2026-05-01');
+
+    act(() => {
+      openPickerProps?.onChange(dayjs('2026-05-02'), { validationError: null });
+    });
+
+    act(() => {
+      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={onChange} label="Дата" />);
+    });
+
+    const rerenderedPickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect((rerenderedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe(
+      '2026-05-02',
+    );
+
+    act(() => {
+      rerenderedPickerProps?.onClose?.();
+    });
+
+    const closedPickerProps = datePickerMock.mock.calls.at(-1)?.[0];
+    expect((closedPickerProps?.value as dayjs.Dayjs | null)?.format('YYYY-MM-DD')).toBe(
+      '2026-05-01',
+    );
 
     act(() => {
       root.unmount();

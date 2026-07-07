@@ -284,14 +284,8 @@ fn message_has_peleng_exists() -> SimpleExpr {
         ))
         .ne(""),
     );
-    let peleng_exists = Expr::exists(
-        sigint_peleng::Entity::find()
-            .filter(Expr::col(sigint_peleng::Column::SourceInboxItemId).equals(
-                (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
-            ))
-            .filter(sigint_peleng::Column::Deleted.eq(false))
-            .into_query(),
-    );
+    let peleng_exists =
+        crate::location::peleng::inbox_item_has_active_peleng_exists();
     coords_exists.or(peleng_exists)
 }
 

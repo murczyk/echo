@@ -154,6 +154,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::NetworkUnit,
             crate::rer_importer::types::MessageIdsReq,
             crate::rer_importer::types::MessageIdsRsp,
+            crate::rer_importer::types::InboxItemContextReq,
+            crate::rer_importer::types::InboxItemContextRsp,
             crate::rer_importer::types::InboxByGroupDigestRsp,
             crate::rer_importer::types::InboxGroupStatsByMinute,
             crate::rer_importer::types::InboxGroupStats,

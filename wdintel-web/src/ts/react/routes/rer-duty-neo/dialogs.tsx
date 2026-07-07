@@ -9,11 +9,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import type { ReactNode } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import {
   STANDARD_DIALOG_ACTIONS_SX,
   STANDARD_DIALOG_FORM_STACK_SX,
 } from '../../components/dialogStyles';
+import { PowerForm } from '../../components/PowerForm';
 import { ELLIPSIS } from '../../utils/misc';
 import { blurActiveElement } from '../../utils/focus';
 
@@ -144,6 +145,12 @@ export function CommentDialog({
   onClose,
   onSave,
 }: CommentDialogProps) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    blurActiveElement();
+    onSave();
+  };
+
   return (
     <Dialog
       open={open}
@@ -156,39 +163,36 @@ export function CommentDialog({
       disableRestoreFocus
     >
       <DialogTitle>Коментар</DialogTitle>
-      <DialogContent>
-        <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
-          {renderCommentPreview(messagePreview)}
-          <TextField
-            autoFocus
-            fullWidth
-            multiline
-            minRows={4}
-            placeholder={`Введіть коментар${ELLIPSIS}`}
-            value={commentText}
-            onChange={(e) => onCommentTextChange(e.target.value)}
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
-        <Button
-          onClick={() => {
-            blurActiveElement();
-            onClose();
-          }}
-        >
-          Скасувати
-        </Button>
-        <Button
-          variant="contained"
-          onClick={() => {
-            blurActiveElement();
-            onSave();
-          }}
-        >
-          Зберегти
-        </Button>
-      </DialogActions>
+      <PowerForm onSubmit={handleSubmit}>
+        <DialogContent>
+          <Stack sx={STANDARD_DIALOG_FORM_STACK_SX}>
+            {renderCommentPreview(messagePreview)}
+            <TextField
+              autoFocus
+              fullWidth
+              multiline
+              minRows={4}
+              placeholder={`Введіть коментар${ELLIPSIS}`}
+              value={commentText}
+              onChange={(e) => onCommentTextChange(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <Button
+            type="button"
+            onClick={() => {
+              blurActiveElement();
+              onClose();
+            }}
+          >
+            Скасувати
+          </Button>
+          <Button type="submit" variant="contained">
+            Зберегти
+          </Button>
+        </DialogActions>
+      </PowerForm>
     </Dialog>
   );
 }

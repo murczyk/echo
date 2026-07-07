@@ -1139,6 +1139,17 @@ export type MessageIdsRsp = {
   messages: Array<[number, InboxMessage]>;
 };
 
+export type InboxItemContextReq = {
+  messageUid: string;
+};
+
+export type InboxItemContextRsp = {
+  groupMasterKeys: Array<string>;
+  sigintInboxItemIds: Array<number>;
+  sinceTs: number | null;
+  tillTs: number | null;
+};
+
 export type InboxByGroupDigestRsp = {
   statsPerMinute: Array<InboxGroupStatsByMinute>;
 };
