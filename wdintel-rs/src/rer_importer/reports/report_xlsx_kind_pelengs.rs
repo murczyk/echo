@@ -1,7 +1,9 @@
 use super::super::types::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
-use crate::location::peleng::collect_inbox_pelengs;
+use crate::location::peleng::{
+    collect_inbox_pelengs, inbox_item_has_active_peleng_exists,
+};
 use crate::rer_importer::analysis::*;
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
@@ -95,8 +97,7 @@ pub async fn get_inbox_messages_report(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         // Allow missing network/freq/unit links for report rows.
-        .filter(sigint_inbox_item::Column::Lng.is_not_null())
-        .filter(sigint_inbox_item::Column::Lat.is_not_null())
+        .filter(inbox_item_has_active_peleng_exists())
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def()
@@ -604,6 +605,9 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
 
     #[test]
     fn deduplicate_by_id_keeps_same_body_from_different_messages() {
@@ -641,5 +645,91 @@ mod tests {
         assert_eq!(actual.len(), 2);
         assert_eq!(actual[0].id, 1);
         assert_eq!(actual[1].id, 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn get_inbox_messages_report_includes_peleng_without_inbox_latlng() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let dt = NaiveDate::from_ymd_opt(2026, 3, 9)
+            .unwrap()
+            .and_hms_opt(10, 15, 0)
+            .unwrap();
+
+        let signal_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("peleng-only-message".to_string())),
+                created_at: Set(dt),
+                timestamp: Set(Some(dt)),
+                message_uid: Set(Some("peleng-only-message".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(signal_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(Some("sender-1".to_string())),
+                message_uid: Set(Some("peleng-only-message".to_string())),
+                created_at: Set(dt),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                date: Set(Some(dt.date().to_string())),
+                time: Set(Some(dt.time().format("%H:%M:%S").to_string())),
+                freq: Set(Some("138.500".to_string())),
+                lat: Set(None),
+                lng: Set(None),
+                coords: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_peleng(
+            &env.dbx,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(signal_message.id),
+                lat: Set(48.1),
+                lng: Set(37.2),
+                created_at: Set(dt),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let messages = get_inbox_messages_report(
+            &login.login,
+            &env,
+            &InboxMessagesReq {
+                nolimit: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, signal_message.id);
+        assert_eq!(messages[0].1, Some((48.1, 37.2)));
     }
 }

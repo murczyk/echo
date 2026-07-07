@@ -1,4 +1,4 @@
-use crate::entities::sigint_peleng;
+use crate::entities::{sigint_inbox_item, sigint_peleng};
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::InboxMapItem;
@@ -6,7 +6,7 @@ use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::NaiveDateTime;
 use milgeo_rs::coordinates::Coords;
-use sea_orm::*;
+use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
 
 pub async fn delete_inbox_pelengs<'a, 'async_trait, C>(
@@ -124,6 +124,19 @@ pub async fn collect_inbox_pelengs(
         .all(dbx)
         .await
         .c(h!())
+}
+
+pub fn inbox_item_has_active_peleng_exists() -> SimpleExpr {
+    Expr::exists(
+        sigint_peleng::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .filter(Expr::col(sigint_peleng::Column::SourceInboxItemId).equals(
+                (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
+            ))
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .into_query(),
+    )
 }
 
 pub async fn collect_inbox_item_pelengs(
