@@ -22,6 +22,7 @@ pub const SYSTEM_SCHEDULED_BY: &str = "system";
 pub struct EchoMissingMessageRow {
     pub id: i64,
     pub message_id: i32,
+    pub group_names: String,
     pub body: String,
     pub created_at: String,
     pub is_resolved: bool,
@@ -45,6 +46,7 @@ pub struct EchoMissingMessageResolveReq {
 struct EchoMissingMessageJoinedRow {
     id: i64,
     message_id: i32,
+    group_names: Option<String>,
     body: Option<String>,
     created_at: NaiveDateTime,
     is_resolved: bool,
@@ -59,6 +61,7 @@ impl EchoMissingMessageJoinedRow {
         EchoMissingMessageRow {
             id: self.id,
             message_id: self.message_id,
+            group_names: self.group_names.unwrap_or_default(),
             body: self.body.unwrap_or_else(|| "???".to_string()),
             created_at: format_dt(self.created_at),
             is_resolved: self.is_resolved,
@@ -220,6 +223,7 @@ pub(crate) async fn list_missing_messages(
         select
             emm.id,
             emm.message_id,
+            echo_groups.group_names,
             eim.body,
             emm.created_at,
             emm.is_resolved,
@@ -229,6 +233,15 @@ pub(crate) async fn list_missing_messages(
             emm.error
         from echo_missing_message emm
         left join echo_inbox_message eim on eim.id = emm.message_id
+        left join lateral (
+            select string_agg(
+                distinct coalesce(nullif(eg.name, ''), eg.group_id),
+                ', ' order by coalesce(nullif(eg.name, ''), eg.group_id)
+            ) as group_names
+            from echo_inbox_message eim_group
+            join echo_group eg on eg.id = eim_group.group_id
+            where eim_group.id = emm.message_id
+        ) echo_groups on true
         order by emm.is_resolved asc, emm.created_at desc, emm.id desc
     "#;
     Ok(
@@ -282,6 +295,7 @@ async fn row_by_id(
         select
             emm.id,
             emm.message_id,
+            echo_groups.group_names,
             eim.body,
             emm.created_at,
             emm.is_resolved,
@@ -291,6 +305,15 @@ async fn row_by_id(
             emm.error
         from echo_missing_message emm
         left join echo_inbox_message eim on eim.id = emm.message_id
+        left join lateral (
+            select string_agg(
+                distinct coalesce(nullif(eg.name, ''), eg.group_id),
+                ', ' order by coalesce(nullif(eg.name, ''), eg.group_id)
+            ) as group_names
+            from echo_inbox_message eim_group
+            join echo_group eg on eg.id = eim_group.group_id
+            where eim_group.id = emm.message_id
+        ) echo_groups on true
         where emm.id = $1
     "#;
     EchoMissingMessageJoinedRow::find_by_statement(
@@ -314,8 +337,11 @@ fn format_dt(dt: NaiveDateTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::EchoMessageSource;
     use crate::functest::tests::cleanup;
+    use sea_orm::ActiveValue::NotSet;
     use serial_test::serial;
+    use uuid::Uuid;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
@@ -341,6 +367,102 @@ mod tests {
             .find(|row| row.message_id == message_id)
             .unwrap();
         assert_eq!(row.body, "???");
+        assert_eq!(row.group_names, "");
         assert_eq!(row.status, "pending");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn list_includes_inbox_echo_group_names() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        echo_missing_message::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let account = mk_echo_account(&env.dbx).await;
+        let group = mk_echo_group(&env.dbx, account.id, "Missing Group").await;
+        let inbox_message =
+            mk_inbox_message(&env.dbx, account.id, group.id).await;
+        record_missing_message(&env.dbx, inbox_message.id, None)
+            .await
+            .unwrap();
+
+        let rows = list_missing_messages(&env.dbx).await.unwrap();
+
+        let row = rows
+            .into_iter()
+            .find(|row| row.message_id == inbox_message.id)
+            .unwrap();
+        assert_eq!(row.group_names, "Missing Group");
+    }
+
+    async fn mk_echo_account(dbx: &DatabaseConnection) -> echo_account::Model {
+        let now = Utc::now().naive_utc();
+        let phone_seed = Uuid::new_v4().simple().to_string();
+        echo_account::ActiveModel {
+            id: NotSet,
+            source: Set(EchoMessageSource::Signal),
+            phone_number: Set(format!("+{}", &phone_seed[..12])),
+            is_linked: Set(true),
+            created_at: Set(now),
+            synced_at: Set(None),
+            last_trusted_at: Set(None),
+            linked_at: Set(Some(now)),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_echo_group(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        name: &str,
+    ) -> echo_group::Model {
+        let now = Utc::now().naive_utc();
+        let group_id = format!("test-group-{}", Uuid::new_v4());
+        echo_group::ActiveModel {
+            id: NotSet,
+            group_id: Set(group_id.clone()),
+            internal_id: Set(Some(format!("internal-{group_id}"))),
+            name: Set(Some(name.to_string())),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_by_messanger: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_inbox_message(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        group_id: i32,
+    ) -> echo_inbox_message::Model {
+        let now = Utc::now().naive_utc();
+        echo_inbox_message::ActiveModel {
+            id: NotSet,
+            body: Set(format!("body {}", Uuid::new_v4())),
+            internal_id: Set(Some(format!("external-{}", Uuid::new_v4()))),
+            duplicate_of: Set(None),
+            sender_id: Set(None),
+            group_id: Set(Some(group_id)),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            updated_at: Set(now),
+            reply_to_inbox_message_id: Set(None),
+            reply_to_outbox_message_id: Set(None),
+            internal_timestamp: Set(None),
+            seen: Set(false),
+            client_id: Set(None),
+            deleted: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
     }
 }

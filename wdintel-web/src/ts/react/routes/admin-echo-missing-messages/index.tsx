@@ -20,6 +20,7 @@ const TRANSLATIONS = {
   pageTitle: 'Загублені повідомлення',
   resolveManually: 'Відновити вручну',
   messageId: 'ID повідомлення',
+  groups: 'Групи',
   body: 'Текст повідомлення',
   status: 'Статус',
   createdAt: 'Створено',
@@ -131,6 +132,27 @@ function MissingMessageTable({
         size: 120,
       },
       {
+        accessorKey: 'groupNames',
+        header: TRANSLATIONS.groups,
+        size: 220,
+        Cell: ({ cell }) => (
+          <Typography
+            component="span"
+            variant="body2"
+            sx={{
+              display: 'block',
+              maxWidth: 300,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={cell.getValue<string>()}
+          >
+            {cell.getValue<string>()}
+          </Typography>
+        ),
+      },
+      {
         accessorKey: 'body',
         header: TRANSLATIONS.body,
         size: 420,
@@ -227,6 +249,7 @@ function MissingMessageTable({
         'mrt-row-numbers',
         'resolveManually',
         'messageId',
+        'groupNames',
         'body',
         'status',
         'createdAt',
