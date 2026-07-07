@@ -10,30 +10,38 @@ use crate::devices::validation::{
     parse_device_id,
 };
 use crate::entities::{
-    area_of_responsibility, device, device_file, sigint_unit,
+    area_of_responsibility, device, device_aor, device_file, sigint_unit,
 };
 use crate::h;
 use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext, Uuid};
 use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Expr, Order};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, IntoSimpleExpr, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select,
 };
 
-pub fn render_device_list_item(
+#[derive(Clone)]
+struct DeviceAorLabel {
+    id: i64,
+    name: Option<String>,
+}
+
+fn render_device_list_item(
     device: device::Model,
-    aor_names: &BTreeMap<i64, String>,
+    device_aors: &BTreeMap<Uuid, Vec<DeviceAorLabel>>,
     unit_names: &BTreeMap<i64, String>,
 ) -> DeviceListItem {
+    let aors = device_aors.get(&device.id).cloned().unwrap_or_default();
     DeviceListItem {
         id: device.id.to_string(),
         name: device.name,
         created_by: device.created_by,
-        aor_name: device
-            .aor_id
-            .and_then(|aor_id| aor_names.get(&aor_id).cloned()),
-        aor_id: device.aor_id,
+        aor_ids: aors.iter().map(|aor| aor.id).collect(),
+        aor_names: aors
+            .into_iter()
+            .map(|aor| aor.name.unwrap_or_default())
+            .collect(),
         unit_name: device
             .unit_id
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
@@ -46,20 +54,22 @@ pub fn render_device_list_item(
     }
 }
 
-pub fn render_device_details(
+fn render_device_details(
     device: device::Model,
-    aor_names: &BTreeMap<i64, String>,
+    device_aors: &BTreeMap<Uuid, Vec<DeviceAorLabel>>,
     unit_names: &BTreeMap<i64, String>,
 ) -> Result<DeviceDetails, AppError> {
+    let aors = device_aors.get(&device.id).cloned().unwrap_or_default();
     let custom_fields = serde_json::from_value(device.custom_fields).c(h!())?;
     Ok(DeviceDetails {
         id: device.id.to_string(),
         name: device.name,
         created_by: device.created_by,
-        aor_name: device
-            .aor_id
-            .and_then(|aor_id| aor_names.get(&aor_id).cloned()),
-        aor_id: device.aor_id,
+        aor_ids: aors.iter().map(|aor| aor.id).collect(),
+        aor_names: aors
+            .into_iter()
+            .map(|aor| aor.name.unwrap_or_default())
+            .collect(),
         unit_name: device
             .unit_id
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
@@ -113,10 +123,13 @@ where
         .await
         .c(h!())?;
     let next_offset = pagination.offset + devices.len() as u64;
-    let (aor_names, unit_names) = load_device_label_maps(db, &devices).await?;
+    let (device_aors, unit_names) =
+        load_device_label_maps(db, &devices).await?;
     let list = devices
         .into_iter()
-        .map(|device| render_device_list_item(device, &aor_names, &unit_names))
+        .map(|device| {
+            render_device_list_item(device, &device_aors, &unit_names)
+        })
         .collect();
 
     Ok(ListDevicesRsp {
@@ -139,9 +152,9 @@ where
         query = query.filter(device::Column::Deleted.eq(false));
     }
     let device = query.one(db).await.c(h!())?.ok_or(AppError::NotFound)?;
-    let (aor_names, unit_names) =
+    let (device_aors, unit_names) =
         load_device_label_maps(db, std::slice::from_ref(&device)).await?;
-    render_device_details(device, &aor_names, &unit_names)
+    render_device_details(device, &device_aors, &unit_names)
 }
 
 pub async fn list_device_files<C>(
@@ -196,7 +209,17 @@ fn apply_device_filters(
     }
     if let Some(aor_ids) = &req.aor_ids {
         if !aor_ids.is_empty() {
-            query = query.filter(device::Column::AorId.is_in(aor_ids.clone()));
+            let device_aor_exists = device_aor::Entity::find()
+                .select_only()
+                .expr(Expr::value(1))
+                .filter(
+                    device_aor::Column::DeviceId
+                        .into_simple_expr()
+                        .eq(device::Column::Id.into_simple_expr()),
+                )
+                .filter(device_aor::Column::AorId.is_in(aor_ids.clone()))
+                .into_query();
+            query = query.filter(Expr::exists(device_aor_exists));
         }
     }
     if let Some(unit_ids) = &req.unit_ids {
@@ -320,36 +343,51 @@ where
 async fn load_device_label_maps<C>(
     db: &C,
     devices: &[device::Model],
-) -> Result<(BTreeMap<i64, String>, BTreeMap<i64, String>), AppError>
+) -> Result<
+    (BTreeMap<Uuid, Vec<DeviceAorLabel>>, BTreeMap<i64, String>),
+    AppError,
+>
 where
     C: ConnectionTrait,
 {
-    let aor_ids = devices.iter().filter_map(|device| device.aor_id).collect();
+    let device_ids = devices.iter().map(|device| device.id).collect();
     let unit_ids = devices.iter().filter_map(|device| device.unit_id).collect();
     Ok((
-        load_aor_names(db, aor_ids).await?,
+        load_device_aor_labels(db, device_ids).await?,
         load_unit_names(db, unit_ids).await?,
     ))
 }
 
-async fn load_aor_names<C>(
+async fn load_device_aor_labels<C>(
     db: &C,
-    aor_ids: BTreeSet<i64>,
-) -> Result<BTreeMap<i64, String>, AppError>
+    device_ids: Vec<Uuid>,
+) -> Result<BTreeMap<Uuid, Vec<DeviceAorLabel>>, AppError>
 where
     C: ConnectionTrait,
 {
-    if aor_ids.is_empty() {
+    if device_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
 
-    let aors = area_of_responsibility::Entity::find()
-        .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
+    let rows = device_aor::Entity::find()
+        .find_also_related(area_of_responsibility::Entity)
+        .filter(device_aor::Column::DeviceId.is_in(device_ids))
+        .order_by_asc(device_aor::Column::Id)
         .all(db)
         .await
         .c(h!())?;
-    Ok(aors.into_iter().map(|aor| (aor.id, aor.name)).collect())
+    let mut result = BTreeMap::new();
+    for (device_aor, aor) in rows {
+        let name = aor.and_then(|aor| (!aor.deleted).then_some(aor.name));
+        result
+            .entry(device_aor.device_id)
+            .or_insert_with(Vec::new)
+            .push(DeviceAorLabel {
+                id: device_aor.aor_id,
+                name,
+            });
+    }
+    Ok(result)
 }
 
 async fn load_unit_names<C>(
@@ -374,4 +412,83 @@ where
 
 fn datetime_ms(datetime: NaiveDateTime) -> i64 {
     datetime.and_utc().timestamp_millis()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use serde_json::json;
+
+    fn fixture_device() -> device::Model {
+        let now = NaiveDate::from_ymd_opt(2026, 7, 7)
+            .unwrap()
+            .and_hms_opt(10, 30, 0)
+            .unwrap();
+        device::Model {
+            id: Uuid::from_u128(0x018f0000000070008000000000000000),
+            name: "Device Alpha".to_string(),
+            created_by: "operator".to_string(),
+            unit_id: Some(7),
+            custom_fields: json!([{ "label": "Serial", "value": "123" }]),
+            external_url: None,
+            deleted: false,
+            deleted_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn render_device_list_item_supports_zero_and_multiple_smugi() {
+        let device = fixture_device();
+        let unit_names = BTreeMap::from([(7, "Unit".to_string())]);
+
+        let row = render_device_list_item(
+            device.clone(),
+            &BTreeMap::new(),
+            &unit_names,
+        );
+        assert!(row.aor_ids.is_empty());
+        assert!(row.aor_names.is_empty());
+
+        let device_aors = BTreeMap::from([(
+            device.id,
+            vec![
+                DeviceAorLabel {
+                    id: 10,
+                    name: Some("Alpha".to_string()),
+                },
+                DeviceAorLabel { id: 20, name: None },
+            ],
+        )]);
+        let row = render_device_list_item(device, &device_aors, &unit_names);
+
+        assert_eq!(row.aor_ids, vec![10, 20]);
+        assert_eq!(row.aor_names, vec!["Alpha", ""]);
+    }
+
+    #[test]
+    fn render_device_details_supports_multiple_smugi() {
+        let device = fixture_device();
+        let device_aors = BTreeMap::from([(
+            device.id,
+            vec![
+                DeviceAorLabel {
+                    id: 10,
+                    name: Some("Alpha".to_string()),
+                },
+                DeviceAorLabel {
+                    id: 20,
+                    name: Some("Bravo".to_string()),
+                },
+            ],
+        )]);
+        let details =
+            render_device_details(device, &device_aors, &BTreeMap::new())
+                .unwrap();
+
+        assert_eq!(details.aor_ids, vec![10, 20]);
+        assert_eq!(details.aor_names, vec!["Alpha", "Bravo"]);
+    }
 }

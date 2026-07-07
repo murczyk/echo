@@ -14,7 +14,6 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "Text")]
     pub created_by: String,
-    pub aor_id: Option<i64>,
     pub unit_id: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]
     pub custom_fields: Json,
@@ -28,14 +27,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::area_of_responsibility::Entity",
-        from = "Column::AorId",
-        to = "super::area_of_responsibility::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    AreaOfResponsibility,
+    #[sea_orm(has_many = "super::device_aor::Entity")]
+    DeviceAor,
     #[sea_orm(has_many = "super::device_file::Entity")]
     DeviceFile,
     #[sea_orm(
@@ -56,9 +49,9 @@ pub enum Relation {
     SigintUnit,
 }
 
-impl Related<super::area_of_responsibility::Entity> for Entity {
+impl Related<super::device_aor::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::AreaOfResponsibility.def()
+        Relation::DeviceAor.def()
     }
 }
 

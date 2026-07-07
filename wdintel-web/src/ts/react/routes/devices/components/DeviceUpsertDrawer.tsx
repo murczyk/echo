@@ -49,6 +49,11 @@ type Props = {
 
 type TouchedField = 'name' | 'externalUrl';
 
+function selectedLookupOptions(options: DeviceLookupOption[], ids: number[]): DeviceLookupOption[] {
+  const optionsById = new Map(options.map((option) => [option.id, option]));
+  return ids.map((id) => optionsById.get(id) ?? { id, label: `#${id}` });
+}
+
 function selectedLookupOption(
   options: DeviceLookupOption[],
   id: number | null,
@@ -86,9 +91,9 @@ export function DeviceUpsertDrawer({
     setTouched({});
   }, [mode, open]);
 
-  const selectedAor = useMemo(
-    () => selectedLookupOption(aorOptions, form?.aorId ?? null),
-    [aorOptions, form?.aorId],
+  const selectedAors = useMemo(
+    () => selectedLookupOptions(aorOptions, form?.aorIds ?? []),
+    [aorOptions, form?.aorIds],
   );
   const selectedUnit = useMemo(
     () => selectedLookupOption(unitOptions, form?.unitId ?? null),
@@ -107,8 +112,8 @@ export function DeviceUpsertDrawer({
     return field === 'name' ? serverFieldErrors.name : serverFieldErrors.externalUrl;
   };
 
-  const handleAorChange = (_event: SyntheticEvent, next: DeviceLookupOption | null) => {
-    patchForm({ aorId: next?.id ?? null });
+  const handleAorChange = (_event: SyntheticEvent, next: DeviceLookupOption[]) => {
+    patchForm({ aorIds: next.map((option) => option.id) });
   };
 
   const handleUnitChange = (_event: SyntheticEvent, next: DeviceLookupOption | null) => {
@@ -180,8 +185,8 @@ export function DeviceUpsertDrawer({
           {noEditChanges ? (
             <PowerAlert severity="info">Немає змін для збереження.</PowerAlert>
           ) : null}
-          {serverFieldErrors.aorId ? (
-            <PowerAlert severity="error">{serverFieldErrors.aorId}</PowerAlert>
+          {serverFieldErrors.aorIds ? (
+            <PowerAlert severity="error">{serverFieldErrors.aorIds}</PowerAlert>
           ) : null}
           {serverFieldErrors.unitId ? (
             <PowerAlert severity="error">{serverFieldErrors.unitId}</PowerAlert>
@@ -202,18 +207,21 @@ export function DeviceUpsertDrawer({
                 helperText={fieldError('name')}
               />
 
-              <Autocomplete<DeviceLookupOption, false, false, false>
+              <Autocomplete<DeviceLookupOption, true, false, false>
+                multiple
+                disableCloseOnSelect
+                filterSelectedOptions
                 fullWidth
                 size="small"
                 options={aorOptions}
-                value={selectedAor}
+                value={selectedAors}
                 loading={referenceLoading}
                 disabled={formBlocked}
                 getOptionLabel={(option) => option.label}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 onChange={handleAorChange}
                 renderInput={(params) => (
-                  <TextField {...params} label="Район" placeholder="Без району" />
+                  <TextField {...params} label="Смуги" placeholder="Смуга" />
                 )}
               />
 

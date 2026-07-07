@@ -23,7 +23,7 @@ import type { RequestOptions } from './client';
 export type DeviceUpdatePatchInput = {
   deviceId: string;
   name?: string;
-  aorId?: number | null;
+  aorIds?: number[];
   unitId?: number | null;
   customFields?: DeviceCustomField[];
   externalUrl?: string | null;
@@ -33,7 +33,7 @@ export type DeviceUpdatePatchInput = {
 type DeviceUpdatePatchReq = {
   deviceId: string;
   name?: string;
-  aorId?: number | null;
+  aorIds?: number[];
   unitId?: number | null;
   customFields?: DeviceCustomField[];
   externalUrl?: string | null;
@@ -49,8 +49,8 @@ export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpd
   if (name !== undefined && name !== null) {
     req.name = name;
   }
-  if (input.aorId !== undefined) {
-    req.aorId = input.aorId;
+  if (input.aorIds !== undefined) {
+    req.aorIds = input.aorIds;
   }
   if (input.unitId !== undefined) {
     req.unitId = input.unitId;

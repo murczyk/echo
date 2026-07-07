@@ -1604,8 +1604,8 @@ export type DeviceListItem = {
   id: string;
   name: string;
   createdBy: string;
-  aorId: number | null;
-  aorName: string | null;
+  aorIds: Array<number>;
+  aorNames: Array<string>;
   unitId: number | null;
   unitName: string | null;
   externalUrl: string | null;
@@ -1619,8 +1619,8 @@ export type DeviceDetails = {
   id: string;
   name: string;
   createdBy: string;
-  aorId: number | null;
-  aorName: string | null;
+  aorIds: Array<number>;
+  aorNames: Array<string>;
   unitId: number | null;
   unitName: string | null;
   customFields: Array<DeviceCustomField>;
@@ -1669,7 +1669,7 @@ export type DeviceDetailReq = {
 
 export type CreateDeviceReq = {
   name: string;
-  aorId: number | null;
+  aorIds: Array<number>;
   unitId: number | null;
   customFields: Array<DeviceCustomField>;
   externalUrl: string | null;
@@ -1679,7 +1679,7 @@ export type CreateDeviceReq = {
 export type UpdateDeviceReq = {
   deviceId: string;
   name: string | null;
-  aorId: number | null;
+  aorIds: Array<number> | null;
   unitId: number | null;
   customFields: Array<DeviceCustomField> | null;
   externalUrl: string | null;

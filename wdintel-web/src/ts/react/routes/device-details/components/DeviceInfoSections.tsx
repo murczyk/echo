@@ -13,12 +13,8 @@ import {
 
 import type { DeviceDetails } from '../../../../../Bindings';
 import { isSafeExternalUrl } from '../../devices/helpers';
-import {
-  formatAorLabel,
-  formatDeviceSummaryRows,
-  formatOptionalText,
-  formatUnitLabel,
-} from '../helpers';
+import { formatDeviceSummaryRows, formatOptionalText, formatUnitLabel } from '../helpers';
+import { formatAorsLabel } from '../../devices/helpers';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -71,7 +67,7 @@ export function DeviceRegistrySection({
       <CardContent>
         <Stack spacing={1.5} divider={<Divider flexItem />}>
           <InfoRow label="Назва" value={device.name} />
-          <InfoRow label="Район" value={formatAorLabel(device.aorId, device.aorName)} />
+          <InfoRow label="Смуги" value={formatAorsLabel(device.aorIds, device.aorNames)} />
           <InfoRow label="Підрозділ" value={formatUnitLabel(device.unitId, device.unitName)} />
           <Box
             sx={{

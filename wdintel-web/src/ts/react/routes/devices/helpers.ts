@@ -106,7 +106,7 @@ export function hasActiveDevicesFilters(searchText: string, filters: DevicesFilt
 export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
   return {
     ...device,
-    aorLabel: formatAorLabel(device.aorId, device.aorName),
+    aorLabel: formatAorsLabel(device.aorIds, device.aorNames),
     unitLabel: formatUnitLabel(device.unitId, device.unitName),
     updatedAtLabel: formatDeviceDateTime(device.updatedAtMs),
     createdAtLabel: formatDeviceDateTime(device.createdAtMs),
@@ -119,8 +119,8 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     id: device.id,
     name: device.name,
     createdBy: device.createdBy,
-    aorId: device.aorId,
-    aorName: device.aorName,
+    aorIds: device.aorIds,
+    aorNames: device.aorNames,
     unitId: device.unitId,
     unitName: device.unitName,
     externalUrl: device.externalUrl,
@@ -165,9 +165,17 @@ export function isSafeExternalUrl(value: string | null | undefined): value is st
   }
 }
 
-function formatAorLabel(id: number | null, name: string | null): string {
-  if (name?.trim()) return name.trim();
-  if (id !== null) return `AOR #${id} — назва недоступна`;
+export function formatAorsLabel(ids: number[], names: string[]): string {
+  if (ids.length > 0) {
+    return ids
+      .map((id, index) => {
+        const name = names[index]?.trim();
+        return name || `AOR #${id} — назва недоступна`;
+      })
+      .join(', ');
+  }
+  const visibleNames = names.map((name) => name.trim()).filter((name) => name !== '');
+  if (visibleNames.length > 0) return visibleNames.join(', ');
   return '—';
 }
 

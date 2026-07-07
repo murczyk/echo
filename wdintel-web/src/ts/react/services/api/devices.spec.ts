@@ -46,8 +46,8 @@ function mockDeviceDetailsResponse() {
     id: DEVICE_ID,
     name: 'Device Alpha',
     created_by: 'operator',
-    aor_id: 4,
-    aor_name: 'AOR',
+    aor_ids: [4, 5],
+    aor_names: ['AOR', 'AOR 2'],
     unit_id: 7,
     unit_name: 'Unit',
     custom_fields: [{ label: 'Serial', value: '123' }],
@@ -66,8 +66,8 @@ function mockListDevicesResponse() {
         id: DEVICE_ID,
         name: 'Device Alpha',
         created_by: 'operator',
-        aor_id: 4,
-        aor_name: 'AOR',
+        aor_ids: [4, 5],
+        aor_names: ['AOR', 'AOR 2'],
         unit_id: 7,
         unit_name: 'Unit',
         external_url: null,
@@ -160,7 +160,7 @@ describe('devices API service routes', () => {
   it('createDevice uses /api/device/create', async () => {
     await createDevice({
       name: 'Device Alpha',
-      aorId: 4,
+      aorIds: [4, 5],
       unitId: 7,
       customFields: [{ label: 'Serial', value: '123' }],
       externalUrl: null,
@@ -170,7 +170,7 @@ describe('devices API service routes', () => {
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/create', expect.any(Object));
     expect(requestBody()).toMatchObject({
       name: 'Device Alpha',
-      aor_id: 4,
+      aor_ids: [4, 5],
       unit_id: 7,
       custom_fields: [{ label: 'Serial', value: '123' }],
       external_url: null,
@@ -179,10 +179,10 @@ describe('devices API service routes', () => {
   });
 
   it('updateDevice uses /api/device/update and serialized patch body', async () => {
-    await updateDevice({ deviceId: DEVICE_ID, aorId: null, unitId: 7, files: [] });
+    await updateDevice({ deviceId: DEVICE_ID, aorIds: [], unitId: 7, files: [] });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/update', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID, aor_id: null, unit_id: 7 });
+    expect(requestBody()).toEqual({ device_id: DEVICE_ID, aor_ids: [], unit_id: 7 });
   });
 
   it('deleteDevice uses /api/device/delete', async () => {
@@ -277,7 +277,7 @@ describe('DeviceUpdatePatchInput serialization', () => {
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
         name: undefined,
-        aorId: null,
+        aorIds: [],
         unitId: null,
         customFields: undefined,
         externalUrl: null,
@@ -285,7 +285,7 @@ describe('DeviceUpdatePatchInput serialization', () => {
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
-      aorId: null,
+      aorIds: [],
       unitId: null,
       externalUrl: null,
     });

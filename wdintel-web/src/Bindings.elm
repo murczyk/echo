@@ -4178,8 +4178,8 @@ type alias DeviceListItem =
     { id : String
     , name : String
     , createdBy : String
-    , aorId : Maybe (Int)
-    , aorName : Maybe (String)
+    , aorIds : List (Int)
+    , aorNames : List (String)
     , unitId : Maybe (Int)
     , unitName : Maybe (String)
     , externalUrl : Maybe (String)
@@ -4196,8 +4196,8 @@ deviceListItemEncoder struct =
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "created_by", (Json.Encode.string) struct.createdBy )
-        , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
-        , ( "aor_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aorName )
+        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
+        , ( "aor_names", (Json.Encode.list (Json.Encode.string)) struct.aorNames )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
@@ -4212,8 +4212,8 @@ type alias DeviceDetails =
     { id : String
     , name : String
     , createdBy : String
-    , aorId : Maybe (Int)
-    , aorName : Maybe (String)
+    , aorIds : List (Int)
+    , aorNames : List (String)
     , unitId : Maybe (Int)
     , unitName : Maybe (String)
     , customFields : List (DeviceCustomField)
@@ -4231,8 +4231,8 @@ deviceDetailsEncoder struct =
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "created_by", (Json.Encode.string) struct.createdBy )
-        , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
-        , ( "aor_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aorName )
+        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
+        , ( "aor_names", (Json.Encode.list (Json.Encode.string)) struct.aorNames )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
         , ( "custom_fields", (Json.Encode.list (deviceCustomFieldEncoder)) struct.customFields )
@@ -4334,7 +4334,7 @@ deviceDetailReqEncoder struct =
 
 type alias CreateDeviceReq =
     { name : String
-    , aorId : Maybe (Int)
+    , aorIds : List (Int)
     , unitId : Maybe (Int)
     , customFields : List (DeviceCustomField)
     , externalUrl : Maybe (String)
@@ -4346,7 +4346,7 @@ createDeviceReqEncoder : CreateDeviceReq -> Json.Encode.Value
 createDeviceReqEncoder struct =
     Json.Encode.object
         [ ( "name", (Json.Encode.string) struct.name )
-        , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
+        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "custom_fields", (Json.Encode.list (deviceCustomFieldEncoder)) struct.customFields )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
@@ -4357,7 +4357,7 @@ createDeviceReqEncoder struct =
 type alias UpdateDeviceReq =
     { deviceId : String
     , name : Maybe (String)
-    , aorId : Maybe (Int)
+    , aorIds : Maybe (List (Int))
     , unitId : Maybe (Int)
     , customFields : Maybe (List (DeviceCustomField))
     , externalUrl : Maybe (String)
@@ -4370,7 +4370,7 @@ updateDeviceReqEncoder struct =
     Json.Encode.object
         [ ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
-        , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
+        , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "custom_fields", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (deviceCustomFieldEncoder))) struct.customFields )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
@@ -12781,8 +12781,8 @@ deviceListItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
@@ -12798,8 +12798,8 @@ deviceDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.list (deviceCustomFieldDecoder))))
@@ -12858,7 +12858,7 @@ createDeviceReqDecoder : Json.Decode.Decoder CreateDeviceReq
 createDeviceReqDecoder =
     Json.Decode.succeed CreateDeviceReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.list (deviceCustomFieldDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
@@ -12870,7 +12870,7 @@ updateDeviceReqDecoder =
     Json.Decode.succeed UpdateDeviceReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.nullable (Json.Decode.list (deviceCustomFieldDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))

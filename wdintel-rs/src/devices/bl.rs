@@ -10,21 +10,21 @@ use crate::devices::types::{
 use crate::devices::validation::{
     normalize_custom_fields, normalize_device_name, normalize_external_url,
     normalize_optional_file_create_items, normalized_device_name_key,
-    parse_device_id, validate_aor_id, validate_unit_id,
+    parse_device_id, validate_aor_ids, validate_unit_id,
 };
-use crate::entities::device;
+use crate::entities::{device, device_aor};
 use crate::h;
 use crate::types::{AppError, BTreeMap, ShortContext, ShortContextErr, Uuid};
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    IntoActiveModel, NotSet, QueryFilter, Set, TransactionTrait,
 };
 
 struct NormalizedCreateDevice {
     name: String,
-    aor_id: Option<i64>,
+    aor_ids: Vec<i64>,
     unit_id: Option<i64>,
     custom_fields: Vec<crate::devices::types::DeviceCustomField>,
     external_url: Option<String>,
@@ -34,7 +34,7 @@ struct NormalizedCreateDevice {
 struct NormalizedUpdateDevice {
     device_id: Uuid,
     name: Option<String>,
-    aor_id: Option<Option<i64>>,
+    aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
     custom_fields: Option<Vec<crate::devices::types::DeviceCustomField>>,
     external_url: Option<Option<String>>,
@@ -70,7 +70,6 @@ pub async fn create_device(
         id: Set(device_id),
         name: Set(req.name),
         created_by: Set(created_by.to_string()),
-        aor_id: Set(req.aor_id),
         unit_id: Set(req.unit_id),
         custom_fields: Set(custom_fields),
         external_url: Set(req.external_url),
@@ -83,6 +82,7 @@ pub async fn create_device(
     .await
     .map_err(map_device_write_error)?;
 
+    replace_device_aors(&txn, device_id, &req.aor_ids).await?;
     insert_device_file_rows(&txn, device_id, req.files, now).await?;
     txn.commit().await.c(h!())?;
 
@@ -111,8 +111,12 @@ pub async fn update_device(
     }
 
     let now = Utc::now().naive_utc();
+    let aor_ids = device_changes.aor_ids.clone();
     if has_device_changes {
         apply_device_changes(&txn, device, device_changes, now).await?;
+    }
+    if let Some(aor_ids) = aor_ids {
+        replace_device_aors(&txn, device_id, &aor_ids).await?;
     }
     if !req.files.is_empty() {
         insert_device_file_rows(&txn, device_id, req.files, now).await?;
@@ -166,7 +170,7 @@ async fn normalize_create_device(
 ) -> Result<NormalizedCreateDevice, AppError> {
     Ok(NormalizedCreateDevice {
         name: normalize_device_name(&req.name)?,
-        aor_id: validate_aor_id(dbx, req.aor_id).await?,
+        aor_ids: validate_aor_ids(dbx, req.aor_ids).await?,
         unit_id: validate_unit_id(dbx, req.unit_id).await?,
         custom_fields: normalize_custom_fields(req.custom_fields)?,
         external_url: normalize_external_url(req.external_url)?,
@@ -182,7 +186,7 @@ async fn normalize_update_device(
     Ok(NormalizedUpdateDevice {
         device_id,
         name: normalize_update_name(req.name)?,
-        aor_id: normalize_update_aor_id(dbx, req.aor_id).await?,
+        aor_ids: normalize_update_aor_ids(dbx, req.aor_ids).await?,
         unit_id: normalize_update_unit_id(dbx, req.unit_id).await?,
         custom_fields: normalize_update_custom_fields(req.custom_fields)?,
         external_url: normalize_update_external_url(req.external_url)?,
@@ -201,15 +205,14 @@ fn normalize_update_name(
     }
 }
 
-async fn normalize_update_aor_id(
+async fn normalize_update_aor_ids(
     dbx: &DatabaseConnection,
-    aor_id: DeviceUpdateNullableField<i64>,
-) -> Result<Option<Option<i64>>, AppError> {
-    match aor_id {
-        DeviceUpdateNullableField::Missing => Ok(None),
-        DeviceUpdateNullableField::Null => Ok(Some(None)),
-        DeviceUpdateNullableField::Value(aor_id) => {
-            Ok(Some(validate_aor_id(dbx, Some(aor_id)).await?))
+    aor_ids: DeviceUpdateRequiredField<Vec<i64>>,
+) -> Result<Option<Vec<i64>>, AppError> {
+    match aor_ids {
+        DeviceUpdateRequiredField::Missing => Ok(None),
+        DeviceUpdateRequiredField::Value(aor_ids) => {
+            Ok(Some(validate_aor_ids(dbx, aor_ids).await?))
         }
     }
 }
@@ -279,7 +282,7 @@ where
 #[derive(Clone)]
 struct DeviceChanges {
     name: Option<String>,
-    aor_id: Option<Option<i64>>,
+    aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
     custom_fields: Option<Vec<crate::devices::types::DeviceCustomField>>,
     external_url: Option<Option<String>>,
@@ -288,7 +291,7 @@ struct DeviceChanges {
 impl DeviceChanges {
     fn is_empty(&self) -> bool {
         self.name.is_none()
-            && self.aor_id.is_none()
+            && self.aor_ids.is_none()
             && self.unit_id.is_none()
             && self.custom_fields.is_none()
             && self.external_url.is_none()
@@ -305,7 +308,7 @@ fn collect_device_changes(
             .as_ref()
             .filter(|name| *name != &device.name)
             .cloned(),
-        aor_id: changed_nullable(req.aor_id, device.aor_id),
+        aor_ids: req.aor_ids.clone(),
         unit_id: changed_nullable(req.unit_id, device.unit_id),
         custom_fields: changed_custom_fields(device, req)?,
         external_url: changed_nullable(
@@ -358,9 +361,6 @@ where
     if let Some(name) = changes.name {
         device.name = Set(name);
     }
-    if let Some(aor_id) = changes.aor_id {
-        device.aor_id = Set(aor_id);
-    }
     if let Some(unit_id) = changes.unit_id {
         device.unit_id = Set(unit_id);
     }
@@ -373,6 +373,35 @@ where
     }
     device.updated_at = Set(now);
     device.update(db).await.map_err(map_device_write_error)
+}
+
+async fn replace_device_aors<C>(
+    db: &C,
+    device_id: Uuid,
+    aor_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    device_aor::Entity::delete_many()
+        .filter(device_aor::Column::DeviceId.eq(device_id))
+        .exec(db)
+        .await
+        .c(h!())?;
+
+    for smuha_id in aor_ids {
+        device_aor::ActiveModel {
+            id: NotSet,
+            device_id: Set(device_id),
+            aor_id: Set(*smuha_id),
+            created_at: NotSet,
+        }
+        .insert(db)
+        .await
+        .c(h!())?;
+    }
+
+    Ok(())
 }
 
 async fn set_device_deleted(

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDeviceFilesListReq,
   fileDisplayName,
-  formatAorLabel,
   formatUnitLabel,
   hasActiveFileFilters,
   mapDeviceDeletedFilter,
@@ -32,10 +31,8 @@ describe('device details helpers', () => {
     });
   });
 
-  it('formats missing AOR/unit labels with id fallback', () => {
-    expect(formatAorLabel(7, null)).toBe('AOR #7 — назва недоступна');
+  it('formats missing unit labels with id fallback', () => {
     expect(formatUnitLabel(8, '')).toBe('Підрозділ #8 — назва недоступна');
-    expect(formatAorLabel(null, null)).toBe('—');
   });
 
   it('uses name, path, then id for file display names', () => {

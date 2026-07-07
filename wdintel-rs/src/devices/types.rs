@@ -61,8 +61,8 @@ pub struct DeviceListItem {
     pub id: String,
     pub name: String,
     pub created_by: String,
-    pub aor_id: Option<i64>,
-    pub aor_name: Option<String>,
+    pub aor_ids: Vec<i64>,
+    pub aor_names: Vec<String>,
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub external_url: Option<String>,
@@ -79,8 +79,8 @@ pub struct DeviceDetails {
     pub id: String,
     pub name: String,
     pub created_by: String,
-    pub aor_id: Option<i64>,
-    pub aor_name: Option<String>,
+    pub aor_ids: Vec<i64>,
+    pub aor_names: Vec<String>,
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub custom_fields: Vec<DeviceCustomField>,
@@ -145,7 +145,8 @@ pub struct DeviceDetailReq {
 )]
 pub struct CreateDeviceReq {
     pub name: String,
-    pub aor_id: Option<i64>,
+    #[serde(default)]
+    pub aor_ids: Vec<i64>,
     pub unit_id: Option<i64>,
     #[serde(default)]
     pub custom_fields: Vec<DeviceCustomField>,
@@ -335,9 +336,9 @@ pub struct UpdateDeviceReq {
     pub name: DeviceUpdateRequiredField<String>,
     #[serde(
         default,
-        skip_serializing_if = "DeviceUpdateNullableField::is_missing"
+        skip_serializing_if = "DeviceUpdateRequiredField::is_missing"
     )]
-    pub aor_id: DeviceUpdateNullableField<i64>,
+    pub aor_ids: DeviceUpdateRequiredField<Vec<i64>>,
     #[serde(
         default,
         skip_serializing_if = "DeviceUpdateNullableField::is_missing"
@@ -438,14 +439,16 @@ mod tests {
     fn update_device_req_preserves_missing_null_and_value_fields() {
         let req: UpdateDeviceReq = serde_json::from_value(serde_json::json!({
             "device_id": "018f0000-0000-7000-8000-000000000000",
-            "aor_id": null,
+            "aor_ids": [],
             "unit_id": 7,
             "external_url": null
         }))
         .unwrap();
 
         assert!(matches!(req.name, DeviceUpdateRequiredField::Missing));
-        assert!(matches!(req.aor_id, DeviceUpdateNullableField::Null));
+        assert!(
+            matches!(req.aor_ids, DeviceUpdateRequiredField::Value(ids) if ids.is_empty())
+        );
         assert!(matches!(req.unit_id, DeviceUpdateNullableField::Value(7)));
         assert!(matches!(req.external_url, DeviceUpdateNullableField::Null));
         assert!(matches!(
@@ -463,6 +466,14 @@ mod tests {
             }))
             .unwrap_err();
         assert!(name_err.to_string().contains("field cannot be null"));
+
+        let aor_ids_err =
+            serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
+                "device_id": "018f0000-0000-7000-8000-000000000000",
+                "aor_ids": null
+            }))
+            .unwrap_err();
+        assert!(aor_ids_err.to_string().contains("field cannot be null"));
 
         let custom_fields_err =
             serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({

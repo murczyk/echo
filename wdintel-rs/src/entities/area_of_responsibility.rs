@@ -50,8 +50,8 @@ pub enum Relation {
     AreaOfResponsibilityReportOrder,
     #[sea_orm(has_many = "super::datasource::Entity")]
     Datasource,
-    #[sea_orm(has_many = "super::device::Entity")]
-    Device,
+    #[sea_orm(has_many = "super::device_aor::Entity")]
+    DeviceAor,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::UpdatedByLoginId",
@@ -102,9 +102,9 @@ impl Related<super::datasource::Entity> for Entity {
     }
 }
 
-impl Related<super::device::Entity> for Entity {
+impl Related<super::device_aor::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Device.def()
+        Relation::DeviceAor.def()
     }
 }
 

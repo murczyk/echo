@@ -72,7 +72,7 @@ export function DevicesToolbarFilters({
         isOptionEqualToValue={(option, value) => option.id === value.id}
         onChange={(_, value) => onAorIdsChange(value.map((option) => option.id))}
         sx={{ minWidth: { xs: '100%', lg: 240 } }}
-        renderInput={(params) => <TextField {...params} label="Райони" placeholder="AOR" />}
+        renderInput={(params) => <TextField {...params} label="Смуги" placeholder="Смуга" />}
       />
 
       <Autocomplete

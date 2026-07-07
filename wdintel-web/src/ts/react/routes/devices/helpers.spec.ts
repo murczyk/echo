@@ -4,6 +4,7 @@ import {
   buildDevicesListReq,
   buildDevicesSortBy,
   createDefaultDevicesFilterState,
+  formatAorsLabel,
   hasActiveDevicesFilters,
 } from './helpers';
 
@@ -76,6 +77,15 @@ describe('devices list query mapping', () => {
       offset: 100,
       sortBy: ['name_asc'],
     });
+  });
+
+  it('formats smuha labels from names with id fallback', () => {
+    expect(formatAorsLabel([1, 2], ['Alpha', 'Beta'])).toBe('Alpha, Beta');
+    expect(formatAorsLabel([1, 2], ['Alpha', ''])).toBe('Alpha, AOR #2 — назва недоступна');
+    expect(formatAorsLabel([1, 2], [])).toBe(
+      'AOR #1 — назва недоступна, AOR #2 — назва недоступна',
+    );
+    expect(formatAorsLabel([], [])).toBe('—');
   });
 
   it('maps supported sorts and resets unsupported sorts', () => {

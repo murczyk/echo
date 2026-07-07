@@ -4,7 +4,7 @@ import type {
   DeviceFileEntry,
   ListDeviceFilesReq,
 } from '../../../../Bindings';
-import { formatDeviceDateTime } from '../devices/helpers';
+import { formatAorsLabel, formatDeviceDateTime } from '../devices/helpers';
 
 export type DeviceFilesDeletedFilterValue = 'active' | 'deleted' | 'all';
 
@@ -35,12 +35,6 @@ export function buildDeviceFilesListReq(params: {
   };
 }
 
-export function formatAorLabel(id: number | null, name: string | null): string {
-  if (name?.trim()) return name.trim();
-  if (id !== null) return `AOR #${id} — назва недоступна`;
-  return '—';
-}
-
 export function formatUnitLabel(id: number | null, name: string | null): string {
   if (name?.trim()) return name.trim();
   if (id !== null) return `Підрозділ #${id} — назва недоступна`;
@@ -64,7 +58,7 @@ export function formatDeviceSummaryRows(device: DeviceDetails) {
     ...(device.deleted
       ? [{ label: 'Видалено', value: formatDeviceDateTime(device.deletedAtMs) }]
       : []),
-    { label: 'Район', value: formatAorLabel(device.aorId, device.aorName) },
+    { label: 'Смуги', value: formatAorsLabel(device.aorIds, device.aorNames) },
     { label: 'Підрозділ', value: formatUnitLabel(device.unitId, device.unitName) },
   ];
 }

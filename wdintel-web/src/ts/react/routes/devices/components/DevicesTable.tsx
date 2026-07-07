@@ -77,6 +77,21 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         enableSorting: false,
       },
       {
+        id: 'aors',
+        accessorKey: 'aorLabel',
+        header: 'Смуги',
+        size: 240,
+        enableSorting: false,
+        Cell: ({ cell }) => (
+          <Typography
+            variant="body2"
+            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
+          >
+            {cell.getValue<string>()}
+          </Typography>
+        ),
+      },
+      {
         id: 'unit',
         accessorKey: 'unitLabel',
         header: 'Підрозділ',

@@ -46,8 +46,8 @@ function buildDeviceRow(): DeviceRowView {
     id: '018f0000-0000-7000-8000-000000000000',
     name: 'Device Alpha',
     createdBy: 'tester',
-    aorId: null,
-    aorName: null,
+    aorIds: [],
+    aorNames: [],
     unitId: null,
     unitName: null,
     externalUrl: null,
@@ -118,20 +118,13 @@ describe('DevicesTable', () => {
     expect(columns.map((column) => column.id)).toEqual([
       'name',
       'createdBy',
+      'aors',
       'unit',
       'updatedAt',
       'lifecycle',
     ]);
     expect(columns.map((column) => column.header)).not.toEqual(
-      expect.arrayContaining([
-        'ID',
-        'Район',
-        'Посилання',
-        'Створено',
-        'Видалено',
-        'AOR ID',
-        'Unit ID',
-      ]),
+      expect.arrayContaining(['ID', 'Посилання', 'Створено', 'Видалено', 'AOR ID', 'Unit ID']),
     );
   });
 

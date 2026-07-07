@@ -20,7 +20,7 @@ import { DevicesToolbarFilters } from './components/DevicesToolbarFilters';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: ['name', 'createdBy', 'unit', 'updatedAt', 'lifecycle'],
+  dataColumnIds: ['name', 'createdBy', 'aors', 'unit', 'updatedAt', 'lifecycle'],
   withRowNumbers: true,
   withRowActions: true,
 });
@@ -28,6 +28,7 @@ const columnOrder = buildDefaultColumnOrder({
 const defaultColumnVisibility = {
   name: true,
   createdBy: true,
+  aors: true,
   unit: true,
   updatedAt: true,
   lifecycle: false,
@@ -59,7 +60,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
       const labels = optionLabels(page.aorOptions, page.filters.aorIds);
       filters.push({
         id: 'aor',
-        label: 'Райони',
+        label: 'Смуги',
         value: page.filters.aorIds,
         valuePreview: labels.join(', '),
         isGlobalFilter: false,

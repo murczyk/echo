@@ -143,27 +143,37 @@ pub fn normalize_external_url(
     Ok(Some(external_url))
 }
 
-pub async fn validate_aor_id<C>(
+pub async fn validate_aor_ids<C>(
     db: &C,
-    aor_id: Option<i64>,
-) -> Result<Option<i64>, AppError>
+    aor_ids: Vec<i64>,
+) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait,
 {
-    let Some(aor_id) = aor_id else {
-        return Ok(None);
-    };
-
-    let exists = area_of_responsibility::Entity::find_by_id(aor_id)
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .one(db)
-        .await?
-        .is_some();
-    if !exists {
-        return Err(form_error("aor_id", "Район відповідальності не знайдено"));
+    let mut unique_ids = Vec::new();
+    let mut seen_ids = BTreeSet::new();
+    for smuha_id in aor_ids {
+        if seen_ids.insert(smuha_id) {
+            unique_ids.push(smuha_id);
+        }
+    }
+    if unique_ids.is_empty() {
+        return Ok(unique_ids);
     }
 
-    Ok(Some(aor_id))
+    let found_ids = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Id.is_in(unique_ids.clone()))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|aor| aor.id)
+        .collect::<BTreeSet<_>>();
+    if found_ids.len() != unique_ids.len() {
+        return Err(form_error("aor_ids", "Смугу не знайдено"));
+    }
+
+    Ok(unique_ids)
 }
 
 pub async fn validate_unit_id<C>(

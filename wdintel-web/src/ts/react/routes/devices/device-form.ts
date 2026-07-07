@@ -40,7 +40,7 @@ export type DeviceFileDraft = {
 
 export type DeviceUpsertForm = {
   name: string;
-  aorId: number | null;
+  aorIds: number[];
   unitId: number | null;
   externalUrl: string;
   customFields: DeviceCustomFieldDraft[];
@@ -71,7 +71,7 @@ export type DeviceUpsertValidationErrors = {
 
 export type DeviceServerFieldErrors = Partial<{
   name: string;
-  aorId: string;
+  aorIds: string;
   unitId: string;
   externalUrl: string;
   customFields: string;
@@ -105,7 +105,7 @@ export function createDeviceFileDraft(overrides: Partial<DeviceFileDraft> = {}):
 export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
   return {
     name: '',
-    aorId: null,
+    aorIds: [],
     unitId: null,
     externalUrl: '',
     customFields: [],
@@ -116,7 +116,7 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
 export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertForm {
   return {
     name: device.name,
-    aorId: device.aorId,
+    aorIds: device.aorIds,
     unitId: device.unitId,
     externalUrl: device.externalUrl ?? '',
     customFields: device.customFields.map((field) => createDeviceCustomFieldDraft(field)),
@@ -310,7 +310,7 @@ export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceReq {
   const files = normalizeDeviceFileRows(form.files);
   return {
     name: form.name.trim(),
-    aorId: form.aorId,
+    aorIds: form.aorIds,
     unitId: form.unitId,
     customFields: normalizeDeviceCustomFields(form.customFields),
     externalUrl: normalizeExternalUrl(form.externalUrl),
@@ -323,6 +323,11 @@ export function buildCreateDeviceFilesReq(
   rows: DeviceFileDraft[],
 ): CreateDeviceFilesReq {
   return { deviceId, files: normalizeDeviceFileRows(rows) };
+}
+
+function numberArraysEqual(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 function customFieldsEqual(left: DeviceCustomField[], right: DeviceCustomField[]): boolean {
@@ -344,7 +349,7 @@ export function buildUpdateDevicePatch(
   const files = normalizeDeviceFileRows(form.files);
 
   if (name !== device.name) req.name = name;
-  if (form.aorId !== device.aorId) req.aorId = form.aorId;
+  if (!numberArraysEqual(form.aorIds, device.aorIds)) req.aorIds = form.aorIds;
   if (form.unitId !== device.unitId) req.unitId = form.unitId;
   if (externalUrl !== device.externalUrl) req.externalUrl = externalUrl;
   if (!customFieldsEqual(customFields, device.customFields)) req.customFields = customFields;
@@ -356,7 +361,7 @@ export function buildUpdateDevicePatch(
 export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): boolean {
   return (
     patch.name !== undefined ||
-    patch.aorId !== undefined ||
+    patch.aorIds !== undefined ||
     patch.unitId !== undefined ||
     patch.customFields !== undefined ||
     patch.externalUrl !== undefined ||
@@ -368,8 +373,8 @@ function fieldNameFromBackend(field: string): keyof DeviceServerFieldErrors | nu
   switch (field) {
     case 'name':
       return 'name';
-    case 'aor_id':
-      return 'aorId';
+    case 'aor_ids':
+      return 'aorIds';
     case 'unit_id':
       return 'unitId';
     case 'external_url':

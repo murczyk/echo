@@ -22,8 +22,8 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
     id: DEVICE_ID,
     name: 'Device Alpha',
     createdBy: 'operator',
-    aorId: 4,
-    aorName: 'AOR',
+    aorIds: [4],
+    aorNames: ['AOR'],
     unitId: 7,
     unitName: 'Unit',
     customFields: [{ label: 'Serial', value: '123' }],
@@ -40,7 +40,7 @@ describe('device form helpers', () => {
   it('builds create request with trimmed fields, null clears, and optional files', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = '  Device Beta  ';
-    form.aorId = 10;
+    form.aorIds = [10, 20];
     form.unitId = null;
     form.externalUrl = '  https://example.test/beta  ';
     form.customFields = [createDeviceCustomFieldDraft({ label: ' Serial ', value: ' 123 ' })];
@@ -56,7 +56,7 @@ describe('device form helpers', () => {
 
     expect(req).toMatchObject({
       name: 'Device Beta',
-      aorId: 10,
+      aorIds: [10, 20],
       unitId: null,
       customFields: [{ label: 'Serial', value: '123' }],
       externalUrl: 'https://example.test/beta',
@@ -73,7 +73,7 @@ describe('device form helpers', () => {
 
     expect(buildCreateDeviceReq(form)).toEqual({
       name: 'Device Beta',
-      aorId: null,
+      aorIds: [],
       unitId: null,
       customFields: [],
       externalUrl: null,
@@ -85,7 +85,7 @@ describe('device form helpers', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
     form.name = ' Device Alpha Prime ';
-    form.aorId = null;
+    form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
     form.customFields = [];
@@ -94,7 +94,7 @@ describe('device form helpers', () => {
     expect(buildUpdateDevicePatch(device, form)).toEqual({
       deviceId: DEVICE_ID,
       name: 'Device Alpha Prime',
-      aorId: null,
+      aorIds: [],
       unitId: null,
       customFields: [],
       externalUrl: null,
