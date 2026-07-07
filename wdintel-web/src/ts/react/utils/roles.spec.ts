@@ -12,6 +12,16 @@ describe('roles', () => {
     expect(hasRole(['Admin'], 'Orbit')).toBe(true);
     expect(hasRole(['Orbit'], 'Orbit')).toBe(true);
     expect(hasRole(['Full'], 'Orbit')).toBe(false);
+    expect(hasRole(['Cyber'], 'Cyber')).toBe(true);
+    expect(hasRole(['DevicesEditor'], 'DevicesEditor')).toBe(true);
+    expect(hasRole(['Admin'], 'Cyber')).toBe(true);
+    expect(hasRole(['Admin'], 'DevicesEditor')).toBe(true);
+    expect(hasRole(['Api'], 'Cyber')).toBe(false);
+    expect(hasRole(['Api'], 'DevicesEditor')).toBe(false);
+    expect(hasRole(['Full'], 'Cyber')).toBe(false);
+    expect(hasRole(['Full'], 'DevicesEditor')).toBe(false);
+    expect(hasRole(['Rer'], 'Cyber')).toBe(false);
+    expect(hasRole(['Rer'], 'DevicesEditor')).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
   });
@@ -20,5 +30,7 @@ describe('roles', () => {
     expect(hasAnyRole(['Admin'], ['AdvancedReports'])).toBe(true);
     expect(hasAnyRole(['Full'], ['UnitsEditor', 'CallsignsEditor'])).toBe(false);
     expect(hasAnyRole(['CallsignsEditor'], ['UnitsEditor', 'CallsignsEditor'])).toBe(true);
+    expect(hasAnyRole(['DevicesEditor'], ['Cyber', 'DevicesEditor'])).toBe(true);
+    expect(hasAnyRole(['Api'], ['Cyber', 'DevicesEditor'])).toBe(false);
   });
 });

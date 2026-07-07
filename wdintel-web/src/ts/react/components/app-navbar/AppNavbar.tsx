@@ -7,7 +7,7 @@ import {
   goiExternalUrl,
   operationalSubs,
   analysisSubs,
-  databaseSubs,
+  getDatabaseSubs,
   converterSubs,
   adminSubs,
 } from './menu-items';
@@ -40,6 +40,7 @@ export interface AppNavbarProps {
       enableAudioTranscription: boolean;
       showClassicDuty: boolean;
       showClassicAnalysis: boolean;
+      supportNonRerInterceptions: boolean;
     } | null;
   };
   activeName: string;
@@ -78,6 +79,9 @@ export function AppNavbar({
   );
   const [userShowClassicDuty, setUserShowClassicDuty] = useState(false);
   const [userShowClassicAnalysis, setUserShowClassicAnalysis] = useState(false);
+  const [loadedSupportNonRerInterceptions, setLoadedSupportNonRerInterceptions] = useState<
+    boolean | null
+  >(shared?.systemSettings ? shared.systemSettings.supportNonRerInterceptions : null);
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -88,6 +92,9 @@ export function AppNavbar({
       setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
       setLoadedShowClassicDuty(shared.systemSettings.showClassicDuty);
       setLoadedShowClassicAnalysis(shared.systemSettings.showClassicAnalysis);
+      setLoadedSupportNonRerInterceptions((prev) =>
+        prev === null ? shared.systemSettings!.supportNonRerInterceptions : prev,
+      );
     }
   }, [shared?.systemSettings]);
 
@@ -102,6 +109,7 @@ export function AppNavbar({
             setLoadedAudioTranscription(settings.enableAudioTranscription);
             setLoadedShowClassicDuty(settings.showClassicDuty);
             setLoadedShowClassicAnalysis(settings.showClassicAnalysis);
+            setLoadedSupportNonRerInterceptions(settings.supportNonRerInterceptions);
           }
         })
         .catch(() => {});
@@ -166,6 +174,13 @@ export function AppNavbar({
   const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRer = hasRole(user?.roles, 'Rer');
+  const canReadDevices = hasRole(user?.roles, 'Cyber') || hasRole(user?.roles, 'DevicesEditor');
+  const devicesMenuIsVisible =
+    serverModeIsLive && loadedSupportNonRerInterceptions === true && canReadDevices;
+  const databaseMenuSubs = getDatabaseSubs({
+    includeRerItems: serverModeIsLive && isRer,
+    includeDevicesItem: devicesMenuIsVisible,
+  });
 
   const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
   const visibleAdminSubs = adminSubs.filter(
@@ -464,9 +479,8 @@ export function AppNavbar({
                       ? '/rer-analysis-neo'
                       : '/rer-analysis',
                 )}
-              {serverModeIsLive &&
-                isRer &&
-                renderDropdownMenu('database', 'База даних', databaseSubs)}
+              {databaseMenuSubs.length > 0 &&
+                renderDropdownMenu('database', 'База даних', databaseMenuSubs)}
               {goiMenuIsVisible && renderDropdownMenu('goi', 'ГОІ', goiSubs)}
               {serverModeIsLive &&
                 isBasic &&

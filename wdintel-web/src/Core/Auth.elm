@@ -50,6 +50,14 @@ hasRole role user =
             List.member "Admin" user.roles
                 || List.member "CallsignsEditor" user.roles
 
+        "Cyber" ->
+            List.member "Admin" user.roles
+                || List.member "Cyber" user.roles
+
+        "DevicesEditor" ->
+            List.member "Admin" user.roles
+                || List.member "DevicesEditor" user.roles
+
         "AdvancedReports" ->
             List.member "Admin" user.roles
                 || List.member "AdvancedReports" user.roles

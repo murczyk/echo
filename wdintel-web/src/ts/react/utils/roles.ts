@@ -10,6 +10,8 @@ export type UserRole =
   | 'UnitsEditor'
   | 'NetworkEditor'
   | 'CallsignsEditor'
+  | 'Cyber'
+  | 'DevicesEditor'
   | 'AdvancedReports'
   | 'Orbit'
   | 'NoAutoLogout';
@@ -40,6 +42,10 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('NetworkEditor');
     case 'CallsignsEditor':
       return has('Admin') || has('CallsignsEditor');
+    case 'Cyber':
+      return has('Admin') || has('Cyber');
+    case 'DevicesEditor':
+      return has('Admin') || has('DevicesEditor');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
     case 'Orbit':

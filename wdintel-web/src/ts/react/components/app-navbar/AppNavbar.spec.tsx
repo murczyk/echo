@@ -30,6 +30,7 @@ beforeEach(() => {
     enableAudioTranscription: false,
     showClassicDuty: true,
     showClassicAnalysis: true,
+    supportNonRerInterceptions: false,
   });
   fetchUserSettingsMock.mockReset().mockResolvedValue({
     showClassicDuty: false,
@@ -64,6 +65,7 @@ function renderComponent(props: any) {
     root.render(<AppNavbar {...props} />);
   });
 
+  rendered.push({ container, root });
   return { container, root };
 }
 
@@ -203,6 +205,9 @@ describe('AppNavbar', () => {
         systemSettings: {
           defaultNeoAnalysis: false,
           enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: false,
         },
       },
     });
@@ -211,6 +216,9 @@ describe('AppNavbar', () => {
     currentSettingsMock.mockResolvedValue({
       defaultNeoAnalysis: false,
       enableAudioTranscription: true,
+      showClassicDuty: true,
+      showClassicAnalysis: true,
+      supportNonRerInterceptions: false,
     });
     const enabled = renderComponent({
       ...defaultProps,
@@ -220,6 +228,9 @@ describe('AppNavbar', () => {
         systemSettings: {
           defaultNeoAnalysis: false,
           enableAudioTranscription: true,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: false,
         },
       },
     });
@@ -229,7 +240,7 @@ describe('AppNavbar', () => {
   });
 
   it('updates Echo GPU servers when shared transcription settings change', () => {
-    currentSettingsMock.mockReturnValue(new Promise(() => {}));
+    currentSettingsMock.mockReturnValue(Promise.withResolvers<never>().promise);
     const props = {
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Admin'] },
@@ -238,6 +249,9 @@ describe('AppNavbar', () => {
         systemSettings: {
           defaultNeoAnalysis: false,
           enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: false,
         },
       },
     };
@@ -264,6 +278,128 @@ describe('AppNavbar', () => {
       root.render(<AppNavbar {...props} />);
     });
     expect(container.textContent).not.toContain('Echo GPU Сервери');
+  });
+
+  it('renders Devices in the database menu for non-RER Devices readers when enabled', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Cyber'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: true,
+        },
+      },
+    });
+
+    const content = container.textContent;
+    expect(content).toContain('База даних');
+    expect(content).toContain('Пристрої');
+    expect(content).not.toContain('Мережі');
+  });
+
+  it('hides Devices without the feature gate or Devices read role', () => {
+    const disabledGate = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['DevicesEditor'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: false,
+        },
+      },
+    });
+    expect(disabledGate.container.textContent).not.toContain('Пристрої');
+
+    const missingRole = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Api'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: true,
+        },
+      },
+    });
+    expect(missingRole.container.textContent).not.toContain('Пристрої');
+  });
+
+  it('renders Devices for Admin and keeps RER database items visible', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: true,
+        },
+      },
+    });
+
+    const content = container.textContent;
+    expect(content).toContain('База даних');
+    expect(content).toContain('Мережі');
+    expect(content).toContain('Пристрої');
+  });
+
+  it('refreshes Devices visibility after system settings are saved', async () => {
+    currentSettingsMock
+      .mockResolvedValueOnce({
+        defaultNeoAnalysis: false,
+        enableAudioTranscription: false,
+        showClassicDuty: true,
+        showClassicAnalysis: true,
+        supportNonRerInterceptions: false,
+      })
+      .mockResolvedValueOnce({
+        defaultNeoAnalysis: false,
+        enableAudioTranscription: false,
+        showClassicDuty: true,
+        showClassicAnalysis: true,
+        supportNonRerInterceptions: true,
+      });
+
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['DevicesEditor'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+          showClassicDuty: true,
+          showClassicAnalysis: true,
+          supportNonRerInterceptions: false,
+        },
+      },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain('Пристрої');
+
+    await act(async () => {
+      window.dispatchEvent(new Event('system-settings-saved'));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Пристрої');
   });
 
   it('toggles mobile menu on click', () => {

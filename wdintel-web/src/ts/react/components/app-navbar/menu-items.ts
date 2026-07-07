@@ -71,13 +71,22 @@ export const analysisSubs: Menu[] = [
   },
 ];
 
+const networksDatabaseSub: Menu = {
+  type: 'item',
+  link: { type: 'internal', path: '/rer-networks-neo' },
+  activeName: 'networks-neo',
+  label: 'Мережі',
+};
+
+export const devicesDatabaseSub: Menu = {
+  type: 'item',
+  link: { type: 'internal', path: '/devices' },
+  activeName: 'devices',
+  label: 'Пристрої',
+};
+
 export const databaseSubs: Menu[] = [
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/rer-networks-neo' },
-    activeName: 'networks-neo',
-    label: 'Мережі',
-  },
+  networksDatabaseSub,
   {
     type: 'item',
     link: { type: 'internal', path: '/rer-palitra-neo' },
@@ -109,6 +118,22 @@ export const databaseSubs: Menu[] = [
     label: 'Частоти',
   },
 ];
+
+export function getDatabaseSubs({
+  includeRerItems,
+  includeDevicesItem,
+}: {
+  includeRerItems: boolean;
+  includeDevicesItem: boolean;
+}): Menu[] {
+  if (!includeRerItems) {
+    return includeDevicesItem ? [devicesDatabaseSub] : [];
+  }
+
+  return includeDevicesItem
+    ? [networksDatabaseSub, devicesDatabaseSub, ...databaseSubs.slice(1)]
+    : databaseSubs;
+}
 
 export const converterSubs: Menu[] = [
   {
