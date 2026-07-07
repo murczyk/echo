@@ -835,7 +835,26 @@ async fn swap_units(
         .context(h!())?;
 
     move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
+    swap_unit_devices(old_unit_id, new_unit_id, dbx).await?;
 
+    Ok(())
+}
+
+async fn swap_unit_devices(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    device::Entity::update_many()
+        .col_expr(device::Column::UnitId, Expr::value(Some(new_unit_id)))
+        .col_expr(
+            device::Column::UpdatedAt,
+            Expr::value(Utc::now().naive_utc()),
+        )
+        .filter(device::Column::UnitId.eq(old_unit_id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
