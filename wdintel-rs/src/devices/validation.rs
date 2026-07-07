@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 
 use crate::config::{
-    DEVICE_CUSTOM_FIELDS_MAX_COUNT, DEVICE_CUSTOM_FIELD_LABEL_MAX_CHARS,
-    DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS, DEVICE_EXTERNAL_URL_MAX_CHARS,
-    DEVICE_FILE_CREATE_BATCH_MAX_COUNT, DEVICE_FILE_LIST_DEFAULT_LIMIT,
-    DEVICE_FILE_LIST_MAX_LIMIT, DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS,
+    DEVICE_EXTERNAL_URL_MAX_CHARS, DEVICE_FILE_CREATE_BATCH_MAX_COUNT,
+    DEVICE_FILE_LIST_DEFAULT_LIMIT, DEVICE_FILE_LIST_MAX_LIMIT,
+    DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS,
     DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS, DEVICE_LIST_DEFAULT_LIMIT,
-    DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS,
+    DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS, DEVICE_TAGS_MAX_COUNT,
+    DEVICE_TAG_LABEL_MAX_CHARS, DEVICE_TAG_VALUE_MAX_CHARS,
 };
-use crate::devices::types::{CreateDeviceFileItem, DeviceCustomField};
+use crate::devices::types::{CreateDeviceFileItem, DeviceTag};
 use crate::entities::{area_of_responsibility, sigint_unit};
 use crate::types::{AppError, BTreeMap, BTreeSet, Uuid};
 use chrono::{DateTime, Utc};
@@ -52,57 +52,43 @@ pub fn normalized_device_name_key(name: &str) -> Result<String, AppError> {
     Ok(normalize_device_name(name)?.to_lowercase())
 }
 
-pub fn normalize_custom_fields(
-    custom_fields: Vec<DeviceCustomField>,
-) -> Result<Vec<DeviceCustomField>, AppError> {
-    if custom_fields.len() > DEVICE_CUSTOM_FIELDS_MAX_COUNT {
-        return Err(form_error("custom_fields", "Забагато додаткових полів"));
+pub fn normalize_tags(
+    tags: Vec<DeviceTag>,
+) -> Result<Vec<DeviceTag>, AppError> {
+    if tags.len() > DEVICE_TAGS_MAX_COUNT {
+        return Err(form_error("tags", "Забагато тегів"));
     }
 
     let mut labels = BTreeSet::new();
-    custom_fields
-        .into_iter()
+    tags.into_iter()
         .enumerate()
-        .map(|(idx, custom_field)| {
-            normalize_custom_field(idx, custom_field, &mut labels)
-        })
+        .map(|(idx, tag)| normalize_tag(idx, tag, &mut labels))
         .collect()
 }
 
-fn normalize_custom_field(
+fn normalize_tag(
     idx: usize,
-    custom_field: DeviceCustomField,
+    tag: DeviceTag,
     labels: &mut BTreeSet<String>,
-) -> Result<DeviceCustomField, AppError> {
-    let label_field = format!("custom_fields.{idx}.label");
-    let value_field = format!("custom_fields.{idx}.value");
-    let label = custom_field.label.trim().to_string();
-    let value = custom_field.value.trim().to_string();
+) -> Result<DeviceTag, AppError> {
+    let label_field = format!("tags.{idx}.label");
+    let value_field = format!("tags.{idx}.value");
+    let label = tag.label.trim().to_string();
+    let value = tag.value.trim().to_string();
 
     if label.is_empty() {
         return Err(form_error(
             &label_field,
-            "Назва додаткового поля не може бути порожньою",
+            "Назва тегу не може бути порожньою",
         ));
     }
-    validate_max_chars(
-        &label_field,
-        &label,
-        DEVICE_CUSTOM_FIELD_LABEL_MAX_CHARS,
-    )?;
-    validate_max_chars(
-        &value_field,
-        &value,
-        DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS,
-    )?;
+    validate_max_chars(&label_field, &label, DEVICE_TAG_LABEL_MAX_CHARS)?;
+    validate_max_chars(&value_field, &value, DEVICE_TAG_VALUE_MAX_CHARS)?;
     if !labels.insert(label.clone()) {
-        return Err(form_error(
-            &label_field,
-            "Додаткове поле з такою назвою вже існує",
-        ));
+        return Err(form_error(&label_field, "Тег з такою назвою вже існує"));
     }
 
-    Ok(DeviceCustomField { label, value })
+    Ok(DeviceTag { label, value })
 }
 
 pub fn normalize_external_url(
@@ -381,8 +367,8 @@ mod tests {
     }
 
     #[test]
-    fn custom_fields_are_trimmed_and_duplicate_labels_are_rejected() {
-        let fields = normalize_custom_fields(vec![DeviceCustomField {
+    fn tags_are_trimmed_and_duplicate_labels_are_rejected() {
+        let fields = normalize_tags(vec![DeviceTag {
             label: "  Serial  ".to_string(),
             value: "  123  ".to_string(),
         }])
@@ -390,18 +376,18 @@ mod tests {
         assert_eq!(fields[0].label, "Serial");
         assert_eq!(fields[0].value, "123");
 
-        let err = normalize_custom_fields(vec![
-            DeviceCustomField {
+        let err = normalize_tags(vec![
+            DeviceTag {
                 label: "Serial".to_string(),
                 value: "1".to_string(),
             },
-            DeviceCustomField {
+            DeviceTag {
                 label: "Serial".to_string(),
                 value: "2".to_string(),
             },
         ])
         .unwrap_err();
-        assert_form_field(err, "custom_fields.1.label");
+        assert_form_field(err, "tags.1.label");
     }
 
     #[test]

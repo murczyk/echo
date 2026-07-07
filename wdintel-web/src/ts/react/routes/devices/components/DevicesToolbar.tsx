@@ -6,7 +6,7 @@ import { PowerChip } from '../../../components/PowerChip';
 import { GlobalFilterTextField } from '../../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import type { ActiveFilterDescriptor } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
-import type { DeviceDeletedFilterValue, DevicesFilterState } from '../helpers';
+import type { DeviceArchivedFilterValue, DevicesFilterState } from '../helpers';
 
 function StatusChipLabel({
   color,
@@ -42,9 +42,9 @@ type Props = {
   loading: boolean;
   globalFilter: string;
   onChangeGlobalFilter: (value: string | ((prev: string) => string)) => void;
-  filters: Pick<DevicesFilterState, 'deletedFilter'>;
+  filters: Pick<DevicesFilterState, 'archivedFilter'>;
   setFilters: Dispatch<SetStateAction<DevicesFilterState>>;
-  statusCounts: { active: number; deleted: number } | null;
+  statusCounts: { active: number; archived: number } | null;
   additionalActiveFilters: ActiveFilterDescriptor[];
   onClearAdditionalActiveFilter: (filterId: string) => void;
   onClearAdditionalActiveFilters: () => void;
@@ -53,9 +53,9 @@ type Props = {
 
 function setStatus(
   setFilters: Dispatch<SetStateAction<DevicesFilterState>>,
-  deletedFilter: DeviceDeletedFilterValue,
+  archivedFilter: DeviceArchivedFilterValue,
 ) {
-  setFilters((current) => ({ ...current, deletedFilter }));
+  setFilters((current) => ({ ...current, archivedFilter }));
 }
 
 export function DevicesToolbar({
@@ -87,14 +87,14 @@ export function DevicesToolbar({
       />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
         <PowerChip
-          selected={filters.deletedFilter === 'all'}
+          selected={filters.archivedFilter === 'all'}
           onClick={() => setStatus(setFilters, 'all')}
           label="Всі"
           interactive
           fontWeight={700}
         />
         <PowerChip
-          selected={filters.deletedFilter === 'active'}
+          selected={filters.archivedFilter === 'active'}
           onClick={() => setStatus(setFilters, 'active')}
           label={
             <StatusChipLabel
@@ -107,13 +107,13 @@ export function DevicesToolbar({
           fontWeight={700}
         />
         <PowerChip
-          selected={filters.deletedFilter === 'deleted'}
-          onClick={() => setStatus(setFilters, 'deleted')}
+          selected={filters.archivedFilter === 'archived'}
+          onClick={() => setStatus(setFilters, 'archived')}
           label={
             <StatusChipLabel
               color="#6b6b6b"
-              label="Видалені"
-              counter={statusCounts?.deleted ?? '—'}
+              label="Архівні"
+              counter={statusCounts?.archived ?? '—'}
             />
           }
           interactive

@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct DeviceCustomField {
+pub struct DeviceTag {
     pub label: String,
     pub value: String,
 }
@@ -22,13 +22,34 @@ pub struct DeviceCustomField {
     Clone,
     Copy,
 )]
-pub enum DeviceDeletedFilter {
+pub enum DeviceArchivedFilter {
     #[serde(rename = "active_only")]
     DeviceActiveOnly,
-    #[serde(rename = "deleted_only")]
-    DeviceDeletedOnly,
+    #[serde(rename = "archived_only")]
+    DeviceArchivedOnly,
     #[serde(rename = "all")]
     DeviceAll,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+pub enum DeviceFileDeletedFilter {
+    #[serde(rename = "active_only")]
+    DeviceFileActiveOnly,
+    #[serde(rename = "deleted_only")]
+    DeviceFileDeletedOnly,
+    #[serde(rename = "all")]
+    DeviceFileAll,
 }
 
 #[derive(
@@ -66,10 +87,10 @@ pub struct DeviceListItem {
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub external_url: Option<String>,
-    pub deleted: bool,
+    pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
-    pub deleted_at_ms: Option<i64>,
+    pub archived_at_ms: Option<i64>,
 }
 
 #[derive(
@@ -83,12 +104,12 @@ pub struct DeviceDetails {
     pub aor_names: Vec<String>,
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
-    pub custom_fields: Vec<DeviceCustomField>,
+    pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
-    pub deleted: bool,
+    pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
-    pub deleted_at_ms: Option<i64>,
+    pub archived_at_ms: Option<i64>,
 }
 
 #[derive(
@@ -112,7 +133,7 @@ pub struct DeviceFileEntry {
 )]
 pub struct ListDevicesReq {
     pub filter_text: Option<String>,
-    pub deleted_filter: Option<DeviceDeletedFilter>,
+    pub archived_filter: Option<DeviceArchivedFilter>,
     pub aor_ids: Option<Vec<i64>>,
     pub unit_ids: Option<Vec<i64>>,
     pub created_by: Option<String>,
@@ -128,7 +149,7 @@ pub struct ListDevicesReq {
 )]
 pub struct DeviceStatusCountsRsp {
     pub active: i64,
-    pub deleted: i64,
+    pub archived: i64,
 }
 
 #[derive(
@@ -161,7 +182,7 @@ pub struct DeviceUnitStatRow {
 )]
 pub struct DeviceDetailReq {
     pub device_id: String,
-    pub include_deleted: Option<bool>,
+    pub include_archived: Option<bool>,
 }
 
 #[derive(
@@ -173,7 +194,7 @@ pub struct CreateDeviceReq {
     pub aor_ids: Vec<i64>,
     pub unit_id: Option<i64>,
     #[serde(default)]
-    pub custom_fields: Vec<DeviceCustomField>,
+    pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
     pub files: Option<Vec<CreateDeviceFileItem>>,
 }
@@ -372,7 +393,7 @@ pub struct UpdateDeviceReq {
         default,
         skip_serializing_if = "DeviceUpdateRequiredField::is_missing"
     )]
-    pub custom_fields: DeviceUpdateRequiredField<Vec<DeviceCustomField>>,
+    pub tags: DeviceUpdateRequiredField<Vec<DeviceTag>>,
     #[serde(
         default,
         skip_serializing_if = "DeviceUpdateNullableField::is_missing"
@@ -384,7 +405,7 @@ pub struct UpdateDeviceReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct DeleteDeviceReq {
+pub struct ArchiveDeviceReq {
     pub device_id: String,
 }
 
@@ -400,7 +421,7 @@ pub struct RestoreDeviceReq {
 )]
 pub struct ListDeviceFilesReq {
     pub device_id: String,
-    pub deleted_filter: Option<DeviceDeletedFilter>,
+    pub deleted_filter: Option<DeviceFileDeletedFilter>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
 }
@@ -475,10 +496,7 @@ mod tests {
         );
         assert!(matches!(req.unit_id, DeviceUpdateNullableField::Value(7)));
         assert!(matches!(req.external_url, DeviceUpdateNullableField::Null));
-        assert!(matches!(
-            req.custom_fields,
-            DeviceUpdateRequiredField::Missing
-        ));
+        assert!(matches!(req.tags, DeviceUpdateRequiredField::Missing));
     }
 
     #[test]
@@ -499,14 +517,12 @@ mod tests {
             .unwrap_err();
         assert!(aor_ids_err.to_string().contains("field cannot be null"));
 
-        let custom_fields_err =
+        let tags_err =
             serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
                 "device_id": "018f0000-0000-7000-8000-000000000000",
-                "custom_fields": null
+                "tags": null
             }))
             .unwrap_err();
-        assert!(custom_fields_err
-            .to_string()
-            .contains("field cannot be null"));
+        assert!(tags_err.to_string().contains("field cannot be null"));
     }
 }

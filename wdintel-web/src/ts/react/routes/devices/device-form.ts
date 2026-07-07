@@ -2,16 +2,16 @@ import type {
   CreateDeviceFileItem,
   CreateDeviceFilesReq,
   CreateDeviceReq,
-  DeviceCustomField,
+  DeviceTag,
   DeviceDetails,
 } from '../../../../Bindings';
 import type { DeviceUpdatePatchInput } from '../../services/api/devices';
 import { formatDeviceErrorMessage } from './helpers';
 
 export const DEVICE_NAME_MAX_CHARS = 255;
-export const DEVICE_CUSTOM_FIELDS_MAX_COUNT = 50;
-export const DEVICE_CUSTOM_FIELD_LABEL_MAX_CHARS = 128;
-export const DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS = 4096;
+export const DEVICE_TAGS_MAX_COUNT = 50;
+export const DEVICE_TAG_LABEL_MAX_CHARS = 128;
+export const DEVICE_TAG_VALUE_MAX_CHARS = 4096;
 export const DEVICE_EXTERNAL_URL_MAX_CHARS = 4096;
 export const DEVICE_FILE_CREATE_BATCH_MAX_COUNT = 100;
 export const DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS = 1024;
@@ -24,7 +24,7 @@ function nextDraftId(prefix: string): string {
   return `${prefix}-${draftRowSeq}`;
 }
 
-export type DeviceCustomFieldDraft = {
+export type DeviceTagDraft = {
   id: string;
   label: string;
   value: string;
@@ -43,11 +43,11 @@ export type DeviceUpsertForm = {
   aorIds: number[];
   unitId: number | null;
   externalUrl: string;
-  customFields: DeviceCustomFieldDraft[];
+  tags: DeviceTagDraft[];
   files: DeviceFileDraft[];
 };
 
-export type DeviceCustomFieldDraftError = {
+export type DeviceTagDraftError = {
   label?: string;
   value?: string;
 };
@@ -63,9 +63,9 @@ export type DeviceFileDraftError = {
 export type DeviceUpsertValidationErrors = {
   name?: string;
   externalUrl?: string;
-  customFields?: string;
+  tags?: string;
   files?: string;
-  customFieldRows: Record<string, DeviceCustomFieldDraftError>;
+  tagRows: Record<string, DeviceTagDraftError>;
   fileRows: Record<string, DeviceFileDraftError>;
 };
 
@@ -74,19 +74,17 @@ export type DeviceServerFieldErrors = Partial<{
   aorIds: string;
   unitId: string;
   externalUrl: string;
-  customFields: string;
+  tags: string;
   files: string;
 }>;
 
 function emptyValidationErrors(): DeviceUpsertValidationErrors {
-  return { customFieldRows: {}, fileRows: {} };
+  return { tagRows: {}, fileRows: {} };
 }
 
-export function createDeviceCustomFieldDraft(
-  overrides: Partial<DeviceCustomFieldDraft> = {},
-): DeviceCustomFieldDraft {
+export function createDeviceTagDraft(overrides: Partial<DeviceTagDraft> = {}): DeviceTagDraft {
   return {
-    id: overrides.id ?? nextDraftId('custom-field'),
+    id: overrides.id ?? nextDraftId('tag'),
     label: overrides.label ?? '',
     value: overrides.value ?? '',
   };
@@ -108,7 +106,7 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
     aorIds: [],
     unitId: null,
     externalUrl: '',
-    customFields: [],
+    tags: [],
     files: [],
   };
 }
@@ -119,7 +117,7 @@ export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertFo
     aorIds: device.aorIds,
     unitId: device.unitId,
     externalUrl: device.externalUrl ?? '',
-    customFields: device.customFields.map((field) => createDeviceCustomFieldDraft(field)),
+    tags: device.tags.map((field) => createDeviceTagDraft(field)),
     files: [],
   };
 }
@@ -128,9 +126,9 @@ function isValidationErrorsEmpty(errors: DeviceUpsertValidationErrors): boolean 
   return (
     errors.name === undefined &&
     errors.externalUrl === undefined &&
-    errors.customFields === undefined &&
+    errors.tags === undefined &&
     errors.files === undefined &&
-    Object.keys(errors.customFieldRows).length === 0 &&
+    Object.keys(errors.tagRows).length === 0 &&
     Object.keys(errors.fileRows).length === 0
   );
 }
@@ -164,37 +162,37 @@ function validateExternalUrl(value: string): string | undefined {
   return undefined;
 }
 
-export function validateDeviceCustomFields(
-  rows: DeviceCustomFieldDraft[],
-): Pick<DeviceUpsertValidationErrors, 'customFields' | 'customFieldRows'> {
-  const errors: Pick<DeviceUpsertValidationErrors, 'customFields' | 'customFieldRows'> = {
-    customFieldRows: {},
+export function validateDeviceTags(
+  rows: DeviceTagDraft[],
+): Pick<DeviceUpsertValidationErrors, 'tags' | 'tagRows'> {
+  const errors: Pick<DeviceUpsertValidationErrors, 'tags' | 'tagRows'> = {
+    tagRows: {},
   };
 
-  if (rows.length > DEVICE_CUSTOM_FIELDS_MAX_COUNT) {
-    errors.customFields = 'Забагато додаткових полів.';
+  if (rows.length > DEVICE_TAGS_MAX_COUNT) {
+    errors.tags = 'Забагато тегів.';
   }
 
   const labels = new Set<string>();
   rows.forEach((row) => {
-    const rowErrors: DeviceCustomFieldDraftError = {};
+    const rowErrors: DeviceTagDraftError = {};
     const label = row.label.trim();
     const value = row.value.trim();
 
     if (label === '') {
-      rowErrors.label = 'Назва додаткового поля не може бути порожньою.';
+      rowErrors.label = 'Назва тегу не може бути порожньою.';
     } else {
-      const labelLengthError = validateMaxChars(label, DEVICE_CUSTOM_FIELD_LABEL_MAX_CHARS);
+      const labelLengthError = validateMaxChars(label, DEVICE_TAG_LABEL_MAX_CHARS);
       if (labelLengthError) {
         rowErrors.label = labelLengthError;
       } else if (labels.has(label)) {
-        rowErrors.label = 'Додаткове поле з такою назвою вже існує.';
+        rowErrors.label = 'Тег з такою назвою вже існує.';
       }
     }
 
-    const valueLengthError = validateMaxChars(value, DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS);
+    const valueLengthError = validateMaxChars(value, DEVICE_TAG_VALUE_MAX_CHARS);
     if (valueLengthError) rowErrors.value = valueLengthError;
-    if (Object.keys(rowErrors).length > 0) errors.customFieldRows[row.id] = rowErrors;
+    if (Object.keys(rowErrors).length > 0) errors.tagRows[row.id] = rowErrors;
     if (label !== '') labels.add(label);
   });
 
@@ -271,9 +269,9 @@ export function validateDeviceUpsertForm(
   const externalUrlError = validateExternalUrl(form.externalUrl);
   if (externalUrlError) errors.externalUrl = externalUrlError;
 
-  const customFieldErrors = validateDeviceCustomFields(form.customFields);
-  errors.customFields = customFieldErrors.customFields;
-  errors.customFieldRows = customFieldErrors.customFieldRows;
+  const tagErrors = validateDeviceTags(form.tags);
+  errors.tags = tagErrors.tags;
+  errors.tagRows = tagErrors.tagRows;
 
   const fileErrors = validateDeviceFileRows(form.files, {
     rejectEmpty: options.rejectEmptyFiles,
@@ -284,7 +282,7 @@ export function validateDeviceUpsertForm(
   return isValidationErrorsEmpty(errors) ? null : errors;
 }
 
-export function normalizeDeviceCustomFields(rows: DeviceCustomFieldDraft[]): DeviceCustomField[] {
+export function normalizeDeviceTags(rows: DeviceTagDraft[]): DeviceTag[] {
   return rows.map((row) => ({ label: row.label.trim(), value: row.value.trim() }));
 }
 
@@ -312,7 +310,7 @@ export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceReq {
     name: form.name.trim(),
     aorIds: form.aorIds,
     unitId: form.unitId,
-    customFields: normalizeDeviceCustomFields(form.customFields),
+    tags: normalizeDeviceTags(form.tags),
     externalUrl: normalizeExternalUrl(form.externalUrl),
     files: files.length > 0 ? files : null,
   };
@@ -330,7 +328,7 @@ function numberArraysEqual(left: number[], right: number[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
-function customFieldsEqual(left: DeviceCustomField[], right: DeviceCustomField[]): boolean {
+function tagsEqual(left: DeviceTag[], right: DeviceTag[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((field, index) => {
     const other = right[index];
@@ -344,7 +342,7 @@ export function buildUpdateDevicePatch(
 ): DeviceUpdatePatchInput {
   const req: DeviceUpdatePatchInput = { deviceId: device.id };
   const name = form.name.trim();
-  const customFields = normalizeDeviceCustomFields(form.customFields);
+  const tags = normalizeDeviceTags(form.tags);
   const externalUrl = normalizeExternalUrl(form.externalUrl);
   const files = normalizeDeviceFileRows(form.files);
 
@@ -352,7 +350,7 @@ export function buildUpdateDevicePatch(
   if (!numberArraysEqual(form.aorIds, device.aorIds)) req.aorIds = form.aorIds;
   if (form.unitId !== device.unitId) req.unitId = form.unitId;
   if (externalUrl !== device.externalUrl) req.externalUrl = externalUrl;
-  if (!customFieldsEqual(customFields, device.customFields)) req.customFields = customFields;
+  if (!tagsEqual(tags, device.tags)) req.tags = tags;
   if (files.length > 0) req.files = files;
 
   return req;
@@ -363,7 +361,7 @@ export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): bool
     patch.name !== undefined ||
     patch.aorIds !== undefined ||
     patch.unitId !== undefined ||
-    patch.customFields !== undefined ||
+    patch.tags !== undefined ||
     patch.externalUrl !== undefined ||
     (patch.files !== undefined && patch.files.length > 0)
   );
@@ -379,12 +377,12 @@ function fieldNameFromBackend(field: string): keyof DeviceServerFieldErrors | nu
       return 'unitId';
     case 'external_url':
       return 'externalUrl';
-    case 'custom_fields':
-      return 'customFields';
+    case 'tags':
+      return 'tags';
     case 'files':
       return 'files';
     default:
-      if (field.startsWith('custom_fields.')) return 'customFields';
+      if (field.startsWith('tags.')) return 'tags';
       if (field.startsWith('files.')) return 'files';
       return null;
   }

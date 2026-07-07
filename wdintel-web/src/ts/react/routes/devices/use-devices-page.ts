@@ -11,7 +11,7 @@ import type {
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import {
   createDevice,
-  deleteDevice,
+  archiveDevice,
   getDeviceDetail,
   restoreDevice,
   updateDevice,
@@ -29,7 +29,7 @@ import {
   resolveAorOptions,
   resolveDeviceSidebarUnitIds,
   resolveUnitOptions,
-  type DeviceDeletedFilterValue,
+  type DeviceArchivedFilterValue,
   type DeviceLookupOption,
   type DevicesFilterState,
 } from './helpers';
@@ -92,9 +92,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [deleteDialogDevice, setDeleteDialogDevice] = useState<{ id: string; name: string } | null>(
-    null,
-  );
+  const [archiveDialogDevice, setArchiveDialogDevice] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const requestSeqRef = useRef(0);
   const bootstrapLoadedRef = useRef(false);
@@ -188,8 +189,8 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
   useEffect(() => () => loadActions.dispose(), [loadActions]);
 
-  const setDeletedFilter = useCallback((deletedFilter: DeviceDeletedFilterValue) => {
-    setFilters((current) => ({ ...current, deletedFilter }));
+  const setArchivedFilter = useCallback((archivedFilter: DeviceArchivedFilterValue) => {
+    setFilters((current) => ({ ...current, archivedFilter }));
   }, []);
 
   const onPickUnitFilter = useCallback(
@@ -301,9 +302,9 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       setEditError(null);
       setEditServerFieldErrors({});
       try {
-        const device = await getDeviceDetail({ deviceId, includeDeleted: true });
-        if (device.deleted) {
-          setStatus({ kind: 'error', text: 'Видалений пристрій потрібно спочатку відновити.' });
+        const device = await getDeviceDetail({ deviceId, includeArchived: true });
+        if (device.archived) {
+          setStatus({ kind: 'error', text: 'Архівований пристрій потрібно спочатку відновити.' });
           return;
         }
         setEditDevice(device);
@@ -336,7 +337,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
   const submitEditDialog = useCallback(
     async (form: DeviceUpsertForm) => {
-      if (!permissions.canEdit || editDevice === null || editDevice.deleted || editSubmitting) {
+      if (!permissions.canEdit || editDevice === null || editDevice.archived || editSubmitting) {
         return;
       }
       if (validateDeviceUpsertForm(form) !== null) {
@@ -378,38 +379,38 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     [editDevice, editSubmitting, loadActions, permissions.canEdit],
   );
 
-  const deleteRow = useCallback(
+  const archiveRow = useCallback(
     (deviceId: string, deviceName: string) => {
       if (!permissions.canEdit || mutatingDeviceId !== null || editLoadingDeviceId !== null) return;
-      setDeleteDialogDevice({ id: deviceId, name: deviceName });
+      setArchiveDialogDevice({ id: deviceId, name: deviceName });
     },
     [editLoadingDeviceId, mutatingDeviceId, permissions.canEdit],
   );
 
-  const closeDeleteDialog = useCallback(() => {
+  const closeArchiveDialog = useCallback(() => {
     if (mutatingDeviceId !== null) return;
-    setDeleteDialogDevice(null);
+    setArchiveDialogDevice(null);
   }, [mutatingDeviceId]);
 
-  const confirmDeleteRow = useCallback(async () => {
-    if (!permissions.canEdit || deleteDialogDevice === null || mutatingDeviceId !== null) return;
+  const confirmArchiveRow = useCallback(async () => {
+    if (!permissions.canEdit || archiveDialogDevice === null || mutatingDeviceId !== null) return;
 
-    setMutatingDeviceId(deleteDialogDevice.id);
+    setMutatingDeviceId(archiveDialogDevice.id);
     setStatus(null);
     try {
-      const device = await deleteDevice({ deviceId: deleteDialogDevice.id });
+      const device = await archiveDevice({ deviceId: archiveDialogDevice.id });
       await refreshAfterLifecycleMutation(deviceDetailsToListItem(device));
-      setDeleteDialogDevice(null);
-      setStatus({ kind: 'success', text: 'Пристрій видалено.' });
+      setArchiveDialogDevice(null);
+      setStatus({ kind: 'success', text: 'Пристрій архівовано.' });
     } catch (error) {
       setStatus({
         kind: 'error',
-        text: `Помилка видалення пристрою: ${formatDeviceErrorMessage(error)}`,
+        text: `Помилка архівування пристрою: ${formatDeviceErrorMessage(error)}`,
       });
     } finally {
       setMutatingDeviceId(null);
     }
-  }, [deleteDialogDevice, mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation]);
+  }, [archiveDialogDevice, mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation]);
 
   const restoreRow = useCallback(
     async (deviceId: string) => {
@@ -466,7 +467,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     editSubmitting,
     editHasChanges,
     editLoadingDeviceId,
-    deleteDialogDevice,
+    archiveDialogDevice,
     mutatingDeviceId,
     busyDeviceId,
     aorOptions,
@@ -476,7 +477,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     hasFilters,
     initialLoadFailed,
     tableStateContext,
-    setDeletedFilter,
+    setArchivedFilter,
     onPickUnitFilter,
     onClearUnitFilter,
     clearFilters,
@@ -490,9 +491,9 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     closeEditDialog,
     setEditForm: changeEditForm,
     submitEditDialog,
-    deleteRow,
-    closeDeleteDialog,
-    confirmDeleteRow,
+    archiveRow,
+    closeArchiveDialog,
+    confirmArchiveRow,
     restoreRow,
   };
 }

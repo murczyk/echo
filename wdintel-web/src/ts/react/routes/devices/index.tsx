@@ -44,12 +44,12 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const additionalActiveFilters = useMemo<ActiveFilterDescriptor[]>(() => {
     const filters: ActiveFilterDescriptor[] = [];
 
-    if (page.filters.deletedFilter !== 'active') {
+    if (page.filters.archivedFilter !== 'active') {
       filters.push({
-        id: 'deleted',
+        id: 'archived',
         label: 'Стан',
-        value: page.filters.deletedFilter,
-        valuePreview: page.filters.deletedFilter === 'deleted' ? 'Видалені' : 'Всі',
+        value: page.filters.archivedFilter,
+        valuePreview: page.filters.archivedFilter === 'archived' ? 'Архівні' : 'Всі',
         isGlobalFilter: false,
       });
     }
@@ -71,12 +71,12 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
     }
 
     return filters;
-  }, [page.filters.deletedFilter, page.selectedSidebarUnitFilter]);
+  }, [page.filters.archivedFilter, page.selectedSidebarUnitFilter]);
 
   function clearAdditionalActiveFilter(filterId: string) {
     switch (filterId) {
-      case 'deleted':
-        page.setDeletedFilter('active');
+      case 'archived':
+        page.setArchivedFilter('active');
         break;
       case 'unit':
         page.onClearUnitFilter();
@@ -85,7 +85,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   }
 
   function clearAdditionalActiveFilters() {
-    page.setDeletedFilter('active');
+    page.setArchivedFilter('active');
     page.onClearUnitFilter();
   }
 
@@ -183,13 +183,14 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         />
 
         <ConfirmDangerDialog
-          open={page.deleteDialogDevice !== null}
-          onClose={page.closeDeleteDialog}
-          onConfirm={() => void page.confirmDeleteRow()}
-          title="Видалити пристрій"
-          description={`Ви дійсно хочете видалити пристрій «${page.deleteDialogDevice?.name ?? ''}»?`}
+          open={page.archiveDialogDevice !== null}
+          onClose={page.closeArchiveDialog}
+          onConfirm={() => void page.confirmArchiveRow()}
+          title="Архівувати пристрій"
+          description={`Ви дійсно хочете архівувати пристрій «${page.archiveDialogDevice?.name ?? ''}»?`}
+          confirmLabel="Архівувати"
           submitting={page.mutatingDeviceId !== null}
-          disabled={page.deleteDialogDevice === null}
+          disabled={page.archiveDialogDevice === null}
         />
 
         <Stack
@@ -271,11 +272,11 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                 total={page.total}
                 canEdit={page.permissions.canEdit}
                 mutatingDeviceId={page.busyDeviceId}
-                showLifecycle={page.filters.deletedFilter !== 'active'}
+                showLifecycle={page.filters.archivedFilter !== 'active'}
                 hasFilters={page.hasFilters}
                 tableStateContext={tableStateContext}
                 onEdit={page.openEditRow}
-                onDelete={page.deleteRow}
+                onArchive={page.archiveRow}
                 onRestore={page.restoreRow}
                 onLoadMore={page.loadMore}
                 onClearFilters={page.clearFilters}

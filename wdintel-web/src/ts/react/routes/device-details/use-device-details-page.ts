@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
 import {
-  deleteDevice,
+  archiveDevice,
   getDeviceDetail,
   restoreDevice,
   updateDevice,
@@ -58,7 +58,7 @@ export function useDeviceDetailsPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -77,7 +77,7 @@ export function useDeviceDetailsPage({
     setEditForm(null);
     setEditError(null);
     setEditServerFieldErrors({});
-    setDeleteDialogOpen(false);
+    setArchiveDialogOpen(false);
     abortRef.current?.abort();
   }, [deviceId]);
 
@@ -105,7 +105,7 @@ export function useDeviceDetailsPage({
 
       try {
         const nextDevice = await getDeviceDetail(
-          { deviceId, includeDeleted: true },
+          { deviceId, includeArchived: true },
           { signal: controller.signal },
         );
         if (requestSeqRef.current !== seq || controller.signal.aborted) return;
@@ -153,7 +153,7 @@ export function useDeviceDetailsPage({
   }, [lookupsLoaded, lookupsLoading, permissions.canEdit]);
 
   const openEditDrawer = useCallback(() => {
-    if (!permissions.canEdit || !device || device.deleted) return;
+    if (!permissions.canEdit || !device || device.archived) return;
     setEditForm(deviceDetailsToUpsertForm(device));
     setEditError(null);
     setEditServerFieldErrors({});
@@ -175,7 +175,7 @@ export function useDeviceDetailsPage({
 
   const saveEditDevice = useCallback(
     async (form: DeviceUpsertForm): Promise<boolean> => {
-      if (!permissions.canEdit || !device || device.deleted || editSubmitting) return false;
+      if (!permissions.canEdit || !device || device.archived || editSubmitting) return false;
       if (validateDeviceUpsertForm(form) !== null) {
         setEditError('Перевірте поля форми.');
         return false;
@@ -213,30 +213,30 @@ export function useDeviceDetailsPage({
     [device, editSubmitting, permissions.canEdit],
   );
 
-  const openDeleteDialog = useCallback(() => {
-    if (!permissions.canEdit || !device || device.deleted || mutating) return;
-    setDeleteDialogOpen(true);
+  const openArchiveDialog = useCallback(() => {
+    if (!permissions.canEdit || !device || device.archived || mutating) return;
+    setArchiveDialogOpen(true);
   }, [device, mutating, permissions.canEdit]);
 
-  const closeDeleteDialog = useCallback(() => {
+  const closeArchiveDialog = useCallback(() => {
     if (mutating) return;
-    setDeleteDialogOpen(false);
+    setArchiveDialogOpen(false);
   }, [mutating]);
 
-  const confirmDeleteCurrentDevice = useCallback(async () => {
-    if (!permissions.canEdit || !device || device.deleted || mutating) return;
+  const confirmArchiveCurrentDevice = useCallback(async () => {
+    if (!permissions.canEdit || !device || device.archived || mutating) return;
 
     setMutating(true);
     setStatus(null);
     try {
-      const nextDevice = await deleteDevice({ deviceId });
+      const nextDevice = await archiveDevice({ deviceId });
       setDevice(nextDevice);
-      setDeleteDialogOpen(false);
-      setStatus({ kind: 'success', text: 'Пристрій видалено.' });
+      setArchiveDialogOpen(false);
+      setStatus({ kind: 'success', text: 'Пристрій архівовано.' });
     } catch (error) {
       setStatus({
         kind: 'error',
-        text: `Помилка видалення пристрою: ${formatDeviceErrorMessage(error)}`,
+        text: `Помилка архівування пристрою: ${formatDeviceErrorMessage(error)}`,
       });
     } finally {
       setMutating(false);
@@ -244,7 +244,7 @@ export function useDeviceDetailsPage({
   }, [device, deviceId, mutating, permissions.canEdit]);
 
   const restoreCurrentDevice = useCallback(async () => {
-    if (!permissions.canEdit || !device || !device.deleted || mutating) return;
+    if (!permissions.canEdit || !device || !device.archived || mutating) return;
 
     setMutating(true);
     setStatus(null);
@@ -279,16 +279,16 @@ export function useDeviceDetailsPage({
     editServerFieldErrors,
     editSubmitting,
     editHasChanges,
-    deleteDialogOpen,
+    archiveDialogOpen,
     initialLoadFailed,
     reload,
     openEditDrawer,
     closeEditDrawer,
     setEditForm: changeEditForm,
     saveEditDevice,
-    openDeleteDialog,
-    closeDeleteDialog,
-    confirmDeleteCurrentDevice,
+    openArchiveDialog,
+    closeArchiveDialog,
+    confirmArchiveCurrentDevice,
     restoreCurrentDevice,
   };
 }

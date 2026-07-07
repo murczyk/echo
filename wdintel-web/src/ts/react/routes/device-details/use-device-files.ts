@@ -33,12 +33,12 @@ export function useDeviceFiles({
   deviceId,
   canRead,
   canEdit,
-  parentDeleted,
+  parentArchived,
 }: {
   deviceId: string;
   canRead: boolean;
   canEdit: boolean;
-  parentDeleted: boolean;
+  parentArchived: boolean;
 }) {
   const [files, setFiles] = useState<DeviceFileEntry[]>([]);
   const [deletedFilter, setDeletedFilter] = useState<DeviceFilesDeletedFilterValue>('active');
@@ -73,10 +73,10 @@ export function useDeviceFiles({
   }, [deletedFilter]);
 
   useEffect(() => {
-    if (!parentDeleted) return;
+    if (!parentArchived) return;
     setCreateDialogOpen(false);
     setDeleteDialogFile(null);
-  }, [parentDeleted]);
+  }, [parentArchived]);
 
   const loadFiles = useCallback(
     async ({ append, preserveData }: { append: boolean; preserveData: boolean }) => {
@@ -157,13 +157,13 @@ export function useDeviceFiles({
   const loadMore = useCallback(() => loadFiles({ append: true, preserveData: true }), [loadFiles]);
 
   const assertParentActive = useCallback(() => {
-    if (!parentDeleted) return true;
+    if (!parentArchived) return true;
     setStatus({
       kind: 'warning',
       text: 'Відновіть пристрій перед зміною життєвого циклу файлів.',
     });
     return false;
-  }, [parentDeleted]);
+  }, [parentArchived]);
 
   const openCreateDialog = useCallback(() => {
     if (!canEdit || !assertParentActive()) return;

@@ -65,14 +65,14 @@ pub async fn device_update(
     Ok(Json(bl::update_device(&env.dbx, req.into_inner()).await?))
 }
 
-#[post("/api/device/delete")]
-pub async fn device_delete(
+#[post("/api/device/archive")]
+pub async fn device_archive(
     user: Identity,
     env: Data<Env>,
-    req: Json<DeleteDeviceReq>,
+    req: Json<ArchiveDeviceReq>,
 ) -> Result<Json<DeviceDetails>, AppError> {
     access::ensure_device_editor(&env.dbx, &user).await?;
-    Ok(Json(bl::delete_device(&env.dbx, req.into_inner()).await?))
+    Ok(Json(bl::archive_device(&env.dbx, req.into_inner()).await?))
 }
 
 #[post("/api/device/restore")]

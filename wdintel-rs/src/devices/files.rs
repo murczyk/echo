@@ -96,7 +96,7 @@ where
     C: ConnectionTrait,
 {
     device::Entity::find_by_id(device_id)
-        .filter(device::Column::Deleted.eq(false))
+        .filter(device::Column::Archived.eq(false))
         .one(db)
         .await
         .c(h!())?
@@ -114,7 +114,7 @@ where
     let res = device::Entity::update_many()
         .col_expr(device::Column::UpdatedAt, Expr::value(now))
         .filter(device::Column::Id.eq(device_id))
-        .filter(device::Column::Deleted.eq(false))
+        .filter(device::Column::Archived.eq(false))
         .exec(db)
         .await
         .c(h!())?;

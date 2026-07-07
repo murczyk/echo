@@ -52,15 +52,15 @@ function buildDeviceRow(): DeviceRowView {
     unitId: null,
     unitName: null,
     externalUrl: null,
-    deleted: false,
+    archived: false,
     createdAtMs: 1,
     updatedAtMs: 2,
-    deletedAtMs: null,
+    archivedAtMs: null,
     aorLabel: '—',
     unitLabel: '—',
     createdAtLabel: '01.01.1970, 00:00:00',
     updatedAtLabel: '01.01.1970, 00:00:00',
-    deletedAtLabel: '—',
+    archivedAtLabel: '—',
   };
 }
 
@@ -81,7 +81,7 @@ function renderTable() {
         hasFilters={false}
         tableStateContext={tableStateContext as never}
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
+        onArchive={vi.fn()}
         onRestore={vi.fn()}
         onLoadMore={() => Promise.resolve()}
         onClearFilters={vi.fn()}
@@ -126,15 +126,15 @@ describe('DevicesTable', () => {
       'lifecycle',
     ]);
     expect(columns.map((column) => column.header)).not.toEqual(
-      expect.arrayContaining(['ID', 'Посилання', 'Створено', 'Видалено', 'AOR ID', 'Unit ID']),
+      expect.arrayContaining(['ID', 'Посилання', 'Створено', 'Архівовано', 'AOR ID', 'Unit ID']),
     );
   });
 
-  it('provides edit/delete row actions for active rows', () => {
+  it('provides edit/archive row actions for active rows', () => {
     renderTable();
     const row = buildDeviceRow();
     const onEdit = vi.fn();
-    const onDelete = vi.fn();
+    const onArchive = vi.fn();
     const onRestore = vi.fn();
 
     act(() => {
@@ -144,7 +144,7 @@ describe('DevicesTable', () => {
           canEdit
           disabled={false}
           onEdit={onEdit}
-          onDelete={onDelete}
+          onArchive={onArchive}
           onRestore={onRestore}
         />,
       );
@@ -159,7 +159,7 @@ describe('DevicesTable', () => {
 
     const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
     const editItem = menuItems.find((item) => item.textContent?.includes('Редагувати'));
-    const deleteItem = menuItems.find((item) => item.textContent?.includes('Видалити'));
+    const deleteItem = menuItems.find((item) => item.textContent?.includes('Архівувати'));
     expect(editItem).not.toBeUndefined();
     expect(deleteItem).not.toBeUndefined();
 
@@ -168,7 +168,7 @@ describe('DevicesTable', () => {
     });
 
     expect(onEdit).toHaveBeenCalledWith(row.id);
-    expect(onDelete).not.toHaveBeenCalled();
+    expect(onArchive).not.toHaveBeenCalled();
     expect(onRestore).not.toHaveBeenCalled();
   });
 

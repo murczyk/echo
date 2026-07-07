@@ -1,26 +1,15 @@
-import { Box, Paper, Stack, Tab, Tabs } from '@mui/material';
+import { Box, Paper, Tab, Tabs } from '@mui/material';
 import type { ReactNode } from 'react';
-
-import type { DeviceDetails } from '../../../../../Bindings';
-import { DeviceCustomFieldsSection, DeviceRegistrySection } from './DeviceInfoSections';
 
 export type DeviceDetailsTab = 'description' | 'files';
 
 type Props = {
-  device: DeviceDetails;
   activeTab: DeviceDetailsTab;
   onActiveTabChange: (tab: DeviceDetailsTab) => void;
-  onOpenExternalUrl: (url: string) => void;
   filesPanel: ReactNode;
 };
 
-export function DeviceDetailsTabPanel({
-  device,
-  activeTab,
-  onActiveTabChange,
-  onOpenExternalUrl,
-  filesPanel,
-}: Props) {
+export function DeviceDetailsTabPanel({ activeTab, onActiveTabChange, filesPanel }: Props) {
   return (
     <Paper
       variant="outlined"
@@ -66,6 +55,7 @@ export function DeviceDetailsTabPanel({
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
         {activeTab === 'description' ? (
           <Box
+            data-testid="device-details-description-tab"
             sx={{
               p: 2,
               minHeight: 0,
@@ -74,12 +64,7 @@ export function DeviceDetailsTabPanel({
               overflowX: 'hidden',
               boxSizing: 'border-box',
             }}
-          >
-            <Stack spacing={2} sx={{ minWidth: 0 }}>
-              <DeviceRegistrySection device={device} onOpenExternalUrl={onOpenExternalUrl} />
-              <DeviceCustomFieldsSection device={device} />
-            </Stack>
-          </Box>
+          />
         ) : (
           <Box
             sx={{

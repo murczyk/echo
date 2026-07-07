@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 use crate::devices::types::{
-    DeviceDeletedFilter, DeviceDetailReq, DeviceDetails, DeviceFileEntry,
-    DeviceListItem, DeviceListSortBy, DeviceStatusCountsRsp, DeviceUnitStatRow,
-    DeviceUnitStatsRsp, ListDeviceFilesReq, ListDeviceFilesRsp, ListDevicesReq,
-    ListDevicesRsp,
+    DeviceArchivedFilter, DeviceDetailReq, DeviceDetails,
+    DeviceFileDeletedFilter, DeviceFileEntry, DeviceListItem, DeviceListSortBy,
+    DeviceStatusCountsRsp, DeviceUnitStatRow, DeviceUnitStatsRsp,
+    ListDeviceFilesReq, ListDeviceFilesRsp, ListDevicesReq, ListDevicesRsp,
 };
 use crate::devices::validation::{
     normalize_device_list_pagination, normalize_file_list_pagination,
@@ -49,10 +49,10 @@ fn render_device_list_item(
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
         unit_id: device.unit_id,
         external_url: device.external_url,
-        deleted: device.deleted,
+        archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
-        deleted_at_ms: device.deleted_at.map(datetime_ms),
+        archived_at_ms: device.archived_at.map(datetime_ms),
     }
 }
 
@@ -62,7 +62,7 @@ fn render_device_details(
     unit_names: &BTreeMap<i64, String>,
 ) -> Result<DeviceDetails, AppError> {
     let aors = device_aors.get(&device.id).cloned().unwrap_or_default();
-    let custom_fields = serde_json::from_value(device.custom_fields).c(h!())?;
+    let tags = serde_json::from_value(device.tags).c(h!())?;
     Ok(DeviceDetails {
         id: device.id.to_string(),
         name: device.name,
@@ -76,12 +76,12 @@ fn render_device_details(
             .unit_id
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
         unit_id: device.unit_id,
-        custom_fields,
+        tags,
         external_url: device.external_url,
-        deleted: device.deleted,
+        archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
-        deleted_at_ms: device.deleted_at.map(datetime_ms),
+        archived_at_ms: device.archived_at.map(datetime_ms),
     })
 }
 
@@ -168,7 +168,7 @@ where
 #[derive(FromQueryResult)]
 struct DeviceStatusCountsSqlRow {
     active: i64,
-    deleted: i64,
+    archived: i64,
 }
 
 #[derive(FromQueryResult)]
@@ -180,7 +180,7 @@ struct DeviceUnitStatSqlRow {
 fn empty_device_status_counts() -> DeviceStatusCountsRsp {
     DeviceStatusCountsRsp {
         active: 0,
-        deleted: 0,
+        archived: 0,
     }
 }
 
@@ -198,12 +198,12 @@ where
         .c(h!())?
         .unwrap_or(DeviceStatusCountsSqlRow {
             active: 0,
-            deleted: 0,
+            archived: 0,
         });
 
     Ok(DeviceStatusCountsRsp {
         active: row.active,
-        deleted: row.deleted,
+        archived: row.archived,
     })
 }
 
@@ -213,18 +213,20 @@ fn build_device_status_counts_query(
     Ok(apply_device_filters(device::Entity::find(), req, false)?
         .select_only()
         .column_as(
-            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."deleted" = false)"#),
+            Expr::cust(
+                r#"COUNT(*) FILTER (WHERE "device"."archived" = false)"#,
+            ),
             "active",
         )
         .column_as(
-            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."deleted" = true)"#),
-            "deleted",
+            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."archived" = true)"#),
+            "archived",
         ))
 }
 
 fn build_device_unit_stats_query() -> Select<device::Entity> {
     device::Entity::find()
-        .filter(device::Column::Deleted.eq(false))
+        .filter(device::Column::Archived.eq(false))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .join_as(
             JoinType::InnerJoin,
@@ -256,8 +258,8 @@ where
 {
     let device_id = parse_device_id(&req.device_id)?;
     let mut query = device::Entity::find_by_id(device_id);
-    if !req.include_deleted.unwrap_or(false) {
-        query = query.filter(device::Column::Deleted.eq(false));
+    if !req.include_archived.unwrap_or(false) {
+        query = query.filter(device::Column::Archived.eq(false));
     }
     let device = query.one(db).await.c(h!())?.ok_or(AppError::NotFound)?;
     let (device_aors, unit_names) =
@@ -276,7 +278,7 @@ where
     ensure_device_exists(db, device_id).await?;
 
     let pagination = normalize_file_list_pagination(req.limit, req.offset)?;
-    let query = apply_deleted_filter(
+    let query = apply_file_deleted_filter(
         device_file::Entity::find()
             .filter(device_file::Column::DeviceId.eq(device_id)),
         req.deleted_filter,
@@ -304,13 +306,13 @@ where
 fn apply_device_filters(
     mut query: Select<device::Entity>,
     req: &ListDevicesReq,
-    include_deleted_filter: bool,
+    include_archived_filter: bool,
 ) -> Result<Select<device::Entity>, AppError> {
-    if include_deleted_filter {
-        query = apply_deleted_filter(
+    if include_archived_filter {
+        query = apply_archived_filter(
             query,
-            req.deleted_filter,
-            device::Column::Deleted,
+            req.archived_filter,
+            device::Column::Archived,
         );
     }
 
@@ -350,23 +352,45 @@ fn apply_device_filters(
     Ok(query)
 }
 
-fn apply_deleted_filter<E, C>(
+fn apply_archived_filter<E, C>(
     query: Select<E>,
-    deleted_filter: Option<DeviceDeletedFilter>,
+    archived_filter: Option<DeviceArchivedFilter>,
+    archived_column: C,
+) -> Select<E>
+where
+    E: EntityTrait,
+    C: ColumnTrait,
+{
+    match archived_filter.unwrap_or(DeviceArchivedFilter::DeviceActiveOnly) {
+        DeviceArchivedFilter::DeviceActiveOnly => {
+            query.filter(archived_column.eq(false))
+        }
+        DeviceArchivedFilter::DeviceArchivedOnly => {
+            query.filter(archived_column.eq(true))
+        }
+        DeviceArchivedFilter::DeviceAll => query,
+    }
+}
+
+fn apply_file_deleted_filter<E, C>(
+    query: Select<E>,
+    deleted_filter: Option<DeviceFileDeletedFilter>,
     deleted_column: C,
 ) -> Select<E>
 where
     E: EntityTrait,
     C: ColumnTrait,
 {
-    match deleted_filter.unwrap_or(DeviceDeletedFilter::DeviceActiveOnly) {
-        DeviceDeletedFilter::DeviceActiveOnly => {
+    match deleted_filter
+        .unwrap_or(DeviceFileDeletedFilter::DeviceFileActiveOnly)
+    {
+        DeviceFileDeletedFilter::DeviceFileActiveOnly => {
             query.filter(deleted_column.eq(false))
         }
-        DeviceDeletedFilter::DeviceDeletedOnly => {
+        DeviceFileDeletedFilter::DeviceFileDeletedOnly => {
             query.filter(deleted_column.eq(true))
         }
-        DeviceDeletedFilter::DeviceAll => query,
+        DeviceFileDeletedFilter::DeviceFileAll => query,
     }
 }
 
@@ -535,7 +559,7 @@ mod tests {
     fn empty_list_devices_req() -> ListDevicesReq {
         ListDevicesReq {
             filter_text: None,
-            deleted_filter: None,
+            archived_filter: None,
             aor_ids: None,
             unit_ids: None,
             created_by: None,
@@ -556,19 +580,19 @@ mod tests {
             name: "Device Alpha".to_string(),
             created_by: "operator".to_string(),
             unit_id: Some(7),
-            custom_fields: json!([{ "label": "Serial", "value": "123" }]),
+            tags: json!([{ "label": "Serial", "value": "123" }]),
             external_url: None,
-            deleted: false,
-            deleted_at: None,
+            archived: false,
+            archived_at: None,
             created_at: now,
             updated_at: now,
         }
     }
 
     #[test]
-    fn device_status_counts_query_ignores_selected_deleted_filter() {
+    fn device_status_counts_query_ignores_selected_archived_filter() {
         let mut req = empty_list_devices_req();
-        req.deleted_filter = Some(DeviceDeletedFilter::DeviceDeletedOnly);
+        req.archived_filter = Some(DeviceArchivedFilter::DeviceArchivedOnly);
 
         let sql = build_device_status_counts_query(&req)
             .unwrap()
@@ -576,10 +600,11 @@ mod tests {
             .to_string();
 
         assert_eq!(sql.matches("WHERE").count(), 2);
+        assert!(sql.contains(
+            r#"COUNT(*) FILTER (WHERE "device"."archived" = false)"#
+        ));
         assert!(sql
-            .contains(r#"COUNT(*) FILTER (WHERE "device"."deleted" = false)"#));
-        assert!(sql
-            .contains(r#"COUNT(*) FILTER (WHERE "device"."deleted" = true)"#));
+            .contains(r#"COUNT(*) FILTER (WHERE "device"."archived" = true)"#));
     }
 
     #[test]
@@ -589,7 +614,7 @@ mod tests {
             .to_string();
 
         assert!(sql.contains(r#"INNER JOIN "sigint_unit" AS "sigint_unit""#));
-        assert!(sql.contains(r#""device"."deleted" = FALSE"#));
+        assert!(sql.contains(r#""device"."archived" = FALSE"#));
         assert!(sql.contains(r#""sigint_unit"."deleted" = FALSE"#));
         assert!(sql.contains(r#"GROUP BY "sigint_unit"."id""#));
     }

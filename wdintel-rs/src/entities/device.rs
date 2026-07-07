@@ -16,11 +16,11 @@ pub struct Model {
     pub created_by: String,
     pub unit_id: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]
-    pub custom_fields: Json,
+    pub tags: Json,
     #[sea_orm(column_type = "Text", nullable)]
     pub external_url: Option<String>,
-    pub deleted: bool,
-    pub deleted_at: Option<DateTime>,
+    pub archived: bool,
+    pub archived_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

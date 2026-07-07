@@ -4,8 +4,8 @@ import type {
   CreateDeviceFilesRsp,
   CreateDeviceReq,
   DeleteDeviceFileReq,
-  DeleteDeviceReq,
-  DeviceCustomField,
+  ArchiveDeviceReq,
+  DeviceTag,
   DeviceDetailReq,
   DeviceDetails,
   DeviceFileEntry,
@@ -26,7 +26,7 @@ export type DeviceUpdatePatchInput = {
   name?: string;
   aorIds?: number[];
   unitId?: number | null;
-  customFields?: DeviceCustomField[];
+  tags?: DeviceTag[];
   externalUrl?: string | null;
   files?: CreateDeviceFileItem[];
 };
@@ -36,7 +36,7 @@ type DeviceUpdatePatchReq = {
   name?: string;
   aorIds?: number[];
   unitId?: number | null;
-  customFields?: DeviceCustomField[];
+  tags?: DeviceTag[];
   externalUrl?: string | null;
   files?: CreateDeviceFileItem[];
 };
@@ -45,7 +45,7 @@ export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpd
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
 
   const name = (input as { name?: string | null }).name;
-  const customFields = (input as { customFields?: DeviceCustomField[] | null }).customFields;
+  const tags = (input as { tags?: DeviceTag[] | null }).tags;
 
   if (name !== undefined && name !== null) {
     req.name = name;
@@ -56,8 +56,8 @@ export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpd
   if (input.unitId !== undefined) {
     req.unitId = input.unitId;
   }
-  if (customFields !== undefined && customFields !== null) {
-    req.customFields = customFields;
+  if (tags !== undefined && tags !== null) {
+    req.tags = tags;
   }
   if (input.externalUrl !== undefined) {
     req.externalUrl = input.externalUrl;
@@ -127,12 +127,12 @@ export async function updateDevice(
   return transformSnakeToCamel<DeviceDetails>(data);
 }
 
-export async function deleteDevice(
-  req: DeleteDeviceReq,
+export async function archiveDevice(
+  req: ArchiveDeviceReq,
   options?: RequestOptions,
 ): Promise<DeviceDetails> {
   const data = await postJson<DeviceDetails>(
-    '/api/device/delete',
+    '/api/device/archive',
     transformCamelToSnake(req),
     options,
   );

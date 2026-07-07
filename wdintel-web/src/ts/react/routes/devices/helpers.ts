@@ -12,10 +12,10 @@ import type {
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
-export type DeviceDeletedFilterValue = 'active' | 'deleted' | 'all';
+export type DeviceArchivedFilterValue = 'active' | 'archived' | 'all';
 
 export type DevicesFilterState = {
-  deletedFilter: DeviceDeletedFilterValue;
+  archivedFilter: DeviceArchivedFilterValue;
   unitIds: number[];
 };
 
@@ -39,7 +39,7 @@ export type DeviceRowView = DeviceListItem & {
   unitLabel: string;
   updatedAtLabel: string;
   createdAtLabel: string;
-  deletedAtLabel: string;
+  archivedAtLabel: string;
 };
 
 export const DEVICES_LIST_PAGE_SIZE = 100;
@@ -48,7 +48,7 @@ const DEVICE_UNIT_HIERARCHY_KEYS = ['army', 'division', 'regiment', 'battalion']
 
 export function createDefaultDevicesFilterState(): DevicesFilterState {
   return {
-    deletedFilter: 'active',
+    archivedFilter: 'active',
     unitIds: [],
   };
 }
@@ -85,10 +85,10 @@ export function buildDevicesListReq(params: {
 
   return {
     filterText: filterText === '' ? null : filterText,
-    deletedFilter:
-      params.filters.deletedFilter === 'deleted'
-        ? 'deleted_only'
-        : params.filters.deletedFilter === 'all'
+    archivedFilter:
+      params.filters.archivedFilter === 'archived'
+        ? 'archived_only'
+        : params.filters.archivedFilter === 'all'
           ? 'all'
           : 'active_only',
     aorIds: null,
@@ -103,7 +103,7 @@ export function buildDevicesListReq(params: {
 
 export function hasActiveDevicesFilters(searchText: string, filters: DevicesFilterState): boolean {
   return (
-    searchText.trim() !== '' || filters.deletedFilter !== 'active' || filters.unitIds.length > 0
+    searchText.trim() !== '' || filters.archivedFilter !== 'active' || filters.unitIds.length > 0
   );
 }
 
@@ -114,7 +114,7 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
     unitLabel: formatUnitLabel(device.unitId, device.unitName),
     updatedAtLabel: formatDeviceDateTime(device.updatedAtMs),
     createdAtLabel: formatDeviceDateTime(device.createdAtMs),
-    deletedAtLabel: formatDeviceDateTime(device.deletedAtMs),
+    archivedAtLabel: formatDeviceDateTime(device.archivedAtMs),
   };
 }
 
@@ -128,10 +128,10 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     unitId: device.unitId,
     unitName: device.unitName,
     externalUrl: device.externalUrl,
-    deleted: device.deleted,
+    archived: device.archived,
     createdAtMs: device.createdAtMs,
     updatedAtMs: device.updatedAtMs,
-    deletedAtMs: device.deletedAtMs,
+    archivedAtMs: device.archivedAtMs,
   };
 }
 

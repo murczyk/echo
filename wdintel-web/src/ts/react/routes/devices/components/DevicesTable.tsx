@@ -40,7 +40,7 @@ type Props = {
   hasFilters: boolean;
   tableStateContext: ReturnType<typeof useTableStateContext>;
   onEdit: (deviceId: string) => void;
-  onDelete: (deviceId: string, deviceName: string) => void;
+  onArchive: (deviceId: string, deviceName: string) => void;
   onRestore: (deviceId: string) => void;
   onLoadMore: () => Promise<void>;
   onClearFilters: () => void;
@@ -116,14 +116,14 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
       },
       {
         id: 'lifecycle',
-        accessorKey: 'deleted',
+        accessorKey: 'archived',
         header: 'Стан',
         size: 120,
         enableSorting: false,
         Cell: ({ row }) =>
           showLifecycle ? (
-            row.original.deleted ? (
-              <PowerChip label="Видалено" color="error" selected />
+            row.original.archived ? (
+              <PowerChip label="Архівний" color="warning" selected />
             ) : (
               <PowerChip label="Активний" color="success" selected />
             )
@@ -147,7 +147,7 @@ export function DevicesTable({
   hasFilters,
   tableStateContext,
   onEdit,
-  onDelete,
+  onArchive,
   onRestore,
   onLoadMore,
   onClearFilters,
@@ -197,7 +197,7 @@ export function DevicesTable({
         canEdit={canEdit}
         disabled={mutatingDeviceId !== null}
         onEdit={onEdit}
-        onDelete={onDelete}
+        onArchive={onArchive}
         onRestore={onRestore}
       />
     ),

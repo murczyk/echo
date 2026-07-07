@@ -3,14 +3,15 @@
 use crate::devices::files::{insert_device_file_rows, touch_device_updated_at};
 use crate::devices::query::get_device_details;
 use crate::devices::types::{
-    CreateDeviceFileItem, CreateDeviceReq, DeleteDeviceReq, DeviceDetailReq,
+    ArchiveDeviceReq, CreateDeviceFileItem, CreateDeviceReq, DeviceDetailReq,
     DeviceDetails, DeviceUpdateNullableField, DeviceUpdateRequiredField,
     RestoreDeviceReq, UpdateDeviceReq,
 };
 use crate::devices::validation::{
-    normalize_custom_fields, normalize_device_name, normalize_external_url,
-    normalize_optional_file_create_items, normalized_device_name_key,
-    parse_device_id, validate_aor_ids, validate_unit_id,
+    normalize_device_name, normalize_external_url,
+    normalize_optional_file_create_items, normalize_tags,
+    normalized_device_name_key, parse_device_id, validate_aor_ids,
+    validate_unit_id,
 };
 use crate::entities::{device, device_aor};
 use crate::h;
@@ -26,7 +27,7 @@ struct NormalizedCreateDevice {
     name: String,
     aor_ids: Vec<i64>,
     unit_id: Option<i64>,
-    custom_fields: Vec<crate::devices::types::DeviceCustomField>,
+    tags: Vec<crate::devices::types::DeviceTag>,
     external_url: Option<String>,
     files: Vec<CreateDeviceFileItem>,
 }
@@ -36,7 +37,7 @@ struct NormalizedUpdateDevice {
     name: Option<String>,
     aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
-    custom_fields: Option<Vec<crate::devices::types::DeviceCustomField>>,
+    tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
     files: Vec<CreateDeviceFileItem>,
 }
@@ -65,16 +66,16 @@ pub async fn create_device(
 
     let now = Utc::now().naive_utc();
     let device_id = Uuid::now_v7();
-    let custom_fields = serde_json::to_value(req.custom_fields).c(h!())?;
+    let tags = serde_json::to_value(req.tags).c(h!())?;
     device::ActiveModel {
         id: Set(device_id),
         name: Set(req.name),
         created_by: Set(created_by.to_string()),
         unit_id: Set(req.unit_id),
-        custom_fields: Set(custom_fields),
+        tags: Set(tags),
         external_url: Set(req.external_url),
-        deleted: Set(false),
-        deleted_at: Set(None),
+        archived: Set(false),
+        archived_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -129,18 +130,18 @@ pub async fn update_device(
     get_device_details(dbx, &device_detail_req(device_id, true)).await
 }
 
-pub async fn delete_device(
+pub async fn archive_device(
     dbx: &DatabaseConnection,
-    req: DeleteDeviceReq,
+    req: ArchiveDeviceReq,
 ) -> Result<DeviceDetails, AppError> {
-    set_device_deleted(dbx, &req.device_id, true).await
+    set_device_archived(dbx, &req.device_id, true).await
 }
 
 pub async fn restore_device(
     dbx: &DatabaseConnection,
     req: RestoreDeviceReq,
 ) -> Result<DeviceDetails, AppError> {
-    set_device_deleted(dbx, &req.device_id, false).await
+    set_device_archived(dbx, &req.device_id, false).await
 }
 
 async fn find_update_target<C>(
@@ -155,10 +156,10 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    if device.deleted {
+    if device.archived {
         return Err(form_error(
             "device_id",
-            "Видалений пристрій не можна редагувати",
+            "Архівований пристрій не можна редагувати",
         ));
     }
     Ok(device)
@@ -172,7 +173,7 @@ async fn normalize_create_device(
         name: normalize_device_name(&req.name)?,
         aor_ids: validate_aor_ids(dbx, req.aor_ids).await?,
         unit_id: validate_unit_id(dbx, req.unit_id).await?,
-        custom_fields: normalize_custom_fields(req.custom_fields)?,
+        tags: normalize_tags(req.tags)?,
         external_url: normalize_external_url(req.external_url)?,
         files: normalize_optional_file_create_items(req.files)?,
     })
@@ -188,7 +189,7 @@ async fn normalize_update_device(
         name: normalize_update_name(req.name)?,
         aor_ids: normalize_update_aor_ids(dbx, req.aor_ids).await?,
         unit_id: normalize_update_unit_id(dbx, req.unit_id).await?,
-        custom_fields: normalize_update_custom_fields(req.custom_fields)?,
+        tags: normalize_update_tags(req.tags)?,
         external_url: normalize_update_external_url(req.external_url)?,
         files: normalize_optional_file_create_items(req.files)?,
     })
@@ -230,15 +231,13 @@ async fn normalize_update_unit_id(
     }
 }
 
-fn normalize_update_custom_fields(
-    custom_fields: DeviceUpdateRequiredField<
-        Vec<crate::devices::types::DeviceCustomField>,
-    >,
-) -> Result<Option<Vec<crate::devices::types::DeviceCustomField>>, AppError> {
-    match custom_fields {
+fn normalize_update_tags(
+    tags: DeviceUpdateRequiredField<Vec<crate::devices::types::DeviceTag>>,
+) -> Result<Option<Vec<crate::devices::types::DeviceTag>>, AppError> {
+    match tags {
         DeviceUpdateRequiredField::Missing => Ok(None),
-        DeviceUpdateRequiredField::Value(custom_fields) => {
-            Ok(Some(normalize_custom_fields(custom_fields)?))
+        DeviceUpdateRequiredField::Value(tags) => {
+            Ok(Some(normalize_tags(tags)?))
         }
     }
 }
@@ -284,7 +283,7 @@ struct DeviceChanges {
     name: Option<String>,
     aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
-    custom_fields: Option<Vec<crate::devices::types::DeviceCustomField>>,
+    tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
 }
 
@@ -293,7 +292,7 @@ impl DeviceChanges {
         self.name.is_none()
             && self.aor_ids.is_none()
             && self.unit_id.is_none()
-            && self.custom_fields.is_none()
+            && self.tags.is_none()
             && self.external_url.is_none()
     }
 }
@@ -310,7 +309,7 @@ fn collect_device_changes(
             .cloned(),
         aor_ids: req.aor_ids.clone(),
         unit_id: changed_nullable(req.unit_id, device.unit_id),
-        custom_fields: changed_custom_fields(device, req)?,
+        tags: changed_tags(device, req)?,
         external_url: changed_nullable(
             req.external_url.clone(),
             device.external_url.clone(),
@@ -331,21 +330,21 @@ where
     }
 }
 
-fn changed_custom_fields(
+fn changed_tags(
     device: &device::Model,
     req: &NormalizedUpdateDevice,
-) -> Result<Option<Vec<crate::devices::types::DeviceCustomField>>, AppError> {
-    let Some(custom_fields) = &req.custom_fields else {
+) -> Result<Option<Vec<crate::devices::types::DeviceTag>>, AppError> {
+    let Some(tags) = &req.tags else {
         return Ok(None);
     };
-    let current_custom_fields = serde_json::from_value::<
-        Vec<crate::devices::types::DeviceCustomField>,
-    >(device.custom_fields.clone())
+    let current_tags = serde_json::from_value::<
+        Vec<crate::devices::types::DeviceTag>,
+    >(device.tags.clone())
     .c(h!())?;
-    if &current_custom_fields == custom_fields {
+    if &current_tags == tags {
         return Ok(None);
     }
-    Ok(Some(custom_fields.clone()))
+    Ok(Some(tags.clone()))
 }
 
 async fn apply_device_changes<C>(
@@ -364,9 +363,8 @@ where
     if let Some(unit_id) = changes.unit_id {
         device.unit_id = Set(unit_id);
     }
-    if let Some(custom_fields) = changes.custom_fields {
-        device.custom_fields =
-            Set(serde_json::to_value(custom_fields).c(h!())?);
+    if let Some(tags) = changes.tags {
+        device.tags = Set(serde_json::to_value(tags).c(h!())?);
     }
     if let Some(external_url) = changes.external_url {
         device.external_url = Set(external_url);
@@ -404,10 +402,10 @@ where
     Ok(())
 }
 
-async fn set_device_deleted(
+async fn set_device_archived(
     dbx: &DatabaseConnection,
     device_id: &str,
-    deleted: bool,
+    archived: bool,
 ) -> Result<DeviceDetails, AppError> {
     let device_id = parse_device_id(device_id)?;
     let txn = dbx.begin().await.c(h!())?;
@@ -417,7 +415,7 @@ async fn set_device_deleted(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    if device.deleted == deleted {
+    if device.archived == archived {
         txn.commit().await.c(h!())?;
         return get_device_details(dbx, &device_detail_req(device_id, true))
             .await;
@@ -425,8 +423,8 @@ async fn set_device_deleted(
 
     let now = Utc::now().naive_utc();
     let mut device = device.into_active_model();
-    device.deleted = Set(deleted);
-    device.deleted_at = Set(deleted.then_some(now));
+    device.archived = Set(archived);
+    device.archived_at = Set(archived.then_some(now));
     device.updated_at = Set(now);
     device.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
@@ -464,11 +462,11 @@ fn validate_created_by(created_by: &str) -> Result<(), AppError> {
 
 fn device_detail_req(
     device_id: Uuid,
-    include_deleted: bool,
+    include_archived: bool,
 ) -> DeviceDetailReq {
     DeviceDetailReq {
         device_id: device_id.to_string(),
-        include_deleted: Some(include_deleted),
+        include_archived: Some(include_archived),
     }
 }
 

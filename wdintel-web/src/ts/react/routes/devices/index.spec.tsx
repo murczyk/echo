@@ -111,10 +111,10 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     noMoreToLoad: true,
     sidebarOpen: true,
     setSidebarOpen: vi.fn(),
-    filters: { deletedFilter: 'deleted', unitIds: [7] },
+    filters: { archivedFilter: 'archived', unitIds: [7] },
     setFilters: vi.fn(),
     status: null,
-    statusCounts: { active: 3, deleted: 1 },
+    statusCounts: { active: 3, archived: 1 },
     bootstrapLoaded: true,
     creating: false,
     createDialogOpen: false,
@@ -128,7 +128,7 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     editSubmitting: false,
     editHasChanges: false,
     editLoadingDeviceId: null,
-    deleteDialogDevice: null,
+    archiveDialogDevice: null,
     mutatingDeviceId: null,
     busyDeviceId: null,
     aorOptions: [],
@@ -147,7 +147,7 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     selectedSidebarUnitFilter: { kind: 'leaf', label: 'Unit 7', unitName: 'Unit 7', unitId: 7 },
     hasFilters: true,
     initialLoadFailed: false,
-    setDeletedFilter: vi.fn(),
+    setArchivedFilter: vi.fn(),
     onPickUnitFilter: vi.fn(),
     onClearUnitFilter: vi.fn(),
     clearFilters: vi.fn(),
@@ -161,9 +161,9 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     closeEditDialog: vi.fn(),
     setEditForm: vi.fn(),
     submitEditDialog: vi.fn(),
-    deleteRow: vi.fn(),
-    closeDeleteDialog: vi.fn(),
-    confirmDeleteRow: vi.fn(),
+    archiveRow: vi.fn(),
+    closeArchiveDialog: vi.fn(),
+    confirmArchiveRow: vi.fn(),
     restoreRow: vi.fn(),
     ...overrides,
   };
@@ -209,19 +209,19 @@ describe('DevicesPage layout', () => {
     });
     expect(capturedDevicesToolbarProps).toMatchObject({
       globalFilter: 'alpha',
-      statusCounts: { active: 3, deleted: 1 },
+      statusCounts: { active: 3, archived: 1 },
     });
 
     const additionalActiveFilters = capturedDevicesToolbarProps?.additionalActiveFilters as Array<{
       id: string;
     }>;
-    expect(additionalActiveFilters.map((filter) => filter.id)).toEqual(['deleted', 'unit']);
+    expect(additionalActiveFilters.map((filter) => filter.id)).toEqual(['archived', 'unit']);
     expect(additionalActiveFilters.map((filter) => filter.id)).not.toEqual(
       expect.arrayContaining(['aor', 'createdBy']),
     );
     expect(capturedDevicesTableProps).toMatchObject({
       onEdit: expect.any(Function),
-      onDelete: expect.any(Function),
+      onArchive: expect.any(Function),
       onRestore: expect.any(Function),
     });
   });

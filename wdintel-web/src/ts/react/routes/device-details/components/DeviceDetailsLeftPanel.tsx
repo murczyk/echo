@@ -213,8 +213,8 @@ function buildMainFields({
         >
           <Chip
             size="small"
-            color={device.deleted ? 'warning' : 'success'}
-            label={formatDeviceLifecycleLabel(device.deleted)}
+            color={device.archived ? 'warning' : 'success'}
+            label={formatDeviceLifecycleLabel(device.archived)}
           />
         </Stack>
       ),
@@ -259,16 +259,35 @@ function buildAdditionalFields(device: DeviceDetails): FieldConfig[] {
       label: 'Оновлено',
       value: <DeviceTextValue>{formatDeviceDateTime(device.updatedAtMs)}</DeviceTextValue>,
     },
-    ...(device.deleted
+    ...(device.archived
       ? [
           {
-            key: 'deletedAt',
-            label: 'Видалено',
-            value: <DeviceTextValue>{formatDeviceDateTime(device.deletedAtMs)}</DeviceTextValue>,
+            key: 'archivedAt',
+            label: 'Архівовано',
+            value: <DeviceTextValue>{formatDeviceDateTime(device.archivedAtMs)}</DeviceTextValue>,
           },
         ]
       : []),
   ];
+}
+
+function DeviceTagsSection({ device }: { device: DeviceDetails }) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <SectionTitle>Теги</SectionTitle>
+      {device.tags.length === 0 ? (
+        <DeviceTextValue muted>Теги відсутні.</DeviceTextValue>
+      ) : (
+        <FieldList
+          fields={device.tags.map((tag, index) => ({
+            key: `${tag.label}-${index}`,
+            label: tag.label,
+            value: <DeviceTextValue muted={tag.value === ''}>{tag.value || '—'}</DeviceTextValue>,
+          }))}
+        />
+      )}
+    </Box>
+  );
 }
 
 function DeviceLeftPanelContent({
@@ -283,6 +302,8 @@ function DeviceLeftPanelContent({
       <DeviceSection title="Основне" fields={buildMainFields({ device, onOpenExternalUrl })} />
       <Divider />
       <DeviceSection title="Додатково" fields={buildAdditionalFields(device)} />
+      <Divider />
+      <DeviceTagsSection device={device} />
     </>
   );
 }

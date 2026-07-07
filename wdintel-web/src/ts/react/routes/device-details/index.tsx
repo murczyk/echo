@@ -1,5 +1,5 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import DeleteIcon from '@mui/icons-material/Delete';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -42,10 +42,10 @@ function openExternalUrl(url: string) {
 
 function DeviceHeaderTitle({
   deviceName,
-  deleted,
+  archived,
 }: {
   deviceName: string | null;
-  deleted: boolean;
+  archived: boolean;
 }) {
   return (
     <Box
@@ -75,8 +75,8 @@ function DeviceHeaderTitle({
           </Typography>
           <Chip
             size="small"
-            color={deleted ? 'warning' : 'success'}
-            label={formatDeviceLifecycleLabel(deleted)}
+            color={archived ? 'warning' : 'success'}
+            label={formatDeviceLifecycleLabel(archived)}
             sx={{ flexShrink: 0 }}
           />
         </>
@@ -97,7 +97,7 @@ export function DeviceDetailsPage({
     deviceId,
     canRead: page.permissions.canRead,
     canEdit: page.permissions.canEdit,
-    parentDeleted: page.device?.deleted ?? false,
+    parentArchived: page.device?.archived ?? false,
   });
   const isDesktopLayout = useMediaQuery((theme) => theme.breakpoints.up('lg'));
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
@@ -121,9 +121,9 @@ export function DeviceDetailsPage({
   const device = page.device;
   const externalUrl = device?.externalUrl?.trim() ?? '';
   const canOpenExternalUrl = isSafeExternalUrl(externalUrl);
-  const showEditAction = page.permissions.canEdit && device !== null && !device.deleted;
-  const showDeleteAction = page.permissions.canEdit && device !== null && !device.deleted;
-  const showRestoreAction = page.permissions.canEdit && device !== null && device.deleted;
+  const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
+  const showArchiveAction = page.permissions.canEdit && device !== null && !device.archived;
+  const showRestoreAction = page.permissions.canEdit && device !== null && device.archived;
   const leftPanelVisible = !isDesktopLayout || leftPanelOpen;
   const sidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
 
@@ -139,7 +139,7 @@ export function DeviceDetailsPage({
       status={files.status}
       mutatingFileId={files.mutatingFileId}
       canEdit={page.permissions.canEdit}
-      parentDeleted={device.deleted}
+      parentArchived={device.archived}
       hasFilters={files.hasFilters}
       onDeletedFilterChange={files.setDeletedFilter}
       onCreate={files.openCreateDialog}
@@ -163,7 +163,10 @@ export function DeviceDetailsPage({
     >
       <PageHeader
         title={
-          <DeviceHeaderTitle deviceName={device?.name ?? null} deleted={device?.deleted ?? false} />
+          <DeviceHeaderTitle
+            deviceName={device?.name ?? null}
+            archived={device?.archived ?? false}
+          />
         }
         titleLeadingActions={
           isDesktopLayout ? (
@@ -204,15 +207,15 @@ export function DeviceDetailsPage({
                 Редагувати
               </Button>
             ) : null}
-            {showDeleteAction ? (
+            {showArchiveAction ? (
               <Button
                 color="error"
                 variant="outlined"
-                onClick={page.openDeleteDialog}
+                onClick={page.openArchiveDialog}
                 disabled={page.mutating || page.editSubmitting}
-                startIcon={page.mutating ? <CircularProgress size={16} /> : <DeleteIcon />}
+                startIcon={page.mutating ? <CircularProgress size={16} /> : <ArchiveOutlinedIcon />}
               >
-                Видалити
+                Архівувати
               </Button>
             ) : null}
             {showRestoreAction ? (
@@ -231,9 +234,9 @@ export function DeviceDetailsPage({
       />
 
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
-      {device?.deleted ? (
+      {device?.archived ? (
         <PowerAlert severity="warning" autoHideDuration={null}>
-          Пристрій видалено. Редактори можуть відновити пристрій; життєвий цикл файлів заблоковано
+          Пристрій архівовано. Редактори можуть відновити пристрій; життєвий цикл файлів заблоковано
           до відновлення.
         </PowerAlert>
       ) : null}
@@ -296,10 +299,8 @@ export function DeviceDetailsPage({
               </Box>
             ) : null}
             <DeviceDetailsTabPanel
-              device={device}
               activeTab={activeTab}
               onActiveTabChange={setActiveTab}
-              onOpenExternalUrl={openExternalUrl}
               filesPanel={filesPanel}
             />
           </Box>
@@ -333,11 +334,12 @@ export function DeviceDetailsPage({
       />
 
       <ConfirmDangerDialog
-        open={page.deleteDialogOpen}
-        onClose={page.closeDeleteDialog}
-        onConfirm={() => void page.confirmDeleteCurrentDevice()}
-        title="Видалити пристрій"
-        description={`Ви дійсно хочете видалити пристрій «${device?.name ?? ''}»?`}
+        open={page.archiveDialogOpen}
+        onClose={page.closeArchiveDialog}
+        onConfirm={() => void page.confirmArchiveCurrentDevice()}
+        title="Архівувати пристрій"
+        description={`Ви дійсно хочете архівувати пристрій «${device?.name ?? ''}»?`}
+        confirmLabel="Архівувати"
         submitting={page.mutating}
         disabled={device === null}
       />

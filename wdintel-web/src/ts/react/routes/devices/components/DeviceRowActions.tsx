@@ -1,4 +1,4 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import RestoreIcon from '@mui/icons-material/Restore';
 
@@ -10,16 +10,16 @@ type Props = {
   canEdit: boolean;
   disabled: boolean;
   onEdit: (deviceId: string) => void;
-  onDelete: (deviceId: string, deviceName: string) => void;
+  onArchive: (deviceId: string, deviceName: string) => void;
   onRestore: (deviceId: string) => void;
 };
 
-export function DeviceRowActions({ row, canEdit, disabled, onEdit, onDelete, onRestore }: Props) {
+export function DeviceRowActions({ row, canEdit, disabled, onEdit, onArchive, onRestore }: Props) {
   if (!canEdit) return null;
 
   return (
     <MrtRowActions forceMenu>
-      {row.deleted ? (
+      {row.archived ? (
         <MrtRowActionButton
           key="restore"
           label="Відновити"
@@ -37,12 +37,12 @@ export function DeviceRowActions({ row, canEdit, disabled, onEdit, onDelete, onR
             onClick={() => onEdit(row.id)}
           />,
           <MrtRowActionButton
-            key="delete"
-            label="Видалити"
-            icon={<DeleteOutlineIcon fontSize="small" />}
+            key="archive"
+            label="Архівувати"
+            icon={<ArchiveOutlinedIcon fontSize="small" />}
             disabled={disabled}
             tone="danger"
-            onClick={() => onDelete(row.id, row.name)}
+            onClick={() => onArchive(row.id, row.name)}
           />,
         ]
       )}

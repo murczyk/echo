@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDevice,
   createDeviceFiles,
-  deleteDevice,
+  archiveDevice,
   deleteDeviceFile,
   getDeviceDetail,
   getDeviceUnitStats,
@@ -52,12 +52,12 @@ function mockDeviceDetailsResponse() {
     aor_names: ['AOR', 'AOR 2'],
     unit_id: 7,
     unit_name: 'Unit',
-    custom_fields: [{ label: 'Serial', value: '123' }],
+    tags: [{ label: 'Serial', value: '123' }],
     external_url: 'https://example.test/device',
-    deleted: false,
+    archived: false,
     created_at_ms: 10,
     updated_at_ms: 20,
-    deleted_at_ms: null,
+    archived_at_ms: null,
   };
 }
 
@@ -73,17 +73,17 @@ function mockListDevicesResponse() {
         unit_id: 7,
         unit_name: 'Unit',
         external_url: null,
-        deleted: false,
+        archived: false,
         created_at_ms: 10,
         updated_at_ms: 20,
-        deleted_at_ms: null,
+        archived_at_ms: null,
       },
     ],
     total: 1,
     has_more: false,
     status_counts: {
       active: 3,
-      deleted: 1,
+      archived: 1,
     },
   };
 }
@@ -137,7 +137,7 @@ describe('devices API service routes', () => {
     const rsp = await listDevices(
       {
         filterText: 'alpha',
-        deletedFilter: 'active_only',
+        archivedFilter: 'active_only',
         aorIds: [4],
         unitIds: [7],
         createdBy: 'operator',
@@ -153,7 +153,7 @@ describe('devices API service routes', () => {
     expect(requestSignal()).toBe(controller.signal);
     expect(requestBody()).toMatchObject({
       filter_text: 'alpha',
-      deleted_filter: 'active_only',
+      archived_filter: 'active_only',
       aor_ids: [4],
       unit_ids: [7],
       created_by: 'operator',
@@ -163,7 +163,7 @@ describe('devices API service routes', () => {
       sort_by: ['updated_at_desc'],
     });
     expect(rsp.list[0].createdBy).toBe('operator');
-    expect(rsp.statusCounts).toEqual({ active: 3, deleted: 1 });
+    expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
     expect(rsp.hasMore).toBe(false);
   });
 
@@ -180,10 +180,10 @@ describe('devices API service routes', () => {
   });
 
   it('getDeviceDetail uses /api/device/detail', async () => {
-    const rsp = await getDeviceDetail({ deviceId: DEVICE_ID, includeDeleted: true });
+    const rsp = await getDeviceDetail({ deviceId: DEVICE_ID, includeArchived: true });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/detail', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID, include_deleted: true });
+    expect(requestBody()).toEqual({ device_id: DEVICE_ID, include_archived: true });
     expect(rsp.createdAtMs).toBe(10);
   });
 
@@ -192,7 +192,7 @@ describe('devices API service routes', () => {
       name: 'Device Alpha',
       aorIds: [4, 5],
       unitId: 7,
-      customFields: [{ label: 'Serial', value: '123' }],
+      tags: [{ label: 'Serial', value: '123' }],
       externalUrl: null,
       files: null,
     });
@@ -202,7 +202,7 @@ describe('devices API service routes', () => {
       name: 'Device Alpha',
       aor_ids: [4, 5],
       unit_id: 7,
-      custom_fields: [{ label: 'Serial', value: '123' }],
+      tags: [{ label: 'Serial', value: '123' }],
       external_url: null,
       files: null,
     });
@@ -215,10 +215,10 @@ describe('devices API service routes', () => {
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, aor_ids: [], unit_id: 7 });
   });
 
-  it('deleteDevice uses /api/device/delete', async () => {
-    await deleteDevice({ deviceId: DEVICE_ID });
+  it('archiveDevice uses /api/device/archive', async () => {
+    await archiveDevice({ deviceId: DEVICE_ID });
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/delete', expect.any(Object));
+    expect(fetchMock()).toHaveBeenCalledWith('/api/device/archive', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID });
   });
 
@@ -309,7 +309,7 @@ describe('DeviceUpdatePatchInput serialization', () => {
         name: undefined,
         aorIds: [],
         unitId: null,
-        customFields: undefined,
+        tags: undefined,
         externalUrl: null,
         files: [],
       }),
@@ -321,18 +321,18 @@ describe('DeviceUpdatePatchInput serialization', () => {
     });
   });
 
-  it('never serializes name null or customFields null and clears custom fields with []', () => {
+  it('never serializes name null or tags null and clears tags with []', () => {
     expect(
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
         name: null,
-        customFields: null,
+        tags: null,
       } as never),
     ).toEqual({ deviceId: DEVICE_ID });
 
-    expect(toDeviceUpdatePatchReq({ deviceId: DEVICE_ID, customFields: [] })).toEqual({
+    expect(toDeviceUpdatePatchReq({ deviceId: DEVICE_ID, tags: [] })).toEqual({
       deviceId: DEVICE_ID,
-      customFields: [],
+      tags: [],
     });
   });
 

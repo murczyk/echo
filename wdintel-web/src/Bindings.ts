@@ -1582,12 +1582,18 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
-export type DeviceCustomField = {
+export type DeviceTag = {
   label: string;
   value: string;
 };
 
-export type DeviceDeletedFilter =
+export type DeviceArchivedFilter =
+  | 'active_only'
+  | 'archived_only'
+  | 'all'
+;
+
+export type DeviceFileDeletedFilter =
   | 'active_only'
   | 'deleted_only'
   | 'all'
@@ -1609,10 +1615,10 @@ export type DeviceListItem = {
   unitId: number | null;
   unitName: string | null;
   externalUrl: string | null;
-  deleted: boolean;
+  archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
-  deletedAtMs: number | null;
+  archivedAtMs: number | null;
 };
 
 export type DeviceDetails = {
@@ -1623,12 +1629,12 @@ export type DeviceDetails = {
   aorNames: Array<string>;
   unitId: number | null;
   unitName: string | null;
-  customFields: Array<DeviceCustomField>;
+  tags: Array<DeviceTag>;
   externalUrl: string | null;
-  deleted: boolean;
+  archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
-  deletedAtMs: number | null;
+  archivedAtMs: number | null;
 };
 
 export type DeviceFileEntry = {
@@ -1646,7 +1652,7 @@ export type DeviceFileEntry = {
 
 export type ListDevicesReq = {
   filterText: string | null;
-  deletedFilter: DeviceDeletedFilter | null;
+  archivedFilter: DeviceArchivedFilter | null;
   aorIds: Array<number> | null;
   unitIds: Array<number> | null;
   createdBy: string | null;
@@ -1658,7 +1664,7 @@ export type ListDevicesReq = {
 
 export type DeviceStatusCountsRsp = {
   active: number;
-  deleted: number;
+  archived: number;
 };
 
 export type ListDevicesRsp = {
@@ -1679,14 +1685,14 @@ export type DeviceUnitStatRow = {
 
 export type DeviceDetailReq = {
   deviceId: string;
-  includeDeleted: boolean | null;
+  includeArchived: boolean | null;
 };
 
 export type CreateDeviceReq = {
   name: string;
   aorIds: Array<number>;
   unitId: number | null;
-  customFields: Array<DeviceCustomField>;
+  tags: Array<DeviceTag>;
   externalUrl: string | null;
   files: Array<CreateDeviceFileItem> | null;
 };
@@ -1696,12 +1702,12 @@ export type UpdateDeviceReq = {
   name: string | null;
   aorIds: Array<number> | null;
   unitId: number | null;
-  customFields: Array<DeviceCustomField> | null;
+  tags: Array<DeviceTag> | null;
   externalUrl: string | null;
   files: Array<CreateDeviceFileItem> | null;
 };
 
-export type DeleteDeviceReq = {
+export type ArchiveDeviceReq = {
   deviceId: string;
 };
 
@@ -1711,7 +1717,7 @@ export type RestoreDeviceReq = {
 
 export type ListDeviceFilesReq = {
   deviceId: string;
-  deletedFilter: DeviceDeletedFilter | null;
+  deletedFilter: DeviceFileDeletedFilter | null;
   limit: number | null;
   offset: number | null;
 };

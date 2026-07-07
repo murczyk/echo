@@ -45,12 +45,12 @@ const activeDevice: DeviceDetails = {
   aorNames: ['Північ', 'Південь'],
   unitId: 7,
   unitName: 'Unit Seven',
-  customFields: [{ label: 'IP', value: '10.0.0.1' }],
+  tags: [{ label: 'IP', value: '10.0.0.1' }],
   externalUrl: 'https://example.test/device-alpha',
-  deleted: false,
+  archived: false,
   createdAtMs: 1_700_000_000_000,
   updatedAtMs: 1_700_000_010_000,
-  deletedAtMs: null,
+  archivedAtMs: null,
 };
 
 const fileEntry: DeviceFileEntry = {
@@ -82,16 +82,16 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     editServerFieldErrors: {},
     editSubmitting: false,
     editHasChanges: false,
-    deleteDialogOpen: false,
+    archiveDialogOpen: false,
     initialLoadFailed: false,
     reload: vi.fn(),
     openEditDrawer: vi.fn(),
     closeEditDrawer: vi.fn(),
     setEditForm: vi.fn(),
     saveEditDevice: vi.fn(),
-    openDeleteDialog: vi.fn(),
-    closeDeleteDialog: vi.fn(),
-    confirmDeleteCurrentDevice: vi.fn(),
+    openArchiveDialog: vi.fn(),
+    closeArchiveDialog: vi.fn(),
+    confirmArchiveCurrentDevice: vi.fn(),
     restoreCurrentDevice: vi.fn(),
     ...overrides,
   };
@@ -176,13 +176,23 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Південь');
     expect(leftPanelText).toContain('Unit Seven');
     expect(leftPanelText).toContain('operator');
+    expect(leftPanelText).toContain('Теги');
+    expect(leftPanelText).toContain('IP');
+    expect(leftPanelText).toContain('10.0.0.1');
+    expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
+      (leftPanelText ?? '').indexOf('Теги'),
+    );
 
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).map((element) =>
       element.textContent?.trim(),
     );
     expect(tabs).toEqual(['Опис', 'Файли']);
-    expect(container?.textContent).toContain('Реєстрові поля');
-    expect(container?.textContent).toContain('Користувацькі поля');
+    expect(container?.textContent).not.toContain('Реєстрові поля');
+    expect(
+      container
+        ?.querySelector('[data-testid="device-details-description-tab"]')
+        ?.textContent?.trim(),
+    ).toBe('');
     expect(container?.textContent).not.toContain('Метадані файлів');
 
     clickTab('Файли');
@@ -191,13 +201,13 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.textContent).toContain('manual.pdf');
   });
 
-  it('keeps deleted devices restore-only and blocks file mutations in the files tab', () => {
+  it('keeps archived devices restore-only and blocks file mutations in the files tab', () => {
     pageMock.useDeviceDetailsPage.mockReturnValue(
       buildPage({
         device: {
           ...activeDevice,
-          deleted: true,
-          deletedAtMs: 1_700_000_040_000,
+          archived: true,
+          archivedAtMs: 1_700_000_040_000,
         },
       }),
     );
@@ -205,9 +215,9 @@ describe('DeviceDetailsPage layout', () => {
     renderPage();
 
     expect(filesMock.useDeviceFiles).toHaveBeenCalledWith(
-      expect.objectContaining({ parentDeleted: true }),
+      expect.objectContaining({ parentArchived: true }),
     );
-    expect(container?.textContent).toContain('Пристрій видалено');
+    expect(container?.textContent).toContain('Пристрій архівовано');
     expect(container?.textContent).not.toContain('Редагувати');
     expect(container?.textContent).toContain('Відновити');
 

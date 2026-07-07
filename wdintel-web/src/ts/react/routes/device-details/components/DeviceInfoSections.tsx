@@ -110,18 +110,18 @@ export function DeviceRegistrySection({
   );
 }
 
-export function DeviceCustomFieldsSection({ device }: { device: DeviceDetails }) {
+export function DeviceTagsSection({ device }: { device: DeviceDetails }) {
   return (
     <Card variant="outlined">
-      <CardHeader title="Користувацькі поля" />
+      <CardHeader title="Теги" />
       <CardContent>
-        {device.customFields.length === 0 ? (
+        {device.tags.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            Користувацькі поля відсутні.
+            Теги відсутні.
           </Typography>
         ) : (
           <Stack spacing={1.5} divider={<Divider flexItem />}>
-            {device.customFields.map((field, index) => (
+            {device.tags.map((field, index) => (
               <Box
                 key={`${field.label}-${index}`}
                 sx={{

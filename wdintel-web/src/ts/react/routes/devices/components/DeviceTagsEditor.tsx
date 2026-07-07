@@ -5,32 +5,28 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { Box, Button, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
 
 import {
-  createDeviceCustomFieldDraft,
-  DEVICE_CUSTOM_FIELDS_MAX_COUNT,
-  type DeviceCustomFieldDraft,
-  type DeviceCustomFieldDraftError,
+  createDeviceTagDraft,
+  DEVICE_TAGS_MAX_COUNT,
+  type DeviceTagDraft,
+  type DeviceTagDraftError,
 } from '../device-form';
 
 type Props = {
-  rows: DeviceCustomFieldDraft[];
-  errors: Record<string, DeviceCustomFieldDraftError>;
+  rows: DeviceTagDraft[];
+  errors: Record<string, DeviceTagDraftError>;
   disabled: boolean;
-  onChange: (rows: DeviceCustomFieldDraft[]) => void;
+  onChange: (rows: DeviceTagDraft[]) => void;
 };
 
 function replaceRow(
-  rows: DeviceCustomFieldDraft[],
+  rows: DeviceTagDraft[],
   rowId: string,
-  patch: Partial<DeviceCustomFieldDraft>,
-): DeviceCustomFieldDraft[] {
+  patch: Partial<DeviceTagDraft>,
+): DeviceTagDraft[] {
   return rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
 }
 
-function moveRow(
-  rows: DeviceCustomFieldDraft[],
-  index: number,
-  delta: -1 | 1,
-): DeviceCustomFieldDraft[] {
+function moveRow(rows: DeviceTagDraft[], index: number, delta: -1 | 1): DeviceTagDraft[] {
   const nextIndex = index + delta;
   if (nextIndex < 0 || nextIndex >= rows.length) return rows;
   const next = [...rows];
@@ -39,29 +35,29 @@ function moveRow(
   return next;
 }
 
-export function DeviceCustomFieldsEditor({ rows, errors, disabled, onChange }: Props) {
+export function DeviceTagsEditor({ rows, errors, disabled, onChange }: Props) {
   return (
     <Stack spacing={1.5}>
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
         <Box>
-          <Typography variant="subtitle2">Користувацькі поля</Typography>
+          <Typography variant="subtitle2">Теги</Typography>
           <Typography variant="caption" color="text.secondary">
-            Порядок зберігається як у списку. Максимум {DEVICE_CUSTOM_FIELDS_MAX_COUNT}.
+            Порядок зберігається як у списку. Максимум {DEVICE_TAGS_MAX_COUNT}.
           </Typography>
         </Box>
         <Button
           size="small"
           startIcon={<AddIcon />}
-          onClick={() => onChange([...rows, createDeviceCustomFieldDraft()])}
-          disabled={disabled || rows.length >= DEVICE_CUSTOM_FIELDS_MAX_COUNT}
+          onClick={() => onChange([...rows, createDeviceTagDraft()])}
+          disabled={disabled || rows.length >= DEVICE_TAGS_MAX_COUNT}
         >
-          Додати поле
+          Додати тег
         </Button>
       </Stack>
 
       {rows.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          Користувацькі поля не додані.
+          Теги не додані.
         </Typography>
       ) : (
         <Stack spacing={1.25}>
@@ -78,7 +74,7 @@ export function DeviceCustomFieldsEditor({ rows, errors, disabled, onChange }: P
                 }}
               >
                 <TextField
-                  label="Назва поля"
+                  label="Назва тегу"
                   size="small"
                   value={row.label}
                   onChange={(event) =>
@@ -130,14 +126,14 @@ export function DeviceCustomFieldsEditor({ rows, errors, disabled, onChange }: P
                       </IconButton>
                     </span>
                   </Tooltip>
-                  <Tooltip title="Видалити поле">
+                  <Tooltip title="Видалити тег">
                     <span>
                       <IconButton
                         size="small"
                         color="error"
                         disabled={disabled}
                         onClick={() => onChange(rows.filter((item) => item.id !== row.id))}
-                        aria-label="Видалити користувацьке поле"
+                        aria-label="Видалити тег"
                       >
                         <DeleteOutlineIcon fontSize="small" />
                       </IconButton>

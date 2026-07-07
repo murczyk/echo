@@ -20,15 +20,15 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import type { DeviceLookupOption } from '../helpers';
 import {
   validateDeviceUpsertForm,
-  type DeviceCustomFieldDraftError,
+  type DeviceTagDraftError,
   type DeviceFileDraftError,
   type DeviceServerFieldErrors,
   type DeviceUpsertForm,
 } from '../device-form';
-import { DeviceCustomFieldsEditor } from './DeviceCustomFieldsEditor';
+import { DeviceTagsEditor } from './DeviceTagsEditor';
 import { DeviceFileRowsEditor } from './DeviceFileRowsEditor';
 
-const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError> = {};
+const EMPTY_TAG_ROW_ERRORS: Record<string, DeviceTagDraftError> = {};
 const EMPTY_FILE_ROW_ERRORS: Record<string, DeviceFileDraftError> = {};
 
 type Props = {
@@ -129,9 +129,9 @@ export function DeviceUpsertDrawer({
   };
 
   const showCollectionErrors = submitted && validation !== null;
-  const customFieldRows = showCollectionErrors
-    ? (validation?.customFieldRows ?? EMPTY_CUSTOM_FIELD_ROW_ERRORS)
-    : EMPTY_CUSTOM_FIELD_ROW_ERRORS;
+  const tagRows = showCollectionErrors
+    ? (validation?.tagRows ?? EMPTY_TAG_ROW_ERRORS)
+    : EMPTY_TAG_ROW_ERRORS;
   const fileRows = showCollectionErrors
     ? (validation?.fileRows ?? EMPTY_FILE_ROW_ERRORS)
     : EMPTY_FILE_ROW_ERRORS;
@@ -253,17 +253,17 @@ export function DeviceUpsertDrawer({
               />
 
               <Divider />
-              {showCollectionErrors && validation?.customFields ? (
-                <PowerAlert severity="error">{validation.customFields}</PowerAlert>
+              {showCollectionErrors && validation?.tags ? (
+                <PowerAlert severity="error">{validation.tags}</PowerAlert>
               ) : null}
-              {serverFieldErrors.customFields ? (
-                <PowerAlert severity="error">{serverFieldErrors.customFields}</PowerAlert>
+              {serverFieldErrors.tags ? (
+                <PowerAlert severity="error">{serverFieldErrors.tags}</PowerAlert>
               ) : null}
-              <DeviceCustomFieldsEditor
-                rows={form.customFields}
-                errors={customFieldRows}
+              <DeviceTagsEditor
+                rows={form.tags}
+                errors={tagRows}
                 disabled={formBlocked}
-                onChange={(customFields) => patchForm({ customFields })}
+                onChange={(tags) => patchForm({ tags })}
               />
 
               <Divider />

@@ -42,7 +42,7 @@ type Props = {
   status: DeviceDetailsUiMessage;
   mutatingFileId: string | null;
   canEdit: boolean;
-  parentDeleted: boolean;
+  parentArchived: boolean;
   hasFilters: boolean;
   onDeletedFilterChange: (value: DeviceFilesDeletedFilterValue) => void;
   onCreate: () => void;
@@ -78,21 +78,21 @@ function FileLifecycleCell({ file }: { file: DeviceFileEntry }) {
 function FileRowActions({
   file,
   canEdit,
-  parentDeleted,
+  parentArchived,
   disabled,
   onDelete,
   onRestore,
 }: {
   file: DeviceFileEntry;
   canEdit: boolean;
-  parentDeleted: boolean;
+  parentArchived: boolean;
   disabled: boolean;
   onDelete: (file: DeviceFileEntry) => void;
   onRestore: (file: DeviceFileEntry) => void;
 }) {
   if (!canEdit) return null;
 
-  const title = parentDeleted
+  const title = parentArchived
     ? 'Відновіть пристрій перед зміною життєвого циклу файлів'
     : file.deleted
       ? 'Відновити файл'
@@ -103,7 +103,7 @@ function FileRowActions({
       <span>
         <IconButton
           size="small"
-          disabled={disabled || parentDeleted}
+          disabled={disabled || parentArchived}
           color={file.deleted ? 'primary' : 'error'}
           aria-label={file.deleted ? 'Відновити файл' : 'Видалити файл'}
           onClick={() => (file.deleted ? onRestore(file) : onDelete(file))}
@@ -126,7 +126,7 @@ export function DeviceFilesSection({
   status,
   mutatingFileId,
   canEdit,
-  parentDeleted,
+  parentArchived,
   hasFilters,
   onDeletedFilterChange,
   onCreate,
@@ -162,11 +162,11 @@ export function DeviceFilesSection({
             {canEdit ? (
               <Tooltip
                 title={
-                  parentDeleted ? 'Відновіть пристрій перед додаванням файлів' : 'Додати файли'
+                  parentArchived ? 'Відновіть пристрій перед додаванням файлів' : 'Додати файли'
                 }
               >
                 <span>
-                  <Button size="small" onClick={onCreate} disabled={parentDeleted}>
+                  <Button size="small" onClick={onCreate} disabled={parentArchived}>
                     Додати файли
                   </Button>
                 </span>
@@ -189,7 +189,7 @@ export function DeviceFilesSection({
       />
       <CardContent>
         <Stack spacing={2}>
-          {parentDeleted && canEdit ? (
+          {parentArchived && canEdit ? (
             <Alert severity="warning">
               Відновіть пристрій перед додаванням, видаленням або відновленням файлів.
             </Alert>
@@ -240,7 +240,7 @@ export function DeviceFilesSection({
                           <FileRowActions
                             file={file}
                             canEdit={canEdit}
-                            parentDeleted={parentDeleted}
+                            parentArchived={parentArchived}
                             disabled={mutatingFileId === file.fileId || mutatingFileId !== null}
                             onDelete={onDelete}
                             onRestore={onRestore}

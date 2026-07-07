@@ -39,7 +39,7 @@ describe('devices list query mapping', () => {
       }),
     ).toEqual({
       filterText: null,
-      deletedFilter: 'active_only',
+      archivedFilter: 'active_only',
       aorIds: null,
       unitIds: null,
       createdBy: null,
@@ -50,25 +50,25 @@ describe('devices list query mapping', () => {
     });
   });
 
-  it('maps deleted filters to backend enum values', () => {
+  it('maps archived filters to backend enum values', () => {
     expect(
       buildDevicesListReq({
         searchText: '',
-        filters: { ...createDefaultDevicesFilterState(), deletedFilter: 'deleted' },
+        filters: { ...createDefaultDevicesFilterState(), archivedFilter: 'archived' },
         sorting: [],
         limit: 100,
         offset: 0,
-      }).deletedFilter,
-    ).toBe('deleted_only');
+      }).archivedFilter,
+    ).toBe('archived_only');
 
     expect(
       buildDevicesListReq({
         searchText: '',
-        filters: { ...createDefaultDevicesFilterState(), deletedFilter: 'all' },
+        filters: { ...createDefaultDevicesFilterState(), archivedFilter: 'all' },
         sorting: [],
         limit: 100,
         offset: 0,
-      }).deletedFilter,
+      }).archivedFilter,
     ).toBe('all');
   });
 
@@ -77,7 +77,7 @@ describe('devices list query mapping', () => {
       buildDevicesListReq({
         searchText: '  drone  ',
         filters: {
-          deletedFilter: 'all',
+          archivedFilter: 'all',
           unitIds: [30],
         },
         sorting: [{ id: 'name', desc: false }],
@@ -86,7 +86,7 @@ describe('devices list query mapping', () => {
       }),
     ).toMatchObject({
       filterText: 'drone',
-      deletedFilter: 'all',
+      archivedFilter: 'all',
       aorIds: null,
       unitIds: [30],
       createdBy: null,
@@ -143,7 +143,7 @@ describe('devices list query mapping', () => {
     expect(hasActiveDevicesFilters('', createDefaultDevicesFilterState())).toBe(false);
     expect(hasActiveDevicesFilters('device', createDefaultDevicesFilterState())).toBe(true);
     expect(
-      hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), deletedFilter: 'all' }),
+      hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), archivedFilter: 'all' }),
     ).toBe(true);
     expect(
       hasActiveDevicesFilters('', { ...createDefaultDevicesFilterState(), unitIds: [1] }),

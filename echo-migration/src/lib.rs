@@ -283,6 +283,7 @@ mod m20260706_153312_tag_unique_enabled_organism_label;
 mod m20260707_081900_create_devices;
 mod m20260707_132105_create_device_aor;
 mod m20260707_135501_drop_device_aor_id;
+mod m20260707_180541_rename_device_tags_archive;
 mod m20260707_095504_echo_missing_message_deleted_status;
 mod m20260707_164344_echo_missing_message_duplicate_status;
 mod m20260707_170000_signal_message_attachments_hash;
@@ -637,6 +638,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260707_081900_create_devices::Migration),
             Box::new(m20260707_132105_create_device_aor::Migration),
             Box::new(m20260707_135501_drop_device_aor_id::Migration),
+            Box::new(m20260707_180541_rename_device_tags_archive::Migration),
             Box::new(
                 m20260707_095504_echo_missing_message_deleted_status::Migration,
             ),

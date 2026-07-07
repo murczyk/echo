@@ -742,7 +742,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::device_unit_stats)
             .service(crate::devices::device_create)
             .service(crate::devices::device_update)
-            .service(crate::devices::device_delete)
+            .service(crate::devices::device_archive)
             .service(crate::devices::device_restore)
             .service(crate::devices::device_files_list)
             .service(crate::devices::device_files_create)

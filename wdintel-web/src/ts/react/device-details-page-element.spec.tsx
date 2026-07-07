@@ -31,12 +31,12 @@ beforeEach(() => {
           aor_names: [],
           unit_id: null,
           unit_name: null,
-          custom_fields: [],
+          tags: [],
           external_url: null,
-          deleted: false,
+          archived: false,
           created_at_ms: 10,
           updated_at_ms: 20,
-          deleted_at_ms: null,
+          archived_at_ms: null,
         });
       }
       if (url === '/api/device/files/list') {

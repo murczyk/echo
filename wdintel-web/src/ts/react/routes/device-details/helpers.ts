@@ -1,5 +1,5 @@
 import type {
-  DeviceDeletedFilter,
+  DeviceFileDeletedFilter,
   DeviceDetails,
   DeviceFileEntry,
   ListDeviceFilesReq,
@@ -10,7 +10,9 @@ export type DeviceFilesDeletedFilterValue = 'active' | 'deleted' | 'all';
 
 export const DEVICE_FILES_PAGE_SIZE = 50;
 
-export function mapDeviceDeletedFilter(value: DeviceFilesDeletedFilterValue): DeviceDeletedFilter {
+export function mapDeviceDeletedFilter(
+  value: DeviceFilesDeletedFilterValue,
+): DeviceFileDeletedFilter {
   switch (value) {
     case 'deleted':
       return 'deleted_only';
@@ -46,8 +48,8 @@ export function formatOptionalText(value: string | null | undefined): string {
   return text === '' ? '—' : text;
 }
 
-export function formatDeviceLifecycleLabel(deleted: boolean): string {
-  return deleted ? 'Видалено' : 'Активний';
+export function formatDeviceLifecycleLabel(archived: boolean): string {
+  return archived ? 'Архівний' : 'Активний';
 }
 
 export function formatDeviceSummaryRows(device: DeviceDetails) {
@@ -55,8 +57,8 @@ export function formatDeviceSummaryRows(device: DeviceDetails) {
     { label: 'Створив', value: device.createdBy },
     { label: 'Створено', value: formatDeviceDateTime(device.createdAtMs) },
     { label: 'Оновлено', value: formatDeviceDateTime(device.updatedAtMs) },
-    ...(device.deleted
-      ? [{ label: 'Видалено', value: formatDeviceDateTime(device.deletedAtMs) }]
+    ...(device.archived
+      ? [{ label: 'Архівовано', value: formatDeviceDateTime(device.archivedAtMs) }]
       : []),
     { label: 'Смуги', value: formatAorsLabel(device.aorIds, device.aorNames) },
     { label: 'Підрозділ', value: formatUnitLabel(device.unitId, device.unitName) },

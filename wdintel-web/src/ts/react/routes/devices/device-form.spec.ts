@@ -6,7 +6,7 @@ import {
   buildCreateDeviceReq,
   buildUpdateDevicePatch,
   createDefaultDeviceUpsertForm,
-  createDeviceCustomFieldDraft,
+  createDeviceTagDraft,
   createDeviceFileDraft,
   deviceDetailsToUpsertForm,
   hasDeviceUpdatePatchChanges,
@@ -26,12 +26,12 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
     aorNames: ['AOR'],
     unitId: 7,
     unitName: 'Unit',
-    customFields: [{ label: 'Serial', value: '123' }],
+    tags: [{ label: 'Serial', value: '123' }],
     externalUrl: 'https://example.test/device',
-    deleted: false,
+    archived: false,
     createdAtMs: 10,
     updatedAtMs: 20,
-    deletedAtMs: null,
+    archivedAtMs: null,
     ...overrides,
   };
 }
@@ -43,7 +43,7 @@ describe('device form helpers', () => {
     form.aorIds = [10, 20];
     form.unitId = null;
     form.externalUrl = '  https://example.test/beta  ';
-    form.customFields = [createDeviceCustomFieldDraft({ label: ' Serial ', value: ' 123 ' })];
+    form.tags = [createDeviceTagDraft({ label: ' Serial ', value: ' 123 ' })];
     form.files = [
       createDeviceFileDraft({
         originalName: ' scan.pdf ',
@@ -58,7 +58,7 @@ describe('device form helpers', () => {
       name: 'Device Beta',
       aorIds: [10, 20],
       unitId: null,
-      customFields: [{ label: 'Serial', value: '123' }],
+      tags: [{ label: 'Serial', value: '123' }],
       externalUrl: 'https://example.test/beta',
     });
     expect(req.files).toHaveLength(1);
@@ -67,7 +67,7 @@ describe('device form helpers', () => {
     expect(req.files?.[0].originalCreatedAtMs).toEqual(expect.any(Number));
   });
 
-  it('submits create customFields empty array and files null by default', () => {
+  it('submits create tags empty array and files null by default', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = 'Device Beta';
 
@@ -75,7 +75,7 @@ describe('device form helpers', () => {
       name: 'Device Beta',
       aorIds: [],
       unitId: null,
-      customFields: [],
+      tags: [],
       externalUrl: null,
       files: null,
     });
@@ -88,7 +88,7 @@ describe('device form helpers', () => {
     form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
-    form.customFields = [];
+    form.tags = [];
     form.files = [createDeviceFileDraft({ originalAbsolutePath: '/tmp/new.bin' })];
 
     expect(buildUpdateDevicePatch(device, form)).toEqual({
@@ -96,7 +96,7 @@ describe('device form helpers', () => {
       name: 'Device Alpha Prime',
       aorIds: [],
       unitId: null,
-      customFields: [],
+      tags: [],
       externalUrl: null,
       files: [
         {
@@ -117,20 +117,20 @@ describe('device form helpers', () => {
     expect(hasDeviceUpdatePatchChanges(patch)).toBe(false);
   });
 
-  it('validates custom fields, duplicate labels, file rows, and URL', () => {
+  it('validates tags, duplicate labels, file rows, and URL', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = 'Device';
     form.externalUrl = '/relative';
-    form.customFields = [
-      createDeviceCustomFieldDraft({ id: 'a', label: 'Serial', value: '1' }),
-      createDeviceCustomFieldDraft({ id: 'b', label: ' Serial ', value: '2' }),
+    form.tags = [
+      createDeviceTagDraft({ id: 'a', label: 'Serial', value: '1' }),
+      createDeviceTagDraft({ id: 'b', label: ' Serial ', value: '2' }),
     ];
     form.files = [createDeviceFileDraft({ id: 'f', originalCreatedAt: 'not-a-date' })];
 
     const errors = validateDeviceUpsertForm(form);
 
     expect(errors?.externalUrl).toBe('Посилання має бути абсолютним URL');
-    expect(errors?.customFieldRows.b.label).toBe('Додаткове поле з такою назвою вже існує.');
+    expect(errors?.tagRows.b.label).toBe('Тег з такою назвою вже існує.');
     expect(errors?.fileRows.f.row).toBe('Потрібна назва файлу або абсолютний шлях.');
     expect(errors?.fileRows.f.originalCreatedAt).toBe('Некоректний час файлу.');
   });
