@@ -9,8 +9,9 @@ import { usePickersTranslations } from '@mui/x-date-pickers/hooks/usePickersTran
 import dayjs from 'dayjs';
 import 'dayjs/locale/uk';
 import type { Dayjs } from 'dayjs';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
+
+import { usePowerDatePickerDraft } from './usePowerDatePickerDraft';
 
 dayjs.locale('uk');
 
@@ -120,102 +121,18 @@ export function PowerDatePicker({
   ...props
 }: PowerDatePickerProps) {
   const desktopModeProps = buildDesktopModeProps();
-  const [open, setOpen] = useState(false);
-  const [draftValue, setDraftValue] = useState<Dayjs | null>(props.value);
-  const debounceTimerRef = useRef<number | null>(null);
-  const pendingValueRef = useRef<Dayjs | null>(null);
-  const acceptingRef = useRef(false);
-  const selectedSectionsRef = useRef<BaseDatePickerProps['selectedSections']>(
-    props.selectedSections ?? null,
-  );
-
-  useEffect(() => {
-    selectedSectionsRef.current = props.selectedSections ?? null;
-  }, [props.selectedSections]);
-
-  useEffect(
-    () => () => {
-      if (debounceTimerRef.current != null) {
-        window.clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-      pendingValueRef.current = null;
-    },
-    [],
-  );
-
-  useLayoutEffect(() => {
-    if (props.value != null) return;
-    clearPendingChange();
-  }, [props.value]);
-
-  useEffect(() => {
-    setDraftValue(props.value);
-  }, [props.value]);
-
-  const isManualFieldEdit = () => selectedSectionsRef.current != null;
-
-  const clearPendingChange = () => {
-    if (debounceTimerRef.current != null) {
-      window.clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    pendingValueRef.current = null;
-  };
-
-  const flushPendingChange = () => {
-    if (debounceTimerRef.current == null || pendingValueRef.current == null) return;
-
-    window.clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = null;
-    const pendingValue = pendingValueRef.current;
-    pendingValueRef.current = null;
-    onChange(pendingValue);
-  };
-
-  const scheduleManualChange = (value: Dayjs) => {
-    clearPendingChange();
-    pendingValueRef.current = value;
-    debounceTimerRef.current = window.setTimeout(() => {
-      const pendingValue = pendingValueRef.current;
-      debounceTimerRef.current = null;
-      pendingValueRef.current = null;
-      if (pendingValue != null) {
-        onChange(pendingValue);
-      }
-    }, manualInputDebounceMs);
-  };
-
-  const handleOpen = () => {
-    const pendingValue = pendingValueRef.current;
-    flushPendingChange();
-    setDraftValue(pendingValue ?? props.value);
-    setOpen(true);
-    props.onOpen?.();
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    if (!acceptingRef.current) {
-      setDraftValue(props.value);
-    }
-    acceptingRef.current = false;
-    props.onClose?.();
-  };
-
-  const handleAccept = () => {
-    acceptingRef.current = true;
-    clearPendingChange();
-    const nextValue = draftValue;
-    setOpen(false);
-    if (nextValue == null) {
-      if (allowEmpty) onChange(null);
-      return;
-    }
-    if (!isValidPickerValue(nextValue)) return;
-    onChange(nextValue);
-    props.onAccept?.(nextValue as never, { validationError: null } as never);
-  };
+  const pickerDraft = usePowerDatePickerDraft<Dayjs | null>({
+    value: props.value,
+    allowEmpty,
+    manualInputDebounceMs,
+    selectedSections: props.selectedSections ?? null,
+    onChange,
+    onAccept: (nextValue) =>
+      props.onAccept?.(nextValue as never, { validationError: null } as never),
+    onOpen: props.onOpen,
+    onClose: props.onClose,
+    isValidValue: isValidPickerValue,
+  });
 
   return (
     <LocalizationProvider
@@ -230,37 +147,17 @@ export function PowerDatePicker({
       <DatePicker
         {...props}
         {...desktopModeProps}
-        value={draftValue}
-        open={open}
+        value={pickerDraft.draftValue}
+        open={pickerDraft.open}
         closeOnSelect={false}
-        onOpen={handleOpen}
-        onClose={handleClose}
-        onAccept={handleAccept}
+        onOpen={pickerDraft.handleOpen}
+        onClose={pickerDraft.handleClose}
+        onAccept={pickerDraft.handleAccept}
         onSelectedSectionsChange={(nextSelectedSections) => {
-          selectedSectionsRef.current = nextSelectedSections;
+          pickerDraft.handleSelectedSectionsChange(nextSelectedSections);
           props.onSelectedSectionsChange?.(nextSelectedSections);
         }}
-        onChange={(value, context) => {
-          if (context.validationError != null) return;
-          if (value == null) {
-            clearPendingChange();
-            setDraftValue(null);
-            if (allowEmpty) onChange(null);
-            return;
-          }
-          if (!isValidPickerValue(value)) return;
-          if (isManualFieldEdit()) {
-            setDraftValue(value);
-            scheduleManualChange(value);
-            return;
-          }
-          if (open) {
-            setDraftValue(value);
-            return;
-          }
-          setDraftValue(value);
-          onChange(value);
-        }}
+        onChange={pickerDraft.handleChange}
         slots={{
           ...desktopModeProps.slots,
           actionBar: PowerPickerActionBar,
@@ -272,7 +169,7 @@ export function PowerDatePicker({
             ...(slotProps?.actionBar ?? {}),
             actions: [] as Array<'clear' | 'cancel' | 'accept' | 'today'>,
             powerActions: ['close', 'accept'],
-            onRequestClose: handleClose,
+            onRequestClose: pickerDraft.handleClose,
           } as any,
         }}
       />
@@ -301,124 +198,18 @@ export function PowerDateTimePicker({
   ...props
 }: PowerDateTimePickerProps) {
   const desktopModeProps = buildDesktopModeProps();
-  const [open, setOpen] = useState(false);
-  const [draftValue, setDraftValue] = useState<Dayjs | null>(props.value);
-  const debounceTimerRef = useRef<number | null>(null);
-  const pendingValueRef = useRef<Dayjs | null>(null);
-  const acceptingRef = useRef(false);
-  const selectedSectionsRef = useRef<BaseDateTimePickerProps['selectedSections']>(
-    props.selectedSections ?? null,
-  );
-
-  useEffect(() => {
-    selectedSectionsRef.current = props.selectedSections ?? null;
-  }, [props.selectedSections]);
-
-  useEffect(
-    () => () => {
-      if (debounceTimerRef.current != null) {
-        window.clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-      pendingValueRef.current = null;
-    },
-    [],
-  );
-
-  useLayoutEffect(() => {
-    if (props.value != null) return;
-    clearPendingChange();
-  }, [props.value]);
-
-  useEffect(() => {
-    setDraftValue(props.value);
-  }, [props.value]);
-
-  const isManualFieldEdit = () => selectedSectionsRef.current != null;
-
-  const clearPendingChange = () => {
-    if (debounceTimerRef.current != null) {
-      window.clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    pendingValueRef.current = null;
-  };
-
-  const flushPendingChange = () => {
-    if (debounceTimerRef.current == null || pendingValueRef.current == null) return;
-
-    window.clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = null;
-    const pendingValue = pendingValueRef.current;
-    pendingValueRef.current = null;
-    onChange(pendingValue);
-  };
-
-  const scheduleManualChange = (value: Dayjs) => {
-    clearPendingChange();
-    pendingValueRef.current = value;
-    debounceTimerRef.current = window.setTimeout(() => {
-      const pendingValue = pendingValueRef.current;
-      debounceTimerRef.current = null;
-      pendingValueRef.current = null;
-      if (pendingValue != null) {
-        onChange(pendingValue);
-      }
-    }, manualInputDebounceMs);
-  };
-
-  const handleOpen = () => {
-    const pendingValue = pendingValueRef.current;
-    flushPendingChange();
-    setDraftValue(pendingValue ?? props.value);
-    setOpen(true);
-    props.onOpen?.();
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    if (!acceptingRef.current) {
-      setDraftValue(props.value);
-    }
-    acceptingRef.current = false;
-    props.onClose?.();
-  };
-
-  const handleAccept = () => {
-    acceptingRef.current = true;
-    clearPendingChange();
-    const nextValue = draftValue;
-    setOpen(false);
-    if (nextValue == null) {
-      if (allowEmpty) onChange(null);
-      return;
-    }
-    if (!isValidPickerValue(nextValue)) return;
-    onChange(nextValue);
-    props.onAccept?.(nextValue as never, { validationError: null } as never);
-  };
-
-  const handleChange = (value: Dayjs | null, context: { validationError: unknown }) => {
-    if (context.validationError != null) return;
-    if (value == null) {
-      clearPendingChange();
-      setDraftValue(null);
-      if (allowEmpty) onChange(null);
-      return;
-    }
-    if (!isValidPickerValue(value)) return;
-    if (isManualFieldEdit()) {
-      setDraftValue(value);
-      scheduleManualChange(value);
-      return;
-    }
-    if (open) {
-      setDraftValue(value);
-      return;
-    }
-    setDraftValue(value);
-    onChange(value);
-  };
+  const pickerDraft = usePowerDatePickerDraft<Dayjs | null>({
+    value: props.value,
+    allowEmpty,
+    manualInputDebounceMs,
+    selectedSections: props.selectedSections ?? null,
+    onChange,
+    onAccept: (nextValue) =>
+      props.onAccept?.(nextValue as never, { validationError: null } as never),
+    onOpen: props.onOpen,
+    onClose: props.onClose,
+    isValidValue: isValidPickerValue,
+  });
 
   return (
     <LocalizationProvider
@@ -433,18 +224,18 @@ export function PowerDateTimePicker({
       <DateTimePicker
         {...props}
         {...desktopModeProps}
-        value={draftValue}
-        open={open}
+        value={pickerDraft.draftValue}
+        open={pickerDraft.open}
         closeOnSelect={false}
         ampm={false}
-        onOpen={handleOpen}
-        onClose={handleClose}
-        onAccept={handleAccept}
+        onOpen={pickerDraft.handleOpen}
+        onClose={pickerDraft.handleClose}
+        onAccept={pickerDraft.handleAccept}
         onSelectedSectionsChange={(nextSelectedSections) => {
-          selectedSectionsRef.current = nextSelectedSections;
+          pickerDraft.handleSelectedSectionsChange(nextSelectedSections);
           props.onSelectedSectionsChange?.(nextSelectedSections);
         }}
-        onChange={handleChange}
+        onChange={pickerDraft.handleChange}
         slots={{
           ...desktopModeProps.slots,
           actionBar: PowerPickerActionBar,
@@ -456,7 +247,7 @@ export function PowerDateTimePicker({
             ...(slotProps?.actionBar ?? {}),
             actions: [] as Array<'clear' | 'cancel' | 'accept' | 'today'>,
             powerActions: ['close', 'accept'],
-            onRequestClose: handleClose,
+            onRequestClose: pickerDraft.handleClose,
           } as any,
         }}
       />
