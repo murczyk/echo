@@ -8,6 +8,7 @@ import type {
   DeviceCustomField,
   DeviceDetailReq,
   DeviceDetails,
+  DeviceFileEntry,
   ListDeviceFilesReq,
   ListDeviceFilesRsp,
   ListDevicesReq,
@@ -166,23 +167,23 @@ export async function createDeviceFiles(
 export async function deleteDeviceFile(
   req: DeleteDeviceFileReq,
   options?: RequestOptions,
-): Promise<DeviceDetails> {
-  const data = await postJson<DeviceDetails>(
+): Promise<DeviceFileEntry> {
+  const data = await postJson<DeviceFileEntry>(
     '/api/device/files/delete',
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<DeviceDetails>(data);
+  return transformSnakeToCamel<DeviceFileEntry>(data);
 }
 
 export async function restoreDeviceFile(
   req: RestoreDeviceFileReq,
   options?: RequestOptions,
-): Promise<DeviceDetails> {
-  const data = await postJson<DeviceDetails>(
+): Promise<DeviceFileEntry> {
+  const data = await postJson<DeviceFileEntry>(
     '/api/device/files/restore',
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<DeviceDetails>(data);
+  return transformSnakeToCamel<DeviceFileEntry>(data);
 }

@@ -1,6 +1,7 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
+import { DeviceDetailsPage } from './routes/device-details';
 
 const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,11 +45,11 @@ function DeviceDetailsPageRoot({
   return (
     <NeoMuiThemeProvider>
       <div
-        className="h-full w-full min-w-0 p-6"
+        className="h-full w-full min-w-0"
         data-auth-user-roles={authUserRoles.join(',')}
         data-device-id={deviceId}
       >
-        <h1 className="m-0 text-2xl font-semibold text-[var(--color-text)]">Пристрій</h1>
+        <DeviceDetailsPage deviceId={deviceId} authUserRoles={authUserRoles} />
       </div>
     </NeoMuiThemeProvider>
   );

@@ -250,18 +250,24 @@ describe('devices API service routes', () => {
     expect(rsp.list[0].fileId).toBe(FILE_ID);
   });
 
-  it('deleteDeviceFile uses /api/device/files/delete', async () => {
-    await deleteDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
+  it('deleteDeviceFile uses /api/device/files/delete and transforms file response', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDeviceFilesResponse().list[0]));
+
+    const rsp = await deleteDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/delete', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, file_id: FILE_ID });
+    expect(rsp.fileId).toBe(FILE_ID);
   });
 
-  it('restoreDeviceFile uses /api/device/files/restore', async () => {
-    await restoreDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
+  it('restoreDeviceFile uses /api/device/files/restore and transforms file response', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDeviceFilesResponse().list[0]));
+
+    const rsp = await restoreDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/restore', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, file_id: FILE_ID });
+    expect(rsp.fileId).toBe(FILE_ID);
   });
 });
 

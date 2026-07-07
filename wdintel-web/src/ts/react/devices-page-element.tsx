@@ -1,6 +1,7 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
+import { DevicesPage } from './routes/devices';
 
 function readAuthUserRoles(element: Element): string[] {
   const ownRaw = element.getAttribute('data-auth-user-roles') ?? '';
@@ -22,9 +23,7 @@ function splitRoles(raw: string): string[] {
 function DevicesPageRoot({ authUserRoles }: { authUserRoles: string[] }) {
   return (
     <NeoMuiThemeProvider>
-      <div className="h-full w-full min-w-0 p-6" data-auth-user-roles={authUserRoles.join(',')}>
-        <h1 className="m-0 text-2xl font-semibold text-[var(--color-text)]">Пристрої</h1>
-      </div>
+      <DevicesPage authUserRoles={authUserRoles} />
     </NeoMuiThemeProvider>
   );
 }

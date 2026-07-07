@@ -1,0 +1,451 @@
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  Link,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import type { MRT_ColumnDef, MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
+import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { useEffect, useMemo, useRef } from 'react';
+
+import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import { PowerChip } from '../../../components/PowerChip';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
+import { TableEmptyState } from '../../../components/TableEmptyState';
+import {
+  CUSTOM_STYLES,
+  FULL_HEIGHT_LOADING_ROW_COUNT,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  getPageScrollTableContainerSx,
+} from '../../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../../components/mui-customized/table/get-default-table-options';
+import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import { DeviceRowActions } from './DeviceRowActions';
+import { isSafeExternalUrl, type DeviceRowView } from '../helpers';
+
+const defaultMrtOptions = getDefaultMRTOptions<DeviceRowView>();
+const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+const resolvedPaperProps =
+  typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+
+type Props = {
+  rows: DeviceRowView[];
+  loading: boolean;
+  refreshing: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  total: number;
+  canEdit: boolean;
+  mutatingDeviceId: string | null;
+  showLifecycle: boolean;
+  hasFilters: boolean;
+  tableStateContext: ReturnType<typeof useTableStateContext>;
+  onDelete: (deviceId: string, deviceName: string) => void;
+  onRestore: (deviceId: string) => void;
+  onLoadMore: () => Promise<void>;
+  onClearFilters: () => void;
+  onTableInitialized: (table: MRT_TableInstance<DeviceRowView>) => void;
+  columnOrder: MRT_ColumnOrderState;
+};
+
+function openExternalUrl(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRowView>[] {
+  return useMemo(
+    () => [
+      {
+        id: 'name',
+        accessorKey: 'name',
+        header: 'Назва',
+        size: 260,
+        Cell: ({ row }) => (
+          <Link href={`/devices/${row.original.id}`} underline="hover" fontWeight={600}>
+            {row.original.name || '—'}
+          </Link>
+        ),
+      },
+      {
+        id: 'createdBy',
+        accessorKey: 'createdBy',
+        header: 'Створив',
+        size: 160,
+        enableSorting: false,
+      },
+      {
+        id: 'aor',
+        accessorKey: 'aorLabel',
+        header: 'Район',
+        size: 220,
+        enableSorting: false,
+        Cell: ({ cell }) => (
+          <Typography
+            variant="body2"
+            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
+          >
+            {cell.getValue<string>()}
+          </Typography>
+        ),
+      },
+      {
+        id: 'unit',
+        accessorKey: 'unitLabel',
+        header: 'Підрозділ',
+        size: 220,
+        enableSorting: false,
+        Cell: ({ cell }) => (
+          <Typography
+            variant="body2"
+            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
+          >
+            {cell.getValue<string>()}
+          </Typography>
+        ),
+      },
+      {
+        id: 'updatedAt',
+        accessorKey: 'updatedAtMs',
+        header: 'Оновлено',
+        size: 170,
+        Cell: ({ row }) => row.original.updatedAtLabel,
+      },
+      {
+        id: 'externalUrl',
+        accessorKey: 'externalUrl',
+        header: 'Посилання',
+        size: 120,
+        enableSorting: false,
+        Cell: ({ row }) => {
+          const externalUrl = row.original.externalUrl;
+          return isSafeExternalUrl(externalUrl) ? (
+            <Tooltip title="Відкрити зовнішнє посилання">
+              <IconButton
+                size="small"
+                aria-label="Відкрити зовнішнє посилання"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openExternalUrl(externalUrl);
+                }}
+              >
+                <OpenInNewIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              —
+            </Typography>
+          );
+        },
+      },
+      {
+        id: 'lifecycle',
+        accessorKey: 'deleted',
+        header: 'Стан',
+        size: 120,
+        enableSorting: false,
+        Cell: ({ row }) =>
+          showLifecycle ? (
+            row.original.deleted ? (
+              <PowerChip label="Видалено" color="error" selected />
+            ) : (
+              <PowerChip label="Активний" color="success" selected />
+            )
+          ) : null,
+      },
+      {
+        id: 'id',
+        accessorKey: 'id',
+        header: 'ID',
+        size: 280,
+        enableSorting: false,
+      },
+      {
+        id: 'createdAt',
+        accessorKey: 'createdAtMs',
+        header: 'Створено',
+        size: 170,
+        enableSorting: false,
+        Cell: ({ row }) => row.original.createdAtLabel,
+      },
+      {
+        id: 'deletedAt',
+        accessorKey: 'deletedAtMs',
+        header: 'Видалено',
+        size: 170,
+        enableSorting: false,
+        Cell: ({ row }) => row.original.deletedAtLabel,
+      },
+      {
+        id: 'aorId',
+        accessorKey: 'aorId',
+        header: 'AOR ID',
+        size: 120,
+        enableSorting: false,
+      },
+      {
+        id: 'unitId',
+        accessorKey: 'unitId',
+        header: 'Unit ID',
+        size: 120,
+        enableSorting: false,
+      },
+    ],
+    [showLifecycle],
+  );
+}
+
+export function DevicesTable({
+  rows,
+  loading,
+  refreshing,
+  loadingMore,
+  hasMore,
+  total,
+  canEdit,
+  mutatingDeviceId,
+  showLifecycle,
+  hasFilters,
+  tableStateContext,
+  onDelete,
+  onRestore,
+  onLoadMore,
+  onClearFilters,
+  onTableInitialized,
+  columnOrder,
+}: Props) {
+  const columns = useDevicesTableColumns(showLifecycle);
+  const isInitialLoading = loading && rows.length === 0;
+  const isEmptyResult = !isInitialLoading && rows.length === 0;
+  const showLoadMore = !isInitialLoading && hasMore;
+  const showTableOverlay =
+    !isInitialLoading && (loadingMore || refreshing || mutatingDeviceId !== null);
+
+  const table = useMaterialReactTable({
+    ...defaultMrtOptions,
+    data: rows,
+    columns,
+    enableColumnActions: true,
+    enableGlobalFilter: true,
+    enableColumnFilters: false,
+    enableColumnFilterModes: false,
+    enableFacetedValues: false,
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    enableSorting: true,
+    manualFiltering: true,
+    manualSorting: true,
+    enableHiding: true,
+    enableRowActions: canEdit,
+    positionActionsColumn: 'first',
+    enableRowNumbers: true,
+    initialState: {
+      columnOrder,
+      pagination: {
+        pageIndex: 0,
+        pageSize: FULL_HEIGHT_LOADING_ROW_COUNT,
+      },
+    },
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    onSortingChange: tableStateContext.onSortingChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    renderRowActions: ({ row }) => (
+      <DeviceRowActions
+        row={row.original}
+        canEdit={canEdit}
+        disabled={mutatingDeviceId !== null}
+        onDelete={onDelete}
+        onRestore={onRestore}
+      />
+    ),
+    defaultColumn: {
+      size: 180,
+      renderColumnActionsMenuItems,
+    },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        enableResizing: false,
+      },
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(1),
+        enableResizing: false,
+      },
+    },
+    renderEmptyRowsFallback: () => (
+      <TableEmptyState
+        message={hasFilters ? 'Пристрої не знайдено' : 'Пристрої ще не створені'}
+        actionLabel={hasFilters ? 'Очистити фільтри' : undefined}
+        onAction={hasFilters ? onClearFilters : undefined}
+      />
+    ),
+    muiTablePaperProps: ({ table }) => {
+      const paperProps = resolvedPaperProps({ table });
+      return {
+        ...paperProps,
+        sx: {
+          ...(paperProps as { sx?: object }).sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+          width: '100%',
+          maxWidth: '100%',
+          height: isInitialLoading || isEmptyResult ? '100%' : 'auto',
+          minHeight: isInitialLoading || isEmptyResult ? '100%' : 0,
+          minWidth: 0,
+          overflow: table.getState().isFullScreen
+            ? 'auto'
+            : showTableOverlay || isEmptyResult
+              ? 'hidden'
+              : 'auto',
+          border: 0,
+          borderRadius: 0,
+          boxShadow: 'none',
+        },
+        style: {
+          ...((paperProps as { style?: object }).style ?? {}),
+          padding: 0,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: getPageScrollTableContainerSx({
+        loading: showTableOverlay,
+        height: '100%',
+        minHeight: isInitialLoading || isEmptyResult ? '100%' : 0,
+        maxHeight: 'none',
+        idleOverflowX: 'auto',
+        idleOverflowY: isEmptyResult ? 'hidden' : 'auto',
+        idleOverflow: isEmptyResult ? 'hidden' : 'auto',
+      }),
+    },
+    muiTableHeadCellProps: {
+      sx: {
+        ...CUSTOM_STYLES.muiTableHeadCellProps.sx,
+        '& .Mui-TableHeadCell-ResizeHandle-Wrapper': {
+          mr: '-8px',
+        },
+      },
+    },
+    muiTableBodyCellProps: {
+      sx: {
+        ...CUSTOM_STYLES.muiTableBodyCellProps.sx,
+        verticalAlign: 'top',
+      },
+    },
+    muiTableBodyProps: {
+      sx: {
+        ...CUSTOM_STYLES.muiTableBodyProps.sx,
+        minHeight: isInitialLoading || isEmptyResult ? '100%' : 0,
+      },
+    },
+    muiTableProps: {
+      'aria-label': 'Пристрої',
+    },
+    state: {
+      isLoading: loading,
+      showLoadingOverlay: false,
+      showSkeletons: isInitialLoading,
+      showProgressBars: false,
+      globalFilter: tableStateContext.globalFilter,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder ?? columnOrder,
+      columnSizing: tableStateContext.columnSizing ?? {},
+      columnVisibility: {
+        ...(tableStateContext.columnVisibility ?? {}),
+        lifecycle: showLifecycle,
+      },
+    },
+  });
+
+  const onTableInitializedRef = useRef(onTableInitialized);
+
+  useEffect(() => {
+    onTableInitializedRef.current = onTableInitialized;
+  }, [onTableInitialized]);
+
+  useEffect(() => {
+    onTableInitializedRef.current(table);
+  }, [table]);
+
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid',
+        borderColor: 'var(--bs-border-color)',
+        backgroundColor: 'var(--bs-body-bg)',
+        overflow: 'hidden',
+      }}
+    >
+      <SectionLoadingOverlay
+        open={showTableOverlay}
+        ariaLabel={isInitialLoading ? 'Завантаження пристроїв' : 'Оновлення пристроїв'}
+        showSpinner={!isInitialLoading}
+      />
+      <Box
+        sx={{
+          position: 'relative',
+          minHeight: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <MaterialReactTable table={table} />
+        {showLoadMore ? (
+          <Box
+            sx={{
+              borderTop: '1px solid',
+              borderColor: 'var(--bs-border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              p: '10px',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Показано {rows.length} з {total}
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={() => void onLoadMore()}
+              disabled={loadingMore || loading || refreshing}
+              startIcon={loadingMore ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              {loadingMore ? 'Завантаження...' : 'Завантажити ще'}
+            </Button>
+          </Box>
+        ) : rows.length > 0 ? (
+          <Box
+            sx={{
+              borderTop: '1px solid',
+              borderColor: 'var(--bs-border-color)',
+              display: 'flex',
+              justifyContent: 'center',
+              p: '10px',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Показано {rows.length} з {total}
+            </Typography>
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
+  );
+}
