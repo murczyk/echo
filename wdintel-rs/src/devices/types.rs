@@ -429,3 +429,49 @@ pub struct DeleteDeviceFileReq {
     pub device_id: String,
     pub file_id: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_device_req_preserves_missing_null_and_value_fields() {
+        let req: UpdateDeviceReq = serde_json::from_value(serde_json::json!({
+            "device_id": "018f0000-0000-7000-8000-000000000000",
+            "aor_id": null,
+            "unit_id": 7,
+            "external_url": null
+        }))
+        .unwrap();
+
+        assert!(matches!(req.name, DeviceUpdateRequiredField::Missing));
+        assert!(matches!(req.aor_id, DeviceUpdateNullableField::Null));
+        assert!(matches!(req.unit_id, DeviceUpdateNullableField::Value(7)));
+        assert!(matches!(req.external_url, DeviceUpdateNullableField::Null));
+        assert!(matches!(
+            req.custom_fields,
+            DeviceUpdateRequiredField::Missing
+        ));
+    }
+
+    #[test]
+    fn update_device_req_rejects_null_required_patch_fields() {
+        let name_err =
+            serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
+                "device_id": "018f0000-0000-7000-8000-000000000000",
+                "name": null
+            }))
+            .unwrap_err();
+        assert!(name_err.to_string().contains("field cannot be null"));
+
+        let custom_fields_err =
+            serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
+                "device_id": "018f0000-0000-7000-8000-000000000000",
+                "custom_fields": null
+            }))
+            .unwrap_err();
+        assert!(custom_fields_err
+            .to_string()
+            .contains("field cannot be null"));
+    }
+}

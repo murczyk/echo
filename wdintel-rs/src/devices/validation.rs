@@ -344,3 +344,125 @@ fn validate_optional_timestamp_ms(
     }
     Ok(Some(timestamp_ms))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_form_field(err: AppError, field: &str) {
+        match err {
+            AppError::Form(errors) => assert!(errors.contains_key(field)),
+            err => panic!("unexpected error: {err:?}"),
+        }
+    }
+
+    #[test]
+    fn device_name_is_trimmed_and_required() {
+        assert_eq!(normalize_device_name("  Device  ").unwrap(), "Device");
+        assert_form_field(normalize_device_name("   ").unwrap_err(), "name");
+    }
+
+    #[test]
+    fn normalized_device_name_key_is_trimmed_and_lowercase() {
+        assert_eq!(
+            normalized_device_name_key("  Device Alpha  ").unwrap(),
+            "device alpha"
+        );
+    }
+
+    #[test]
+    fn custom_fields_are_trimmed_and_duplicate_labels_are_rejected() {
+        let fields = normalize_custom_fields(vec![DeviceCustomField {
+            label: "  Serial  ".to_string(),
+            value: "  123  ".to_string(),
+        }])
+        .unwrap();
+        assert_eq!(fields[0].label, "Serial");
+        assert_eq!(fields[0].value, "123");
+
+        let err = normalize_custom_fields(vec![
+            DeviceCustomField {
+                label: "Serial".to_string(),
+                value: "1".to_string(),
+            },
+            DeviceCustomField {
+                label: "Serial".to_string(),
+                value: "2".to_string(),
+            },
+        ])
+        .unwrap_err();
+        assert_form_field(err, "custom_fields.1.label");
+    }
+
+    #[test]
+    fn external_url_empty_becomes_none_and_relative_url_is_rejected() {
+        assert_eq!(
+            normalize_external_url(Some("   ".to_string())).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_external_url(Some(
+                "https://example.com/path".to_string()
+            ))
+            .unwrap()
+            .as_deref(),
+            Some("https://example.com/path")
+        );
+        assert_form_field(
+            normalize_external_url(Some("/relative".to_string())).unwrap_err(),
+            "external_url",
+        );
+    }
+
+    #[test]
+    fn optional_file_batch_allows_empty_and_duplicate_metadata() {
+        assert!(normalize_optional_file_create_items(Some(Vec::new()))
+            .unwrap()
+            .is_empty());
+        let files = normalize_optional_file_create_items(Some(vec![
+            CreateDeviceFileItem {
+                original_name: Some(" file.txt ".to_string()),
+                original_absolute_path: None,
+                original_created_at_ms: Some(0),
+                original_modified_at_ms: None,
+            },
+            CreateDeviceFileItem {
+                original_name: Some(" file.txt ".to_string()),
+                original_absolute_path: None,
+                original_created_at_ms: Some(0),
+                original_modified_at_ms: None,
+            },
+        ]))
+        .unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].original_name.as_deref(), Some("file.txt"));
+    }
+
+    #[test]
+    fn required_file_batch_rejects_empty_missing_metadata_and_bad_timestamp() {
+        assert_form_field(
+            normalize_required_file_create_items(Vec::new()).unwrap_err(),
+            "files",
+        );
+        assert_form_field(
+            normalize_required_file_create_items(vec![CreateDeviceFileItem {
+                original_name: Some("   ".to_string()),
+                original_absolute_path: None,
+                original_created_at_ms: None,
+                original_modified_at_ms: None,
+            }])
+            .unwrap_err(),
+            "files.0",
+        );
+        assert_form_field(
+            normalize_required_file_create_items(vec![CreateDeviceFileItem {
+                original_name: Some("file.txt".to_string()),
+                original_absolute_path: None,
+                original_created_at_ms: Some(i64::MAX),
+                original_modified_at_ms: None,
+            }])
+            .unwrap_err(),
+            "files.0.original_created_at_ms",
+        );
+    }
+}
