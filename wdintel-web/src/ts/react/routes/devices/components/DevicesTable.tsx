@@ -1,13 +1,4 @@
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  IconButton,
-  Link,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Link, Typography } from '@mui/material';
 import type { MRT_ColumnDef, MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
@@ -29,7 +20,7 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { DeviceRowActions } from './DeviceRowActions';
-import { isSafeExternalUrl, type DeviceRowView } from '../helpers';
+import type { DeviceRowView } from '../helpers';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceRowView>();
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -55,10 +46,6 @@ type Props = {
   onTableInitialized: (table: MRT_TableInstance<DeviceRowView>) => void;
   columnOrder: MRT_ColumnOrderState;
 };
-
-function openExternalUrl(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
 
 function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRowView>[] {
   return useMemo(
@@ -90,21 +77,6 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         enableSorting: false,
       },
       {
-        id: 'aor',
-        accessorKey: 'aorLabel',
-        header: 'Район',
-        size: 220,
-        enableSorting: false,
-        Cell: ({ cell }) => (
-          <Typography
-            variant="body2"
-            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
-          >
-            {cell.getValue<string>()}
-          </Typography>
-        ),
-      },
-      {
         id: 'unit',
         accessorKey: 'unitLabel',
         header: 'Підрозділ',
@@ -127,34 +99,6 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         Cell: ({ row }) => row.original.updatedAtLabel,
       },
       {
-        id: 'externalUrl',
-        accessorKey: 'externalUrl',
-        header: 'Посилання',
-        size: 120,
-        enableSorting: false,
-        Cell: ({ row }) => {
-          const externalUrl = row.original.externalUrl;
-          return isSafeExternalUrl(externalUrl) ? (
-            <Tooltip title="Відкрити зовнішнє посилання">
-              <IconButton
-                size="small"
-                aria-label="Відкрити зовнішнє посилання"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openExternalUrl(externalUrl);
-                }}
-              >
-                <OpenInNewIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              —
-            </Typography>
-          );
-        },
-      },
-      {
         id: 'lifecycle',
         accessorKey: 'deleted',
         header: 'Стан',
@@ -168,43 +112,6 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
               <PowerChip label="Активний" color="success" selected />
             )
           ) : null,
-      },
-      {
-        id: 'id',
-        accessorKey: 'id',
-        header: 'ID',
-        size: 280,
-        enableSorting: false,
-      },
-      {
-        id: 'createdAt',
-        accessorKey: 'createdAtMs',
-        header: 'Створено',
-        size: 170,
-        enableSorting: false,
-        Cell: ({ row }) => row.original.createdAtLabel,
-      },
-      {
-        id: 'deletedAt',
-        accessorKey: 'deletedAtMs',
-        header: 'Видалено',
-        size: 170,
-        enableSorting: false,
-        Cell: ({ row }) => row.original.deletedAtLabel,
-      },
-      {
-        id: 'aorId',
-        accessorKey: 'aorId',
-        header: 'AOR ID',
-        size: 120,
-        enableSorting: false,
-      },
-      {
-        id: 'unitId',
-        accessorKey: 'unitId',
-        header: 'Unit ID',
-        size: 120,
-        enableSorting: false,
       },
     ],
     [showLifecycle],

@@ -20,20 +20,7 @@ import { DevicesToolbarFilters } from './components/DevicesToolbarFilters';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: [
-    'name',
-    'createdBy',
-    'aor',
-    'unit',
-    'updatedAt',
-    'externalUrl',
-    'lifecycle',
-    'id',
-    'createdAt',
-    'deletedAt',
-    'aorId',
-    'unitId',
-  ],
+  dataColumnIds: ['name', 'createdBy', 'unit', 'updatedAt', 'lifecycle'],
   withRowNumbers: true,
   withRowActions: true,
 });
@@ -41,16 +28,9 @@ const columnOrder = buildDefaultColumnOrder({
 const defaultColumnVisibility = {
   name: true,
   createdBy: true,
-  aor: true,
   unit: true,
   updatedAt: true,
-  externalUrl: true,
   lifecycle: false,
-  id: false,
-  createdAt: false,
-  deletedAt: false,
-  aorId: false,
-  unitId: false,
 };
 
 function optionLabels(options: DeviceLookupOption[], ids: number[]) {

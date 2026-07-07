@@ -111,6 +111,30 @@ afterEach(() => {
 });
 
 describe('DevicesTable', () => {
+  it('exposes only approved list data columns', () => {
+    renderTable();
+    const columns = capturedOptions?.columns as Array<{ id: string; header: string }>;
+
+    expect(columns.map((column) => column.id)).toEqual([
+      'name',
+      'createdBy',
+      'unit',
+      'updatedAt',
+      'lifecycle',
+    ]);
+    expect(columns.map((column) => column.header)).not.toEqual(
+      expect.arrayContaining([
+        'ID',
+        'Район',
+        'Посилання',
+        'Створено',
+        'Видалено',
+        'AOR ID',
+        'Unit ID',
+      ]),
+    );
+  });
+
   it('navigates to detail through SPA history from the name link', () => {
     const row = renderTable();
     const columns = capturedOptions?.columns as Array<{
