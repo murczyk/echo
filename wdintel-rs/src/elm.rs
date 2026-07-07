@@ -1118,7 +1118,20 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 }
 
 fn patch_generated_elm(output: String) -> String {
-    patch_backward_compatible_decoders(patch_generated_elm_names(output))
+    trim_trailing_whitespace(patch_backward_compatible_decoders(
+        patch_generated_elm_names(output),
+    ))
+}
+
+fn trim_trailing_whitespace(output: String) -> String {
+    let mut output = output
+        .trim_end()
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    output.push('\n');
+    output
 }
 
 fn patch_generated_elm_names(output: String) -> String {

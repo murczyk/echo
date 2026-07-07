@@ -1582,6 +1582,157 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
+export type DeviceCustomField = {
+  label: string;
+  value: string;
+};
+
+export type DeviceDeletedFilter =
+  | 'active_only'
+  | 'deleted_only'
+  | 'all'
+;
+
+export type DeviceListSortBy =
+  | 'name_asc'
+  | 'name_desc'
+  | 'updated_at_asc'
+  | 'updated_at_desc'
+;
+
+export type DeviceListItem = {
+  id: string;
+  name: string;
+  createdBy: string;
+  aorId: number | null;
+  aorName: string | null;
+  unitId: number | null;
+  unitName: string | null;
+  externalUrl: string | null;
+  deleted: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+  deletedAtMs: number | null;
+};
+
+export type DeviceDetails = {
+  id: string;
+  name: string;
+  createdBy: string;
+  aorId: number | null;
+  aorName: string | null;
+  unitId: number | null;
+  unitName: string | null;
+  customFields: Array<DeviceCustomField>;
+  externalUrl: string | null;
+  deleted: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+  deletedAtMs: number | null;
+};
+
+export type DeviceFileEntry = {
+  fileId: string;
+  deviceId: string;
+  originalName: string | null;
+  originalAbsolutePath: string | null;
+  originalCreatedAtMs: number | null;
+  originalModifiedAtMs: number | null;
+  deleted: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+  deletedAtMs: number | null;
+};
+
+export type ListDevicesReq = {
+  filterText: string | null;
+  deletedFilter: DeviceDeletedFilter | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  createdBy: string | null;
+  ids: Array<string> | null;
+  limit: number | null;
+  offset: number | null;
+  sortBy: Array<DeviceListSortBy>;
+};
+
+export type ListDevicesRsp = {
+  list: Array<DeviceListItem>;
+  total: number;
+  hasMore: boolean;
+};
+
+export type DeviceDetailReq = {
+  deviceId: string;
+  includeDeleted: boolean | null;
+};
+
+export type CreateDeviceReq = {
+  name: string;
+  aorId: number | null;
+  unitId: number | null;
+  customFields: Array<DeviceCustomField>;
+  externalUrl: string | null;
+  files: Array<CreateDeviceFileItem> | null;
+};
+
+export type UpdateDeviceReq = {
+  deviceId: string;
+  name: string | null;
+  aorId: number | null;
+  unitId: number | null;
+  customFields: Array<DeviceCustomField> | null;
+  externalUrl: string | null;
+  files: Array<CreateDeviceFileItem> | null;
+};
+
+export type DeleteDeviceReq = {
+  deviceId: string;
+};
+
+export type RestoreDeviceReq = {
+  deviceId: string;
+};
+
+export type ListDeviceFilesReq = {
+  deviceId: string;
+  deletedFilter: DeviceDeletedFilter | null;
+  limit: number | null;
+  offset: number | null;
+};
+
+export type ListDeviceFilesRsp = {
+  list: Array<DeviceFileEntry>;
+  total: number;
+  hasMore: boolean;
+};
+
+export type CreateDeviceFileItem = {
+  originalName: string | null;
+  originalAbsolutePath: string | null;
+  originalCreatedAtMs: number | null;
+  originalModifiedAtMs: number | null;
+};
+
+export type CreateDeviceFilesReq = {
+  deviceId: string;
+  files: Array<CreateDeviceFileItem>;
+};
+
+export type CreateDeviceFilesRsp = {
+  list: Array<DeviceFileEntry>;
+};
+
+export type RestoreDeviceFileReq = {
+  deviceId: string;
+  fileId: string;
+};
+
+export type DeleteDeviceFileReq = {
+  deviceId: string;
+  fileId: string;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;
