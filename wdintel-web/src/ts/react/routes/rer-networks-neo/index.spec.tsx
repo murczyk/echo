@@ -11,6 +11,7 @@ import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
+  HOVER_POPOVER_CLOSE_DELAY_MS,
   RerNetworksNeoPage,
   getLocationParts,
   useHoverPopoverState,
@@ -873,10 +874,17 @@ it('keeps the hover popover open when moving from anchor to popper', () => {
 
   act(() => {
     latest?.onHoverAnchorPointerLeave();
+  });
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS - 1);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
     latest?.onHoverPopperPointerEnter();
   });
   act(() => {
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(1);
   });
   expect(latest?.hoverPopover?.kind).toBe('freq');
 
@@ -884,7 +892,149 @@ it('keeps the hover popover open when moving from anchor to popper', () => {
     latest?.onHoverPopperPointerLeave();
   });
   act(() => {
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+  });
+  expect(latest?.hoverPopover).toBeNull();
+
+  act(() => {
+    harnessRoot.unmount();
+  });
+  harnessContainer.remove();
+  vi.useRealTimers();
+});
+
+it('keeps the hover popover open when scrolling inside the popper and closes on outside scroll', () => {
+  let latest: ReturnType<typeof useHoverPopoverState> | null = null;
+
+  function Harness() {
+    latest = useHoverPopoverState();
+    return null;
+  }
+
+  const harnessContainer = document.createElement('div');
+  document.body.appendChild(harnessContainer);
+  const harnessRoot = createRoot(harnessContainer);
+  const anchor = document.createElement('div');
+  const row = buildNetwork(1) as never;
+  const popper = document.createElement('div');
+  popper.setAttribute('data-network-hover-popper', 'true');
+  const popperScrollTarget = document.createElement('div');
+  popper.appendChild(popperScrollTarget);
+  document.body.appendChild(popper);
+  const outsideScrollTarget = document.createElement('div');
+  document.body.appendChild(outsideScrollTarget);
+
+  act(() => {
+    harnessRoot.render(createElement(Harness));
+  });
+
+  act(() => {
+    latest?.onHoverAnchorPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    popperScrollTarget.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    outsideScrollTarget.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  expect(latest?.hoverPopover).toBeNull();
+
+  act(() => {
+    harnessRoot.unmount();
+  });
+  harnessContainer.remove();
+  popper.remove();
+  outsideScrollTarget.remove();
+});
+
+it('delays closing on outside pointer move and cancels when entering the popper', () => {
+  vi.useFakeTimers();
+  let latest: ReturnType<typeof useHoverPopoverState> | null = null;
+
+  function Harness() {
+    latest = useHoverPopoverState();
+    return null;
+  }
+
+  const harnessContainer = document.createElement('div');
+  document.body.appendChild(harnessContainer);
+  const harnessRoot = createRoot(harnessContainer);
+  const anchor = document.createElement('div');
+  const row = buildNetwork(1) as never;
+
+  act(() => {
+    harnessRoot.render(createElement(Harness));
+  });
+
+  act(() => {
+    latest?.onHoverAnchorPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverOutsidePointerMove();
+  });
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS - 1);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverPopperPointerEnter();
+  });
+  act(() => {
+    vi.advanceTimersByTime(1);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverPopperPointerLeave();
+  });
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
+  });
+  expect(latest?.hoverPopover).toBeNull();
+
+  act(() => {
+    harnessRoot.unmount();
+  });
+  harnessContainer.remove();
+  vi.useRealTimers();
+});
+
+it('closes after the outside pointer move delay when the popper is not entered', () => {
+  vi.useFakeTimers();
+  let latest: ReturnType<typeof useHoverPopoverState> | null = null;
+
+  function Harness() {
+    latest = useHoverPopoverState();
+    return null;
+  }
+
+  const harnessContainer = document.createElement('div');
+  document.body.appendChild(harnessContainer);
+  const harnessRoot = createRoot(harnessContainer);
+  const anchor = document.createElement('div');
+  const row = buildNetwork(1) as never;
+
+  act(() => {
+    harnessRoot.render(createElement(Harness));
+  });
+
+  act(() => {
+    latest?.onHoverAnchorPointerEnter(anchor, row);
+  });
+  expect(latest?.hoverPopover?.kind).toBe('freq');
+
+  act(() => {
+    latest?.onHoverOutsidePointerMove();
+  });
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPOVER_CLOSE_DELAY_MS);
   });
   expect(latest?.hoverPopover).toBeNull();
 

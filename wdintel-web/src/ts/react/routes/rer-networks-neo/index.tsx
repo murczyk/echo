@@ -18,6 +18,7 @@ import {
   NetworkHoverPopovers,
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
+  HOVER_POPOVER_CLOSE_DELAY_MS,
   useHoverPopoverState,
 } from './components/NetworkHoverPopovers';
 import { NetworkPageHeaderActions } from './components/NetworksPageHeader';
@@ -36,6 +37,7 @@ const columnOrder = buildDefaultColumnOrder({
 export {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
+  HOVER_POPOVER_CLOSE_DELAY_MS,
   getLocationParts,
   useHoverPopoverState,
 };
@@ -59,6 +61,7 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
     onHoverAnchorPointerLeave,
     onHoverPopperPointerEnter,
     onHoverPopperPointerLeave,
+    onHoverOutsidePointerMove,
     closeHoverPopover,
   } = useHoverPopoverState();
 
@@ -154,11 +157,9 @@ function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string
       if (!target) return;
       if (target.closest('[data-network-hover-anchor="true"], [data-network-hover-popper="true"]'))
         return;
-      if (hoverPopover !== null) {
-        closeHoverPopover();
-      }
+      onHoverOutsidePointerMove();
     },
-    [closeHoverPopover, hoverPopover],
+    [onHoverOutsidePointerMove],
   );
 
   return (

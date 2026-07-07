@@ -15,6 +15,7 @@ export const FREQUENCY_HOVER_POPPER_MODIFIERS: Array<{
   { name: 'flip', options: { fallbackPlacements: ['bottom-start', 'top-end', 'bottom-end'] } },
   { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
 ];
+export const HOVER_POPOVER_CLOSE_DELAY_MS = 100;
 
 export type HoverPopoverState = {
   kind: 'freq' | 'location';
@@ -227,7 +228,7 @@ export function useHoverPopoverState() {
     hoverPopoverCloseTimeoutRef.current = window.setTimeout(() => {
       closeIfOutsideHoverZone();
       hoverPopoverCloseTimeoutRef.current = null;
-    }, 80);
+    }, HOVER_POPOVER_CLOSE_DELAY_MS);
   }, [cancelHoverPopoverClose, closeIfOutsideHoverZone]);
 
   const openFreqPopover = useCallback(
@@ -286,10 +287,26 @@ export function useHoverPopoverState() {
     scheduleCloseHoverPopover();
   }, [scheduleCloseHoverPopover]);
 
+  const onHoverOutsidePointerMove = useCallback(() => {
+    if (hoverPopover === null) {
+      return;
+    }
+
+    hoverAnchorInsideRef.current = false;
+    hoverPopperInsideRef.current = false;
+    scheduleCloseHoverPopover();
+  }, [hoverPopover, scheduleCloseHoverPopover]);
+
   useEffect(() => {
     if (hoverPopover === null) return;
 
-    const closeOnScroll = () => closeHoverPopover();
+    const closeOnScroll = (event: Event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-network-hover-popper="true"]')) {
+        return;
+      }
+      closeHoverPopover();
+    };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         closeHoverPopover();
@@ -314,6 +331,7 @@ export function useHoverPopoverState() {
     onHoverAnchorPointerLeave,
     onHoverPopperPointerEnter,
     onHoverPopperPointerLeave,
+    onHoverOutsidePointerMove,
     closeHoverPopover,
   };
 }
