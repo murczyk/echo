@@ -266,11 +266,7 @@ export function DeviceDetailsPage({
           >
             {leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'auto' }}>
-                <DeviceDetailsLeftPanel
-                  device={null}
-                  loading={page.loading}
-                  onOpenExternalUrl={openExternalUrl}
-                />
+                <DeviceDetailsLeftPanel device={null} loading={page.loading} />
               </Box>
             ) : null}
             <PageLoadingState minHeight="100%" />
@@ -291,11 +287,7 @@ export function DeviceDetailsPage({
           >
             {leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'auto' }}>
-                <DeviceDetailsLeftPanel
-                  device={device}
-                  loading={page.loading}
-                  onOpenExternalUrl={openExternalUrl}
-                />
+                <DeviceDetailsLeftPanel device={device} loading={page.loading} />
               </Box>
             ) : null}
             <DeviceDetailsTabPanel

@@ -1,25 +1,13 @@
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import {
-  Box,
-  Button,
-  Chip,
-  Divider,
-  Link,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Box, Chip, Divider, Link, Paper, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import type { DeviceDetails } from '../../../../../Bindings';
 import { formatDeviceDateTime, isSafeExternalUrl } from '../../devices/helpers';
-import { formatDeviceLifecycleLabel, formatOptionalText, formatUnitLabel } from '../helpers';
+import { formatDeviceLifecycleLabel, formatUnitLabel } from '../helpers';
 
 type Props = {
   device: DeviceDetails | null;
   loading: boolean;
-  onOpenExternalUrl: (url: string) => void;
 };
 
 type FieldConfig = {
@@ -150,56 +138,33 @@ function DeviceAorsValue({ device }: { device: DeviceDetails }) {
   );
 }
 
-function DeviceExternalUrlValue({
-  externalUrl,
-  onOpenExternalUrl,
-}: {
-  externalUrl: string | null;
-  onOpenExternalUrl: (url: string) => void;
-}) {
-  const url = externalUrl?.trim() ?? '';
-  const canOpenExternalUrl = isSafeExternalUrl(url);
+function DeviceNameValue({ device }: { device: DeviceDetails }) {
+  const externalUrl = device.externalUrl?.trim() ?? '';
 
-  if (!canOpenExternalUrl) {
-    return <DeviceTextValue muted={!url}>{formatOptionalText(externalUrl)}</DeviceTextValue>;
+  if (!isSafeExternalUrl(externalUrl)) {
+    return <DeviceTextValue>{device.name}</DeviceTextValue>;
   }
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-      <Link
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        underline="hover"
-        variant="body2"
-        sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-      >
-        {url}
-      </Link>
-      <Button
-        size="small"
-        startIcon={<OpenInNewIcon fontSize="small" />}
-        onClick={() => onOpenExternalUrl(url)}
-        sx={{ flexShrink: 0 }}
-      >
-        Відкрити
-      </Button>
-    </Stack>
+    <Link
+      href={externalUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      underline="hover"
+      variant="body2"
+      sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+    >
+      {device.name}
+    </Link>
   );
 }
 
-function buildMainFields({
-  device,
-  onOpenExternalUrl,
-}: {
-  device: DeviceDetails;
-  onOpenExternalUrl: (url: string) => void;
-}): FieldConfig[] {
+function buildMainFields(device: DeviceDetails): FieldConfig[] {
   return [
     {
       key: 'name',
       label: 'Назва',
-      value: <DeviceTextValue>{device.name}</DeviceTextValue>,
+      value: <DeviceNameValue device={device} />,
     },
     {
       key: 'lifecycle',
@@ -228,16 +193,6 @@ function buildMainFields({
       key: 'unit',
       label: 'Підрозділ',
       value: <DeviceTextValue>{formatUnitLabel(device.unitId, device.unitName)}</DeviceTextValue>,
-    },
-    {
-      key: 'externalUrl',
-      label: 'Зовнішнє посилання',
-      value: (
-        <DeviceExternalUrlValue
-          externalUrl={device.externalUrl}
-          onOpenExternalUrl={onOpenExternalUrl}
-        />
-      ),
     },
   ];
 }
@@ -290,16 +245,10 @@ function DeviceTagsSection({ device }: { device: DeviceDetails }) {
   );
 }
 
-function DeviceLeftPanelContent({
-  device,
-  onOpenExternalUrl,
-}: {
-  device: DeviceDetails;
-  onOpenExternalUrl: (url: string) => void;
-}) {
+function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
   return (
     <>
-      <DeviceSection title="Основне" fields={buildMainFields({ device, onOpenExternalUrl })} />
+      <DeviceSection title="Основне" fields={buildMainFields(device)} />
       <Divider />
       <DeviceSection title="Додатково" fields={buildAdditionalFields(device)} />
       <Divider />
@@ -308,7 +257,7 @@ function DeviceLeftPanelContent({
   );
 }
 
-export function DeviceDetailsLeftPanel({ device, loading, onOpenExternalUrl }: Props) {
+export function DeviceDetailsLeftPanel({ device, loading }: Props) {
   return (
     <Paper
       variant="outlined"
@@ -338,7 +287,7 @@ export function DeviceDetailsLeftPanel({ device, loading, onOpenExternalUrl }: P
         {loading && device === null ? (
           <DeviceDetailsLeftPanelSkeleton />
         ) : device ? (
-          <DeviceLeftPanelContent device={device} onOpenExternalUrl={onOpenExternalUrl} />
+          <DeviceLeftPanelContent device={device} />
         ) : null}
       </Box>
     </Paper>

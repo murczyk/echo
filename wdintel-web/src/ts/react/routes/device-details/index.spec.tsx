@@ -167,9 +167,12 @@ describe('DeviceDetailsPage layout', () => {
   it('renders main information in the left panel and exactly two main tabs', () => {
     renderPage();
 
-    const leftPanelText = container?.querySelector(
-      '[data-testid="device-details-left-panel"]',
-    )?.textContent;
+    const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
+    const leftPanelText = leftPanel?.textContent;
+    const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
+      (element) => element.textContent === 'Device Alpha',
+    );
+
     expect(leftPanelText).toContain('Device Alpha');
     expect(leftPanelText).toContain('Активний');
     expect(leftPanelText).toContain('Північ');
@@ -179,6 +182,9 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Теги');
     expect(leftPanelText).toContain('IP');
     expect(leftPanelText).toContain('10.0.0.1');
+    expect(leftPanelText).not.toContain('Зовнішнє посилання');
+    expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
+    expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
     expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
       (leftPanelText ?? '').indexOf('Теги'),
     );
