@@ -34,10 +34,12 @@ vi.mock('@mui/material', () => ({
     label,
     value,
     onChange,
+    helperText,
   }: {
     label?: ReactNode;
     value?: string | number;
     onChange?: (event: { target: { value: string } }) => void;
+    helperText?: ReactNode;
   }) => (
     <label>
       {label}
@@ -45,6 +47,7 @@ vi.mock('@mui/material', () => ({
         value={value ?? ''}
         onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
       />
+      {helperText}
     </label>
   ),
   ToggleButtonGroup: ({
@@ -398,6 +401,46 @@ describe('OrganismTagsSection', () => {
         ownerOrganismId: 7,
       }),
     );
+  });
+
+  it('rejects a non-numeric order value instead of silently saving it as null', async () => {
+    view = renderSection(7);
+    listOrganismTagsMock.mockResolvedValueOnce([]);
+
+    await act(async () => {
+      view.root.render(<OrganismTagsSection organismId={7} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(view.container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Додати тег'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const inputs = Array.from(view.container.querySelectorAll('input'));
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+
+    await act(async () => {
+      setter?.call(inputs[0], 'новий');
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      setter?.call(inputs[1], 'e');
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await act(async () => {
+      Array.from(view.container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Зберегти'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createOrganismTagMock).not.toHaveBeenCalled();
+    expect(view.container.textContent).toContain('Некоректне число');
   });
 
   it('disables an organism tag through the update endpoint and moves it out of the active view', async () => {

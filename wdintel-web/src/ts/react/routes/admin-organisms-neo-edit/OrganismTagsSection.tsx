@@ -89,6 +89,13 @@ function formFromTag(tag: TagAdmin): TagFormState {
   };
 }
 
+function parseOrdValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -152,6 +159,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [labelTouched, setLabelTouched] = useState(false);
   const [view, setView] = useState<TagsView>('active');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const isLabelValid = form.label.trim().length > 0;
   const showLabelError = labelTouched && !isLabelValid;
@@ -191,6 +199,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     setEditingTag(null);
     setForm(emptyTagForm);
     setLabelTouched(false);
+    setFormErrors({});
     setError(null);
     setDialogOpen(true);
   }, []);
@@ -199,6 +208,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     setEditingTag(tag);
     setForm(formFromTag(tag));
     setLabelTouched(false);
+    setFormErrors({});
     setError(null);
     setDialogOpen(true);
   }, []);
@@ -211,10 +221,17 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
   const handleSave = useCallback(async () => {
     if (organismId == null) return;
 
+    const ordValue = parseOrdValue(form.ord);
+    if (form.ord.trim() && ordValue === null) {
+      setFormErrors({ ord: 'Некоректне число' });
+      return;
+    }
+    setFormErrors({});
+
     const req: TagUpsertReq = {
       label: form.label.trim(),
       extra: form.extra,
-      ord: form.ord === '' ? null : Number(form.ord),
+      ord: ordValue,
       enabled: form.enabled,
       isPalitra: form.isPalitra,
       ownerOrganismId: organismId,
@@ -480,7 +497,8 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
                   setForm((current) => ({ ...current, ord: event.target.value }))
                 }
                 type="number"
-                helperText=" "
+                error={Boolean(formErrors.ord)}
+                helperText={formErrors.ord || ' '}
                 sx={{ width: 112, flexShrink: 0 }}
               />
             </Stack>
