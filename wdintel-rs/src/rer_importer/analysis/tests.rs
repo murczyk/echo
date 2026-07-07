@@ -763,8 +763,10 @@ fn network_counts(networks: Vec<AnalysisStatsNetwork>) -> BTreeMap<i64, i64> {
         .collect()
 }
 
-fn sender_counts(senders: Vec<AnalysisStatsSender>) -> BTreeMap<String, i64> {
-    senders
+fn sender_counts(
+    stats_senders: Vec<AnalysisStatsSender>,
+) -> BTreeMap<String, i64> {
+    stats_senders
         .into_iter()
         .map(|sender| (sender.uuid, sender.count))
         .collect()
@@ -851,11 +853,11 @@ async fn fetch_sender_counts_for_req(
 ) -> Result<BTreeMap<String, i64>, AppError> {
     let (login, master_keys) = analysis_login_and_master_keys(env).await?;
     let env = Data::from(env.clone());
-    let senders =
+    let stats_senders =
         stats::fetch_senders_for_login(req, &login, &env, master_keys)
             .await
             .context(h!())?;
-    Ok(sender_counts(senders))
+    Ok(sender_counts(stats_senders))
 }
 
 async fn fetch_aor_counts_for_req(
