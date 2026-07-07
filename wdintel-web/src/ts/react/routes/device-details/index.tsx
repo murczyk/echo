@@ -16,20 +16,23 @@ import {
   Typography,
 } from '@mui/material';
 
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { navigateWithinSpa } from '../../utils/browser';
+import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
 import { isSafeExternalUrl } from '../devices/helpers';
+import { DeviceFileBatchCreateDialog } from './components/DeviceFileBatchCreateDialog';
 import { DeviceFilesSection } from './components/DeviceFilesSection';
 import {
   DeviceCustomFieldsSection,
   DeviceRegistrySection,
   DeviceSummarySection,
 } from './components/DeviceInfoSections';
-import { formatDeviceLifecycleLabel } from './helpers';
+import { fileDisplayName, formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
 import { useDeviceFiles } from './use-device-files';
 
@@ -143,7 +146,7 @@ export function DeviceDetailsPage({
             <Button
               variant="outlined"
               onClick={() => void page.reload()}
-              disabled={page.loading || page.refreshing || page.mutating}
+              disabled={page.loading || page.refreshing || page.mutating || page.editSubmitting}
               startIcon={page.refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
             >
               Оновити
@@ -151,8 +154,8 @@ export function DeviceDetailsPage({
             {showEditAction ? (
               <Button
                 variant="outlined"
-                onClick={page.showEditNotice}
-                disabled={page.mutating}
+                onClick={page.openEditDrawer}
+                disabled={page.mutating || page.editSubmitting}
                 startIcon={<EditIcon />}
               >
                 Редагувати
@@ -162,8 +165,8 @@ export function DeviceDetailsPage({
               <Button
                 color="error"
                 variant="outlined"
-                onClick={() => void page.deleteCurrentDevice()}
-                disabled={page.mutating}
+                onClick={page.openDeleteDialog}
+                disabled={page.mutating || page.editSubmitting}
                 startIcon={page.mutating ? <CircularProgress size={16} /> : <DeleteIcon />}
               >
                 Видалити
@@ -174,7 +177,7 @@ export function DeviceDetailsPage({
                 color="primary"
                 variant="contained"
                 onClick={() => void page.restoreCurrentDevice()}
-                disabled={page.mutating}
+                disabled={page.mutating || page.editSubmitting}
                 startIcon={page.mutating ? <CircularProgress size={16} /> : <RestoreIcon />}
               >
                 Відновити
@@ -224,7 +227,7 @@ export function DeviceDetailsPage({
               parentDeleted={device.deleted}
               hasFilters={files.hasFilters}
               onDeletedFilterChange={files.setDeletedFilter}
-              onCreate={files.showCreateNotice}
+              onCreate={files.openCreateDialog}
               onReload={files.reload}
               onLoadMore={files.loadMore}
               onDelete={files.deleteFile}
@@ -239,6 +242,60 @@ export function DeviceDetailsPage({
           showSpinner={false}
         />
       </Box>
+
+      <DeviceUpsertDrawer
+        open={page.editForm !== null}
+        mode="edit"
+        form={page.editForm}
+        saving={page.editSubmitting}
+        error={page.editError}
+        serverFieldErrors={page.editServerFieldErrors}
+        referenceLoading={page.lookupsLoading}
+        aorOptions={page.aorOptions}
+        unitOptions={page.unitOptions}
+        hasChanges={page.editHasChanges}
+        onClose={page.closeEditDrawer}
+        onChange={page.setEditForm}
+        onSave={(form) => {
+          void page.saveEditDevice(form).then((saved) => {
+            if (saved) void files.reload();
+          });
+        }}
+      />
+
+      <ConfirmDangerDialog
+        open={page.deleteDialogOpen}
+        onClose={page.closeDeleteDialog}
+        onConfirm={() => void page.confirmDeleteCurrentDevice()}
+        title="Видалити пристрій"
+        description={`Ви дійсно хочете видалити пристрій «${device?.name ?? ''}»?`}
+        submitting={page.mutating}
+        disabled={device === null}
+      />
+
+      <DeviceFileBatchCreateDialog
+        open={files.createDialogOpen}
+        rows={files.createRows}
+        error={files.createError}
+        serverFieldErrors={files.createServerFieldErrors}
+        submitting={files.creatingFiles}
+        onRowsChange={files.setCreateRows}
+        onClose={files.closeCreateDialog}
+        onSubmit={(rows) => void files.submitCreateFiles(rows)}
+      />
+
+      <ConfirmDangerDialog
+        open={files.deleteDialogFile !== null}
+        onClose={files.closeDeleteDialog}
+        onConfirm={() => void files.confirmDeleteFile()}
+        title="Видалити файл"
+        description={`Ви дійсно хочете видалити файл «${
+          files.deleteDialogFile ? fileDisplayName(files.deleteDialogFile) : ''
+        }»?`}
+        confirmLabel="Видалити файл"
+        submitting={files.mutatingFileId !== null}
+        disabled={files.deleteDialogFile === null}
+      />
     </Box>
   );
 }

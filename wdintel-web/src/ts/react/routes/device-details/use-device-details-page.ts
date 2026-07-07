@@ -1,9 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { DeviceDetails } from '../../../../Bindings';
-import { deleteDevice, getDeviceDetail, restoreDevice } from '../../services/api/devices';
+import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
+import { listAors } from '../../services/api/aor';
+import {
+  deleteDevice,
+  getDeviceDetail,
+  restoreDevice,
+  updateDevice,
+} from '../../services/api/devices';
+import { getUnitsList } from '../../services/api/units';
 import { hasRole } from '../../utils/roles';
-import { formatDeviceErrorMessage } from '../devices/helpers';
+import {
+  buildUpdateDevicePatch,
+  deviceDetailsToUpsertForm,
+  hasDeviceUpdatePatchChanges,
+  parseDeviceServerFieldErrors,
+  validateDeviceUpsertForm,
+  type DeviceServerFieldErrors,
+  type DeviceUpsertForm,
+} from '../devices/device-form';
+import {
+  formatDeviceErrorMessage,
+  resolveAorOptions,
+  resolveUnitOptions,
+} from '../devices/helpers';
 
 export type DeviceDetailsUiMessage = {
   kind: 'success' | 'error' | 'warning' | 'info';
@@ -30,14 +50,34 @@ export function useDeviceDetailsPage({
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<DeviceDetailsUiMessage>(null);
   const [mutating, setMutating] = useState(false);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const [lookupsLoaded, setLookupsLoaded] = useState(false);
+  const [editForm, setEditForm] = useState<DeviceUpsertForm | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  const aorOptions = useMemo(() => resolveAorOptions(aors), [aors]);
+  const unitOptions = useMemo(() => resolveUnitOptions(units), [units]);
+  const editHasChanges = useMemo(() => {
+    if (device === null || editForm === null) return false;
+    return hasDeviceUpdatePatchChanges(buildUpdateDevicePatch(device, editForm));
+  }, [device, editForm]);
 
   useEffect(() => {
     setDevice(null);
     setLoading(true);
     setStatus(null);
+    setEditForm(null);
+    setEditError(null);
+    setEditServerFieldErrors({});
+    setDeleteDialogOpen(false);
     abortRef.current?.abort();
   }, [deviceId]);
 
@@ -96,20 +136,102 @@ export function useDeviceDetailsPage({
     [device, loadDevice],
   );
 
-  const showEditNotice = useCallback(() => {
-    if (!permissions.canEdit || !device || device.deleted) return;
-    setStatus({ kind: 'info', text: 'Форма редагування пристрою буде додана на Етапі 17.' });
-  }, [device, permissions.canEdit]);
+  const loadLookups = useCallback(async () => {
+    if (!permissions.canEdit || lookupsLoaded || lookupsLoading) return;
 
-  const deleteCurrentDevice = useCallback(async () => {
+    setLookupsLoading(true);
+    try {
+      const [nextAors, nextUnits] = await Promise.all([listAors({ sortBy: null }), getUnitsList()]);
+      setAors(nextAors);
+      setUnits(nextUnits);
+      setLookupsLoaded(true);
+    } catch (error) {
+      setEditError(`Помилка завантаження довідників: ${formatDeviceErrorMessage(error)}`);
+    } finally {
+      setLookupsLoading(false);
+    }
+  }, [lookupsLoaded, lookupsLoading, permissions.canEdit]);
+
+  const openEditDrawer = useCallback(() => {
+    if (!permissions.canEdit || !device || device.deleted) return;
+    setEditForm(deviceDetailsToUpsertForm(device));
+    setEditError(null);
+    setEditServerFieldErrors({});
+    void loadLookups();
+  }, [device, loadLookups, permissions.canEdit]);
+
+  const closeEditDrawer = useCallback(() => {
+    if (editSubmitting) return;
+    setEditForm(null);
+    setEditError(null);
+    setEditServerFieldErrors({});
+  }, [editSubmitting]);
+
+  const changeEditForm = useCallback((form: DeviceUpsertForm | null) => {
+    setEditForm(form);
+    setEditError(null);
+    setEditServerFieldErrors({});
+  }, []);
+
+  const saveEditDevice = useCallback(
+    async (form: DeviceUpsertForm): Promise<boolean> => {
+      if (!permissions.canEdit || !device || device.deleted || editSubmitting) return false;
+      if (validateDeviceUpsertForm(form) !== null) {
+        setEditError('Перевірте поля форми.');
+        return false;
+      }
+
+      const patch = buildUpdateDevicePatch(device, form);
+      if (!hasDeviceUpdatePatchChanges(patch)) {
+        setEditError('Немає змін для збереження.');
+        return false;
+      }
+
+      setEditSubmitting(true);
+      setEditError(null);
+      setEditServerFieldErrors({});
+      setStatus(null);
+      try {
+        const nextDevice = await updateDevice(patch);
+        setDevice(nextDevice);
+        setEditForm(null);
+        setStatus({ kind: 'success', text: 'Пристрій оновлено.' });
+        return true;
+      } catch (error) {
+        const fieldErrors = parseDeviceServerFieldErrors(error);
+        setEditServerFieldErrors(fieldErrors);
+        setEditError(
+          Object.keys(fieldErrors).length > 0
+            ? null
+            : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
+        );
+        return false;
+      } finally {
+        setEditSubmitting(false);
+      }
+    },
+    [device, editSubmitting, permissions.canEdit],
+  );
+
+  const openDeleteDialog = useCallback(() => {
     if (!permissions.canEdit || !device || device.deleted || mutating) return;
-    if (!window.confirm(`Видалити пристрій «${device.name}»?`)) return;
+    setDeleteDialogOpen(true);
+  }, [device, mutating, permissions.canEdit]);
+
+  const closeDeleteDialog = useCallback(() => {
+    if (mutating) return;
+    setDeleteDialogOpen(false);
+  }, [mutating]);
+
+  const confirmDeleteCurrentDevice = useCallback(async () => {
+    if (!permissions.canEdit || !device || device.deleted || mutating) return;
 
     setMutating(true);
     setStatus(null);
     try {
       const nextDevice = await deleteDevice({ deviceId });
       setDevice(nextDevice);
+      setDeleteDialogOpen(false);
       setStatus({ kind: 'success', text: 'Пристрій видалено.' });
     } catch (error) {
       setStatus({
@@ -149,10 +271,24 @@ export function useDeviceDetailsPage({
     refreshing,
     status,
     mutating,
+    aorOptions,
+    unitOptions,
+    lookupsLoading,
+    editForm,
+    editError,
+    editServerFieldErrors,
+    editSubmitting,
+    editHasChanges,
+    deleteDialogOpen,
     initialLoadFailed,
     reload,
-    showEditNotice,
-    deleteCurrentDevice,
+    openEditDrawer,
+    closeEditDrawer,
+    setEditForm: changeEditForm,
+    saveEditDevice,
+    openDeleteDialog,
+    closeDeleteDialog,
+    confirmDeleteCurrentDevice,
     restoreCurrentDevice,
   };
 }

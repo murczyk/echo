@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { DeviceFileEntry } from '../../../../Bindings';
-import { deleteDeviceFile, listDeviceFiles, restoreDeviceFile } from '../../services/api/devices';
+import {
+  createDeviceFiles,
+  deleteDeviceFile,
+  listDeviceFiles,
+  restoreDeviceFile,
+} from '../../services/api/devices';
+import {
+  buildCreateDeviceFilesReq,
+  createDeviceFileDraft,
+  parseDeviceServerFieldErrors,
+  validateDeviceFileRows,
+  type DeviceFileDraft,
+  type DeviceServerFieldErrors,
+} from '../devices/device-form';
 import { formatDeviceErrorMessage } from '../devices/helpers';
 import {
   DEVICE_FILES_PAGE_SIZE,
   buildDeviceFilesListReq,
-  fileDisplayName,
   hasActiveFileFilters,
   type DeviceFilesDeletedFilterValue,
 } from './helpers';
@@ -37,6 +49,14 @@ export function useDeviceFiles({
   const [loadingMore, setLoadingMore] = useState(false);
   const [status, setStatus] = useState<DeviceDetailsUiMessage>(null);
   const [mutatingFileId, setMutatingFileId] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createRows, setCreateRows] = useState<DeviceFileDraft[]>([]);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createServerFieldErrors, setCreateServerFieldErrors] = useState<DeviceServerFieldErrors>(
+    {},
+  );
+  const [creatingFiles, setCreatingFiles] = useState(false);
+  const [deleteDialogFile, setDeleteDialogFile] = useState<DeviceFileEntry | null>(null);
 
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -51,6 +71,12 @@ export function useDeviceFiles({
   useEffect(() => {
     latestDeletedFilterRef.current = deletedFilter;
   }, [deletedFilter]);
+
+  useEffect(() => {
+    if (!parentDeleted) return;
+    setCreateDialogOpen(false);
+    setDeleteDialogFile(null);
+  }, [parentDeleted]);
 
   const loadFiles = useCallback(
     async ({ append, preserveData }: { append: boolean; preserveData: boolean }) => {
@@ -139,34 +165,99 @@ export function useDeviceFiles({
     return false;
   }, [parentDeleted]);
 
-  const showCreateNotice = useCallback(() => {
+  const openCreateDialog = useCallback(() => {
     if (!canEdit || !assertParentActive()) return;
-    setStatus({ kind: 'info', text: 'Форма додавання файлів буде додана на Етапі 17.' });
+    setCreateRows([createDeviceFileDraft()]);
+    setCreateError(null);
+    setCreateServerFieldErrors({});
+    setCreateDialogOpen(true);
   }, [assertParentActive, canEdit]);
 
-  const deleteFile = useCallback(
-    async (file: DeviceFileEntry) => {
-      if (!canEdit || mutatingFileId !== null || !assertParentActive()) return;
-      if (!window.confirm(`Видалити файл «${fileDisplayName(file)}»?`)) return;
+  const closeCreateDialog = useCallback(() => {
+    if (creatingFiles) return;
+    setCreateDialogOpen(false);
+    setCreateRows([]);
+    setCreateError(null);
+    setCreateServerFieldErrors({});
+  }, [creatingFiles]);
 
-      setMutatingFileId(file.fileId);
+  const changeCreateRows = useCallback((rows: DeviceFileDraft[]) => {
+    setCreateRows(rows);
+    setCreateError(null);
+    setCreateServerFieldErrors({});
+  }, []);
+
+  const submitCreateFiles = useCallback(
+    async (rows: DeviceFileDraft[]) => {
+      if (!canEdit || creatingFiles || !assertParentActive()) return;
+      const validation = validateDeviceFileRows(rows, { rejectEmpty: true });
+      if (validation.files !== undefined || Object.keys(validation.fileRows).length > 0) {
+        setCreateError('Перевірте поля форми.');
+        return;
+      }
+
+      setCreatingFiles(true);
+      setCreateError(null);
+      setCreateServerFieldErrors({});
       setStatus(null);
       try {
-        const nextFile = await deleteDeviceFile({ deviceId, fileId: file.fileId });
-        setFiles((current) => replaceFile(current, nextFile));
+        const rsp = await createDeviceFiles(buildCreateDeviceFilesReq(deviceId, rows));
+        setFiles((current) => [...rsp.list, ...current]);
+        setTotal((current) => current + rsp.list.length);
         await reload();
-        setStatus({ kind: 'success', text: 'Файл видалено.' });
+        setCreateDialogOpen(false);
+        setCreateRows([]);
+        setStatus({ kind: 'success', text: 'Файли додано.' });
       } catch (error) {
-        setStatus({
-          kind: 'error',
-          text: `Помилка видалення файлу: ${formatDeviceErrorMessage(error)}`,
-        });
+        const fieldErrors = parseDeviceServerFieldErrors(error);
+        setCreateServerFieldErrors(fieldErrors);
+        setCreateError(
+          Object.keys(fieldErrors).length > 0
+            ? null
+            : `Помилка додавання файлів: ${formatDeviceErrorMessage(error)}`,
+        );
       } finally {
-        setMutatingFileId(null);
+        setCreatingFiles(false);
       }
     },
-    [assertParentActive, canEdit, deviceId, mutatingFileId, reload],
+    [assertParentActive, canEdit, creatingFiles, deviceId, reload],
   );
+
+  const deleteFile = useCallback(
+    (file: DeviceFileEntry) => {
+      if (!canEdit || mutatingFileId !== null || !assertParentActive()) return;
+      setDeleteDialogFile(file);
+    },
+    [assertParentActive, canEdit, mutatingFileId],
+  );
+
+  const closeDeleteDialog = useCallback(() => {
+    if (mutatingFileId !== null) return;
+    setDeleteDialogFile(null);
+  }, [mutatingFileId]);
+
+  const confirmDeleteFile = useCallback(async () => {
+    if (!canEdit || mutatingFileId !== null || deleteDialogFile === null || !assertParentActive()) {
+      return;
+    }
+
+    setMutatingFileId(deleteDialogFile.fileId);
+    setStatus(null);
+    try {
+      const nextFile = await deleteDeviceFile({ deviceId, fileId: deleteDialogFile.fileId });
+      setFiles((current) => replaceFile(current, nextFile));
+      await reload();
+      setDeleteDialogFile(null);
+      setStatus({ kind: 'success', text: 'Файл видалено.' });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: `Помилка видалення файлу: ${formatDeviceErrorMessage(error)}`,
+      });
+    } finally {
+      setMutatingFileId(null);
+    }
+  }, [assertParentActive, canEdit, deleteDialogFile, deviceId, mutatingFileId, reload]);
 
   const restoreFile = useCallback(
     async (file: DeviceFileEntry) => {
@@ -204,13 +295,24 @@ export function useDeviceFiles({
     loadingMore,
     status,
     mutatingFileId,
+    createDialogOpen,
+    createRows,
+    createError,
+    createServerFieldErrors,
+    creatingFiles,
+    deleteDialogFile,
     hasFilters,
     initialLoadFailed,
     setDeletedFilter,
     reload,
     loadMore,
-    showCreateNotice,
+    openCreateDialog,
+    closeCreateDialog,
+    setCreateRows: changeCreateRows,
+    submitCreateFiles,
     deleteFile,
+    closeDeleteDialog,
+    confirmDeleteFile,
     restoreFile,
   };
 }

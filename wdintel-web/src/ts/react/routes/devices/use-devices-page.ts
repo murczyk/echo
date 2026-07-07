@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, DeviceListItem, Unit } from '../../../../Bindings';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { createDevice, deleteDevice, restoreDevice } from '../../services/api/devices';
+import { navigateWithinSpa } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import {
   buildDeviceRowView,
@@ -16,6 +17,14 @@ import {
   type DeviceLookupOption,
   type DevicesFilterState,
 } from './helpers';
+import {
+  buildCreateDeviceReq,
+  createDefaultDeviceUpsertForm,
+  parseDeviceServerFieldErrors,
+  validateDeviceUpsertForm,
+  type DeviceServerFieldErrors,
+  type DeviceUpsertForm,
+} from './device-form';
 import {
   createDevicesLoadActions,
   type DevicesQuerySnapshot,
@@ -46,10 +55,15 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [status, setStatus] = useState<DevicesUiMessage>(null);
   const [bootstrapLoaded, setBootstrapLoaded] = useState(false);
   const [mutatingDeviceId, setMutatingDeviceId] = useState<string | null>(null);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createName, setCreateName] = useState('');
+  const [createForm, setCreateForm] = useState<DeviceUpsertForm | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createServerFieldErrors, setCreateServerFieldErrors] = useState<DeviceServerFieldErrors>(
+    {},
+  );
   const [creating, setCreating] = useState(false);
+  const [deleteDialogDevice, setDeleteDialogDevice] = useState<{ id: string; name: string } | null>(
+    null,
+  );
 
   const requestSeqRef = useRef(0);
   const bootstrapLoadedRef = useRef(false);
@@ -158,45 +172,53 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
   const openCreateDialog = useCallback(() => {
     if (!permissions.canEdit) return;
-    setCreateName('');
+    setCreateForm(createDefaultDeviceUpsertForm());
     setCreateError(null);
-    setCreateDialogOpen(true);
+    setCreateServerFieldErrors({});
   }, [permissions.canEdit]);
 
   const closeCreateDialog = useCallback(() => {
     if (creating) return;
-    setCreateDialogOpen(false);
+    setCreateForm(null);
     setCreateError(null);
+    setCreateServerFieldErrors({});
   }, [creating]);
 
-  const submitCreateDialog = useCallback(async () => {
-    if (!permissions.canEdit || creating) return;
-
-    const name = createName.trim();
-    if (name === '') {
-      setCreateError('Вкажіть назву пристрою.');
-      return;
-    }
-
-    setCreating(true);
+  const changeCreateForm = useCallback((form: DeviceUpsertForm | null) => {
+    setCreateForm(form);
     setCreateError(null);
-    setStatus(null);
-    try {
-      const device = await createDevice({
-        name,
-        aorId: null,
-        unitId: null,
-        customFields: [],
-        externalUrl: null,
-        files: null,
-      });
-      window.location.assign(`/devices/${device.id}`);
-    } catch (error) {
-      setCreateError(`Помилка створення пристрою: ${formatDeviceErrorMessage(error)}`);
-    } finally {
-      setCreating(false);
-    }
-  }, [createName, creating, permissions.canEdit]);
+    setCreateServerFieldErrors({});
+  }, []);
+
+  const submitCreateDialog = useCallback(
+    async (form: DeviceUpsertForm) => {
+      if (!permissions.canEdit || creating) return;
+      if (validateDeviceUpsertForm(form) !== null) {
+        setCreateError('Перевірте поля форми.');
+        return;
+      }
+
+      setCreating(true);
+      setCreateError(null);
+      setCreateServerFieldErrors({});
+      setStatus(null);
+      try {
+        const device = await createDevice(buildCreateDeviceReq(form));
+        navigateWithinSpa(`/devices/${device.id}`);
+      } catch (error) {
+        const fieldErrors = parseDeviceServerFieldErrors(error);
+        setCreateServerFieldErrors(fieldErrors);
+        setCreateError(
+          Object.keys(fieldErrors).length > 0
+            ? null
+            : `Помилка створення пристрою: ${formatDeviceErrorMessage(error)}`,
+        );
+      } finally {
+        setCreating(false);
+      }
+    },
+    [creating, permissions.canEdit],
+  );
 
   const refreshAfterLifecycleMutation = useCallback(
     async (device: DeviceListItem) => {
@@ -211,27 +233,37 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   );
 
   const deleteRow = useCallback(
-    async (deviceId: string, deviceName: string) => {
+    (deviceId: string, deviceName: string) => {
       if (!permissions.canEdit || mutatingDeviceId !== null) return;
-      if (!window.confirm(`Видалити пристрій «${deviceName}»?`)) return;
-
-      setMutatingDeviceId(deviceId);
-      setStatus(null);
-      try {
-        const device = await deleteDevice({ deviceId });
-        await refreshAfterLifecycleMutation(deviceDetailsToListItem(device));
-        setStatus({ kind: 'success', text: 'Пристрій видалено.' });
-      } catch (error) {
-        setStatus({
-          kind: 'error',
-          text: `Помилка видалення пристрою: ${formatDeviceErrorMessage(error)}`,
-        });
-      } finally {
-        setMutatingDeviceId(null);
-      }
+      setDeleteDialogDevice({ id: deviceId, name: deviceName });
     },
-    [mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation],
+    [mutatingDeviceId, permissions.canEdit],
   );
+
+  const closeDeleteDialog = useCallback(() => {
+    if (mutatingDeviceId !== null) return;
+    setDeleteDialogDevice(null);
+  }, [mutatingDeviceId]);
+
+  const confirmDeleteRow = useCallback(async () => {
+    if (!permissions.canEdit || deleteDialogDevice === null || mutatingDeviceId !== null) return;
+
+    setMutatingDeviceId(deleteDialogDevice.id);
+    setStatus(null);
+    try {
+      const device = await deleteDevice({ deviceId: deleteDialogDevice.id });
+      await refreshAfterLifecycleMutation(deviceDetailsToListItem(device));
+      setDeleteDialogDevice(null);
+      setStatus({ kind: 'success', text: 'Пристрій видалено.' });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: `Помилка видалення пристрою: ${formatDeviceErrorMessage(error)}`,
+      });
+    } finally {
+      setMutatingDeviceId(null);
+    }
+  }, [deleteDialogDevice, mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation]);
 
   const restoreRow = useCallback(
     async (deviceId: string) => {
@@ -271,9 +303,11 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     status,
     bootstrapLoaded,
     creating,
-    createDialogOpen,
-    createName,
+    createDialogOpen: createForm !== null,
+    createForm,
     createError,
+    createServerFieldErrors,
+    deleteDialogDevice,
     mutatingDeviceId,
     aorOptions,
     unitOptions,
@@ -289,9 +323,11 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     loadMore,
     openCreateDialog,
     closeCreateDialog,
-    setCreateName,
+    setCreateForm: changeCreateForm,
     submitCreateDialog,
     deleteRow,
+    closeDeleteDialog,
+    confirmDeleteRow,
     restoreRow,
   };
 }

@@ -3,6 +3,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
 
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -13,7 +14,7 @@ import {
 } from '../../components/mui-customized/table/table-state-provider';
 import type { ActiveFilterDescriptor } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
 import { DEFAULT_DEVICES_SORTING, type DeviceLookupOption } from './helpers';
-import { CreateDeviceDialog } from './components/CreateDeviceDialog';
+import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
 import { DevicesTable } from './components/DevicesTable';
 import { DevicesToolbarFilters } from './components/DevicesToolbarFilters';
 import { useDevicesPage } from './use-devices-page';
@@ -185,14 +186,31 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
         ) : null}
 
-        <CreateDeviceDialog
+        <DeviceUpsertDrawer
           open={page.createDialogOpen}
-          name={page.createName}
+          mode="create"
+          form={page.createForm}
+          saving={page.creating}
           error={page.createError}
-          submitting={page.creating}
-          onNameChange={page.setCreateName}
+          serverFieldErrors={page.createServerFieldErrors}
+          referenceLoading={
+            page.loading && page.aorOptions.length === 0 && page.unitOptions.length === 0
+          }
+          aorOptions={page.aorOptions}
+          unitOptions={page.unitOptions}
           onClose={page.closeCreateDialog}
-          onSubmit={page.submitCreateDialog}
+          onChange={page.setCreateForm}
+          onSave={(form) => void page.submitCreateDialog(form)}
+        />
+
+        <ConfirmDangerDialog
+          open={page.deleteDialogDevice !== null}
+          onClose={page.closeDeleteDialog}
+          onConfirm={() => void page.confirmDeleteRow()}
+          title="Видалити пристрій"
+          description={`Ви дійсно хочете видалити пристрій «${page.deleteDialogDevice?.name ?? ''}»?`}
+          submitting={page.mutatingDeviceId !== null}
+          disabled={page.deleteDialogDevice === null}
         />
 
         {page.initialLoadFailed ? (
