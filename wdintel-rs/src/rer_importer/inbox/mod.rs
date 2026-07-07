@@ -15,7 +15,7 @@ use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use chrono::*;
-use echo_migration::{Expr, PostgresQueryBuilder};
+use echo_migration::{Expr, Order, PostgresQueryBuilder};
 use itertools::Itertools;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -138,6 +138,174 @@ fn get_inbox_filter_active_range(
     }
 
     Ok(None)
+}
+
+#[derive(FromQueryResult)]
+struct InboxItemContextRow {
+    id: i64,
+    datetime: Option<NaiveDateTime>,
+}
+
+#[derive(FromQueryResult)]
+struct InboxItemContextGroupRow {
+    group_master_key: Option<String>,
+}
+
+#[post("/api/rer-importer/inbox-item-context")]
+async fn inbox_item_context(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxItemContextReq>,
+) -> Result<Json<InboxItemContextRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let Some(message_uid) =
+        normalized_optional_string(Some(req.message_uid.as_str()))
+    else {
+        return Ok(Json(InboxItemContextRsp::default()));
+    };
+
+    let res = inbox_item_context_bl(&env.dbx, &login, &message_uid).await?;
+    Ok(Json(res))
+}
+
+async fn inbox_item_context_bl(
+    dbx: &DatabaseConnection,
+    login: &str,
+    message_uid: &str,
+) -> Result<InboxItemContextRsp, AppError> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    if allowed_groups.is_empty() {
+        return Ok(InboxItemContextRsp::default());
+    }
+
+    let mut rows =
+        load_inbox_item_context_rows(dbx, &allowed_groups, message_uid).await?;
+    if rows.is_empty() {
+        return Ok(InboxItemContextRsp::default());
+    }
+    rows.sort_by_key(|row| row.id);
+
+    let sigint_inbox_item_ids =
+        rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let group_master_keys = load_inbox_item_context_group_keys(
+        dbx,
+        &allowed_groups,
+        &sigint_inbox_item_ids,
+    )
+    .await?;
+
+    Ok(build_inbox_item_context_rsp(
+        rows,
+        group_master_keys,
+        sigint_inbox_item_ids,
+    ))
+}
+
+async fn load_inbox_item_context_rows(
+    dbx: &DatabaseConnection,
+    allowed_groups: &[String],
+    message_uid: &str,
+) -> Result<Vec<InboxItemContextRow>, AppError> {
+    Ok(SignalMessage::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .select_only()
+        .distinct()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::MessageUid.eq(message_uid))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.to_vec()),
+        )
+        .into_model::<InboxItemContextRow>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn load_inbox_item_context_group_keys(
+    dbx: &DatabaseConnection,
+    allowed_groups: &[String],
+    sigint_inbox_item_ids: &[i64],
+) -> Result<Vec<String>, AppError> {
+    let original_group_order = Expr::cust(
+        r#"case
+            when "signal_message"."datasource_group_id" = "signal_message_group"."datasource_group_id"
+              or "signal_message_group"."group_master_key" = (
+                select "datasource_group"."group_master_key"
+                from "datasource_group"
+                where "datasource_group"."id" = "signal_message"."datasource_group_id"
+              )
+            then 0
+            else 1
+        end"#,
+    );
+    let rows = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalMessage.def(),
+        )
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .eq_any(sigint_inbox_item_ids.to_vec()),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.to_vec()),
+        )
+        .order_by(original_group_order, Order::Asc)
+        .order_by_asc(signal_message_group::Column::SignalMessageId)
+        .order_by_asc(signal_message_group::Column::Id)
+        .into_model::<InboxItemContextGroupRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| row.group_master_key)
+        .filter(|key| seen.insert(key.clone()))
+        .collect())
+}
+
+fn build_inbox_item_context_rsp(
+    rows: Vec<InboxItemContextRow>,
+    group_master_keys: Vec<String>,
+    sigint_inbox_item_ids: Vec<i64>,
+) -> InboxItemContextRsp {
+    let datetimes = rows
+        .iter()
+        .filter_map(|row| row.datetime.as_ref().copied())
+        .collect::<Vec<_>>();
+    let earliest = datetimes.iter().min();
+    let latest = datetimes.iter().max();
+    InboxItemContextRsp {
+        group_master_keys,
+        sigint_inbox_item_ids,
+        since_ts: earliest.map(|ts| {
+            (*ts - Duration::minutes(15)).and_utc().timestamp_millis()
+        }),
+        till_ts: latest.map(|ts| {
+            (*ts + Duration::minutes(15)).and_utc().timestamp_millis()
+        }),
+    }
 }
 
 #[post("/api/rer-importer/messages-by-id")]

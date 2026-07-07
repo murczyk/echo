@@ -2964,6 +2964,36 @@ messageIdsRspEncoder struct =
         ]
 
 
+type alias InboxItemContextReq =
+    { messageUid : String
+    }
+
+
+inboxItemContextReqEncoder : InboxItemContextReq -> Json.Encode.Value
+inboxItemContextReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_uid", (Json.Encode.string) struct.messageUid )
+        ]
+
+
+type alias InboxItemContextRsp =
+    { groupMasterKeys : List (String)
+    , sigintInboxItemIds : List (Int)
+    , sinceTs : Maybe (Int)
+    , tillTs : Maybe (Int)
+    }
+
+
+inboxItemContextRspEncoder : InboxItemContextRsp -> Json.Encode.Value
+inboxItemContextRspEncoder struct =
+    Json.Encode.object
+        [ ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
+        , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
+        , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
+        ]
+
+
 type alias InboxByGroupDigestRsp =
     { statsPerMinute : List (InboxGroupStatsByMinute)
     }
@@ -14236,5 +14266,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

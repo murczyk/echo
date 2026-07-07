@@ -410,6 +410,33 @@ pub struct InboxMessagesReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct InboxItemContextReq {
+    pub message_uid: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
+)]
+pub struct InboxItemContextRsp {
+    pub group_master_keys: Vec<String>,
+    pub sigint_inbox_item_ids: Vec<i64>,
+    #[serde(rename = "sinceTs")]
+    pub since_ts: Option<i64>,
+    #[serde(rename = "tillTs")]
+    pub till_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct InboxMessagesRsp {
     pub inbox_items: Vec<(i64, InboxMessage)>,
     pub callsigns: Vec<CallsignInfoRes>,
