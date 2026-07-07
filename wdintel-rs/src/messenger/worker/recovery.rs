@@ -1581,6 +1581,91 @@ mod tests {
         assert_caption_media_duplicate_is_marked_duplicate(None).await;
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn scheduled_media_only_does_not_match_empty_null_hash_message() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group =
+            mk_echo_group(&env.dbx, account.id, "media-only-duplicate-group")
+                .await;
+        let cursor = old_ts();
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let mut inbox = inbox.into_active_model();
+        inbox.body = Set(String::new());
+        let inbox = inbox.update(&env.dbx).await.unwrap();
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"new-payload").unwrap();
+        mk_echo_attachment(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            &file.path().display().to_string(),
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let now = Utc::now().naive_utc();
+        signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(String::new())),
+            datasource_group_id: Set(Some(datasource_group_id)),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            sender: Set(None),
+            format: Set(None),
+            deleted: Set(false),
+            external_id: Set(None),
+            echo_inbox_message_id: Set(None),
+            message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
+            operator_tags: Set(None),
+            attachments_hash: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_system_settings(
+            &env.dbx,
+            cursor + chrono::TimeDelta::minutes(2),
+            false,
+        )
+        .await;
+        let missing_message =
+            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
+                .await
+                .unwrap();
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
+            .await
+            .is_some());
+        let missing_message =
+            echo_missing_message::Entity::find_by_id(missing_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
+        assert_eq!(missing_message.error, None);
+    }
+
     async fn assert_caption_media_duplicate_is_marked_duplicate(
         existing_attachments_hash: Option<String>,
     ) {

@@ -470,30 +470,30 @@ pub async fn find_duplicate_of(
     chars.next_back();
     let alt_body = chars.as_str().to_string();
     let body_filter = match attachments_hash {
-        Some(attachments_hash) => Condition::any()
-            .add(
-                Condition::all()
-                    .add(signal_message::Column::Body.eq(body))
-                    .add(
-                        signal_message::Column::AttachmentsHash
-                            .eq(attachments_hash),
-                    ),
-            )
-            .add(
-                Condition::all()
-                    .add(signal_message::Column::Body.eq(body))
-                    .add(signal_message::Column::AttachmentsHash.is_null()),
-            )
-            .add(
-                Condition::all()
-                    .add(signal_message::Column::Body.eq(body_for_dedupe))
-                    .add(signal_message::Column::AttachmentsHash.is_null()),
-            )
-            .add(
-                Condition::all()
-                    .add(signal_message::Column::Body.eq(alt_body))
-                    .add(signal_message::Column::AttachmentsHash.is_null()),
-            ),
+        Some(attachments_hash) => {
+            let same_hash_body = Condition::all()
+                .add(signal_message::Column::Body.eq(body))
+                .add(
+                    signal_message::Column::AttachmentsHash
+                        .eq(attachments_hash),
+                );
+            let legacy_caption_body = Condition::all()
+                .add(signal_message::Column::Body.eq(body))
+                .add(signal_message::Column::AttachmentsHash.is_null());
+            let legacy_marker_body = Condition::all()
+                .add(signal_message::Column::Body.eq(body_for_dedupe))
+                .add(signal_message::Column::AttachmentsHash.is_null());
+            let legacy_alt_body = Condition::all()
+                .add(signal_message::Column::Body.eq(alt_body))
+                .add(signal_message::Column::AttachmentsHash.is_null());
+            let body_filter = Condition::any().add(same_hash_body);
+            let body_filter = if body.trim().is_empty() {
+                body_filter
+            } else {
+                body_filter.add(legacy_caption_body)
+            };
+            body_filter.add(legacy_marker_body).add(legacy_alt_body)
+        }
         None => Condition::any()
             .add(
                 Condition::all()
