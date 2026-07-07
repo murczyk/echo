@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Dialog, DialogContent, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -28,6 +28,7 @@ import {
 } from './MessageCardImagePreviewActions';
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
+import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-clipboard';
 import {
   blurActivePreviewDialogElement,
   getMessageCardPreviewCounterSx,
@@ -59,7 +60,11 @@ export function MessageImagePreviewDialog({
   const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, imageCount);
   const currentImage = imageHrefs[resolvedIndex] ?? null;
   const currentHref = currentImage?.href ?? '';
+  const currentPreviewKey = `${resolvedIndex}:${currentHref}`;
   const [failedHref, setFailedHref] = useState<string | null>(null);
+  const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
+  const [loadedImageKey, setLoadedImageKey] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [zoom, setZoom] = useState(ZOOM_MIN);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
@@ -69,6 +74,7 @@ export function MessageImagePreviewDialog({
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const stagePaletteByHrefRef = useRef(new Map<string, StagePalette>());
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
   const zoomRef = useRef(zoom);
   const dragRef = useRef<DragState | null>(null);
@@ -115,7 +121,11 @@ export function MessageImagePreviewDialog({
     setPan({ x: 0, y: 0 });
     setFailedHref(null);
     setImageSize(null);
+    setLoadedImage(null);
+    setLoadedImageKey(null);
+    setCopyStatus('idle');
     setInfoAnchorEl(null);
+    copyRequestKeyRef.current = null;
   }, [removePointerListeners]);
 
   const resetPreviewState = useCallback(() => {
@@ -203,7 +213,7 @@ export function MessageImagePreviewDialog({
 
   useEffect(() => {
     resetImageState();
-  }, [currentHref, resetImageState]);
+  }, [currentHref, resolvedIndex, resetImageState]);
 
   useEffect(() => {
     if (!open) {
@@ -296,15 +306,33 @@ export function MessageImagePreviewDialog({
     });
   };
 
-  const handleImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
-    const image = event.currentTarget;
+  const handleImageLoad = (image: HTMLImageElement) => {
     setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
     setFailedHref(null);
+    setLoadedImage(image);
+    setLoadedImageKey(currentPreviewKey);
     sampleStagePalette(image);
   };
 
   const handleImageError = () => {
     setFailedHref(currentHref);
+    setLoadedImage(null);
+  };
+
+  const handleCopyImage = async () => {
+    if (loadedImage === null || loadedImageKey !== currentPreviewKey) return;
+
+    setCopyStatus('copying');
+    copyRequestKeyRef.current = currentPreviewKey;
+
+    try {
+      await copyImageToClipboard(loadedImage, currentHrefRef.current);
+      if (copyRequestKeyRef.current !== currentPreviewKey) return;
+      setCopyStatus('copied');
+    } catch {
+      if (copyRequestKeyRef.current !== currentPreviewKey) return;
+      setCopyStatus('error');
+    }
   };
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -443,8 +471,13 @@ export function MessageImagePreviewDialog({
           currentHref={currentHref}
           downloadFileName={downloadFileName}
           hasCarousel={hasCarousel}
+          copyStatus={copyStatus}
+          canCopyImage={
+            loadedImageKey === currentPreviewKey && canCopyImageToClipboard(loadedImage)
+          }
           resolvedIndex={resolvedIndex}
           imageCount={imageCount}
+          onCopyImage={handleCopyImage}
           onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
           onGoToNext={() => goToIndex(resolvedIndex + 1)}
           onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}

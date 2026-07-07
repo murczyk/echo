@@ -1,3 +1,4 @@
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
@@ -149,8 +150,11 @@ export function MessageCardImagePreviewActions({
   currentHref,
   downloadFileName,
   hasCarousel,
+  copyStatus,
+  canCopyImage,
   resolvedIndex,
   imageCount,
+  onCopyImage,
   onGoToPrevious,
   onGoToNext,
   onInfoClick,
@@ -159,13 +163,37 @@ export function MessageCardImagePreviewActions({
   currentHref: string;
   downloadFileName: string;
   hasCarousel: boolean;
+  copyStatus: 'idle' | 'copying' | 'copied' | 'error';
+  canCopyImage: boolean;
   resolvedIndex: number;
   imageCount: number;
+  onCopyImage: () => void;
   onGoToPrevious: () => void;
   onGoToNext: () => void;
   onInfoClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onClose: () => void;
 }) {
+  const copyTooltip =
+    copyStatus === 'copying'
+      ? 'Копіювання...'
+      : canCopyImage
+        ? 'Скопіювати зображення'
+        : 'Копіювання зображень недоступне';
+  const copyLabel =
+    copyStatus === 'copying'
+      ? 'Копіювання...'
+      : copyStatus === 'copied'
+        ? 'Зображення скопійовано'
+        : copyStatus === 'error'
+          ? 'Не вдалося скопіювати зображення'
+          : '';
+  const copyLabelColor =
+    copyStatus === 'copied'
+      ? 'success.main'
+      : copyStatus === 'error'
+        ? 'error.main'
+        : 'text.secondary';
+
   return (
     <DialogActions
       sx={{
@@ -195,6 +223,19 @@ export function MessageCardImagePreviewActions({
             <InfoIcon />
           </IconButton>
         </Tooltip>
+        <Tooltip title={copyTooltip} enterDelay={300}>
+          <span>
+            <IconButton
+              aria-label="Скопіювати зображення"
+              size="small"
+              onClick={onCopyImage}
+              disabled={!canCopyImage || copyStatus === 'copying'}
+              sx={{ color: 'text.secondary' }}
+            >
+              <ContentCopyIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Відкрити в новій вкладці" enterDelay={300}>
           <IconButton
             component="a"
@@ -220,6 +261,20 @@ export function MessageCardImagePreviewActions({
             <DownloadIcon />
           </IconButton>
         </Tooltip>
+        {copyLabel !== '' ? (
+          <Typography
+            variant="caption"
+            aria-live="polite"
+            sx={{
+              alignSelf: 'center',
+              ml: 0.75,
+              color: copyLabelColor,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {copyLabel}
+          </Typography>
+        ) : null}
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         {hasCarousel && (

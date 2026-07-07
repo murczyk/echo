@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { forwardRef } from 'react';
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { MessageCardImage } from './message-card-image-utils';
@@ -26,7 +26,7 @@ export const MessageCardImagePreviewStage = forwardRef<
     imageSize: StageSize | null;
     stageBackground: string;
     isFullscreen: boolean;
-    onImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void;
+    onImageLoad: (image: HTMLImageElement) => void;
     onImageError: () => void;
     onStartPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
     onStopPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -92,7 +92,7 @@ export const MessageCardImagePreviewStage = forwardRef<
         data-image-preview-natural-width={imageSize?.width ?? ''}
         data-image-preview-natural-height={imageSize?.height ?? ''}
         draggable={false}
-        onLoad={onImageLoad}
+        onLoad={(event: SyntheticEvent<HTMLImageElement>) => onImageLoad(event.currentTarget)}
         onError={onImageError}
         decoding="async"
         sx={{
