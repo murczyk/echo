@@ -10,8 +10,9 @@ use crate::message_queue::{
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::missing_message::{
     load_scheduled_missing_messages, mark_missing_message_deleted,
-    mark_missing_message_error, mark_missing_message_resolved,
-    record_deleted_missing_message, record_missing_message,
+    mark_missing_message_duplicate, mark_missing_message_error,
+    mark_missing_message_resolved, record_deleted_missing_message,
+    record_duplicate_missing_message, record_missing_message,
     schedule_missing_message, SYSTEM_SCHEDULED_BY,
 };
 use crate::messenger::types::{EchoAccountF1, Message};
@@ -359,17 +360,29 @@ async fn process_candidates(
         result.max_processed_cursor =
             Some(echo_im_sync_cursor_for_message(inbox_message));
         result.missing_count += 1;
-        if skipped_inbox_reason(inbox_message)
-            == Some(SkippedInboxReason::Deleted)
+        if let Some(
+            reason @ (SkippedInboxReason::Deleted
+            | SkippedInboxReason::Duplicate),
+        ) = skipped_inbox_reason(inbox_message)
         {
             log_skipped_inbox(
                 inbox_message,
                 recovery_datasource_id(inbox_message, datasources, None),
-                SkippedInboxReason::Deleted,
+                reason,
             );
-            record_deleted_missing_message(dbx, inbox_message.id)
-                .await
-                .c(h!())?;
+            match reason {
+                SkippedInboxReason::Deleted => {
+                    record_deleted_missing_message(dbx, inbox_message.id)
+                        .await
+                        .c(h!())?;
+                }
+                SkippedInboxReason::Duplicate => {
+                    record_duplicate_missing_message(dbx, inbox_message.id)
+                        .await
+                        .c(h!())?;
+                }
+                SkippedInboxReason::Private => {}
+            }
             continue;
         }
         let scheduled_by = if autofix_enabled {
@@ -511,18 +524,26 @@ async fn process_missing_message_recovery(
 
     if let Some(reason) = skipped_inbox_reason(inbox_message) {
         log_skipped_inbox(inbox_message, datasource_id, reason);
-        if reason == SkippedInboxReason::Deleted {
-            mark_missing_message_deleted(dbx, missing_message)
+        match reason {
+            SkippedInboxReason::Deleted => {
+                mark_missing_message_deleted(dbx, missing_message)
+                    .await
+                    .c(h!())?;
+            }
+            SkippedInboxReason::Duplicate => {
+                mark_missing_message_duplicate(dbx, missing_message)
+                    .await
+                    .c(h!())?;
+            }
+            SkippedInboxReason::Private => {
+                mark_missing_message_error(
+                    dbx,
+                    missing_message,
+                    format!("skipped during recovery: {}", reason.as_str()),
+                )
                 .await
                 .c(h!())?;
-        } else {
-            mark_missing_message_error(
-                dbx,
-                missing_message,
-                format!("skipped during recovery: {}", reason.as_str()),
-            )
-            .await
-            .c(h!())?;
+            }
         }
         return Ok(());
     }
@@ -1291,6 +1312,16 @@ mod tests {
                 .unwrap(),
             0
         );
+        let duplicate_missing_message =
+            missing_message_by_message_id(&env.dbx, duplicate.id)
+                .await
+                .unwrap();
+        assert!(duplicate_missing_message.is_resolved);
+        assert_eq!(
+            duplicate_missing_message.status,
+            EchoMissingMessageStatus::Duplicate
+        );
+        assert_eq!(duplicate_missing_message.error, None);
     }
 
     #[tokio::test]
@@ -1462,6 +1493,58 @@ mod tests {
                 .unwrap();
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Deleted);
+        assert_eq!(missing_message.error, None);
+        assert_eq!(
+            missing_message.scheduled_by,
+            Some("ManualUser".to_string())
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scheduled_duplicate_inbox_message_is_marked_duplicate() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, _datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group =
+            mk_echo_group(&env.dbx, account.id, "scheduled-duplicate-group")
+                .await;
+        let cursor = old_ts();
+        let original =
+            mk_inbox_message(&env.dbx, account.id, Some(group.id), cursor)
+                .await;
+        let duplicate = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        insert_system_settings(
+            &env.dbx,
+            cursor + chrono::TimeDelta::minutes(2),
+            false,
+        )
+        .await;
+        update_inbox_flags(&env.dbx, duplicate.id, false, Some(original.id))
+            .await;
+        let missing_message =
+            record_missing_message(&env.dbx, duplicate.id, Some("ManualUser"))
+                .await
+                .unwrap();
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        let missing_message =
+            echo_missing_message::Entity::find_by_id(missing_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Duplicate);
         assert_eq!(missing_message.error, None);
         assert_eq!(
             missing_message.scheduled_by,

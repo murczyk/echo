@@ -10,9 +10,9 @@ use chrono::{NaiveDateTime, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::debug;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    QuerySelect, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseBackend, DatabaseConnection, EntityTrait, FromQueryResult,
+    QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,10 @@ struct EchoMissingMessageJoinedRow {
 
 impl EchoMissingMessageJoinedRow {
     fn into_api_row(self) -> EchoMissingMessageRow {
+        let error = match self.status.as_str() {
+            "deleted" | "duplicate" => None,
+            _ => self.error,
+        };
         EchoMissingMessageRow {
             id: self.id,
             message_id: self.message_id,
@@ -68,13 +72,13 @@ impl EchoMissingMessageJoinedRow {
             resolved_at: self.resolved_at.map(format_dt),
             scheduled_by: self.scheduled_by,
             status: self.status,
-            error: self.error,
+            error,
         }
     }
 }
 
 pub async fn record_missing_message(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     message_id: i32,
     scheduled_by: Option<&str>,
 ) -> Result<echo_missing_message::Model, AppError> {
@@ -120,7 +124,7 @@ pub async fn record_missing_message(
 }
 
 pub async fn schedule_missing_message(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
     scheduled_by: &str,
 ) -> Result<echo_missing_message::Model, AppError> {
@@ -156,7 +160,7 @@ pub async fn load_scheduled_missing_messages(
 }
 
 pub async fn mark_missing_message_resolved(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
 ) -> Result<echo_missing_message::Model, AppError> {
     let mut missing_message: echo_missing_message::ActiveModel =
@@ -169,7 +173,7 @@ pub async fn mark_missing_message_resolved(
 }
 
 pub async fn mark_missing_message_deleted(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
 ) -> Result<echo_missing_message::Model, AppError> {
     let mut missing_message: echo_missing_message::ActiveModel =
@@ -181,8 +185,21 @@ pub async fn mark_missing_message_deleted(
     Ok(missing_message.update(dbx).await.c(h!())?)
 }
 
+pub async fn mark_missing_message_duplicate(
+    dbx: &impl ConnectionTrait,
+    missing_message: echo_missing_message::Model,
+) -> Result<echo_missing_message::Model, AppError> {
+    let mut missing_message: echo_missing_message::ActiveModel =
+        missing_message.into();
+    missing_message.status = Set(EchoMissingMessageStatus::Duplicate);
+    missing_message.is_resolved = Set(true);
+    missing_message.resolved_at = Set(Some(Utc::now().naive_utc()));
+    missing_message.error = Set(None);
+    Ok(missing_message.update(dbx).await.c(h!())?)
+}
+
 pub async fn mark_missing_message_error(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
     error: String,
 ) -> Result<echo_missing_message::Model, AppError> {
@@ -196,11 +213,36 @@ pub async fn mark_missing_message_error(
 }
 
 pub async fn record_deleted_missing_message(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     message_id: i32,
 ) -> Result<echo_missing_message::Model, AppError> {
-    let missing_message = record_missing_message(dbx, message_id, None).await?;
+    let missing_message =
+        find_or_record_missing_message(dbx, message_id).await?;
     mark_missing_message_deleted(dbx, missing_message).await
+}
+
+pub async fn record_duplicate_missing_message(
+    dbx: &impl ConnectionTrait,
+    message_id: i32,
+) -> Result<echo_missing_message::Model, AppError> {
+    let missing_message =
+        find_or_record_missing_message(dbx, message_id).await?;
+    mark_missing_message_duplicate(dbx, missing_message).await
+}
+
+async fn find_or_record_missing_message(
+    dbx: &impl ConnectionTrait,
+    message_id: i32,
+) -> Result<echo_missing_message::Model, AppError> {
+    let missing_message = echo_missing_message::Entity::find()
+        .filter(echo_missing_message::Column::MessageId.eq(message_id))
+        .one(dbx)
+        .await
+        .c(h!())?;
+    if let Some(missing_message) = missing_message {
+        return Ok(missing_message);
+    }
+    record_missing_message(dbx, message_id, None).await
 }
 
 pub async fn schedule_missing_message_by_id(
@@ -395,6 +437,38 @@ mod tests {
             .find(|row| row.message_id == inbox_message.id)
             .unwrap();
         assert_eq!(row.group_names, "Missing Group");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn list_hides_errors_for_deleted_and_duplicate_statuses() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        echo_missing_message::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let deleted = record_deleted_missing_message(&env.dbx, -12346)
+            .await
+            .unwrap();
+        let duplicate = record_duplicate_missing_message(&env.dbx, -12347)
+            .await
+            .unwrap();
+        for missing_message in [deleted, duplicate] {
+            let mut missing_message: echo_missing_message::ActiveModel =
+                missing_message.into();
+            missing_message.error = Set(Some("stale error".to_string()));
+            missing_message.update(&env.dbx).await.unwrap();
+        }
+
+        let rows = list_missing_messages(&env.dbx).await.unwrap();
+
+        let terminal_rows = rows
+            .into_iter()
+            .filter(|row| [-12346, -12347].contains(&row.message_id))
+            .collect::<Vec<_>>();
+        assert_eq!(terminal_rows.len(), 2);
+        assert!(terminal_rows.iter().all(|row| row.error.is_none()));
     }
 
     async fn mk_echo_account(dbx: &DatabaseConnection) -> echo_account::Model {

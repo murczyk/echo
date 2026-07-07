@@ -122,6 +122,20 @@ pub async fn process_signal_message_queue_item_with_options(
     .c(h!())?;
 
     if res.is_duplicate {
+        if let Some(inbox_message_id) = m.inbox_message_id {
+            match i32::try_from(inbox_message_id) {
+                Ok(message_id) => {
+                    crate::messenger::missing_message::record_duplicate_missing_message(
+                        txn, message_id,
+                    )
+                    .await
+                    .c(h!())?;
+                }
+                Err(e) => warn!(
+                    "failed to convert duplicate inbox_message_id={inbox_message_id} to i32: {e}; skipping missing message record"
+                ),
+            }
+        }
         return Ok(res.message.message_uid.context(h!())?);
     }
 
