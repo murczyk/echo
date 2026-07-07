@@ -5,9 +5,29 @@ pub mod types;
 
 use crate::error::AppError;
 use crate::types::*;
-use actix_web::{route, web, HttpRequest, HttpResponse};
+use actix_web::{post, route, web, HttpRequest, HttpResponse};
+use types::{
+    CreateCyberEchoSignalMessagePayload, CreateCyberEchoSignalMessageRsp,
+};
 
 const CYBER_ECHO_TUS_PATH_BASE: &str = "/api/sigint/cyber-echo/tus";
+
+#[post("/api/sigint/cyber-echo/message/create")]
+pub async fn cyber_echo_message_create(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    payload: web::Json<CreateCyberEchoSignalMessagePayload>,
+) -> Result<web::Json<CreateCyberEchoSignalMessageRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    Ok(web::Json(
+        bl::create_signal_message(&login, &env, payload.into_inner())
+            .await
+            .c(h!())?,
+    ))
+}
 
 #[route("/api/sigint/cyber-echo/tus", method = "POST", method = "OPTIONS")]
 pub async fn cyber_echo_tus_base(
