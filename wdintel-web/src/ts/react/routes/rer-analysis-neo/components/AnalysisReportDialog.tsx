@@ -31,6 +31,7 @@ import { useId } from 'react';
 
 import type { User } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
+import { hasAnyRole } from '../../../utils/roles';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { parseUtcDateTime } from '../../../services/api/report-history';
 import {
@@ -224,7 +225,7 @@ function ReportCheckboxLabel({
 }
 
 function canUseAdvancedReports(user: User | null): boolean {
-  return ADVANCED_REPORT_ROLES.some((role) => Boolean(user?.roles.includes(role)));
+  return hasAnyRole(user?.roles, ADVANCED_REPORT_ROLES);
 }
 
 export function AnalysisReportDialog({

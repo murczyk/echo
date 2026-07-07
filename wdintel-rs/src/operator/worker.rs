@@ -1,10 +1,11 @@
+use crate::config::OPERATOR_INBOX_WORKER_LOOKBACK_HOURS;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use echo_migration::JoinType;
 use sea_orm::*;
 use std::collections::HashMap;
@@ -70,29 +71,8 @@ async fn receive_once(
     redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
-    let now = Utc::now();
-    let echo_operator_queue = signal_message::Entity::find()
-        .select_only()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .column(signal_message::Column::Id)
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .filter(sigint_inbox_item::Column::Id.is_null())
-        .filter(datasource_group::Column::DatasourceId.eq(datasource.id))
-        .filter(signal_message::Column::CreatedAt.lte(
-            now - chrono::Duration::seconds(RECEIVE_INTERVAL_SECONDS as i64),
-        ))
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .limit(50)
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let echo_operator_queue =
+        load_echo_operator_queue(dbx, datasource.id).await.c(h!())?;
     for id in echo_operator_queue {
         let txn = dbx.begin().await.c(h!())?;
         let changed_inbox_item_ids =
@@ -115,6 +95,90 @@ async fn receive_once(
             .c(h!())?;
     }
     Ok(())
+}
+
+async fn load_echo_operator_queue(
+    dbx: &DatabaseConnection,
+    datasource_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    let datasource_group_ids =
+        load_operator_datasource_group_ids(dbx, datasource_id)
+            .await
+            .c(h!())?;
+    if datasource_group_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let now = Utc::now().naive_utc();
+    let since =
+        now - chrono::Duration::hours(OPERATOR_INBOX_WORKER_LOOKBACK_HOURS);
+    let till = now - chrono::Duration::seconds(RECEIVE_INTERVAL_SECONDS as i64);
+    let mut rows = vec![];
+    for datasource_group_id in datasource_group_ids {
+        rows.extend(
+            load_echo_operator_queue_for_group(
+                dbx,
+                datasource_group_id,
+                since,
+                till,
+            )
+            .await
+            .c(h!())?,
+        );
+    }
+    rows.sort_by(|(_, left), (_, right)| left.cmp(right));
+    rows.truncate(50);
+
+    Ok(rows.into_iter().map(|(id, _)| id).collect())
+}
+
+async fn load_echo_operator_queue_for_group(
+    dbx: &DatabaseConnection,
+    datasource_group_id: i64,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> Result<Vec<(i64, NaiveDateTime)>, AppError> {
+    let rows = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::CreatedAt)
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .filter(sigint_inbox_item::Column::Id.is_null())
+        .filter(
+            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
+        )
+        // Intentionally ignore older operator backlog here. This worker is a
+        // near-live bridge, and old recovery must be handled explicitly rather
+        // than reopening broad scans on signal_message.
+        .filter(signal_message::Column::CreatedAt.gte(since))
+        .filter(signal_message::Column::CreatedAt.lte(till))
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .limit(50)
+        .into_tuple::<(i64, NaiveDateTime)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(rows)
+}
+
+async fn load_operator_datasource_group_ids(
+    dbx: &DatabaseConnection,
+    datasource_id: i64,
+) -> Result<Vec<i64>, AppError> {
+    let ids = datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(ids)
 }
 
 async fn import_sigint_inbox_message_metadata(

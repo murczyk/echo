@@ -806,4 +806,40 @@ describe('MarkedText', () => {
       freqs_selected: ['200'],
     });
   });
+
+  it('linkifies CNTextC URLs and preserves callsign tokens', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[
+            { CNTextC: { text: 'Посилання: https://example.com/test).' } },
+            { CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } },
+          ]}
+          bodyText="Посилання: https://example.com/test).\nwolf"
+        />,
+      );
+    });
+
+    const link = container.querySelector('a[href="https://example.com/test"]');
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe('https://example.com/test');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
+    expect(container.textContent).toContain('Посилання: https://example.com/test).');
+  });
+
+  it('does not linkify non-http protocols', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNTextC: { text: 'javascript:alert(1) file:///tmp/x' } }]}
+          bodyText="javascript:alert(1) file:///tmp/x"
+        />,
+      );
+    });
+
+    expect(container.querySelector('a[href^="http"]')).toBeNull();
+    expect(container.textContent).toBe('javascript:alert(1) file:///tmp/x');
+  });
 });

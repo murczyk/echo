@@ -774,6 +774,23 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
   });
 
+  it('linkifies plain message text URLs in the body', async () => {
+    const url = 'https://docs.google.com/document/d/hash/edit?usp=sharing';
+    const view = await renderCard({
+      msg: buildMessage({
+        text: `Дивись документ: ${url}`,
+        textMarked: [],
+      }),
+    });
+    rendered.push(view);
+
+    const link = view.container.querySelector(`a[href="${url}"]`);
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe(url);
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
   it('renders the network label in the header as bold text', async () => {
     const view = await renderHeader();
     rendered.push(view);

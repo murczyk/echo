@@ -9,6 +9,7 @@ import {
   type XlsxPreviewResult,
 } from '../xlsx/xlsx-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
+import { debugDocumentPreview } from '../document-preview-debug';
 
 export function XlsxDocumentPreview({
   href,
@@ -54,6 +55,12 @@ export function XlsxDocumentPreview({
         }
 
         const buffer = await response.arrayBuffer();
+        debugDocumentPreview('xlsx', 'fetched workbook', {
+          href,
+          sizeBytes,
+          contentLength: response.headers.get('content-length'),
+          bufferByteLength: buffer.byteLength,
+        });
         if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
@@ -71,6 +78,17 @@ export function XlsxDocumentPreview({
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
+        debugDocumentPreview(
+          'xlsx',
+          'preview failed',
+          {
+            href,
+            sizeBytes,
+            message: error instanceof Error ? error.message : String(error),
+            rawError: error,
+          },
+          'error',
+        );
         setError(
           error instanceof Error
             ? formatXlsxPreviewErrorMessage(error.message)

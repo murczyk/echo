@@ -26,6 +26,7 @@ import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
+import { hasRole } from '../../utils/roles';
 import {
   getPublicNetworkDetailsTab,
   readRequestedNetworkDetailsTab,
@@ -93,7 +94,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   );
   const status = useMemo(() => networkStatusDisplay(state.network), [state.network]);
   const isAdmin = useMemo(
-    () => (state.currentUser?.roles ?? []).includes('Admin'),
+    () => hasRole(state.currentUser?.roles, 'Admin'),
     [state.currentUser?.roles],
   );
   const networkIdValue = state.network?.id ?? null;

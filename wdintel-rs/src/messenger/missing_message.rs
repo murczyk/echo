@@ -165,6 +165,19 @@ pub async fn mark_missing_message_resolved(
     Ok(missing_message.update(dbx).await.c(h!())?)
 }
 
+pub async fn mark_missing_message_deleted(
+    dbx: &DatabaseConnection,
+    missing_message: echo_missing_message::Model,
+) -> Result<echo_missing_message::Model, AppError> {
+    let mut missing_message: echo_missing_message::ActiveModel =
+        missing_message.into();
+    missing_message.status = Set(EchoMissingMessageStatus::Deleted);
+    missing_message.is_resolved = Set(true);
+    missing_message.resolved_at = Set(Some(Utc::now().naive_utc()));
+    missing_message.error = Set(None);
+    Ok(missing_message.update(dbx).await.c(h!())?)
+}
+
 pub async fn mark_missing_message_error(
     dbx: &DatabaseConnection,
     missing_message: echo_missing_message::Model,
@@ -177,6 +190,14 @@ pub async fn mark_missing_message_error(
     missing_message.resolved_at = Set(None);
     missing_message.error = Set(Some(error));
     Ok(missing_message.update(dbx).await.c(h!())?)
+}
+
+pub async fn record_deleted_missing_message(
+    dbx: &DatabaseConnection,
+    message_id: i32,
+) -> Result<echo_missing_message::Model, AppError> {
+    let missing_message = record_missing_message(dbx, message_id, None).await?;
+    mark_missing_message_deleted(dbx, missing_message).await
 }
 
 pub async fn schedule_missing_message_by_id(

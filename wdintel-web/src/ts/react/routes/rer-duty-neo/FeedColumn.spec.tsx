@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 
-
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
 }));
@@ -22,8 +21,14 @@ vi.mock('./FeedKeywordsPanel', () => ({
 }));
 
 vi.mock('../shared/message-card/MessageCard', () => ({
-  DutyMessageCard: (props: { onCopyEtalon?: () => void; onCopyLocation?: () => void }) => (
+  DutyMessageCard: (props: {
+    id: number;
+    botTagAction?: { messageId: number; tagId: number } | null;
+    onCopyEtalon?: () => void;
+    onCopyLocation?: () => void;
+  }) => (
     <div data-testid="message-card">
+      <span data-testid={`bot-action-${props.id}`}>{props.botTagAction?.messageId ?? ''}</span>
       {props.onCopyEtalon != null ? <span data-testid="copy-etalon">copy-etalon</span> : null}
       {props.onCopyLocation != null ? <span data-testid="copy-location">copy-location</span> : null}
     </div>
@@ -143,6 +148,9 @@ function buildProps(): FeedColumnProps {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        botTagAction: null,
+        onCancelBotTagAction: vi.fn(),
+        onMarkBotTagWrong: vi.fn(),
       },
       actions: {
         onLoadOlder: vi.fn(),
@@ -229,6 +237,22 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
+  });
+
+  it('scopes the bot tag prompt to the matching message card only', async () => {
+    const props = buildProps();
+    props.column.feed.items = [
+      [1, minimalInboxMessage({ timestamp: 101 })],
+      [2, minimalInboxMessage({ timestamp: 102 })],
+    ];
+    props.column.messageCard.botTagAction = { messageId: 1, tagId: 3 };
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-testid="bot-action-1"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-testid="bot-action-2"]')?.textContent).toBe('');
   });
 
   it('closes the notifications panel on outside click', async () => {

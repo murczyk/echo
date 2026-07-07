@@ -2964,6 +2964,36 @@ messageIdsRspEncoder struct =
         ]
 
 
+type alias InboxItemContextReq =
+    { messageUid : String
+    }
+
+
+inboxItemContextReqEncoder : InboxItemContextReq -> Json.Encode.Value
+inboxItemContextReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_uid", (Json.Encode.string) struct.messageUid )
+        ]
+
+
+type alias InboxItemContextRsp =
+    { groupMasterKeys : List (String)
+    , sigintInboxItemIds : List (Int)
+    , sinceTs : Maybe (Int)
+    , tillTs : Maybe (Int)
+    }
+
+
+inboxItemContextRspEncoder : InboxItemContextRsp -> Json.Encode.Value
+inboxItemContextRspEncoder struct =
+    Json.Encode.object
+        [ ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
+        , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
+        , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
+        ]
+
+
 type alias InboxByGroupDigestRsp =
     { statsPerMinute : List (InboxGroupStatsByMinute)
     }
@@ -3594,6 +3624,8 @@ type alias GoiUserIntegration =
     , goiUrl : Maybe (String)
     , swappUrl : Maybe (String)
     , hasDataAccess : Bool
+    , pauseWorker : Bool
+    , canChangePauseWorker : Bool
     , canRestart : Bool
     , restartUnavailableReason : Maybe (String)
     }
@@ -3610,6 +3642,8 @@ goiUserIntegrationEncoder struct =
         , ( "goi_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiUrl )
         , ( "swapp_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.swappUrl )
         , ( "has_data_access", (Json.Encode.bool) struct.hasDataAccess )
+        , ( "pause_worker", (Json.Encode.bool) struct.pauseWorker )
+        , ( "can_change_pause_worker", (Json.Encode.bool) struct.canChangePauseWorker )
         , ( "can_restart", (Json.Encode.bool) struct.canRestart )
         , ( "restart_unavailable_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.restartUnavailableReason )
         ]
@@ -10681,6 +10715,8 @@ goiUserIntegrationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "swapp_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_data_access" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pause_worker" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_change_pause_worker" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_restart" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restart_unavailable_reason" (Json.Decode.nullable (Json.Decode.string))))
 
@@ -14230,5 +14266,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-
 

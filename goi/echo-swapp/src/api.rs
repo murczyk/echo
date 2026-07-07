@@ -1,6 +1,7 @@
 use crate::messenger::{self, CreateMessengerReq, MessengerKind};
 use crate::AppState;
 use actix_web::{delete, get, post, web, HttpResponse, Responder};
+use base64::{engine::general_purpose, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
@@ -250,7 +251,7 @@ async fn whatsapp_send(
     let name = path.into_inner();
     require_kind(&state, &name, MessengerKind::Whatsapp).await?;
     let req = req.into_inner();
-    let attachments = req.screenshot.into_iter().collect();
+    let attachments = prepare_whatsapp_attachments(req.screenshot)?;
     messenger::send(
         &state.db,
         &name,
@@ -403,6 +404,43 @@ fn error(err: anyhow::Error) -> actix_web::Error {
     actix_web::error::ErrorInternalServerError(err.to_string())
 }
 
+fn prepare_whatsapp_attachments(
+    screenshot: Option<String>,
+) -> actix_web::Result<Vec<String>> {
+    let Some(screenshot) = screenshot else {
+        return Ok(Vec::new());
+    };
+    let screenshot = screenshot.trim();
+    if screenshot.is_empty() {
+        return Ok(Vec::new());
+    }
+    let screenshot = strip_base64_data_uri(screenshot)?;
+    general_purpose::STANDARD.decode(screenshot).map_err(|_| {
+        actix_web::error::ErrorBadRequest("invalid WhatsApp screenshot base64")
+    })?;
+    Ok(vec![screenshot.to_string()])
+}
+
+fn strip_base64_data_uri(screenshot: &str) -> actix_web::Result<&str> {
+    let Some(data_uri) = screenshot.strip_prefix("data:") else {
+        return Ok(screenshot);
+    };
+    let Some((metadata, content_base64)) = data_uri.split_once(',') else {
+        return Err(actix_web::error::ErrorBadRequest(
+            "invalid WhatsApp screenshot data URI",
+        ));
+    };
+    if !metadata
+        .split(';')
+        .any(|part| part.eq_ignore_ascii_case("base64"))
+    {
+        return Err(actix_web::error::ErrorBadRequest(
+            "WhatsApp screenshot data URI must be base64 encoded",
+        ));
+    }
+    Ok(content_base64.trim())
+}
+
 fn classify_signal_recipients(
     recipients: Vec<String>,
     known_group_ids: &HashSet<String>,
@@ -437,6 +475,52 @@ mod tests {
 
     fn known_group_ids(ids: &[&str]) -> HashSet<String> {
         ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn prepares_raw_base64_whatsapp_screenshot() {
+        let attachments =
+            prepare_whatsapp_attachments(Some(" YWJj ".to_string())).unwrap();
+
+        assert_eq!(attachments, vec!["YWJj"]);
+    }
+
+    #[test]
+    fn strips_whatsapp_screenshot_data_uri_header() {
+        let attachments = prepare_whatsapp_attachments(Some(
+            "data:image/png;base64,YWJj".to_string(),
+        ))
+        .unwrap();
+
+        assert_eq!(attachments, vec!["YWJj"]);
+    }
+
+    #[test]
+    fn skips_empty_whatsapp_screenshot() {
+        let attachments =
+            prepare_whatsapp_attachments(Some(" ".to_string())).unwrap();
+
+        assert!(attachments.is_empty());
+    }
+
+    #[test]
+    fn rejects_non_base64_whatsapp_screenshot_data_uri() {
+        let err = prepare_whatsapp_attachments(Some(
+            "data:image/png,abc".to_string(),
+        ))
+        .unwrap_err();
+
+        assert_eq!(err.as_response_error().status_code(), 400);
+    }
+
+    #[test]
+    fn rejects_invalid_whatsapp_screenshot_base64() {
+        let err = prepare_whatsapp_attachments(Some(
+            "data:image/png;base64,not base64".to_string(),
+        ))
+        .unwrap_err();
+
+        assert_eq!(err.as_response_error().status_code(), 400);
     }
 
     #[test]

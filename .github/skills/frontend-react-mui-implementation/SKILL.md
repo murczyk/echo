@@ -62,14 +62,18 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `SavedFiltersControl` for saved filter CRUD.
 - `PageHeader` and existing top-action styles for neo page headers/actions.
 - **Power wrappers** (`wdintel-web/src/ts/react/components/`): prefer these over raw MUI when the use case matches.
-  | MUI | Use instead |
-  | --- | --- |
-  | `Alert` | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
-  | `Button` | `PowerButton` — debounced double-submit guard |
-  | `IconButton` | `PowerIconButton` |
-  | `Chip` (selectable/filter tags) | `PowerChip` or `CompactPowerChip` |
-  | `Menu` | `PowerMenu` — Escape does not bubble to parent drawers |
-  | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI.
+  | MUI                                                                                                                                            | Use instead                                                                          |
+  | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+  | `Alert`                                                                                                                                        | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
+  | `Button`                                                                                                                                       | `PowerButton` — debounced double-submit guard                                        |
+  | `IconButton`                                                                                                                                   | `PowerIconButton`                                                                    |
+  | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                    |
+  | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                               |
+  | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI. |
+- MUI `Dialog`, `Modal`, `Menu`, and `Popover` can surface `Blocked aria-hidden... retained focus` warnings when focus is restored into an `aria-hidden` subtree.
+- When chaining modal surfaces, close the current surface first, move or blur focus before hiding the focused subtree, and defer opening the next surface to the next tick/frame if needed.
+- For dialogs opened from menus, close the menu first, then open the dialog after state settles; use `disableRestoreFocus` when MUI would otherwise restore focus into an `aria-hidden` ancestor.
+- Restore focus manually only after modal cleanup, and browser-check the console for `Blocked aria-hidden`.
 - Avoid MUI `Menu` for hover-only popups when it can focus or `aria-hide` surrounding content; prefer non-modal `Popper`/`Tooltip`-style patterns there.
 - For React pages that need date selection, prefer MUI X `DatePicker` / `DateTimePicker` with the app locale/theme conventions.
 - Do not use native `input type="date"` / `datetime-local` unless there is a documented repo-specific reason.
@@ -105,7 +109,7 @@ if (isUnauthorizedError(error)) {
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
-- Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON/Markdown edits.
+- Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Check public URL tab values against internal ids; keep aliases only for intentional legacy compatibility.

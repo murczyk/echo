@@ -66,6 +66,49 @@ pub async fn oneoff_merge_datasource_group(
     Ok(())
 }
 
+pub async fn oneoff_compact_datasource_group(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let config = crate::config::read_config(mode)?;
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+
+    print_datasource_group_size(&dbx, "before").await.c(h!())?;
+    println!("datasource_group compaction started");
+    dbx.execute_unprepared("vacuum (full, analyze) datasource_group;")
+        .await
+        .c(h!())?;
+    print_datasource_group_size(&dbx, "after").await.c(h!())?;
+
+    Ok(())
+}
+
+async fn print_datasource_group_size(
+    dbx: &DatabaseConnection,
+    label: &str,
+) -> Result<(), AppError> {
+    let row = dbx
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                pg_size_pretty(pg_relation_size('datasource_group')) as heap_size,
+                pg_size_pretty(pg_total_relation_size('datasource_group')) as total_size
+            "#
+            .to_string(),
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let heap_size: String = row.try_get("", "heap_size").c(h!())?;
+    let total_size: String = row.try_get("", "total_size").c(h!())?;
+
+    println!(
+        "datasource_group {label}: heap_size={heap_size} total_size={total_size}"
+    );
+
+    Ok(())
+}
+
 async fn merge_group_into(
     txn: &DatabaseTransaction,
     datasource_group: datasource_group::Model,

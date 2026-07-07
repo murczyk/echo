@@ -11,6 +11,12 @@ hasRole role user =
         "Admin" ->
             List.member "Admin" user.roles
 
+        "Api" ->
+            List.member "Api" user.roles
+
+        "ApiAgent" ->
+            List.member "ApiAgent" user.roles
+
         "Full" ->
             List.member "Admin" user.roles
                 || List.member "Full" user.roles
@@ -49,7 +55,9 @@ hasRole role user =
                 || List.member "AdvancedReports" user.roles
 
         "DeleteMsg" ->
-            List.member "DeleteMsg" user.roles
+            List.member "Admin" user.roles
+                || List.member "Full" user.roles
+                || List.member "DeleteMsg" user.roles
 
         "NoAutoLogout" ->
             List.member "NoAutoLogout" user.roles

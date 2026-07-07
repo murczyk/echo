@@ -52,6 +52,9 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
       featureStrictNetworks,
       tagsLayout,
       tagsMap,
+      botTagAction,
+      onCancelBotTagAction,
+      onMarkBotTagWrong,
     } = messageCard;
     const {
       onLoadOlder,
@@ -95,7 +98,9 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
       resetKey: feed.referenceTimeMs ?? feed.id,
     });
 
-    useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [scroll.scrollToBottom]);
+    useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
+      scroll.scrollToBottom,
+    ]);
 
     if (feed.loading && feed.items.length === 0) {
       return (
@@ -147,7 +152,11 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
               <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
             </Box>
           ) : feed.hasReachedStart ? (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1.5 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: 'center', py: 1.5 }}
+            >
               Немає старіших повідомлень
             </Typography>
           ) : null}
@@ -176,6 +185,9 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
                       msg={msg}
                       feedCount={feedCount}
                       tagsLayout={tagsLayout}
+                      botTagAction={botTagAction?.messageId === id ? botTagAction : null}
+                      onCancelBotTagAction={onCancelBotTagAction}
+                      onMarkBotTagWrong={onMarkBotTagWrong}
                       referenceTimeMs={feed.referenceTimeMs}
                       authUserName={authUserName}
                       groupName={labels.groupName}
@@ -227,7 +239,11 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
                       onCopyEtalon={
                         etalonDisplayModel.copyEtalonValue == null
                           ? undefined
-                          : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
+                          : () =>
+                              onMessageCopy(
+                                etalonDisplayModel.copyEtalonValue ?? '',
+                                `etalon-${id}`,
+                              )
                       }
                       onCopyLocation={
                         etalonDisplayModel.copyLocationValue == null
@@ -238,9 +254,13 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
                                 `location-${id}`,
                               )
                       }
-                      onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feed.id, freq)}
+                      onAddFrequencyToFilter={(freq) =>
+                        onMessageAddFrequencyToFilter(feed.id, freq)
+                      }
                       onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
-                      onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
+                      onExcludeMessageEntity={(entity, value) =>
+                        onMessageExcludeEntity(entity, value)
+                      }
                       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
                       rightHeaderInsetPx={0}
                       filterState={feed.filter}
@@ -290,7 +310,9 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
                     boxShadow: 'none',
                   },
                 }}
-                aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
+                aria-label={
+                  isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
+                }
                 onClick={onArrowClick}
                 disabled={loadingNewer}
               >

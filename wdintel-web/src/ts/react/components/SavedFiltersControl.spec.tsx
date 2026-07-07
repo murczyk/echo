@@ -11,6 +11,13 @@ type TestSavedFilter = {
   name: string;
 };
 
+let tooltipProps: Array<{
+  title?: string;
+  disableHoverListener?: boolean;
+  disableFocusListener?: boolean;
+  disableTouchListener?: boolean;
+}> = [];
+
 vi.mock('@mui/material', () => ({
   Autocomplete: (props: {
     options: TestSavedFilter[];
@@ -93,7 +100,21 @@ vi.mock('@mui/material', () => ({
       />
     </label>
   ),
-  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Tooltip: (props: {
+    children: ReactNode;
+    title?: string;
+    disableHoverListener?: boolean;
+    disableFocusListener?: boolean;
+    disableTouchListener?: boolean;
+  }) => {
+    tooltipProps.push({
+      title: props.title,
+      disableHoverListener: props.disableHoverListener,
+      disableFocusListener: props.disableFocusListener,
+      disableTouchListener: props.disableTouchListener,
+    });
+    return <>{props.children}</>;
+  },
 }));
 
 import { SavedFiltersControl } from './SavedFiltersControl';
@@ -188,6 +209,7 @@ describe('SavedFiltersControl', () => {
       });
       item.container.remove();
     }
+    tooltipProps = [];
   });
 
   it('applies selected filters and reflects the selected value', async () => {
@@ -226,15 +248,35 @@ describe('SavedFiltersControl', () => {
   it('can disable saving as new from the menu', async () => {
     const view = await renderComponent(
       buildProps({
-        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
-        savedFilterName: 'Base filter',
+        selectedSavedFilter: null,
+        savedFilterName: '',
         canSaveAsNew: false,
       }),
     );
     rendered.push(view);
 
     await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
-    expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(true);
+    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(
+      true,
+    );
+    expect(tooltipProps).toHaveLength(0);
+  });
+
+  it('keeps the tooltip enabled when actions are available', async () => {
+    const view = await renderComponent(
+      buildProps({
+        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
+        savedFilterName: 'Base filter',
+      }),
+    );
+    rendered.push(view);
+
+    expect(tooltipProps.at(-1)).toEqual({
+      title: 'Дії',
+      disableHoverListener: undefined,
+      disableFocusListener: undefined,
+      disableTouchListener: undefined,
+    });
   });
 
   it('saves as new and renames through compact dialogs', async () => {
