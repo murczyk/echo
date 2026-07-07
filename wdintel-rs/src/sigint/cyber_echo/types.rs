@@ -4,8 +4,8 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct CreateCyberEchoSignalMessagePayload {
     pub body: String,
-    pub timestamp_ms: Option<i64>,
     pub signal_group_master_key: String,
+    pub computer_name_id: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
