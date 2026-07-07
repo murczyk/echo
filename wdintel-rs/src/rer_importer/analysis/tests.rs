@@ -3470,7 +3470,9 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     let _parent_unit = mk_sigint_unit(
         db,
         sigint_unit::ActiveModel {
-            name: Set("Parent Regiment".to_string()),
+            name: Set("2 бат 1 полк".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
             created_by: Set("Tester".to_string()),
             ..Default::default()
         },
@@ -3480,8 +3482,10 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     let child_unit = mk_sigint_unit(
         db,
         sigint_unit::ActiveModel {
-            name: Set("Child Battalion".to_string()),
-            regiment: Set("Parent Regiment".to_string()),
+            name: Set("3 рота 2 бат 1 полк".to_string()),
+            company: Set("3 рота".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
             created_by: Set("Tester".to_string()),
             ..Default::default()
         },
@@ -3491,8 +3495,10 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     let other_unit = mk_sigint_unit(
         db,
         sigint_unit::ActiveModel {
-            name: Set("Other Battalion".to_string()),
-            regiment: Set("Other Regiment".to_string()),
+            name: Set("3 рота 2 бат 2 полк".to_string()),
+            company: Set("3 рота".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("2 полк".to_string()),
             created_by: Set("Tester".to_string()),
             ..Default::default()
         },
@@ -3573,7 +3579,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     let base_req = crate::rer_importer::types::InboxMessagesReq {
         since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
         till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
-        selected_units: Some(vec!["Parent Regiment".to_string()]),
+        selected_units: Some(vec!["2 бат 1 полк".to_string()]),
         units_exact_match_only: Some(false),
         nolimit: Some(true),
         ..Default::default()
@@ -3602,6 +3608,26 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     .await
     .unwrap();
     assert!(items.is_empty());
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        denied_units: Some(vec!["2 бат 1 полк".to_string()]),
+        units_exact_match_only: Some(false),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_other.id]
+    );
 }
 
 #[tokio::test]

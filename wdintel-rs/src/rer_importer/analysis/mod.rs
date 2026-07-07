@@ -627,6 +627,74 @@ fn linked_unit_matches_selected_units(
         return unit_matches;
     }
 
+    let hierarchy_column_matches = sigint_unit_hierarchy_columns()
+        .into_iter()
+        .fold(unit_matches, |expr, column| {
+            expr.or(Expr::col((unit_alias.clone(), column))
+                .is_in(selected_units.clone()))
+        });
+
+    hierarchy_column_matches.or(selected_parent_unit_matches_linked_unit(
+        selected_units,
+        unit_alias,
+    ))
+}
+
+fn selected_parent_unit_matches_linked_unit(
+    selected_units: Vec<String>,
+    linked_unit_alias: Alias,
+) -> SimpleExpr {
+    let parent_unit_alias = Alias::new("selected_parent_unit");
+    let mut query = Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(sigint_unit::Entity, parent_unit_alias.clone())
+        .and_where(
+            Expr::col((parent_unit_alias.clone(), sigint_unit::Column::Name))
+                .is_in(selected_units),
+        )
+        .and_where(
+            Expr::col((
+                parent_unit_alias.clone(),
+                sigint_unit::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(sigint_unit_has_any_hierarchy_value(
+            parent_unit_alias.clone(),
+        ));
+    for column in sigint_unit_hierarchy_columns() {
+        query.and_where(parent_hierarchy_column_matches_linked_unit(
+            parent_unit_alias.clone(),
+            linked_unit_alias.clone(),
+            column,
+        ));
+    }
+
+    Expr::exists(query.to_owned())
+}
+
+fn parent_hierarchy_column_matches_linked_unit(
+    parent_unit_alias: Alias,
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    let parent_column = Expr::col((parent_unit_alias, column));
+    parent_column
+        .clone()
+        .eq("")
+        .or(parent_column.equals((linked_unit_alias, column)))
+}
+
+fn sigint_unit_has_any_hierarchy_value(unit_alias: Alias) -> SimpleExpr {
+    let columns = sigint_unit_hierarchy_columns();
+    columns[1..].iter().fold(
+        Expr::col((unit_alias.clone(), columns[0])).ne(""),
+        |expr, column| expr.or(Expr::col((unit_alias.clone(), *column)).ne("")),
+    )
+}
+
+fn sigint_unit_hierarchy_columns() -> [sigint_unit::Column; 5] {
     [
         sigint_unit::Column::Company,
         sigint_unit::Column::Battalion,
@@ -634,11 +702,6 @@ fn linked_unit_matches_selected_units(
         sigint_unit::Column::Division,
         sigint_unit::Column::Army,
     ]
-    .into_iter()
-    .fold(unit_matches, |expr, column| {
-        expr.or(Expr::col((unit_alias.clone(), column))
-            .is_in(selected_units.clone()))
-    })
 }
 
 fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
