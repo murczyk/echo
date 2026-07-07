@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::messenger::media::MediaUploadInput;
 use crate::types::*;
 use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
 use actix_web::http::{header, Method, StatusCode};
@@ -17,6 +18,7 @@ const BASE_UPLOAD_DIR: &str = "cyber_echo_tus_upload";
 const PENDING_DIR: &str = "pending";
 const COMPLETED_DIR: &str = "completed";
 const METADATA_EXT: &str = "json";
+pub const MAX_COMPLETED_UPLOADS: usize = 10;
 
 const HEADER_NAME_TUS_VERSION: HeaderName =
     HeaderName::from_static("tus-version");
@@ -155,6 +157,36 @@ impl TusHandler {
             return Ok(None);
         };
         self.open_completed_file(login, request_file).await
+    }
+
+    pub async fn resolve_completed_uploads(
+        &self,
+        login: &str,
+        upload_urls: &[String],
+    ) -> Result<Vec<MediaUploadInput>, AppError> {
+        if upload_urls.len() > MAX_COMPLETED_UPLOADS {
+            return Err(AppError::BL {
+                msg: format!(
+                    "too many attachments: maximum is {MAX_COMPLETED_UPLOADS}"
+                ),
+            });
+        }
+
+        let mut uploads = Vec::with_capacity(upload_urls.len());
+        for upload_url in upload_urls {
+            let upload = self
+                .open_completed_url(login, upload_url)
+                .await
+                .c(h!())?
+                .ok_or_else(|| AppError::BL {
+                    msg: format!(
+                        "upload not found or incomplete: {upload_url}"
+                    ),
+                })?;
+            uploads.push(media_upload_input_from_tus_upload(upload));
+        }
+
+        Ok(uploads)
     }
 
     pub async fn open_completed_file(
@@ -640,6 +672,24 @@ fn parse_upload_metadata(
         }
     }
     Ok(metadata)
+}
+
+fn media_upload_input_from_tus_upload(upload: TusUpload) -> MediaUploadInput {
+    MediaUploadInput {
+        path: upload.file_path.display().to_string(),
+        name: upload
+            .metadata
+            .filename
+            .or(upload.metadata.meta_name)
+            .or_else(|| {
+                upload
+                    .file_path
+                    .file_name()
+                    .and_then(|file_name| file_name.to_str())
+                    .map(|file_name| file_name.to_string())
+            }),
+        content_type: upload.metadata.filetype.or(upload.metadata.meta_type),
+    }
 }
 
 fn login_dir(login: &str) -> String {
