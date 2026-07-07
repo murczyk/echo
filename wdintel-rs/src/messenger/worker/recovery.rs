@@ -5,7 +5,7 @@ use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::message_queue::{
     process_signal_message_queue_item_with_options,
-    ProcessSignalMessageQueueItemOptions,
+    ProcessSignalMessageQueueItemOptions, ProcessSignalMessageQueueItemResult,
 };
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::missing_message::{
@@ -559,11 +559,21 @@ async fn process_missing_message_recovery(
     .await;
 
     match recovery {
-        Ok(message_uid) => {
-            log_recovered_inbox(inbox_message, datasource_id, &message_uid);
-            mark_missing_message_resolved(dbx, missing_message)
-                .await
-                .c(h!())?;
+        Ok(result) => {
+            log_recovered_inbox(
+                inbox_message,
+                datasource_id,
+                &result.message_uid,
+            );
+            if result.is_duplicate {
+                mark_missing_message_duplicate(dbx, missing_message)
+                    .await
+                    .c(h!())?;
+            } else {
+                mark_missing_message_resolved(dbx, missing_message)
+                    .await
+                    .c(h!())?;
+            }
         }
         Err(err) => {
             log_recovery_error(inbox_message, datasource_id, &err);
@@ -704,7 +714,7 @@ async fn recover_inbox_message(
     datasources: &BTreeMap<i32, EchoAccountF1>,
     inbox_message: &echo_inbox_message::Model,
     maps: &RecoveryMaps,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<ProcessSignalMessageQueueItemResult> {
     let datasource = datasources.get(&inbox_message.account_id).c(h!())?;
     let group_id = inbox_message.group_id.c(h!())?;
     let group = maps.groups.get(&group_id).c(h!())?;
@@ -752,7 +762,7 @@ async fn process_recovery_message(
     message: Message,
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<ProcessSignalMessageQueueItemResult> {
     let txn = dbx.begin().await.c(h!())?;
     let result = process_recovery_message_in_txn(
         &txn,
@@ -766,7 +776,7 @@ async fn process_recovery_message(
     .await;
 
     match result {
-        Ok((message_uid, changed_inbox_item_ids)) => {
+        Ok((result, changed_inbox_item_ids)) => {
             txn.commit().await.c(h!())?;
             if let Err(err) = crate::inbox::fanout_inbox_changes(
                 redis,
@@ -776,7 +786,7 @@ async fn process_recovery_message(
             {
                 error!("failed to fanout recovered inbox changes: {:?}", err);
             }
-            Ok(message_uid)
+            Ok(result)
         }
         Err(err) => {
             if let Err(rollback_err) = txn.rollback().await {
@@ -798,9 +808,9 @@ async fn process_recovery_message_in_txn(
     message: Message,
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
-) -> anyhow::Result<(String, Vec<i64>)> {
+) -> anyhow::Result<(ProcessSignalMessageQueueItemResult, Vec<i64>)> {
     let mut changed_inbox_item_ids = vec![];
-    let message_uid = process_signal_message_queue_item_with_options(
+    let result = process_signal_message_queue_item_with_options(
         message,
         attachments,
         redis,
@@ -820,7 +830,7 @@ async fn process_recovery_message_in_txn(
 
     mark_inbox_seen(txn, inbox_message).await.c(h!())?;
 
-    Ok((message_uid, changed_inbox_item_ids))
+    Ok((result, changed_inbox_item_ids))
 }
 
 async fn mark_inbox_seen(
@@ -958,6 +968,7 @@ mod tests {
     use crate::functest::tests::cleanup;
     use sea_orm::*;
     use serial_test::serial;
+    use tempfile::NamedTempFile;
     use uuid::Uuid;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
@@ -1550,6 +1561,95 @@ mod tests {
             missing_message.scheduled_by,
             Some("ManualUser".to_string())
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scheduled_caption_media_duplicate_is_marked_duplicate() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group = mk_echo_group(
+            &env.dbx,
+            account.id,
+            "caption-media-duplicate-group",
+        )
+        .await;
+        let cursor = old_ts();
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let body = format!("caption {}", Uuid::new_v4());
+        let mut inbox = inbox.into_active_model();
+        inbox.body = Set(body.clone());
+        let inbox = inbox.update(&env.dbx).await.unwrap();
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"payload").unwrap();
+        mk_echo_attachment(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            &file.path().display().to_string(),
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let now = Utc::now().naive_utc();
+        signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(body)),
+            datasource_group_id: Set(Some(datasource_group_id)),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            sender: Set(None),
+            format: Set(None),
+            deleted: Set(false),
+            external_id: Set(None),
+            echo_inbox_message_id: Set(None),
+            message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
+            operator_tags: Set(None),
+            attachments_hash: Set(Some(format!(
+                "[attachment sha256:{}]",
+                sha256::digest(b"payload")
+            ))),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_system_settings(
+            &env.dbx,
+            cursor + chrono::TimeDelta::minutes(2),
+            false,
+        )
+        .await;
+        let missing_message =
+            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
+                .await
+                .unwrap();
+
+        let missing_count = run_recovery(&env).await;
+
+        assert_eq!(missing_count, 1);
+        let missing_message =
+            echo_missing_message::Entity::find_by_id(missing_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(missing_message.is_resolved);
+        assert_eq!(missing_message.status, EchoMissingMessageStatus::Duplicate);
+        assert_eq!(missing_message.error, None);
     }
 
     #[tokio::test]
@@ -2311,6 +2411,7 @@ mod tests {
             echo_inbox_message_id: Set(echo_inbox_message_id),
             message_uid: Set(message_uid),
             operator_tags: Set(None),
+            attachments_hash: Set(None),
         }
         .insert(dbx)
         .await
@@ -2335,6 +2436,7 @@ mod tests {
             echo_inbox_message_id: Set(Some(i64::from(inbox_id))),
             message_uid: Set(None),
             operator_tags: Set(None),
+            attachments_hash: Set(None),
         }
         .insert(dbx)
         .await

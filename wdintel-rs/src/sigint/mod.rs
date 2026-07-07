@@ -395,6 +395,8 @@ mod oneoff_reprocess_coords_tests {
 pub async fn find_duplicate_of(
     txn: &DatabaseTransaction,
     body_for_dedupe: &str,
+    body: &str,
+    attachments_hash: Option<&str>,
     m_timestamp: Option<NaiveDateTime>,
     db_message_id: i64,
     manager: &mut ConnectionManager,
@@ -467,16 +469,44 @@ pub async fn find_duplicate_of(
     let mut chars = body_for_dedupe.chars();
     chars.next_back();
     let alt_body = chars.as_str().to_string();
+    let body_filter = match attachments_hash {
+        Some(attachments_hash) => Condition::any()
+            .add(
+                Condition::all()
+                    .add(signal_message::Column::Body.eq(body))
+                    .add(
+                        signal_message::Column::AttachmentsHash
+                            .eq(attachments_hash),
+                    ),
+            )
+            .add(
+                Condition::all()
+                    .add(signal_message::Column::Body.eq(body_for_dedupe))
+                    .add(signal_message::Column::AttachmentsHash.is_null()),
+            )
+            .add(
+                Condition::all()
+                    .add(signal_message::Column::Body.eq(alt_body))
+                    .add(signal_message::Column::AttachmentsHash.is_null()),
+            ),
+        None => Condition::any()
+            .add(
+                Condition::all()
+                    .add(signal_message::Column::Body.eq(body_for_dedupe))
+                    .add(signal_message::Column::AttachmentsHash.is_null()),
+            )
+            .add(
+                Condition::all()
+                    .add(signal_message::Column::Body.eq(alt_body))
+                    .add(signal_message::Column::AttachmentsHash.is_null()),
+            ),
+    };
 
     let m_duplicate = signal_message::Entity::find()
         .find_with_related(datasource_group::Entity)
         .filter(time_filter)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            signal_message::Column::Body
-                .eq(body_for_dedupe)
-                .or(signal_message::Column::Body.eq(alt_body)),
-        )
+        .filter(body_filter)
         .order_by_asc(signal_message::Column::CreatedAt)
         .all(txn)
         .await
@@ -717,6 +747,7 @@ async fn xlsx_import_process_one(
         echo_inbox_message_id: Set(None),
         message_uid: NotSet,
         operator_tags: NotSet,
+        attachments_hash: NotSet,
     }
     .insert(dbx)
     .await

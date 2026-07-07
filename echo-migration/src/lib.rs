@@ -282,6 +282,7 @@ mod m20260706_142937_add_goi_integration_pause_worker;
 mod m20260706_153312_tag_unique_enabled_organism_label;
 mod m20260707_095504_echo_missing_message_deleted_status;
 mod m20260707_164344_echo_missing_message_duplicate_status;
+mod m20260707_170000_signal_message_attachments_hash;
 
 pub struct Migrator;
 
@@ -594,6 +595,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260707_164344_echo_missing_message_duplicate_status::Migration,
+            ),
+            Box::new(
+                m20260707_170000_signal_message_attachments_hash::Migration,
             ),
         ]
     }

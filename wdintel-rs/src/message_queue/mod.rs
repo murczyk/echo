@@ -20,6 +20,12 @@ pub struct ProcessSignalMessageQueueItemOptions {
     pub created_at: Option<NaiveDateTime>,
 }
 
+#[derive(Clone, Debug)]
+pub struct ProcessSignalMessageQueueItemResult {
+    pub message_uid: String,
+    pub is_duplicate: bool,
+}
+
 pub async fn process_signal_message_queue_item(
     m: Message,
     attachments: Vec<MessageAttachmentF1>,
@@ -32,7 +38,7 @@ pub async fn process_signal_message_queue_item(
     skip_process_inbox_item: bool,
     changed_inbox_item_ids: &mut Vec<i64>,
 ) -> Result<String, AppError> {
-    process_signal_message_queue_item_with_options(
+    Ok(process_signal_message_queue_item_with_options(
         m,
         attachments,
         redis,
@@ -45,7 +51,8 @@ pub async fn process_signal_message_queue_item(
         changed_inbox_item_ids,
         ProcessSignalMessageQueueItemOptions::default(),
     )
-    .await
+    .await?
+    .message_uid)
 }
 
 pub async fn process_signal_message_queue_item_with_options(
@@ -60,7 +67,7 @@ pub async fn process_signal_message_queue_item_with_options(
     skip_process_inbox_item: bool,
     changed_inbox_item_ids: &mut Vec<i64>,
     options: ProcessSignalMessageQueueItemOptions,
-) -> Result<String, AppError> {
+) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
     // Normalize body
     info!("received message: {:?}", m);
     let body = m.body.replace("\r\n", "\n");
@@ -72,8 +79,9 @@ pub async fn process_signal_message_queue_item_with_options(
         attachments.len(),
         attachment_paths
     );
+    let attachments_hash = dedupe::attachments_hash(&attachments).await;
     let body_for_dedupe =
-        dedupe::body_with_attachment_markers(&body, &attachments).await;
+        dedupe::body_with_attachments_hash(&body, attachments_hash.as_deref());
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
             txn,
@@ -99,6 +107,7 @@ pub async fn process_signal_message_queue_item_with_options(
         echo_inbox_message_id: Set(m.inbox_message_id),
         message_uid: NotSet,
         operator_tags: NotSet,
+        attachments_hash: Set(attachments_hash),
     }
     .insert(txn)
     .await
@@ -106,6 +115,8 @@ pub async fn process_signal_message_queue_item_with_options(
     let m_duplicate_of = crate::sigint::find_duplicate_of(
         txn,
         &body_for_dedupe,
+        &body,
+        signal_message.attachments_hash.as_deref(),
         Some(m.timestamp),
         signal_message.id,
         redis,
@@ -136,7 +147,10 @@ pub async fn process_signal_message_queue_item_with_options(
                 ),
             }
         }
-        return Ok(res.message.message_uid.context(h!())?);
+        return Ok(ProcessSignalMessageQueueItemResult {
+            message_uid: res.message.message_uid.context(h!())?,
+            is_duplicate: true,
+        });
     }
 
     let signal_message =
@@ -185,5 +199,8 @@ pub async fn process_signal_message_queue_item_with_options(
         .await
         .c(h!())?;
     }
-    Ok(message_uid)
+    Ok(ProcessSignalMessageQueueItemResult {
+        message_uid,
+        is_duplicate: false,
+    })
 }
