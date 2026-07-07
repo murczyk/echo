@@ -15,7 +15,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { buildInboxReq } from './helpers';
-import type { AnalysisBotTagAction } from './use-analysis-data.message-actions';
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
@@ -67,7 +67,7 @@ export type UseAnalysisDataResult = {
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
-  botTagAction: AnalysisBotTagAction | null;
+  botTagAction: MessageCardBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;
   loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;

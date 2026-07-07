@@ -8,6 +8,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type {
   InboxMessage,
+  InboxMessageTag,
   InboxMessagesReq,
   SavedFilterDuty,
   SignalGroupEntry,
@@ -25,6 +26,7 @@ const hoisted = vi.hoisted(() => ({
   importantAdd: vi.fn(),
   importantRemove: vi.fn(),
   inboxMessageTagsAdd: vi.fn(),
+  inboxMessageTagsModelError: vi.fn(),
   inboxMessageTagsRm: vi.fn(),
   savedFilterDelete: vi.fn(),
   savedFilterRename: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock('../../services/api/inbox', () => ({
   importantAdd: hoisted.importantAdd,
   importantRemove: hoisted.importantRemove,
   inboxMessageTagsAdd: hoisted.inboxMessageTagsAdd,
+  inboxMessageTagsModelError: hoisted.inboxMessageTagsModelError,
   inboxMessageTagsRm: hoisted.inboxMessageTagsRm,
   savedFilterDelete: hoisted.savedFilterDelete,
   savedFilterRename: hoisted.savedFilterRename,
@@ -86,6 +89,9 @@ type HarnessApi = ReturnType<typeof useRerDutyMessageActions> & {
     sender?: string | null;
     senderName?: string | null;
   } | null;
+  botTagAction: ReturnType<typeof useRerDutyMessageActions>['botTagAction'];
+  onCancelBotTagAction: ReturnType<typeof useRerDutyMessageActions>['onCancelBotTagAction'];
+  onMarkBotTagWrong: ReturnType<typeof useRerDutyMessageActions>['onMarkBotTagWrong'];
 };
 
 function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMessagesReq {
@@ -119,10 +125,32 @@ function buildFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState 
   };
 }
 
+function buildTag(tagId: number, overrides: Partial<InboxMessageTag> = {}): InboxMessageTag {
+  return {
+    id: tagId,
+    tagId,
+    confidence: 1,
+    login: null,
+    model: null,
+    organismId: null,
+    ...overrides,
+  };
+}
+
+function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
+  return minimalInboxMessage({
+    text: 'message',
+    tags: [3, 4],
+    inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })],
+    ...overrides,
+  });
+}
+
 function TestHarness(props: {
   apiRef: MutableRefObject<HarnessApi | null>;
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
+  authUserName?: string | null;
 }) {
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(
     props.initialFeeds ?? [buildFeed()],
@@ -146,7 +174,7 @@ function TestHarness(props: {
     showArrowResult: vi.fn(),
     setWatchModeByFeedId: vi.fn(),
     setLoadingNewerFeedId: vi.fn(),
-    authUserName: null,
+    authUserName: props.authUserName ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
     },
@@ -174,6 +202,9 @@ function TestHarness(props: {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     commentMessagePreview: actions.commentMessagePreview,
+    botTagAction: actions.botTagAction,
+    onCancelBotTagAction: actions.onCancelBotTagAction,
+    onMarkBotTagWrong: actions.onMarkBotTagWrong,
   };
   return null;
 }
@@ -203,6 +234,7 @@ describe('useRerDutyMessageActions', () => {
     vi.clearAllMocks();
     hoisted.deleteMessage.mockResolvedValue(undefined);
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
+    hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -587,5 +619,68 @@ describe('useRerDutyMessageActions', () => {
 
     expect(apiRef.current!.saveFilterNameByFeedId['mf-0']).toBe('');
     expect(apiRef.current!.saveFilterNameByFeedId['mf-1']).toBe('Filter B');
+  });
+
+  it('keeps bot rows when toggling the human tag and clears only bot rows on model error', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          authUserName="tester"
+          initialFeeds={[
+            buildFeed({
+              items: [
+                [
+                  1,
+                  buildMessage({
+                    inboxTags: [buildTag(3, { model: 'bot', confidence: 0.92 })],
+                  }),
+                ],
+              ],
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleToggleTag('mf-0', 1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsAdd).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(apiRef.current!.botTagAction).toBeNull();
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([
+      expect.objectContaining({ tagId: 3, login: 'tester', model: null }),
+      expect.objectContaining({ tagId: 3, model: 'bot' }),
+    ]);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([3, 4]);
+
+    await act(async () => {
+      await apiRef.current!.handleToggleTag('mf-0', 1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(apiRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([
+      expect.objectContaining({ tagId: 3, model: 'bot' }),
+    ]);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([3, 4]);
+
+    await act(async () => {
+      await apiRef.current!.onMarkBotTagWrong(1, 3);
+    });
+
+    expect(hoisted.inboxMessageTagsModelError).toHaveBeenCalledWith({
+      messageId: 1,
+      tagId: 3,
+    });
+    expect(apiRef.current!.botTagAction).toBeNull();
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([]);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([4]);
   });
 });

@@ -22,7 +22,7 @@ import type {
 } from '../../../../Bindings';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
-import type { AnalysisBotTagAction } from './use-analysis-data.message-actions';
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -171,7 +171,7 @@ export type AnalysisPageState = {
   hasLoadedInitialMessages: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
-  botTagAction: AnalysisBotTagAction | null;
+  botTagAction: MessageCardBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
   messagesPaging: boolean;

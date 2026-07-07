@@ -24,6 +24,7 @@ import {
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 
 export type FeedColumnModel = {
   feed: MessageFeedState;
@@ -60,6 +61,9 @@ export type FeedColumnModel = {
     tagsLayout: TagsLayoutVariant;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
+    botTagAction: MessageCardBotTagAction | null;
+    onCancelBotTagAction: () => void;
+    onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
   };
   actions: {
     onLoadOlder: () => void;

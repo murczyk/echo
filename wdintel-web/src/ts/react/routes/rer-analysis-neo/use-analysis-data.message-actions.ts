@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-import type { InboxMessage, InboxMessageTag, SummaryTableFreqRow } from '../../../../Bindings';
+import type { InboxMessage, SummaryTableFreqRow } from '../../../../Bindings';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -17,11 +17,13 @@ import {
 import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisQueryState } from './types';
-
-export type AnalysisBotTagAction = {
-  messageId: number;
-  tagId: number;
-};
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import {
+  hasBotTag,
+  hasUserTag,
+  removeBotTags,
+  toggleHumanTag,
+} from '../shared/message-card/message-card-tag-actions';
 
 type Params = {
   currentUser: User | null;
@@ -41,102 +43,9 @@ type Params = {
   toErrorMessage: (error: unknown) => string;
 };
 
-function getInboxTags(message: InboxMessage): InboxMessageTag[] {
-  return message.inboxTags ?? [];
-}
-
-function hasUserTag(message: InboxMessage, tagId: number, login: string | null): boolean {
-  if (isNullOrUndefined(login) || login.trim() === '') return false;
-  return getInboxTags(message).some(
-    (tag) => tag.tagId === tagId && tag.model == null && tag.login === login,
-  );
-}
-
-function hasBotTag(message: InboxMessage, tagId: number): boolean {
-  return getInboxTags(message).some((tag) => tag.tagId === tagId && tag.model != null);
-}
-
-function tagIdsWithFallback(
-  inboxTags: InboxMessageTag[],
-  fallbackTags: number[] | null | undefined,
-): number[] {
-  const next: number[] = [];
-  for (const tag of inboxTags) {
-    if (!next.includes(tag.tagId)) next.push(tag.tagId);
-  }
-  for (const tagId of fallbackTags ?? []) {
-    if (!next.includes(tagId)) next.push(tagId);
-  }
-  return next;
-}
-
-function tagIdsWithoutTagId(
-  inboxTags: InboxMessageTag[],
-  fallbackTags: number[] | null | undefined,
-  tagId: number,
-): number[] {
-  const next: number[] = [];
-  for (const tag of inboxTags) {
-    if (tag.tagId !== tagId && !next.includes(tag.tagId)) next.push(tag.tagId);
-  }
-  for (const fallbackTagId of fallbackTags ?? []) {
-    if (fallbackTagId !== tagId && !next.includes(fallbackTagId)) next.push(fallbackTagId);
-  }
-  return next;
-}
-
-function toggleHumanTag(
-  message: InboxMessage,
-  tagId: number,
-  login: string | null,
-  organismId: number | null,
-): InboxMessage {
-  const currentTags = getInboxTags(message);
-  const remainingTags =
-    login == null
-      ? currentTags
-      : currentTags.filter(
-          (tag) => !(tag.tagId === tagId && tag.model == null && tag.login === login),
-        );
-  const hasRemoved = remainingTags.length !== currentTags.length;
-  const added =
-    login != null && !hasRemoved
-      ? [
-          {
-            id: 0,
-            tagId,
-            confidence: 1,
-            login,
-            model: null,
-            organismId,
-          },
-        ]
-      : [];
-  const inboxTags = [...added, ...remainingTags];
-  const hasRemainingTag = inboxTags.some((tag) => tag.tagId === tagId);
-  return {
-    ...message,
-    inboxTags,
-    tags: hasRemainingTag
-      ? tagIdsWithFallback(inboxTags, message.tags ?? [])
-      : tagIdsWithoutTagId(inboxTags, message.tags ?? [], tagId),
-  };
-}
-
-function removeBotTags(message: InboxMessage, tagId: number): InboxMessage {
-  const inboxTags = getInboxTags(message).filter(
-    (tag) => !(tag.tagId === tagId && tag.model != null),
-  );
-  return {
-    ...message,
-    inboxTags,
-    tags: tagIdsWithoutTagId(inboxTags, message.tags ?? [], tagId),
-  };
-}
-
 export function useAnalysisDataMessageActions(params: Params) {
   const [messageActionCount, setMessageActionCount] = useState(0);
-  const [botTagAction, setBotTagAction] = useState<AnalysisBotTagAction | null>(null);
+  const [botTagAction, setBotTagAction] = useState<MessageCardBotTagAction | null>(null);
 
   const onDeleteMessage = useCallback(
     async (messageId: number) => {

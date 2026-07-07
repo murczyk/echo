@@ -91,6 +91,9 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     tagsLayout,
     tagsMap,
     tagsOrder,
+    botTagAction,
+    onCancelBotTagAction,
+    onMarkBotTagWrong,
   } = messageCard;
   const {
     onLoadOlder,
@@ -270,6 +273,9 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               msg={msg}
               feedCount={feedCount}
               tagsLayout={tagsLayout}
+              botTagAction={botTagAction?.messageId === id ? botTagAction : null}
+              onCancelBotTagAction={onCancelBotTagAction}
+              onMarkBotTagWrong={onMarkBotTagWrong}
               referenceTimeMs={feed.referenceTimeMs}
               authUserName={authUserName}
               groupName={labels.groupName}
