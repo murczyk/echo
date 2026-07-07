@@ -58,6 +58,7 @@ export function usePowerDatePickerDraft<TValue>({
   useLayoutEffect(() => {
     if (value != null) return;
     clearPendingChange();
+    setDraftValue(value);
   }, [value]);
 
   const syncDraftFromControlledValueIfIdle = () => {
