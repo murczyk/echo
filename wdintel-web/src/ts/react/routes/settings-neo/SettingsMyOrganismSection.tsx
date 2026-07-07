@@ -6,7 +6,7 @@ import type { TagAdmin } from '../../../../Bindings';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SectionErrorState } from '../../components/SectionErrorState';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
-import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
+import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -91,7 +91,12 @@ export function SettingsMyOrganismSection() {
   const visibleTags = useMemo(() => tags.filter((tag) => tag.enabled), [tags]);
 
   const columns = useMemo<MRT_ColumnDef<TagAdmin>[]>(() => {
-    const noWrapCellProps = { sx: { ...CUSTOM_CELL_STYLES, whiteSpace: 'nowrap' } };
+    const noWrapHeadCellProps = {
+      sx: { ...CUSTOM_STYLES.muiTableHeadCellProps.sx, whiteSpace: 'nowrap' },
+    };
+    const noWrapBodyCellProps = {
+      sx: { ...CUSTOM_STYLES.muiTableBodyCellProps.sx, whiteSpace: 'nowrap' },
+    };
     return [
       { header: 'ID', accessorKey: 'tagId', size: 80 },
       { header: 'Назва', accessorKey: 'label', size: 200 },
@@ -100,24 +105,24 @@ export function SettingsMyOrganismSection() {
         id: 'extra',
         accessorFn: (row) => formatBoolean(row.extra),
         size: 150,
-        muiTableHeadCellProps: noWrapCellProps,
-        muiTableBodyCellProps: noWrapCellProps,
+        muiTableHeadCellProps: noWrapHeadCellProps,
+        muiTableBodyCellProps: noWrapBodyCellProps,
       },
       {
         header: 'Порядок',
         id: 'ord',
         accessorFn: (row) => (row.ord == null ? '—' : row.ord),
         size: 130,
-        muiTableHeadCellProps: noWrapCellProps,
-        muiTableBodyCellProps: noWrapCellProps,
+        muiTableHeadCellProps: noWrapHeadCellProps,
+        muiTableBodyCellProps: noWrapBodyCellProps,
       },
       {
         header: 'Палітра',
         id: 'isPalitra',
         accessorFn: (row) => formatBoolean(row.isPalitra),
         size: 130,
-        muiTableHeadCellProps: noWrapCellProps,
-        muiTableBodyCellProps: noWrapCellProps,
+        muiTableHeadCellProps: noWrapHeadCellProps,
+        muiTableBodyCellProps: noWrapBodyCellProps,
       },
     ];
   }, []);
