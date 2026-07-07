@@ -100,3 +100,8 @@ export function submitFormFromKeyboard(
 export function getFormKeyboardSubmitHandler(canSubmit: CanSubmit) {
   return (event: KeyboardEvent<HTMLElement>) => submitFormFromKeyboard(event, canSubmit);
 }
+
+export function preventFormSubmitFromKeyboard(event: KeyboardEvent<HTMLElement>): void {
+  if (!shouldSubmitFormFromKeyboard(event)) return;
+  event.preventDefault();
+}

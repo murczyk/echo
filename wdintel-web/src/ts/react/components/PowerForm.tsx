@@ -1,7 +1,10 @@
 import { Box, type BoxProps } from '@mui/material';
 import type { FormEvent, FormEventHandler, KeyboardEventHandler } from 'react';
 
-import { getFormKeyboardSubmitHandler } from '../utils/formKeyboardSubmit';
+import {
+  getFormKeyboardSubmitHandler,
+  preventFormSubmitFromKeyboard,
+} from '../utils/formKeyboardSubmit';
 
 type PowerFormProps = Omit<BoxProps<'form'>, 'component' | 'onSubmit' | 'onKeyDown'> & {
   onSubmit: FormEventHandler<HTMLFormElement>;
@@ -30,7 +33,11 @@ export function PowerForm(props: PowerFormProps) {
         if (event.defaultPrevented) return;
         getFormKeyboardSubmitHandler(canSubmit)(event);
       }
-    : onKeyDown;
+    : (event) => {
+        onKeyDown?.(event);
+        if (event.defaultPrevented) return;
+        preventFormSubmitFromKeyboard(event);
+      };
 
   return <Box {...rest} component="form" onSubmit={handleSubmit} onKeyDown={handleKeyDown} />;
 }

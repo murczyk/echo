@@ -7,10 +7,11 @@ Shared app wrappers for repeated UI behavior in `wdintel-web`.
 Use for forms in dialogs, drawers, and pages when you want app-wide submit behavior.
 
 - `keyboardSubmit` is enabled by default.
-- `keyboardSubmit={false}` disables Enter / Cmd+Enter / Ctrl+Enter handling.
+- `keyboardSubmit={false}` disables keyboard-triggered submit shortcuts.
 - `canSubmit={boolean | () => boolean}` blocks both keyboard submit and native submit.
 - Single-line inputs submit on `Enter`.
 - Textareas submit on `Cmd+Enter` / `Ctrl+Enter`.
+- Use `canSubmit={false}` when the whole form must stay blocked.
 
 ```tsx
 <PowerForm canSubmit={canSave} onSubmit={handleSubmit}>

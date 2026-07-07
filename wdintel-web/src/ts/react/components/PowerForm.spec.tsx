@@ -173,7 +173,34 @@ describe('PowerForm', () => {
       input?.dispatchEvent(event);
     });
 
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('prevents textarea keyboard submit when keyboardSubmit is false', () => {
+    const onSubmit = vi.fn();
+    const { container, root } = renderComponent(
+      <PowerForm keyboardSubmit={false} onSubmit={onSubmit}>
+        <textarea aria-label="value" />
+      </PowerForm>,
+    );
+
+    const form = container.querySelector('form') as HTMLFormElement | null;
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null;
+    expect(form).toBeTruthy();
+    expect(textarea).toBeTruthy();
+    wireRequestSubmit(form as HTMLFormElement);
+
+    const metaEvent = buildKeyboardEvent(textarea, { metaKey: true });
+    const ctrlEvent = buildKeyboardEvent(textarea, { ctrlKey: true });
+    act(() => {
+      textarea?.dispatchEvent(metaEvent);
+      textarea?.dispatchEvent(ctrlEvent);
+    });
+
+    expect(metaEvent.defaultPrevented).toBe(true);
+    expect(ctrlEvent.defaultPrevented).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
     root.unmount();
   });
@@ -237,6 +264,28 @@ describe('PowerForm', () => {
     const button = container.querySelector('button[type="submit"]') as HTMLButtonElement | null;
     expect(form).toBeTruthy();
     expect(button).toBeTruthy();
+
+    act(() => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    root.unmount();
+  });
+
+  it('still allows normal form submission when keyboardSubmit is false', () => {
+    const onSubmit = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
+    const { container, root } = renderComponent(
+      <PowerForm keyboardSubmit={false} onSubmit={onSubmit}>
+        <input aria-label="value" />
+        <button type="submit">Save</button>
+      </PowerForm>,
+    );
+
+    const form = container.querySelector('form') as HTMLFormElement | null;
+    expect(form).toBeTruthy();
 
     act(() => {
       form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
