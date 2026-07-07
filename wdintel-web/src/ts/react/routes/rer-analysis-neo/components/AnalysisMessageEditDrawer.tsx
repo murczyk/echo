@@ -2,7 +2,9 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import { Box, Button, Chip, Drawer, IconButton, Stack, TextField, Typography } from '@mui/material';
 import { memo, useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import { ELLIPSIS, isNullOrUndefined } from '../../../utils/misc';
+import { getFormKeyboardSubmitHandler } from '../../../utils/formKeyboardSubmit';
 
 import type { InboxMessage } from '../../../../../Bindings';
 
@@ -38,6 +40,7 @@ function AnalysisMessageEditDrawerComponent({
   }, [message?.id, message?.message, open]);
 
   const currentMessage = draftMessage ?? message?.message ?? null;
+  const canSave = !saveInFlight && !isNullOrUndefined(currentMessage);
 
   const updateDraftField = <K extends keyof InboxMessage>(field: K, value: InboxMessage[K]) => {
     setDraftMessage((current) =>
@@ -87,9 +90,18 @@ function AnalysisMessageEditDrawerComponent({
     updateDraftField('callsigns', [...currentCallsigns, callsign]);
   };
 
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSave || isNullOrUndefined(currentMessage)) return;
+    onSave(currentMessage);
+  };
+
   return (
     <Drawer anchor="right" open={open} onClose={onClose} ModalProps={{ disableRestoreFocus: true }}>
       <Box
+        component="form"
+        onSubmit={handleSubmit}
+        onKeyDown={getFormKeyboardSubmitHandler(canSave)}
         sx={{
           width: { xs: '100vw', sm: 420 },
           display: 'flex',
@@ -129,6 +141,7 @@ function AnalysisMessageEditDrawerComponent({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
+                    event.stopPropagation();
                     addCallsign();
                   }
                 }}
@@ -206,12 +219,10 @@ function AnalysisMessageEditDrawerComponent({
           justifyContent="flex-end"
           sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}
         >
-          <Button onClick={onClose}>Скасувати</Button>
-          <Button
-            variant="contained"
-            onClick={() => currentMessage && onSave(currentMessage)}
-            disabled={saveInFlight || isNullOrUndefined(currentMessage)}
-          >
+          <Button type="button" onClick={onClose}>
+            Скасувати
+          </Button>
+          <Button type="submit" variant="contained" disabled={!canSave}>
             {saveInFlight ? `Зберігаємо${ELLIPSIS}` : 'Зберегти'}
           </Button>
         </Stack>
