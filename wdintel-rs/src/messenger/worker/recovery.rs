@@ -1567,6 +1567,23 @@ mod tests {
     #[serial]
     async fn scheduled_caption_media_duplicate_is_marked_duplicate() {
         let _guard = TEST_LOCK.lock().await;
+        assert_caption_media_duplicate_is_marked_duplicate(Some(format!(
+            "[attachment sha256:{}]",
+            sha256::digest(b"payload")
+        )))
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scheduled_legacy_caption_media_duplicate_is_marked_duplicate() {
+        let _guard = TEST_LOCK.lock().await;
+        assert_caption_media_duplicate_is_marked_duplicate(None).await;
+    }
+
+    async fn assert_caption_media_duplicate_is_marked_duplicate(
+        existing_attachments_hash: Option<String>,
+    ) {
         let env = recovery_env().await;
         let (account, datasource) =
             mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
@@ -1608,7 +1625,7 @@ mod tests {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
-            body: Set(Some(body)),
+            body: Set(Some(body.clone())),
             datasource_group_id: Set(Some(datasource_group_id)),
             created_at: Set(now),
             timestamp: Set(Some(now)),
@@ -1619,10 +1636,7 @@ mod tests {
             echo_inbox_message_id: Set(None),
             message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
             operator_tags: Set(None),
-            attachments_hash: Set(Some(format!(
-                "[attachment sha256:{}]",
-                sha256::digest(b"payload")
-            ))),
+            attachments_hash: Set(existing_attachments_hash),
         }
         .insert(&env.dbx)
         .await

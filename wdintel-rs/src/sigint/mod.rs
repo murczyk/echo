@@ -481,6 +481,11 @@ pub async fn find_duplicate_of(
             )
             .add(
                 Condition::all()
+                    .add(signal_message::Column::Body.eq(body))
+                    .add(signal_message::Column::AttachmentsHash.is_null()),
+            )
+            .add(
+                Condition::all()
                     .add(signal_message::Column::Body.eq(body_for_dedupe))
                     .add(signal_message::Column::AttachmentsHash.is_null()),
             )
