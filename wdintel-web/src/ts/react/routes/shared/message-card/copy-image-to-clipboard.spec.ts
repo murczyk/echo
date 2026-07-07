@@ -150,6 +150,49 @@ describe('copyImageToClipboard', () => {
     expect(write).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects non-image fetched content even when ClipboardItem supports it', async () => {
+    const image = createLoadedImage();
+    const write = vi.fn().mockResolvedValue(undefined);
+    const toBlob = vi.fn((callback: BlobCallback) => {
+      callback?.(null);
+    });
+    const originalCreateElement = document.createElement.bind(document);
+    const createElement = vi.spyOn(document, 'createElement');
+    createElement.mockImplementation(((tagName: string) => {
+      if (tagName === 'canvas') {
+        return {
+          width: 0,
+          height: 0,
+          getContext: () => ({ drawImage: vi.fn() }) as CanvasRenderingContext2D,
+          toBlob,
+        } as never;
+      }
+
+      return originalCreateElement(tagName);
+    }) as typeof document.createElement);
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { write },
+    });
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(['<html></html>'], { type: 'text/html' }),
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'text/html' : null),
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(copyImageToClipboard(image, 'https://example.test/image.html')).rejects.toThrow(
+      'Копіювання зображень недоступне.',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('reports image copying as unavailable when the browser lacks clipboard support', () => {
     const image = createLoadedImage();
     vi.stubGlobal('ClipboardItem', undefined);

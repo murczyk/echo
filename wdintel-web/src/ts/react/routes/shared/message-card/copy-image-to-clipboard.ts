@@ -28,9 +28,10 @@ function hasImageDimensions(image: HTMLImageElement | null): boolean {
 }
 
 function isClipboardImageMimeTypeSupported(mimeType: string): boolean {
+  if (!mimeType.startsWith('image/')) return false;
   const clipboardItem = window.ClipboardItem as ClipboardItemLike | undefined;
   if (clipboardItem?.supports != null) return clipboardItem.supports(mimeType);
-  return mimeType.startsWith('image/');
+  return true;
 }
 
 async function writeBlobToClipboard(blob: Blob, mimeType: string): Promise<void> {
