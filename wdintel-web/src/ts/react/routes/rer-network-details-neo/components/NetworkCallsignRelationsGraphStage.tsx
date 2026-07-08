@@ -450,7 +450,7 @@ export function NetworkCallsignRelationsGraphStage({
         >
           <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520 }}>
             <Typography variant="h6" sx={{ color: graphTheme.overlayText, fontWeight: 700 }}>
-              Граф зв&apos;язків позивних
+              Граф зв'язків позивних
             </Typography>
             <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
               Немає даних про зв&apos;язки для вибраних мережі, періоду та частот.

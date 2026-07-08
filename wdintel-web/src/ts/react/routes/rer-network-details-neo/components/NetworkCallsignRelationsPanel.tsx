@@ -78,7 +78,7 @@ export function NetworkCallsignRelationsPanel({
           sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1, alignItems: 'center' }}
         >
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв&apos;язків позивних
+            Граф зв'язків позивних
           </Typography>
           <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>
             {relationsError}
@@ -106,7 +106,7 @@ export function NetworkCallsignRelationsPanel({
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв&apos;язків позивних
+            Граф зв'язків позивних
           </Typography>
           <NetworkDetailsLoadingState message={`Завантажуємо граф зв'язків позивних${ELLIPSIS}`} />
         </Stack>
@@ -129,7 +129,7 @@ export function NetworkCallsignRelationsPanel({
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%', flex: 1 }}>
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв&apos;язків позивних
+            Граф зв'язків позивних
           </Typography>
           <NetworkDetailsEmptyState
             icon={<AccountTreeOutlinedIcon />}

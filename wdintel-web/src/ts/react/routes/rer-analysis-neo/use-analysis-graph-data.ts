@@ -18,6 +18,10 @@ type Params = {
   queryState: AnalysisQueryState;
 };
 
+export type InvalidateCallsignGraphOptions = {
+  clearGraph?: boolean;
+};
+
 export function useAnalysisGraphData({
   onError,
   onUnauthorized,
@@ -46,9 +50,12 @@ export function useAnalysisGraphData({
     setCorrelatedFreqsLoading(false);
   }, []);
 
-  const invalidateCallsignGraph = useCallback(() => {
+  const invalidateCallsignGraph = useCallback((options?: InvalidateCallsignGraphOptions) => {
     callsignGraphAbortControllerRef.current?.abort();
     callsignGraphRequestRef.current += 1;
+    if (options?.clearGraph) {
+      setCallsignGraph(null);
+    }
     setCallsignGraphLoading(false);
     setCallsignGraphLoadError(null);
     setCallsignGraphLoadVersion((current) => current + 1);

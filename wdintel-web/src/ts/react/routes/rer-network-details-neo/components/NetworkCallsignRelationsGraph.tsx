@@ -504,7 +504,7 @@ export function NetworkCallsignRelationsGraph({
           sx={{ flexWrap: 'wrap' }}
         >
           <Typography id={headingId} component="h2" variant="h6">
-            Граф зв&apos;язків позивних
+            Граф зв'язків позивних
           </Typography>
           <Stack spacing={0.25} sx={{ textAlign: 'right', alignItems: 'flex-end' }}>
             <Typography variant="body2" color="text.secondary">

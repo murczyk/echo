@@ -17,13 +17,14 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import type { AnalysisAorEntry, AnalysisCountItem } from './types';
+import type { InvalidateCallsignGraphOptions } from './use-analysis-graph-data';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type Params = {
   emptyNewCallsigns: NewCallsignsRes;
   emptyOptions: import('./types').AnalysisFilterOptions;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: InvalidateCallsignGraphOptions) => void;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<CountStatsRsp | null>;
@@ -156,7 +157,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setMessageComments({});
     invalidateMessageCommentsLoads();
     optionsFreqsRef.current = [];
-    invalidateCallsignGraph();
+    invalidateCallsignGraph({ clearGraph: true });
   }, [
     emptyNewCallsigns,
     emptyOptions,
