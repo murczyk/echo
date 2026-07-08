@@ -284,14 +284,8 @@ fn message_has_peleng_exists() -> SimpleExpr {
         ))
         .ne(""),
     );
-    let peleng_exists = Expr::exists(
-        sigint_peleng::Entity::find()
-            .filter(Expr::col(sigint_peleng::Column::SourceInboxItemId).equals(
-                (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
-            ))
-            .filter(sigint_peleng::Column::Deleted.eq(false))
-            .into_query(),
-    );
+    let peleng_exists =
+        crate::location::peleng::inbox_item_has_active_peleng_exists();
     coords_exists.or(peleng_exists)
 }
 
@@ -512,16 +506,16 @@ where
         if !selected_units.is_empty() {
             let selected_units =
                 selected_units.clone().into_iter().collect_vec();
-            let in_subquery_condition = message_has_linked_unit(
-                Expr::col((
-                    Alias::new("selected_unit"),
-                    sigint_unit::Column::Name,
-                ))
-                .is_in(selected_units.clone()),
+            let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let linked_unit_match = linked_unit_matches_selected_units(
+                selected_units.clone(),
+                !exact_match_only,
             );
+            let in_subquery_condition =
+                message_has_linked_unit(linked_unit_match);
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
-            let expr = if units_exact_match_only.unwrap_or(false) {
+            let expr = if exact_match_only {
                 in_subquery_condition
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
@@ -587,17 +581,15 @@ where
         }
         if !denied_units.is_empty() {
             let selected_units = denied_units.into_iter().collect_vec();
+            let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let linked_unit_match = linked_unit_matches_selected_units(
+                selected_units.clone(),
+                !exact_match_only,
+            );
+            let in_subquery_condition =
+                message_has_linked_unit(linked_unit_match).not();
 
-            let in_subquery_condition = message_has_linked_unit(
-                Expr::col((
-                    Alias::new("selected_unit"),
-                    sigint_unit::Column::Name,
-                ))
-                .is_in(selected_units.clone()),
-            )
-            .not();
-
-            let expr = if units_exact_match_only.unwrap_or(false) {
+            let expr = if exact_match_only {
                 in_subquery_condition
             } else {
                 // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -620,6 +612,159 @@ where
         (Some(f), None) => Ok(q.filter(f)),
         (Some(f1), Some(f2)) => Ok(q.filter(f1.and(f2))),
     }
+}
+
+fn linked_unit_matches_selected_units(
+    selected_units: Vec<String>,
+    include_hierarchy: bool,
+) -> SimpleExpr {
+    let unit_alias = Alias::new("selected_unit");
+    let unit_matches =
+        Expr::col((unit_alias.clone(), sigint_unit::Column::Name))
+            .is_in(selected_units.clone());
+
+    if !include_hierarchy {
+        return unit_matches;
+    }
+
+    unit_matches
+        .or(unresolved_hierarchy_column_matches_selected_units(
+            &selected_units,
+            unit_alias.clone(),
+        ))
+        .or(selected_parent_unit_matches_linked_unit(
+            selected_units,
+            unit_alias,
+        ))
+}
+
+fn unresolved_hierarchy_column_matches_selected_units(
+    selected_units: &[String],
+    linked_unit_alias: Alias,
+) -> SimpleExpr {
+    let columns = sigint_unit_hierarchy_columns();
+    columns[1..].iter().fold(
+        unresolved_hierarchy_column_matches_selected_unit(
+            selected_units,
+            linked_unit_alias.clone(),
+            columns[0],
+        ),
+        |expr, column| {
+            expr.or(unresolved_hierarchy_column_matches_selected_unit(
+                selected_units,
+                linked_unit_alias.clone(),
+                *column,
+            ))
+        },
+    )
+}
+
+fn unresolved_hierarchy_column_matches_selected_unit(
+    selected_units: &[String],
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    Expr::col((linked_unit_alias.clone(), column))
+        .is_in(selected_units.to_vec())
+        .and(
+            catalog_hierarchy_unit_exists_for_column_value(
+                linked_unit_alias,
+                column,
+            )
+            .not(),
+        )
+}
+
+fn catalog_hierarchy_unit_exists_for_column_value(
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    let catalog_unit_alias = Alias::new("selected_hierarchy_unit");
+    Expr::exists(
+        Query::select()
+            .expr(Expr::value(1))
+            .from_as(sigint_unit::Entity, catalog_unit_alias.clone())
+            .and_where(
+                Expr::col((
+                    catalog_unit_alias.clone(),
+                    sigint_unit::Column::Name,
+                ))
+                .equals((linked_unit_alias, column)),
+            )
+            .and_where(
+                Expr::col((
+                    catalog_unit_alias.clone(),
+                    sigint_unit::Column::Deleted,
+                ))
+                .eq(false),
+            )
+            .and_where(sigint_unit_has_any_hierarchy_value(catalog_unit_alias))
+            .to_owned(),
+    )
+}
+
+fn selected_parent_unit_matches_linked_unit(
+    selected_units: Vec<String>,
+    linked_unit_alias: Alias,
+) -> SimpleExpr {
+    let parent_unit_alias = Alias::new("selected_parent_unit");
+    let mut query = Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(sigint_unit::Entity, parent_unit_alias.clone())
+        .and_where(
+            Expr::col((parent_unit_alias.clone(), sigint_unit::Column::Name))
+                .is_in(selected_units),
+        )
+        .and_where(
+            Expr::col((
+                parent_unit_alias.clone(),
+                sigint_unit::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(sigint_unit_has_any_hierarchy_value(
+            parent_unit_alias.clone(),
+        ));
+    for column in sigint_unit_hierarchy_columns() {
+        query.and_where(parent_hierarchy_column_matches_linked_unit(
+            parent_unit_alias.clone(),
+            linked_unit_alias.clone(),
+            column,
+        ));
+    }
+
+    Expr::exists(query.to_owned())
+}
+
+fn parent_hierarchy_column_matches_linked_unit(
+    parent_unit_alias: Alias,
+    linked_unit_alias: Alias,
+    column: sigint_unit::Column,
+) -> SimpleExpr {
+    let parent_column = Expr::col((parent_unit_alias, column));
+    parent_column
+        .clone()
+        .eq("")
+        .or(parent_column.equals((linked_unit_alias, column)))
+}
+
+fn sigint_unit_has_any_hierarchy_value(unit_alias: Alias) -> SimpleExpr {
+    let columns = sigint_unit_hierarchy_columns();
+    columns[1..].iter().fold(
+        Expr::col((unit_alias.clone(), columns[0])).ne(""),
+        |expr, column| expr.or(Expr::col((unit_alias.clone(), *column)).ne("")),
+    )
+}
+
+fn sigint_unit_hierarchy_columns() -> [sigint_unit::Column; 5] {
+    [
+        sigint_unit::Column::Company,
+        sigint_unit::Column::Battalion,
+        sigint_unit::Column::Regiment,
+        sigint_unit::Column::Division,
+        sigint_unit::Column::Army,
+    ]
 }
 
 fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {

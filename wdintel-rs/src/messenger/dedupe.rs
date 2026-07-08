@@ -14,10 +14,31 @@ pub async fn body_with_attachment_markers<A>(
 where
     A: AttachmentForDedupe,
 {
-    if !body.trim().is_empty() || attachments.is_empty() {
-        return body.to_string();
-    }
+    let attachments_hash = attachments_hash(attachments).await;
+    body_with_attachments_hash(body, attachments_hash.as_deref())
+}
 
+pub fn body_with_attachments_hash(
+    body: &str,
+    attachments_hash: Option<&str>,
+) -> String {
+    let Some(attachments_hash) = attachments_hash else {
+        return body.to_string();
+    };
+    if body.trim().is_empty() {
+        attachments_hash.to_string()
+    } else {
+        format!("{body}\n{attachments_hash}")
+    }
+}
+
+pub async fn attachments_hash<A>(attachments: &[A]) -> Option<String>
+where
+    A: AttachmentForDedupe,
+{
+    if attachments.is_empty() {
+        return None;
+    }
     let mut markers = Vec::new();
     for attachment in attachments {
         let path = attachment.attachment_path();
@@ -58,10 +79,10 @@ where
     }
 
     if markers.is_empty() {
-        return body.to_string();
+        return None;
     }
     markers.sort();
-    markers.join("\n")
+    Some(markers.join("\n"))
 }
 
 fn attachment_name<A: AttachmentForDedupe>(attachment: &A) -> Option<String> {
@@ -84,5 +105,72 @@ impl AttachmentForDedupe for echo_im::types::MessageAttachmentF1 {
 
     fn attachment_name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use tokio::io::AsyncWriteExt;
+
+    struct TestAttachment {
+        path: String,
+        name: Option<String>,
+    }
+
+    impl AttachmentForDedupe for TestAttachment {
+        fn attachment_path(&self) -> &str {
+            &self.path
+        }
+
+        fn attachment_name(&self) -> Option<&str> {
+            self.name.as_deref()
+        }
+    }
+
+    async fn write_temp_file(data: &[u8]) -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let mut tokio_file =
+            tokio::fs::File::create(file.path()).await.unwrap();
+        tokio_file.write_all(data).await.unwrap();
+        tokio_file.flush().await.unwrap();
+        file
+    }
+
+    #[tokio::test]
+    async fn appends_attachment_hash_markers_to_non_empty_body() {
+        let file = write_temp_file(b"payload").await;
+        let attachment = TestAttachment {
+            path: file.path().display().to_string(),
+            name: Some("photo.jpg".to_string()),
+        };
+
+        let body =
+            body_with_attachment_markers("2026-07-07", &[attachment]).await;
+
+        assert_eq!(
+            body,
+            format!(
+                "2026-07-07\n[attachment sha256:{}]",
+                sha256::digest(b"payload")
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_media_only_dedupe_body_as_attachment_markers() {
+        let file = write_temp_file(b"payload").await;
+        let attachment = TestAttachment {
+            path: file.path().display().to_string(),
+            name: Some("photo.jpg".to_string()),
+        };
+
+        let body = body_with_attachment_markers("", &[attachment]).await;
+
+        assert_eq!(
+            body,
+            format!("[attachment sha256:{}]", sha256::digest(b"payload"))
+        );
     }
 }
