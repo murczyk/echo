@@ -418,6 +418,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     callsignGraph: data.callsignGraph,
     callsignGraphLoading: data.callsignGraphLoading,
     callsignGraphLoadVersion: data.callsignGraphLoadVersion,
+    callsignGraphLoadError: data.callsignGraphLoadError,
     callsignGraphNolimit: data.callsignGraphNolimit,
     centerTab,
     centerTabPending,

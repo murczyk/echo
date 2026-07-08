@@ -197,6 +197,7 @@ export function useAnalysisData({
     callsignGraph: sidebarData.callsignGraph,
     callsignGraphLoading: sidebarData.callsignGraphLoading,
     callsignGraphLoadVersion: sidebarData.callsignGraphLoadVersion,
+    callsignGraphLoadError: sidebarData.callsignGraphLoadError,
     callsignGraphNolimit: sidebarData.callsignGraphNolimit,
     correlatedFreqs: sidebarData.correlatedFreqs,
     correlatedFreqsLoading: sidebarData.correlatedFreqsLoading,
