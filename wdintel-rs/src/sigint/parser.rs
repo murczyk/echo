@@ -71,7 +71,18 @@ fn normalize_comment_key(text: &str) -> String {
 }
 
 fn filter_ignored_comment(comment: Option<String>) -> Option<String> {
-    comment.filter(|comment| !is_ignored_comment(comment))
+    let comment = comment?;
+    let kept = comment
+        .lines()
+        .map(str::trim)
+        .filter(|line| !is_ignored_comment(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if kept.trim().is_empty() {
+        None
+    } else {
+        Some(kept)
+    }
 }
 
 fn is_dialog_line(line: &str) -> bool {
@@ -154,7 +165,7 @@ pub fn parse_comments(body: &str) -> ParsedComments {
 pub fn extract_text_without_top_comment(
     body: &str,
 ) -> Result<NoHeadersBody, AppError> {
-    if crate::rer_importer::zp_peleng_format::parse(body).is_some()
+    if crate::rer_importer::zp_peleng_vorony_odina_format::parse(body).is_some()
         || crate::rer_importer::zp_digital_post_alt_format::parse(body)
             .is_some()
     {
@@ -362,6 +373,25 @@ mod tests {
     }
 
     #[test]
+    fn top_drops_only_service_radio_exchange_comment_line() {
+        let body = "службовий радіообмін\nважливий коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
+        let res = parse_comments(body);
+        assert_eq!(res.top.as_deref(), Some("важливий коментар"));
+        assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn top_keeps_service_radio_exchange_as_part_of_comment_line() {
+        let body = "службовий радіообмін противника щодо роботи\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
+        let res = parse_comments(body);
+        assert_eq!(
+            res.top.as_deref(),
+            Some("службовий радіообмін противника щодо роботи")
+        );
+        assert_eq!(res.bottom, None);
+    }
+
+    #[test]
     fn top_keeps_prefix_before_inline_otrymano_post_header() {
         let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
         let res = parse_comments(body);
@@ -412,10 +442,19 @@ mod tests {
     }
 
     #[test]
-    fn body_noheader_without_top_comment_keeps_zp_peleng_body() {
+    fn body_noheader_without_top_comment_keeps_zp_peleng_vorony_odina_mgrs_body(
+    ) {
         let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let res = extract_text_without_top_comment(body).unwrap();
         assert_eq!(res.body, "36T VS 89904 14667");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_keeps_zp_peleng_vorony_odina_sk42_body(
+    ) {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "x:51-29637\ny:65-01850");
     }
 
     #[test]
@@ -465,6 +504,25 @@ mod tests {
         let res = parse_comments(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn bottom_drops_only_service_radio_exchange_comment_line() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\nважливий рядок";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom.as_deref(), Some("важливий рядок"));
+    }
+
+    #[test]
+    fn bottom_keeps_service_radio_exchange_as_part_of_comment_line() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін противника щодо роботи";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(
+            res.bottom.as_deref(),
+            Some("службовий радіообмін противника щодо роботи")
+        );
     }
 
     #[test]

@@ -163,13 +163,14 @@ pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
 }
 
 pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
-    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(input)
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(input)
     {
-        let start_byte = input.find(&zp_peleng.mgrs).unwrap_or(0);
+        let start_byte = input.find(&zp_peleng.coordinate_text).unwrap_or(0);
         let start = input[..start_byte].chars().count();
-        let end = start + zp_peleng.mgrs.chars().count();
+        let end = start + zp_peleng.coordinate_text.chars().count();
         return Ok(NoHeadersBody {
-            body: zp_peleng.mgrs,
+            body: zp_peleng.coordinate_text,
             start,
             end,
         });
@@ -252,10 +253,17 @@ mod tests {
     }
 
     #[test]
-    fn extract_text_zp_peleng_format_keeps_mgrs() {
+    fn extract_text_zp_peleng_vorony_odina_mgrs_format_keeps_mgrs() {
         let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "36T VS 89904 14667");
+    }
+
+    #[test]
+    fn extract_text_zp_peleng_vorony_odina_sk42_format_keeps_xy() {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "x:51-29637\ny:65-01850");
     }
 
     #[test]

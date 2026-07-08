@@ -4,7 +4,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
-    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(inp) {
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
+    {
         return Ok(Some(zp_peleng.post_name));
     }
     if let Some(zp_digital_post_alt) =
@@ -260,10 +262,17 @@ mod tests {
     }
 
     #[test]
-    fn extract_post_zp_peleng_format() {
+    fn extract_post_zp_peleng_vorony_odina_mgrs_format() {
         let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "Shark 4")
+    }
+
+    #[test]
+    fn extract_post_zp_peleng_vorony_odina_sk42_format() {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Танго-Ехо")
     }
 
     #[test]

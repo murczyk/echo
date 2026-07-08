@@ -3,10 +3,13 @@ use milgeo_rs::coordinates::Coords;
 use regex::Regex;
 
 pub async fn extract_coords(body: &str) -> Vec<Coords> {
-    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(body)
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {
-        return milgeo_rs::coordinates::rer_extract_coords(&zp_peleng.mgrs)
-            .await;
+        return milgeo_rs::coordinates::rer_extract_coords(
+            &zp_peleng.coordinate_text,
+        )
+        .await;
     }
 
     let body = prepare_body_for_coords(body);
@@ -103,11 +106,20 @@ ID⬅️(CG) 1871040, 3106946, 2122380, 1139383, 443796, 3102387, 2626603, 47047
     }
 
     #[tokio::test]
-    async fn extract_coords_zp_peleng_format() {
+    async fn extract_coords_zp_peleng_vorony_odina_mgrs_format() {
         let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let coords = extract_coords(body).await;
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].mgrs, "36TVS8990414667");
+    }
+
+    #[tokio::test]
+    async fn extract_coords_zp_peleng_vorony_odina_sk42_format() {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let coords = extract_coords(body).await;
+        assert_eq!(coords.len(), 1);
+        assert!(coords[0].capture.contains("x:51-29637"));
+        assert!(coords[0].capture.contains("y:65-01850"));
     }
 
     #[tokio::test]

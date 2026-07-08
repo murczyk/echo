@@ -15,7 +15,8 @@ pub fn extract_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<NaiveDateTime>, AppError> {
-    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(body)
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {
         return Ok(Some(zp_peleng.timestamp));
     }
@@ -361,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_datetime_zp_peleng_format() {
+    fn extract_datetime_zp_peleng_vorony_odina_mgrs_format() {
         let input = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let tz = crate::config::get_tz();
         let lnow = fixed_now(tz);
@@ -370,6 +371,21 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 7, 1)
                 .unwrap()
                 .and_hms_opt(3, 7, 42)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_zp_peleng_vorony_odina_sk42_format() {
+        let input = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let tz = crate::config::get_tz();
+        let lnow = fixed_now(tz);
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 7, 1)
+                .unwrap()
+                .and_hms_opt(3, 10, 0)
                 .unwrap(),
         );
         assert_eq!(res, expected);
