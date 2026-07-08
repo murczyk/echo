@@ -28,7 +28,7 @@ import {
   fetchInboxMessages,
   fetchNetworksByIds,
   getLatestSenders,
-  getTagsMapForDisplay,
+  getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { getUnitsList } from '../../services/api/units';
@@ -72,6 +72,7 @@ type FilterSectionLoadContext = {
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   unitsMap: Record<number, Unit>;
 };
 
@@ -296,7 +297,11 @@ export function buildAnalysisReqForFilterSection(
 ): AnalysisStatsReq {
   switch (section) {
     case 'tags':
-      return { ...analysisReq, selectedTags: null };
+      // The tags facet must show every tag regardless of the current tag filter, so
+      // strip all self-referential tag conditions — not just `selectedTags`. Leaving
+      // `deniedTags`/`tagPresence` in place would compute the option list from messages
+      // that already exclude the denied tag, dropping it from its own picker.
+      return { ...analysisReq, selectedTags: null, deniedTags: null, tagPresence: null };
     case 'aors':
       return { ...analysisReq, selectedAors: null };
     case 'groups':
@@ -335,18 +340,19 @@ export async function loadFilterSectionData(
 
   switch (section) {
     case 'tags': {
-      const [tagsRsp, tagsDisplayMap] = await Promise.all([
+      const [tagsRsp, tagsDisplay] = await Promise.all([
         fetchAnalysisTags(context.analysisReq, requestOptions),
-        getTagsMapForDisplay(requestOptions),
+        getTagsForDisplay(requestOptions),
       ]);
       if (isStale() || isAborted()) return;
-      context.setTagsMap(tagsDisplayMap);
+      context.setTagsMap(tagsDisplay.tagsMap);
+      context.setTagsOrder(tagsDisplay.tagsOrder);
       context.setOptions((current) => ({
         ...current,
         tags: toFilterOptions(
           tagsRsp.tags,
           (item) => String(item.tagId),
-          (item) => tagsDisplayMap[item.tagId]?.label ?? String(item.tagId),
+          (item) => tagsDisplay.tagsMap[item.tagId]?.label ?? String(item.tagId),
           (item) => item.count,
         ),
       }));

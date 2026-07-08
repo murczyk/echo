@@ -1,12 +1,30 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
+
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: forwardRef<
+    HTMLDivElement,
+    {
+      data?: Array<[number, unknown]>;
+      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
+    }
+  >(function Virtuoso({ data, itemContent }, ref) {
+    return (
+      <div ref={ref} data-testid="virtuoso">
+        {(data ?? []).map((item, index) => (
+          <div key={String(index)}>{itemContent?.(index, item)}</div>
+        ))}
+      </div>
+    );
+  }),
+}));
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -55,7 +73,12 @@ function buildProps(): FeedColumnProps {
           freqsDenied: null,
           postsSelected: null,
           postsDenied: null,
+          unitsSelected: null,
+          unitsDenied: null,
+          unitsExactMatchOnly: false,
           lastViewedMessageId: null,
+          highlightKeywordsEnabled: false,
+          highlightKeywordSetId: null,
         },
         items: [],
         loading: false,
@@ -148,6 +171,7 @@ function buildProps(): FeedColumnProps {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        tagsOrder: [],
         botTagAction: null,
         onCancelBotTagAction: vi.fn(),
         onMarkBotTagWrong: vi.fn(),

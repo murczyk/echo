@@ -1,8 +1,9 @@
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import {
   Box,
-  Button,
   CircularProgress,
   FormControlLabel,
+  IconButton,
   Paper,
   Stack,
   Switch,
@@ -17,11 +18,14 @@ type Props = {
   graph: NetJsonGraphAndMeta | null;
   loading: boolean;
   loadVersion: number;
+  loadError?: string | null;
   nolimit: boolean;
   visible?: boolean;
   onLoad: () => void;
   onToggleNolimit: () => void;
 };
+
+type GraphRootKey = 'primary' | 'secondary';
 
 let netjsonScriptLoaded = false;
 
@@ -32,14 +36,9 @@ async function loadNetjsonScript() {
   }
 }
 
-function renderGraph(elemId: string, graphDataAndMeta: NetJsonGraphAndMeta) {
+function renderGraph(graphContainer: HTMLElement, graphDataAndMeta: NetJsonGraphAndMeta) {
   const graphData = { ...graphDataAndMeta.graph, type: graphDataAndMeta.graph.type_ };
   if (!window.netjson_graphs) window.netjson_graphs = {};
-  const graphContainer = document.getElementById(elemId);
-  if (!graphContainer) return;
-
-  delete window.netjson_graphs[elemId];
-  graphContainer.replaceChildren();
 
   const graph = new NetJSONGraph(graphData, {
     el: graphContainer,
@@ -58,52 +57,102 @@ function renderGraph(elemId: string, graphDataAndMeta: NetJsonGraphAndMeta) {
     },
     linkCategories: graphDataAndMeta.linkCategories,
   });
-  window.netjson_graphs[elemId] = graph;
   graph.render();
+
+  if (graphContainer.childNodes.length === 0) {
+    throw new Error('NetJSON graph render produced no content');
+  }
+
+  return graph;
+}
+
+function getRootStyle(isVisible: boolean) {
+  return {
+    position: isVisible ? 'relative' : 'absolute',
+    inset: isVisible ? 'auto' : 0,
+    width: '100%',
+    height: '100%',
+    visibility: isVisible ? 'visible' : 'hidden',
+    pointerEvents: isVisible ? 'auto' : 'none',
+  } as const;
 }
 
 export function AnalysisCallsignGraphCard({
   graph,
   loading,
   loadVersion,
+  loadError = null,
   nolimit,
   visible = true,
   onLoad,
   onToggleNolimit,
 }: Props) {
-  const graphId = useId().replace(/:/g, '-');
-  const elementId = `callsign-graph-div-${graphId}`;
-  const headingId = `${elementId}-heading`;
-  const graphContainerRef = useRef<HTMLDivElement | null>(null);
-  const autoloadedVersionRef = useRef<number | null>(null);
+  const headingId = useId().replace(/:/g, '-');
+  const graphHostRef = useRef<HTMLDivElement | null>(null);
+  const primaryGraphRootRef = useRef<HTMLDivElement | null>(null);
+  const secondaryGraphRootRef = useRef<HTMLDivElement | null>(null);
+  const autoloadedVersionRef = useRef<number | null>(graph ? loadVersion : null);
+  const visibleGraphRootKeyRef = useRef<GraphRootKey>('primary');
+  const hasRenderedGraphRef = useRef(false);
+  const renderSequenceRef = useRef(0);
   const zoomHintTimeoutRef = useRef<number | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [zoomHintVisible, setZoomHintVisible] = useState(false);
+  const [visibleGraphRootKey, setVisibleGraphRootKey] = useState<GraphRootKey>('primary');
 
   useEffect(() => {
-    if (!visible || loading || isPresent(graph) || autoloadedVersionRef.current === loadVersion)
-      return;
+    if (!visible || loading || autoloadedVersionRef.current === loadVersion) return;
     autoloadedVersionRef.current = loadVersion;
     onLoad();
-  }, [graph, loadVersion, loading, onLoad, visible]);
+  }, [loadVersion, loading, onLoad, visible]);
 
   useEffect(() => {
     if (!graph || !visible) return;
+
+    const renderSequence = renderSequenceRef.current + 1;
+    renderSequenceRef.current = renderSequence;
     let active = true;
+
+    const targetRootKey: GraphRootKey = hasRenderedGraphRef.current
+      ? visibleGraphRootKeyRef.current === 'primary'
+        ? 'secondary'
+        : 'primary'
+      : visibleGraphRootKeyRef.current;
+
+    const targetRoot =
+      targetRootKey === 'primary' ? primaryGraphRootRef.current : secondaryGraphRootRef.current;
+
+    if (!targetRoot) return;
+    targetRoot.replaceChildren();
+
     void loadNetjsonScript().then(() => {
-      if (!active) return;
-      renderGraph(elementId, graph);
-      window.requestAnimationFrame(() => {
+      if (!active || renderSequence !== renderSequenceRef.current) return;
+
+      try {
+        const renderedGraph = renderGraph(targetRoot, graph);
+        if (!active || renderSequence !== renderSequenceRef.current) return;
+
+        if (!window.netjson_graphs) window.netjson_graphs = {};
+        window.netjson_graphs.callsignGraph = renderedGraph;
+
+        visibleGraphRootKeyRef.current = targetRootKey;
+        setVisibleGraphRootKey(targetRootKey);
+        hasRenderedGraphRef.current = true;
+        setRenderError(null);
+      } catch {
         if (!active) return;
-        window.netjson_graphs?.[elementId]?.render?.();
-      });
+        targetRoot.replaceChildren();
+        setRenderError('Не вдалося відобразити граф');
+      }
     });
+
     return () => {
       active = false;
     };
-  }, [elementId, graph, visible]);
+  }, [graph, visible]);
 
   useEffect(() => {
-    const graphContainer = graphContainerRef.current;
+    const graphContainer = graphHostRef.current;
     if (!graphContainer) return;
 
     const handleWheel = (event: WheelEvent) => {
@@ -135,19 +184,41 @@ export function AnalysisCallsignGraphCard({
   );
 
   const nodes = graph?.graph.nodes ?? [];
+  const isRefreshing = loading && graph !== null;
+  const graphStatus = renderError ?? loadError;
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{ mb: 1.5 }}
+      >
         <Typography id={headingId} variant="subtitle2" component="h2">
           Граф позивних
         </Typography>
-        <Button size="small" onClick={onLoad} disabled={loading}>
-          {loading ? <CircularProgress size={14} /> : 'Оновити'}
-        </Button>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          {isRefreshing ? (
+            <Typography variant="caption" color="text.secondary" role="status" aria-live="polite">
+              Оновлюється...
+            </Typography>
+          ) : null}
+          <IconButton
+            aria-label="Оновити граф"
+            onClick={onLoad}
+            disabled={loading}
+            size="small"
+            sx={{ width: 32, height: 32 }}
+            title="Оновити граф"
+          >
+            <RefreshOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Stack>
       </Stack>
       {graph ? (
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+        <Stack spacing={0.5} sx={{ mb: 1 }}>
           <Typography variant="caption" color="text.secondary" role="status" aria-live="polite">
             Показано {nodes.length} з {graph.overallCount ?? nodes.length} позивних
           </Typography>
@@ -158,6 +229,11 @@ export function AnalysisCallsignGraphCard({
           />
         </Stack>
       ) : null}
+      {graphStatus ? (
+        <Typography variant="caption" color="error" sx={{ display: 'block', mb: 1 }}>
+          {graph ? 'Не вдалося оновити, показано попередній граф.' : graphStatus}
+        </Typography>
+      ) : null}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
         Масштаб: Ctrl/Cmd + колесо миші.
       </Typography>
@@ -166,6 +242,26 @@ export function AnalysisCallsignGraphCard({
           <CircularProgress size={24} />
           <Typography variant="body2" color="text.secondary">
             {`Завантажуємо граф позивних${ELLIPSIS}`}
+          </Typography>
+        </Stack>
+      ) : graphStatus && !graph ? (
+        <Stack
+          spacing={1}
+          alignItems="center"
+          justifyContent="center"
+          sx={{
+            minHeight: 180,
+            px: 2,
+            textAlign: 'center',
+            border: '1px dashed',
+            borderColor: 'divider',
+          }}
+        >
+          <Typography variant="body2" color="error">
+            Не вдалося завантажити граф позивних.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {graphStatus}
           </Typography>
         </Stack>
       ) : !graph ? (
@@ -212,12 +308,24 @@ export function AnalysisCallsignGraphCard({
             Утримуйте Ctrl/Cmd для масштабу
           </Box>
           <div
-            ref={graphContainerRef}
-            id={elementId}
+            ref={graphHostRef}
+            id="callsign-graph-div"
+            className="analysis-callsign-graph"
             role="img"
             aria-label="Граф зв'язків позивних"
             style={{ height: 600, position: 'relative', transform: 'translateZ(0)' }}
-          />
+          >
+            <div
+              ref={primaryGraphRootRef}
+              data-root="primary"
+              style={getRootStyle(visibleGraphRootKey === 'primary')}
+            />
+            <div
+              ref={secondaryGraphRootRef}
+              data-root="secondary"
+              style={getRootStyle(visibleGraphRootKey === 'secondary')}
+            />
+          </div>
         </Box>
       )}
     </Paper>

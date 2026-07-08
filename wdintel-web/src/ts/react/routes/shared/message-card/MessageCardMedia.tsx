@@ -1,14 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import { Box, Button, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 
-const AUDIO_PLAYER_MIN_HEIGHT_PX = 120;
-const AUDIO_PLAYER_TOP_PADDING_PX = 12;
+const AUDIO_PLAYER_MIN_HEIGHT_PX = 72;
+const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 
 const AUDIO_FILE_EXTENSIONS = [
@@ -120,6 +120,9 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
     player.setAttribute('mode', 'compact');
     player.setAttribute('storage-key', storageKey);
     player.setAttribute('theme', getMuiPaletteMode());
+    if (displayName !== '<файл без назви>') {
+      player.setAttribute('file-name', displayName);
+    }
     if (waveSrc !== '') {
       player.setAttribute('wave-src', waveSrc);
     }
@@ -133,7 +136,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
       playerRef.current = null;
       host.replaceChildren();
     };
-  }, [href, storageKey, waveSrc, spectrumSrc]);
+  }, [href, storageKey, waveSrc, spectrumSrc, displayName]);
 
   useLayoutEffect(() => {
     const player = playerRef.current;
@@ -145,20 +148,6 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
 
   return (
     <Box sx={{ mb: 0.5, width: '100%', maxWidth: 460, minWidth: 0 }}>
-      <Typography
-        variant="caption"
-        component="div"
-        title={displayName}
-        sx={{
-          mb: 2,
-          color: 'text.secondary',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {displayName}
-      </Typography>
       <Box
         ref={hostRef}
         data-audio-player-host
@@ -175,7 +164,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
           pb: 0.5,
           display: 'flex',
           alignItems: 'stretch',
-          overflow: 'visible',
+          overflow: 'hidden',
         }}
       />
     </Box>

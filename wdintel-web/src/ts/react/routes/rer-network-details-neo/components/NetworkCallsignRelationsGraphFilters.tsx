@@ -1,4 +1,12 @@
-import { Box, Checkbox, FormControlLabel, Popover, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  Checkbox,
+  FormControlLabel,
+  Popover,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { NetworkCallsignRelationFreqView } from '../network-relations';
@@ -65,23 +73,36 @@ export function NetworkCallsignRelationsGraphFilters({
           <Stack spacing={0.75}>
             {legendFreqs.map((freq) => {
               const enabled = enabledFreqs.includes(freq.freq);
+              const disableToggle = enabled && enabledFreqs.length === 1;
               return (
-                <FormControlLabel
+                <Tooltip
                   key={freq.freq}
-                  control={
-                    <Checkbox
-                      checked={enabled}
-                      onChange={(_, checked) => onEnabledFreqToggle(freq.freq, checked)}
+                  title={disableToggle ? 'Має бути вибрана хоча б одна частота' : undefined}
+                  disableHoverListener={!disableToggle}
+                  disableFocusListener={!disableToggle}
+                  disableTouchListener={!disableToggle}
+                >
+                  <Box component="span" sx={{ display: 'block' }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={enabled}
+                          disabled={disableToggle}
+                          onChange={(_, checked) => onEnabledFreqToggle(freq.freq, checked)}
+                        />
+                      }
+                      label={
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Box
+                            sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color }}
+                          />
+                          <span>{freq.freq}</span>
+                        </Stack>
+                      }
+                      sx={{ m: 0 }}
                     />
-                  }
-                  label={
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Box sx={{ width: 18, height: 3, borderRadius: 999, bgcolor: freq.color }} />
-                      <span>{freq.freq}</span>
-                    </Stack>
-                  }
-                  sx={{ m: 0 }}
-                />
+                  </Box>
+                </Tooltip>
               );
             })}
           </Stack>

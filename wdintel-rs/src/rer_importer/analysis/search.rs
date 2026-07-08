@@ -36,6 +36,8 @@ lazy_static! {
         Regex::new(r"(?:^|\s)(-([0-9]{3}(\.|,)[0-9]{2,4}))\b").unwrap();
     static ref RE_MSG_UID: Regex =
         Regex::new(r"\b[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}\b").unwrap();
+    static ref RE_TS_PREFIX_TOKEN: Regex =
+        Regex::new(r"^[\p{L}\p{N}_]+$").unwrap();
 }
 
 pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
@@ -157,6 +159,33 @@ pub fn trim_ts_query(inp: &str) -> anyhow::Result<Option<String>> {
     }
 }
 
+pub fn ts_prefix_query(inp: &str) -> Option<String> {
+    let tokens = inp.split_whitespace().collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let mut prefix_tokens = vec![];
+    for token in tokens {
+        let lower = token.to_lowercase();
+        if lower == "and" || lower == "or" {
+            return None;
+        }
+        if token.chars().count() < 3 {
+            return None;
+        }
+        if !token.chars().any(char::is_alphabetic) {
+            return None;
+        }
+        if !RE_TS_PREFIX_TOKEN.is_match(token) {
+            return None;
+        }
+        prefix_tokens.push(format!("{token}:*"));
+    }
+
+    Some(prefix_tokens.join(" & "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +235,18 @@ mod tests {
             trim_ts_query("  foo and bar  ").unwrap(),
             Some("foo and bar".to_string())
         );
+    }
+
+    #[test]
+    fn test_ts_prefix_query() {
+        assert_eq!(ts_prefix_query("Берку"), Some("Берку:*".to_string()));
+        assert_eq!(
+            ts_prefix_query("Берку альфа"),
+            Some("Берку:* & альфа:*".to_string())
+        );
+        assert_eq!(ts_prefix_query("Берку or альфа"), None);
+        assert_eq!(ts_prefix_query("-Берку"), None);
+        assert_eq!(ts_prefix_query("42"), None);
     }
 
     // Add new test for % handling

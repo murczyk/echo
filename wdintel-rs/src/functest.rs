@@ -1473,6 +1473,9 @@ pub mod tests {
         if out.operator_tags == NotSet {
             out.operator_tags = Set(None);
         }
+        if out.attachments_hash == NotSet {
+            out.attachments_hash = Set(None);
+        }
         out
     }
 

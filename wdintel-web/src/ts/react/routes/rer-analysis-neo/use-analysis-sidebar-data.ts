@@ -15,6 +15,7 @@ import { useAnalysisGraphData } from './use-analysis-graph-data';
 import { useAnalysisGroupsActivityData } from './use-analysis-groups-activity-data';
 import { useAnalysisSummaryData } from './use-analysis-summary-data';
 import { useAnalysisTopSidebarData } from './use-analysis-top-sidebar-data';
+import type { InvalidateCallsignGraphOptions } from './use-analysis-graph-data';
 import { downloadAnalysisGeojson, downloadAnalysisKmz } from '../../services/api/analysis';
 import { downloadBlob } from '../../utils/download-blob';
 import { buildAnalysisReq } from './helpers';
@@ -36,6 +37,7 @@ export type UseAnalysisSidebarDataResult = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
+  callsignGraphLoadError?: string | null;
   callsignGraphNolimit: boolean;
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoadedFreq: string | null;
@@ -59,7 +61,7 @@ export type UseAnalysisSidebarDataResult = {
   newCallsignsLoadedKeyRef: MutableRefObject<string | null>;
   newCallsignsPendingKeyRef: MutableRefObject<string | null>;
   invalidateCorrelatedFreqsCache: () => void;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: InvalidateCallsignGraphOptions) => void;
   invalidateSummaryData: (keepLoading?: boolean) => void;
   invalidateRightSidebarData: () => void;
   loadCorrelatedFreqs: () => Promise<void>;

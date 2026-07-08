@@ -13,7 +13,8 @@ import {
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import { FeedColumn, type FeedColumnHandle, type FeedColumnModel } from './FeedColumn';
+import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
+import type { FeedColumnModel } from './types';
 import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
 import { dutyTopActionButtonSx, dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';

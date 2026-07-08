@@ -382,6 +382,19 @@ pub async fn goi_download_file(
     .c(h!())?
 }
 
+pub async fn goi_file_exists(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) -> anyhow::Result<bool> {
+    goi_validate_connection_req(&req)?;
+
+    tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_file_exists_sync(req, remote_file_path)
+    })
+    .await
+    .c(h!())?
+}
+
 pub async fn goi_delete_file(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,

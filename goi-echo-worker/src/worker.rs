@@ -3,12 +3,14 @@ use crate::entities::{association, knowledge};
 use anyhow::{Context, Result};
 use goi_echo_worker::knowledge::{read_knowledge_rows, KnowledgeRow};
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
+use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, NotSet,
     QueryFilter, Set, TransactionTrait, TryInsertResult,
 };
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -23,6 +25,17 @@ struct FileState {
     last_fingerprint: Option<FileFingerprint>,
     last_refresh_bucket: Option<i64>,
     missing_logged: bool,
+}
+
+pub async fn ensure_xlsx_files_exist(config: &Config) -> Result<()> {
+    for (kind, path) in [
+        ("associations", config.associations_xlsx_path()),
+        ("knowledge", config.knowledge_xlsx_path()),
+        ("frequencies", config.frequencies_xlsx_path()),
+    ] {
+        ensure_xlsx_file_exists(&PathBuf::from(path), kind).await?;
+    }
+    Ok(())
 }
 
 pub async fn associations_worker_nofail(
@@ -130,11 +143,18 @@ async fn file_fingerprint(
         Ok(metadata) => metadata,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             if !state.missing_logged {
-                log::warn!("GOI {kind} file not found: {}", path.display());
+                log::warn!(
+                    "GOI {kind} file not found, creating empty XLSX: {}",
+                    path.display()
+                );
                 state.missing_logged = true;
             }
             state.last_fingerprint = None;
-            return Ok(None);
+            ensure_xlsx_file_exists(path, kind).await?;
+            state.missing_logged = false;
+            tokio::fs::metadata(path)
+                .await
+                .with_context(|| path.display().to_string())?
         }
         Err(err) => {
             return Err(err).with_context(|| path.display().to_string())
@@ -150,6 +170,53 @@ async fn file_fingerprint(
         modified_ms,
         len: metadata.len(),
     }))
+}
+
+async fn ensure_xlsx_file_exists(path: &Path, kind: &str) -> Result<bool> {
+    match tokio::fs::metadata(path).await {
+        Ok(_) => Ok(false),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            create_empty_xlsx_file(path).await?;
+            log::info!("Created empty GOI {kind} XLSX: {}", path.display());
+            Ok(true)
+        }
+        Err(err) => Err(err).with_context(|| path.display().to_string()),
+    }
+}
+
+async fn create_empty_xlsx_file(path: &Path) -> Result<()> {
+    let parent = path.parent().context("XLSX path has no parent directory")?;
+    tokio::fs::create_dir_all(parent).await?;
+
+    let tmp_path = temp_xlsx_path(path);
+    let file_data = tokio::task::spawn_blocking(empty_xlsx_buffer)
+        .await
+        .context("joining empty XLSX writer task")??;
+    tokio::fs::write(&tmp_path, file_data).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        tokio::fs::set_permissions(
+            &tmp_path,
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .await?;
+    }
+    tokio::fs::rename(&tmp_path, path).await?;
+    Ok(())
+}
+
+fn temp_xlsx_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("goi.xlsx");
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    path.with_file_name(format!(".{file_name}.tmp-{suffix}"))
 }
 
 async fn insert_association_rows(
@@ -355,5 +422,42 @@ fn log_insert_result(
                 insert_result.last_insert_id
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use goi_echo_worker::knowledge::read_knowledge_rows;
+    use goi_echo_worker::row::read_association_rows;
+
+    #[tokio::test]
+    async fn ensure_xlsx_file_exists_creates_valid_empty_workbook() {
+        let dir = temp_dir("goi-empty-xlsx");
+        let path = dir.join("nested").join("knowledge.xlsx");
+
+        assert!(ensure_xlsx_file_exists(&path, "knowledge")
+            .await
+            .expect("create xlsx"));
+        assert!(!ensure_xlsx_file_exists(&path, "knowledge")
+            .await
+            .expect("existing xlsx"));
+        assert!(read_association_rows(&path)
+            .expect("association rows")
+            .is_empty());
+        assert!(read_knowledge_rows(&path)
+            .expect("knowledge rows")
+            .is_empty());
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("{prefix}-{}-{suffix}", std::process::id()))
     }
 }

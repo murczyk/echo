@@ -34,6 +34,7 @@ type SettingsNeoTableProps<TData extends MRT_RowData> = {
   manualSorting?: boolean;
   enableRowActions?: boolean;
   renderRowActions?: MRT_TableOptions<TData>['renderRowActions'];
+  rowActionsColumnSize?: number;
   showToolbarInternalActions?: boolean;
   enableTopToolbar?: boolean;
   enableBottomToolbar?: boolean;
@@ -65,6 +66,7 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
   manualSorting = false,
   enableRowActions = false,
   renderRowActions,
+  rowActionsColumnSize = mrtRowActionsColumnSize(1),
   showToolbarInternalActions = false,
   enableTopToolbar = false,
   enableBottomToolbar = false,
@@ -143,7 +145,9 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(1),
+        size: rowActionsColumnSize,
+        minSize: rowActionsColumnSize,
+        maxSize: rowActionsColumnSize,
         enableResizing: false,
       },
       'mrt-row-numbers': {

@@ -4,6 +4,17 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
+    {
+        return Ok(Some(zp_peleng.post_name));
+    }
+    if let Some(zp_digital_post_alt) =
+        crate::rer_importer::zp_digital_post_alt_format::parse(inp)
+    {
+        return Ok(Some(zp_digital_post_alt.post_name));
+    }
+
     // Only inspect the first N lines to avoid false positives deep in dialogues
     let scan_inp = inp
         .lines()
@@ -251,6 +262,27 @@ mod tests {
     }
 
     #[test]
+    fn extract_post_zp_peleng_vorony_odina_mgrs_format() {
+        let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Shark 4")
+    }
+
+    #[test]
+    fn extract_post_zp_peleng_vorony_odina_sk42_format() {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Танго-Ехо")
+    }
+
+    #[test]
+    fn extract_post_zp_digital_post_alt_format() {
+        let body = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "ЦФП55")
+    }
+
+    #[test]
     fn extract_post_extra_01() {
         let body = r#"Отримано з поста "DOT3_1 (77)"
 --------------------------------------
@@ -439,6 +471,46 @@ Kupol80
 "#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "Сфінкс".to_string())
+    }
+
+    #[test]
+    fn extract_post_otrymano_posts_list_in_one_quoted_string() {
+        let body = r#"Отримано з постів "Пост 10, Пост 6, Пост 8"
+--------------------------------------
+01.07.2026, 02:55:19
+155.0250
+УКХ р/м ПУ ФСБ рф
+
+1.  Ярус-33, я Мотив-54 на прием."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Пост 8".to_string())
+    }
+
+    #[test]
+    fn extract_post_otrymano_posts_list_from_prod_sample() {
+        let body = r#"РР35:
+Отримано з постів "Quantum, SC5"
+--------------------------------------
+01.07.2026, 02:58:41
+137.9000
+УКХ р/м йм. управління 52 орб
+
+— Да я только на кирпичных летаю."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "SC5".to_string())
+    }
+
+    #[test]
+    fn extract_post_inline_otrymano_post_header_with_prefix() {
+        let body = r#"37T BN 88562 95454  Отримано з поста "П152"
+--------------------------------------
+01.07.2026, 02:55:19
+155.0250
+УКХ р/м
+
+— репліка"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "П152".to_string())
     }
 
     #[test]

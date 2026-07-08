@@ -24,6 +24,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     authUserName,
     profiles,
     tagsMap,
+    tagsOrder,
     groupInfos,
     savedFilters,
     setSavedFilters,
@@ -82,14 +83,21 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       ? senderOptionsStableRef.current
       : ((senderOptionsStableRef.current = senderOptions), senderOptions);
 
-  const tagIdsList = useMemo(
-    () =>
-      Object.keys(tagsMap)
-        .map(Number)
-        .filter((n) => !Number.isNaN(n))
-        .sort((a, b) => a - b),
-    [tagsMap],
-  );
+  const tagIdsList = useMemo(() => {
+    const seen = new Set<number>();
+    const ordered: number[] = [];
+    for (const tagId of tagsOrder) {
+      if (!tagsMap[tagId] || seen.has(tagId)) continue;
+      seen.add(tagId);
+      ordered.push(tagId);
+    }
+    for (const tagId of Object.keys(tagsMap).map(Number)) {
+      if (!Number.isFinite(tagId) || seen.has(tagId)) continue;
+      seen.add(tagId);
+      ordered.push(tagId);
+    }
+    return ordered;
+  }, [tagsMap, tagsOrder]);
 
   return {
     handleSaveFilter: savedFilterActions.handleSaveFilter,

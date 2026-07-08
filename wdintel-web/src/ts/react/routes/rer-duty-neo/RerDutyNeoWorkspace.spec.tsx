@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { FeedColumnModel } from './FeedColumn';
+import type { FeedColumnModel } from './types';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { MessageFeedState } from './utils';
 
@@ -21,7 +21,12 @@ function buildFeed(id: string): MessageFeedState {
       freqsDenied: null,
       postsSelected: null,
       postsDenied: null,
+      unitsSelected: null,
+      unitsDenied: null,
+      unitsExactMatchOnly: false,
       lastViewedMessageId: null,
+      highlightKeywordsEnabled: false,
+      highlightKeywordSetId: null,
     },
     items: [],
     loading: true,
@@ -119,6 +124,11 @@ describe('RerDutyNeoWorkspace', () => {
           onApplySavedFilter: () => {},
         },
       },
+      keywordsPanel: {
+        keywordSets: [],
+        onFilterChange: () => {},
+        onKeywordSetsReload: async () => {},
+      },
       messageCard: {
         authUserName: null,
         copiedFeedbackId: null,
@@ -131,6 +141,7 @@ describe('RerDutyNeoWorkspace', () => {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        tagsOrder: [],
         botTagAction: null,
         onCancelBotTagAction: () => {},
         onMarkBotTagWrong: async () => {},

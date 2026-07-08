@@ -235,6 +235,7 @@ function buildPage() {
     summaryRows: [],
     tagsLayout: 'compact',
     tagsMap: {},
+    tagsOrder: [],
     topCallsigns: [],
     topFreqs: [],
     topLocations: [],

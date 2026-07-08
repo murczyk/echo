@@ -21,7 +21,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
-import type { FeedColumnModel } from './FeedColumn';
+import type { FeedColumnModel } from './types';
 import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -85,6 +85,7 @@ type DutyMessageCardItemProps = {
   networks?: Network[];
   featureStrictNetworks: boolean;
   tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
@@ -116,6 +117,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   networks,
   featureStrictNetworks,
   tagsMap,
+  tagsOrder,
   filterState,
   onMessageBookmark,
   onMessageImportant,
@@ -155,6 +157,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       networks={networks}
       featureStrictNetworks={featureStrictNetworks}
       tagsMap={tagsMap}
+      tagsOrder={tagsOrder}
       onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
       onImportant={() => onMessageImportant(id, msg.important)}
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
@@ -229,6 +232,7 @@ type DutyMessageListProps = {
   networks?: Network[];
   featureStrictNetworks: boolean;
   tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
@@ -261,6 +265,7 @@ const DutyMessageList = memo(function DutyMessageList({
   networks,
   featureStrictNetworks,
   tagsMap,
+  tagsOrder,
   filterState,
   onMessageBookmark,
   onMessageImportant,
@@ -302,6 +307,7 @@ const DutyMessageList = memo(function DutyMessageList({
             networks={networks}
             featureStrictNetworks={featureStrictNetworks}
             tagsMap={tagsMap}
+            tagsOrder={tagsOrder}
             filterState={filterState}
             onMessageBookmark={onMessageBookmark}
             onMessageImportant={onMessageImportant}
@@ -343,6 +349,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       tagsMap,
+      tagsOrder,
       botTagAction,
       onCancelBotTagAction,
       onMarkBotTagWrong,
@@ -490,6 +497,7 @@ export const FeedColumnContent = memo(
               networks={networks}
               featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
+              tagsOrder={tagsOrder}
               filterState={feed.filter}
               onMessageBookmark={stableOnMessageBookmark}
               onMessageImportant={stableOnMessageImportant}
@@ -614,6 +622,7 @@ export const FeedColumnContent = memo(
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
       prevCard.tagsMap !== nextCard.tagsMap ||
+      prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction
     ) {
       return false;

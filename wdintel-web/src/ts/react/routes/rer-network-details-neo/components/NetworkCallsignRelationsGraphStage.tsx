@@ -25,7 +25,6 @@ import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
 
 import { ELLIPSIS } from '../../../utils/misc';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
-import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../shared/empty-state-text';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
 import {
@@ -37,6 +36,7 @@ import type {
   NetworkCallsignRelationsEdgeView,
   NetworkCallsignRelationsGraphView,
   NetworkCallsignRelationsNodeView,
+  NetworkCallsignRelationFreqState,
   RelationGraphLayout,
   RelationGraphViewBox,
 } from '../network-relations';
@@ -47,6 +47,9 @@ type Props = {
   graphView: NetworkCallsignRelationsGraphView;
   layout: RelationGraphLayout;
   viewBox: RelationGraphViewBox;
+  graphNodeCount: number;
+  graphEdgeCount: number;
+  onReload: () => void;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   selectedNode: NetworkCallsignRelationsNodeView | null;
@@ -65,7 +68,7 @@ type Props = {
   relationsSearch: string;
   graphWarning: boolean;
   legendFreqs: NetworkCallsignRelationFreqView[];
-  relationsEnabledFreqs: string[];
+  relationFreqState: NetworkCallsignRelationFreqState;
   relationsMinIntensity: number;
   relationsLoading: boolean;
   intensityAnchorEl: HTMLElement | null;
@@ -89,15 +92,6 @@ type Props = {
   zoomOutFactor: number;
 };
 
-function getDefaultEnabledFreqs(legendFreqs: NetworkCallsignRelationFreqView[]): string[] {
-  const enabledByDefaultFreqs = legendFreqs
-    .filter((freq) => freq.enabledByDefault)
-    .map((freq) => freq.freq);
-  return enabledByDefaultFreqs.length > 0
-    ? enabledByDefaultFreqs
-    : legendFreqs.map((freq) => freq.freq);
-}
-
 function sameFreqs(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
 
@@ -111,6 +105,9 @@ export function NetworkCallsignRelationsGraphStage({
   graphView,
   layout,
   viewBox,
+  graphNodeCount,
+  graphEdgeCount,
+  onReload,
   selectedNodeId,
   selectedEdgeId,
   selectedNode,
@@ -129,7 +126,7 @@ export function NetworkCallsignRelationsGraphStage({
   relationsSearch,
   graphWarning,
   legendFreqs,
-  relationsEnabledFreqs,
+  relationFreqState,
   relationsMinIntensity,
   relationsLoading,
   intensityAnchorEl,
@@ -156,11 +153,15 @@ export function NetworkCallsignRelationsGraphStage({
   const isDarkMode = theme.palette.mode === 'dark';
   const graphTheme = getNetworkRelationsGraphTheme(theme);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const defaultEnabledFreqs = getDefaultEnabledFreqs(legendFreqs);
+  const { defaultEnabledFreqs, resolvedEnabledFreqs } = relationFreqState;
   const hasResettableGraphFilters =
     relationsSearch.trim() !== '' ||
     relationsMinIntensity !== NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY ||
-    !sameFreqs(relationsEnabledFreqs, defaultEnabledFreqs);
+    !sameFreqs(resolvedEnabledFreqs, defaultEnabledFreqs);
+  const graphHasNoData = graphNodeCount === 0 && graphEdgeCount === 0;
+  const graphHasNodesButNoEdges = graphNodeCount > 0 && graphEdgeCount === 0;
+  const graphFilteredEmpty =
+    graphIsFilteredEmpty && !graphWarning && !graphHasNoData && !graphHasNodesButNoEdges;
 
   useEffect(() => {
     document.body.classList.toggle('small-map-fullscreen-open', isFullscreen);
@@ -184,13 +185,6 @@ export function NetworkCallsignRelationsGraphStage({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isFullscreen]);
-
-  const handleFilterToggle = (freq: string, checked: boolean) => {
-    const nextFreqs = checked
-      ? [...new Set([...relationsEnabledFreqs, freq])]
-      : relationsEnabledFreqs.filter((item) => item !== freq);
-    onEnabledFreqsChange(nextFreqs);
-  };
 
   const handleSelectNodeId = (nodeId: string | null) => {
     onSelectNodeId(nodeId);
@@ -442,7 +436,7 @@ export function NetworkCallsignRelationsGraphStage({
             </Typography>
           </Stack>
         </Box>
-      ) : graphIsFilteredEmpty ? (
+      ) : graphHasNoData ? (
         <Box
           sx={{
             position: 'absolute',
@@ -454,9 +448,79 @@ export function NetworkCallsignRelationsGraphStage({
             textAlign: 'center',
           }}
         >
-          <Stack spacing={1.25} alignItems="center">
+          <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520 }}>
+            <Typography variant="h6" sx={{ color: graphTheme.overlayText, fontWeight: 700 }}>
+              Граф зв'язків позивних
+            </Typography>
+            <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
+              Немає даних про зв&apos;язки для вибраних мережі, періоду та частот.
+            </Typography>
+            <Button
+              variant="text"
+              onClick={onReload}
+              sx={{
+                fontWeight: 400,
+                p: 0.5,
+                px: 2.5,
+                '&:hover': {
+                  bgcolor: theme.palette.action.hover,
+                },
+              }}
+            >
+              Оновити
+            </Button>
+          </Stack>
+        </Box>
+      ) : graphHasNodesButNoEdges ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            px: 3,
+            textAlign: 'center',
+          }}
+        >
+          <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520 }}>
+            <Typography variant="h6" sx={{ color: graphTheme.overlayText, fontWeight: 700 }}>
+              Немає зв&apos;язків між позивними за вибраний період
+            </Typography>
+            <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
+              Спробуйте оновити дані або розширити період пошуку.
+            </Typography>
+            <Button
+              variant="text"
+              onClick={onReload}
+              sx={{
+                fontWeight: 400,
+                p: 0.5,
+                px: 2.5,
+                '&:hover': {
+                  bgcolor: theme.palette.action.hover,
+                },
+              }}
+            >
+              Оновити
+            </Button>
+          </Stack>
+        </Box>
+      ) : graphFilteredEmpty ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            px: 3,
+            textAlign: 'center',
+          }}
+        >
+          <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520 }}>
             <Typography variant="body1" sx={{ color: graphTheme.overlayTextSecondary }}>
-              {EMPTY_STATE_NO_RESULTS_TEXT}
+              Фільтри приховали всі зв&apos;язки
             </Typography>
             {hasResettableGraphFilters ? (
               <Button
@@ -572,7 +636,7 @@ export function NetworkCallsignRelationsGraphStage({
             </Typography>
             <Stack spacing={0.8} sx={{ mt: 0.5 }}>
               {legendFreqs.map((freq) => {
-                const enabled = relationsEnabledFreqs.includes(freq.freq);
+                const enabled = resolvedEnabledFreqs.includes(freq.freq);
                 return (
                   <Stack
                     key={freq.freq}
@@ -654,7 +718,7 @@ export function NetworkCallsignRelationsGraphStage({
           <Stack spacing={1.5} alignItems="center" sx={{ color: graphTheme.overlayText }}>
             <CircularProgress size={28} />
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {`Оновлюємо граф зв'язків${ELLIPSIS}`}
+              {`Оновлюємо граф зв'язків позивних${ELLIPSIS}`}
             </Typography>
           </Stack>
         </Box>

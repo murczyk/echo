@@ -74,6 +74,7 @@ const baseAnalysisData = {
   callsignGraph: null,
   callsignGraphLoading: false,
   callsignGraphLoadVersion: 0,
+  callsignGraphLoadError: null,
   callsignGraphNolimit: false,
   correlatedFreqs: [],
   correlatedFreqsLoading: false,
@@ -160,6 +161,7 @@ const baseAnalysisData = {
   summaryCallsignsInfo: {},
   unitsMap: {},
   tagsMap: {},
+  tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
   groupInfos: {},
@@ -597,6 +599,18 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
+  });
+
+  it('exposes the callsign graph load error in the page view model', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      callsignGraphLoadError: 'boom',
+    };
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.callsignGraphLoadError).toBe('boom');
   });
 
   it('moves the active map away from the sidebar when the setting turns off', async () => {

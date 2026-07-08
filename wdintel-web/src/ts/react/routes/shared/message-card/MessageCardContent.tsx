@@ -46,6 +46,7 @@ export function MessageCardMessageBody({
   compact = false,
   msg,
   tagsMap,
+  tagsOrder,
   tagsLoading = false,
   onToggleTag,
   tagsLayout = 'full',
@@ -62,6 +63,7 @@ export function MessageCardMessageBody({
   compact?: boolean;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
   tagsLoading?: boolean;
   onToggleTag: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
@@ -256,6 +258,7 @@ export function MessageCardMessageBody({
             <MessageCardTags
               msg={msg}
               tagsMap={tagsMap}
+              tagsOrder={tagsOrder}
               onToggleTag={onToggleTag}
               tagsLayout={tagsLayout}
             />

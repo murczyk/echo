@@ -24,6 +24,7 @@ export function useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns 
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
   const [users, setUsers] = useState<Record<string, User | null>>({});
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [tagsOrder, setTagsOrder] = useState<number[]>([]);
   const [networkDisplayMap, setNetworkDisplayMap] = useState<Record<number, string>>({});
   const [networks, setNetworks] = useState<Network[]>([]);
   const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<Record<string, CallsignInfoRes>>(
@@ -86,12 +87,14 @@ export function useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns 
     setProfiles,
     setSummaryCallsignsInfo,
     setTagsMap,
+    setTagsOrder,
     setUnitsMap,
     setUsers,
     shouldLoadNewCallsignsRef,
     summaryCallsignsInfo,
     summaryCallsignsInfoRef,
     tagsMap,
+    tagsOrder,
     unitsMap,
     unitsMapRef,
     users,

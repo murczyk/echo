@@ -1213,6 +1213,7 @@ async fn upsert_submit_signal_message(
             echo_inbox_message_id: Set(None),
             message_uid: NotSet,
             operator_tags: Set(operator_tags),
+            attachments_hash: Set(None),
         }
         .insert(txn)
         .await

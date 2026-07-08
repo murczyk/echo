@@ -17,13 +17,14 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import type { AnalysisAorEntry, AnalysisCountItem } from './types';
+import type { InvalidateCallsignGraphOptions } from './use-analysis-graph-data';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type Params = {
   emptyNewCallsigns: NewCallsignsRes;
   emptyOptions: import('./types').AnalysisFilterOptions;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: InvalidateCallsignGraphOptions) => void;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<CountStatsRsp | null>;
@@ -51,6 +52,7 @@ type Params = {
   setSummaryLoading: Setter<boolean>;
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -93,6 +95,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
@@ -131,6 +134,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setProfiles({});
     setGroupInfos({});
     setTagsMap({});
+    setTagsOrder([]);
     setNetworks([]);
     setUnitsMap({});
     setNetworkDisplayMap({});
@@ -153,7 +157,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setMessageComments({});
     invalidateMessageCommentsLoads();
     optionsFreqsRef.current = [];
-    invalidateCallsignGraph();
+    invalidateCallsignGraph({ clearGraph: true });
   }, [
     emptyNewCallsigns,
     emptyOptions,
@@ -185,6 +189,7 @@ export function useAnalysisDataStateUtils(params: Params) {
     setSummaryLoading,
     setSummaryRows,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,

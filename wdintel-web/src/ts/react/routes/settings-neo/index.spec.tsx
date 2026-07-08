@@ -238,6 +238,10 @@ vi.mock('./SettingsMyReportsSection', () => ({
   ),
 }));
 
+vi.mock('./SettingsMyOrganismSection', () => ({
+  SettingsMyOrganismSection: () => <div>my-organism-active</div>,
+}));
+
 import { SettingsNeoPage } from './index';
 
 function deferred<T>() {
@@ -397,6 +401,19 @@ describe('SettingsNeoPage', () => {
 
     expect(container.textContent).toContain('reports-active');
     expect(container.textContent).not.toContain('Груп не знайдено');
+  });
+
+  it('accepts the my organism section and shows its tab', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="my-organism" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Мій організм');
+    expect(container.textContent).toContain('my-organism-active');
   });
 
   it('always shows the my groups tab after an empty successful load', async () => {

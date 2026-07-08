@@ -161,7 +161,7 @@ fn list_fixes() -> &'static BTreeMap<String, String> {
     &FIXES
 }
 
-fn companies_arr() -> [&'static str; 175] {
+fn companies_arr() -> [&'static str; 176] {
     [
         "автр",
         "авто",
@@ -302,6 +302,7 @@ fn companies_arr() -> [&'static str; 175] {
         "порєм",
         "ппг",
         "ппс",
+        "пу",
         "рае",
         "раг",
         "рєзеск",
@@ -527,7 +528,7 @@ fn divisions_arr() -> [&'static str; 45] {
         "шад",
     ]
 }
-fn armies_arr() -> [&'static str; 30] {
+fn armies_arr() -> [&'static str; 32] {
     [
         "А",
         "ЗВА",
@@ -558,6 +559,8 @@ fn armies_arr() -> [&'static str; 30] {
         "шак",
         "ОВА",
         "ОВДА",
+        "фсб",
+        "фсб рф",
         "Фл",
     ]
 }

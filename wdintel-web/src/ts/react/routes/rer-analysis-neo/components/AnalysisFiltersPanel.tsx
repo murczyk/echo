@@ -45,6 +45,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     savedFilterName,
     savedFilters,
     tagsMap,
+    tagsOrder,
     applySavedFilter,
     deleteLoadedSavedFilter,
     renameExistingSavedFilter,
@@ -69,8 +70,9 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
         options,
         queryState,
         tagsMap,
+        tagsOrder,
       }),
-    [aorEntries, counts, groupInfos, options, queryState, tagsMap],
+    [aorEntries, counts, groupInfos, options, queryState, tagsMap, tagsOrder],
   );
 
   const toggleSection = (section: FilterSectionId) => {

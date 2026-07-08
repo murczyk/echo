@@ -20,6 +20,7 @@ const TRANSLATIONS = {
   pageTitle: 'Загублені повідомлення',
   resolveManually: 'Відновити вручну',
   messageId: 'ID повідомлення',
+  groups: 'Групи',
   body: 'Текст повідомлення',
   status: 'Статус',
   createdAt: 'Створено',
@@ -37,6 +38,7 @@ const TRANSLATIONS = {
   statusError: 'помилка',
   statusResolved: 'відновлено',
   statusDeleted: 'видалено',
+  statusDuplicate: 'дублікат',
 } as const;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -45,6 +47,7 @@ const STATUS_LABELS: Record<string, string> = {
   error: TRANSLATIONS.statusError,
   resolved: TRANSLATIONS.statusResolved,
   deleted: TRANSLATIONS.statusDeleted,
+  duplicate: TRANSLATIONS.statusDuplicate,
 };
 
 const STATUS_FILTER_OPTIONS = Object.values(STATUS_LABELS).map((label) => ({
@@ -71,6 +74,7 @@ function statusChipColor(status: string): ChipProps['color'] {
   if (status === 'resolved') return 'success';
   if (status === 'error') return 'error';
   if (status === 'scheduled') return 'warning';
+  if (status === 'duplicate') return 'info';
   return 'default';
 }
 
@@ -107,6 +111,7 @@ function MissingMessageTable({
             item.isResolved ||
             item.status === 'scheduled' ||
             item.status === 'deleted' ||
+            item.status === 'duplicate' ||
             resolvingIds.has(item.id);
           return (
             <Button
@@ -120,7 +125,9 @@ function MissingMessageTable({
                 ? TRANSLATIONS.scheduled
                 : item.status === 'deleted'
                   ? TRANSLATIONS.statusDeleted
-                  : TRANSLATIONS.schedule}
+                  : item.status === 'duplicate'
+                    ? TRANSLATIONS.statusDuplicate
+                    : TRANSLATIONS.schedule}
             </Button>
           );
         },
@@ -129,6 +136,27 @@ function MissingMessageTable({
         accessorKey: 'messageId',
         header: TRANSLATIONS.messageId,
         size: 120,
+      },
+      {
+        accessorKey: 'groupNames',
+        header: TRANSLATIONS.groups,
+        size: 220,
+        Cell: ({ cell }) => (
+          <Typography
+            component="span"
+            variant="body2"
+            sx={{
+              display: 'block',
+              maxWidth: 300,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={cell.getValue<string>()}
+          >
+            {cell.getValue<string>()}
+          </Typography>
+        ),
       },
       {
         accessorKey: 'body',
@@ -198,23 +226,29 @@ function MissingMessageTable({
         accessorKey: 'error',
         header: TRANSLATIONS.error,
         size: 360,
-        Cell: ({ cell }) => (
-          <Typography
-            component="span"
-            variant="body2"
-            color="error"
-            sx={{
-              display: 'block',
-              maxWidth: 460,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={cell.getValue<string | null>() ?? ''}
-          >
-            {cell.getValue<string | null>() ?? ''}
-          </Typography>
-        ),
+        Cell: ({ cell, row }) => {
+          const value =
+            row.original.status === 'deleted' || row.original.status === 'duplicate'
+              ? ''
+              : (cell.getValue<string | null>() ?? '');
+          return (
+            <Typography
+              component="span"
+              variant="body2"
+              color="error"
+              sx={{
+                display: 'block',
+                maxWidth: 460,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={value}
+            >
+              {value}
+            </Typography>
+          );
+        },
       },
     ],
     [onResolve, resolvingIds],
@@ -227,6 +261,7 @@ function MissingMessageTable({
         'mrt-row-numbers',
         'resolveManually',
         'messageId',
+        'groupNames',
         'body',
         'status',
         'createdAt',

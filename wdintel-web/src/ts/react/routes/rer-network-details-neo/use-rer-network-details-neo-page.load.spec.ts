@@ -18,6 +18,7 @@ import {
 } from './use-rer-network-details-neo-page.types';
 import {
   derivePelengEnabledFreqs,
+  deriveRelationsEnabledFreqs,
   useRerNetworkDetailsNeoPageLoad,
 } from './use-rer-network-details-neo-page.load';
 
@@ -189,6 +190,19 @@ describe('use-rer-network-details-neo-page.load', () => {
     expect(derivePelengEnabledFreqs(['149.0000'], [{ freq: '   ' }, { freq: '146.5000' }])).toEqual(
       ['146.5000', NO_DATA_LABEL],
     );
+  });
+
+  it('falls back to the loaded relation frequencies when the selection is empty', () => {
+    expect(
+      deriveRelationsEnabledFreqs([], null, {
+        freqs: [
+          { freq: '652.111', enabledByDefault: true },
+          { freq: '852.111', enabledByDefault: false },
+        ],
+        nodes: [],
+        edges: [],
+      }),
+    ).toEqual(['652.111']);
   });
 
   it('loads Everything candidates once and splits catalog and intercepted rows', async () => {

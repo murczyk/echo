@@ -46,6 +46,7 @@ export type UseAnalysisDataResult = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
+  callsignGraphLoadError?: string | null;
   callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;
@@ -118,6 +119,7 @@ export type UseAnalysisDataResult = {
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   topCallsigns: AnalysisCountItem[];
   topFreqs: AnalysisCountItem[];
   groupInfos: Record<string, SignalGroupEntry>;
