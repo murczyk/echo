@@ -131,6 +131,14 @@ mod tests {
     }
 
     #[test]
+    fn extract_freq_separate_freq_post_line_without_space_inside_post() {
+        let input =
+            "01.07.2026, 03:04:16\n463.4500 ЦФП52\nУКХ р/м НВ підрозділу";
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, Some("463.4500".to_string()));
+    }
+
+    #[test]
     fn extract_freq_star_wrapped_line() {
         let input = "01.07.2026 02:58:08\n*123.7586*\nПерехоплення";
         let res = extract_freq(input).unwrap();

@@ -3,7 +3,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(
     Elm,
@@ -115,15 +115,19 @@ lazy_static! {
     static ref RE31: Regex =
         Regex::new(r#"^[0-9]{2}-[0-9]{2}(-[0-9]{2})?$"#).unwrap();
     // Remove unit line from Mouse
-    static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
+    static ref RE3: Regex = Regex::new(r#"^[^\p{L}\p{N}]*(?:[0-9]{3}(?:\.|,)[0-9]{3,5}\s*(?:\(?МГц\)?|MHz)\s+)?(?i:(?:\[dmr\]\s*)?(?:укх|управління)|dmre?\s+р/м)\s"#).unwrap();
     // Remove freq line from Mouse
-    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(\.|,)[0-9]{3,5}\*|[0-9]{3}(\.|,)[0-9]{3,5})\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
+    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(?:\.|,)[0-9]{3,5}\*|[0-9]{3}(?:\.|,)[0-9]{3,5})(?:\s+[а-яіїА-ЯІЇ]{0,2}(?:П|п)\s*-?\s*\d{1,3})?\s*$"#).unwrap();
     // Remove coordinates line from Mouse
     static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
     // Remove line with ---------------------
     static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
     // Buran-style date/time label line: `Дата: ...` / `Час: ...`
     static ref RE_DT_LABEL: Regex = Regex::new(r#"^(Дата|Час)\s*[: ]"#).unwrap();
+    static ref UNIT_WATERMARK_LINES: HashSet<String> = ["---- РР 47 ОМБР ----"]
+        .into_iter()
+        .map(normalize_unit_watermark_line)
+        .collect();
 }
 
 pub fn is_header_line(line: &str) -> bool {
@@ -209,6 +213,14 @@ fn normalize_decorated_header_line(line: &str) -> Option<String> {
     Some(line)
 }
 
+fn is_unit_watermark_line(line: &str) -> bool {
+    UNIT_WATERMARK_LINES.contains(&normalize_unit_watermark_line(line))
+}
+
+fn normalize_unit_watermark_line(line: &str) -> String {
+    line.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
     let marker_start = line.find("Отримано з пост")?;
     Some(line[..marker_start].trim().to_string())
@@ -262,6 +274,7 @@ pub(crate) fn extract_text_excluding_lines(
         .lines()
         .enumerate()
         .filter(|(idx, _)| !excluded_lines.contains(idx))
+        .filter(|(_, x)| !is_unit_watermark_line(x))
         .map(|(_, x)| {
             trim_otrymano_post_header(x).unwrap_or_else(|| x.to_string())
         })
@@ -378,6 +391,63 @@ mod tests {
         let body = "F= 148.175 DMR\nПерехоплення";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_freq_post_line_without_space_inside_post_is_header() {
+        let body = "01.07.2026, 03:04:16\n463.4500 ЦФП52\nУКХ р/м НВ підрозділу\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_freq_mhz_unit_line_is_header() {
+        let body = "02.07.2026, 03:00:04\n446.1500\n446.150 МГц УКХ р/м постів повітряного спостереження (ППС) 80 омсбр 14 АК (ІВАНІВКА, ЧУЛАКІВКА, БЕХТЕРИ)\nНВ\nОРБИТА\n\n— Орбита, Орбита, переходим на этаж выше.\n\nМітки перехоплення: 👆👆👆 - Звернути увагу";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "НВ\nОРБИТА\n\n— Орбита, Орбита, переходим на этаж выше."
+        );
+    }
+
+    #[test]
+    fn extract_text_dmr_unit_line_is_header() {
+        let body = "Отримано з поста \"Radiotrap_Г-Б4\"\n--------------------------------------\n02.07.2026, 02:58:44\n150.5500\nDMR р/м управління підрозділом протидії БпЛА 245 мсп 3 мсд 20 А 150.550 МГц (БОРИСІВКА, ГРУЗСКОЄ, ЦАПОВКА, КРАСНИЙ ХУТІР)\nГРОМ\nБАЗА\n\n— База, База, я Гром, остановка 7.\n— Гром, Гром, я База, принял.\n\n\nКоментар: Доповідь по обстановці.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "ГРОМ\nБАЗА\n\n— База, База, я Гром, остановка 7.\n— Гром, Гром, я База, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_decorated_ukh_unit_line_with_inline_cc_is_header() {
+        let body = "02.07.2026, 02:58:17\n430.8750\n🐵🪖УКХ ╬ р/м 9мср 3 мсб 1432 мсп ╬ (СТЕЛЬМАХІВКА - НОВОПЛАТОНІВКА) СС:10\nНВ\nАРХИВ, КОНДОР, АДВОКАТ\n\n— 5 малых, 5 малых назад выходили, выходили 1000, 1000 принял?\n— Принял, принял.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "НВ\nАРХИВ, КОНДОР, АДВОКАТ\n\n— 5 малых, 5 малых назад выходили, выходили 1000, 1000 принял?\n— Принял, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_lowercase_decorated_ukh_unit_line_is_header() {
+        let body = "02.07.2026, 02:57:03\n142.2001\n🌊/🏡 укх р/м 31 мсп 67 мсд 25 ЗА (р-н ЯМПОЛІВКА - ЗАРІЧНЕ)\nРУДНИК\nБАБАЙКА\n\n— Бабайка Роднику костлявая прошла.\n— Бабайка, да, принял.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "РУДНИК\nБАБАЙКА\n\n— Бабайка Роднику костлявая прошла.\n— Бабайка, да, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_removes_unit_watermark_line() {
+        let watermark = "----\u{00a0}РР\u{00a0}47\u{00a0}ОМБР\u{00a0}----";
+        let body = format!(
+            "02.07.2026, 02:58:17\n430.8750\nУКХ р/м 9мср\nНВ\n\n— Прийом.\n{watermark}"
+        );
+        let res = extract_text(&body).unwrap().body;
+        assert_eq!(res, "НВ\n\n— Прийом.");
     }
 
     #[test]
