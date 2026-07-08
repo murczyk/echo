@@ -3,6 +3,12 @@ use milgeo_rs::coordinates::Coords;
 use regex::Regex;
 
 pub async fn extract_coords(body: &str) -> Vec<Coords> {
+    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(body)
+    {
+        return milgeo_rs::coordinates::rer_extract_coords(&zp_peleng.mgrs)
+            .await;
+    }
+
     let body = prepare_body_for_coords(body);
     milgeo_rs::coordinates::rer_extract_coords(&body).await
 }
@@ -94,6 +100,14 @@ ID⬅️(CG) 1871040, 3106946, 2122380, 1139383, 443796, 3102387, 2626603, 47047
             .await
             .is_empty());
         assert!(extract_coords(body).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_coords_zp_peleng_format() {
+        let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let coords = extract_coords(body).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36TVS8990414667");
     }
 
     #[tokio::test]

@@ -295,7 +295,7 @@ fn render_entry(frame: &mut Frame<'_>, area: Rect, state: &ReviewState) {
     render_text_pane(
         frame,
         right[0],
-        "Body no header",
+        "Body no header preview",
         &entry.body_noheader,
         state.scroll,
     );
@@ -390,11 +390,15 @@ impl ReviewEntry {
     fn from_row(row: ReviewQueryRow) -> Option<Self> {
         let body = row.body?;
         let parsed = crate::sigint::parser::parse_comments(&body);
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(&body)
+                .map(|body_noheader| body_noheader.body)
+                .unwrap_or_else(|_| body_noheader_to_text(row.body_noheader));
         Some(Self {
             id: row.id,
             created_at: row.created_at,
             body,
-            body_noheader: body_noheader_to_text(row.body_noheader),
+            body_noheader,
             parsed,
         })
     }

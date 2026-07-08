@@ -1,8 +1,10 @@
 use crate::rer_importer::body_noheader::{
-    is_datetime_header_line, is_header_line,
+    is_datetime_header_line, is_header_line, NoHeadersBody,
 };
+use crate::types::AppError;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::collections::BTreeSet;
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct ParsedComments {
@@ -55,6 +57,21 @@ lazy_static! {
         r"^-?\d{1,3}[.,]\d+\s*[, ]\s*-?\d{1,3}[.,]\d+\s*$"
     )
     .unwrap();
+}
+
+fn is_ignored_comment(text: &str) -> bool {
+    normalize_comment_key(text) == "службовийрадіообмін"
+}
+
+fn normalize_comment_key(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| c.to_lowercase())
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+fn filter_ignored_comment(comment: Option<String>) -> Option<String> {
+    comment.filter(|comment| !is_ignored_comment(comment))
 }
 
 fn is_dialog_line(line: &str) -> bool {
@@ -114,7 +131,8 @@ fn join_block(lines: &[&str]) -> Option<String> {
 }
 
 pub fn parse_comments(body: &str) -> ParsedComments {
-    let lines: Vec<&str> = body.lines().collect();
+    let lines = normalized_body_lines(body);
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
 
     let marker_comment = scan_marker_comment(&lines);
 
@@ -127,14 +145,46 @@ pub fn parse_comments(body: &str) -> ParsedComments {
     let bottom = marker_bottom
         .or_else(|| anchor.and_then(|a| parse_tail_comment(&lines[a..])));
 
-    ParsedComments { top, bottom }
+    ParsedComments {
+        top: filter_ignored_comment(top),
+        bottom: filter_ignored_comment(bottom),
+    }
+}
+
+pub fn extract_text_without_top_comment(
+    body: &str,
+) -> Result<NoHeadersBody, AppError> {
+    if crate::rer_importer::zp_peleng_format::parse(body).is_some()
+        || crate::rer_importer::zp_digital_post_alt_format::parse(body)
+            .is_some()
+    {
+        return crate::rer_importer::body_noheader::extract_text(body);
+    }
+
+    let lines = normalized_body_lines(body);
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let excluded_lines = top_comment_line_indices(&lines);
+    crate::rer_importer::body_noheader::extract_text_excluding_lines(
+        body,
+        &excluded_lines,
+    )
 }
 
 pub(crate) fn marker_comment_strip_candidates(body: &str) -> Vec<String> {
-    let lines: Vec<&str> = body.lines().collect();
+    let lines = normalized_body_lines(body);
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
     scan_marker_comment(&lines)
         .map(|comment| comment.strip_candidates(&lines))
         .unwrap_or_default()
+}
+
+fn normalized_body_lines(body: &str) -> Vec<String> {
+    body.lines()
+        .map(|line| {
+            crate::rer_importer::body_noheader::trim_otrymano_post_header(line)
+                .unwrap_or_else(|| line.to_string())
+        })
+        .collect()
 }
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
@@ -191,6 +241,30 @@ fn parse_top(
         .map(|(_, l)| *l)
         .collect();
     join_block(&kept)
+}
+
+fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
+    let Some(anchor) = lines.iter().position(|l| is_datetime_header_line(l))
+    else {
+        return BTreeSet::new();
+    };
+    let marker_comment = scan_marker_comment(lines);
+    let indices: Vec<usize> = lines[..anchor]
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| {
+            !is_header_line(l)
+                && !marker_comment
+                    .as_ref()
+                    .map(|comment| *i >= comment.start && *i < comment.end)
+                    .unwrap_or(false)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let kept: Vec<&str> = indices.iter().map(|i| lines[*i]).collect();
+    join_block(&kept)
+        .map(|_| indices.into_iter().collect())
+        .unwrap_or_default()
 }
 
 fn parse_tail_comment(post: &[&str]) -> Option<String> {
@@ -272,10 +346,86 @@ mod tests {
     }
 
     #[test]
+    fn top_ignores_otrymano_posts_plural_and_divider() {
+        let body = "Отримано з постів \"Пост 10, Пост 6, Пост 8\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м ПУ ФСБ рф\n\n— репліка";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn top_ignores_service_radio_exchange_comment() {
+        let body = "  СЛУЖБОВИЙ...   радіообмін!!!\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn top_keeps_prefix_before_inline_otrymano_post_header() {
+        let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let res = parse_comments(body);
+        assert_eq!(res.top.as_deref(), Some("37T BN 88562 95454"));
+        assert_eq!(res.bottom, None);
+    }
+
+    #[test]
     fn top_with_otrymano_then_real_comment() {
         let body = "Отримано з поста \"Альфа\"\n--------------------\nважливий коментар оператора\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
         let res = parse_comments(body);
         assert_eq!(res.top.as_deref(), Some("важливий коментар оператора"));
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_top_block() {
+        let body = "верхній коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ р/м\n\n— репліка\n\nнижній коментар";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "— репліка\n\nнижній коментар");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_top_line_without_blank() {
+        let body = "верхній коментар\n24.07.2025, 08:05:21\n149.7300\nУКХ р/м\n— репліка";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "— репліка");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_keeps_body_without_top_comment() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ р/м\n\n— репліка";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "— репліка");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_ignored_comment() {
+        let body = "службовий радіообмін\n\n24.07.2025, 08:05:21\n149.7300\nУКХ р/м\n\n— репліка";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "— репліка");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_inline_post_prefix() {
+        let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "УКХ р/м\n\n— репліка");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_keeps_zp_peleng_body() {
+        let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "36T VS 89904 14667");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_keeps_zp_digital_post_alt_body() {
+        let body = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(
+            res.body,
+            "УКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)"
+        );
     }
 
     // ── Variant 2: bottom comment ──────────────────────────────────────
@@ -307,6 +457,14 @@ mod tests {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: перший рядок\nдругий рядок";
         let res = parse_comments(body);
         assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
+    }
+
+    #[test]
+    fn bottom_ignores_service_radio_exchange_comment() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий, радіообмін.";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom, None);
     }
 
     #[test]

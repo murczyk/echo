@@ -15,6 +15,16 @@ pub fn extract_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<NaiveDateTime>, AppError> {
+    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(body)
+    {
+        return Ok(Some(zp_peleng.timestamp));
+    }
+    if let Some(zp_digital_post_alt) =
+        crate::rer_importer::zp_digital_post_alt_format::parse(body)
+    {
+        return Ok(Some(zp_digital_post_alt.timestamp));
+    }
+
     lazy_static! {
         static ref REGEX_PATTERNS: Vec<(Regex, ProcessorFn)> = vec![
             // Work with formats like DD.MM.YYYY_HH:MI
@@ -345,6 +355,36 @@ mod tests {
             NaiveDate::from_ymd_opt(2023, 2, 8)
                 .unwrap()
                 .and_hms_opt(21, 0, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_zp_peleng_format() {
+        let input = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let tz = crate::config::get_tz();
+        let lnow = fixed_now(tz);
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 7, 1)
+                .unwrap()
+                .and_hms_opt(3, 7, 42)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_zp_digital_post_alt_format() {
+        let input = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let tz = crate::config::get_tz();
+        let lnow = fixed_now(tz);
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 7, 1)
+                .unwrap()
+                .and_hms_opt(3, 4, 16)
                 .unwrap(),
         );
         assert_eq!(res, expected);

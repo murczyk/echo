@@ -3,6 +3,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(
     Elm,
@@ -32,7 +33,7 @@ lazy_static! {
     .unwrap();
     // Remove data with line starting as below
     static ref RE0: Regex = Regex::new(
-        r#"^Отримано з поста"#
+        r#"^\s*Отримано з пост(а|ів)"#
     )
     .unwrap();
     // Remove data time line from Mouse #1
@@ -156,9 +157,53 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE_DT_LABEL.is_match(line)
 }
 
+pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
+    let marker_start = line.find("Отримано з пост")?;
+    Some(line[..marker_start].trim().to_string())
+}
+
 pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
+    if let Some(zp_peleng) = crate::rer_importer::zp_peleng_format::parse(input)
+    {
+        let start_byte = input.find(&zp_peleng.mgrs).unwrap_or(0);
+        let start = input[..start_byte].chars().count();
+        let end = start + zp_peleng.mgrs.chars().count();
+        return Ok(NoHeadersBody {
+            body: zp_peleng.mgrs,
+            start,
+            end,
+        });
+    }
+    if let Some(zp_digital_post_alt) =
+        crate::rer_importer::zp_digital_post_alt_format::parse(input)
+    {
+        let start_byte =
+            input.find(&zp_digital_post_alt.network_line).unwrap_or(0);
+        let start = input[..start_byte].chars().count();
+        let end = start + zp_digital_post_alt.network_line.chars().count();
+        return Ok(NoHeadersBody {
+            body: zp_digital_post_alt.network_line,
+            start,
+            end,
+        });
+    }
+
+    extract_text_excluding_lines(input, &BTreeSet::new())
+}
+
+pub(crate) fn extract_text_excluding_lines(
+    input: &str,
+    excluded_lines: &BTreeSet<usize>,
+) -> Result<NoHeadersBody, AppError> {
     // 1. Keep empty lines to avoid breaking `inp.find(&res)`
-    let mut lines: Vec<String> = input.lines().map(|x| x.to_string()).collect();
+    let mut lines: Vec<String> = input
+        .lines()
+        .enumerate()
+        .filter(|(idx, _)| !excluded_lines.contains(idx))
+        .map(|(_, x)| {
+            trim_otrymano_post_header(x).unwrap_or_else(|| x.to_string())
+        })
+        .collect();
     lines = lines
         .iter()
         // .filter(|l| l.trim() != "")
@@ -204,6 +249,37 @@ mod tests {
         let body = " audio | 2026-07-01_14-47-03 \nПерехоплення\nрядок 2";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "Перехоплення\nрядок 2");
+    }
+
+    #[test]
+    fn extract_text_zp_peleng_format_keeps_mgrs() {
+        let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "36T VS 89904 14667");
+    }
+
+    #[test]
+    fn extract_text_zp_digital_post_alt_format_keeps_network_line() {
+        let body = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "УКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)"
+        );
+    }
+
+    #[test]
+    fn extract_text_otrymano_posts_plural_header() {
+        let body = "Отримано з постів \"Пост 10, Пост 6, Пост 8\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "УКХ р/м\n\n— репліка");
+    }
+
+    #[test]
+    fn extract_text_trims_inline_otrymano_post_header_suffix() {
+        let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "37T BN 88562 95454\nУКХ р/м\n\n— репліка");
     }
 
     #[test]

@@ -47,6 +47,8 @@ pub mod search;
 pub mod signals;
 pub mod types;
 pub mod unit;
+pub mod zp_digital_post_alt_format;
+pub mod zp_peleng_format;
 
 fn media_inline_content_disposition(
     file_name: Option<&str>,
