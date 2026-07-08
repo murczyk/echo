@@ -8,7 +8,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
-use crate::types::{info, Env, ShortContext};
+use crate::types::{info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
@@ -843,7 +843,7 @@ impl KnowledgeWorkbookData {
             .cloned()
             .collect::<BTreeSet<_>>();
         affected_sheet_names.insert(target_sheet_name.clone());
-        let current_callsigns = sorted_goi_callsigns(current_callsigns);
+        let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
 
         for sheet_name in affected_sheet_names {
             let current_sheet_callsigns = if sheet_name == target_sheet_name {
@@ -926,7 +926,7 @@ fn apply_goi_callsigns_to_xlsx(
         .default_target_sheet_name(previous_callsigns)
         .c(h!())?;
     let worker_row_nums_by_sheet = workbook.worker_row_nums_by_sheet();
-    let current_callsigns = sorted_goi_callsigns(current_callsigns);
+    let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
     let mut archive = XlsxArchive::from_bytes(file_data).c(h!())?;
     let sheet_paths = archive.sheet_paths_by_name().c(h!())?;
 
@@ -1284,11 +1284,21 @@ struct SheetXmlRow {
     is_worker: bool,
 }
 
-fn sorted_goi_callsigns(
+fn unique_sorted_goi_callsigns(
     current_callsigns: &[GoiCallsignState],
 ) -> Vec<GoiCallsignState> {
     let mut current_callsigns = current_callsigns.to_vec();
     current_callsigns.sort_by_key(|callsign| callsign.id);
+    let duplicate_ids = current_callsigns
+        .windows(2)
+        .filter_map(|pair| (pair[0].id == pair[1].id).then_some(pair[0].id))
+        .collect::<BTreeSet<_>>();
+    if !duplicate_ids.is_empty() {
+        warn!(
+            "[goi-sync] Deduplicating GOI knowledge callsign rows by EXO ID before workbook write: duplicate_ids={duplicate_ids:?}"
+        );
+        current_callsigns.dedup_by_key(|callsign| callsign.id);
+    }
     current_callsigns
 }
 
@@ -1299,6 +1309,7 @@ fn rewrite_sheet_xml(
     sync_timestamp: &str,
 ) -> Result<String, AppError> {
     let (prefix, rows, suffix) = split_sheet_xml(sheet_xml).c(h!())?;
+    let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
     let rows = rows
         .into_iter()
         .map(|(row_num, xml)| SheetXmlRow {
@@ -2025,7 +2036,7 @@ mod tests {
         let rewritten = rewrite_sheet_xml(
             sheet_xml,
             &BTreeSet::from([2]),
-            &sorted_goi_callsigns(&current),
+            &unique_sorted_goi_callsigns(&current),
             TEST_GOI_SYNC_TIMESTAMP,
         )
         .expect("rewrite_sheet_xml");
@@ -2038,6 +2049,30 @@ mod tests {
         assert!(rewritten.contains(r#"<row r="5"><c r="A5" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
         assert!(rewritten.contains(r#"<c r="H5" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
         assert!(!rewritten.contains(r#"<row r="2"><c r="A2"/></row>"#));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_deduplicates_current_callsign_ids() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H1"/><sheetData><row r="1"><c r="A1"/></row></sheetData></worksheet>"#;
+        let current = vec![
+            sample_callsign(2, "BETA", None),
+            sample_callsign(2, "BETA DUPLICATE", None),
+            sample_callsign(5, "EPSILON", None),
+        ];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::new(),
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert_eq!(rewritten.matches("EXO ID 2").count(), 1);
+        assert_eq!(rewritten.matches("EXO ID 5").count(), 1);
+        assert!(rewritten.contains(r#"<row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+        assert!(rewritten.contains(r#"<row r="3"><c r="A3" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
+        assert!(!rewritten.contains("BETA DUPLICATE"));
     }
 
     #[test]
@@ -2083,7 +2118,7 @@ mod tests {
         let rewritten = rewrite_sheet_xml(
             sheet_xml,
             &BTreeSet::from([2, 3]),
-            &sorted_goi_callsigns(&current),
+            &unique_sorted_goi_callsigns(&current),
             TEST_GOI_SYNC_TIMESTAMP,
         )
         .expect("rewrite_sheet_xml");
@@ -2094,6 +2129,25 @@ mod tests {
         assert!(rewritten.contains(r#"<c r="H3" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
         assert!(!rewritten.contains("BETA OLD"));
         assert!(!rewritten.contains("EPSILON OLD"));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_removes_existing_duplicate_worker_rows() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA OLD 1</t></is></c><c r="C2" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D2" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c></row><row r="3"><c r="A3" t="inlineStr"><is><t xml:space="preserve">BETA OLD 2</t></is></c><c r="C3" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D3" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H3" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c></row></sheetData></worksheet>"#;
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::from([2, 3]),
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert_eq!(rewritten.matches("EXO ID 2").count(), 1);
+        assert!(rewritten.contains(r#"<row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+        assert!(!rewritten.contains("BETA OLD 1"));
+        assert!(!rewritten.contains("BETA OLD 2"));
     }
 
     #[test]
