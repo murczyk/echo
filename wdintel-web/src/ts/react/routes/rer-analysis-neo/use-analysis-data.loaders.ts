@@ -156,15 +156,9 @@ export function useAnalysisDataLoaders(params: Params) {
 
   const invalidateCallsignGraph = useCallback(() => {
     callsignGraphRequestRef.current += 1;
-    setCallsignGraph(null);
     setCallsignGraphLoading(false);
     setCallsignGraphLoadVersion((current) => current + 1);
-  }, [
-    callsignGraphRequestRef,
-    setCallsignGraph,
-    setCallsignGraphLoading,
-    setCallsignGraphLoadVersion,
-  ]);
+  }, [callsignGraphRequestRef, setCallsignGraphLoading, setCallsignGraphLoadVersion]);
 
   const invalidateSummaryData = useCallback(
     (keepLoading = false) => {
@@ -184,10 +178,7 @@ export function useAnalysisDataLoaders(params: Params) {
     rightSidebarRequestRef.current += 1;
     rightSidebarRequestKeyRef.current = null;
     setRightSidebarLoading(false);
-    setTopCallsigns([]);
-    setTopLocations([]);
-    setTopUnits([]);
-  }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
+  }, [setRightSidebarLoading]);
 
   const loadMissingCallsignInfos = useCallback(
     async (callsigns: string[], requestId: number) => {

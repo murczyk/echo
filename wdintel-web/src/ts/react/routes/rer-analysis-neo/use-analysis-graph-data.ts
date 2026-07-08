@@ -30,6 +30,7 @@ export function useAnalysisGraphData({
   const [callsignGraphLoading, setCallsignGraphLoading] = useState(false);
   const [callsignGraphLoadVersion, setCallsignGraphLoadVersion] = useState(0);
   const [callsignGraphNolimit, setCallsignGraphNolimit] = useState(false);
+  const [callsignGraphLoadError, setCallsignGraphLoadError] = useState<string | null>(null);
 
   const correlatedFreqsRequestRef = useRef(0);
   const correlatedFreqsRequestKeyRef = useRef<string | null>(null);
@@ -48,8 +49,8 @@ export function useAnalysisGraphData({
   const invalidateCallsignGraph = useCallback(() => {
     callsignGraphAbortControllerRef.current?.abort();
     callsignGraphRequestRef.current += 1;
-    setCallsignGraph(null);
     setCallsignGraphLoading(false);
+    setCallsignGraphLoadError(null);
     setCallsignGraphLoadVersion((current) => current + 1);
   }, []);
 
@@ -109,6 +110,7 @@ export function useAnalysisGraphData({
     const requestId = callsignGraphRequestRef.current + 1;
     callsignGraphRequestRef.current = requestId;
     setCallsignGraphLoading(true);
+    setCallsignGraphLoadError(null);
     try {
       const rsp = await fetchAnalysisCallsignGraph(
         { ...analysisReq, nolimit: callsignGraphNolimit },
@@ -116,6 +118,7 @@ export function useAnalysisGraphData({
       );
       if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted) return;
       setCallsignGraph(rsp);
+      setCallsignGraphLoadError(null);
     } catch (loadError) {
       if (
         requestId !== callsignGraphRequestRef.current ||
@@ -123,7 +126,9 @@ export function useAnalysisGraphData({
         isAbortError(loadError)
       )
         return;
-      if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      const errorMessage = toErrorMessage(loadError);
+      setCallsignGraphLoadError(errorMessage);
+      if (!onUnauthorized(loadError)) onError(errorMessage);
     } finally {
       if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted) return;
       setCallsignGraphLoading(false);
@@ -153,6 +158,7 @@ export function useAnalysisGraphData({
     callsignGraph,
     callsignGraphLoading,
     callsignGraphLoadVersion,
+    callsignGraphLoadError,
     callsignGraphNolimit,
     correlatedFreqsRequestRef,
     correlatedFreqsRequestKeyRef,

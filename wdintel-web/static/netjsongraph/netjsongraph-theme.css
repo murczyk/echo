@@ -23,7 +23,7 @@
   background-color: #fff;
 }
 
-#callsign-graph-div .switch-wrap input[type="checkbox"]:checked+label {
+#callsign-graph-div .switch-wrap input[type='checkbox']:checked + label {
   background: grey;
 }
 
@@ -42,6 +42,10 @@
 
 #callsign-graph-div .njg-sideBar {
   background-color: #fff;
+}
+
+#callsign-graph-div.analysis-callsign-graph .njg-sideBar {
+  display: none;
 }
 
 #callsign-graph-div .sideBarHandle {

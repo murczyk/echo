@@ -36,6 +36,7 @@ export type UseAnalysisSidebarDataResult = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
+  callsignGraphLoadError?: string | null;
   callsignGraphNolimit: boolean;
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoadedFreq: string | null;

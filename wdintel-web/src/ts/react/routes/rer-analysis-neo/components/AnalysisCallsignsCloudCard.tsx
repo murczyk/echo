@@ -29,6 +29,11 @@ export function AnalysisCallsignsCloudCard({ items, loading = false }: Props) {
       <CompactTitle id={headingId} component="h2" sx={{ mb: 1.5 }}>
         Хмара позивних
       </CompactTitle>
+      {loading && items.length > 0 ? (
+        <CompactText color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          Оновлюється...
+        </CompactText>
+      ) : null}
       <Stack direction="row" gap={1} flexWrap="wrap" role="list" aria-label="Хмара позивних">
         {loading && visibleItems.length === 0 ? (
           <Stack direction="row" spacing={1} alignItems="center">

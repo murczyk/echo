@@ -9,6 +9,7 @@ type Props = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
+  callsignGraphLoadError?: string | null;
   callsignGraphNolimit: boolean;
   visible: boolean;
   onLoadCallsignGraph: () => void;
@@ -21,6 +22,7 @@ export function AnalysisCallsignsPane({
   callsignGraph,
   callsignGraphLoading,
   callsignGraphLoadVersion,
+  callsignGraphLoadError,
   callsignGraphNolimit,
   visible,
   onLoadCallsignGraph,
@@ -38,6 +40,7 @@ export function AnalysisCallsignsPane({
           graph={callsignGraph}
           loading={callsignGraphLoading}
           loadVersion={callsignGraphLoadVersion}
+          loadError={callsignGraphLoadError ?? null}
           nolimit={callsignGraphNolimit}
           visible={visible}
           onLoad={onLoadCallsignGraph}

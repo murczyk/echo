@@ -17,6 +17,7 @@ type Props = Pick<
   | 'callsignGraph'
   | 'callsignGraphLoading'
   | 'callsignGraphLoadVersion'
+  | 'callsignGraphLoadError'
   | 'callsignGraphNolimit'
   | 'correlatedFreqs'
   | 'correlatedFreqsLoading'
@@ -55,6 +56,7 @@ export function AnalysisSidebar({
   callsignGraph,
   callsignGraphLoading,
   callsignGraphLoadVersion,
+  callsignGraphLoadError,
   callsignGraphNolimit,
   correlatedFreqs,
   correlatedFreqsLoading,
@@ -250,6 +252,7 @@ export function AnalysisSidebar({
             callsignGraph={callsignGraph}
             callsignGraphLoading={callsignGraphLoading}
             callsignGraphLoadVersion={callsignGraphLoadVersion}
+            callsignGraphLoadError={callsignGraphLoadError}
             callsignGraphNolimit={callsignGraphNolimit}
             visible={isSidebarVisible}
             onLoadCallsignGraph={loadCallsignGraph}
