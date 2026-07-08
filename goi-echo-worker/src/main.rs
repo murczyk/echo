@@ -18,6 +18,7 @@ async fn main() -> Result<()> {
     let config = config::read_config()?;
     let db = db::connect(&config).await?;
     migration::run_migration(&db).await?;
+    worker::ensure_xlsx_files_exist(&config).await?;
 
     let worker_db = db.clone();
     let worker_config = config.clone();
