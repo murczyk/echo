@@ -1406,6 +1406,20 @@ fn split_sheet_xml(
         .ok_or_else(|| AppError::BL {
             msg: "GOI sheet XML has broken <sheetData> tag".to_string(),
         })?;
+    let sheet_data_tag = &sheet_xml[sheet_data_start..sheet_data_tag_end];
+    if sheet_data_tag.trim_end().ends_with("/>") {
+        let sheet_data_open = sheet_data_tag
+            .trim_end_matches('>')
+            .trim_end()
+            .trim_end_matches('/')
+            .trim_end();
+        return Ok((
+            format!("{}{}>", &sheet_xml[..sheet_data_start], sheet_data_open),
+            Vec::new(),
+            format!("</sheetData>{}", &sheet_xml[sheet_data_tag_end..]),
+        ));
+    }
+
     let sheet_data_end =
         sheet_xml.find("</sheetData>").ok_or_else(|| AppError::BL {
             msg: "GOI sheet XML has no </sheetData>".to_string(),
@@ -1508,6 +1522,16 @@ fn update_sheet_dimension(sheet_xml: &str, rows_xml: &[String]) -> String {
         return malformed_dimension_regex
             .replace(sheet_xml, format!(r#"<dimension ref="{next_ref}"${{1}}"#))
             .into_owned();
+    }
+
+    if let Some(sheet_data_start) = sheet_xml.find("<sheetData") {
+        let mut out = String::with_capacity(
+            sheet_xml.len() + r#"<dimension ref=""/>"#.len() + next_ref.len(),
+        );
+        out.push_str(&sheet_xml[..sheet_data_start]);
+        out.push_str(&format!(r#"<dimension ref="{next_ref}"/>"#));
+        out.push_str(&sheet_xml[sheet_data_start..]);
+        return out;
     }
 
     sheet_xml.to_string()
@@ -1845,6 +1869,17 @@ mod tests {
     }
 
     #[test]
+    fn update_sheet_dimension_inserts_missing_dimension_tag() {
+        let sheet_xml = r#"<worksheet><sheetData><row r="1"><c r="A1"/><c r="H1"/></row></sheetData></worksheet>"#;
+        let rows_xml =
+            vec![r#"<row r="1"><c r="A1"/><c r="H1"/></row>"#.to_string()];
+
+        let updated = update_sheet_dimension(sheet_xml, &rows_xml);
+
+        assert!(updated.contains(r#"<dimension ref="A1:H1"/><sheetData>"#));
+    }
+
+    #[test]
     fn extract_goi_callsigns_state_reads_worker_rows_from_workbook() {
         let workbook = KnowledgeWorkbookData {
             sheets: vec![
@@ -1943,6 +1978,37 @@ mod tests {
         assert_eq!(state.len(), 1);
         assert_eq!(state[0].id, 2);
         assert_eq!(state[0].comment, "джерело: Пролом");
+    }
+
+    #[test]
+    fn apply_goi_callsigns_to_empty_xlsx_creates_worker_rows() {
+        let file_data = empty_xlsx_buffer().expect("empty xlsx");
+        let workbook =
+            KnowledgeWorkbookData::from_xlsx_bytes(&file_data).expect("parse");
+        let current = vec![
+            sample_callsign(5, "EPSILON", None),
+            sample_callsign(2, "BETA", None),
+        ];
+
+        let next_file_data = apply_goi_callsigns_to_xlsx(
+            &file_data,
+            &workbook,
+            &[],
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("apply_goi_callsigns_to_xlsx");
+        validate_knowledge_xlsx_bytes(&next_file_data).expect("validate");
+        let next = KnowledgeWorkbookData::from_xlsx_bytes(&next_file_data)
+            .expect("parse next")
+            .extract_goi_callsigns_state();
+
+        assert_eq!(next.len(), 2);
+        assert_eq!(next[0].id, 2);
+        assert_eq!(next[0].callsign, "BETA");
+        assert_eq!(next[0].unit, "3 ОМСБр");
+        assert_eq!(next[1].id, 5);
+        assert_eq!(next[1].callsign, "EPSILON");
     }
 
     #[test]
@@ -2048,6 +2114,26 @@ mod tests {
         assert!(rewritten.contains(r#"<row r="5"><c r="A5" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
         assert!(!rewritten.contains(r#"<row r="2"><c r="A2"/></row>"#));
         assert!(!rewritten.contains(r#"<row r="3"><c r="A3"/></row>"#));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_expands_self_closing_sheet_data() {
+        let sheet_xml =
+            r#"<worksheet><dimension ref="A1"/><sheetData/></worksheet>"#;
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::new(),
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert!(rewritten.contains("<sheetData>"));
+        assert!(rewritten.contains("</sheetData>"));
+        assert!(rewritten.contains(r#"<dimension ref="A1:H1"/>"#));
+        assert!(rewritten.contains(r#"<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
     }
 
     #[test]
