@@ -14,33 +14,17 @@ import { buildDefaultColumnOrder } from '../../components/mui-customized/table/g
 import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
 import { NetworksTable } from './components/NetworksTable';
 import { NetworkDialogs } from './components/NetworkDialogs';
-import {
-  NetworkHoverPopovers,
-  FREQUENCY_HOVER_POPPER_MODIFIERS,
-  FREQUENCY_HOVER_POPPER_PLACEMENT,
-  HOVER_POPOVER_CLOSE_DELAY_MS,
-  useHoverPopoverState,
-} from './components/NetworkHoverPopovers';
+import { NetworkHoverPopovers, useHoverPopoverState } from './components/NetworkHoverPopovers';
 import { NetworkPageHeaderActions } from './components/NetworksPageHeader';
 import { NetworksToolbar } from './components/NetworksToolbar';
 import { useRerNetworksNeoPage } from './use-rer-networks-neo-page';
 import { resolveAorFilterSelectOptions, sanitizeNetworkColumnFilters } from './helpers';
-import { getLocationParts } from './components/NetworkCells';
-
 const DEFAULT_NETWORKS_SORTING: MRT_SortingState = [{ id: 'network', desc: false }];
 const columnOrder = buildDefaultColumnOrder({
   dataColumnIds: ['network', 'aors', 'freqs', 'location', 'activity', 'lastActivity'],
   withRowNumbers: true,
   withRowActions: true,
 });
-
-export {
-  FREQUENCY_HOVER_POPPER_MODIFIERS,
-  FREQUENCY_HOVER_POPPER_PLACEMENT,
-  HOVER_POPOVER_CLOSE_DELAY_MS,
-  getLocationParts,
-  useHoverPopoverState,
-};
 
 function RerNetworksNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerNetworksNeoPage({ authUserRoles });
