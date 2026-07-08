@@ -284,9 +284,9 @@ mod m20260707_095504_echo_missing_message_deleted_status;
 mod m20260707_164344_echo_missing_message_duplicate_status;
 mod m20260707_170000_signal_message_attachments_hash;
 mod m20260707_212500_echo_missing_message_duplicate_backfill;
-mod m20260704_083252_add_cyber_echo_enabled_to_settings;
-mod m20260704_130958_add_computer_name;
-mod m20260704_143111_add_computer_name_search_indexes;
+mod m20260708_083252_add_cyber_echo_enabled_to_settings;
+mod m20260708_130958_add_computer_name;
+mod m20260708_143111_add_computer_name_search_indexes;
 
 pub struct Migrator;
 
@@ -592,9 +592,9 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260707_170000_signal_message_attachments_hash::Migration,
             ),
-            Box::new(m20260704_083252_add_cyber_echo_enabled_to_settings::Migration),
-            Box::new(m20260704_130958_add_computer_name::Migration),
-            Box::new(m20260704_143111_add_computer_name_search_indexes::Migration),
+            Box::new(m20260708_083252_add_cyber_echo_enabled_to_settings::Migration),
+            Box::new(m20260708_130958_add_computer_name::Migration),
+            Box::new(m20260708_143111_add_computer_name_search_indexes::Migration),
         ]
     }
 }
