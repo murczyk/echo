@@ -24,6 +24,16 @@ pub fn extract_unit_with_aor(
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
     // trace!("> extract_unit: inp={inp}");
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
+    {
+        return Ok(UnitAndLoc {
+            unit: None,
+            locality: Some(zp_peleng.location),
+            locality_v2: None,
+        });
+    }
+
     if let Some(value) = try_extract_standard_unit_and_location(
         settlements.clone(),
         inp,

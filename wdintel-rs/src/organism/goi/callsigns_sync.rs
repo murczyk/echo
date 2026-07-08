@@ -28,6 +28,10 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
 const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
+const KNOWLEDGE_COMMENT_COL_IDX: usize = 4;
+const KNOWLEDGE_UNIT_COL_IDX: usize = 6;
+const KNOWLEDGE_POSITION_COL_IDX: usize = 7;
+const KNOWLEDGE_WORKER_ID_COL_IDX: usize = 8;
 #[cfg(test)]
 const TEST_GOI_SYNC_TIMESTAMP: &str = "17.03.2026 23:06:40";
 
@@ -37,6 +41,7 @@ pub(super) struct GoiCallsignState {
     pub callsign: String,
     pub frequency: String,
     pub unit: String,
+    pub position: String,
     pub comment: String,
     pub row_ref: Option<GoiWorkbookRowRef>,
 }
@@ -52,10 +57,12 @@ struct LiveCallsignRow {
     id: i64,
     network_id: i64,
     sigint_callsign: String,
+    position: Option<String>,
     comment: Option<String>,
     source_id: Option<i64>,
     radio_freq: Option<String>,
     sc_deleted: Option<bool>,
+    sc_position: Option<String>,
     sc_comment: Option<String>,
     sc_source_id: Option<i32>,
     sc_radio_freq: Option<String>,
@@ -214,6 +221,18 @@ async fn download_or_create_knowledge_xlsx(
     knowledge_xlsx_path: &str,
     integration_label: &str,
 ) -> Result<Vec<u8>, AppError> {
+    if !super::goi_file_exists(ssh_req.clone(), knowledge_xlsx_path.to_string())
+        .await
+        .c(h!())?
+    {
+        return create_knowledge_xlsx(
+            ssh_req,
+            knowledge_xlsx_path,
+            integration_label,
+        )
+        .await;
+    }
+
     match super::goi_download_file(
         ssh_req.clone(),
         knowledge_xlsx_path.to_string(),
@@ -222,22 +241,35 @@ async fn download_or_create_knowledge_xlsx(
     {
         Ok(file_data) => Ok(file_data),
         Err(err) if goi_download_error_is_missing_file(&err) => {
-            info!(
-                "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
-                knowledge_xlsx_path
-            );
-            let file_data = empty_xlsx_buffer().c(h!())?;
-            super::goi_upload_file(
+            create_knowledge_xlsx(
                 ssh_req,
-                knowledge_xlsx_path.to_string(),
-                file_data.clone(),
+                knowledge_xlsx_path,
+                integration_label,
             )
             .await
-            .c(h!())?;
-            Ok(file_data)
         }
         Err(err) => Err(AppError::from(err)),
     }
+}
+
+async fn create_knowledge_xlsx(
+    ssh_req: CheckOrganismGoiConnectionReq,
+    knowledge_xlsx_path: &str,
+    integration_label: &str,
+) -> Result<Vec<u8>, AppError> {
+    info!(
+        "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
+        knowledge_xlsx_path
+    );
+    let file_data = empty_xlsx_buffer().c(h!())?;
+    super::goi_upload_file(
+        ssh_req,
+        knowledge_xlsx_path.to_string(),
+        file_data.clone(),
+    )
+    .await
+    .c(h!())?;
+    Ok(file_data)
 }
 
 fn goi_download_error_is_missing_file(err: &anyhow::Error) -> bool {
@@ -346,6 +378,7 @@ async fn load_live_goi_callsigns(
             );
         }
         let unit = merged_live_unit_name(&callsign);
+        let position = merged_live_position(&callsign);
         let source_name = merged_live_source_name(&callsign, &source_names);
         let comment = merged_live_comment_text(&callsign);
         let goi_callsign = GoiCallsignState {
@@ -353,6 +386,7 @@ async fn load_live_goi_callsigns(
             callsign: callsign_name,
             frequency,
             unit,
+            position,
             comment: render_live_comment(
                 comment.as_deref(),
                 source_name.as_deref(),
@@ -463,6 +497,7 @@ async fn load_live_callsign_rows(
             "network_id",
         )
         .column(sigint_network_callsign::Column::SigintCallsign)
+        .column(sigint_network_callsign::Column::Position)
         .column(sigint_network_callsign::Column::Comment)
         .column(sigint_network_callsign::Column::SourceId)
         .column(sigint_network_callsign::Column::RadioFreq)
@@ -472,6 +507,13 @@ async fn load_live_callsign_rows(
                 sigint_callsign::Column::Deleted,
             )),
             "sc_deleted",
+        )
+        .column_as(
+            Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::Position,
+            )),
+            "sc_position",
         )
         .column_as(
             Expr::col((
@@ -553,6 +595,18 @@ fn merged_live_unit_name(callsign: &LiveCallsignRow) -> String {
             linked_sigint_callsign_is_active(callsign)
                 .then_some(normalize_optional_trimmed(
                     callsign.sc_unit_name.clone(),
+                ))
+                .flatten()
+        })
+        .unwrap_or_default()
+}
+
+fn merged_live_position(callsign: &LiveCallsignRow) -> String {
+    normalize_optional_trimmed(callsign.position.clone())
+        .or_else(|| {
+            linked_sigint_callsign_is_active(callsign)
+                .then_some(normalize_optional_trimmed(
+                    callsign.sc_position.clone(),
                 ))
                 .flatten()
         })
@@ -670,6 +724,7 @@ fn goi_callsign_changed(
     previous.callsign != current.callsign
         || previous.frequency != current.frequency
         || previous.unit != current.unit
+        || previous.position != current.position
         || previous.comment != current.comment
 }
 
@@ -697,11 +752,12 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
         .map(|row_ref| format!("{}#{}", row_ref.sheet_name, row_ref.row_num))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "id={} callsign={:?} frequency={:?} unit={:?} comment={:?} row_ref={}",
+        "id={} callsign={:?} frequency={:?} unit={:?} position={:?} comment={:?} row_ref={}",
         callsign.id,
         callsign.callsign,
         callsign.frequency,
         callsign.unit,
+        callsign.position,
         callsign.comment,
         row_ref
     )
@@ -709,16 +765,18 @@ fn format_goi_callsign_state_for_log(callsign: &GoiCallsignState) -> String {
 
 fn format_live_callsign_row_for_log(callsign: &LiveCallsignRow) -> String {
     format!(
-        "id={} network_id={} sigint_callsign={:?} unit_name={:?} comment={:?} source_id={:?} radio_freq={:?} sc_deleted={:?} sc_unit_name={:?} sc_comment={:?} sc_source_id={:?} sc_radio_freq={:?}",
+        "id={} network_id={} sigint_callsign={:?} unit_name={:?} position={:?} comment={:?} source_id={:?} radio_freq={:?} sc_deleted={:?} sc_unit_name={:?} sc_position={:?} sc_comment={:?} sc_source_id={:?} sc_radio_freq={:?}",
         callsign.id,
         callsign.network_id,
         callsign.sigint_callsign,
         callsign.unit_name,
+        callsign.position,
         callsign.comment,
         callsign.source_id,
         callsign.radio_freq,
         callsign.sc_deleted,
         callsign.sc_unit_name,
+        callsign.sc_position,
         callsign.sc_comment,
         callsign.sc_source_id,
         callsign.sc_radio_freq
@@ -751,8 +809,18 @@ impl KnowledgeWorkbookData {
                 if !is_worker_callsign_row(row) {
                     continue;
                 }
-                let Some(id) = parse_goi_callsign_id(row.get(7))
-                    .or_else(|| parse_goi_callsign_id(row.get(4)))
+                let Some(id) =
+                    parse_goi_callsign_id(row.get(KNOWLEDGE_WORKER_ID_COL_IDX))
+                        .or_else(|| {
+                            parse_legacy_h_goi_callsign_id(
+                                row.get(KNOWLEDGE_POSITION_COL_IDX),
+                            )
+                        })
+                        .or_else(|| {
+                            parse_goi_callsign_id(
+                                row.get(KNOWLEDGE_COMMENT_COL_IDX),
+                            )
+                        })
                 else {
                     continue;
                 };
@@ -760,7 +828,8 @@ impl KnowledgeWorkbookData {
                     id,
                     callsign: workbook_cell_text(row.first()),
                     frequency: workbook_cell_text(row.get(1)),
-                    unit: workbook_cell_text(row.get(6)),
+                    unit: workbook_cell_text(row.get(KNOWLEDGE_UNIT_COL_IDX)),
+                    position: extract_goi_callsign_position(row),
                     comment: extract_goi_callsign_comment(row),
                     row_ref: Some(GoiWorkbookRowRef {
                         sheet_name: sheet.name.clone(),
@@ -908,6 +977,7 @@ fn build_worker_row_cells_for_tests(
         WorkbookCellValue::String(callsign.comment.clone()),
         WorkbookCellValue::String(sync_timestamp.to_string()),
         WorkbookCellValue::String(callsign.unit.clone()),
+        WorkbookCellValue::String(callsign.position.clone()),
         WorkbookCellValue::String(format!(
             "{KNOWLEDGE_WORKER_ID_PREFIX}{}",
             callsign.id
@@ -1381,6 +1451,20 @@ fn split_sheet_xml(
         .ok_or_else(|| AppError::BL {
             msg: "GOI sheet XML has broken <sheetData> tag".to_string(),
         })?;
+    let sheet_data_tag = &sheet_xml[sheet_data_start..sheet_data_tag_end];
+    if sheet_data_tag.trim_end().ends_with("/>") {
+        let sheet_data_open = sheet_data_tag
+            .trim_end_matches('>')
+            .trim_end()
+            .trim_end_matches('/')
+            .trim_end();
+        return Ok((
+            format!("{}{}>", &sheet_xml[..sheet_data_start], sheet_data_open),
+            Vec::new(),
+            format!("</sheetData>{}", &sheet_xml[sheet_data_tag_end..]),
+        ));
+    }
+
     let sheet_data_end =
         sheet_xml.find("</sheetData>").ok_or_else(|| AppError::BL {
             msg: "GOI sheet XML has no </sheetData>".to_string(),
@@ -1419,9 +1503,10 @@ fn build_worker_row_xml(
     push_inline_string_cell(&mut cells, "E", row_num, &callsign.comment);
     push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
     push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit);
+    push_inline_string_cell(&mut cells, "H", row_num, &callsign.position);
     push_inline_string_cell(
         &mut cells,
-        "H",
+        "I",
         row_num,
         &format!("{KNOWLEDGE_WORKER_ID_PREFIX}{}", callsign.id),
     );
@@ -1485,6 +1570,16 @@ fn update_sheet_dimension(sheet_xml: &str, rows_xml: &[String]) -> String {
             .into_owned();
     }
 
+    if let Some(sheet_data_start) = sheet_xml.find("<sheetData") {
+        let mut out = String::with_capacity(
+            sheet_xml.len() + r#"<dimension ref=""/>"#.len() + next_ref.len(),
+        );
+        out.push_str(&sheet_xml[..sheet_data_start]);
+        out.push_str(&format!(r#"<dimension ref="{next_ref}"/>"#));
+        out.push_str(&sheet_xml[sheet_data_start..]);
+        return out;
+    }
+
     sheet_xml.to_string()
 }
 
@@ -1543,18 +1638,24 @@ fn is_worker_callsign_row(row: &[WorkbookCellValue]) -> bool {
 }
 
 fn extract_goi_callsign_comment(row: &[WorkbookCellValue]) -> String {
-    let note = workbook_cell_text(row.get(4));
-    let extra = workbook_cell_text(row.get(7));
-    if parse_goi_callsign_id(row.get(7)).is_some() {
-        return note;
-    }
-    if parse_goi_callsign_id(row.get(4)).is_some() {
+    let note = workbook_cell_text(row.get(KNOWLEDGE_COMMENT_COL_IDX));
+    let extra = workbook_cell_text(row.get(KNOWLEDGE_POSITION_COL_IDX));
+    if parse_goi_callsign_id(row.get(KNOWLEDGE_COMMENT_COL_IDX)).is_some() {
         return extra;
     }
-    if !note.is_empty() {
-        return note;
+    note
+}
+
+fn extract_goi_callsign_position(row: &[WorkbookCellValue]) -> String {
+    if parse_goi_callsign_id(row.get(KNOWLEDGE_WORKER_ID_COL_IDX)).is_some() {
+        if parse_legacy_h_goi_callsign_id(row.get(KNOWLEDGE_POSITION_COL_IDX))
+            .is_some()
+        {
+            return String::new();
+        }
+        return workbook_cell_text(row.get(KNOWLEDGE_POSITION_COL_IDX));
     }
-    extra
+    String::new()
 }
 
 fn parse_goi_callsign_id(cell: Option<&WorkbookCellValue>) -> Option<i64> {
@@ -1567,6 +1668,18 @@ fn parse_goi_callsign_id(cell: Option<&WorkbookCellValue>) -> Option<i64> {
         return value.trim().parse::<i64>().ok();
     }
     value.parse::<i64>().ok()
+}
+
+fn parse_legacy_h_goi_callsign_id(
+    cell: Option<&WorkbookCellValue>,
+) -> Option<i64> {
+    let value = workbook_cell_text(cell);
+    value
+        .trim()
+        .strip_prefix(KNOWLEDGE_WORKER_ID_PREFIX)?
+        .trim()
+        .parse::<i64>()
+        .ok()
 }
 
 impl From<&Data> for WorkbookCellValue {
@@ -1604,6 +1717,7 @@ mod tests {
             callsign: callsign.to_string(),
             frequency: "145.500".to_string(),
             unit: "3 ОМСБр".to_string(),
+            position: "КР".to_string(),
             comment: "джерело: Пролом".to_string(),
             row_ref: row_num.map(|row_num| GoiWorkbookRowRef {
                 sheet_name: "Knowledge".to_string(),
@@ -1617,10 +1731,12 @@ mod tests {
             id: 10,
             network_id: 20,
             sigint_callsign: "BARS".to_string(),
+            position: None,
             comment: None,
             source_id: None,
             radio_freq: None,
             sc_deleted: Some(false),
+            sc_position: Some("fallback position".to_string()),
             sc_comment: Some("fallback comment".to_string()),
             sc_source_id: Some(7),
             sc_radio_freq: Some("145.600".to_string()),
@@ -1700,6 +1816,35 @@ mod tests {
         let unit = merged_live_unit_name(&callsign);
 
         assert_eq!(unit, "fallback unit");
+    }
+
+    #[test]
+    fn merged_live_position_ignores_deleted_linked_callsign() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.sc_deleted = Some(true);
+
+        let position = merged_live_position(&callsign);
+
+        assert_eq!(position, "");
+    }
+
+    #[test]
+    fn merged_live_position_prefers_network_callsign_position() {
+        let mut callsign = sample_live_callsign_row();
+        callsign.position = Some("  КР  ".to_string());
+
+        let position = merged_live_position(&callsign);
+
+        assert_eq!(position, "КР");
+    }
+
+    #[test]
+    fn merged_live_position_uses_linked_callsign_position() {
+        let callsign = sample_live_callsign_row();
+
+        let position = merged_live_position(&callsign);
+
+        assert_eq!(position, "fallback position");
     }
 
     #[test]
@@ -1820,6 +1965,17 @@ mod tests {
     }
 
     #[test]
+    fn update_sheet_dimension_inserts_missing_dimension_tag() {
+        let sheet_xml = r#"<worksheet><sheetData><row r="1"><c r="A1"/><c r="H1"/></row></sheetData></worksheet>"#;
+        let rows_xml =
+            vec![r#"<row r="1"><c r="A1"/><c r="H1"/></row>"#.to_string()];
+
+        let updated = update_sheet_dimension(sheet_xml, &rows_xml);
+
+        assert!(updated.contains(r#"<dimension ref="A1:H1"/><sheetData>"#));
+    }
+
+    #[test]
     fn extract_goi_callsigns_state_reads_worker_rows_from_workbook() {
         let workbook = KnowledgeWorkbookData {
             sheets: vec![
@@ -1849,6 +2005,7 @@ mod tests {
                             ),
                             WorkbookCellValue::Empty,
                             WorkbookCellValue::String("3 ОМСБр".to_string()),
+                            WorkbookCellValue::String("КР".to_string()),
                             WorkbookCellValue::String("EXO ID 2".to_string()),
                         ],
                     ],
@@ -1886,7 +2043,40 @@ mod tests {
         assert_eq!(state[1].callsign, "BETA");
         assert_eq!(state[1].frequency, "145.500");
         assert_eq!(state[1].unit, "3 ОМСБр");
+        assert_eq!(state[1].position, "КР");
         assert_eq!(state[1].comment, "джерело: Пролом");
+    }
+
+    #[test]
+    fn extract_goi_callsigns_state_reads_legacy_column_h_id_layout() {
+        let workbook = KnowledgeWorkbookData {
+            sheets: vec![WorkbookSheetData {
+                name: "Knowledge".to_string(),
+                rows: vec![vec![
+                    WorkbookCellValue::String("BETA".to_string()),
+                    WorkbookCellValue::String("145.500".to_string()),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_KIND_CALL_SIGN.to_string(),
+                    ),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_WORKER_AUTHOR.to_string(),
+                    ),
+                    WorkbookCellValue::String("джерело: Пролом".to_string()),
+                    WorkbookCellValue::String(
+                        TEST_GOI_SYNC_TIMESTAMP.to_string(),
+                    ),
+                    WorkbookCellValue::String("3 ОМСБр".to_string()),
+                    WorkbookCellValue::String("EXO ID 2".to_string()),
+                ]],
+            }],
+        };
+
+        let state = workbook.extract_goi_callsigns_state();
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].id, 2);
+        assert_eq!(state[0].position, "");
+        assert_eq!(state[0].comment, "джерело: Пролом");
     }
 
     #[test]
@@ -1917,7 +2107,40 @@ mod tests {
 
         assert_eq!(state.len(), 1);
         assert_eq!(state[0].id, 2);
+        assert_eq!(state[0].position, "");
         assert_eq!(state[0].comment, "джерело: Пролом");
+    }
+
+    #[test]
+    fn apply_goi_callsigns_to_empty_xlsx_creates_worker_rows() {
+        let file_data = empty_xlsx_buffer().expect("empty xlsx");
+        let workbook =
+            KnowledgeWorkbookData::from_xlsx_bytes(&file_data).expect("parse");
+        let current = vec![
+            sample_callsign(5, "EPSILON", None),
+            sample_callsign(2, "BETA", None),
+        ];
+
+        let next_file_data = apply_goi_callsigns_to_xlsx(
+            &file_data,
+            &workbook,
+            &[],
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("apply_goi_callsigns_to_xlsx");
+        validate_knowledge_xlsx_bytes(&next_file_data).expect("validate");
+        let next = KnowledgeWorkbookData::from_xlsx_bytes(&next_file_data)
+            .expect("parse next")
+            .extract_goi_callsigns_state();
+
+        assert_eq!(next.len(), 2);
+        assert_eq!(next[0].id, 2);
+        assert_eq!(next[0].callsign, "BETA");
+        assert_eq!(next[0].unit, "3 ОМСБр");
+        assert_eq!(next[0].position, "КР");
+        assert_eq!(next[1].id, 5);
+        assert_eq!(next[1].callsign, "EPSILON");
     }
 
     #[test]
@@ -2000,6 +2223,10 @@ mod tests {
         );
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[2][7])),
+            "КР"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[2][8])),
             "EXO ID 5"
         );
     }
@@ -2026,6 +2253,26 @@ mod tests {
     }
 
     #[test]
+    fn rewrite_sheet_xml_expands_self_closing_sheet_data() {
+        let sheet_xml =
+            r#"<worksheet><dimension ref="A1"/><sheetData/></worksheet>"#;
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::new(),
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert!(rewritten.contains("<sheetData>"));
+        assert!(rewritten.contains("</sheetData>"));
+        assert!(rewritten.contains(r#"<dimension ref="A1:I1"/>"#));
+        assert!(rewritten.contains(r#"<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+    }
+
+    #[test]
     fn rewrite_sheet_xml_appends_missing_ids_sorted_by_id() {
         let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/><c r="B3"><f>SUM(A1:A2)</f></c></row></sheetData></worksheet>"#;
         let current = vec![
@@ -2045,9 +2292,11 @@ mod tests {
             r#"<row r="3"><c r="A3"/><c r="B3"><f>SUM(A1:A2)</f></c></row>"#
         ));
         assert!(rewritten.contains(r#"<row r="4"><c r="A4" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
-        assert!(rewritten.contains(r#"<c r="H4" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H4" t="inlineStr"><is><t xml:space="preserve">КР</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="I4" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
         assert!(rewritten.contains(r#"<row r="5"><c r="A5" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
-        assert!(rewritten.contains(r#"<c r="H5" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H5" t="inlineStr"><is><t xml:space="preserve">КР</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="I5" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
         assert!(!rewritten.contains(r#"<row r="2"><c r="A2"/></row>"#));
     }
 
@@ -2089,6 +2338,9 @@ mod tests {
         .expect("rewrite_sheet_xml");
 
         assert!(rewritten.contains(r#"<c r="G2" t="inlineStr"><is><t xml:space="preserve">3 ОМСБр</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H2" t="inlineStr"><is><t xml:space="preserve">КР</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="I2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
+        assert!(!rewritten.contains(r#"<c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
     }
 
     #[test]
@@ -2124,9 +2376,11 @@ mod tests {
         .expect("rewrite_sheet_xml");
 
         assert!(rewritten.contains(r#"<row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
-        assert!(rewritten.contains(r#"<c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H2" t="inlineStr"><is><t xml:space="preserve">КР</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="I2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
         assert!(rewritten.contains(r#"<row r="3"><c r="A3" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
-        assert!(rewritten.contains(r#"<c r="H3" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H3" t="inlineStr"><is><t xml:space="preserve">КР</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="I3" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
         assert!(!rewritten.contains("BETA OLD"));
         assert!(!rewritten.contains("EPSILON OLD"));
     }
@@ -2193,6 +2447,10 @@ mod tests {
         );
         assert_eq!(
             workbook_cell_text(Some(&workbook.sheets[0].rows[0][7])),
+            "КР"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[0][8])),
             "EXO ID 2"
         );
     }

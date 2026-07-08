@@ -120,8 +120,12 @@ where
     );
     let checked = freq.is_some();
     let reviewed = false;
+    let comment_parsing_enabled = config.sigint_comment_parsing_enabled()?;
     let body_noheader = match &meow_format {
         Some(meow_format) => meow_format.body_noheader.clone(),
+        None if comment_parsing_enabled => {
+            crate::sigint::parser::extract_text_without_top_comment(&body)?
+        }
         None => crate::rer_importer::body_noheader::extract_text(&body)?,
     };
 
@@ -253,7 +257,7 @@ where
     .await
     .c(h!())?;
 
-    if config.sigint_comment_parsing_enabled()? {
+    if comment_parsing_enabled {
         insert_missing_auto_comments(txn, message.id, post_id, &body)
             .await
             .c(h!())?;

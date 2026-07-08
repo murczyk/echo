@@ -2100,21 +2100,30 @@ where
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
         if !search_parts.ts_query.is_empty() {
+            let search_tsv = Expr::col((
+                sigint_search::Entity,
+                sigint_search::Column::SearchTsv,
+            ));
+            let search_filter =
+                search_tsv.clone().matches(Expr::cust_with_values(
+                    "websearch_to_tsquery('russian', $1)",
+                    vec![search_parts.ts_query.clone()],
+                ));
+            let search_filter =
+                match search::ts_prefix_query(&search_parts.ts_query) {
+                    Some(ts_prefix_query) => search_filter.or(search_tsv
+                        .matches(Expr::cust_with_values(
+                            "to_tsquery('russian', $1)",
+                            vec![ts_prefix_query],
+                        ))),
+                    None => search_filter,
+                };
             q2 = q2
                 .join(
                     JoinType::InnerJoin,
                     sigint_inbox_item::Relation::SigintSearch.def(),
                 )
-                .filter(
-                    Expr::col((
-                        sigint_search::Entity,
-                        sigint_search::Column::SearchTsv,
-                    ))
-                    .matches(Expr::cust_with_values(
-                        "websearch_to_tsquery('russian', $1)",
-                        vec![search_parts.ts_query.clone()],
-                    )),
-                );
+                .filter(search_filter);
         }
         for ilike in search_parts.ilike {
             q2 =

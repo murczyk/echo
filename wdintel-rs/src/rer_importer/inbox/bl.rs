@@ -236,6 +236,9 @@ pub async fn aggregate_to_inbox_messages(
         Default::default()
     };
 
+    let comment_parsing_enabled =
+        env.config.sigint_comment_parsing_enabled()?;
+
     for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
@@ -263,8 +266,11 @@ pub async fn aggregate_to_inbox_messages(
             .map(mk_media_url)
             .collect_vec();
         let body = message.body.clone().unwrap_or("".to_string());
-        let no_headers_body =
-            crate::rer_importer::body_noheader::extract_text(&body)?;
+        let no_headers_body = if comment_parsing_enabled {
+            crate::sigint::parser::extract_text_without_top_comment(&body)?
+        } else {
+            crate::rer_importer::body_noheader::extract_text(&body)?
+        };
         let freq = message.freq.clone();
         let coords = message.coords.clone();
         let callsigns = match message.callsigns.as_ref() {
