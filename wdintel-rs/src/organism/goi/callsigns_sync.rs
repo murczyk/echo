@@ -733,6 +733,22 @@ impl KnowledgeWorkbookData {
         callsigns
     }
 
+    fn worker_row_nums_by_sheet(&self) -> BTreeMap<String, BTreeSet<u32>> {
+        let mut rows_by_sheet = BTreeMap::new();
+        for sheet in &self.sheets {
+            for (row_idx, row) in sheet.rows.iter().enumerate() {
+                if !is_worker_callsign_row(row) {
+                    continue;
+                }
+                rows_by_sheet
+                    .entry(sheet.name.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .insert((row_idx + 1) as u32);
+            }
+        }
+        rows_by_sheet
+    }
+
     fn default_target_sheet_name(
         &self,
         previous_callsigns: &[GoiCallsignState],
@@ -781,27 +797,17 @@ impl KnowledgeWorkbookData {
     ) -> Result<(), AppError> {
         let target_sheet_name =
             self.default_target_sheet_name(previous_callsigns).c(h!())?;
-        let mut affected_sheet_names = previous_callsigns
-            .iter()
-            .filter_map(|callsign| callsign.row_ref.as_ref())
-            .map(|row_ref| row_ref.sheet_name.clone())
+        let worker_row_nums_by_sheet = self.worker_row_nums_by_sheet();
+        let mut affected_sheet_names = worker_row_nums_by_sheet
+            .keys()
+            .cloned()
             .collect::<BTreeSet<_>>();
         affected_sheet_names.insert(target_sheet_name.clone());
+        let current_callsigns = sorted_goi_callsigns(current_callsigns);
 
         for sheet_name in affected_sheet_names {
-            let previous_sheet_callsigns = previous_callsigns
-                .iter()
-                .filter(|callsign| {
-                    callsign
-                        .row_ref
-                        .as_ref()
-                        .map(|row_ref| row_ref.sheet_name.as_str())
-                        == Some(sheet_name.as_str())
-                })
-                .cloned()
-                .collect::<Vec<_>>();
             let current_sheet_callsigns = if sheet_name == target_sheet_name {
-                current_callsigns
+                current_callsigns.as_slice()
             } else {
                 &[]
             };
@@ -816,7 +822,10 @@ impl KnowledgeWorkbookData {
                 })?;
             sheet.rows = rewrite_sheet_rows_for_tests(
                 &sheet.rows,
-                &previous_sheet_callsigns,
+                worker_row_nums_by_sheet
+                    .get(&sheet_name)
+                    .cloned()
+                    .unwrap_or_default(),
                 current_sheet_callsigns,
                 TEST_GOI_SYNC_TIMESTAMP,
             );
@@ -828,59 +837,21 @@ impl KnowledgeWorkbookData {
 #[cfg(test)]
 fn rewrite_sheet_rows_for_tests(
     rows: &[Vec<WorkbookCellValue>],
-    previous_callsigns: &[GoiCallsignState],
+    worker_row_nums: BTreeSet<u32>,
     current_callsigns: &[GoiCallsignState],
     sync_timestamp: &str,
 ) -> Vec<Vec<WorkbookCellValue>> {
-    let worker_row_nums = previous_callsigns
-        .iter()
-        .filter_map(|callsign| callsign.row_ref.as_ref().map(|row| row.row_num))
-        .collect::<BTreeSet<_>>();
-    let next_append_row_num = rows
-        .len()
-        .checked_add(1)
-        .map(|row_num| row_num as u32)
-        .unwrap_or(1);
-    let target_worker_row_nums = plan_worker_row_nums(
-        &worker_row_nums,
-        current_callsigns.len(),
-        next_append_row_num,
-    );
-    let existing_worker_rows_by_row_num = worker_row_nums
-        .iter()
-        .copied()
-        .zip(current_callsigns.iter())
-        .collect::<BTreeMap<_, _>>();
-    let appended_worker_row_count = target_worker_row_nums
-        .iter()
-        .filter(|row_num| !worker_row_nums.contains(row_num))
-        .count();
-
     let mut out_rows = Vec::new();
     for (idx, row) in rows.iter().enumerate() {
         let row_num = idx as u32 + 1;
         if worker_row_nums.contains(&row_num) {
-            if let Some(callsign) =
-                existing_worker_rows_by_row_num.get(&row_num)
-            {
-                out_rows.push(build_worker_row_cells_for_tests(
-                    callsign,
-                    sync_timestamp,
-                ));
-            }
             continue;
         }
         out_rows.push(row.clone());
     }
-    out_rows.extend(
-        current_callsigns
-            .iter()
-            .skip(existing_worker_rows_by_row_num.len())
-            .take(appended_worker_row_count)
-            .map(|callsign| {
-                build_worker_row_cells_for_tests(callsign, sync_timestamp)
-            }),
-    );
+    out_rows.extend(current_callsigns.iter().map(|callsign| {
+        build_worker_row_cells_for_tests(callsign, sync_timestamp)
+    }));
     out_rows
 }
 
@@ -914,13 +885,14 @@ fn apply_goi_callsigns_to_xlsx(
     let target_sheet_name = workbook
         .default_target_sheet_name(previous_callsigns)
         .c(h!())?;
+    let worker_row_nums_by_sheet = workbook.worker_row_nums_by_sheet();
+    let current_callsigns = sorted_goi_callsigns(current_callsigns);
     let mut archive = XlsxArchive::from_bytes(file_data).c(h!())?;
     let sheet_paths = archive.sheet_paths_by_name().c(h!())?;
 
-    let mut affected_sheet_names = previous_callsigns
-        .iter()
-        .filter_map(|callsign| callsign.row_ref.as_ref())
-        .map(|row_ref| row_ref.sheet_name.clone())
+    let mut affected_sheet_names = worker_row_nums_by_sheet
+        .keys()
+        .cloned()
         .collect::<BTreeSet<_>>();
     affected_sheet_names.insert(target_sheet_name.clone());
     let affected_sheet_names =
@@ -941,30 +913,23 @@ fn apply_goi_callsigns_to_xlsx(
                 ),
             })?;
         let sheet_xml = archive.file(sheet_path).c(h!())?;
-        let previous_sheet_callsigns = previous_callsigns
-            .iter()
-            .filter(|callsign| {
-                callsign
-                    .row_ref
-                    .as_ref()
-                    .map(|row_ref| row_ref.sheet_name.as_str())
-                    == Some(sheet_name.as_str())
-            })
+        let worker_row_nums = worker_row_nums_by_sheet
+            .get(&sheet_name)
             .cloned()
-            .collect::<Vec<_>>();
+            .unwrap_or_default();
         let current_sheet_callsigns = if sheet_name == target_sheet_name {
-            current_callsigns
+            current_callsigns.as_slice()
         } else {
             &[]
         };
         info!(
             "[goi-sync] Rewriting GOI knowledge sheet {sheet_name}: previous_worker_rows={}, next_worker_rows={}, sheet_path={sheet_path}",
-            previous_sheet_callsigns.len(),
+            worker_row_nums.len(),
             current_sheet_callsigns.len()
         );
         let next_sheet_xml = rewrite_sheet_xml(
             &sheet_xml,
-            &previous_sheet_callsigns,
+            &worker_row_nums,
             current_sheet_callsigns,
             sync_timestamp,
         )
@@ -1275,114 +1240,65 @@ fn normalize_workbook_target(target: &str) -> String {
 
 #[derive(Debug, Clone)]
 struct SheetXmlRow {
-    row_num: u32,
     xml: String,
     is_worker: bool,
 }
 
-fn plan_worker_row_nums(
-    existing_worker_row_nums: &BTreeSet<u32>,
-    current_callsigns_len: usize,
-    next_append_row_num: u32,
-) -> Vec<u32> {
-    let mut row_nums = existing_worker_row_nums
-        .iter()
-        .copied()
-        .take(current_callsigns_len)
-        .collect::<Vec<_>>();
-    let appended_count = current_callsigns_len.saturating_sub(row_nums.len());
-    row_nums.extend(
-        (0..appended_count).map(|idx| next_append_row_num + idx as u32),
-    );
-    row_nums
+fn sorted_goi_callsigns(
+    current_callsigns: &[GoiCallsignState],
+) -> Vec<GoiCallsignState> {
+    let mut current_callsigns = current_callsigns.to_vec();
+    current_callsigns.sort_by_key(|callsign| callsign.id);
+    current_callsigns
 }
 
 fn rewrite_sheet_xml(
     sheet_xml: &str,
-    previous_callsigns: &[GoiCallsignState],
+    worker_row_nums: &BTreeSet<u32>,
     current_callsigns: &[GoiCallsignState],
     sync_timestamp: &str,
 ) -> Result<String, AppError> {
     let (prefix, rows, suffix) = split_sheet_xml(sheet_xml).c(h!())?;
-    let worker_row_nums = previous_callsigns
-        .iter()
-        .filter_map(|callsign| callsign.row_ref.as_ref().map(|row| row.row_num))
-        .collect::<BTreeSet<_>>();
     let rows = rows
         .into_iter()
         .map(|(row_num, xml)| SheetXmlRow {
-            row_num,
             is_worker: worker_row_nums.contains(&row_num),
             xml,
         })
         .collect::<Vec<_>>();
-    let next_append_row_num =
-        rows.last().map(|row| row.row_num + 1).unwrap_or(1);
-    let target_worker_row_nums = plan_worker_row_nums(
-        &worker_row_nums,
-        current_callsigns.len(),
-        next_append_row_num,
-    );
-    let existing_worker_rows_by_row_num = worker_row_nums
-        .iter()
-        .copied()
-        .zip(current_callsigns.iter())
-        .map(|(row_num, callsign)| {
-            (
-                row_num,
-                build_worker_row_xml(row_num, callsign, sync_timestamp),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let appended_worker_row_nums = target_worker_row_nums
-        .iter()
-        .copied()
-        .filter(|row_num| !worker_row_nums.contains(row_num))
-        .collect::<Vec<_>>();
     let worker_row_num_min = worker_row_nums.first().copied();
     let worker_row_num_max = worker_row_nums.last().copied();
-    let target_worker_row_num_min = target_worker_row_nums.first().copied();
-    let target_worker_row_num_max = target_worker_row_nums.last().copied();
-    let appended_worker_row_num_min = appended_worker_row_nums.first().copied();
-    let appended_worker_row_num_max = appended_worker_row_nums.last().copied();
     info!(
-        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_num_min={:?}, worker_row_num_max={:?}, target_worker_row_num_min={:?}, target_worker_row_num_max={:?}, appended_worker_row_num_min={:?}, appended_worker_row_num_max={:?}",
+        "[goi-sync] rewrite_sheet_xml: source_rows={}, previous_worker_rows={}, next_worker_rows={}, worker_row_num_min={:?}, worker_row_num_max={:?}",
         rows.len(),
-        previous_callsigns.len(),
+        worker_row_nums.len(),
         current_callsigns.len(),
         worker_row_num_min,
         worker_row_num_max,
-        target_worker_row_num_min,
-        target_worker_row_num_max,
-        appended_worker_row_num_min,
-        appended_worker_row_num_max
     );
 
     let mut out_rows = Vec::new();
     for row in rows {
         if row.is_worker {
-            if let Some(row_xml) =
-                existing_worker_rows_by_row_num.get(&row.row_num)
-            {
-                out_rows.push(row_xml.clone());
-            }
             continue;
         }
         out_rows.push(row.xml);
     }
-    out_rows.extend(
-        appended_worker_row_nums
-            .iter()
-            .copied()
-            .zip(
-                current_callsigns
-                    .iter()
-                    .skip(existing_worker_rows_by_row_num.len()),
+    let next_worker_row_num = out_rows
+        .iter()
+        .filter_map(|row| extract_row_num(row))
+        .max()
+        .map(|row_num| row_num + 1)
+        .unwrap_or(1);
+    out_rows.extend(current_callsigns.iter().enumerate().map(
+        |(idx, callsign)| {
+            build_worker_row_xml(
+                next_worker_row_num + idx as u32,
+                callsign,
+                sync_timestamp,
             )
-            .map(|(row_num, callsign)| {
-                build_worker_row_xml(row_num, callsign, sync_timestamp)
-            }),
-    );
+        },
+    ));
 
     let mut out = String::with_capacity(
         prefix.len()
@@ -1478,19 +1394,21 @@ fn push_inline_string_cell(
 }
 
 fn update_sheet_dimension(sheet_xml: &str, rows_xml: &[String]) -> String {
-    let Some(max_row_num) = rows_xml
+    let next_ref = match rows_xml
         .iter()
         .filter_map(|row_xml| extract_row_num(row_xml))
         .max()
-    else {
-        return sheet_xml.to_string();
+    {
+        Some(max_row_num) => {
+            let max_col = rows_xml
+                .iter()
+                .flat_map(|row_xml| extract_cell_cols(row_xml))
+                .max_by_key(|col| col_letters_to_idx(col))
+                .unwrap_or_else(|| "A".to_string());
+            format!("A1:{max_col}{max_row_num}")
+        }
+        None => "A1".to_string(),
     };
-    let max_col = rows_xml
-        .iter()
-        .flat_map(|row_xml| extract_cell_cols(row_xml))
-        .max_by_key(|col| col_letters_to_idx(col))
-        .unwrap_or_else(|| "A".to_string());
-    let next_ref = format!("A1:{max_col}{max_row_num}");
     let valid_dimension_regex =
         match Regex::new(r#"<dimension\b([^>]*?)\bref="[^"]*"([^>]*/?>)"#) {
             Ok(regex) => regex,
@@ -1623,7 +1541,7 @@ impl From<&Data> for WorkbookCellValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn sample_callsign(
         id: i64,
@@ -1939,7 +1857,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_goi_callsigns_reuses_deleted_rows_and_updates_workbook_state() {
+    fn apply_goi_callsigns_removes_stale_rows_and_compacts_worker_block() {
         let mut workbook = KnowledgeWorkbookData {
             sheets: vec![WorkbookSheetData {
                 name: "Knowledge".to_string(),
@@ -2023,18 +1941,13 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_sheet_xml_keeps_manual_rows_below_worker_block_at_same_row_nums()
-    {
+    fn rewrite_sheet_xml_preserves_manual_rows_and_compacts_worker_block() {
         let sheet_xml = r#"<worksheet><dimension ref="A1:H4"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/></row><row r="4"><c r="A4"/><c r="B4"><f>SUM(A1:A3)</f></c></row></sheetData></worksheet>"#;
-        let previous = vec![
-            sample_callsign(2, "BETA", Some(2)),
-            sample_callsign(4, "DELTA", Some(3)),
-        ];
         let current = vec![sample_callsign(2, "BETA", None)];
 
         let rewritten = rewrite_sheet_xml(
             sheet_xml,
-            &previous,
+            &BTreeSet::from([2, 3]),
             &current,
             TEST_GOI_SYNC_TIMESTAMP,
         )
@@ -2043,25 +1956,23 @@ mod tests {
         assert!(rewritten.contains(
             r#"<row r="4"><c r="A4"/><c r="B4"><f>SUM(A1:A3)</f></c></row>"#
         ));
-        assert!(!rewritten.contains(
-            r#"<row r="3"><c r="A4"/><c r="B4"><f>SUM(A1:A3)</f></c></row>"#
-        ));
+        assert!(rewritten.contains(r#"<row r="5"><c r="A5" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+        assert!(!rewritten.contains(r#"<row r="2"><c r="A2"/></row>"#));
+        assert!(!rewritten.contains(r#"<row r="3"><c r="A3"/></row>"#));
     }
 
     #[test]
-    fn rewrite_sheet_xml_appends_new_worker_rows_instead_of_moving_manual_rows()
-    {
+    fn rewrite_sheet_xml_appends_missing_ids_sorted_by_id() {
         let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2"/></row><row r="3"><c r="A3"/><c r="B3"><f>SUM(A1:A2)</f></c></row></sheetData></worksheet>"#;
-        let previous = vec![sample_callsign(2, "BETA", Some(2))];
         let current = vec![
-            sample_callsign(2, "BETA", None),
             sample_callsign(5, "EPSILON", None),
+            sample_callsign(2, "BETA", None),
         ];
 
         let rewritten = rewrite_sheet_xml(
             sheet_xml,
-            &previous,
-            &current,
+            &BTreeSet::from([2]),
+            &sorted_goi_callsigns(&current),
             TEST_GOI_SYNC_TIMESTAMP,
         )
         .expect("rewrite_sheet_xml");
@@ -2069,9 +1980,113 @@ mod tests {
         assert!(rewritten.contains(
             r#"<row r="3"><c r="A3"/><c r="B3"><f>SUM(A1:A2)</f></c></row>"#
         ));
-        assert!(rewritten.contains(r#"<row r="4"><c r="A4" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
-        assert!(!rewritten.contains(
-            r#"<row r="4"><c r="A3"/><c r="B3"><f>SUM(A1:A2)</f></c></row>"#
-        ));
+        assert!(rewritten.contains(r#"<row r="4"><c r="A4" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H4" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
+        assert!(rewritten.contains(r#"<row r="5"><c r="A5" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H5" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
+        assert!(!rewritten.contains(r#"<row r="2"><c r="A2"/></row>"#));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_restores_erased_column_g() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H2"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c><c r="B2" t="inlineStr"><is><t xml:space="preserve">145.500</t></is></c><c r="C2" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D2" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c></row></sheetData></worksheet>"#;
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::from([2]),
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert!(rewritten.contains(r#"<c r="G2" t="inlineStr"><is><t xml:space="preserve">3 ОМСБр</t></is></c>"#));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_removes_stale_worker_rows_and_shrinks_empty_sheet() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H2"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c><c r="C1" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D1" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H1" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c></row></sheetData></worksheet>"#;
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::from([1]),
+            &[],
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert!(rewritten.contains(r#"<dimension ref="A1"/>"#));
+        assert!(!rewritten.contains("EXO ID 2"));
+    }
+
+    #[test]
+    fn rewrite_sheet_xml_uses_current_data_when_existing_rows_are_reordered() {
+        let sheet_xml = r#"<worksheet><dimension ref="A1:H3"/><sheetData><row r="1"><c r="A1"/></row><row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">EPSILON OLD</t></is></c><c r="C2" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D2" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c></row><row r="3"><c r="A3" t="inlineStr"><is><t xml:space="preserve">BETA OLD</t></is></c><c r="C3" t="inlineStr"><is><t xml:space="preserve">CALL_SIGN</t></is></c><c r="D3" t="inlineStr"><is><t xml:space="preserve">EXO</t></is></c><c r="H3" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c></row></sheetData></worksheet>"#;
+        let current = vec![
+            sample_callsign(5, "EPSILON", None),
+            sample_callsign(2, "BETA", None),
+        ];
+
+        let rewritten = rewrite_sheet_xml(
+            sheet_xml,
+            &BTreeSet::from([2, 3]),
+            &sorted_goi_callsigns(&current),
+            TEST_GOI_SYNC_TIMESTAMP,
+        )
+        .expect("rewrite_sheet_xml");
+
+        assert!(rewritten.contains(r#"<row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">BETA</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H2" t="inlineStr"><is><t xml:space="preserve">EXO ID 2</t></is></c>"#));
+        assert!(rewritten.contains(r#"<row r="3"><c r="A3" t="inlineStr"><is><t xml:space="preserve">EPSILON</t></is></c>"#));
+        assert!(rewritten.contains(r#"<c r="H3" t="inlineStr"><is><t xml:space="preserve">EXO ID 5</t></is></c>"#));
+        assert!(!rewritten.contains("BETA OLD"));
+        assert!(!rewritten.contains("EPSILON OLD"));
+    }
+
+    #[test]
+    fn apply_goi_callsigns_migrates_legacy_column_e_id_layout() {
+        let mut workbook = KnowledgeWorkbookData {
+            sheets: vec![WorkbookSheetData {
+                name: "Knowledge".to_string(),
+                rows: vec![vec![
+                    WorkbookCellValue::String("BETA OLD".to_string()),
+                    WorkbookCellValue::String("145.500".to_string()),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_KIND_CALL_SIGN.to_string(),
+                    ),
+                    WorkbookCellValue::String(
+                        KNOWLEDGE_WORKER_AUTHOR.to_string(),
+                    ),
+                    WorkbookCellValue::String("EXO ID 2".to_string()),
+                    WorkbookCellValue::String(
+                        TEST_GOI_SYNC_TIMESTAMP.to_string(),
+                    ),
+                    WorkbookCellValue::Empty,
+                    WorkbookCellValue::String("old comment".to_string()),
+                ]],
+            }],
+        };
+        let previous = workbook.extract_goi_callsigns_state();
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        workbook
+            .apply_goi_callsigns(&previous, &current)
+            .expect("apply_goi_callsigns");
+        let next = workbook.extract_goi_callsigns_state();
+
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].id, 2);
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[0][4])),
+            "джерело: Пролом"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[0][6])),
+            "3 ОМСБр"
+        );
+        assert_eq!(
+            workbook_cell_text(Some(&workbook.sheets[0].rows[0][7])),
+            "EXO ID 2"
+        );
     }
 }

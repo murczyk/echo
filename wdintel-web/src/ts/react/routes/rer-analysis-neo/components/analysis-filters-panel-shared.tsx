@@ -29,6 +29,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'savedFilterName'
   | 'savedFilters'
   | 'tagsMap'
+  | 'tagsOrder'
 > &
   Pick<
     AnalysisPageActions,

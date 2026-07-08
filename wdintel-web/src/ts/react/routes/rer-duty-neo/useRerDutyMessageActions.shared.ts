@@ -42,6 +42,7 @@ export type MessageActionsDeps = {
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   groupInfos: Record<string, SignalGroupEntry>;
   savedFilters: SavedFilterDuty[];
   setSavedFilters: Dispatch<SetStateAction<SavedFilterDuty[]>>;
