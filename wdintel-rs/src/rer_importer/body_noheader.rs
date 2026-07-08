@@ -340,6 +340,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_bare_receiver_group_metadata_lines_are_headers() {
+        let body =
+            "01.07.2026 02:58:08\nID(CG):395251\nID(CG) 395252\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_blank_optional_metadata_lines_are_headers() {
+        let body = "01.07.2026 02:58:08\nID відправника: -\nКод групи: НВ\nКод кольору: -\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
     fn extract_text_keeps_dialog_lines_with_inline_metadata() {
         let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nПрийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення";
         let res = extract_text(body).unwrap();

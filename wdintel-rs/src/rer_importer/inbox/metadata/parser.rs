@@ -73,11 +73,7 @@ pub(crate) fn is_metadata_line(line: &str) -> bool {
     if line.is_empty() {
         return false;
     }
-    let normalized_line = NormalizedLine::new(line.clone());
-    let has_metadata = parse_metadata_line(&normalized_line)
-        .into_iter()
-        .any(|metadata| metadata.has_some_value());
-    has_metadata && is_metadata_only_line(&line)
+    is_metadata_only_line(&line)
 }
 
 fn is_metadata_only_line(line: &str) -> bool {
@@ -87,12 +83,12 @@ fn is_metadata_only_line(line: &str) -> bool {
             (?:
                 [cс]{2}\s*:?\s*(?:\d+|нв|-)
               | код\s+кольору\s*:?\s*(?:\d+|нв|-)
-              | [iі]d\s*\(\s*[cс]g\s*\)\s*⬅️?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s*\(\s*[cс]g\s*\)\s*(?:⬅️?)?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | (?:[cс]g|group\s+id|код\s+групи)\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+відправника\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | source\s+id\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
-              | [iі]d\s*➡️?\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s*:\s*[^;\r\n]+;
               | хеш\s+[iі]d\s*:\s*[0-9a-f]+
               | 👥\s*:\s*[^🔐\r\n]+?\s*🔐
