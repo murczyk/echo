@@ -438,7 +438,7 @@ mod tests {
     fn body_noheader_without_top_comment_crops_inline_post_prefix() {
         let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
         let res = extract_text_without_top_comment(body).unwrap();
-        assert_eq!(res.body, "УКХ р/м\n\n— репліка");
+        assert_eq!(res.body, "— репліка");
     }
 
     #[test]

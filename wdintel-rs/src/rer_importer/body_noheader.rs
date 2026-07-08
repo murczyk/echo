@@ -280,14 +280,14 @@ mod tests {
     fn extract_text_otrymano_posts_plural_header() {
         let body = "Отримано з постів \"Пост 10, Пост 6, Пост 8\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
         let res = extract_text(body).unwrap().body;
-        assert_eq!(res, "УКХ р/м\n\n— репліка");
+        assert_eq!(res, "— репліка");
     }
 
     #[test]
     fn extract_text_trims_inline_otrymano_post_header_suffix() {
         let body = "37T BN 88562 95454  Отримано з поста \"П152\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
         let res = extract_text(body).unwrap().body;
-        assert_eq!(res, "37T BN 88562 95454\nУКХ р/м\n\n— репліка");
+        assert_eq!(res, "37T BN 88562 95454\n\n— репліка");
     }
 
     #[test]
