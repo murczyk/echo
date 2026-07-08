@@ -12,6 +12,7 @@ use crate::types::{info, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
+use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use quick_xml::events::Event;
 use quick_xml::name::QName;
 use quick_xml::Reader as XmlReader;
@@ -136,9 +137,10 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         "[goi-sync] Downloading GOI knowledge workbook for {integration_label} from {}",
         remote_paths.knowledge_xlsx
     );
-    let knowledge_xlsx = super::goi_download_file(
+    let knowledge_xlsx = download_or_create_knowledge_xlsx(
         ssh_req.clone(),
-        remote_paths.knowledge_xlsx.clone(),
+        &remote_paths.knowledge_xlsx,
+        &integration_label,
     )
     .await
     .c(h!())?;
@@ -205,6 +207,44 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         "[goi-sync] Finished GOI callsigns knowledge sync for {integration_label}"
     );
     Ok(())
+}
+
+async fn download_or_create_knowledge_xlsx(
+    ssh_req: CheckOrganismGoiConnectionReq,
+    knowledge_xlsx_path: &str,
+    integration_label: &str,
+) -> Result<Vec<u8>, AppError> {
+    match super::goi_download_file(
+        ssh_req.clone(),
+        knowledge_xlsx_path.to_string(),
+    )
+    .await
+    {
+        Ok(file_data) => Ok(file_data),
+        Err(err) if goi_download_error_is_missing_file(&err) => {
+            info!(
+                "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
+                knowledge_xlsx_path
+            );
+            let file_data = empty_xlsx_buffer().c(h!())?;
+            super::goi_upload_file(
+                ssh_req,
+                knowledge_xlsx_path.to_string(),
+                file_data.clone(),
+            )
+            .await
+            .c(h!())?;
+            Ok(file_data)
+        }
+        Err(err) => Err(AppError::from(err)),
+    }
+}
+
+fn goi_download_error_is_missing_file(err: &anyhow::Error) -> bool {
+    let message = format!("{err:#}").to_lowercase();
+    message.contains("no such file")
+        || message.contains("not found")
+        || message.contains("does not exist")
 }
 
 fn goi_ssh_req_from_integration(
@@ -1598,6 +1638,19 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+    }
+
+    #[test]
+    fn goi_download_error_is_missing_file_matches_expected_ssh_errors() {
+        assert!(goi_download_error_is_missing_file(&anyhow::anyhow!(
+            "scp_recv failed: No such file"
+        )));
+        assert!(goi_download_error_is_missing_file(&anyhow::anyhow!(
+            "remote path does not exist"
+        )));
+        assert!(!goi_download_error_is_missing_file(&anyhow::anyhow!(
+            "permission denied"
+        )));
     }
 
     #[test]
