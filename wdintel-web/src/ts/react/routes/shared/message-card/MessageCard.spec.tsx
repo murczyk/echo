@@ -1577,8 +1577,20 @@ describe('MessageCard', () => {
     const view = await renderCard({
       displayMode: 'analysis',
       messageComments: [
-        { id: 11, messageId: 42, comment: 'visible comment', login: 'peer-login' },
-        { id: 12, messageId: 42, comment: 'hidden comment', login: 'tester' },
+        {
+          id: 11,
+          messageId: 42,
+          comment: 'visible comment',
+          login: 'peer-login',
+          sigintPostName: null,
+        },
+        {
+          id: 12,
+          messageId: 42,
+          comment: 'hidden comment',
+          login: 'tester',
+          sigintPostName: null,
+        },
       ],
     });
     rendered.push(view);
@@ -1588,16 +1600,60 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('hidden comment');
   });
 
+  it('renders post name as the author for post-authored comments', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      messageComments: [
+        {
+          id: 11,
+          messageId: 42,
+          comment: 'auto comment',
+          login: 'system',
+          sigintPostName: 'Пост Альфа',
+        },
+      ],
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Пост Альфа');
+    expect(view.container.textContent).toContain('auto comment');
+    expect(view.container.textContent).not.toContain('system');
+  });
+
   it('collapses other comments after the first three and expands on demand', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const view = await renderCard({
         displayMode: 'analysis',
         messageComments: [
-          { id: 11, messageId: 42, comment: 'first comment', login: 'other-login-1' },
-          { id: 11, messageId: 42, comment: 'second comment', login: 'other-login-2' },
-          { id: 11, messageId: 42, comment: 'third comment', login: 'other-login-3' },
-          { id: 11, messageId: 42, comment: 'fourth comment', login: 'other-login-4' },
+          {
+            id: 11,
+            messageId: 42,
+            comment: 'first comment',
+            login: 'other-login-1',
+            sigintPostName: null,
+          },
+          {
+            id: 11,
+            messageId: 42,
+            comment: 'second comment',
+            login: 'other-login-2',
+            sigintPostName: null,
+          },
+          {
+            id: 11,
+            messageId: 42,
+            comment: 'third comment',
+            login: 'other-login-3',
+            sigintPostName: null,
+          },
+          {
+            id: 11,
+            messageId: 42,
+            comment: 'fourth comment',
+            login: 'other-login-4',
+            sigintPostName: null,
+          },
         ],
       });
       rendered.push(view);

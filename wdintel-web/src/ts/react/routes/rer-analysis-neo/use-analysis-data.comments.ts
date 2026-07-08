@@ -22,6 +22,10 @@ function normalizeLogin(login: string): string {
   return login.trim();
 }
 
+function hasSigintPostAuthor(comment: MessageComment): boolean {
+  return normalizeLogin(comment.sigintPostName ?? '') !== '';
+}
+
 export function filterOtherMessageComments(
   authUserName: string | null,
   currentUser: User | null,
@@ -29,6 +33,8 @@ export function filterOtherMessageComments(
   comments: MessageComment[],
 ): MessageComment[] {
   return comments.filter((comment) => {
+    if (hasSigintPostAuthor(comment)) return true;
+
     const commentLogin = normalizeLogin(comment.login);
     if (commentLogin === '') return false;
     if (normalizeLogin(authUserName ?? '') === commentLogin) return false;
@@ -85,6 +91,7 @@ export async function loadMissingMessageCommentsForMessages(
       new Set(
         (commentsRsp.data ?? [])
           .flatMap((entry) => entry.comments ?? [])
+          .filter((comment) => !hasSigintPostAuthor(comment))
           .map((comment) => normalizeLogin(comment.login))
           .filter(
             (login) =>

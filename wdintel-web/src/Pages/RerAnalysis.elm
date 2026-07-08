@@ -927,7 +927,17 @@ loadNewUsers model =
         allLogins =
             model.messageComments
                 |> Dict.toList
-                |> List.concatMap (Tuple.second >> List.map .login)
+                |> List.concatMap
+                    (Tuple.second
+                        >> List.filter
+                            (\comment ->
+                                comment.sigintPostName
+                                    |> Maybe.withDefault ""
+                                    |> String.trim
+                                    |> (==) ""
+                            )
+                        >> List.map .login
+                    )
                 |> Set.fromList
 
         knownLogins =
