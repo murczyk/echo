@@ -108,6 +108,7 @@ export function useWindowedFeedScroll({
   const loadNewerTriggeredRef = useRef(false);
   const hasSeenNotAtBottomRef = useRef(false);
   const atBottomRef = useRef<boolean | null>(null);
+  const previousScrollTopRef = useRef(0);
   const nearBottomRef = useRef<boolean | null>(null);
   const atTopRef = useRef<boolean | null>(null);
   const anchorSnapshotRef = useRef<AnchorSnapshot | null>(null);
@@ -119,6 +120,7 @@ export function useWindowedFeedScroll({
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
+  const wasAtBottomBeforeRender = atBottomRef.current;
 
   const itemIdsRef = useRef<readonly number[]>(itemIds);
   itemIdsRef.current = itemIds;
@@ -270,6 +272,9 @@ export function useWindowedFeedScroll({
       const nearBottom = bottomDistance <= bottomLoadBufferPx;
       const atTop = scroller.scrollTop <= 0;
       const wasAtBottom = atBottomRef.current;
+      const currentScrollTop = scroller.scrollTop;
+      const prevScrollTop = previousScrollTopRef.current;
+      previousScrollTopRef.current = currentScrollTop;
 
       const {
         onNearBottomChange,
@@ -295,7 +300,12 @@ export function useWindowedFeedScroll({
         onAtBottomChange?.(atBottom);
       }
       if (!atBottom) hasSeenNotAtBottomRef.current = true;
-      if (wasAtBottom === true && !atBottom) onLeftBottom?.();
+      if (wasAtBottom === true && !atBottom) {
+        const scrolledUp = currentScrollTop < prevScrollTop - 1;
+        if (scrolledUp && !bottomSettleActiveRef.current) {
+          onLeftBottom?.();
+        }
+      }
       if (atBottom && wasAtBottom === false && hasSeenNotAtBottomRef.current) onReachedBottom?.();
 
       if (opts.allowTopReached !== false && atTopRef.current !== atTop) {
@@ -345,6 +355,7 @@ export function useWindowedFeedScroll({
       } else {
         scroller.scrollTop = scroller.scrollHeight;
       }
+      previousScrollTopRef.current = scroller.scrollTop;
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
       captureAnchorSnapshot();
     },
@@ -429,7 +440,12 @@ export function useWindowedFeedScroll({
 
     const itemsChanged = !areNumberArraysEqual(previousItemIdsRef.current, currentItemIds);
     if (itemsChanged) {
-      restoreAnchorAfterItemsChange();
+      if (wasAtBottomBeforeRender === true) {
+        scrollToBottom('auto');
+        startBottomSettle();
+      } else {
+        restoreAnchorAfterItemsChange();
+      }
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
       captureAnchorSnapshot();
       previousItemIdsRef.current = currentItemIds;

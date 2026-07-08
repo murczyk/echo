@@ -96,6 +96,7 @@
   --color-border: var(--border-color);
   --color-border-selected: var(--border-selected-color);
   --color-separator: var(--separator-color);
+  --color-divider: var(--border-color);
   --color-icons: var(--icons-color);
   --color-tag: var(--tag-color);
   --color-tag-selected: var(--tag-selected-color);

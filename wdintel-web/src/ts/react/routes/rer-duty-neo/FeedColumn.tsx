@@ -30,7 +30,7 @@ export type FeedColumnProps = {
   column: FeedColumnModel;
 };
 
-export type FeedColumnHandle = { scrollToEnd: () => void };
+export type FeedColumnHandle = { scrollToEnd: (behavior?: ScrollBehavior) => void };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   { column },
   ref,
@@ -145,9 +145,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useImperativeHandle(
     ref,
     () => ({
-      scrollToEnd() {
+      scrollToEnd(behavior: ScrollBehavior = 'smooth') {
         if (feed.items.length === 0) return;
-        contentRef.current?.scrollToBottom('smooth');
+        contentRef.current?.scrollToBottom(behavior);
       },
     }),
     [feed.items.length],

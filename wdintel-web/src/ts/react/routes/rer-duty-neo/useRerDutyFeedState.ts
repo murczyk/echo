@@ -77,13 +77,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
   const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
-  const [loadingNewerFeedId, setLoadingNewerFeedId] = useState<string | null>(null);
+  const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
   const columnRefsRef = useRef<Record<string, FeedColumnHandle | null>>({});
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const loadGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
-  const scrollToEndAfterNewerRef = useRef<string | null>(null);
+  const scrollToEndAfterNewerRef = useRef<Set<string>>(new Set());
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const newestExhaustedCursorByFeedIdRef = useRef<Record<string, number>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, ServerCountBaseline>>({});
@@ -301,7 +301,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const loadFeedOlderMessages = useCallback(
     async (feedId: string) => {
-      const w = messageFeeds.find((x) => x.id === feedId);
+      const w = messageFeedsRef.current.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
       setMessageFeeds((prev) =>
@@ -346,7 +346,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
       }
     },
-    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
+    [buildReqForFeed, mergeInboxCallsigns],
   );
 
   const loadFeedNewerMessages = useCallback(
@@ -360,7 +360,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       },
     ) => {
       if (loadNewerInFlightRef.current.has(feedId)) return;
-      const feed = messageFeeds.find((x) => x.id === feedId);
+      const feed = messageFeedsRef.current.find((x) => x.id === feedId);
       if (!feed || feed.items.length === 0) return;
       const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
       const lastId = feed.items[feed.items.length - 1][0];
@@ -371,7 +371,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return;
       }
       loadNewerInFlightRef.current.add(feedId);
-      setLoadingNewerFeedId(feedId);
+      setLoadingNewerFeedIds((prev) => {
+        const next = new Set(prev);
+        next.add(feedId);
+        return next;
+      });
       try {
         const req = buildReqForFeed(feed, {
           sinceIdNoninclusive: lastId,
@@ -422,7 +426,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
         }
         if (addedCount > 0 && opts?.scrollToEndAfterLoad === true) {
-          scrollToEndAfterNewerRef.current = feedId;
+          scrollToEndAfterNewerRef.current.add(feedId);
           nearBottomByFeedIdRef.current = {
             ...nearBottomByFeedIdRef.current,
             [feedId]: true,
@@ -432,10 +436,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         // ignore single failure to keep polling and prev messages
       } finally {
         loadNewerInFlightRef.current.delete(feedId);
-        setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
+        setLoadingNewerFeedIds((prev) => {
+          if (!prev.has(feedId)) return prev;
+          const next = new Set(prev);
+          next.delete(feedId);
+          return next;
+        });
       }
     },
-    [messageFeeds, buildReqForFeed, mergeInboxCallsigns],
+    [buildReqForFeed, setLoadingNewerFeedIds, setProfiles, setGroupInfos, mergeInboxCallsigns],
   );
 
   useEffect(() => {
@@ -443,9 +452,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [messageFeeds, retainFeedIds]);
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
-    if (!messageFeeds.length) return;
+    if (!messageFeedsRef.current.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
-    messageFeeds.forEach((feed) => {
+    messageFeedsRef.current.forEach((feed) => {
       if (feed.loading) return;
       const signature = JSON.stringify({
         filter: {
@@ -472,7 +481,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       }
     });
     const counts = await Promise.all(
-      messageFeeds.map(async (w) => {
+      messageFeedsRef.current.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
           return {
             messageFeedsRef,
@@ -534,53 +543,45 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       });
       return changed ? next : prev;
     });
-    for (const entry of counts) {
-      if (entry.skipped || isNullOrUndefined(entry.quantity)) continue;
-      const { feedId } = entry;
-      if (entry.failed) {
-        continue;
-      }
-      if (entry.quantity <= 0) {
-        if (isPresent(entry.cursorId))
-          newestExhaustedCursorByFeedIdRef.current[feedId] = entry.cursorId;
+    await Promise.all(
+      counts.map(async (entry) => {
+        if (entry.skipped || isNullOrUndefined(entry.quantity)) return;
+        const { feedId } = entry;
+        if (entry.failed) return;
+        if (entry.quantity <= 0) {
+          if (isPresent(entry.cursorId))
+            newestExhaustedCursorByFeedIdRef.current[feedId] = entry.cursorId;
+          lastServerCountByFeedIdRef.current[feedId] = {
+            cursorId: entry.cursorId,
+            quantity: 0,
+          };
+          return;
+        }
+        delete newestExhaustedCursorByFeedIdRef.current[feedId];
+        const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
+        const nextCount = entry.quantity;
+        if (prevServerCount?.cursorId === entry.cursorId || (!prevServerCount && entry.hasItems)) {
+          const prevQuantity = prevServerCount?.quantity ?? 0;
+          const newCount = Math.max(0, nextCount - prevQuantity);
+          if (newCount > 0) {
+            notifyDutyNewMessages(feedId, newCount);
+          }
+        }
         lastServerCountByFeedIdRef.current[feedId] = {
           cursorId: entry.cursorId,
-          quantity: 0,
+          quantity: nextCount,
         };
-        continue;
-      }
-      delete newestExhaustedCursorByFeedIdRef.current[feedId];
-      const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
-      const nextCount = entry.quantity;
-      if (prevServerCount?.cursorId === entry.cursorId || (!prevServerCount && entry.hasItems)) {
-        const prevQuantity = prevServerCount?.quantity ?? 0;
-        const newCount = Math.max(0, nextCount - prevQuantity);
-        if (newCount > 0) {
-          notifyDutyNewMessages(feedId, newCount);
+        const watchMode = watchModeByFeedId[feedId] ?? true;
+        if (watchMode || nearBottom[feedId]) {
+          const shouldFollowScroll = !deps.disableAutoScroll && watchMode;
+          await loadFeedNewerMessages(feedId, {
+            scrollToEndAfterLoad: shouldFollowScroll,
+            skipIfNewestExhausted: true,
+          });
         }
-      }
-      lastServerCountByFeedIdRef.current[feedId] = {
-        cursorId: entry.cursorId,
-        quantity: nextCount,
-      };
-      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
-        const atBottom = atBottomByFeedIdRef.current[feedId] ?? false;
-        const shouldFollowScroll =
-          !deps.disableAutoScroll && (watchModeByFeedId[feedId] ?? false) && atBottom;
-        await loadFeedNewerMessages(feedId, {
-          scrollToEndAfterLoad: shouldFollowScroll,
-          skipIfNewestExhausted: true,
-        });
-      }
-    }
-  }, [
-    messageFeeds,
-    watchModeByFeedId,
-    loadFeedNewerMessages,
-    buildReqForFeed,
-    freqs,
-    deps.disableAutoScroll,
-  ]);
+      }),
+    );
+  }, [watchModeByFeedId, loadFeedNewerMessages, buildReqForFeed, freqs, deps.disableAutoScroll]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -643,12 +644,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
 
   useEffect(() => {
-    const feedId = scrollToEndAfterNewerRef.current;
-    if (isNullOrUndefined(feedId)) return;
-    scrollToEndAfterNewerRef.current = null;
+    const feedIds = Array.from(scrollToEndAfterNewerRef.current);
+    if (feedIds.length === 0) return;
+    scrollToEndAfterNewerRef.current.clear();
     const refs = columnRefsRef.current;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => refs[feedId]?.scrollToEnd());
+      requestAnimationFrame(() => {
+        feedIds.forEach((feedId) => {
+          refs[feedId]?.scrollToEnd('auto');
+        });
+      });
     });
   }, [messageFeeds]);
 
@@ -727,8 +732,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     mergeResolvedCallsigns,
     watchModeByFeedId,
     setWatchModeByFeedId,
-    loadingNewerFeedId,
-    setLoadingNewerFeedId,
+    loadingNewerFeedIds,
+    setLoadingNewerFeedIds,
     arrowResultByFeedId,
     showArrowResult,
   };

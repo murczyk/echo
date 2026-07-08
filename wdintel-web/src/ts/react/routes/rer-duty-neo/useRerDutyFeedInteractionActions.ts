@@ -18,10 +18,12 @@ type Params = {
       | 'reportTagsOnlyThisUnit'
     >,
   ) => ReturnType<typeof buildInboxReq>;
-  columnRefsRef: MutableRefObject<Record<string, { scrollToEnd: () => void } | null>>;
+  columnRefsRef: MutableRefObject<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >;
   showArrowResult: (feedId: string, message: string) => void;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
-  setLoadingNewerFeedId: Dispatch<SetStateAction<string | null>>;
+  setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
   loadFeedInitialMessages: (feedId: string) => Promise<void>;
   loadFeedNewerMessages: (
     feedId: string,
@@ -38,7 +40,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     columnRefsRef,
     showArrowResult,
     setWatchModeByFeedId,
-    setLoadingNewerFeedId,
+    setLoadingNewerFeedIds,
     loadFeedInitialMessages,
     loadFeedNewerMessages,
     dutyDisableAutoScroll,
@@ -57,7 +59,11 @@ export function useRerDutyFeedInteractionActions(params: Params) {
         requestAnimationFrame(() => requestAnimationFrame(() => refs[feedId]?.scrollToEnd()));
       };
       scrollToEnd();
-      setLoadingNewerFeedId(feedId);
+      setLoadingNewerFeedIds((prev) => {
+        const next = new Set(prev);
+        next.add(feedId);
+        return next;
+      });
       try {
         if (feed.items.length > 0) {
           const lastItem = feed.items[feed.items.length - 1];
@@ -84,7 +90,12 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       } catch {
         showArrowResult(feedId, 'Немає нових повідомлень');
       } finally {
-        setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
+        setLoadingNewerFeedIds((prev) => {
+          if (!prev.has(feedId)) return prev;
+          const next = new Set(prev);
+          next.delete(feedId);
+          return next;
+        });
       }
     },
     [
@@ -95,7 +106,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       showArrowResult,
       columnRefsRef,
       setWatchModeByFeedId,
-      setLoadingNewerFeedId,
+      setLoadingNewerFeedIds,
       setMessageFeeds,
       dutyDisableAutoScroll,
     ],

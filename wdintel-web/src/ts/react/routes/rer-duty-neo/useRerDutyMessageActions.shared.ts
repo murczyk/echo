@@ -38,7 +38,7 @@ export type MessageActionsDeps = {
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   showArrowResult: (feedId: string, message: string) => void;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
-  setLoadingNewerFeedId: Dispatch<SetStateAction<string | null>>;
+  setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;

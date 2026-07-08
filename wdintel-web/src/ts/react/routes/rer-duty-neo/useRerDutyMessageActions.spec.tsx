@@ -172,7 +172,7 @@ function TestHarness(props: {
     columnRefsRef: { current: {} },
     showArrowResult: vi.fn(),
     setWatchModeByFeedId: vi.fn(),
-    setLoadingNewerFeedId: vi.fn(),
+    setLoadingNewerFeedIds: vi.fn(),
     authUserName: props.authUserName ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
