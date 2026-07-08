@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
-import type { ComponentProps, ReactNode } from 'react';
+import { act, Children, cloneElement, isValidElement } from 'react';
+import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -79,14 +79,32 @@ vi.mock('@mui/material', () => ({
   }: {
     children: ReactNode;
     onChange?: (_event: unknown, value: string | null) => void;
+  }) => {
+    // Bind each button to its own group's onChange so multiple groups on the page
+    // (metadata mode, tag mode) can be driven independently in tests.
+    toggleButtonGroupOnChange = onChange;
+    return (
+      <div data-testid="toggle-button-group">
+        {Children.map(children, (child) =>
+          isValidElement(child)
+            ? cloneElement(child as ReactElement<{ __onChange?: typeof onChange }>, {
+                __onChange: onChange,
+              })
+            : child,
+        )}
+      </div>
+    );
+  },
+  ToggleButton: ({
+    children,
+    value,
+    __onChange,
+  }: {
+    children: ReactNode;
+    value: string;
+    __onChange?: (_event: unknown, value: string | null) => void;
   }) => (
-    <div data-testid="toggle-button-group">
-      {children}
-      {void (toggleButtonGroupOnChange = onChange)}
-    </div>
-  ),
-  ToggleButton: ({ children, value }: { children: ReactNode; value: string }) => (
-    <button type="button" onClick={() => toggleButtonGroupOnChange?.(null, value)}>
+    <button type="button" onClick={() => (__onChange ?? toggleButtonGroupOnChange)?.(null, value)}>
       {children}
     </button>
   ),
@@ -262,6 +280,7 @@ function buildProps(
       savedFilterName: '',
       savedFilters: [],
       tagsMap: {},
+      tagsOrder: [],
       applySavedFilter: vi.fn(),
       deleteLoadedSavedFilter: vi.fn(),
       renameExistingSavedFilter: vi.fn(),
@@ -606,6 +625,7 @@ describe('AnalysisFiltersPanel', () => {
           ownerOrganismId: null,
         },
       } as AnalysisPageState['tagsMap'],
+      tagsOrder: [2, 1],
       options: {
         ...buildOptions(),
         tags: [
@@ -1004,6 +1024,37 @@ describe('AnalysisFiltersPanel', () => {
       onlyWithMetadata: false,
       withoutMetadata: true,
     });
+  });
+
+  it('wires the tag mode buttons into updateQueryState', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        updateQueryState,
+        queryState: { ...emptyQueryState(), tags: [1], tagsExcludeMode: true },
+      }),
+    );
+    rendered.push(view);
+
+    const toggleButton = (labelText: string) => {
+      const button = Array.from(view.container.querySelectorAll('button')).find((item) =>
+        item.textContent?.includes(labelText),
+      );
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error(`Button not found for label: ${labelText}`);
+      }
+      return button;
+    };
+
+    await act(async () => {
+      toggleButton('Лише обрані').click();
+    });
+    await act(async () => {
+      toggleButton('Крім обраних').click();
+    });
+
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: false });
+    expect(updateQueryState).toHaveBeenCalledWith({ tagsExcludeMode: true });
   });
 
   it('clears without-coords when the peleng checkbox is disabled', async () => {

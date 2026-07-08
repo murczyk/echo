@@ -179,6 +179,7 @@ function TestHarness(props: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
     },
     tagsMap: {},
+    tagsOrder: [],
     groupInfos: {
       'group-1': { masterKey: 'group-1', name: 'Група 1' } as SignalGroupEntry,
     },

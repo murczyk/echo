@@ -47,6 +47,7 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'adjacentFreqsRange', param: 'adjacentFreqsRange', type: 'number' },
   { key: 'withoutModelTags', param: 'withoutModelTags', type: 'boolean' },
   { key: 'filterTagsOption', param: 'filterTagsOption', type: 'string' },
+  { key: 'tagsExcludeMode', param: 'tagsExcludeMode', type: 'boolean' },
   { key: 'reportTagsOnlyThisUnit', param: 'reportTagsOnlyThisUnit', type: 'boolean' },
 ];
 
@@ -89,6 +90,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   adjacentFreqsRange: 0,
   withoutModelTags: false,
   filterTagsOption: 'OneOfTags',
+  tagsExcludeMode: false,
   reportTagsOnlyThisUnit: false,
 };
 

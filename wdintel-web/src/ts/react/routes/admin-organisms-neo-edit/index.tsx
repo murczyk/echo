@@ -5,10 +5,13 @@ import {
   CircularProgress,
   FormControlLabel,
   MenuItem,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import type { SyntheticEvent } from 'react';
 
 import {
   AreaOfResponsibility,
@@ -47,9 +50,11 @@ import {
 } from '../../services/api/organisms';
 import { navigateWithinSpa } from '../../utils/browser';
 import { PowerAlert } from '../../components/PowerAlert';
+import { OrganismTagsSection } from './OrganismTagsSection';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type StatusMessage = { kind: 'error' | 'success'; message: string } | null;
+type OrganismEditTab = 'main' | 'tags' | 'goi';
 
 type OrganismFormState = {
   name: string;
@@ -217,10 +222,6 @@ function getSimpleGoiUrl(apiHost: string, sshHost: string): string {
   return apiHost.trim() || sshHost.trim();
 }
 
-function isFullGoiIntegration(form: OrganismFormState): boolean {
-  return form.goiIntegrationType === GOI_INTEGRATION_TYPE_FULL;
-}
-
 type AdminOrganismsNeoEditPageProps = {
   organismId: string | null;
 };
@@ -260,9 +261,6 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
 
   const parentValue =
     props.organisms.find((organism) => organism.id === props.form.parentId) ?? null;
-  const isGoiBusy =
-    props.isSubmitting || props.isCheckingGoiConnection || props.isSettingUpGoiWorker;
-  const isFullIntegration = isFullGoiIntegration(props.form);
 
   return (
     <div className="space-y-5">
@@ -451,31 +449,36 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           />
         </div>
       ) : null}
-
-      <Box className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-6">
-        <Typography variant="h6" className="!font-semibold pb-3">
-          ГОІ
-        </Typography>
-        <PowerAlert severity="info">
-          Керування інтеграціями ГОІ винесено в окрему адмін-панель. Тут налаштування організму
-          більше не містять GOI конфігурацію.
-        </PowerAlert>
-        <div>
-          <PowerButton
-            variant="outlined"
-            onClick={() => navigateWithinSpa('/admin/goi-integrations-neo')}
-            disabled={isGoiBusy}
-          >
-            Відкрити панель ГОІ
-          </PowerButton>
-        </div>
-      </Box>
     </div>
+  );
+}
+
+function OrganismGoiSection({ disabled }: { disabled: boolean }) {
+  return (
+    <Box className="space-y-4">
+      <Typography variant="h6" className="font-semibold! pb-3">
+        ГОІ
+      </Typography>
+      <PowerAlert severity="info">
+        Керування інтеграціями ГОІ винесено в окрему адмін-панель. Тут налаштування організму більше
+        не містять GOI конфігурацію.
+      </PowerAlert>
+      <div>
+        <PowerButton
+          variant="outlined"
+          onClick={() => navigateWithinSpa('/admin/goi-integrations-neo')}
+          disabled={disabled}
+        >
+          Відкрити панель ГОІ
+        </PowerButton>
+      </div>
+    </Box>
   );
 }
 
 function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   const isNew = !props.organismId;
+  const [activeTab, setActiveTab] = useState<OrganismEditTab>('main');
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusMessage>(null);
@@ -697,6 +700,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
 
   function navigateBack() {
     navigateWithinSpa(backToPath);
+  }
+
+  function handleTabChange(_: SyntheticEvent, value: OrganismEditTab) {
+    setActiveTab(value);
   }
 
   function validateForm(): boolean {
@@ -947,43 +954,100 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           </PowerAlert>
         ) : null}
 
-        <OrganismFormFields
-          form={form}
-          formErrors={formErrors}
-          isSubmitting={isSubmitting}
-          isCheckingGoiConnection={isCheckingGoiConnection}
-          isSettingUpGoiWorker={isSettingUpGoiWorker}
-          isNew={isNew}
-          organisms={organisms}
-          groups={groups}
-          availableGroups={availableGroups}
-          aors={aors}
-          computedGroups={computedGroups}
-          computeError={computeError}
-          goiConnectionStatus={goiConnectionStatus}
-          isComputing={isComputing}
-          groupsValidation={groupsValidation}
-          onCheckGoiConnection={handleCheckGoiConnection}
-          onSetupGoiWorker={handleSetupGoiWorker}
-          onChange={handleChange}
-        />
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab
+            value="main"
+            label="Основне"
+            id="admin-organism-tab-main"
+            aria-controls="admin-organism-panel-main"
+          />
+          <Tab
+            value="tags"
+            label="Теги"
+            id="admin-organism-tab-tags"
+            aria-controls="admin-organism-panel-tags"
+          />
+          <Tab
+            value="goi"
+            label="ГОІ"
+            id="admin-organism-tab-goi"
+            aria-controls="admin-organism-panel-goi"
+          />
+        </Tabs>
 
-        <div className="flex justify-end gap-3">
-          <PowerButton
-            variant="outlined"
-            onClick={navigateBack}
-            disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+        {activeTab === 'main' ? (
+          <Box
+            id="admin-organism-panel-main"
+            role="tabpanel"
+            aria-labelledby="admin-organism-tab-main"
+            className="space-y-6"
           >
-            Скасувати
-          </PowerButton>
-          <PowerButton
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+            <OrganismFormFields
+              form={form}
+              formErrors={formErrors}
+              isSubmitting={isSubmitting}
+              isCheckingGoiConnection={isCheckingGoiConnection}
+              isSettingUpGoiWorker={isSettingUpGoiWorker}
+              isNew={isNew}
+              organisms={organisms}
+              groups={groups}
+              availableGroups={availableGroups}
+              aors={aors}
+              computedGroups={computedGroups}
+              computeError={computeError}
+              goiConnectionStatus={goiConnectionStatus}
+              isComputing={isComputing}
+              groupsValidation={groupsValidation}
+              onCheckGoiConnection={handleCheckGoiConnection}
+              onSetupGoiWorker={handleSetupGoiWorker}
+              onChange={handleChange}
+            />
+
+            <div className="flex justify-end gap-3">
+              <PowerButton
+                variant="outlined"
+                onClick={navigateBack}
+                disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+              >
+                Скасувати
+              </PowerButton>
+              <PowerButton
+                variant="contained"
+                onClick={handleSubmit}
+                disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+              >
+                {isNew ? 'Створити' : 'Зберегти'}
+              </PowerButton>
+            </div>
+          </Box>
+        ) : null}
+
+        {activeTab === 'tags' ? (
+          <Box
+            id="admin-organism-panel-tags"
+            role="tabpanel"
+            aria-labelledby="admin-organism-tab-tags"
+            sx={{ mt: -1 }}
           >
-            {isNew ? 'Створити' : 'Зберегти'}
-          </PowerButton>
-        </div>
+            <OrganismTagsSection organismId={isNew ? null : Number(props.organismId)} />
+          </Box>
+        ) : null}
+
+        {activeTab === 'goi' ? (
+          <Box
+            id="admin-organism-panel-goi"
+            role="tabpanel"
+            aria-labelledby="admin-organism-tab-goi"
+          >
+            <OrganismGoiSection
+              disabled={isSubmitting || isCheckingGoiConnection || isSettingUpGoiWorker}
+            />
+          </Box>
+        ) : null}
       </div>
     </FormPageLayout>
   );

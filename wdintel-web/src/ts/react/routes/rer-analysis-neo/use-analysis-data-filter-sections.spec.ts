@@ -24,7 +24,7 @@ const analysisApiMocks = vi.hoisted(() => ({
   fetchAnalysisNetworks: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
-  getTagsMapForDisplay: vi.fn(),
+  getTagsForDisplay: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -36,7 +36,7 @@ vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisNetworks: analysisApiMocks.fetchAnalysisNetworks,
   fetchNetworksByIds: analysisApiMocks.fetchNetworksByIds,
   getLatestSenders: analysisApiMocks.getLatestSenders,
-  getTagsMapForDisplay: analysisApiMocks.getTagsMapForDisplay,
+  getTagsForDisplay: analysisApiMocks.getTagsForDisplay,
 }));
 
 const ALL_OPTION_SECTIONS = [
@@ -76,6 +76,7 @@ function Harness() {
     setOptions: vi.fn(),
     setProfiles: vi.fn(),
     setTagsMap: vi.fn(),
+    setTagsOrder: vi.fn(),
   });
   return null;
 }
@@ -113,7 +114,7 @@ beforeEach(() => {
   analysisApiMocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
   analysisApiMocks.fetchNetworksByIds.mockResolvedValue([]);
   analysisApiMocks.getLatestSenders.mockResolvedValue({ data: {} });
-  analysisApiMocks.getTagsMapForDisplay.mockResolvedValue({});
+  analysisApiMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 
 afterEach(() => {
@@ -331,6 +332,7 @@ describe('loadFilterSectionData', () => {
         setOptions,
         setProfiles: vi.fn(),
         setTagsMap: vi.fn(),
+        setTagsOrder: vi.fn(),
         unitsMap: { 1: { id: 1, name: 'Fresh Unit' } },
       });
       await Promise.resolve();
@@ -464,6 +466,43 @@ describe('useAnalysisFilterSections', () => {
     });
 
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
+  });
+
+  it('marks the loaded tags facet stale and drops its cache so a reload refetches it', async () => {
+    await renderHook();
+
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+      await Promise.resolve();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(1);
+    expect(latest?.isFilterSectionStale('tags')).toBe(false);
+
+    act(() => {
+      latest?.invalidateTagFacetLoad();
+    });
+
+    expect(latest?.isFilterSectionStale('tags')).toBe(true);
+
+    // Cache key was dropped, so loading tags again re-hits the API.
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+      await Promise.resolve();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the tags facet untouched when it was never loaded', async () => {
+    await renderHook();
+
+    act(() => {
+      latest?.invalidateTagFacetLoad();
+    });
+
+    expect(latest?.isFilterSectionStale('tags')).toBe(false);
+    expect(analysisApiMocks.fetchAnalysisTags).not.toHaveBeenCalled();
   });
 
   it('moves an in-flight invalidated section to stale and keeps it queued for reload', async () => {

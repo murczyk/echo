@@ -98,6 +98,7 @@ type Props = {
   profiles: Record<string, SignalProfileEntry | null>;
   users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   searchText?: string | null;
@@ -134,6 +135,7 @@ type AnalysisMessageCardItemProps = {
   referenceTimeMs: number | null;
   users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   searchText?: string | null;
@@ -167,6 +169,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   referenceTimeMs,
   users,
   tagsMap,
+  tagsOrder,
   tagsLoading,
   tagsLayout,
   searchText,
@@ -201,6 +204,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       )}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
+      tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       searchText={searchText}
@@ -341,6 +345,7 @@ function AnalysisMessagesPaneComponent({
   profiles,
   users,
   tagsMap,
+  tagsOrder,
   tagsLoading,
   tagsLayout,
   searchText,
@@ -451,6 +456,7 @@ function AnalysisMessagesPaneComponent({
               users={users}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
+              tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               searchText={searchText}

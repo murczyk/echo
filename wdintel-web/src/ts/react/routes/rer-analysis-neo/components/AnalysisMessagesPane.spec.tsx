@@ -199,6 +199,7 @@ function buildProps(
     profiles: {},
     users: {},
     tagsMap: {},
+    tagsOrder: [],
     tagsLoading: false,
     tagsLayout: 'full',
     ...overrides,

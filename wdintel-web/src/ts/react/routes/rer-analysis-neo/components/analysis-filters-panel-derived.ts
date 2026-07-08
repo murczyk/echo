@@ -9,7 +9,7 @@ import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
 type Params = Pick<
   AnalysisFiltersPanelPage,
-  'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap'
+  'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap' | 'tagsOrder'
 >;
 
 export type AnalysisFiltersPanelDerivedData = {
@@ -98,6 +98,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   options,
   queryState,
   tagsMap,
+  tagsOrder = [],
 }: Params): AnalysisFiltersPanelDerivedData {
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
@@ -130,14 +131,42 @@ export function buildAnalysisFiltersPanelDerivedData({
     })),
   );
 
-  const tagOptions = sortFilterOptionsByLabel(
-    options.tags.map((option) => ({
-      ...option,
-      label: normalizeFilterLabel(
-        tagsMap[Number(option.value)]?.label ?? option.label ?? option.value,
-      ),
-    })),
+  // The dropdown lists every known tag, not just the facet of tags present on the
+  // currently-visible messages. `options.tags` supplies the per-tag counts (how many
+  // visible messages carry the tag); tags absent from the facet show a count of 0 but
+  // stay pickable. Ordering follows the backend `tagsOrder`, with the current
+  // organism's user tags first and every other tag after them.
+  const tagFacetCountByValue = new Map<string, number>(
+    options.tags.map((option) => [option.value, option.count]),
   );
+  const tagValuesInOrder: number[] = [];
+  const seenTagValues = new Set<number>();
+  const pushTagValue = (tagId: number) => {
+    if (seenTagValues.has(tagId)) return;
+    seenTagValues.add(tagId);
+    tagValuesInOrder.push(tagId);
+  };
+  // `tagsOrder` already carries the full tag list in backend order; the facet and the
+  // selected tags are unioned in afterwards so nothing selectable is ever dropped.
+  tagsOrder.forEach(pushTagValue);
+  options.tags.forEach((option) => pushTagValue(Number(option.value)));
+  queryState.tags.forEach(pushTagValue);
+
+  const buildTagOption = (tagId: number): AnalysisFilterOption => {
+    const value = String(tagId);
+    return {
+      value,
+      label: normalizeFilterLabel(tagsMap[tagId]?.label ?? value),
+      count: tagFacetCountByValue.get(value) ?? 0,
+    };
+  };
+  const userTagOptions = tagValuesInOrder
+    .filter((tagId) => tagsMap[tagId]?.ownerOrganismId != null)
+    .map(buildTagOption);
+  const otherTagOptions = tagValuesInOrder
+    .filter((tagId) => tagsMap[tagId]?.ownerOrganismId == null)
+    .map(buildTagOption);
+  const tagOptions = [...userTagOptions, ...otherTagOptions];
 
   const metadataCcsOptions = sortFilterOptionsByLabel(
     options.metadataCcs.map((option) => ({

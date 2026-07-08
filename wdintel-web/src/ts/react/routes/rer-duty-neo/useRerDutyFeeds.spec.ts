@@ -51,6 +51,7 @@ vi.mock('./useRerDutyFilterOptions', () => ({
     setGroupInfos: vi.fn(),
     profiles: {},
     tagsMap: {},
+    tagsOrder: [],
     savedFilters: [],
     setSavedFilters: vi.fn(),
     selectedSavedIdByFeedId: {},
