@@ -71,6 +71,16 @@ lazy_static! {
         r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
     )
     .unwrap();
+    // Remove data time + freq line dd.mm.yyyy hh:mm:ss F=123.4567(МГц)
+    static ref RE25_FREQ: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\s+[Ff]\s*=\s*[0-9]{3}(\.|,)[0-9]{3,5}\s*(\(?МГц\)?|MHz)$"#
+    )
+    .unwrap();
+    // Remove frequency line like F=148.175 DMR
+    static ref RE_F_DMR: Regex = Regex::new(
+        r#"^[Ff]\s*=\s*[0-9]{3}(\.|,)[0-9]{3,5}\s*DMR\s*$"#
+    )
+    .unwrap();
     // Remove data time line dd.mm.yyyy hh:mm
     static ref RE25A: Regex = Regex::new(
         r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}[,\s]+[0-9]{1,2}:[0-9]{2}\s*$"#
@@ -107,7 +117,7 @@ lazy_static! {
     // Remove unit line from Mouse
     static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
     // Remove freq line from Mouse
-    static ref RE4: Regex = Regex::new(r#"^[0-9]{3}(\.|,)[0-9]{3,5}\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
+    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(\.|,)[0-9]{3,5}\*|[0-9]{3}(\.|,)[0-9]{3,5})\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
     // Remove coordinates line from Mouse
     static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
     // Remove line with ---------------------
@@ -117,6 +127,16 @@ lazy_static! {
 }
 
 pub fn is_header_line(line: &str) -> bool {
+    if crate::rer_importer::inbox::metadata::is_metadata_line(line) {
+        return true;
+    }
+
+    is_header_line_raw(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| is_header_line_raw(&line))
+}
+
+fn is_header_line_raw(line: &str) -> bool {
     RE.is_match(line)
         || RE0.is_match(line)
         || RE1.is_match(line)
@@ -126,6 +146,8 @@ pub fn is_header_line(line: &str) -> bool {
         || RE23.is_match(line)
         || RE24.is_match(line)
         || RE25.is_match(line)
+        || RE25_FREQ.is_match(line)
+        || RE_F_DMR.is_match(line)
         || RE25A.is_match(line)
         || RE26.is_match(line)
         || RE27.is_match(line)
@@ -140,6 +162,12 @@ pub fn is_header_line(line: &str) -> bool {
 }
 
 pub fn is_datetime_header_line(line: &str) -> bool {
+    is_datetime_header_line_raw(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| is_datetime_header_line_raw(&line))
+}
+
+fn is_datetime_header_line_raw(line: &str) -> bool {
     RE1.is_match(line)
         || RE2.is_match(line)
         || RE21.is_match(line)
@@ -147,6 +175,7 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE23.is_match(line)
         || RE24.is_match(line)
         || RE25.is_match(line)
+        || RE25_FREQ.is_match(line)
         || RE25A.is_match(line)
         || RE26.is_match(line)
         || RE27.is_match(line)
@@ -155,6 +184,25 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE30.is_match(line)
         || RE31.is_match(line)
         || RE_DT_LABEL.is_match(line)
+}
+
+fn normalize_decorated_header_line(line: &str) -> Option<String> {
+    let line = demoji::demoji(line);
+    let line = line
+        .chars()
+        .map(|ch| match ch {
+            '[' | ']' | '{' | '}' | '(' | ')' => ' ',
+            '╬' => ' ',
+            '│' => ' ',
+            '\u{200d}' | '\u{fe0e}' | '\u{fe0f}' => ' ',
+            _ => ch,
+        })
+        .collect::<String>();
+    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.is_empty() {
+        return None;
+    }
+    Some(line)
 }
 
 pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
@@ -267,6 +315,27 @@ mod tests {
         let body = " audio | 2026-07-01_14-47-03 \nПерехоплення\nрядок 2";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "Перехоплення\nрядок 2");
+    }
+
+    #[test]
+    fn extract_text_metadata_lines_are_headers() {
+        let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nID➡️: 261\nID(CG)⬅️: 8584772\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_decorated_header_lines_are_headers() {
+        let body = "🔺(01.07.2026 02:58:08)\n🔺(01.07.2026 02:58:08 F=170.0250(МГц))\n│╬{*123.7586*}\n[УКХ р/м]\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_f_dmr_line_is_header() {
+        let body = "F= 148.175 DMR\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
     }
 
     #[test]

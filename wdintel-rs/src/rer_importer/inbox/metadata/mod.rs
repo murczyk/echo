@@ -10,7 +10,9 @@ pub mod oneoff;
 mod parser;
 pub mod types;
 
-pub(crate) use parser::{normalize_metadata_digits, normalize_metadata_value};
+pub(crate) use parser::{
+    is_metadata_line, normalize_metadata_digits, normalize_metadata_value,
+};
 
 pub async fn refresh_metadata_for_body<'a, 'async_trait, C>(
     sigint_inbox_item_id: i64,

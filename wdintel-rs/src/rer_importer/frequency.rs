@@ -131,6 +131,28 @@ mod tests {
     }
 
     #[test]
+    fn extract_freq_star_wrapped_line() {
+        let input = "01.07.2026 02:58:08\n*123.7586*\nПерехоплення";
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, Some("123.7586".to_string()));
+    }
+
+    #[test]
+    fn extract_freq_ts_freq_reporting_format() {
+        let input = "01.07.2026 02:58:08 F=170.0250(МГц)\nПерехоплення";
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, Some("170.0250".to_string()));
+    }
+
+    #[test]
+    fn extract_freq_f_dmr_format() {
+        for input in ["F= 148.175 DMR", "F=148.175DMR"] {
+            let res = extract_freq(input).unwrap();
+            assert_eq!(res, Some("148.1750".to_string()));
+        }
+    }
+
+    #[test]
     fn extract_freq_test02() {
         let input = r#"08.02.2023_21:00 F=455.5550(МГц)"#;
         let res = extract_freq(input).unwrap();

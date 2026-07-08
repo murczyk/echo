@@ -68,6 +68,17 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     reduce_metadata_list(result)
 }
 
+pub(crate) fn is_metadata_line(line: &str) -> bool {
+    let (line, _) = trim_line(line);
+    if line.is_empty() {
+        return false;
+    }
+    let normalized_line = NormalizedLine::new(line);
+    parse_metadata_line(&normalized_line)
+        .into_iter()
+        .any(|metadata| metadata.has_some_value())
+}
+
 pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CC: Regex =

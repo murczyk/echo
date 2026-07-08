@@ -34,6 +34,13 @@ pub fn extract_unit_with_aor(
         });
     }
 
+    if let Some(value) =
+        try_extract_pu_fsb_rf_unit_and_location(settlements.clone(), inp)
+            .c(h!())?
+    {
+        return Ok(value);
+    }
+
     if let Some(value) = try_extract_standard_unit_and_location(
         settlements.clone(),
         inp,
@@ -742,6 +749,41 @@ fn is_known_unit_token(unit_name: &str) -> bool {
         || crate::unit::const_units::list_standalone()
             .iter()
             .any(|value| value == unit_name)
+}
+
+fn try_extract_pu_fsb_rf_unit_and_location(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    inp: &str,
+) -> Result<Option<UnitAndLoc>, AppError> {
+    lazy_static! {
+        static ref RE: Regex = RegexBuilder::new(
+            r#"^(?P<unit>.*?\bПУ\s+ФСБ\s+РФ\b)\s*/\s*(?P<locality>район\s+.+?)(?:\s+\([0-9]{2}\.[0-9]{2}\))?\s*$"#
+        )
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    }
+    let Some(line) = inp.lines().find(|line| !line.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let Some(capts) = RE.captures(line.trim()) else {
+        return Ok(None);
+    };
+    let Some(unit) = m_cap_s(&capts, "unit") else {
+        return Ok(None);
+    };
+    let Some(locality) = m_cap_s(&capts, "locality") else {
+        return Ok(None);
+    };
+    let unit = unit.trim().to_string();
+    let locality = locality.trim().to_string();
+    let (locality, locality_v2) =
+        extract_locality(settlements, line.to_string(), Some(locality), None)?;
+    Ok(Some(UnitAndLoc {
+        unit: Some(unit),
+        locality,
+        locality_v2,
+    }))
 }
 
 fn try_extract_standard_unit_and_location(
@@ -2190,6 +2232,52 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
     }
 
     #[test]
+    fn extract_unit_decorated_ukh_header_with_lowercase_location() {
+        let body = "│🛑🌲УКХ р/м управління підрозділу йм. зі складу 3 мсб 82 мсп 69 мсд 6 ЗА (лісовий масив на захід від Вовчанська, Цегельне, Лиман, Симинівка) 🌲🛑";
+
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        let unit = res.unit.unwrap();
+        assert!(unit.contains("3 мсб 82 мсп 69 мсд 6 ЗА"));
+        let locality = res.locality.unwrap();
+        assert!(locality.contains("Вовчанська"));
+        assert!(locality.contains("Цегельне"));
+        assert!(locality.contains("Лиман"));
+        assert!(locality.contains("Симинівка"));
+    }
+
+    #[test]
+    fn extract_unit_decorated_ukh_header_with_dash_location() {
+        let body = "🌻🐺УКХ р/м підрозділу йм. зі складу 1 мсб 128 омсбр 44 АК  (ВОВЧАНСЬК - ВОВЧАНСЬКІ ХУТОРИ)🐺🌻";
+
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.unwrap(),
+            "УКХ р/м підрозділу йм. зі складу 1 мсб 128 омсбр 44 АК"
+                .to_string()
+        );
+        assert_eq!(
+            res.locality.unwrap(),
+            "ВОВЧАНСЬК - ВОВЧАНСЬКІ ХУТОРИ".to_string()
+        );
+    }
+
+    #[test]
     fn extract_unit_zp_1() {
         let body = r#"21.10, 19:37:06
         403.1250
@@ -2514,6 +2602,29 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ОБУХІВКА", "СНАГОСТЬ", "СУДЖА"]);
+    }
+
+    #[test]
+    fn extract_unit_pu_fsb_rf_with_popovo_lezhachi_tetkino_location() {
+        let body =
+            "ймовірно ПУ ФСБ РФ / район ПОПОВО-ЛЕЖАЧИ (РФ) - ТЕТКИНО (РФ) (19.06)";
+
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert!(res
+            .unit
+            .as_deref()
+            .is_some_and(|unit| unit.contains("ПУ ФСБ РФ")));
+        let locality = res.locality.unwrap();
+        assert!(locality.contains("ПОПОВО-ЛЕЖАЧИ"));
+        assert!(locality.contains("ТЕТКИНО"));
     }
 
     #[test]
