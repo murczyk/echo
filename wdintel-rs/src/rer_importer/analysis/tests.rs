@@ -297,6 +297,8 @@ async fn mk_analysis_message_with_location(
     location_v2: Option<&str>,
 ) -> Result<signal_message::Model, AppError> {
     let primary_group = groups.first().context(h!())?;
+    let body_noheader = crate::rer_importer::body_noheader::extract_text(label)
+        .context(h!())?;
     let signal_message = mk_signal_message(
         db,
         signal_message::ActiveModel {
@@ -318,11 +320,17 @@ async fn mk_analysis_message_with_location(
             date: Set(Some(datetime.date().to_string())),
             time: Set(Some(datetime.time().format("%H:%M:%S").to_string())),
             location_v2: Set(location_v2.map(str::to_string)),
+            body_noheader: Set(Some(
+                serde_json::to_value(&body_noheader).context(h!())?,
+            )),
             ..Default::default()
         },
     )
     .await
     .context(h!())?;
+    crate::sigint::worker::incoming_message_after_insert(db, signal_message.id)
+        .await
+        .context(h!())?;
     for group in groups {
         mk_signal_message_group(
             db,
@@ -1044,6 +1052,33 @@ fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
     assert!(sql.contains("NOT EXISTS"));
     assert!(!sql.contains("sender_id"));
     assert!(!sql.contains("sender_name"));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_search_matches_plain_prefix() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    mk_analysis_message(
+        &fixture.env.dbx,
+        "Беркуту передали координати",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.search = Some("Берку".to_string());
+
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
 }
 
 #[tokio::test]
