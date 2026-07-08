@@ -68,6 +68,44 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     reduce_metadata_list(result)
 }
 
+pub(crate) fn is_metadata_line(line: &str) -> bool {
+    let (line, _) = trim_line(line);
+    if line.is_empty() {
+        return false;
+    }
+    is_metadata_only_line(&line)
+}
+
+fn is_metadata_only_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_METADATA_HEADER_PART: Regex = Regex::new(
+            r#"(?ix)
+            (?:
+                [cс]{2}\s*:?\s*(?:\d+|нв|-)
+              | код\s+кольору\s*:?\s*(?:\d+|нв|-)
+              | [iі]d\s*\(\s*[cс]g\s*\)\s*(?:⬅️?)?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | (?:[cс]g|group\s+id|код\s+групи)\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s+відправника\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | source\s+id\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
+              | [iі]d\s*:\s*[^;\r\n]+;
+              | хеш\s+[iі]d\s*:\s*[0-9a-f]+
+              | 👥\s*:\s*[^🔐\r\n]+?\s*🔐
+              | ⬅️\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
+              | ➡️\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
+            )
+            "#
+        )
+        .unwrap();
+    }
+    let line = normalize_metadata_digits(line);
+    let rest = RE_METADATA_HEADER_PART.replace_all(&line, "");
+    let rest = demoji::demoji(&rest);
+    rest.chars()
+        .all(|ch| ch.is_whitespace() || matches!(ch, ';' | ','))
+}
+
 pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
     lazy_static! {
         static ref RE_CC: Regex =
