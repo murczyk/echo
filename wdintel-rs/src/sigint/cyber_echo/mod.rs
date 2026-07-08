@@ -65,17 +65,7 @@ async fn handle_cyber_echo_tus(
     payload: web::Payload,
 ) -> Result<HttpResponse, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
-    crate::system_settings::ensure_cyber_echo_enabled(&env.dbx)
-        .await
-        .c(h!())?;
-    if env.config.s3_config.is_none() {
-        return Err(AppError::BL {
-            msg: "s3 config is required for attachment upload".to_string(),
-        });
-    }
+    ensure_tus_request_allowed(&login, &env).await.c(h!())?;
 
     let handler = tus::TusHandler::new(
         env.config.storage_dir.clone(),
@@ -90,4 +80,44 @@ async fn handle_cyber_echo_tus(
             payload,
         )
         .await
+}
+
+async fn ensure_tus_request_allowed(
+    login: &str,
+    env: &Env,
+) -> Result<(), AppError> {
+    crate::users::has_role(&env.dbx, login, "Rer")
+        .await
+        .c(h!())?;
+    crate::system_settings::ensure_cyber_echo_enabled(&env.dbx)
+        .await
+        .c(h!())?;
+    if env.config.s3_config.is_none() {
+        return Err(AppError::BL {
+            msg: "s3 config is required for attachment upload".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
+
+    const TEST_LOGIN: &str = "Tester";
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_tus_rejects_when_setting_missing() {
+        let env = cleanup().await.unwrap();
+
+        let err = ensure_tus_request_allowed(TEST_LOGIN, &env)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
 }

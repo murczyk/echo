@@ -145,3 +145,245 @@ pub async fn create_signal_message(
         media_ids: media.into_iter().map(|media| media.id).collect(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{computer_name, signal_group, system_settings};
+    use crate::functest::tests::{cleanup, mk_signal_group};
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, NotSet, Set};
+    use serial_test::serial;
+
+    const TEST_LOGIN: &str = "Tester";
+    const TEST_SIGNAL_GROUP_KEY: &str = "vukho-test-master-key";
+
+    fn payload(
+        body: &str,
+        signal_group_master_key: &str,
+        computer_name_id: i64,
+        upload_urls: Option<Vec<String>>,
+    ) -> CreateCyberEchoSignalMessagePayload {
+        CreateCyberEchoSignalMessagePayload {
+            body: body.to_string(),
+            signal_group_master_key: signal_group_master_key.to_string(),
+            computer_name_id,
+            upload_urls,
+        }
+    }
+
+    async fn insert_settings(dbx: &DatabaseConnection, enabled: bool) {
+        let now = Utc::now().naive_utc();
+        system_settings::ActiveModel {
+            id: NotSet,
+            rer_analysis_units_exact_match_only_default: Set(false),
+            created_at: Set(now),
+            updated_at: Set(now),
+            updated_by: Set(None),
+            deleted: Set(false),
+            rer_duty_test_enabled: Set(false),
+            rer_duty_test_since_ms: Set(0),
+            rer_duty_test_limit: Set(0),
+            rer_duty_poll_interval_sec: Set(0),
+            rer_duty_insert_historical_interceptions: Set(false),
+            short_url_enabled: Set(false),
+            support_non_rer_interceptions: Set(false),
+            peleng_bounds_enabled: Set(false),
+            peleng_bounds_top_left_lat: Set(None),
+            peleng_bounds_top_left_lng: Set(None),
+            peleng_bounds_bottom_right_lat: Set(None),
+            peleng_bounds_bottom_right_lng: Set(None),
+            default_neo_analysis: Set(false),
+            echo_im_sync_since: Set(now),
+            autofix_echoim_missing_messages: Set(false),
+            echo_im_sync_since_inbox_message_id: Set(0),
+            cyber_echo_enabled: Set(enabled),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_computer_name(
+        dbx: &DatabaseConnection,
+    ) -> computer_name::Model {
+        computer_name::ActiveModel {
+            id: NotSet,
+            name: Set(Some("southend".to_string())),
+            login: Set(TEST_LOGIN.to_string()),
+            created_at: NotSet,
+            search_tsv: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    fn assert_bl_error(err: AppError, expected: &str) {
+        match err {
+            AppError::BL { msg } => assert!(msg.contains(expected)),
+            err => panic!("expected BL error, got {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_when_setting_missing() {
+        let env = cleanup().await.unwrap();
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload("message", TEST_SIGNAL_GROUP_KEY, 1, None),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_when_setting_disabled() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, false).await;
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload("message", TEST_SIGNAL_GROUP_KEY, 1, None),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_empty_body() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload(" \r\n ", TEST_SIGNAL_GROUP_KEY, 1, None),
+        )
+        .await
+        .unwrap_err();
+
+        assert_bl_error(err, "message body cannot be empty");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_inaccessible_group() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let computer_name = insert_computer_name(&env.dbx).await;
+        let foreign_group_key = "foreign-cyber-echo-group";
+        mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(foreign_group_key.to_string()),
+                name: Set(Some("Foreign".to_string())),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload("message", foreign_group_key, computer_name.id, None),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_unknown_computer_name_id() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload("message", TEST_SIGNAL_GROUP_KEY, i64::MAX, None),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_rejects_attachments_without_s3() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let computer_name = insert_computer_name(&env.dbx).await;
+
+        let err = create_signal_message(
+            TEST_LOGIN,
+            &env,
+            payload(
+                "message",
+                TEST_SIGNAL_GROUP_KEY,
+                computer_name.id,
+                Some(vec![
+                    "/api/sigint/cyber-echo/tus/not-a-real-file.1".to_string()
+                ]),
+            ),
+        )
+        .await
+        .unwrap_err();
+
+        assert_bl_error(err, "s3 config is required");
+    }
+
+    #[tokio::test]
+    async fn cyber_echo_tus_rejects_too_many_upload_urls() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tus_handler = TusHandler::new(
+            temp_dir.path().to_string_lossy().to_string(),
+            super::super::CYBER_ECHO_TUS_PATH_BASE,
+        );
+        let upload_urls = (0..=super::super::tus::MAX_COMPLETED_UPLOADS)
+            .map(|idx| {
+                format!("/api/sigint/cyber-echo/tus/not-a-real-file-{idx}.1")
+            })
+            .collect::<Vec<_>>();
+
+        let err = tus_handler
+            .resolve_completed_uploads(TEST_LOGIN, &upload_urls)
+            .await
+            .unwrap_err();
+
+        assert_bl_error(err, "too many attachments");
+    }
+
+    #[tokio::test]
+    async fn cyber_echo_tus_rejects_unknown_upload_url() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tus_handler = TusHandler::new(
+            temp_dir.path().to_string_lossy().to_string(),
+            super::super::CYBER_ECHO_TUS_PATH_BASE,
+        );
+
+        let err = tus_handler
+            .resolve_completed_uploads(
+                TEST_LOGIN,
+                &["/api/sigint/cyber-echo/tus/not-a-real-file.1".to_string()],
+            )
+            .await
+            .unwrap_err();
+
+        assert_bl_error(err, "upload not found or incomplete");
+    }
+}
