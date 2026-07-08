@@ -212,9 +212,15 @@ export function useAnalysisData({
       try {
         const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds);
         if (nextMessages.length === 0) return;
-        messageList.setMessages((current) => mergeUpdatedVisibleMessageTags(current, nextMessages));
+        messageList.setMessages((current) =>
+          mergeUpdatedVisibleMessageTags(current, nextMessages, {
+            withoutModelTags: queryState.withoutModelTags,
+          }),
+        );
         mapData.setMapOpenMessages((current) =>
-          mergeUpdatedVisibleMessageTags(current, nextMessages),
+          mergeUpdatedVisibleMessageTags(current, nextMessages, {
+            withoutModelTags: queryState.withoutModelTags,
+          }),
         );
       } catch (loadError) {
         if (!onUnauthorized(loadError)) {

@@ -8,17 +8,48 @@ export type MessageFeedWithItems = {
 
 type MessageTagFields = Pick<InboxMessage, 'inboxTags' | 'tags'>;
 
-function mergeTagFields(message: InboxMessage, updates: MessageTagFields): InboxMessage {
+export type MessageTagMergeOptions = {
+  withoutModelTags?: boolean;
+};
+
+function filterModelTags(inboxTags: InboxMessage['inboxTags']): InboxMessage['inboxTags'] {
+  if (inboxTags == null) return inboxTags;
+  return inboxTags.filter((tag) => tag.model == null);
+}
+
+function mergeTagFields(
+  message: InboxMessage,
+  updates: MessageTagFields,
+  options?: MessageTagMergeOptions,
+): InboxMessage {
+  if (!options?.withoutModelTags) {
+    return {
+      ...message,
+      inboxTags: updates.inboxTags,
+      tags: updates.tags,
+    };
+  }
+
+  const inboxTags = filterModelTags(updates.inboxTags);
+  if (inboxTags == null) {
+    return {
+      ...message,
+      inboxTags: updates.inboxTags,
+      tags: updates.tags,
+    };
+  }
+
   return {
     ...message,
-    inboxTags: updates.inboxTags,
-    tags: updates.tags,
+    inboxTags,
+    tags: inboxTags.map((tag) => tag.tagId),
   };
 }
 
 export function mergeUpdatedVisibleMessageTags(
   current: MessageItem[],
   updates: MessageItem[],
+  options?: MessageTagMergeOptions,
 ): MessageItem[] {
   if (current.length === 0 || updates.length === 0) return current;
 
@@ -40,7 +71,7 @@ export function mergeUpdatedVisibleMessageTags(
       return [messageId, message] as MessageItem;
     }
     changed = true;
-    return [messageId, mergeTagFields(message, nextMessage)] as MessageItem;
+    return [messageId, mergeTagFields(message, nextMessage, options)] as MessageItem;
   });
 
   return changed ? nextItems : current;
@@ -49,12 +80,13 @@ export function mergeUpdatedVisibleMessageTags(
 export function mergeUpdatedDutyFeedMessageTags<T extends MessageFeedWithItems>(
   currentFeeds: T[],
   updates: MessageItem[],
+  options?: MessageTagMergeOptions,
 ): T[] {
   if (currentFeeds.length === 0 || updates.length === 0) return currentFeeds;
 
   let changed = false;
   const nextFeeds = currentFeeds.map((feed) => {
-    const nextItems = mergeUpdatedVisibleMessageTags(feed.items, updates);
+    const nextItems = mergeUpdatedVisibleMessageTags(feed.items, updates, options);
     if (nextItems === feed.items) return feed;
     changed = true;
     return { ...feed, items: nextItems };

@@ -210,12 +210,13 @@ vi.mock('./use-analysis-actions', () => ({
 }));
 
 type HookResult = ReturnType<typeof useAnalysisData>;
+type PartialQueryState = Partial<ReturnType<typeof emptyQueryState>>;
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 let latest: HookResult | null = null;
 
-function renderHook() {
+function renderHook(queryStateOverrides: PartialQueryState = {}) {
   if (container == null) throw new Error('container not initialized');
   const Harness = () => {
     latest = useAnalysisData({
@@ -225,7 +226,7 @@ function renderHook() {
       newestFirst: true,
       onError: hoisted.onError,
       onUnauthorized: hoisted.onUnauthorized,
-      queryState: emptyQueryState(),
+      queryState: { ...emptyQueryState(), ...queryStateOverrides },
       rightSidebarVisible: false,
       rightSidebarTab: null,
       shouldLoadNewCallsigns: false,
@@ -379,6 +380,40 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(currentMapMessage.keywordTokens);
     expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(currentMapMessage.textMarked);
     expect(hoisted.onError).not.toHaveBeenCalled();
+  });
+
+  it('filters model tags again when withoutModelTags is enabled', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      tags: [3, 4],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+      ],
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      tags: [3, 4, 5],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+        { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+      ],
+    });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({ withoutModelTags: true });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(latest?.messages[0][1].inboxTags).toEqual([
+      { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+      { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+    ]);
+    expect(latest?.messages[0][1].tags).toEqual([3, 5]);
+    expect(latest?.mapAttrs.messages).toEqual([]);
   });
 
   it('surfaces fetch failures and leaves state unchanged', async () => {

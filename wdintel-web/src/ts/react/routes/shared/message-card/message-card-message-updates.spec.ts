@@ -80,6 +80,34 @@ describe('mergeUpdatedVisibleMessageTags', () => {
     expect(next[1][1].textMarked).toBe(second.textMarked);
     expect(next[1][1].text).toBe('two');
   });
+
+  it('drops model tags when withoutModelTags is enabled and rebuilds tags from remaining inbox tags', () => {
+    const current = inboxMessage({
+      tags: [3, 4],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+      ],
+    });
+    const updated = inboxMessage({
+      tags: [3, 4, 5],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+        { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+      ],
+    });
+
+    const next = mergeUpdatedVisibleMessageTags([[1, current]], [[1, updated]], {
+      withoutModelTags: true,
+    });
+
+    expect(next[0][1].inboxTags).toEqual([
+      { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+      { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+    ]);
+    expect(next[0][1].tags).toEqual([3, 5]);
+  });
 });
 
 describe('mergeUpdatedDutyFeedMessageTags', () => {
