@@ -16,6 +16,12 @@ export type NetworkCallsignRelationFreqView = NetworkCallsignRelationFreq & {
   color: string;
 };
 
+export type NetworkCallsignRelationFreqState = {
+  availableFreqs: NetworkCallsignRelationFreq[];
+  defaultEnabledFreqs: string[];
+  resolvedEnabledFreqs: string[];
+};
+
 export type NetworkCallsignRelationsNodeView = NetworkCallsignRelationNode & {
   matchedSearch: boolean;
   visible: boolean;
@@ -53,6 +59,76 @@ function normalizeEnabledFreq(value: string): string {
   return value.trim();
 }
 
+function getAvailableRelationFreqs(
+  freqs: NetworkCallsignRelationFreq[],
+  edges: Array<Pick<NetworkCallsignRelationsEdgeView, 'byFreq'>> = [],
+): NetworkCallsignRelationFreq[] {
+  const availableFreqs = new Map<string, NetworkCallsignRelationFreq>();
+
+  for (const freq of freqs) {
+    const normalizedFreq = normalizeEnabledFreq(freq.freq);
+    if (normalizedFreq === '' || availableFreqs.has(normalizedFreq)) continue;
+    availableFreqs.set(normalizedFreq, {
+      ...freq,
+      freq: normalizedFreq,
+    });
+  }
+
+  for (const edge of edges) {
+    for (const item of edge.byFreq) {
+      const normalizedFreq = normalizeEnabledFreq(item.freq);
+      if (normalizedFreq === '' || availableFreqs.has(normalizedFreq)) continue;
+      availableFreqs.set(normalizedFreq, {
+        freq: normalizedFreq,
+        enabledByDefault: false,
+      });
+    }
+  }
+
+  return [...availableFreqs.values()];
+}
+
+export function buildNetworkCallsignRelationFreqState(
+  graph: {
+    freqs: NetworkCallsignRelationFreq[];
+    edges: Array<Pick<NetworkCallsignRelationsEdgeView, 'byFreq'>>;
+  } | null,
+  enabledFreqs: string[],
+): NetworkCallsignRelationFreqState {
+  const availableFreqs = getAvailableRelationFreqs(graph?.freqs ?? [], graph?.edges ?? []);
+  const defaultEnabledFreqs = availableFreqs
+    .filter((freq) => freq.enabledByDefault)
+    .map((freq) => freq.freq);
+  const fallbackEnabledFreqs =
+    defaultEnabledFreqs.length > 0 ? defaultEnabledFreqs : availableFreqs.map((freq) => freq.freq);
+  const availableFreqSet = new Set(availableFreqs.map((freq) => freq.freq));
+  const resolvedEnabledFreqs = [...new Set(enabledFreqs.map(normalizeEnabledFreq))]
+    .filter((freq) => freq !== '')
+    .filter((freq) => availableFreqSet.has(freq));
+
+  return {
+    availableFreqs,
+    defaultEnabledFreqs: fallbackEnabledFreqs,
+    resolvedEnabledFreqs:
+      resolvedEnabledFreqs.length > 0 ? resolvedEnabledFreqs : fallbackEnabledFreqs,
+  };
+}
+
+export function getDefaultNetworkCallsignRelationFreqs(
+  freqs: NetworkCallsignRelationFreq[],
+  edges: Array<Pick<NetworkCallsignRelationsEdgeView, 'byFreq'>> = [],
+): string[] {
+  return buildNetworkCallsignRelationFreqState({ freqs, edges }, []).defaultEnabledFreqs;
+}
+
+export function resolveNetworkCallsignRelationsEnabledFreqs(
+  freqs: NetworkCallsignRelationFreq[],
+  enabledFreqs: string[],
+  edges: Array<Pick<NetworkCallsignRelationsEdgeView, 'byFreq'>> = [],
+): string[] {
+  return buildNetworkCallsignRelationFreqState({ freqs, edges }, enabledFreqs).resolvedEnabledFreqs;
+}
+
 function withFrequencyColors(
   freqs: NetworkCallsignRelationFreq[],
 ): NetworkCallsignRelationFreqView[] {
@@ -70,9 +146,10 @@ export function buildNetworkCallsignRelationsGraphView(
   minIntensity: number,
 ): NetworkCallsignRelationsGraphView {
   const normalizedSearch = normalizeRelationText(searchText);
-  const enabledFreqSet = new Set(
-    enabledFreqs.map(normalizeEnabledFreq).filter((freq) => freq !== ''),
-  );
+  const freqState = buildNetworkCallsignRelationFreqState(graph, enabledFreqs);
+  const availableFreqs = freqState.availableFreqs;
+  const resolvedEnabledFreqs = freqState.resolvedEnabledFreqs;
+  const enabledFreqSet = new Set(resolvedEnabledFreqs.map(normalizeEnabledFreq));
 
   const nodes = (graph?.nodes ?? []).map((node) => ({
     ...node,
@@ -160,7 +237,7 @@ export function buildNetworkCallsignRelationsGraphView(
   return {
     nodes: visibleNodes,
     edges: filteredEdges,
-    freqs: withFrequencyColors(graph?.freqs ?? []),
+    freqs: withFrequencyColors(availableFreqs),
     matchedNodeIds,
     visibleNodeIds: filteredVisibleNodeIds,
     visibleEdgeIds: filteredVisibleEdgeIds,

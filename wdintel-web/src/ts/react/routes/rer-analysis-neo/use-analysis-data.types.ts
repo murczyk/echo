@@ -46,6 +46,7 @@ export type UseAnalysisDataResult = {
   callsignGraph: NetJsonGraphAndMeta | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
+  callsignGraphLoadError?: string | null;
   callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoading: boolean;

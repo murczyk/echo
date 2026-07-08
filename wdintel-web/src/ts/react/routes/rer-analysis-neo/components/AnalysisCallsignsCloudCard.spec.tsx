@@ -12,6 +12,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  CircularProgress: () => <span>loading</span>,
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -31,13 +32,13 @@ type Rendered = {
   root: Root;
 };
 
-async function renderComponent(items: AnalysisCountItem[]): Promise<Rendered> {
+async function renderComponent(items: AnalysisCountItem[], loading = false): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
   await act(async () => {
-    root.render(<AnalysisCallsignsCloudCard items={items} />);
+    root.render(<AnalysisCallsignsCloudCard items={items} loading={loading} />);
   });
 
   return { container, root };
@@ -94,5 +95,29 @@ describe('AnalysisCallsignsCloudCard', () => {
 
     expect(view.container.textContent).toContain('Немає даних');
     expect(view.container.textContent).not.toContain('Показати ще');
+  });
+
+  it('keeps existing callsign chips visible while refreshing', async () => {
+    const view = await renderComponent(
+      [
+        { key: 'Позивний 1', count: 4 },
+        { key: 'Позивний 2', count: 2 },
+      ],
+      true,
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Позивний 1');
+    expect(view.container.textContent).toContain('Позивний 2');
+    expect(view.container.textContent).toContain('Оновлюється...');
+    expect(view.container.textContent).not.toContain('Завантаження...');
+  });
+
+  it('shows the loading state before the first callsigns arrive', async () => {
+    const view = await renderComponent([], true);
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Завантаження...');
+    expect(view.container.textContent).not.toContain('Оновлюється...');
   });
 });

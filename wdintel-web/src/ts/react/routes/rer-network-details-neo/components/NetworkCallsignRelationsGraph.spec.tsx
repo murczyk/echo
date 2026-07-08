@@ -25,6 +25,8 @@ type Rendered = {
   root: Root;
 };
 
+type GraphProps = Parameters<typeof NetworkCallsignRelationsGraph>[0];
+
 function createGraph(): NetworkCallsignRelationsRsp {
   return {
     nodes: [
@@ -68,7 +70,7 @@ function createGraph(): NetworkCallsignRelationsRsp {
   };
 }
 
-function renderGraph(relationsSelectedNodeId: string | null = null) {
+function renderGraph(overrides: Partial<GraphProps> = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -98,33 +100,35 @@ function renderGraph(relationsSelectedNodeId: string | null = null) {
 
   vi.mocked(getNetworkCallsignRelationMessages).mockImplementation(() => deferred.promise);
 
+  const props: GraphProps = {
+    networkId: 42,
+    relations: createGraph(),
+    relationsSearch: '',
+    relationsEnabledFreqs: ['652.111'],
+    relationsMinIntensity: 1,
+    relationsShowLabels: true,
+    relationsSelectedNodeId: null,
+    relationsSelectedEdgeId: null,
+    relationsSince: '2026-05-20',
+    relationsTill: '2026-05-21',
+    relationsLoading: false,
+    onSearchChange: vi.fn(),
+    onEnabledFreqsChange: vi.fn(),
+    onMinIntensityChange: vi.fn(),
+    onShowLabelsChange: vi.fn(),
+    onSelectNodeId: vi.fn(),
+    onSelectEdgeId: vi.fn(),
+    onRelationsSinceChange: vi.fn(),
+    onRelationsTillChange: vi.fn(),
+    onReload: vi.fn(),
+    ...overrides,
+  };
+
   act(() => {
-    root.render(
-      <NetworkCallsignRelationsGraph
-        networkId={42}
-        relations={createGraph()}
-        relationsSearch=""
-        relationsEnabledFreqs={['652.111']}
-        relationsMinIntensity={1}
-        relationsShowLabels={true}
-        relationsSelectedNodeId={relationsSelectedNodeId}
-        relationsSelectedEdgeId={null}
-        relationsSince="2026-05-20"
-        relationsTill="2026-05-21"
-        relationsLoading={false}
-        onSearchChange={vi.fn()}
-        onEnabledFreqsChange={vi.fn()}
-        onMinIntensityChange={vi.fn()}
-        onShowLabelsChange={vi.fn()}
-        onSelectNodeId={vi.fn()}
-        onSelectEdgeId={vi.fn()}
-        onRelationsSinceChange={vi.fn()}
-        onRelationsTillChange={vi.fn()}
-      />,
-    );
+    root.render(<NetworkCallsignRelationsGraph {...props} />);
   });
 
-  return { container, root, deferred };
+  return { container, root, deferred, props };
 }
 
 describe('NetworkCallsignRelationsGraph', () => {
@@ -142,7 +146,7 @@ describe('NetworkCallsignRelationsGraph', () => {
   });
 
   it('loads selected node messages and renders them in the details panel', async () => {
-    const view = renderGraph('ALPHA');
+    const view = renderGraph({ relationsSelectedNodeId: 'ALPHA' });
     rendered.push(view);
 
     await act(async () => {
@@ -167,6 +171,29 @@ describe('NetworkCallsignRelationsGraph', () => {
 
     expect(view.container.textContent).toContain('hello');
     expect(view.container.textContent).toContain('652.111');
+  });
+
+  it('does not refetch selected messages when only search or intensity changes', async () => {
+    const view = renderGraph({ relationsSelectedNodeId: 'ALPHA' });
+    rendered.push(view);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(getNetworkCallsignRelationMessages).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.root.render(
+        <NetworkCallsignRelationsGraph
+          {...view.props}
+          relationsSearch="alp"
+          relationsMinIntensity={2}
+        />,
+      );
+    });
+
+    expect(getNetworkCallsignRelationMessages).toHaveBeenCalledTimes(1);
   });
 
   it('toggles fullscreen through the stage portal and exits on Escape', async () => {

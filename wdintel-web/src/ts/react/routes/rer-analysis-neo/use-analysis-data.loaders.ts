@@ -40,6 +40,7 @@ import type {
   AnalysisPalitrasLoadState,
   AnalysisQueryState,
 } from './types';
+import type { InvalidateCallsignGraphOptions } from './use-analysis-graph-data';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
@@ -154,17 +155,22 @@ export function useAnalysisDataLoaders(params: Params) {
     correlatedFreqsRequestKeyRef.current = null;
   }, []);
 
-  const invalidateCallsignGraph = useCallback(() => {
-    callsignGraphRequestRef.current += 1;
-    setCallsignGraph(null);
-    setCallsignGraphLoading(false);
-    setCallsignGraphLoadVersion((current) => current + 1);
-  }, [
-    callsignGraphRequestRef,
-    setCallsignGraph,
-    setCallsignGraphLoading,
-    setCallsignGraphLoadVersion,
-  ]);
+  const invalidateCallsignGraph = useCallback(
+    (options?: InvalidateCallsignGraphOptions) => {
+      callsignGraphRequestRef.current += 1;
+      if (options?.clearGraph) {
+        setCallsignGraph(null);
+      }
+      setCallsignGraphLoading(false);
+      setCallsignGraphLoadVersion((current) => current + 1);
+    },
+    [
+      callsignGraphRequestRef,
+      setCallsignGraph,
+      setCallsignGraphLoading,
+      setCallsignGraphLoadVersion,
+    ],
+  );
 
   const invalidateSummaryData = useCallback(
     (keepLoading = false) => {
@@ -184,10 +190,7 @@ export function useAnalysisDataLoaders(params: Params) {
     rightSidebarRequestRef.current += 1;
     rightSidebarRequestKeyRef.current = null;
     setRightSidebarLoading(false);
-    setTopCallsigns([]);
-    setTopLocations([]);
-    setTopUnits([]);
-  }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
+  }, [setRightSidebarLoading]);
 
   const loadMissingCallsignInfos = useCallback(
     async (callsigns: string[], requestId: number) => {

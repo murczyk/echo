@@ -48,10 +48,7 @@ export function useAnalysisTopSidebarData({
     rightSidebarRequestRef.current += 1;
     rightSidebarRequestKeyRef.current = null;
     setRightSidebarLoading(false);
-    setTopCallsigns([]);
-    setTopLocations([]);
-    setTopUnits([]);
-  }, [setRightSidebarLoading, setTopCallsigns, setTopLocations, setTopUnits]);
+  }, [setRightSidebarLoading]);
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);

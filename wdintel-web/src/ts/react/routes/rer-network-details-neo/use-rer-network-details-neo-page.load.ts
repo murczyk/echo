@@ -38,6 +38,7 @@ import {
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
+import { buildNetworkCallsignRelationFreqState } from './network-relations';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 
@@ -139,22 +140,9 @@ export function deriveRelationsEnabledFreqs(
   currentRelations: NetworkCallsignRelationsRsp | null,
   relations: NetworkCallsignRelationsRsp,
 ): string[] {
-  const fallbackEnabledFreqs = relations.freqs
-    .filter((freq) => freq.enabledByDefault)
-    .map((freq) => freq.freq);
-  const fallbackFreqs =
-    fallbackEnabledFreqs.length > 0
-      ? fallbackEnabledFreqs
-      : relations.freqs.map((freq) => freq.freq);
-
-  if (currentRelations === null) {
-    return fallbackFreqs;
-  }
-
-  const nextEnabledFreqs = currentRelationsEnabledFreqs.filter((freq) =>
-    relations.freqs.some((item) => item.freq === freq),
-  );
-  return nextEnabledFreqs.length > 0 ? nextEnabledFreqs : fallbackFreqs;
+  void currentRelations;
+  return buildNetworkCallsignRelationFreqState(relations, currentRelationsEnabledFreqs)
+    .resolvedEnabledFreqs;
 }
 
 export function isCurrentRelationsWindow(
