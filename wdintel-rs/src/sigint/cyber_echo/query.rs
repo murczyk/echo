@@ -66,15 +66,19 @@ where
 pub async fn validate_computer_name_id<C>(
     dbx: &C,
     computer_name_id: i64,
-) -> Result<computer_name::Model, AppError>
+) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    computer_name::Entity::find_by_id(computer_name_id)
-        .one(dbx)
+    let count = computer_name::Entity::find()
+        .filter(computer_name::Column::Id.eq(computer_name_id))
+        .count(dbx)
         .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    if count == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
 }
 
 pub async fn set_inbox_items_computer_name<C>(
@@ -163,6 +167,7 @@ where
         message_uid: NotSet,
         datasource_group_id: Set(Some(datasource_group_id)),
         operator_tags: NotSet,
+        attachments_hash: NotSet,
     }
     .insert(dbx)
     .await
