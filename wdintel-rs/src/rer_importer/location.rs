@@ -4,6 +4,12 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 pub fn extract_location(inp: &str) -> Result<Option<String>, AppError> {
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
+    {
+        return Ok(Some(zp_peleng.location));
+    }
+
     '_if: {
         lazy_static! {
             static ref RE: Regex =
@@ -99,6 +105,27 @@ mod tests {
 47.4067019, 35.8642446"#;
         let res = extract_location(body).unwrap().unwrap();
         assert_eq!(res, "СХ НОВОПРОКОПІВКА")
+    }
+
+    #[test]
+    fn extract_location_zp_peleng_vorony_odina_mgrs_format() {
+        let body = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
+        let res = extract_location(body).unwrap().unwrap();
+        assert_eq!(res, "р-н. Шевченка")
+    }
+
+    #[test]
+    fn extract_location_zp_peleng_vorony_odina_sk42_format() {
+        let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_location(body).unwrap().unwrap();
+        assert_eq!(res, "Р-н Таврія")
+    }
+
+    #[test]
+    fn extract_location_zp_digital_post_alt_format() {
+        let body = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let res = extract_location(body).unwrap().unwrap();
+        assert_eq!(res, "ЩЕРБАКИ, МИРНЕ")
     }
 
     #[test]

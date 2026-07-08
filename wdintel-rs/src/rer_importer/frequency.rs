@@ -124,6 +124,13 @@ mod tests {
     }
 
     #[test]
+    fn extract_freq_zp_digital_post_alt_format() {
+        let input = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, Some("167.3000".to_string()));
+    }
+
+    #[test]
     fn extract_freq_test02() {
         let input = r#"08.02.2023_21:00 F=455.5550(МГц)"#;
         let res = extract_freq(input).unwrap();
