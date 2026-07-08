@@ -9,6 +9,7 @@ import type {
   InboxMessagesRsp,
   InterseptionKind,
   MessageMediaInfo,
+  MessageIdsRsp,
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
@@ -16,6 +17,7 @@ import type {
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
+import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
@@ -169,6 +171,18 @@ export function normalizeInboxMessageMetadata(
     hashIdEndIndex: (metadata.hashIdEndIndex ?? metadata.hash_id_end_index ?? null) as
       number | null,
   };
+}
+
+export async function fetchMessagesByIds(
+  messageIds: number[],
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessageType]>> {
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/messages-by-id',
+    transformCamelToSnake({ messageIds }),
+    options,
+  );
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {

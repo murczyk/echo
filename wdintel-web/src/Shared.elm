@@ -24,6 +24,7 @@ import Process
 import Random
 import Route exposing (Route)
 import Route.Path
+import Set exposing (Set)
 import Shared.Components.Navbar
 import Shared.Components.Toast
 import Shared.Model
@@ -507,6 +508,9 @@ update req msg model =
                 eventService =
                     model.eventService
 
+                inboxChangedMessageIds =
+                    extractInboxChangedMessageIds response.events
+
                 newEventService =
                     { eventService
                         | lastEventId = response.lastEventId
@@ -524,6 +528,11 @@ update req msg model =
             ( { model | eventService = newEventService }
             , E.batch
                 [ processEventsEffect
+                , if List.isEmpty inboxChangedMessageIds then
+                    E.none
+
+                  else
+                    E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedMessageIds
                 , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
                 ]
             )
@@ -626,6 +635,27 @@ update req msg model =
             ( { model | eventSubscriptions = Core.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
             , E.none
             )
+
+
+extractInboxChangedMessageIds : List B.EventMsg -> List Int
+extractInboxChangedMessageIds events =
+    let
+        step event ( messageIds, seen ) =
+            case event.eventType of
+                B.EtInboxChanged messageId ->
+                    if Set.member messageId seen then
+                        ( messageIds, seen )
+
+                    else
+                        ( messageId :: messageIds, Set.insert messageId seen )
+
+                _ ->
+                    ( messageIds, seen )
+    in
+    events
+        |> List.foldl step ( [], Set.empty )
+        |> Tuple.first
+        |> List.reverse
 
 
 isRerNetworkDetailsPath : String -> Bool

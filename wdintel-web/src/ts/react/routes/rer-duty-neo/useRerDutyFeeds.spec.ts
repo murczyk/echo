@@ -10,6 +10,7 @@ import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
   fetchAnalysisCallsignInfos: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
   fetchUserSettings: vi.fn(),
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
@@ -17,6 +18,7 @@ const hoisted = vi.hoisted(() => ({
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
+  onInboxChangedMessageIds: vi.fn(),
   messageFeeds: [] as Array<{
     id: string;
     items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
@@ -103,8 +105,23 @@ vi.mock('./useRerDutyMessageActions', () => ({
   }),
 }));
 
+vi.mock('../shared/useInboxChangedMessageIds', () => ({
+  useInboxChangedMessageIds: ({
+    onMessageIds,
+  }: {
+    onMessageIds: (messageIds: number[]) => void | Promise<void>;
+  }) => {
+    hoisted.onInboxChangedMessageIds = onMessageIds;
+  },
+}));
+
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: hoisted.fetchMessagesByIds,
+}));
+
 vi.mock('./useRerDutyFeedState', () => ({
   useRerDutyFeedState: () => {
+    const [messageFeeds, setMessageFeeds] = React.useState(hoisted.messageFeeds);
     const [callsignInfoMap, setCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
     >(hoisted.initialCallsignInfoMap);
@@ -113,7 +130,7 @@ vi.mock('./useRerDutyFeedState', () => ({
     >(hoisted.initialInboxCallsignInfoMap);
 
     return {
-      messageFeeds: hoisted.messageFeeds,
+      messageFeeds,
       inboxCallsignInfoMap,
       callsignInfoMap,
       mergeResolvedCallsigns: (items: Array<{ callsign: string; res: unknown[] }>) => {
@@ -129,7 +146,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       },
       setError: hoisted.setFeedErrorMock,
       setWatchModeByFeedId: vi.fn(),
-      setMessageFeeds: vi.fn(),
+      setMessageFeeds,
       nearBottomByFeedIdRef: { current: {} },
       atBottomByFeedIdRef: { current: {} },
       columnRefsRef: { current: {} },
@@ -250,6 +267,7 @@ describe('useRerDutyFeeds', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     latest = null;
+    hoisted.onInboxChangedMessageIds = vi.fn();
     hoisted.initialCallsignInfoMap = {};
     hoisted.initialInboxCallsignInfoMap = {};
     hoisted.messageFeeds = [

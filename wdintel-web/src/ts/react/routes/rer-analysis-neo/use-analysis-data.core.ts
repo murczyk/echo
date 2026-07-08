@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 
+import { fetchMessagesByIds } from '../../services/api/analysis';
 import { buildInboxReq, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
@@ -9,6 +10,8 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
 import { useAnalysisActions } from './use-analysis-actions';
+import { mergeUpdatedVisibleMessages } from '../shared/message-card/message-card-message-updates';
+import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import {
   buildAnalysisActionsParams,
   buildReloadOrchestratorParams,
@@ -190,6 +193,35 @@ export function useAnalysisData({
       setHasLoadedInitialMessages: messageList.setHasLoadedInitialMessages,
     }),
   );
+
+  useInboxChangedMessageIds({
+    onMessageIds: async (messageIds) => {
+      const visibleMessageIds = new Set<number>();
+      messageList.messages.forEach(([messageId]) => {
+        visibleMessageIds.add(messageId);
+      });
+      mapData.mapOpenMessages.forEach(([messageId]) => {
+        visibleMessageIds.add(messageId);
+      });
+
+      const visibleChangedMessageIds = messageIds.filter((messageId) =>
+        visibleMessageIds.has(messageId),
+      );
+      if (visibleChangedMessageIds.length === 0) return;
+
+      try {
+        const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds);
+        if (nextMessages.length === 0) return;
+        messageList.setMessages((current) => mergeUpdatedVisibleMessages(current, nextMessages));
+        mapData.setMapOpenMessages((current) => mergeUpdatedVisibleMessages(current, nextMessages));
+        void loadMissingNetworksForMessages(nextMessages);
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) {
+          onError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      }
+    },
+  });
 
   reloadRef.current = reload;
 

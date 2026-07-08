@@ -26,7 +26,6 @@ import type {
   FreqDailyActivityCount,
   FreqStatsReq,
   GroupStatsRsp,
-  InboxMessage,
   MapPointsRsp,
   MetadataStatsRsp,
   NetJsonGraphAndMeta,
@@ -51,6 +50,7 @@ import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import type { BgtaskStatusAndLogsRsp } from './bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
+export { fetchMessagesByIds } from './inbox-messages';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -83,7 +83,6 @@ type AreaOfResponsibilityStatsRsp = {
   aors: AnalysisStatsAor[];
   aorNames: AreaOfResponsibilityEntry[];
 };
-type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_text_c: 'CNTextC',
@@ -349,16 +348,6 @@ export async function fetchAnalysisMapPoints(
     options,
   );
   return transformSnakeToCamel<MapPointsRsp>(raw);
-}
-
-export async function fetchMessagesByIds(
-  messageIds: number[],
-): Promise<Array<[number, InboxMessage]>> {
-  const raw = await postJson<unknown>(
-    '/api/rer-importer/messages-by-id',
-    transformCamelToSnake({ messageIds }),
-  );
-  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
 export async function fetchMessageComments(req: BatchMessageCommentsReq): Promise<MessageComments> {
