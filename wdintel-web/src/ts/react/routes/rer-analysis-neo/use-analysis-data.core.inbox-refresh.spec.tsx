@@ -1,0 +1,429 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { InboxMessage } from '../../../../Bindings';
+import { emptyQueryState } from './helpers';
+import { useAnalysisData } from './use-analysis-data.core';
+
+const hoisted = vi.hoisted(() => ({
+  fetchMessagesByIds: vi.fn(),
+  onInboxChangedMessageIds: vi.fn(),
+  messages: [] as Array<[number, InboxMessage]>,
+  mapOpenMessages: [] as Array<[number, InboxMessage]>,
+  onError: vi.fn(),
+  onUnauthorized: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock('../../services/api/analysis', () => ({
+  fetchMessagesByIds: hoisted.fetchMessagesByIds,
+}));
+
+vi.mock('../shared/useInboxChangedMessageIds', () => ({
+  useInboxChangedMessageIds: ({
+    onMessageIds,
+  }: {
+    onMessageIds: (messageIds: number[]) => void | Promise<void>;
+  }) => {
+    hoisted.onInboxChangedMessageIds = onMessageIds;
+  },
+}));
+
+vi.mock('./use-analysis-data.wiring', () => ({
+  buildAnalysisActionsParams: (input: unknown) => input,
+  buildReloadOrchestratorParams: (input: unknown) => input,
+}));
+
+vi.mock('./use-analysis-data.support', () => ({
+  useLoadMissingNetworksForMessages: () => vi.fn().mockResolvedValue(undefined),
+  mergeNetworksById: vi.fn(),
+  shouldSkipNewCallsignsLoad: vi.fn(),
+}));
+
+vi.mock('./use-analysis-reference-state', () => ({
+  useAnalysisReferenceState: () => ({
+    networksRef: { current: [] },
+    unitsMapRef: { current: {} },
+    summaryCallsignsInfoRef: { current: {} },
+    optionsFreqsRef: { current: [] },
+    shouldLoadNewCallsignsRef: { current: false },
+    networkDisplayMap: {},
+    setNetworkDisplayMap: vi.fn(),
+    setNetworks: vi.fn(),
+    unitsMap: {},
+    setSummaryCallsignsInfo: vi.fn(),
+    groupInfos: {},
+    setGroupInfos: vi.fn(),
+    options: { freqs: [] },
+    setOptions: vi.fn(),
+    setProfiles: vi.fn(),
+    setTagsMap: vi.fn(),
+    setTagsOrder: vi.fn(),
+    profiles: {},
+    networks: [],
+  }),
+}));
+
+vi.mock('./use-analysis-message-list', () => ({
+  useAnalysisMessageList: () => {
+    const [messages, setMessages] = React.useState(hoisted.messages);
+    return {
+      counts: null,
+      aorEntries: [],
+      messagesLoading: false,
+      hasLoadedInitialMessages: false,
+      messagesPaging: false,
+      messages,
+      messageComments: {},
+      noMoreToLoad: false,
+      nolimitShown: false,
+      invalidateMessagePaging: vi.fn(),
+      loadAllMessages: vi.fn(),
+      loadMessageComments: vi.fn(),
+      loadMoreMessages: vi.fn(),
+      setAorEntries: vi.fn(),
+      setCounts: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setMessageComments: vi.fn(),
+      setMessages,
+      setMessagesLoading: vi.fn(),
+      setMessagesPaging: vi.fn(),
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      messageCommentsLoadVersionRef: { current: 0 },
+    };
+  },
+}));
+
+vi.mock('./use-analysis-map-data', () => ({
+  useAnalysisMapData: () => {
+    const [mapOpenMessages, setMapOpenMessages] = React.useState(hoisted.mapOpenMessages);
+    return {
+      mapLoading: false,
+      mapDateRange: { startDate: 0, endDate: 0 },
+      mapPoints: [],
+      mapNetworkUnits: [],
+      mapOpenMessages,
+      mapPalitras: [],
+      mapPalitrasLoaded: false,
+      mapPalitrasLoadState: 'idle',
+      mapMessagesLoadVersionRef: { current: 0 },
+      mapDateRangeLoadVersionRef: { current: 0 },
+      mapAttrs: { messages: mapOpenMessages },
+      refreshMapDateRange: vi.fn(),
+      loadMessagesForMap: vi.fn(),
+      loadMapPalitras: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapPoints: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      setMapOpenMessages,
+      setMapPalitras: vi.fn(),
+      setMapPalitrasLoaded: vi.fn(),
+      setMapPalitrasLoadState: vi.fn(),
+    };
+  },
+}));
+
+vi.mock('./use-analysis-sidebar-data', () => ({
+  useAnalysisSidebarData: () => ({
+    callsignGraph: null,
+    callsignGraphLoading: false,
+    callsignGraphLoadVersion: 0,
+    callsignGraphLoadError: null,
+    callsignGraphNolimit: false,
+    correlatedFreqs: [],
+    correlatedFreqsLoading: false,
+    groupsActivityPeriod: 'selected',
+    downloadGeojson: vi.fn(),
+    downloadKmz: vi.fn(),
+    downloadSummaryXlsx: vi.fn(),
+    groupsActivity: null,
+    groupsActivityLoadedFreq: null,
+    groupsActivityLoadedPeriod: null,
+    groupsActivityLoading: false,
+    invalidateCallsignGraph: vi.fn(),
+    invalidateCorrelatedFreqsCache: vi.fn(),
+    invalidateRightSidebarData: vi.fn(),
+    invalidateSummaryData: vi.fn(),
+    loadCallsignGraph: vi.fn(),
+    loadSummaryData: vi.fn(),
+    loadTopSidebarData: vi.fn(),
+    newCallsigns: null,
+    newCallsignsLoading: false,
+    newCallsignsLoadedKey: null,
+    newCallsignsLoadedKeyRef: { current: null },
+    newCallsignsPendingKeyRef: { current: null },
+    newCallsignsRequestRef: { current: 0 },
+    setNewCallsigns: vi.fn(),
+    setNewCallsignsLoading: vi.fn(),
+    setNewCallsignsLoadedKey: vi.fn(),
+    setTopCallsigns: vi.fn(),
+    setTopFreqs: vi.fn(),
+    setTopLocations: vi.fn(),
+    setTopUnits: vi.fn(),
+    summaryLoading: false,
+    summaryLoaded: false,
+    summaryHasLoadedOnce: false,
+    rightSidebarLoading: false,
+    summaryRows: [],
+    topCallsigns: [],
+    topFreqs: [],
+    topLocations: [],
+    topUnits: [],
+  }),
+}));
+
+vi.mock('./use-analysis-filter-sections', () => ({
+  useAnalysisFilterSections: () => ({
+    filterSectionLoadStates: {},
+    isFilterSectionEmptyLoading: vi.fn(),
+    isFilterSectionLoading: vi.fn(),
+    isFilterSectionStale: vi.fn(),
+    getLoadedFilterSections: vi.fn(),
+    getReloadFilterSections: vi.fn(),
+    invalidateFilterSectionLoads: vi.fn(),
+    invalidateFilterSectionLoadsForPatch: vi.fn(),
+    invalidateTagFacetLoad: vi.fn(),
+    loadFilterSection: vi.fn(),
+    loadInitialFilterSections: vi.fn(),
+  }),
+}));
+
+vi.mock('./use-analysis-reload-orchestrator', () => ({
+  useAnalysisReloadOrchestrator: () => ({ reload: vi.fn().mockResolvedValue(undefined) }),
+}));
+
+vi.mock('./use-analysis-actions', () => ({
+  useAnalysisActions: () => ({
+    clearAnalysisResults: vi.fn(),
+    onUpdateLocalMessage: vi.fn(),
+    messageActionState: { botTagAction: null, messageActionCount: 0 },
+  }),
+}));
+
+type HookResult = ReturnType<typeof useAnalysisData>;
+type PartialQueryState = Partial<ReturnType<typeof emptyQueryState>>;
+
+let root: Root | null = null;
+let container: HTMLDivElement | null = null;
+let latest: HookResult | null = null;
+
+function renderHook(queryStateOverrides: PartialQueryState = {}) {
+  if (container == null) throw new Error('container not initialized');
+  const Harness = () => {
+    latest = useAnalysisData({
+      authUserName: null,
+      currentUser: null,
+      centerTab: 'messages',
+      newestFirst: true,
+      onError: hoisted.onError,
+      onUnauthorized: hoisted.onUnauthorized,
+      queryState: { ...emptyQueryState(), ...queryStateOverrides },
+      rightSidebarVisible: false,
+      rightSidebarTab: null,
+      shouldLoadNewCallsigns: false,
+      deferInitialLoad: false,
+      rightPanelOpen: false,
+    });
+    return null;
+  };
+
+  root = createRoot(container);
+  act(() => {
+    root?.render(React.createElement(Harness));
+  });
+}
+
+function inboxMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
+  return {
+    messageUid: null,
+    text: '',
+    media: [],
+    images: [],
+    imageRecognized: [],
+    date: null,
+    time: null,
+    freq: null,
+    coords: null,
+    callsigns: [],
+    callsignsAlg2: [],
+    checked: false,
+    important: false,
+    bookmarked: false,
+    timestamp: null,
+    groupMasterKey: null,
+    sender: null,
+    extendedForm: null,
+    post: null,
+    postId: null,
+    unit: null,
+    callsignTokens: null,
+    signalTokens: null,
+    pointTokens: null,
+    noHeadersBody: null,
+    keywordTokens: null,
+    textMarked: null,
+    datasourceId: null,
+    location: null,
+    tags: [],
+    networkIds: [],
+    inboxTags: [],
+    metadata: [],
+    ...overrides,
+  } as InboxMessage;
+}
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  latest = null;
+  hoisted.fetchMessagesByIds.mockReset();
+  hoisted.onInboxChangedMessageIds = vi.fn();
+  hoisted.onError.mockReset();
+  hoisted.onUnauthorized.mockReturnValue(false);
+  hoisted.messages = [];
+  hoisted.mapOpenMessages = [];
+});
+
+afterEach(() => {
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+  container?.remove();
+  container = null;
+});
+
+describe('useAnalysisData inbox refreshes', () => {
+  it('skips fetching when no visible ids overlap', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'one' })]];
+    hoisted.mapOpenMessages = [[2, inboxMessage({ text: 'map' })]];
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([9]);
+    });
+
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+  });
+
+  it('refreshes visible ids and preserves existing rendered fields', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      keywordTokens: [{ text: 'keyword' }] as never,
+      textMarked: [{ CNTextC: { text: 'marked' } }] as never,
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    });
+    const currentMapMessage = inboxMessage({
+      text: 'map-current',
+      keywordTokens: [{ text: 'map-keyword' }] as never,
+      textMarked: [{ CNTextC: { text: 'map-marked' } }] as never,
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      keywordTokens: [{ text: 'new keyword' }] as never,
+      textMarked: [{ CNTextC: { text: 'new marked' } }] as never,
+      tags: [2],
+      inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
+    });
+    hoisted.messages = [
+      [1, currentMessage],
+      [2, currentMessage],
+    ];
+    hoisted.mapOpenMessages = [[2, currentMapMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[2, updatedMessage]]);
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([2]);
+    });
+
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
+    expect(latest?.messages).toEqual([
+      [1, currentMessage],
+      [
+        2,
+        {
+          ...currentMessage,
+          tags: [2],
+          inboxTags: [
+            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
+          ],
+        },
+      ],
+    ]);
+    expect(latest?.mapAttrs.messages).toEqual([
+      [
+        2,
+        {
+          ...currentMapMessage,
+          tags: [2],
+          inboxTags: [
+            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
+          ],
+        },
+      ],
+    ]);
+    expect(latest?.messages[1][1].keywordTokens).toBe(currentMessage.keywordTokens);
+    expect(latest?.messages[1][1].textMarked).toBe(currentMessage.textMarked);
+    expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(currentMapMessage.keywordTokens);
+    expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(currentMapMessage.textMarked);
+    expect(hoisted.onError).not.toHaveBeenCalled();
+  });
+
+  it('filters model tags again when withoutModelTags is enabled', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      tags: [3, 4],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+      ],
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      tags: [3, 4, 5],
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+        { id: 2, tagId: 4, confidence: 1, login: null, model: 'bot', organismId: null },
+        { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+      ],
+    });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({ withoutModelTags: true });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(latest?.messages[0][1].inboxTags).toEqual([
+      { id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null },
+      { id: 3, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+    ]);
+    expect(latest?.messages[0][1].tags).toEqual([3, 5]);
+    expect(latest?.mapAttrs.messages).toEqual([]);
+  });
+
+  it('surfaces fetch failures and leaves state unchanged', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
+    hoisted.mapOpenMessages = [[1, inboxMessage({ text: 'map-current' })]];
+    hoisted.fetchMessagesByIds.mockRejectedValueOnce(new Error('boom'));
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(hoisted.onError).toHaveBeenCalledWith('boom');
+    expect(latest?.messages[0][1].text).toBe('current');
+    expect(latest?.mapAttrs.messages[0][1].text).toBe('map-current');
+  });
+});

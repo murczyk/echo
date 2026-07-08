@@ -30,7 +30,7 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
-  const referenceState = useAnalysisReferenceState({ currentUser, shouldLoadNewCallsigns });
+  const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns });
   const optionsFreqValues = useMemo(
     () => referenceState.options.freqs.map((option) => option.value),
     [referenceState.options.freqs],
@@ -54,7 +54,6 @@ export function useAnalysisData({
   });
 
   const messageList = useAnalysisMessageList({
-    currentUserRef: referenceState.currentUserRef,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
@@ -62,8 +61,6 @@ export function useAnalysisData({
     optionsFreqValues,
     queryState,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
-    usersRef: referenceState.usersRef,
-    setUsers: referenceState.setUsers,
   });
 
   const {
@@ -255,7 +252,6 @@ export function useAnalysisData({
     onToggleMessageTag: messageActionState.onToggleMessageTag,
     options: referenceState.options,
     profiles: referenceState.profiles,
-    users: referenceState.users,
     refreshMapDateRange: mapData.refreshMapDateRange,
     reload,
     summaryLoading: sidebarData.summaryLoading,

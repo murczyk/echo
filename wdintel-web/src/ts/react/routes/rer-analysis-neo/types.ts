@@ -189,7 +189,6 @@ export type AnalysisPageState = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
-  users: Record<string, User | null>;
   tagsLayout: TagsLayoutVariant;
   rightPanelOpen: boolean;
   rightSidebarTab: AnalysisSidebarTab | null;

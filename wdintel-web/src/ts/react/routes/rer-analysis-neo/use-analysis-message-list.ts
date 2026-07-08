@@ -5,7 +5,6 @@ import type {
   CountStatsRsp,
   InboxMessage,
   MessageComment,
-  User,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/analysis';
 import { buildInboxReq } from './helpers';
@@ -16,7 +15,6 @@ import type { AnalysisAorEntry, AnalysisQueryState } from './types';
 import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
-  currentUserRef: React.MutableRefObject<User | null>;
   loadMissingNetworksForMessages: (messageItems: Array<[number, InboxMessage]>) => Promise<void>;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -24,12 +22,9 @@ type Params = {
   optionsFreqValues: string[];
   queryState: AnalysisQueryState;
   setSummaryCallsignsInfo: React.Dispatch<React.SetStateAction<Record<string, CallsignInfoRes>>>;
-  usersRef: React.MutableRefObject<Record<string, User | null>>;
-  setUsers: React.Dispatch<React.SetStateAction<Record<string, User | null>>>;
 };
 
 export function useAnalysisMessageList({
-  currentUserRef,
   loadMissingNetworksForMessages,
   newestFirst,
   onError,
@@ -37,8 +32,6 @@ export function useAnalysisMessageList({
   optionsFreqValues,
   queryState,
   setSummaryCallsignsInfo,
-  usersRef,
-  setUsers,
 }: Params) {
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
@@ -67,20 +60,16 @@ export function useAnalysisMessageList({
       await loadMissingMessageCommentsForMessages(
         loadedMessages,
         {
-          authUserName: currentUserRef.current?.name ?? null,
-          currentUser: currentUserRef.current,
           messageComments: messageCommentsRef.current,
           messageCommentsLoadVersionRef,
           onError,
           onUnauthorized,
           setMessageComments,
-          setUsers,
-          users: usersRef.current,
         },
         forceReload,
       );
     },
-    [currentUserRef, onError, onUnauthorized, setUsers, usersRef],
+    [onError, onUnauthorized],
   );
 
   const loadAllMessages = useCallback(async () => {

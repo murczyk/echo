@@ -91,7 +91,7 @@ pub async fn get_inbox_map_items(
 pub async fn aggregate_to_inbox_messages(
     login: &str,
     messages: Vec<InboxMessageDesc>,
-    logins: &Vec<String>,
+    _logins: &Vec<String>,
     req: &&InboxMessagesReq,
     env: &&Env,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -360,8 +360,8 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            env, message.id, logins,
+        let m_comment = find_sigint_comment_by_signal_message_id_and_login(
+            env, message.id, login,
         )
         .await?;
         let location_v2 = match message.location_v2.clone() {
@@ -428,14 +428,29 @@ pub async fn aggregate_to_inbox_messages(
     Ok(res)
 }
 
-pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_login(
     env: &Env,
     item_id: i64,
-    logins: &Vec<String>,
+    login: &str,
 ) -> Result<Option<sigint_comment::Model>, AppError> {
     let m_comment = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+        .filter(sigint_comment::Column::Login.eq(login))
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+
+    Ok(m_comment)
+}
+
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+    env: &Env,
+    item_id: i64,
+    logins: &[String],
+) -> Result<Option<sigint_comment::Model>, AppError> {
+    let m_comment = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
+        .filter(sigint_comment::Column::Login.eq_any(logins.to_vec()))
         .one(&env.dbx)
         .await
         .c(h!())?;

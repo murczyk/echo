@@ -3286,6 +3286,229 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn test_get_inbox_messages_uses_only_current_login_extended_form() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("PeerTester".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let current_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("current login comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-current".to_string())),
+                message_uid: Set(Some("uid-current".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(current_message.id),
+                freq: Set(Some("100.100".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(login.login.clone()),
+                signal_message_id: Set(current_message.id),
+                comment: Set("my editable comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(current_message.id),
+                comment: Set("peer comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let peer_only_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("peer only comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-peer-only".to_string())),
+                message_uid: Set(Some("uid-peer-only".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(peer_only_message.id),
+                freq: Set(Some("100.200".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(peer_only_message.id),
+                comment: Set("peer only editable comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let messages = get_inbox_messages(&login.login, &logins, &env, &req)
+            .await
+            .unwrap();
+
+        let current_entry = messages
+            .iter()
+            .find(|(id, _)| *id == current_message.id)
+            .expect("current message must be returned");
+        assert_eq!(
+            current_entry.1.extended_form.as_deref(),
+            Some("my editable comment")
+        );
+
+        let peer_only_entry = messages
+            .iter()
+            .find(|(id, _)| *id == peer_only_message.id)
+            .expect("peer only message must be returned");
+        assert_eq!(peer_only_entry.1.extended_form, None);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_find_sigint_comment_by_signal_message_id_and_logins_uses_organism_logins(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("PeerTester".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("kmz peer comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-kmz".to_string())),
+                message_uid: Set(Some("uid-kmz".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("100.300".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer visible comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let organism_logins =
+            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+                .await
+                .unwrap();
+        let comment = find_sigint_comment_by_signal_message_id_and_logins(
+            &env,
+            message.id,
+            &organism_logins,
+        )
+        .await
+        .unwrap()
+        .expect("organism login lookup must return peer comment");
+
+        assert_eq!(comment.login, peer_login.login);
+        assert_eq!(comment.comment, "peer visible comment");
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_get_inbox_messages_matches_sender_in_selected_group() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
