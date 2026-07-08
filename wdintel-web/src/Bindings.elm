@@ -8309,6 +8309,7 @@ activateSystemSettingsReqEncoder struct =
 type alias EchoMissingMessageRow =
     { id : Int
     , messageId : Int
+    , groupNames : String
     , body : String
     , createdAt : String
     , isResolved : Bool
@@ -8324,6 +8325,7 @@ echoMissingMessageRowEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "group_names", (Json.Encode.string) struct.groupNames )
         , ( "body", (Json.Encode.string) struct.body )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "is_resolved", (Json.Encode.bool) struct.isResolved )
@@ -13823,6 +13825,7 @@ echoMissingMessageRowDecoder =
     Json.Decode.succeed EchoMissingMessageRow
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_names" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_resolved" (Json.Decode.bool)))

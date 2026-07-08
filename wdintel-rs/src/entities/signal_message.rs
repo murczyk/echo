@@ -25,6 +25,8 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub operator_tags: Option<Json>,
     pub echo_inbox_message_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub attachments_hash: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

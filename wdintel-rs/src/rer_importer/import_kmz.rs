@@ -228,6 +228,7 @@ pub async fn rer_delta_kmz_import_go(
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
             operator_tags: NotSet,
+            attachments_hash: NotSet,
         }
         .insert(dbx)
         .await

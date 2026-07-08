@@ -3213,6 +3213,7 @@ export type ActivateSystemSettingsReq = {
 export type EchoMissingMessageRow = {
   id: number;
   messageId: number;
+  groupNames: string;
   body: string;
   createdAt: string;
   isResolved: boolean;
