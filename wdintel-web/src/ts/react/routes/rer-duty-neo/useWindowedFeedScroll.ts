@@ -3,6 +3,17 @@ import type { RefObject, UIEventHandler } from 'react';
 
 export type WindowedFeedScrollItem = { id: number };
 
+function areNumberArraysEqual(a: readonly number[], b: readonly number[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  if (a[0] !== b[0] || a[a.length - 1] !== b[b.length - 1]) return false;
+  for (let i = 1; i < a.length - 1; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 type VisibleAnchor = {
   id: number;
   index: number;
@@ -14,7 +25,7 @@ type AnchorSnapshot = {
 };
 
 export type UseWindowedFeedScrollOptions = {
-  items: readonly WindowedFeedScrollItem[];
+  itemIds: readonly number[];
   loadingOlder: boolean;
   loadingNewer?: boolean;
   hasReachedStart: boolean;
@@ -25,7 +36,7 @@ export type UseWindowedFeedScrollOptions = {
   onLeftBottom?: () => void;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
-  onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
+  onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   topLoadBufferPx?: number;
   bottomLoadBufferPx?: number;
   atBottomThresholdPx?: number;
@@ -34,6 +45,7 @@ export type UseWindowedFeedScrollOptions = {
 
 export type WindowedFeedScrollHandle = {
   scrollerRef: RefObject<HTMLDivElement>;
+  listRef: RefObject<HTMLDivElement>;
   handleScroll: UIEventHandler<HTMLDivElement>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   scrollToBottom: (behavior?: ScrollBehavior) => void;
@@ -50,7 +62,7 @@ function distanceToBottom(el: HTMLElement): number {
 }
 
 export function useWindowedFeedScroll({
-  items,
+  itemIds,
   loadingOlder,
   loadingNewer = false,
   hasReachedStart,
@@ -67,7 +79,30 @@ export function useWindowedFeedScroll({
   atBottomThresholdPx = DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   resetKey = null,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
+  const callbacksRef = useRef({
+    onLoadOlder,
+    onLoadNewer,
+    onScrollToTop,
+    onReachedBottom,
+    onLeftBottom,
+    onNearBottomChange,
+    onAtBottomChange,
+    onVisibleMessageIds,
+  });
+  useLayoutEffect(() => {
+    callbacksRef.current = {
+      onLoadOlder,
+      onLoadNewer,
+      onScrollToTop,
+      onReachedBottom,
+      onLeftBottom,
+      onNearBottomChange,
+      onAtBottomChange,
+      onVisibleMessageIds,
+    };
+  });
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const loadOlderTriggeredRef = useRef(false);
   const loadNewerTriggeredRef = useRef(false);
@@ -82,13 +117,11 @@ export function useWindowedFeedScroll({
   const bottomSettleRafRef = useRef<number | null>(null);
   const bottomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
-  const previousItemsKeyRef = useRef('');
+  const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
 
-  const itemIds = useMemo(() => items.map(({ id }) => id), [items]);
-  const itemIdsRef = useRef<number[]>(itemIds);
+  const itemIdsRef = useRef<readonly number[]>(itemIds);
   itemIdsRef.current = itemIds;
-  const itemsKey = useMemo(() => itemIds.join(','), [itemIds]);
 
   useEffect(() => {
     if (!loadingOlder) loadOlderTriggeredRef.current = false;
@@ -104,14 +137,61 @@ export function useWindowedFeedScroll({
     const scrollerRect = scroller.getBoundingClientRect();
     const scrollerTop = scrollerRect.top;
     const scrollerBottom = scrollerRect.bottom;
+    const ids = itemIdsRef.current;
+    if (ids.length === 0) return [];
 
-    return itemIdsRef.current.flatMap((id, index) => {
+    const getRect = (idx: number) => {
+      const id = ids[idx];
       const node = itemRefsRef.current.get(id);
-      if (!node) return [];
+      return node ? node.getBoundingClientRect() : null;
+    };
+
+    let low = 0;
+    let high = ids.length - 1;
+    let firstVisibleIdx = -1;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const rect = getRect(mid);
+
+      if (!rect) {
+        low = mid + 1;
+        continue;
+      }
+
+      if (rect.bottom >= scrollerTop) {
+        if (mid === 0) {
+          firstVisibleIdx = mid;
+          break;
+        } else {
+          const prevRect = getRect(mid - 1);
+          if (!prevRect || prevRect.bottom < scrollerTop) {
+            firstVisibleIdx = mid;
+            break;
+          } else {
+            high = mid - 1;
+          }
+        }
+      } else {
+        low = mid + 1;
+      }
+    }
+
+    if (firstVisibleIdx === -1) return [];
+
+    const anchors: VisibleAnchor[] = [];
+    for (let i = firstVisibleIdx; i < ids.length; i++) {
+      const id = ids[i];
+      const node = itemRefsRef.current.get(id);
+      if (!node) continue;
       const rect = node.getBoundingClientRect();
-      if (rect.bottom < scrollerTop || rect.top > scrollerBottom) return [];
-      return [{ id, index, offsetTop: rect.top - scrollerTop }];
-    });
+      if (rect.top > scrollerBottom) break;
+      if (rect.bottom >= scrollerTop) {
+        anchors.push({ id, index: i, offsetTop: rect.top - scrollerTop });
+      }
+    }
+
+    return anchors;
   }, []);
 
   const captureAnchorSnapshot = useCallback(() => {
@@ -119,23 +199,49 @@ export function useWindowedFeedScroll({
     anchorSnapshotRef.current = anchors.length > 0 ? { anchors } : null;
   }, [collectVisibleAnchors]);
 
+  const reportVisibleMessageIdsRafRef = useRef<number | null>(null);
+  const reportVisibleMessageIdsLastRunRef = useRef<number>(0);
+  const reportVisibleMessageIdsLatestArgsRef = useRef<boolean>(false);
+
   const reportVisibleMessageIds = useCallback(
     (atBottom: boolean) => {
-      if (!onVisibleMessageIds || itemIdsRef.current.length === 0) return;
-      if (atBottom) {
-        onVisibleMessageIds(itemIdsRef.current, { atBottom: true });
-        return;
-      }
+      reportVisibleMessageIdsLatestArgsRef.current = atBottom;
 
-      const anchors = collectVisibleAnchors();
-      const lastVisibleIndex = anchors.reduce(
-        (max, anchor) => Math.max(max, anchor.index),
-        -1,
-      );
-      if (lastVisibleIndex < 0) return;
-      onVisibleMessageIds(itemIdsRef.current.slice(0, lastVisibleIndex + 1), { atBottom: false });
+      const run = () => {
+        reportVisibleMessageIdsLastRunRef.current = Date.now();
+        const latestAtBottom = reportVisibleMessageIdsLatestArgsRef.current;
+        const { onVisibleMessageIds } = callbacksRef.current;
+        if (!onVisibleMessageIds || itemIdsRef.current.length === 0) return;
+        if (latestAtBottom) {
+          onVisibleMessageIds(itemIdsRef.current[itemIdsRef.current.length - 1], {
+            atBottom: true,
+          });
+          return;
+        }
+
+        const anchors = collectVisibleAnchors();
+        const lastVisibleIndex = anchors.reduce((max, anchor) => Math.max(max, anchor.index), -1);
+        if (lastVisibleIndex < 0) return;
+        onVisibleMessageIds(itemIdsRef.current[lastVisibleIndex], { atBottom: false });
+      };
+
+      const now = Date.now();
+      if (now - reportVisibleMessageIdsLastRunRef.current > 200) {
+        if (reportVisibleMessageIdsRafRef.current !== null) {
+          window.clearTimeout(reportVisibleMessageIdsRafRef.current);
+          reportVisibleMessageIdsRafRef.current = null;
+        }
+        run();
+      } else {
+        if (reportVisibleMessageIdsRafRef.current === null) {
+          reportVisibleMessageIdsRafRef.current = window.setTimeout(() => {
+            reportVisibleMessageIdsRafRef.current = null;
+            run();
+          }, 200);
+        }
+      }
     },
-    [collectVisibleAnchors, onVisibleMessageIds],
+    [collectVisibleAnchors],
   );
 
   const stopBottomSettle = useCallback(() => {
@@ -164,6 +270,16 @@ export function useWindowedFeedScroll({
       const nearBottom = bottomDistance <= bottomLoadBufferPx;
       const atTop = scroller.scrollTop <= 0;
       const wasAtBottom = atBottomRef.current;
+
+      const {
+        onNearBottomChange,
+        onAtBottomChange,
+        onLeftBottom,
+        onReachedBottom,
+        onScrollToTop,
+        onLoadOlder,
+        onLoadNewer,
+      } = callbacksRef.current;
 
       if (nearBottomRef.current !== nearBottom) {
         nearBottomRef.current = nearBottom;
@@ -214,13 +330,6 @@ export function useWindowedFeedScroll({
       hasReachedStart,
       loadingNewer,
       loadingOlder,
-      onAtBottomChange,
-      onLeftBottom,
-      onLoadNewer,
-      onLoadOlder,
-      onNearBottomChange,
-      onReachedBottom,
-      onScrollToTop,
       reportVisibleMessageIds,
       stopBottomSettle,
       topLoadBufferPx,
@@ -254,14 +363,11 @@ export function useWindowedFeedScroll({
         if (bottomSettleActiveRef.current) scrollToBottom('auto');
       });
       bottomSettleResizeObserverRef.current = observer;
-      observer.observe(scrollerRef.current);
-      itemRefsRef.current.forEach((node) => observer.observe(node));
+      if (scrollerRef.current) observer.observe(scrollerRef.current);
+      if (listRef.current) observer.observe(listRef.current);
     }
 
-    bottomSettleTimeoutRef.current = setTimeout(
-      stopBottomSettle,
-      INITIAL_BOTTOM_SETTLE_TIMEOUT_MS,
-    );
+    bottomSettleTimeoutRef.current = setTimeout(stopBottomSettle, INITIAL_BOTTOM_SETTLE_TIMEOUT_MS);
 
     const settleFrame = () => {
       if (!bottomSettleActiveRef.current) {
@@ -305,9 +411,10 @@ export function useWindowedFeedScroll({
       stopBottomSettle();
     }
 
-    if (itemIdsRef.current.length === 0) {
+    const currentItemIds = itemIdsRef.current;
+    if (currentItemIds.length === 0) {
       hasInitialScrolledRef.current = false;
-      previousItemsKeyRef.current = itemsKey;
+      previousItemIdsRef.current = currentItemIds;
       stopBottomSettle();
       return;
     }
@@ -316,19 +423,19 @@ export function useWindowedFeedScroll({
       scrollToBottom('auto');
       startBottomSettle();
       hasInitialScrolledRef.current = true;
-      previousItemsKeyRef.current = itemsKey;
+      previousItemIdsRef.current = currentItemIds;
       return;
     }
 
-    if (previousItemsKeyRef.current !== itemsKey) {
+    const itemsChanged = !areNumberArraysEqual(previousItemIdsRef.current, currentItemIds);
+    if (itemsChanged) {
       restoreAnchorAfterItemsChange();
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
       captureAnchorSnapshot();
-      previousItemsKeyRef.current = itemsKey;
+      previousItemIdsRef.current = currentItemIds;
     }
   }, [
     captureAnchorSnapshot,
-    itemsKey,
     resetKey,
     restoreAnchorAfterItemsChange,
     scrollToBottom,
@@ -337,24 +444,45 @@ export function useWindowedFeedScroll({
     updateScrollState,
   ]);
 
+  const handleScrollRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (handleScrollRafRef.current !== null) {
+        cancelAnimationFrame(handleScrollRafRef.current);
+      }
+    };
+  }, []);
+
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
-    updateScrollState();
-    captureAnchorSnapshot();
+    if (handleScrollRafRef.current !== null) return;
+    handleScrollRafRef.current = requestAnimationFrame(() => {
+      updateScrollState();
+      captureAnchorSnapshot();
+      handleScrollRafRef.current = null;
+    });
   }, [captureAnchorSnapshot, updateScrollState]);
 
-  const setItemRef = useCallback(
-    (id: number) => (node: HTMLDivElement | null) => {
-      if (node) {
-        itemRefsRef.current.set(id, node);
-        return;
-      }
-      itemRefsRef.current.delete(id);
-    },
-    [],
-  );
+  const refCacheRef = useRef<Map<number, (node: HTMLDivElement | null) => void>>(new Map());
+
+  const setItemRef = useCallback((id: number) => {
+    let cb = refCacheRef.current.get(id);
+    if (!cb) {
+      cb = (node: HTMLDivElement | null) => {
+        if (node) {
+          itemRefsRef.current.set(id, node);
+        } else {
+          itemRefsRef.current.delete(id);
+        }
+      };
+      refCacheRef.current.set(id, cb);
+    }
+    return cb;
+  }, []);
 
   return {
     scrollerRef,
+    listRef,
     handleScroll,
     setItemRef,
     scrollToBottom,

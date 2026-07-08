@@ -1,6 +1,15 @@
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
-import { forwardRef, memo, useImperativeHandle, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -40,6 +49,16 @@ const EMPTY_MESSAGE_COMMENTS: never[] = [];
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior) => void;
 };
+
+function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
+  const ref = useRef<T | undefined>(callback);
+  useLayoutEffect(() => {
+    ref.current = callback;
+  });
+  return useCallback((...args: any[]) => {
+    return ref.current?.(...args);
+  }, []) as T;
+}
 
 type FeedColumnContentProps = {
   column: FeedColumnModel;
@@ -190,8 +209,119 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   );
 });
 
-export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnContentProps>(
-  function FeedColumnContent({ column }, ref) {
+type DutyMessageListProps = {
+  items: [number, InboxMessage][];
+  feedId: string;
+  feedCount?: number;
+  tagsLayout: TagsLayoutVariant;
+  botTagAction: MessageCardBotTagAction | null;
+  onCancelBotTagAction: () => void;
+  onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
+  referenceTimeMs: number | null;
+  authUserName: string | null;
+  groupInfos: Record<string, SignalGroupEntry>;
+  profiles: Record<string, SignalProfileEntry | null>;
+  copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  unitsMap: Record<number, Unit>;
+  callsignInfoMap: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  featureStrictNetworks: boolean;
+  tagsMap: Record<number, Tag>;
+  filterState: RerDutyFeedFilterState;
+  onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
+  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageCopy: (text: string, feedbackId: string) => void;
+  onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
+  onMessageComment: (msgId: number, currentComment: string | null) => void;
+  onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
+  onMessageToggleTag: (msgId: number, tagId: number) => void;
+  setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
+  listRef: React.RefObject<HTMLDivElement>;
+};
+
+const DutyMessageList = memo(function DutyMessageList({
+  items,
+  feedId,
+  feedCount,
+  tagsLayout,
+  botTagAction,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
+  referenceTimeMs,
+  authUserName,
+  groupInfos,
+  profiles,
+  copiedFeedbackId,
+  networkDisplayMap,
+  networkMap,
+  unitsMap,
+  callsignInfoMap,
+  networks,
+  featureStrictNetworks,
+  tagsMap,
+  filterState,
+  onMessageBookmark,
+  onMessageImportant,
+  onMessageCopy,
+  onMessageAddFrequencyToFilter,
+  onMessageComment,
+  onMessageExcludeEntity,
+  onMessageToggleTag,
+  setItemRef,
+  listRef,
+}: DutyMessageListProps) {
+  return (
+    <div
+      ref={listRef}
+      data-duty-feed-list="true"
+      className="m-0 list-none rer-duty pt-2"
+      style={{ paddingRight: '12px', boxSizing: 'border-box' }}
+    >
+      {items.map(([id, msg]) => (
+        <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+          <DutyMessageCardItem
+            id={id}
+            msg={msg}
+            feedId={feedId}
+            feedCount={feedCount}
+            tagsLayout={tagsLayout}
+            botTagAction={botTagAction}
+            onCancelBotTagAction={onCancelBotTagAction}
+            onMarkBotTagWrong={onMarkBotTagWrong}
+            referenceTimeMs={referenceTimeMs}
+            authUserName={authUserName}
+            groupInfos={groupInfos}
+            profiles={profiles}
+            copiedFeedbackId={copiedFeedbackId}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            unitsMap={unitsMap}
+            callsignInfoMap={callsignInfoMap}
+            networks={networks}
+            featureStrictNetworks={featureStrictNetworks}
+            tagsMap={tagsMap}
+            filterState={filterState}
+            onMessageBookmark={onMessageBookmark}
+            onMessageImportant={onMessageImportant}
+            onMessageCopy={onMessageCopy}
+            onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
+            onMessageComment={onMessageComment}
+            onMessageExcludeEntity={onMessageExcludeEntity}
+            onMessageToggleTag={onMessageToggleTag}
+          />
+        </div>
+      ))}
+    </div>
+  );
+});
+
+export const FeedColumnContent = memo(
+  forwardRef<FeedColumnContentHandle, FeedColumnContentProps>(function FeedColumnContent(
+    { column },
+    ref,
+  ) {
     const { feed, view, messageCard, actions } = column;
     const {
       narrowScreen = false,
@@ -240,9 +370,9 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
       () => (networkMap ? Object.values(networkMap) : undefined),
       [networkMap],
     );
-    const scrollItems = useMemo(() => feed.items.map(([id]) => ({ id })), [feed.items]);
+    const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
     const scroll = useWindowedFeedScroll({
-      items: scrollItems,
+      itemIds,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
       hasReachedStart: feed.hasReachedStart,
@@ -262,6 +392,16 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
     });
+
+    const stableOnCancelBotTagAction = useStableCallback(onCancelBotTagAction);
+    const stableOnMarkBotTagWrong = useStableCallback(onMarkBotTagWrong);
+    const stableOnMessageBookmark = useStableCallback(onMessageBookmark);
+    const stableOnMessageImportant = useStableCallback(onMessageImportant);
+    const stableOnMessageCopy = useStableCallback(onMessageCopy);
+    const stableOnMessageAddFrequencyToFilter = useStableCallback(onMessageAddFrequencyToFilter);
+    const stableOnMessageComment = useStableCallback(onMessageComment);
+    const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
+    const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
 
     useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
       scroll.scrollToBottom,
@@ -330,46 +470,37 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
               Немає повідомлень
             </Typography>
           ) : (
-            <Box
-              data-duty-feed-list="true"
-              className="m-0 list-none rer-duty pt-2"
-              sx={{ pr: '12px', boxSizing: 'border-box' }}
-            >
-              {feed.items.map(([id, msg]) => (
-                <Box key={id} ref={scroll.setItemRef(id)} data-duty-message-id={id}>
-                  <DutyMessageCardItem
-                    id={id}
-                    msg={msg}
-                    feedId={feed.id}
-                    feedCount={feedCount}
-                    tagsLayout={tagsLayout}
-                    botTagAction={botTagAction}
-                    onCancelBotTagAction={onCancelBotTagAction}
-                    onMarkBotTagWrong={onMarkBotTagWrong}
-                    referenceTimeMs={feed.referenceTimeMs}
-                    authUserName={authUserName}
-                    groupInfos={groupInfos}
-                    profiles={profiles}
-                    copiedFeedbackId={copiedFeedbackId}
-                    networkDisplayMap={networkDisplayMap}
-                    networkMap={networkMap}
-                    unitsMap={unitsMap}
-                    callsignInfoMap={callsignInfoMap}
-                    networks={networks}
-                    featureStrictNetworks={featureStrictNetworks}
-                    tagsMap={tagsMap}
-                    filterState={feed.filter}
-                    onMessageBookmark={onMessageBookmark}
-                    onMessageImportant={onMessageImportant}
-                    onMessageCopy={onMessageCopy}
-                    onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
-                    onMessageComment={onMessageComment}
-                    onMessageExcludeEntity={onMessageExcludeEntity}
-                    onMessageToggleTag={onMessageToggleTag}
-                  />
-                </Box>
-              ))}
-            </Box>
+            <DutyMessageList
+              items={feed.items}
+              feedId={feed.id}
+              feedCount={feedCount}
+              tagsLayout={tagsLayout}
+              botTagAction={botTagAction}
+              onCancelBotTagAction={stableOnCancelBotTagAction}
+              onMarkBotTagWrong={stableOnMarkBotTagWrong}
+              referenceTimeMs={feed.referenceTimeMs}
+              authUserName={authUserName}
+              groupInfos={groupInfos}
+              profiles={profiles}
+              copiedFeedbackId={copiedFeedbackId}
+              networkDisplayMap={networkDisplayMap}
+              networkMap={networkMap}
+              unitsMap={unitsMap}
+              callsignInfoMap={callsignInfoMap}
+              networks={networks}
+              featureStrictNetworks={featureStrictNetworks}
+              tagsMap={tagsMap}
+              filterState={feed.filter}
+              onMessageBookmark={stableOnMessageBookmark}
+              onMessageImportant={stableOnMessageImportant}
+              onMessageCopy={stableOnMessageCopy}
+              onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
+              onMessageComment={stableOnMessageComment}
+              onMessageExcludeEntity={stableOnMessageExcludeEntity}
+              onMessageToggleTag={stableOnMessageToggleTag}
+              setItemRef={scroll.setItemRef}
+              listRef={scroll.listRef}
+            />
           )}
         </Box>
         {isPresent(onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
@@ -448,5 +579,46 @@ export const FeedColumnContent = forwardRef<FeedColumnContentHandle, FeedColumnC
         )}
       </Paper>
     );
+  }),
+  (prevProps, nextProps) => {
+    if (prevProps.column.feed !== nextProps.column.feed) {
+      return false;
+    }
+
+    const prevView = prevProps.column.view;
+    const nextView = nextProps.column.view;
+    if (
+      prevView.narrowScreen !== nextView.narrowScreen ||
+      prevView.feedCount !== nextView.feedCount ||
+      prevView.canRemove !== nextView.canRemove ||
+      prevView.maxWidth !== nextView.maxWidth ||
+      prevView.isWatchMode !== nextView.isWatchMode ||
+      prevView.loadingNewer !== nextView.loadingNewer ||
+      prevView.arrowResultMessage !== nextView.arrowResultMessage ||
+      prevView.unreadCount !== nextView.unreadCount
+    ) {
+      return false;
+    }
+
+    const prevCard = prevProps.column.messageCard;
+    const nextCard = nextProps.column.messageCard;
+    if (
+      prevCard.authUserName !== nextCard.authUserName ||
+      prevCard.copiedFeedbackId !== nextCard.copiedFeedbackId ||
+      prevCard.networkDisplayMap !== nextCard.networkDisplayMap ||
+      prevCard.networkMap !== nextCard.networkMap ||
+      prevCard.unitsMap !== nextCard.unitsMap ||
+      prevCard.callsignInfoMap !== nextCard.callsignInfoMap ||
+      prevCard.groupInfos !== nextCard.groupInfos ||
+      prevCard.profiles !== nextCard.profiles ||
+      prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
+      prevCard.tagsLayout !== nextCard.tagsLayout ||
+      prevCard.tagsMap !== nextCard.tagsMap ||
+      prevCard.botTagAction !== nextCard.botTagAction
+    ) {
+      return false;
+    }
+
+    return true;
   },
 );

@@ -516,19 +516,24 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         }
       }),
     );
-    setMessageFeeds((prev) =>
-      prev.map((f) => {
+    setMessageFeeds((prev) => {
+      let changed = false;
+      const next = prev.map((f) => {
         const entry = counts.find((c) => c.feedId === f.id);
         if (entry?.skipped) return f;
         if (f.items.length === 0) return f;
         const quantity = entry?.quantity ?? 0;
+        const nextUnread = Math.max(f.unreadCount, quantity);
+        if (nextUnread === f.unreadCount) return f;
+        changed = true;
         return {
           messageFeedsRef,
           ...f,
-          unreadCount: Math.max(f.unreadCount, quantity),
+          unreadCount: nextUnread,
         };
-      }),
-    );
+      });
+      return changed ? next : prev;
+    });
     for (const entry of counts) {
       if (entry.skipped || isNullOrUndefined(entry.quantity)) continue;
       const { feedId } = entry;

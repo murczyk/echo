@@ -215,7 +215,7 @@ function MessageCardComponent({
   const topRight =
     displayMode === 'duty' ? (
       isPresent(timeDistance) ? (
-        <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="flex-1 min-w-0 flex justify-end">
           {tooltipTime === NO_DATA_LABEL ? (
             <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
               {timeDistance}
@@ -230,12 +230,12 @@ function MessageCardComponent({
               </Typography>
             </Tooltip>
           )}
-        </Box>
+        </div>
       ) : (
-        <Box sx={{ minHeight: 28 }} />
+        <div className="min-h-[28px]" />
       )
     ) : (
-      <Box sx={{ minHeight: 28 }} />
+      <div className="min-h-[28px]" />
     );
 
   const analysisHref = useMemo(
@@ -281,49 +281,22 @@ function MessageCardComponent({
     displayMode === 'analysis' ? messageComments : EMPTY_MESSAGE_COMMENTS;
 
   return (
-    <Box
-      ref={messageRootRef}
-      component="li"
-      sx={{
-        listStyle: 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        pl: 0,
-        pr: 0,
-        pb: 1.5,
-        mb: 0,
-        fontSize: 14,
+    <li
+      ref={messageRootRef as React.RefObject<HTMLLIElement>}
+      className="list-none flex flex-col px-0 pb-3 mb-0 text-base"
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicHeight: '120px',
       }}
     >
-      <Box
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: compactLayout ? 1.25 : 1.5,
-          width: '100%',
-          px: 1.5,
-          py: 1.25,
-          borderRadius: 1,
-          bgcolor: 'var(--color-card)',
-          color: 'text.primary',
-          overflow: 'hidden',
-          fontSize: 14,
-          '& .MuiTypography-root': {
-            fontSize: 14,
-          },
-          '& a': {
-            fontSize: 14,
-          },
-        }}
+      <div
+        className="relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden text-base [&_.MuiTypography-root]:text-base [&_a]:text-base"
+        style={{ gap: compactLayout ? '10px' : '12px' }}
       >
         {watermarkUserName !== '' && (
-          <Box
-            sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
-            aria-hidden
-          >
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
             <MessageCardWatermark authUserName={watermarkUserName} />
-          </Box>
+          </div>
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardContent
@@ -342,8 +315,8 @@ function MessageCardComponent({
           messageComments={visibleMessageComments}
           searchText={searchText}
         />
-      </Box>
-    </Box>
+      </div>
+    </li>
   );
 }
 

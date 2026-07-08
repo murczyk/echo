@@ -148,68 +148,27 @@ function CenteredInfoRow({
   trailing?: JSX.Element | null;
 }) {
   return (
-    <Box
-      sx={{
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
-    >
-      <Box
-        sx={{
-          display: 'grid',
+    <div className="w-full flex justify-center items-center">
+      <div
+        className="grid items-center gap-x-1 min-h-[30px] max-w-full"
+        style={{
           gridTemplateColumns: trailing ? '30px minmax(0, auto) 30px' : '30px minmax(0, auto)',
-          alignItems: 'center',
-          columnGap: 0.5,
-          minHeight: 30,
-          maxWidth: '100%',
         }}
       >
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>{icon}</Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            maxWidth: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          {text}
-        </Box>
+        <div className="flex justify-center items-center">{icon}</div>
+        <div className="min-w-0 max-w-full flex justify-center items-center">{text}</div>
         {trailing ? (
-          <Box
-            sx={{
-              width: 30,
-              minWidth: 30,
-              height: 30,
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
+          <div className="w-[30px] min-w-[30px] h-[30px] flex justify-center items-center">
             {trailing}
-          </Box>
+          </div>
         ) : null}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
 function CenteredTextOnlyRow({ text }: { text: JSX.Element }) {
-  return (
-    <Box
-      sx={{
-        width: '100%',
-        justifyContent: 'center',
-        display: 'flex',
-        alignItems: 'center',
-      }}
-    >
-      {text}
-    </Box>
-  );
+  return <div className="w-full flex justify-center items-center">{text}</div>;
 }
 
 function ActionIconsRow({
@@ -576,260 +535,205 @@ function ActionIconsRow({
           </ButtonGroup>
         )}
       </div>
-      <Menu
-        id={overflowMenuId}
-        anchorReference="anchorPosition"
-        anchorPosition={overflowMenuAnchorPosition ?? undefined}
-        open={isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu}
-        onClose={closeOverflowMenu}
-        MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
-      >
-        {overflowMenuItems.map((item) => (
-          <MenuItem
-            key={item.key}
-            selected={item.selected}
-            onClick={() => handleOverflowMenuItemClick(item.onClick)}
-          >
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              {item.icon}
-              <span>{item.title}</span>
-            </Box>
-          </MenuItem>
-        ))}
-      </Menu>
-      <Menu
-        id={copyMenuId}
-        anchorReference="anchorPosition"
-        anchorPosition={copyMenuAnchorPosition ?? undefined}
-        open={isPresent(copyMenuAnchorPosition)}
-        onClose={closeCopyMenu}
-        MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
-      >
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText)}>
-          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-            <MessageIcon fontSize="small" />
-            <span>Копіювати повідомлення</span>
-          </Box>
-        </MenuItem>
-        {hasCopyTextWithNetwork ? (
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              <PeopleIcon fontSize="small" />
-              <span>Копіювати повідомлення з назвою мережі</span>
-            </Box>
-          </MenuItem>
-        ) : null}
-        {hasCopyTextWithNetworkAndNote ? (
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              <ChatBubbleOutlineOutlinedIcon fontSize="small" />
-              <span>Копіювати повідомлення з мережею та коментарем</span>
-            </Box>
-          </MenuItem>
-        ) : null}
-        {hasFrequencyCopy ? (
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              <SettingsInputAntennaIcon fontSize="small" />
-              <span>Копіювати частоту</span>
-            </Box>
-          </MenuItem>
-        ) : null}
-        {canShowLocationCopy ? (
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              <PlaceIcon fontSize="small" />
-              <span>Копіювати локацію</span>
-            </Box>
-          </MenuItem>
-        ) : null}
-        {hasEtalonCopy ? (
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              <PeopleIcon fontSize="small" />
-              <span>Копіювати прив&apos;язку</span>
-            </Box>
-          </MenuItem>
-        ) : null}
-      </Menu>
-      <Menu
-        id={navigationMenuId}
-        anchorReference="anchorPosition"
-        anchorPosition={navigationMenuAnchorPosition ?? undefined}
-        open={isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu}
-        onClose={closeNavigationMenu}
-        MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
-        slotProps={{
-          paper: {
-            sx: {
-              maxWidth: 320,
-              minWidth: navigationMenuHasNetwork ? undefined : 140,
-              width: navigationMenuHasNetwork ? '100%' : 'fit-content',
-            },
-          },
-        }}
-      >
-        {navigationMenuItems.map((item) =>
-          item.kind === 'network' ? (
+      {isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu && (
+        <Menu
+          id={overflowMenuId}
+          anchorReference="anchorPosition"
+          anchorPosition={overflowMenuAnchorPosition ?? undefined}
+          open={true}
+          onClose={closeOverflowMenu}
+          MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
+        >
+          {overflowMenuItems.map((item) => (
             <MenuItem
-              key={`${item.kind}:${item.href}`}
-              component="a"
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={item.networkLabel}
-              onClick={closeNavigationMenu}
-              sx={{ maxWidth: 320, overflow: 'hidden' }}
+              key={item.key}
+              selected={item.selected}
+              onClick={() => handleOverflowMenuItemClick(item.onClick)}
             >
-              <Box
-                component="span"
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.25,
-                  minWidth: 0,
-                  width: '100%',
-                }}
-              >
-                <PeopleIcon fontSize="small" />
-                <Box
-                  component="span"
-                  sx={{
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  В мережу{' '}
-                  <Box component="strong" sx={{ fontWeight: 700 }}>
-                    {item.networkLabel}
-                  </Box>
-                  {item.badge ? (
-                    <Box
-                      component="span"
-                      className="badge badge-no-unit-sm"
-                      sx={{
-                        ml: '0.35em',
-                        verticalAlign: 'middle',
-                        position: 'relative',
-                        top: '-0.06em',
-                      }}
-                    >
-                      в дорозвідці
-                    </Box>
-                  ) : null}
-                </Box>
-              </Box>
-            </MenuItem>
-          ) : item.kind === 'map' ? (
-            <MenuItem
-              key={`${item.kind}:${item.href}`}
-              component="a"
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={closeNavigationMenu}
-              sx={{ maxWidth: 320, overflow: 'hidden' }}
-            >
-              <Box
-                component="span"
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.25,
-                  minWidth: 0,
-                  width: '100%',
-                }}
-              >
-                <MapIcon fontSize="small" />
-                <Box
-                  component="span"
-                  sx={{
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {item.label ?? 'На мапу'}
-                </Box>
-              </Box>
-            </MenuItem>
-          ) : (
-            <MenuItem
-              key={`${item.kind}:${item.href}`}
-              component="a"
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={closeNavigationMenu}
-              sx={{ maxWidth: 320, overflow: 'hidden' }}
-            >
-              <Box
-                component="span"
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.25,
-                  minWidth: 0,
-                  width: '100%',
-                }}
-              >
-                <BarChartIcon fontSize="small" />
-                <Box
-                  component="span"
-                  sx={{
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {item.label ?? 'В аналіз'}
-                </Box>
-              </Box>
-            </MenuItem>
-          ),
-        )}
-      </Menu>
-      <Menu
-        id={excludeMenuId}
-        anchorReference="anchorPosition"
-        anchorPosition={excludeMenuAnchorPosition ?? undefined}
-        open={isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu}
-        onClose={closeExcludeMenu}
-        MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
-      >
-        {excludeMenuOptions.map((option) => (
-          <MenuItem
-            key={`${option.entity}:${option.value}`}
-            onClick={() => handleExcludeMenuItemClick(option)}
-          >
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
-              {option.entity === 'group' ? (
-                <GraphicEqIcon fontSize="small" />
-              ) : option.entity === 'sender' ? (
-                <AccountCircleIcon fontSize="small" />
-              ) : option.entity === 'freq' ? (
-                <SettingsInputAntennaIcon fontSize="small" />
-              ) : (
-                <DeskIcon fontSize="small" />
-              )}
-              <span>
-                {option.entity === 'group'
-                  ? 'Виключити групу'
-                  : option.entity === 'sender'
-                    ? 'Виключити відправника'
-                    : option.entity === 'freq'
-                      ? 'Виключити частоту'
-                      : 'Виключити пост'}{' '}
-                <Box component="strong">{option.label}</Box>
+              <span className="inline-flex items-center gap-[10px]">
+                {item.icon}
+                <span>{item.title}</span>
               </span>
-            </Box>
+            </MenuItem>
+          ))}
+        </Menu>
+      )}
+      {isPresent(copyMenuAnchorPosition) && (
+        <Menu
+          id={copyMenuId}
+          anchorReference="anchorPosition"
+          anchorPosition={copyMenuAnchorPosition ?? undefined}
+          open={isPresent(copyMenuAnchorPosition)}
+          onClose={closeCopyMenu}
+          MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
+        >
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText)}>
+            <span className="inline-flex items-center gap-[10px]">
+              <MessageIcon fontSize="small" />
+              <span>Копіювати повідомлення</span>
+            </span>
           </MenuItem>
-        ))}
-      </Menu>
+          {hasCopyTextWithNetwork ? (
+            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
+              <span className="inline-flex items-center gap-[10px]">
+                <PeopleIcon fontSize="small" />
+                <span>Копіювати повідомлення з назвою мережі</span>
+              </span>
+            </MenuItem>
+          ) : null}
+          {hasCopyTextWithNetworkAndNote ? (
+            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
+              <span className="inline-flex items-center gap-[10px]">
+                <ChatBubbleOutlineOutlinedIcon fontSize="small" />
+                <span>Копіювати повідомлення з мережею та коментарем</span>
+              </span>
+            </MenuItem>
+          ) : null}
+          {hasFrequencyCopy ? (
+            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
+              <span className="inline-flex items-center gap-[10px]">
+                <SettingsInputAntennaIcon fontSize="small" />
+                <span>Копіювати частоту</span>
+              </span>
+            </MenuItem>
+          ) : null}
+          {canShowLocationCopy ? (
+            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
+              <span className="inline-flex items-center gap-[10px]">
+                <PlaceIcon fontSize="small" />
+                <span>Копіювати локацію</span>
+              </span>
+            </MenuItem>
+          ) : null}
+          {hasEtalonCopy ? (
+            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
+              <span className="inline-flex items-center gap-[10px]">
+                <PeopleIcon fontSize="small" />
+                <span>Копіювати прив&apos;язку</span>
+              </span>
+            </MenuItem>
+          ) : null}
+        </Menu>
+      )}
+      {isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu && (
+        <Menu
+          id={navigationMenuId}
+          anchorReference="anchorPosition"
+          anchorPosition={navigationMenuAnchorPosition ?? undefined}
+          open={true}
+          onClose={closeNavigationMenu}
+          MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
+          slotProps={{
+            paper: {
+              sx: {
+                maxWidth: 320,
+                minWidth: navigationMenuHasNetwork ? undefined : 140,
+                width: navigationMenuHasNetwork ? '100%' : 'fit-content',
+              },
+            },
+          }}
+        >
+          {navigationMenuItems.map((item) =>
+            item.kind === 'network' ? (
+              <MenuItem
+                key={`${item.kind}:${item.href}`}
+                component="a"
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={item.networkLabel}
+                onClick={closeNavigationMenu}
+                sx={{ maxWidth: 320, overflow: 'hidden' }}
+              >
+                <span className="flex items-center gap-[10px] min-w-0 w-full">
+                  <PeopleIcon fontSize="small" />
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    В мережу <strong className="font-bold">{item.networkLabel}</strong>
+                    {item.badge ? (
+                      <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
+                        в дорозвідці
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              </MenuItem>
+            ) : item.kind === 'map' ? (
+              <MenuItem
+                key={`${item.kind}:${item.href}`}
+                component="a"
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={closeNavigationMenu}
+                sx={{ maxWidth: 320, overflow: 'hidden' }}
+              >
+                <span className="flex items-center gap-[10px] min-w-0 w-full">
+                  <MapIcon fontSize="small" />
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    {item.label ?? 'На мапу'}
+                  </span>
+                </span>
+              </MenuItem>
+            ) : (
+              <MenuItem
+                key={`${item.kind}:${item.href}`}
+                component="a"
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={closeNavigationMenu}
+                sx={{ maxWidth: 320, overflow: 'hidden' }}
+              >
+                <span className="flex items-center gap-[10px] min-w-0 w-full">
+                  <BarChartIcon fontSize="small" />
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    {item.label ?? 'В аналіз'}
+                  </span>
+                </span>
+              </MenuItem>
+            ),
+          )}
+        </Menu>
+      )}
+      {isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu && (
+        <Menu
+          id={excludeMenuId}
+          anchorReference="anchorPosition"
+          anchorPosition={excludeMenuAnchorPosition ?? undefined}
+          open={true}
+          onClose={closeExcludeMenu}
+          MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
+        >
+          {excludeMenuOptions.map((option) => (
+            <MenuItem
+              key={`${option.entity}:${option.value}`}
+              onClick={() => handleExcludeMenuItemClick(option)}
+            >
+              <span className="inline-flex items-center gap-[10px]">
+                {option.entity === 'group' ? (
+                  <GraphicEqIcon fontSize="small" />
+                ) : option.entity === 'sender' ? (
+                  <AccountCircleIcon fontSize="small" />
+                ) : option.entity === 'freq' ? (
+                  <SettingsInputAntennaIcon fontSize="small" />
+                ) : (
+                  <DeskIcon fontSize="small" />
+                )}
+                <span>
+                  {option.entity === 'group'
+                    ? 'Виключити групу'
+                    : option.entity === 'sender'
+                      ? 'Виключити відправника'
+                      : option.entity === 'freq'
+                        ? 'Виключити частоту'
+                        : 'Виключити пост'}{' '}
+                  <strong>{option.label}</strong>
+                </span>
+              </span>
+            </MenuItem>
+          ))}
+        </Menu>
+      )}
     </>
   );
 }
@@ -838,14 +742,14 @@ const MESSAGE_CARD_ACTION_COLOR = 'var(--color-action)';
 
 function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) {
   return (
-    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }} title={text}>
-      <Box sx={{ color: MESSAGE_CARD_ACTION_COLOR, lineHeight: 0, flexShrink: 0 }} title={title}>
+    <div className="flex flex-row gap-1.5 items-center min-w-0" title={text}>
+      <div className="text-[var(--color-action)] leading-none shrink-0" title={title}>
         {icon}
-      </Box>
+      </div>
       <Typography variant="caption" sx={{ minWidth: 0 }} noWrap>
         {text}
       </Typography>
-    </Stack>
+    </div>
   );
 }
 
@@ -866,89 +770,36 @@ function NetworkEtalonSection({
   const geoButton =
     !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
       <Tooltip title={locationDisplayValue} placement="top">
-        <Box
-          component="span"
+        <span
           aria-label={`Локація: ${locationDisplayValue}`}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            width: 24,
-            height: 24,
-            p: 0,
-            border: '1px solid transparent',
-            borderRadius: '50%',
-            color: MESSAGE_CARD_ACTION_COLOR,
-            flexShrink: 0,
-            alignSelf: 'center',
-            '&:hover': {
-              color: MESSAGE_CARD_ACTION_COLOR,
-            },
-          }}
+          className="inline-flex items-center justify-center box-border w-6 h-6 p-0 border border-transparent rounded-full shrink-0 self-center text-[var(--color-action)] hover:text-[var(--color-action)]"
         >
           <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
-        </Box>
+        </span>
       </Tooltip>
     ) : null;
 
   const networkContent =
     primaryKind === 'network' ? (
-      <Box
-        sx={{
-          minWidth: 0,
-          maxWidth: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          rowGap: 0.25,
-          alignItems: 'flex-start',
-        }}
-      >
+      <div className="min-w-0 max-w-full flex flex-col gap-y-1 items-start">
         {renderedNetworks.map(({ networkId, label, badge }) => (
-          <Box
+          <div
             key={networkId}
-            sx={{
-              minWidth: 0,
-              maxWidth: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              flexWrap: 'nowrap',
-              lineHeight: 1.1,
-            }}
+            className="min-w-0 max-w-full flex items-center gap-1 flex-nowrap leading-[1.1]"
           >
-            <Box
-              component="span"
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                maxWidth: '100%',
-                verticalAlign: 'top',
-                overflowWrap: 'anywhere',
-                wordBreak: 'break-word',
-              }}
-            >
+            <span className="inline-flex items-center max-w-full align-top break-words [overflow-wrap:anywhere]">
               <Typography component="strong" variant="body2" sx={{ fontWeight: 700 }}>
                 {label}
               </Typography>
               {badge ? (
-                <Box
-                  component="span"
-                  className="badge badge-no-unit-sm"
-                  sx={{
-                    ml: '0.35em',
-                    verticalAlign: 'middle',
-                    position: 'relative',
-                    top: '-0.06em',
-                  }}
-                >
+                <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
                   в дорозвідці
-                </Box>
+                </span>
               ) : null}
-            </Box>
-          </Box>
+            </span>
+          </div>
         ))}
-      </Box>
+      </div>
     ) : (
       <Typography
         component="span"
@@ -991,26 +842,11 @@ function NetworkEtalonSection({
     );
 
   return (
-    <Stack
-      direction="row"
-      spacing={0.75}
-      alignItems="center"
-      sx={{ minWidth: 0, maxWidth: '100%', width: 'fit-content' }}
-    >
+    <div className="flex flex-row gap-1.5 items-center min-w-0 max-w-full w-fit">
       {primaryIcon}
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          rowGap: 0.25,
-          alignItems: 'flex-start',
-        }}
-      >
-        {networkContent}
-      </Box>
+      <div className="min-w-0 flex flex-col gap-y-1 items-start">{networkContent}</div>
       {geoButton}
-    </Stack>
+    </div>
   );
 }
 
@@ -1085,18 +921,18 @@ function MessageCardHeaderComponent({
   const showTopGridLocation =
     etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
   const dateTimeBlock = (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-      <Stack direction="row" spacing={0.75} alignItems="center">
+    <div className="flex flex-row gap-2 flex-wrap items-center">
+      <div className="flex flex-row gap-[6px] items-center">
         <ScheduleOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
         <Typography variant="caption">{formatTime(msg.time)}</Typography>
-      </Stack>
+      </div>
       {isPresent(msg.date) ? (
-        <Stack direction="row" spacing={0.75} alignItems="center">
+        <div className="flex flex-row gap-[6px] items-center">
           <CalendarTodayOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
           <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
-        </Stack>
+        </div>
       ) : null}
-    </Stack>
+    </div>
   );
   const hasFrequencyFilter =
     isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
@@ -1114,11 +950,11 @@ function MessageCardHeaderComponent({
         />
       }
       text={
-        <Box sx={{ minWidth: 0 }}>
+        <div className="min-w-0">
           <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
             {msg.freq}
           </Typography>
-        </Box>
+        </div>
       }
       trailing={
         hasFrequencyFilter ? (
@@ -1134,34 +970,18 @@ function MessageCardHeaderComponent({
 
   if (compact) {
     return (
-      <Box
+      <div
         data-message-header-grid="true"
-        sx={{
-          display: 'grid',
+        className="grid items-center w-full pb-2 border-b border-divider"
+        style={{
           gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
           gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
-          width: '100%',
-          alignItems: 'center',
-          columnGap: 2,
-          rowGap: 1,
-          pb: 1,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
+          columnGap: '16px',
+          rowGap: '8px',
         }}
       >
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
-          {dateTimeBlock}
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gridColumn: 2,
-            gridRow: 1,
-          }}
-        >
+        <div className="min-w-0 flex items-center col-start-1 row-start-1">{dateTimeBlock}</div>
+        <div className="min-w-0 flex items-center justify-center col-start-2 row-start-1">
           <ActionIconsRow
             id={id}
             msg={msg}
@@ -1184,40 +1004,15 @@ function MessageCardHeaderComponent({
             onEditDetails={onEditDetails}
             onExcludeMessageEntity={onExcludeMessageEntity}
           />
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 1,
-          }}
+        </div>
+        <div
+          className="min-w-0 flex items-center justify-end col-start-3 row-start-1"
+          style={{ paddingRight: rightInsetPx }}
         >
-          {topRight ?? (
-            <Box
-              sx={{
-                minHeight: 28,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-              }}
-            />
-          )}
-        </Box>
-        <Box
-          sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
-        >
-          <Stack
-            direction="row"
-            spacing={1.5}
-            useFlexGap
-            flexWrap="wrap"
-            alignItems="center"
-            sx={{ minWidth: 0 }}
-          >
+          {topRight ?? <div className="min-h-[28px] flex items-center justify-end" />}
+        </div>
+        <div className="min-w-0 flex items-start col-start-1 row-start-2">
+          <div className="flex flex-row gap-3 flex-wrap items-center min-w-0">
             {isPresent(groupName) ? (
               <MetaLine
                 icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
@@ -1240,77 +1035,40 @@ function MessageCardHeaderComponent({
                 —
               </Typography>
             )}
-          </Stack>
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gridColumn: 2,
-            gridRow: 2,
-          }}
-        >
+          </div>
+        </div>
+        <div className="min-w-0 flex items-center justify-center col-start-2 row-start-2">
           {freqBlock ?? (
             <Typography variant="caption" color="text.secondary">
               —
             </Typography>
           )}
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 2,
-          }}
+        </div>
+        <div
+          className="min-w-0 flex items-center justify-end col-start-3 row-start-2"
+          style={{ paddingRight: rightInsetPx }}
         >
-          <Box
-            sx={{
-              minHeight: 28,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-            }}
-          >
-            {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
-          </Box>
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gridColumn: '1 / 3',
-            gridRow: 3,
-            columnGap: 1,
-            pr: `${rightInsetPx}px`,
-          }}
+          <div className="min-h-[28px] flex items-center justify-end">
+            {metadataTrigger ?? <div className="min-h-[28px] min-w-[28px]" />}
+          </div>
+        </div>
+        <div
+          className="min-w-0 flex items-center col-start-1 col-end-3 row-start-3 gap-2"
+          style={{ paddingRight: rightInsetPx }}
         >
-          <Box
-            sx={{
+          <div
+            className="min-w-0"
+            style={{
               flex: `0 1 ${networkRowContentWidthPct}%`,
-              minWidth: 0,
               maxWidth: `${networkRowContentWidthPct}%`,
             }}
           >
             <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-          </Box>
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 3,
-          }}
+          </div>
+        </div>
+        <div
+          className="min-w-0 flex items-center justify-end col-start-3 row-start-3"
+          style={{ paddingRight: rightInsetPx }}
         >
           {showTopGridLocation ? (
             <MetaLine
@@ -1319,37 +1077,24 @@ function MessageCardHeaderComponent({
               text={locationDisplayValue}
             />
           ) : null}
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Box
+    <div
       data-message-header-grid="true"
-      sx={{
-        display: 'grid',
+      className="grid items-center w-full"
+      style={{
         gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
-        width: '100%',
-        alignItems: 'center',
-        columnGap: 4,
-        rowGap: 0.75,
+        columnGap: '32px',
+        rowGap: '6px',
       }}
     >
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
-        {dateTimeBlock}
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gridColumn: 2,
-          gridRow: 1,
-        }}
-      >
+      <div className="min-w-0 flex items-center col-start-1 row-start-1">{dateTimeBlock}</div>
+      <div className="min-w-0 flex items-center justify-center col-start-2 row-start-1">
         <ActionIconsRow
           id={id}
           msg={msg}
@@ -1372,40 +1117,15 @@ function MessageCardHeaderComponent({
           onEditDetails={onEditDetails}
           onExcludeMessageEntity={onExcludeMessageEntity}
         />
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 1,
-        }}
+      </div>
+      <div
+        className="min-w-0 flex items-center justify-end col-start-3 row-start-1"
+        style={{ paddingRight: rightInsetPx }}
       >
-        {topRight ?? (
-          <Box
-            sx={{
-              minHeight: 28,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-            }}
-          />
-        )}
-      </Box>
-      <Box
-        sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
-      >
-        <Stack
-          direction="row"
-          spacing={1.5}
-          useFlexGap
-          flexWrap="wrap"
-          alignItems="center"
-          sx={{ minWidth: 0 }}
-        >
+        {topRight ?? <div className="min-h-[28px] flex items-center justify-end" />}
+      </div>
+      <div className="min-w-0 flex items-start col-start-1 row-start-2">
+        <div className="flex flex-row gap-3 flex-wrap items-center min-w-0">
           {isPresent(groupName) ? (
             <MetaLine
               icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
@@ -1428,18 +1148,9 @@ function MessageCardHeaderComponent({
               —
             </Typography>
           )}
-        </Stack>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gridColumn: 2,
-          gridRow: 2,
-        }}
-      >
+        </div>
+      </div>
+      <div className="min-w-0 flex items-center justify-center col-start-2 row-start-2">
         {freqBlock ?? (
           <CenteredTextOnlyRow
             text={
@@ -1449,55 +1160,32 @@ function MessageCardHeaderComponent({
             }
           />
         )}
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 2,
-        }}
+      </div>
+      <div
+        className="min-w-0 flex items-center justify-end col-start-3 row-start-2"
+        style={{ paddingRight: rightInsetPx }}
       >
-        <Box
-          sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
-        >
-          {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
-        </Box>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gridColumn: '1 / 3',
-          gridRow: 3,
-          columnGap: 1,
-          pr: `${rightInsetPx}px`,
-        }}
+        <div className="min-h-[28px] flex items-center justify-end">
+          {metadataTrigger ?? <div className="min-h-[28px] min-w-[28px]" />}
+        </div>
+      </div>
+      <div
+        className="min-w-0 flex items-center col-start-1 col-end-3 row-start-3 gap-2"
+        style={{ paddingRight: rightInsetPx }}
       >
-        <Box
-          sx={{
+        <div
+          className="min-w-0"
+          style={{
             flex: `0 1 ${networkRowContentWidthPct}%`,
-            minWidth: 0,
             maxWidth: `${networkRowContentWidthPct}%`,
           }}
         >
           <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-        </Box>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 3,
-        }}
+        </div>
+      </div>
+      <div
+        className="min-w-0 flex items-center justify-end col-start-3 row-start-3"
+        style={{ paddingRight: rightInsetPx }}
       >
         {showTopGridLocation ? (
           <MetaLine
@@ -1506,8 +1194,8 @@ function MessageCardHeaderComponent({
             text={locationDisplayValue}
           />
         ) : null}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 

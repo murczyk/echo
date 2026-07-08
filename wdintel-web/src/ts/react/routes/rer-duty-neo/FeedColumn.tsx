@@ -85,7 +85,7 @@ export type FeedColumnModel = {
     onAtBottomChange?: (atBottom: boolean) => void;
     onArrowClick?: () => void;
     /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
-    onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
+    onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   };
 };
 

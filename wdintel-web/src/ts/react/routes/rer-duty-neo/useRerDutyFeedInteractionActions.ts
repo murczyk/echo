@@ -102,21 +102,37 @@ export function useRerDutyFeedInteractionActions(params: Params) {
   );
 
   const handleVisibleMessageIds = useCallback(
-    (feedId: string) => (ids: number[], opts?: { atBottom?: boolean }) => {
-      if (ids.length === 0) return;
-      setMessageFeeds((prev) =>
-        prev.map((f) => {
+    (feedId: string) => (lastVisibleId: number, opts?: { atBottom?: boolean }) => {
+      setMessageFeeds((prev) => {
+        let changed = false;
+        const next = prev.map((f) => {
           if (f.id !== feedId) return f;
-          const newlyReadIds = ids.filter((id) => !f.readIds.has(id));
-          if (newlyReadIds.length === 0 && !opts?.atBottom) return f;
-          const nextReadIds = new Set([...f.readIds, ...newlyReadIds]);
+          const isAtBottom = opts?.atBottom ?? false;
+
+          const newlyReadIds: number[] = [];
+          for (const [id] of f.items) {
+            if (!f.readIds.has(id)) {
+              newlyReadIds.push(id);
+            }
+            if (id === lastVisibleId) {
+              break;
+            }
+          }
+
+          if (newlyReadIds.length === 0 && !isAtBottom) return f;
+          if (newlyReadIds.length === 0 && isAtBottom && f.unreadCount === 0) return f;
+
+          changed = true;
+          const nextReadIds = new Set(f.readIds);
+          newlyReadIds.forEach((id) => nextReadIds.add(id));
           return {
             ...f,
             readIds: nextReadIds,
-            unreadCount: opts?.atBottom ? 0 : Math.max(0, f.unreadCount - newlyReadIds.length),
+            unreadCount: isAtBottom ? 0 : Math.max(0, f.unreadCount - newlyReadIds.length),
           };
-        }),
-      );
+        });
+        return changed ? next : prev;
+      });
     },
     [setMessageFeeds],
   );

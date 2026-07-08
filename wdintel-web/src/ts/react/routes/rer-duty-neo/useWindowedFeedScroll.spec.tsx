@@ -13,10 +13,10 @@ function TestScroller(props: {
   loadingNewer?: boolean;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
-  onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
+  onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
 }) {
   const scroll = useWindowedFeedScroll({
-    items: props.ids.map((id) => ({ id })),
+    itemIds: props.ids,
     loadingOlder: false,
     loadingNewer: props.loadingNewer ?? false,
     hasReachedStart: false,
