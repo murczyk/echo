@@ -153,6 +153,29 @@ isOurOrganism user users login =
                 False
 
 
+isPostAuthoredComment : B.MessageComment -> Bool
+isPostAuthoredComment comment =
+    comment.sigintPostName
+        |> Maybe.withDefault ""
+        |> trim
+        |> (/=) ""
+
+
+commentAuthorLabel : B.MessageComment -> String
+commentAuthorLabel comment =
+    comment.sigintPostName
+        |> Maybe.map trim
+        |> Maybe.andThen
+            (\sigintPostName ->
+                if sigintPostName == "" then
+                    Nothing
+
+                else
+                    Just sigintPostName
+            )
+        |> Maybe.withDefault comment.login
+
+
 addCallsign :
     Model
     -> Int
@@ -1537,13 +1560,17 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             vps.messageComments
                 |> Dict.get msgId
                 |> Maybe.withDefault []
-                |> List.filter (\x -> not (isOurOrganism vps.user vps.users x.login))
+                |> List.filter
+                    (\x ->
+                        isPostAuthoredComment x
+                            || not (isOurOrganism vps.user vps.users x.login)
+                    )
                 |> List.map renderOtherComment
 
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text comment.login ]
+                [ strong [] [ text (commentAuthorLabel comment) ]
                 , text ": "
                 , text comment.comment
                 ]

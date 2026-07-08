@@ -2767,6 +2767,7 @@ type alias MessageComment =
     , messageId : Int
     , comment : String
     , login : String
+    , sigintPostName : Maybe (String)
     }
 
 
@@ -2777,6 +2778,7 @@ messageCommentEncoder struct =
         , ( "message_id", (Json.Encode.int) struct.messageId )
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "login", (Json.Encode.string) struct.login )
+        , ( "sigint_post_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sigintPostName )
         ]
 
 
@@ -10306,6 +10308,7 @@ messageCommentDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_post_name" (Json.Decode.nullable (Json.Decode.string))))
 
 
 messageCommentsReqDecoder : Json.Decode.Decoder MessageCommentsReq
@@ -14269,4 +14272,3 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
-

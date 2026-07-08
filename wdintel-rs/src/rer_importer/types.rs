@@ -1485,6 +1485,7 @@ pub struct MessageComment {
     pub message_id: i64,
     pub comment: String,
     pub login: String,
+    pub sigint_post_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
