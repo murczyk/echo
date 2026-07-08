@@ -20,15 +20,38 @@ function normalizeInterseptionKind(raw: Record<string, unknown>): InterseptionKi
   return (raw.is_rer ?? raw.isRer ?? true) ? 'rer' : 'other';
 }
 
-/** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
-export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Record<number, Tag>> {
-  const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {}, options);
-  const map: Record<number, Tag> = {};
-  for (const [i, tagRecord] of Object.entries(raw)) {
-    const nTag = transformSnakeToCamel<Tag>(tagRecord[1]);
-    map[Number(tagRecord[0])] = nTag;
+type RawTagPair = [number, Tag | Record<string, unknown>];
+
+export type TagsForDisplay = {
+  tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
+};
+
+function normalizeTagsForDisplay(raw: RawTagPair[] | null | undefined): TagsForDisplay {
+  const tagsMap: Record<number, Tag> = {};
+  const tagsOrder: number[] = [];
+
+  for (const item of raw ?? []) {
+    if (!Array.isArray(item) || item.length < 2) continue;
+    const tagId = Number(item[0]);
+    if (!Number.isFinite(tagId)) continue;
+    tagsMap[tagId] = transformSnakeToCamel<Tag>(item[1]);
+    tagsOrder.push(tagId);
   }
-  return map;
+
+  return { tagsMap, tagsOrder };
+}
+
+/** Tags list for display. Fetched from POST /api/tags/tags-list in backend-provided order. */
+export async function getTagsForDisplay(options?: RequestOptions): Promise<TagsForDisplay> {
+  const raw = await postJson<RawTagPair[]>('/api/tags/tags-list', {}, options);
+  return normalizeTagsForDisplay(raw);
+}
+
+/** Tags map for legacy callers. Use getTagsForDisplay() when visible order matters. */
+export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Record<number, Tag>> {
+  const { tagsMap } = await getTagsForDisplay(options);
+  return tagsMap;
 }
 
 /** Latest sender profiles (UUID -> profile). */

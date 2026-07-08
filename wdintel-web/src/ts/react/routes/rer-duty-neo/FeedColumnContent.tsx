@@ -90,6 +90,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     featureStrictNetworks,
     tagsLayout,
     tagsMap,
+    tagsOrder,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -288,6 +289,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               networks={networkMap ? Object.values(networkMap) : undefined}
               featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
+              tagsOrder={tagsOrder}
               onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
               onImportant={() => onMessageImportant(id, msg.important)}
               onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}

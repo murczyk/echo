@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
+  getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
 }));
@@ -59,6 +60,7 @@ vi.mock('../../services/api/analysis', () => ({
   fetchInboxMessages: mocks.fetchInboxMessages,
   fetchNetworksByIds: mocks.fetchNetworksByIds,
   getLatestSenders: mocks.getLatestSenders,
+  getTagsForDisplay: mocks.getTagsForDisplay,
   getTagsMapForDisplay: mocks.getTagsMapForDisplay,
 }));
 
@@ -178,6 +180,19 @@ describe('buildAnalysisReqForFilterSection', () => {
 
       expect(req[key as keyof typeof req]).toBeNull();
     }
+  });
+
+  it('strips every self-referential tag condition from the tags facet request', () => {
+    const req = buildAnalysisReqForFilterSection('tags', {
+      ...buildBaseReq(),
+      selectedTags: null,
+      deniedTags: [11],
+      tagPresence: 'WithoutTags',
+    });
+
+    expect(req.selectedTags).toBeNull();
+    expect(req.deniedTags).toBeNull();
+    expect(req.tagPresence).toBeNull();
   });
 
   it('clears withoutMetadata for metadata filter section requests', () => {

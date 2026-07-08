@@ -160,6 +160,7 @@ const baseAnalysisData = {
   summaryCallsignsInfo: {},
   unitsMap: {},
   tagsMap: {},
+  tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
   groupInfos: {},

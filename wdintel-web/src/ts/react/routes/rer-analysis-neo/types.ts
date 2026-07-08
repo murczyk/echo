@@ -66,6 +66,9 @@ export type AnalysisQueryState = Omit<
   fromDateTimeStr: string;
   toDateTimeStr: string;
   filterTagsOption: TagFilterOption;
+  // When true, the selected `tags` become an exclusion list (denied_tags) instead of
+  // an inclusion list (selected_tags). The tag picker stays a single list either way.
+  tagsExcludeMode: boolean;
   includeOnlyNewFreqs: boolean;
   onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;
@@ -205,6 +208,7 @@ export type AnalysisPageState = {
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
   tagsMap: Record<number, Tag>;
+  tagsOrder: number[];
   topCallsigns: AnalysisCountItem[];
   topFreqs: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];

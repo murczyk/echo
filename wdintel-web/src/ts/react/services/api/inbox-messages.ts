@@ -342,6 +342,8 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     highlight_signals: req.highlightSignals,
     highlight_points: req.highlightPoints,
     selected_tags: emptyArrToNull(req.selectedTags),
+    denied_tags: emptyArrToNull(req.deniedTags),
+    tag_presence: req.tagPresence,
     selected_aors: emptyArrToNull(req.selectedAors),
     selected_networks: emptyArrToNull(req.selectedNetworks),
     metadata_cc: req.metadataCc,
