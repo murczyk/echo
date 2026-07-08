@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import {
-  mergeUpdatedDutyFeedMessages,
-  mergeUpdatedVisibleMessages,
+  mergeUpdatedDutyFeedMessageTags,
+  mergeUpdatedVisibleMessageTags,
 } from './message-card-message-updates';
 
 function inboxMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
@@ -19,35 +19,71 @@ function inboxMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
-describe('mergeUpdatedVisibleMessages', () => {
+describe('mergeUpdatedVisibleMessageTags', () => {
   it('keeps the same array when none of the fetched messages are visible', () => {
     const current = [[1, inboxMessage({ text: 'one' })]] as Array<[number, InboxMessage]>;
     const updates = [[2, inboxMessage({ text: 'two' })]] as Array<[number, InboxMessage]>;
 
-    expect(mergeUpdatedVisibleMessages(current, updates)).toBe(current);
+    expect(mergeUpdatedVisibleMessageTags(current, updates)).toBe(current);
   });
 
-  it('replaces only matching visible messages and preserves order', () => {
-    const first = inboxMessage({ text: 'one' });
-    const second = inboxMessage({ text: 'two' });
+  it('updates only tag fields and preserves unrelated message data', () => {
+    const first = inboxMessage({
+      text: 'one',
+      keywordTokens: [{ text: 'kw' }] as never,
+      textMarked: [{ CNTextC: { text: 'marked' } }] as never,
+    });
+    const second = inboxMessage({
+      text: 'two',
+      keywordTokens: [{ text: 'old kw' }] as never,
+      textMarked: [{ CNTextC: { text: 'old marked' } }] as never,
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    });
     const current = [
       [1, first],
       [2, second],
     ] as Array<[number, InboxMessage]>;
-    const updatedSecond = inboxMessage({ text: 'two-updated' });
+    const updatedSecond = inboxMessage({
+      text: 'two-updated',
+      keywordTokens: [{ text: 'new kw' }] as never,
+      textMarked: [{ CNTextC: { text: 'new marked' } }] as never,
+      tags: [2],
+      inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
+    });
 
-    const next = mergeUpdatedVisibleMessages(current, [[2, updatedSecond]]);
+    const next = mergeUpdatedVisibleMessageTags(current, [[2, updatedSecond]]);
 
     expect(next).toEqual([
       [1, first],
-      [2, updatedSecond],
+      [
+        2,
+        {
+          ...second,
+          tags: [2],
+          inboxTags: [
+            {
+              id: 2,
+              tagId: 2,
+              confidence: 1,
+              login: null,
+              model: null,
+              organismId: null,
+            },
+          ],
+          text: 'two',
+        },
+      ],
     ]);
     expect(next).not.toBe(current);
+    expect(next[1][1].keywordTokens).toBe(second.keywordTokens);
+    expect(next[1][1].textMarked).toBe(second.textMarked);
+    expect(next[1][1].text).toBe('two');
   });
 });
 
-describe('mergeUpdatedDutyFeedMessages', () => {
-  it('updates every feed that contains the fetched message id', () => {
+describe('mergeUpdatedDutyFeedMessageTags', () => {
+  it('merges tag fields into every feed that contains the fetched message id', () => {
     const first = inboxMessage({ text: 'one' });
     const second = inboxMessage({ text: 'two' });
     const nextMessage = inboxMessage({ text: 'two-updated' });
@@ -69,13 +105,13 @@ describe('mergeUpdatedDutyFeedMessages', () => {
       },
     ];
 
-    const next = mergeUpdatedDutyFeedMessages(feeds, [[2, nextMessage]]);
+    const next = mergeUpdatedDutyFeedMessageTags(feeds, [[2, nextMessage]]);
 
     expect(next[0].items).toEqual([
       [1, first],
-      [2, nextMessage],
+      [2, second],
     ]);
-    expect(next[1].items).toEqual([[2, nextMessage]]);
+    expect(next[1].items).toEqual([[2, second]]);
     expect(next[0].unreadCount).toBe(3);
     expect(next[0].readIds).toBe(feeds[0].readIds);
   });
@@ -90,6 +126,8 @@ describe('mergeUpdatedDutyFeedMessages', () => {
       },
     ];
 
-    expect(mergeUpdatedDutyFeedMessages(feeds, [[2, inboxMessage({ text: 'two' })]])).toBe(feeds);
+    expect(mergeUpdatedDutyFeedMessageTags(feeds, [[2, inboxMessage({ text: 'two' })]])).toBe(
+      feeds,
+    );
   });
 });

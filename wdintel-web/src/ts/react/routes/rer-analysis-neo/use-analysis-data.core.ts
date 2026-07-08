@@ -10,7 +10,7 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
 import { useAnalysisActions } from './use-analysis-actions';
-import { mergeUpdatedVisibleMessages } from '../shared/message-card/message-card-message-updates';
+import { mergeUpdatedVisibleMessageTags } from '../shared/message-card/message-card-message-updates';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import {
   buildAnalysisActionsParams,
@@ -212,9 +212,10 @@ export function useAnalysisData({
       try {
         const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds);
         if (nextMessages.length === 0) return;
-        messageList.setMessages((current) => mergeUpdatedVisibleMessages(current, nextMessages));
-        mapData.setMapOpenMessages((current) => mergeUpdatedVisibleMessages(current, nextMessages));
-        void loadMissingNetworksForMessages(nextMessages);
+        messageList.setMessages((current) => mergeUpdatedVisibleMessageTags(current, nextMessages));
+        mapData.setMapOpenMessages((current) =>
+          mergeUpdatedVisibleMessageTags(current, nextMessages),
+        );
       } catch (loadError) {
         if (!onUnauthorized(loadError)) {
           onError(loadError instanceof Error ? loadError.message : String(loadError));

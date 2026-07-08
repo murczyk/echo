@@ -284,6 +284,7 @@ describe('useRerDutyFeeds', () => {
         filter: {},
       },
     ];
+    hoisted.fetchMessagesByIds.mockReset();
     hoisted.fetchAnalysisCallsignInfos.mockReset();
     hoisted.applyFilterMock.mockReset();
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
@@ -456,5 +457,151 @@ describe('useRerDutyFeeds', () => {
 
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
+  });
+});
+
+describe('useRerDutyFeeds inbox refreshes', () => {
+  it('skips fetching when no visible ids overlap', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { textMarked: [], tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([9]);
+      });
+
+      expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('updates only tag fields on every visible feed copy', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    const currentMessage = {
+      text: 'current',
+      textMarked: [{ CNTextC: { text: 'marked' } }],
+      keywordTokens: [{ text: 'keyword' }],
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    const currentOtherMessage = {
+      text: 'other',
+      textMarked: [{ CNTextC: { text: 'other marked' } }],
+      keywordTokens: [{ text: 'other keyword' }],
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    const updatedMessage = {
+      text: 'updated',
+      textMarked: [{ CNTextC: { text: 'new marked' } }],
+      keywordTokens: [{ text: 'new keyword' }],
+      tags: [2],
+      inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [
+          [1, currentOtherMessage],
+          [2, currentMessage],
+        ],
+        filter: {},
+        unreadCount: 4,
+        readIds: new Set<number>([1]),
+      },
+      {
+        id: 'mf-1',
+        items: [[2, currentMessage]],
+        filter: {},
+        unreadCount: 1,
+        readIds: new Set<number>(),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[2, updatedMessage]]);
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
+      expect(latest?.messageFeeds[0].items[1]?.[1].text).toBe('current');
+      expect(latest?.messageFeeds[0].items[1]?.[1].tags).toEqual([2]);
+      expect(latest?.messageFeeds[0].items[1]?.[1].inboxTags).toEqual([
+        { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
+      ]);
+      expect(latest?.messageFeeds[0].items[1]?.[1].keywordTokens).toBe(
+        currentMessage.keywordTokens,
+      );
+      expect(latest?.messageFeeds[0].items[1]?.[1].textMarked).toBe(currentMessage.textMarked);
+      expect(latest?.messageFeeds[1].items[0]?.[1].tags).toEqual([2]);
+      expect(latest?.messageFeeds[0].unreadCount).toBe(4);
+      expect(latest?.messageFeeds[0].readIds).toBe(hoisted.messageFeeds[0].readIds);
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('surfaces fetch failures and leaves feed state unchanged', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockRejectedValueOnce(new Error('boom'));
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([1]);
+      });
+
+      expect(hoisted.setFeedErrorMock).toHaveBeenCalledWith('boom');
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
   });
 });

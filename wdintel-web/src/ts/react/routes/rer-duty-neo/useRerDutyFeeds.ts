@@ -4,7 +4,7 @@ import { fetchOrganismKeywordSets } from '../../services/api/organism-keyword-se
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { currentSystemSettings } from '../../services/api/system-settings';
-import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
+import { mergeUpdatedDutyFeedMessageTags } from '../shared/message-card/message-card-message-updates';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
@@ -201,7 +201,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
       try {
         const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds);
         if (nextMessages.length === 0) return;
-        feedState.setMessageFeeds((current) => mergeUpdatedDutyFeedMessages(current, nextMessages));
+        feedState.setMessageFeeds((current) =>
+          mergeUpdatedDutyFeedMessageTags(current, nextMessages),
+        );
       } catch (loadError) {
         feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
         console.error(loadError);
