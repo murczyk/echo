@@ -132,6 +132,35 @@ pub fn goi_download_file_sync(
     .context(h!()))
 }
 
+pub fn goi_file_exists_sync(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) -> anyhow::Result<bool> {
+    let addr = format!("{}:{}", req.ssh_host.trim(), req.ssh_port);
+    let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
+    let timeout = Duration::from_millis(ORGANISM_GOI_SSH_TIMEOUT_MS.into());
+
+    let mut errors = Vec::with_capacity(socket_addrs.len());
+    for socket_addr in socket_addrs {
+        match goi_try_file_exists_for_socket(
+            socket_addr,
+            timeout,
+            ORGANISM_GOI_SSH_TIMEOUT_MS,
+            req.ssh_user.trim(),
+            &remote_file_path,
+        ) {
+            Ok(exists) => return Ok(exists),
+            Err(err) => errors.push(format!("{socket_addr}: {err:#}")),
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "GOI SSH file exists check failed for all resolved addresses for {addr}: {}",
+        errors.join("; ")
+    )
+    .context(h!()))
+}
+
 pub fn goi_delete_file_sync(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -196,6 +225,7 @@ fn goi_try_upload_file_for_socket(
 ) -> anyhow::Result<()> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
+    goi_ensure_remote_parent_dir(&session, remote_file_path)?;
     let remote_temp_file_path = goi_remote_upload_temp_path(remote_file_path);
     if let Err(err) =
         goi_scp_send_file(&session, &remote_temp_file_path, file_data)
@@ -217,6 +247,30 @@ fn goi_try_upload_file_for_socket(
         false,
     )?;
     Ok(())
+}
+
+fn goi_ensure_remote_parent_dir(
+    session: &ssh2::Session,
+    remote_file_path: &str,
+) -> anyhow::Result<()> {
+    let Some(parent_dir) = goi_remote_parent_dir(remote_file_path) else {
+        return Ok(());
+    };
+    goi_exec_command_for_session(
+        session,
+        &format!("mkdir -p -- {}", goi_shell_quote_single(&parent_dir)),
+        Some(ORGANISM_GOI_SSH_LIST_LIMIT),
+        false,
+    )?;
+    Ok(())
+}
+
+fn goi_remote_parent_dir(remote_file_path: &str) -> Option<String> {
+    let parent = Path::new(remote_file_path.trim())
+        .parent()?
+        .to_str()?
+        .trim();
+    (!parent.is_empty() && parent != ".").then(|| parent.to_string())
 }
 
 fn goi_scp_send_file(
@@ -309,6 +363,53 @@ fn goi_try_download_file_for_socket(
     remote_file.wait_eof().c(h!())?;
     remote_file.wait_close().c(h!())?;
     Ok(file_data)
+}
+
+fn goi_try_file_exists_for_socket(
+    socket_addr: SocketAddr,
+    timeout: Duration,
+    timeout_ms: u32,
+    ssh_user: &str,
+    remote_file_path: &str,
+) -> anyhow::Result<bool> {
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, timeout_ms, ssh_user)?;
+    let output = goi_exec_command_for_session(
+        &session,
+        &goi_file_exists_command(remote_file_path),
+        Some(1),
+        true,
+    )?;
+    goi_file_exists_from_output(remote_file_path, &output)
+}
+
+fn goi_file_exists_command(remote_file_path: &str) -> String {
+    format!(
+        "path={}; if [ -f \"$path\" ]; then printf '%s\\n' file; elif [ -e \"$path\" ]; then printf '%s\\n' other; else printf '%s\\n' missing; fi",
+        goi_shell_quote_single(remote_file_path)
+    )
+}
+
+fn goi_file_exists_from_output(
+    remote_file_path: &str,
+    output: &[String],
+) -> anyhow::Result<bool> {
+    match output.first().map(String::as_str) {
+        Some("file") => Ok(true),
+        Some("missing") => Ok(false),
+        Some("other") => Err(anyhow::anyhow!(
+            "GOI remote path exists but is not a regular file: {remote_file_path}"
+        )
+        .context(h!())),
+        Some(value) => Err(anyhow::anyhow!(
+            "unexpected GOI remote file exists output for {remote_file_path}: {value}"
+        )
+        .context(h!())),
+        None => Err(anyhow::anyhow!(
+            "empty GOI remote file exists output for {remote_file_path}"
+        )
+        .context(h!())),
+    }
 }
 
 fn goi_try_exec_command_for_socket(
@@ -474,4 +575,46 @@ fn goi_auth_with_pubkey_file(
 pub(super) fn goi_shell_quote_single(value: &str) -> String {
     let escaped = value.replace('\'', "'\\''");
     format!("'{escaped}'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_file_exists_from_output_parses_file_state() {
+        assert!(goi_file_exists_from_output(
+            "/etc/goi/data/xlsx/knowledge.xlsx",
+            &["file".to_string()]
+        )
+        .expect("file output"));
+        assert!(!goi_file_exists_from_output(
+            "/etc/goi/data/xlsx/knowledge.xlsx",
+            &["missing".to_string()]
+        )
+        .expect("missing output"));
+        assert!(goi_file_exists_from_output(
+            "/etc/goi/data/xlsx/knowledge.xlsx",
+            &["other".to_string()]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn goi_file_exists_command_quotes_remote_path() {
+        let command = goi_file_exists_command("/etc/goi/data/xlsx/o'hara.xlsx");
+
+        assert!(command.contains("path='/etc/goi/data/xlsx/o'\\''hara.xlsx'"));
+        assert!(command.contains("printf '%s\\n' missing"));
+    }
+
+    #[test]
+    fn goi_remote_parent_dir_extracts_parent_for_upload() {
+        assert_eq!(
+            goi_remote_parent_dir("/etc/goi/data/xlsx/knowledge.xlsx")
+                .as_deref(),
+            Some("/etc/goi/data/xlsx")
+        );
+        assert_eq!(goi_remote_parent_dir("knowledge.xlsx"), None);
+    }
 }

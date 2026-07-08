@@ -214,6 +214,18 @@ async fn download_or_create_knowledge_xlsx(
     knowledge_xlsx_path: &str,
     integration_label: &str,
 ) -> Result<Vec<u8>, AppError> {
+    if !super::goi_file_exists(ssh_req.clone(), knowledge_xlsx_path.to_string())
+        .await
+        .c(h!())?
+    {
+        return create_knowledge_xlsx(
+            ssh_req,
+            knowledge_xlsx_path,
+            integration_label,
+        )
+        .await;
+    }
+
     match super::goi_download_file(
         ssh_req.clone(),
         knowledge_xlsx_path.to_string(),
@@ -222,22 +234,35 @@ async fn download_or_create_knowledge_xlsx(
     {
         Ok(file_data) => Ok(file_data),
         Err(err) if goi_download_error_is_missing_file(&err) => {
-            info!(
-                "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
-                knowledge_xlsx_path
-            );
-            let file_data = empty_xlsx_buffer().c(h!())?;
-            super::goi_upload_file(
+            create_knowledge_xlsx(
                 ssh_req,
-                knowledge_xlsx_path.to_string(),
-                file_data.clone(),
+                knowledge_xlsx_path,
+                integration_label,
             )
             .await
-            .c(h!())?;
-            Ok(file_data)
         }
         Err(err) => Err(AppError::from(err)),
     }
+}
+
+async fn create_knowledge_xlsx(
+    ssh_req: CheckOrganismGoiConnectionReq,
+    knowledge_xlsx_path: &str,
+    integration_label: &str,
+) -> Result<Vec<u8>, AppError> {
+    info!(
+        "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
+        knowledge_xlsx_path
+    );
+    let file_data = empty_xlsx_buffer().c(h!())?;
+    super::goi_upload_file(
+        ssh_req,
+        knowledge_xlsx_path.to_string(),
+        file_data.clone(),
+    )
+    .await
+    .c(h!())?;
+    Ok(file_data)
 }
 
 fn goi_download_error_is_missing_file(err: &anyhow::Error) -> bool {
