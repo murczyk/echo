@@ -150,7 +150,7 @@ pub fn parse_comments(body: &str) -> ParsedComments {
     let anchor = lines.iter().position(|l| is_datetime_header_line(l));
 
     let top =
-        anchor.and_then(|a| parse_top(&lines[..a], marker_comment.as_ref()));
+        anchor.and_then(|a| parse_top(&lines, a, marker_comment.as_ref()));
     let marker_bottom =
         marker_comment.as_ref().map(|comment| comment.text.clone());
     let bottom = marker_bottom
@@ -237,10 +237,13 @@ fn is_marker_comment_boundary(line: &str) -> bool {
 }
 
 fn parse_top(
-    pre: &[&str],
+    lines: &[&str],
+    anchor: usize,
     marker_comment: Option<&MarkerComment>,
 ) -> Option<String> {
-    let kept: Vec<&str> = pre
+    let comment_end =
+        zp_peleng_vorony_odina_suffix_start(lines, anchor).unwrap_or(anchor);
+    let kept: Vec<&str> = lines[..comment_end]
         .iter()
         .enumerate()
         .filter(|(i, l)| {
@@ -260,7 +263,9 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
         return BTreeSet::new();
     };
     let marker_comment = scan_marker_comment(lines);
-    let indices: Vec<usize> = lines[..anchor]
+    let comment_end =
+        zp_peleng_vorony_odina_suffix_start(lines, anchor).unwrap_or(anchor);
+    let indices: Vec<usize> = lines[..comment_end]
         .iter()
         .enumerate()
         .filter(|(i, l)| {
@@ -276,6 +281,25 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     join_block(&kept)
         .map(|_| indices.into_iter().collect())
         .unwrap_or_default()
+}
+
+fn zp_peleng_vorony_odina_suffix_start(
+    lines: &[&str],
+    anchor: usize,
+) -> Option<usize> {
+    if lines[anchor + 1..]
+        .iter()
+        .any(|line| !line.trim().is_empty())
+    {
+        return None;
+    }
+
+    [6_usize, 5_usize].into_iter().find_map(|line_count| {
+        let start = (anchor + 1).checked_sub(line_count)?;
+        let body = lines[start..=anchor].join("\n");
+        crate::rer_importer::zp_peleng_vorony_odina_format::parse(&body)
+            .map(|_| start)
+    })
 }
 
 fn parse_tail_comment(post: &[&str]) -> Option<String> {
@@ -453,6 +477,28 @@ mod tests {
     fn body_noheader_without_top_comment_keeps_zp_peleng_vorony_odina_sk42_body(
     ) {
         let body = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "x:51-29637\ny:65-01850");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_only_comment_before_zp_peleng_vorony_odina_mgrs(
+    ) {
+        let body = "операторський коментар\nПост Shark 4\n447.450\nр-н. Шевченка\n36T VS 89904 14667\n01.07.2026 03:07:42";
+        let comments = parse_comments(body);
+        assert_eq!(comments.top.as_deref(), Some("операторський коментар"));
+
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "36T VS 89904 14667");
+    }
+
+    #[test]
+    fn body_noheader_without_top_comment_crops_only_comment_before_zp_peleng_vorony_odina_sk42(
+    ) {
+        let body = "операторський коментар\nПост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
+        let comments = parse_comments(body);
+        assert_eq!(comments.top.as_deref(), Some("операторський коментар"));
+
         let res = extract_text_without_top_comment(body).unwrap();
         assert_eq!(res.body, "x:51-29637\ny:65-01850");
     }

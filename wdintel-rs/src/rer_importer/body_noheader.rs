@@ -163,33 +163,42 @@ pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
 }
 
 pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
+    if let Some(exact_format_text) = extract_exact_format_text(input, input) {
+        return Ok(exact_format_text);
+    }
+
+    extract_text_excluding_lines(input, &BTreeSet::new())
+}
+
+fn extract_exact_format_text(
+    input: &str,
+    position_input: &str,
+) -> Option<NoHeadersBody> {
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(input)
     {
-        let start_byte = input.find(&zp_peleng.coordinate_text).unwrap_or(0);
-        let start = input[..start_byte].chars().count();
-        let end = start + zp_peleng.coordinate_text.chars().count();
-        return Ok(NoHeadersBody {
-            body: zp_peleng.coordinate_text,
-            start,
-            end,
-        });
+        return Some(no_headers_body_at(
+            position_input,
+            zp_peleng.coordinate_text,
+        ));
     }
     if let Some(zp_digital_post_alt) =
         crate::rer_importer::zp_digital_post_alt_format::parse(input)
     {
-        let start_byte =
-            input.find(&zp_digital_post_alt.network_line).unwrap_or(0);
-        let start = input[..start_byte].chars().count();
-        let end = start + zp_digital_post_alt.network_line.chars().count();
-        return Ok(NoHeadersBody {
-            body: zp_digital_post_alt.network_line,
-            start,
-            end,
-        });
+        return Some(no_headers_body_at(
+            position_input,
+            zp_digital_post_alt.network_line,
+        ));
     }
 
-    extract_text_excluding_lines(input, &BTreeSet::new())
+    None
+}
+
+fn no_headers_body_at(position_input: &str, body: String) -> NoHeadersBody {
+    let start_byte = position_input.find(&body).unwrap_or(0);
+    let start = position_input[..start_byte].chars().count();
+    let end = start + body.chars().count();
+    NoHeadersBody { body, start, end }
 }
 
 pub(crate) fn extract_text_excluding_lines(
@@ -205,6 +214,14 @@ pub(crate) fn extract_text_excluding_lines(
             trim_otrymano_post_header(x).unwrap_or_else(|| x.to_string())
         })
         .collect();
+    let exact_format_input = lines.join("\n");
+    if let Some(exact_format_text) = extract_exact_format_text(
+        exact_format_input.trim_matches(['\r', '\n']),
+        input,
+    ) {
+        return Ok(exact_format_text);
+    }
+
     lines = lines
         .iter()
         // .filter(|l| l.trim() != "")

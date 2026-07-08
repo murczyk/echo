@@ -18,12 +18,18 @@ pub fn extract_datetime(
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {
-        return Ok(Some(zp_peleng.timestamp));
+        if let Ok(timestamp) = validate_datetime(lnow, zp_peleng.timestamp) {
+            return Ok(Some(timestamp));
+        }
     }
     if let Some(zp_digital_post_alt) =
         crate::rer_importer::zp_digital_post_alt_format::parse(body)
     {
-        return Ok(Some(zp_digital_post_alt.timestamp));
+        if let Ok(timestamp) =
+            validate_datetime(lnow, zp_digital_post_alt.timestamp)
+        {
+            return Ok(Some(timestamp));
+        }
     }
 
     lazy_static! {
@@ -182,6 +188,26 @@ pub fn extract_datetime(
     };
 
     Ok(None)
+}
+
+fn validate_datetime(
+    lnow: DateTime<Tz>,
+    res: NaiveDateTime,
+) -> Result<NaiveDateTime, AppError> {
+    let Some(res_tz) = lnow.timezone().from_local_datetime(&res).earliest()
+    else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
+
+    if res_tz > lnow + chrono::Duration::days(2) {
+        return Err(AppError::BL {
+            msg: "Date or time too far in future".to_string(),
+        });
+    }
+
+    Ok(res_tz.naive_local())
 }
 
 fn parse_datetime(
@@ -365,7 +391,7 @@ mod tests {
     fn extract_datetime_zp_peleng_vorony_odina_mgrs_format() {
         let input = "Пост Shark 4\n447.450   \nр-н. Шевченка   \n36T VS 89904 14667 \n01.07.2026 03:07:42";
         let tz = crate::config::get_tz();
-        let lnow = fixed_now(tz);
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2026, 7, 1)
@@ -380,7 +406,7 @@ mod tests {
     fn extract_datetime_zp_peleng_vorony_odina_sk42_format() {
         let input = "Пост Танго-Ехо\n446.354\nР-н Таврія\nx:51-29637\ny:65-01850\n03:10 01.07.2026";
         let tz = crate::config::get_tz();
-        let lnow = fixed_now(tz);
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2026, 7, 1)
@@ -395,7 +421,7 @@ mod tests {
     fn extract_datetime_zp_digital_post_alt_format() {
         let input = "01.07.2026, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
         let tz = crate::config::get_tz();
-        let lnow = fixed_now(tz);
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2026, 7, 1)
@@ -404,6 +430,24 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_zp_peleng_vorony_odina_rejects_far_future() {
+        let input = "Пост Shark 4\n447.450\nр-н. Шевченка\n36T VS 89904 14667\n01.07.2099 03:07:42";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn extract_datetime_zp_digital_post_alt_rejects_far_future() {
+        let input = "01.07.2099, 03:04:16\n167.3000 ЦФП55\nУКХ р/м   управління 3 пдб 299 пдп 98 ( ЩЕРБАКИ, МИРНЕ)";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        assert_eq!(res, None);
     }
 
     #[test]
