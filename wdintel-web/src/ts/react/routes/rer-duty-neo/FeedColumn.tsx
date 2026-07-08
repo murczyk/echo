@@ -60,6 +60,7 @@ export type FeedColumnModel = {
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
     tagsMap: Record<number, Tag>;
+    tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;
     onCancelBotTagAction: () => void;
     onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;

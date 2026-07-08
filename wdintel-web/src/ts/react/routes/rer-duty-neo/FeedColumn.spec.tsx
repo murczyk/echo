@@ -10,16 +10,13 @@ import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef(function Virtuoso(
+  Virtuoso: forwardRef<
+    HTMLDivElement,
     {
-      data,
-      itemContent,
-    }: {
       data?: Array<[number, unknown]>;
       itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-    },
-    ref,
-  ) {
+    }
+  >(function Virtuoso({ data, itemContent }, ref) {
     return (
       <div ref={ref} data-testid="virtuoso">
         {(data ?? []).map((item, index) => (
@@ -77,7 +74,12 @@ function buildProps(): FeedColumnProps {
           freqsDenied: null,
           postsSelected: null,
           postsDenied: null,
+          unitsSelected: null,
+          unitsDenied: null,
+          unitsExactMatchOnly: false,
           lastViewedMessageId: null,
+          highlightKeywordsEnabled: false,
+          highlightKeywordSetId: null,
         },
         items: [],
         loading: false,
@@ -171,6 +173,7 @@ function buildProps(): FeedColumnProps {
         featureStrictNetworks: false,
         tagsLayout: 'compact',
         tagsMap: {},
+        tagsOrder: [],
         botTagAction: null,
         onCancelBotTagAction: vi.fn(),
         onMarkBotTagWrong: vi.fn(),

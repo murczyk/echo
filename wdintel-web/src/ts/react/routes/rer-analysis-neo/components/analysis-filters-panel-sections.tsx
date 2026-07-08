@@ -53,6 +53,26 @@ type Props = Pick<
 
 type FilterSectionLoadTarget = AnalysisFilterSectionId | 'freqs';
 
+// The tags filter has two mutually exclusive modes on a single axis, so they live in
+// one ToggleButtonGroup instead of mixing a synthetic list option with a separate toggle:
+//   include  → keep only messages carrying a selected tag  (tagsExcludeMode = false)
+//   exclude  → drop messages carrying a selected tag       (tagsExcludeMode = true)
+type TagFilterMode = 'include' | 'exclude';
+
+function tagFilterModeFromState(queryState: AnalysisFiltersPanelPage['queryState']): TagFilterMode {
+  return queryState.tagsExcludeMode ? 'exclude' : 'include';
+}
+
+function tagFilterModeHint(mode: TagFilterMode): string {
+  switch (mode) {
+    case 'exclude':
+      return 'Показувати записи без вибраних тегів';
+    case 'include':
+    default:
+      return 'Показувати лише записи з вибраними тегами';
+  }
+}
+
 type MetadataFilterMode = 'all' | 'with' | 'without';
 
 function metadataFilterModeFromState(
@@ -138,6 +158,14 @@ export function AnalysisFiltersPanelSections({
     });
   };
 
+  const handleTagFilterModeChange = (
+    _event: MouseEvent<HTMLElement>,
+    nextMode: TagFilterMode | null,
+  ) => {
+    if (nextMode == null) return;
+    updateQueryState({ tagsExcludeMode: nextMode === 'exclude' });
+  };
+
   const effectiveUnitsExactMatchOnly =
     queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
   const unitsExactMatchLabel =
@@ -150,6 +178,7 @@ export function AnalysisFiltersPanelSections({
       : null;
 
   const metadataFilterMode = metadataFilterModeFromState(queryState);
+  const tagFilterMode = tagFilterModeFromState(queryState);
   return (
     <>
       <FilterSection
@@ -513,6 +542,36 @@ export function AnalysisFiltersPanelSections({
         onLoad={loadSection('tags')}
       >
         <Stack spacing={1.25}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+              minWidth: 0,
+            }}
+          >
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              color="primary"
+              value={tagFilterMode}
+              onChange={handleTagFilterModeChange}
+              aria-label="Режим тегів"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  py: 0.75,
+                },
+              }}
+            >
+              <ToggleButton value="include">Лише обрані</ToggleButton>
+              <ToggleButton value="exclude">Крім обраних</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.35 }}>
+              {tagFilterModeHint(tagFilterMode)}
+            </Typography>
+          </Box>
           <AnalysisFilterField
             label="Теги"
             options={derived.tagOptions}
@@ -530,6 +589,7 @@ export function AnalysisFiltersPanelSections({
               control={
                 <Checkbox
                   checked={queryState.filterTagsOption === 'AllTags'}
+                  disabled={queryState.tagsExcludeMode}
                   onChange={(_event, value) =>
                     updateQueryState({ filterTagsOption: value ? 'AllTags' : 'OneOfTags' })
                   }

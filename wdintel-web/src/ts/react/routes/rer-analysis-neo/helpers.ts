@@ -86,6 +86,7 @@ export function emptyQueryState(): AnalysisQueryState {
     adjacentFreqsRange: 0,
     withoutModelTags: false,
     filterTagsOption: 'OneOfTags',
+    tagsExcludeMode: false,
     reportTagsOnlyThisUnit: false,
     onlyWithMedia: false,
   };
@@ -255,8 +256,8 @@ export function buildAnalysisReq(
     orWithCoords: query.orWithCoords,
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
-    selectedTags: query.tags.length ? query.tags : null,
-    deniedTags: null,
+    selectedTags: query.tags.length && !query.tagsExcludeMode ? query.tags : null,
+    deniedTags: query.tags.length && query.tagsExcludeMode ? query.tags : null,
     tagPresence: null,
     selectedNetworks: query.withoutNetwork
       ? null
@@ -400,7 +401,8 @@ export function queryStateFromSavedFilter(
     metadataHash: req.metadataHash ?? [],
     onlyWithMetadata: req.onlyWithMetadata ?? false,
     withoutMetadata: req.withoutMetadata ?? false,
-    tags: req.selectedTags ?? [],
+    tags: (req.deniedTags?.length ? req.deniedTags : req.selectedTags) ?? [],
+    tagsExcludeMode: Boolean(req.deniedTags?.length),
     includePelengLocations: req.includePelengLocations ?? true,
     unitsExactMatchOnly: req.unitsExactMatchOnly,
     withoutModelTags: req.withoutModelTags ?? false,
@@ -482,7 +484,8 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     metadataHash: normalized.metadataHash ?? [],
     onlyWithMetadata: normalized.onlyWithMetadata,
     withoutMetadata: normalized.withoutMetadata,
-    tags: normalized.selectedTags ?? [],
+    tags: (normalized.deniedTags?.length ? normalized.deniedTags : normalized.selectedTags) ?? [],
+    tagsExcludeMode: Boolean(normalized.deniedTags?.length),
     includePelengLocations: normalized.includePelengLocations,
     unitsExactMatchOnly: normalized.unitsExactMatchOnly ?? null,
     withoutModelTags: normalized.withoutModelTags,

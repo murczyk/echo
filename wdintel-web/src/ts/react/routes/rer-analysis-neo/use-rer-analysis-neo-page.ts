@@ -491,6 +491,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     summaryCallsignsInfo: data.summaryCallsignsInfo,
     unitsMap: data.unitsMap,
     tagsMap: data.tagsMap,
+    tagsOrder: data.tagsOrder,
     topCallsigns: data.topCallsigns,
     topFreqs: data.topFreqs,
     topLocations: data.topLocations,

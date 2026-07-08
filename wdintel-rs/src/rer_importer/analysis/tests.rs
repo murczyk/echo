@@ -3464,6 +3464,202 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
 
 #[tokio::test]
 #[serial]
+async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let _parent_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("2 бат 1 полк".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let _short_parent_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("2 бат".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("3 рота 2 бат 1 полк".to_string()),
+            company: Set("3 рота".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("1 полк".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("3 рота 2 бат 2 полк".to_string()),
+            company: Set("3 рота".to_string()),
+            battalion: Set("2 бат".to_string()),
+            regiment: Set("2 полк".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_network = mk_network_fixture(
+        db,
+        "Child Unit Network",
+        "944.6",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    let other_network = mk_network_fixture(
+        db,
+        "Other Child Unit Network",
+        "944.7",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(child_network.network.id),
+            unit_id: Set(child_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(other_network.network.id),
+            unit_id: Set(other_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let msg_child = mk_analysis_message(
+        db,
+        "msg-child-unit",
+        "944.6",
+        test_dt(2026, 3, 2, 10, 5),
+        &[&fixture.group_x],
+        &[child_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_child.id, Some("Header Noise"))
+        .await
+        .unwrap();
+    let msg_other = mk_analysis_message(
+        db,
+        "msg-other-child-unit",
+        "944.7",
+        test_dt(2026, 3, 2, 10, 6),
+        &[&fixture.group_x],
+        &[other_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_other.id, Some("Header Noise"))
+        .await
+        .unwrap();
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let base_req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_units: Some(vec!["2 бат 1 полк".to_string()]),
+        units_exact_match_only: Some(false),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &base_req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_child.id]
+    );
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        selected_units: Some(vec!["2 бат".to_string()]),
+        ..base_req.clone()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_child.id]
+    );
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        units_exact_match_only: Some(true),
+        ..base_req
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert!(items.is_empty());
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        denied_units: Some(vec!["2 бат".to_string()]),
+        units_exact_match_only: Some(false),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_other.id]
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());
@@ -3873,6 +4069,43 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
         .1,
         1
     );
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let map_req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_freqs: Some(vec!["998.8".to_string()]),
+        or_with_coords: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let inbox_items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &map_req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        inbox_items.iter().map(|item| item.id).collect_vec(),
+        vec![peleng_only_msg.id]
+    );
+    assert_eq!(inbox_items[0].coords, None);
+    let pelengs = crate::location::peleng::collect_inbox_item_pelengs(
+        &inbox_items,
+        &fixture.env.dbx,
+    )
+    .await
+    .unwrap();
+    let points = crate::rer_importer::inbox::bl::collect_map_points(
+        inbox_items,
+        pelengs,
+    )
+    .unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].message_id, peleng_only_msg.id);
+    assert_eq!(points[0].lat, 48.0);
+    assert_eq!(points[0].lng, 37.0);
 }
 
 #[tokio::test]

@@ -11,7 +11,7 @@ import {
   getLatestFrequencies,
   getLatestSenders,
   getPostsList,
-  getTagsMapForDisplay,
+  getTagsForDisplay,
   getUserSigintGroups,
   savedFiltersList,
 } from '../../services/api/inbox';
@@ -24,6 +24,7 @@ export function useRerDutyFilterOptions() {
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [tagsOrder, setTagsOrder] = useState<number[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>([]);
   const [selectedSavedIdByFeedId, setSelectedSavedIdByFeedId] = useState<
     Record<string, number | null>
@@ -56,7 +57,7 @@ export function useRerDutyFilterOptions() {
         getLatestFrequencies(),
         getPostsList(),
         getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        getTagsMapForDisplay(),
+        getTagsForDisplay(),
       ]);
     if (sendersResult.status === 'fulfilled') setProfiles(sendersResult.value.data ?? {});
     else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
@@ -80,8 +81,10 @@ export function useRerDutyFilterOptions() {
         }
       }
     } else console.warn('loadFilterOptions: getUserSigintGroups failed', groupKeysResult.reason);
-    if (tagsResult.status === 'fulfilled') setTagsMap(tagsResult.value);
-    else console.warn('loadFilterOptions: getTagsMapForDisplay failed', tagsResult.reason);
+    if (tagsResult.status === 'fulfilled') {
+      setTagsMap(tagsResult.value.tagsMap);
+      setTagsOrder(tagsResult.value.tagsOrder);
+    } else console.warn('loadFilterOptions: getTagsForDisplay failed', tagsResult.reason);
     try {
       const saved = await savedFiltersList();
       setSavedFilters(saved);
@@ -124,6 +127,7 @@ export function useRerDutyFilterOptions() {
     setGroupInfos,
     groupsList,
     tagsMap,
+    tagsOrder,
     savedFilters,
     setSavedFilters,
     selectedSavedIdByFeedId,
