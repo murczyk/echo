@@ -330,6 +330,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               ...windowed.addedItems.map(([id]) => id),
             ]);
             return {
+              messageFeedsRef,
               ...x,
               items: windowed.items,
               readIds: readIdsWithOlder,
@@ -363,7 +364,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (!feed || feed.items.length === 0) return;
       const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
       const lastId = feed.items[feed.items.length - 1][0];
-      if (opts?.skipIfNewestExhausted && newestExhaustedCursorByFeedIdRef.current[feedId] === lastId) {
+      if (
+        opts?.skipIfNewestExhausted &&
+        newestExhaustedCursorByFeedIdRef.current[feedId] === lastId
+      ) {
         return;
       }
       loadNewerInFlightRef.current.add(feedId);
@@ -394,7 +398,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               addedCount = windowed.addedItems.length;
               const markAllRead =
                 opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
-              const unreadAddedCount = windowed.addedItems.filter(([id]) => !x.readIds.has(id)).length;
+              const unreadAddedCount = windowed.addedItems.filter(
+                ([id]) => !x.readIds.has(id),
+              ).length;
               const readIds = markAllRead
                 ? new Set<number>([...x.readIds, ...windowed.items.map(([id]) => id)])
                 : x.readIds;
@@ -402,6 +408,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               delete newestExhaustedCursorByFeedIdRef.current[feedId];
               delete lastServerCountByFeedIdRef.current[feedId];
               return {
+                messageFeedsRef,
                 ...x,
                 items: windowed.items,
                 readIds,
@@ -468,6 +475,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       messageFeeds.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
           return {
+            messageFeedsRef,
             feedId: w.id,
             quantity: null as number | null,
             hasItems: w.items.length > 0,
@@ -484,9 +492,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           const { quantity } = await fetchInboxCount(
             buildReqForFeed(w, { sinceIdNoninclusive: cursorId, nolimit: true }),
           );
-          return { feedId: w.id, quantity, hasItems, cursorId, skipped: false, failed: false };
+          return {
+            messageFeedsRef,
+            feedId: w.id,
+            quantity,
+            hasItems,
+            cursorId,
+            skipped: false,
+            failed: false,
+          };
         } catch {
           return {
+            messageFeedsRef,
             feedId: w.id,
             quantity: 0,
             hasItems: w.items.length > 0,
@@ -505,7 +522,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         if (entry?.skipped) return f;
         if (f.items.length === 0) return f;
         const quantity = entry?.quantity ?? 0;
-        return { ...f, unreadCount: Math.max(f.unreadCount, quantity) };
+        return {
+          messageFeedsRef,
+          ...f,
+          unreadCount: Math.max(f.unreadCount, quantity),
+        };
       }),
     );
     for (const entry of counts) {
@@ -515,7 +536,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         continue;
       }
       if (entry.quantity <= 0) {
-        if (isPresent(entry.cursorId)) newestExhaustedCursorByFeedIdRef.current[feedId] = entry.cursorId;
+        if (isPresent(entry.cursorId))
+          newestExhaustedCursorByFeedIdRef.current[feedId] = entry.cursorId;
         lastServerCountByFeedIdRef.current[feedId] = {
           cursorId: entry.cursorId,
           quantity: 0,
@@ -674,6 +696,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
 
   return {
+    messageFeedsRef,
     messageFeeds,
     setMessageFeeds,
     error,

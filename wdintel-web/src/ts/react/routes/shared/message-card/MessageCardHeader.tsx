@@ -39,7 +39,7 @@ import {
   type SxProps,
   type Theme,
 } from '@mui/material';
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
@@ -1046,7 +1046,7 @@ export type MessageCardHeaderProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
 };
 
-export function MessageCardHeader({
+function MessageCardHeaderComponent({
   compact = false,
   displayMode,
   excludeMenuOptions = [],
@@ -1510,3 +1510,5 @@ export function MessageCardHeader({
     </Box>
   );
 }
+
+export const MessageCardHeader = memo(MessageCardHeaderComponent);

@@ -43,7 +43,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     applyFilter,
-    setError: (value) => setError(value),
+    setError,
   });
 
   const messageItemActions = useRerDutyMessageItemActions({
@@ -52,7 +52,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     authUserName,
     profiles,
     groupInfos,
-    setError: (value) => setError(value),
+    setError,
   });
 
   const feedInteractionActions = useRerDutyFeedInteractionActions({

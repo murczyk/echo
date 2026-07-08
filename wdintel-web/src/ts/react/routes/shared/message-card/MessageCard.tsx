@@ -1,7 +1,7 @@
 import { Box, Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -30,6 +30,7 @@ import {
   emptyFilter,
   getPointEtalonsFromMessage,
   messageRenderDistance,
+  type MessageEntityExcludeMenuOption,
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
@@ -39,6 +40,13 @@ import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
 
 dayjs.extend(customParseFormat);
+
+// Hoisted so repeated renders (e.g. every message card in a scrolling feed) share a single
+// stable reference for these "empty" defaults, instead of allocating a fresh object/array
+// per render that would otherwise defeat React.memo and downstream useMemo dependency checks.
+const EMPTY_FILTER: RerDutyFeedFilterState = emptyFilter();
+const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
+const EMPTY_EXCLUDE_OPTIONS: MessageEntityExcludeMenuOption[] = [];
 
 export function formatMessageCardTooltipTime(
   msg: Pick<InboxMessage, 'time' | 'timestamp'>,
@@ -109,7 +117,7 @@ export type MessageCardProps = {
   analysisCallsignActions?: AnalysisCallsignActions;
 };
 
-export function MessageCard({
+function MessageCardComponent({
   id,
   msg,
   feedCount = 1,
@@ -122,8 +130,8 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
-  filterState = emptyFilter(),
-  messageComments = [],
+  filterState = EMPTY_FILTER,
+  messageComments = EMPTY_MESSAGE_COMMENTS,
   searchText,
   networkMap = {},
   featureStrictNetworks = false,
@@ -158,37 +166,51 @@ export function MessageCard({
     if (!networks) return {};
     return Object.fromEntries(networks.map((network) => [network.id, network]));
   }, [networkMap, networks]);
-  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
-    featureStrictNetworks,
-    networkDisplayMap,
-    networkMap: derivedNetworkMap,
-    networks,
-  });
+  const etalonDisplayModel = useMemo(
+    () =>
+      resolveMessageCardEtalonDisplayModel(msg, {
+        featureStrictNetworks,
+        networkDisplayMap,
+        networkMap: derivedNetworkMap,
+        networks,
+      }),
+    [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
+  );
   const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
   const onCopyLocationAction =
     etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
-  const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
-  const excludeMenuOptions =
-    displayMode === 'duty'
-      ? buildVisibleExcludeMenuOptions(filterState, {
-          group: { value: msg.groupMasterKey, label: groupName },
-          sender: { value: msg.sender, label: senderName },
-          freq: { value: msg.freq, label: msg.freq },
-          post: { value: msg.post, label: msg.post },
-        })
-      : [];
-  const mapHref =
-    displayMode === 'duty'
-      ? pointEtalons.length > 0
-        ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
-        : buildClassicAnalysisHref(msg, true)
-      : undefined;
+  const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
+  const excludeSources = useMemo(
+    () => ({
+      group: { value: msg.groupMasterKey, label: groupName },
+      sender: { value: msg.sender, label: senderName },
+      freq: { value: msg.freq, label: msg.freq },
+      post: { value: msg.post, label: msg.post },
+    }),
+    [msg.groupMasterKey, groupName, msg.sender, senderName, msg.freq, msg.post],
+  );
+  const excludeMenuOptions = useMemo(
+    () =>
+      displayMode === 'duty'
+        ? buildVisibleExcludeMenuOptions(filterState, excludeSources)
+        : EMPTY_EXCLUDE_OPTIONS,
+    [displayMode, filterState, excludeSources],
+  );
+  const mapHref = useMemo(
+    () =>
+      displayMode === 'duty'
+        ? pointEtalons.length > 0
+          ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
+          : buildClassicAnalysisHref(msg, true)
+        : undefined,
+    [displayMode, pointEtalons, msg],
+  );
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs)
       ? messageRenderDistance(msg.timestamp, relativeTimeMs)
       : null;
-  const tooltipTime = formatMessageCardTooltipTime(msg);
+  const tooltipTime = useMemo(() => formatMessageCardTooltipTime(msg), [msg]);
 
   const topRight =
     displayMode === 'duty' ? (
@@ -216,7 +238,10 @@ export function MessageCard({
       <Box sx={{ minHeight: 28 }} />
     );
 
-  const analysisHref = displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined;
+  const analysisHref = useMemo(
+    () => (displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined),
+    [displayMode, msg],
+  );
   const metadataTrigger =
     displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
@@ -252,7 +277,8 @@ export function MessageCard({
     metadataTrigger,
     excludeMenuOptions,
   };
-  const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
+  const visibleMessageComments =
+    displayMode === 'analysis' ? messageComments : EMPTY_MESSAGE_COMMENTS;
 
   return (
     <Box
@@ -320,6 +346,8 @@ export function MessageCard({
     </Box>
   );
 }
+
+export const MessageCard = memo(MessageCardComponent);
 
 type BaseMessageCardProps = Omit<MessageCardProps, 'displayMode'>;
 

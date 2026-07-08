@@ -8,7 +8,7 @@ import type {
 } from '../../../../../Bindings';
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
@@ -323,4 +323,4 @@ function useMemoText(
       })();
 }
 
-export const MessageCardContent = MessageCardMessageBody;
+export const MessageCardContent = memo(MessageCardMessageBody);
