@@ -127,10 +127,14 @@ lazy_static! {
 }
 
 pub fn is_header_line(line: &str) -> bool {
-    if crate::rer_importer::inbox::metadata::is_metadata_line(line) {
-        return true;
-    }
+    is_metadata_header_line(line) || is_non_metadata_header_line(line)
+}
 
+fn is_metadata_header_line(line: &str) -> bool {
+    crate::rer_importer::inbox::metadata::is_metadata_line(line)
+}
+
+fn is_non_metadata_header_line(line: &str) -> bool {
     is_header_line_raw(line)
         || normalize_decorated_header_line(line)
             .is_some_and(|line| is_header_line_raw(&line))
@@ -270,15 +274,22 @@ pub(crate) fn extract_text_excluding_lines(
         return Ok(exact_format_text);
     }
 
-    lines = lines
-        .iter()
-        // .filter(|l| l.trim() != "")
-        .filter(|l| !is_header_line(l))
-        .cloned()
-        .collect();
-    // lines.truncate(5);
+    lines.retain(|line| !is_non_metadata_header_line(line));
 
-    let mut res = lines.join("\n");
+    let mut start_line = 0;
+    while start_line < lines.len()
+        && is_boundary_header_or_empty(&lines[start_line])
+    {
+        start_line += 1;
+    }
+    let mut end_line = lines.len();
+    while end_line > start_line
+        && is_boundary_header_or_empty(&lines[end_line - 1])
+    {
+        end_line -= 1;
+    }
+
+    let mut res = lines[start_line..end_line].join("\n");
 
     // 2. Find start position in character indices
     let start_byte_pos = input.find(&res).unwrap_or(0);
@@ -306,6 +317,10 @@ pub(crate) fn extract_text_excluding_lines(
     })
 }
 
+fn is_boundary_header_or_empty(line: &str) -> bool {
+    line.trim().is_empty() || is_header_line(line)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,11 +342,13 @@ mod tests {
     #[test]
     fn extract_text_keeps_dialog_lines_with_inline_metadata() {
         let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nПрийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення";
-        let res = extract_text(body).unwrap().body;
+        let res = extract_text(body).unwrap();
         assert_eq!(
-            res,
-            "Прийняв ID: 123 і пішов\nПередай СС: 5 завтра\nПерехоплення"
+            res.body,
+            "Прийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення"
         );
+        let start_byte = body.find(&res.body).unwrap();
+        assert_eq!(res.start, body[..start_byte].chars().count());
     }
 
     #[test]
