@@ -325,6 +325,16 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_keeps_dialog_lines_with_inline_metadata() {
+        let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nПрийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "Прийняв ID: 123 і пішов\nПередай СС: 5 завтра\nПерехоплення"
+        );
+    }
+
+    #[test]
     fn extract_text_decorated_header_lines_are_headers() {
         let body = "🔺(01.07.2026 02:58:08)\n🔺(01.07.2026 02:58:08 F=170.0250(МГц))\n│╬{*123.7586*}\n[УКХ р/м]\nПерехоплення";
         let res = extract_text(body).unwrap().body;

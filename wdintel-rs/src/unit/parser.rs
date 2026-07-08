@@ -34,9 +34,12 @@ pub fn extract_unit_with_aor(
         });
     }
 
-    if let Some(value) =
-        try_extract_pu_fsb_rf_unit_and_location(settlements.clone(), inp)
-            .c(h!())?
+    if let Some(value) = try_extract_pu_fsb_rf_unit_and_location(
+        settlements.clone(),
+        inp,
+        m_aor_id,
+    )
+    .c(h!())?
     {
         return Ok(value);
     }
@@ -754,6 +757,7 @@ fn is_known_unit_token(unit_name: &str) -> bool {
 fn try_extract_pu_fsb_rf_unit_and_location(
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     inp: &str,
+    m_aor_id: Option<i64>,
 ) -> Result<Option<UnitAndLoc>, AppError> {
     lazy_static! {
         static ref RE: Regex = RegexBuilder::new(
@@ -777,8 +781,12 @@ fn try_extract_pu_fsb_rf_unit_and_location(
     };
     let unit = unit.trim().to_string();
     let locality = locality.trim().to_string();
-    let (locality, locality_v2) =
-        extract_locality(settlements, line.to_string(), Some(locality), None)?;
+    let (locality, locality_v2) = extract_locality(
+        settlements,
+        line.to_string(),
+        Some(locality),
+        m_aor_id,
+    )?;
     Ok(Some(UnitAndLoc {
         unit: Some(unit),
         locality,
@@ -882,8 +890,10 @@ pub fn try_extract_comm_operator(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::location::types::Language;
     use crate::location::SettlementDetails;
     use crate::unit::parse_library_unit;
+    use std::collections::BTreeMap;
 
     #[test]
     fn extract_unit_01() {
@@ -2625,6 +2635,42 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality = res.locality.unwrap();
         assert!(locality.contains("ПОПОВО-ЛЕЖАЧИ"));
         assert!(locality.contains("ТЕТКИНО"));
+    }
+
+    #[test]
+    fn extract_unit_pu_fsb_rf_resolves_location_with_aor() {
+        let aor_id = 7;
+        let locality = "КВАДРОЗЕБРААЛЬФА";
+        let mut trie = crate::location::trie::Trie::new();
+        let details = SettlementDetails {
+            id: Some(9_000_001),
+            name: locality.to_string(),
+            region: "ТЕСТОВА ОБЛАСТЬ".to_string(),
+            language: Language::Ua,
+            coords: Some((48.0, 33.0)),
+        };
+        trie.insert(locality, details.clone());
+        let mut details_by_id = BTreeMap::new();
+        details_by_id.insert(details.id.unwrap(), details);
+        let settlements_data = Arc::new((
+            vec!["ТЕСТОВА ОБЛАСТЬ".to_string()],
+            vec![],
+            trie,
+            details_by_id,
+        ));
+        let mut settlements_config =
+            crate::location::SettlementsDataConfig::default();
+        settlements_config
+            .aor_id_to_settlements_data
+            .insert(aor_id, settlements_data);
+        let settlements = Arc::new(RwLock::new(settlements_config));
+        let body = format!("ймовірно ПУ ФСБ РФ / район {locality}");
+
+        let res =
+            extract_unit_with_aor(settlements, &body, vec![], Some(aor_id))
+                .unwrap();
+
+        assert_eq!(validate_locality_v2(res.locality_v2), vec![locality]);
     }
 
     #[test]
