@@ -203,6 +203,7 @@ mod tests {
             autofix_echoim_missing_messages: Set(false),
             echo_im_sync_since_inbox_message_id: Set(0),
             cyber_echo_enabled: Set(enabled),
+            echo_restapi_error_discord_webhook_url: Set(None),
         }
         .insert(dbx)
         .await
