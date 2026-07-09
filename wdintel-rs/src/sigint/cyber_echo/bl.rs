@@ -54,6 +54,10 @@ pub async fn create_signal_message(
         .resolve_completed_uploads(login, &upload_urls)
         .await
         .c(h!())?;
+    let delete_uploaded_attachments = env
+        .config
+        .feature_delete_uploaded_attachment
+        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
 
     let datasource_group_id =
         query::ensure_datasource_group_id(&txn, &signal_group.master_key)
@@ -89,9 +93,7 @@ pub async fn create_signal_message(
         &env.config,
         &env.s3,
         &txn,
-        env.config
-            .feature_delete_uploaded_attachment
-            .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+        false,
     )
     .await
     .c(h!())?;
@@ -129,6 +131,11 @@ pub async fn create_signal_message(
     .c(h!())?;
 
     txn.commit().await.c(h!())?;
+
+    if delete_uploaded_attachments {
+        crate::messenger::media::delete_uploaded_attachment_files(&uploads)
+            .await;
+    }
 
     let mut redis = env.redis.clone();
     crate::inbox::fanout_inbox_changes(&mut redis, changed_inbox_item_ids)
