@@ -1,9 +1,10 @@
+use crate::config::SYSTEM_LOGIN_NAME;
 use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
 use actix_web::web::{Data, Json};
-use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
 use serial_test::serial;
 
 struct GroupFixture {
@@ -2332,6 +2333,82 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     assert_eq!(entry.comments.len(), 1);
     assert_eq!(entry.comments[0].login, other_org_login.login);
     assert_eq!(entry.comments[0].comment, "other organism visible comment");
+    assert_eq!(entry.comments[0].sigint_post_name, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_comments_api_returns_post_name_for_auto_comment() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let message = mk_analysis_message(
+        db,
+        "msg-auto-post-comment-api",
+        "940.75",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let sigint_post_name = format!("Пост Альфа {}", message.id);
+    let sigint_post = sigint_post::ActiveModel {
+        name: Set(sigint_post_name.clone()),
+        deleted: Set(false),
+        created_at: Set(test_dt(2026, 3, 1, 10, 4)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    if login::Entity::find_by_id(SYSTEM_LOGIN_NAME)
+        .one(db)
+        .await
+        .unwrap()
+        .is_none()
+    {
+        mk_login(
+            db,
+            login::ActiveModel {
+                login: Set(SYSTEM_LOGIN_NAME.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            signal_message_id: Set(message.id),
+            comment: Set("auto extracted comment".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 6)),
+            sigint_post_id: Set(Some(sigint_post.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+        .await
+        .unwrap();
+    let entry = comments
+        .data
+        .iter()
+        .find(|entry| entry.message_id == message.id)
+        .unwrap();
+
+    assert_eq!(entry.comments.len(), 1);
+    assert_eq!(entry.comments[0].login, SYSTEM_LOGIN_NAME);
+    assert_eq!(entry.comments[0].comment, "auto extracted comment");
+    assert_eq!(
+        entry.comments[0].sigint_post_name.as_deref(),
+        Some(sigint_post_name.as_str())
+    );
 }
 
 #[tokio::test]

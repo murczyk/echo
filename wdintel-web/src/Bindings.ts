@@ -1069,6 +1069,7 @@ export type MessageComment = {
   messageId: number;
   comment: string;
   login: string;
+  sigintPostName: string | null;
 };
 
 export type MessageCommentsReq = {

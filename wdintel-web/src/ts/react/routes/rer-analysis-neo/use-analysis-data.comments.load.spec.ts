@@ -40,6 +40,7 @@ function buildComment(overrides: Partial<MessageComment>): MessageComment {
     messageId: 42,
     login: 'peer-login',
     comment: 'peer comment',
+    sigintPostName: null,
     ...overrides,
   };
 }
@@ -139,5 +140,36 @@ describe('loadMissingMessageCommentsForMessages', () => {
 
     expect(onError).not.toHaveBeenCalled();
     expect(setUsers).not.toHaveBeenCalled();
+  });
+
+  it('does not load user info for post-authored comments', async () => {
+    fetchMessageComments.mockResolvedValue({
+      data: [
+        {
+          messageId: 42,
+          comments: [
+            buildComment({
+              login: 'system',
+              sigintPostName: 'Пост Альфа',
+              comment: 'auto comment',
+            }),
+          ],
+        },
+      ],
+    });
+
+    await loadMissingMessageCommentsForMessages([[42, buildMessage()]], {
+      authUserName: 'tester',
+      currentUser: buildUser({ name: 'tester', organismId: 1 }),
+      messageComments: {},
+      messageCommentsLoadVersionRef: { current: 1 },
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      setMessageComments: vi.fn(),
+      setUsers: vi.fn(),
+      users: {},
+    });
+
+    expect(fetchUserInfo).not.toHaveBeenCalled();
   });
 });

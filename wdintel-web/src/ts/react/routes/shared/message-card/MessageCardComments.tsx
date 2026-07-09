@@ -7,6 +7,11 @@ import type { MessageComment } from '../../../../../Bindings';
 
 const OTHER_COMMENTS_PREVIEW_COUNT = 3;
 
+function commentAuthorLabel(comment: MessageComment): string {
+  const sigintPostName = comment.sigintPostName?.trim() ?? '';
+  return sigintPostName === '' ? comment.login : sigintPostName;
+}
+
 export function MessageCardComments({ messageComments }: { messageComments: MessageComment[] }) {
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const hasOtherCommentsRest = messageComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
@@ -72,7 +77,7 @@ export function MessageCardComments({ messageComments }: { messageComments: Mess
             variant="caption"
             sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}
           >
-            {comment.login}
+            {commentAuthorLabel(comment)}
           </Typography>
           <Typography
             variant="caption"
