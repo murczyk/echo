@@ -628,6 +628,30 @@ export const FeedColumnContent = memo(
       return false;
     }
 
+    const prevActions = prevProps.column.actions;
+    const nextActions = nextProps.column.actions;
+    if (
+      prevActions.onLoadOlder !== nextActions.onLoadOlder ||
+      prevActions.onLoadNewer !== nextActions.onLoadNewer ||
+      prevActions.onRemoveColumn !== nextActions.onRemoveColumn ||
+      prevActions.onMessageBookmark !== nextActions.onMessageBookmark ||
+      prevActions.onMessageImportant !== nextActions.onMessageImportant ||
+      prevActions.onMessageAddFrequencyToFilter !== nextActions.onMessageAddFrequencyToFilter ||
+      prevActions.onMessageCopy !== nextActions.onMessageCopy ||
+      prevActions.onMessageComment !== nextActions.onMessageComment ||
+      prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
+      prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
+      prevActions.onScrollToTop !== nextActions.onScrollToTop ||
+      prevActions.onReachedBottom !== nextActions.onReachedBottom ||
+      prevActions.onLeftBottom !== nextActions.onLeftBottom ||
+      prevActions.onNearBottomChange !== nextActions.onNearBottomChange ||
+      prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
+      prevActions.onArrowClick !== nextActions.onArrowClick ||
+      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
+    ) {
+      return false;
+    }
+
     return true;
   },
 );
