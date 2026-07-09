@@ -216,10 +216,9 @@ export function RerDutyNeoPage({
           setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
         }
         if (feed.items.length > 0) {
-          handleVisibleMessageIds(feed.id)(
-            feed.items.map(([id]) => id),
-            { atBottom: true },
-          );
+          handleVisibleMessageIds(feed.id)(feed.items[feed.items.length - 1][0], {
+            atBottom: true,
+          });
         }
       },
       onLeftBottom: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
