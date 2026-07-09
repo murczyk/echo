@@ -1,5 +1,5 @@
 use crate::entities::{
-    computer_name, datasource_group, sigint_inbox_item, signal_group,
+    datasource_group, device_name, sigint_inbox_item, signal_group,
     signal_message, signal_message_group, signal_profile,
 };
 use crate::error::AppError;
@@ -63,15 +63,15 @@ where
     Ok(login.to_string())
 }
 
-pub async fn validate_computer_name_id<C>(
+pub async fn validate_device_name_id<C>(
     dbx: &C,
-    computer_name_id: i64,
+    device_name_id: i64,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    let count = computer_name::Entity::find()
-        .filter(computer_name::Column::Id.eq(computer_name_id))
+    let count = device_name::Entity::find()
+        .filter(device_name::Column::Id.eq(device_name_id))
         .count(dbx)
         .await
         .c(h!())?;
@@ -81,10 +81,10 @@ where
     Ok(())
 }
 
-pub async fn set_inbox_items_computer_name<C>(
+pub async fn set_inbox_items_device_name<C>(
     dbx: &C,
     inbox_item_ids: Vec<i64>,
-    computer_name_id: i64,
+    device_name_id: i64,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -94,8 +94,8 @@ where
     }
     sigint_inbox_item::Entity::update_many()
         .col_expr(
-            sigint_inbox_item::Column::ComputerNameId,
-            Expr::value(computer_name_id),
+            sigint_inbox_item::Column::DeviceNameId,
+            Expr::value(device_name_id),
         )
         .filter(sigint_inbox_item::Column::Id.is_in(inbox_item_ids))
         .exec(dbx)

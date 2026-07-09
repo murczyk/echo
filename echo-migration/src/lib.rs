@@ -289,6 +289,7 @@ mod m20260708_130958_add_computer_name;
 mod m20260708_143111_add_computer_name_search_indexes;
 mod m20260709_092435_add_system_settings_notifications;
 mod m20260709_124309_signal_message_queue_latest_state;
+mod m20260709_140720_rename_computer_name_to_device_name;
 mod m20260710_091610_organism_secret_group_invites;
 mod m20260710_095803_echo_missing_message_created_at_idx;
 mod m20260710_102248_add_login_description;
@@ -609,6 +610,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260709_124309_signal_message_queue_latest_state::Migration,
             ),
+            Box::new(m20260709_140720_rename_computer_name_to_device_name::Migration),
             Box::new(
                 m20260710_091610_organism_secret_group_invites::Migration,
             ),

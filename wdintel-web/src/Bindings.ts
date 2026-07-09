@@ -2170,25 +2170,25 @@ export type SignalUnitStatRow = {
   count: number;
 };
 
-export type ComputerNameSearchReq = {
+export type DeviceNameSearchReq = {
   search: string;
 };
 
-export type ComputerNameSearchResult = {
+export type DeviceNameSearchResult = {
   id: number;
   name: string;
 };
 
-export type ComputerNameSearchRsp = {
-  computers: Array<ComputerNameSearchResult>;
+export type DeviceNameSearchRsp = {
+  devices: Array<DeviceNameSearchResult>;
 };
 
-export type CreateComputerNameReq = {
+export type CreateDeviceNameReq = {
   name: string;
 };
 
-export type CreateComputerNameRsp = {
-  computer: ComputerNameSearchResult;
+export type CreateDeviceNameRsp = {
+  device: DeviceNameSearchResult;
 };
 
 export type AddAsKnownNetworkCallsignReq = {

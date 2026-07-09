@@ -5648,65 +5648,65 @@ signalUnitStatRowEncoder struct =
         ]
 
 
-type alias ComputerNameSearchReq =
+type alias DeviceNameSearchReq =
     { search : String
     }
 
 
-computerNameSearchReqEncoder : ComputerNameSearchReq -> Json.Encode.Value
-computerNameSearchReqEncoder struct =
+deviceNameSearchReqEncoder : DeviceNameSearchReq -> Json.Encode.Value
+deviceNameSearchReqEncoder struct =
     Json.Encode.object
         [ ( "search", (Json.Encode.string) struct.search )
         ]
 
 
-type alias ComputerNameSearchResult =
+type alias DeviceNameSearchResult =
     { id : Int
     , name : String
     }
 
 
-computerNameSearchResultEncoder : ComputerNameSearchResult -> Json.Encode.Value
-computerNameSearchResultEncoder struct =
+deviceNameSearchResultEncoder : DeviceNameSearchResult -> Json.Encode.Value
+deviceNameSearchResultEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         ]
 
 
-type alias ComputerNameSearchRsp =
-    { computers : List (ComputerNameSearchResult)
+type alias DeviceNameSearchRsp =
+    { devices : List (DeviceNameSearchResult)
     }
 
 
-computerNameSearchRspEncoder : ComputerNameSearchRsp -> Json.Encode.Value
-computerNameSearchRspEncoder struct =
+deviceNameSearchRspEncoder : DeviceNameSearchRsp -> Json.Encode.Value
+deviceNameSearchRspEncoder struct =
     Json.Encode.object
-        [ ( "computers", (Json.Encode.list (computerNameSearchResultEncoder)) struct.computers )
+        [ ( "devices", (Json.Encode.list (deviceNameSearchResultEncoder)) struct.devices )
         ]
 
 
-type alias CreateComputerNameReq =
+type alias CreateDeviceNameReq =
     { name : String
     }
 
 
-createComputerNameReqEncoder : CreateComputerNameReq -> Json.Encode.Value
-createComputerNameReqEncoder struct =
+createDeviceNameReqEncoder : CreateDeviceNameReq -> Json.Encode.Value
+createDeviceNameReqEncoder struct =
     Json.Encode.object
         [ ( "name", (Json.Encode.string) struct.name )
         ]
 
 
-type alias CreateComputerNameRsp =
-    { computer : ComputerNameSearchResult
+type alias CreateDeviceNameRsp =
+    { device : DeviceNameSearchResult
     }
 
 
-createComputerNameRspEncoder : CreateComputerNameRsp -> Json.Encode.Value
-createComputerNameRspEncoder struct =
+createDeviceNameRspEncoder : CreateDeviceNameRsp -> Json.Encode.Value
+createDeviceNameRspEncoder struct =
     Json.Encode.object
-        [ ( "computer", (computerNameSearchResultEncoder) struct.computer )
+        [ ( "device", (deviceNameSearchResultEncoder) struct.device )
         ]
 
 
@@ -12401,35 +12401,35 @@ signalUnitStatRowDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
-computerNameSearchReqDecoder : Json.Decode.Decoder ComputerNameSearchReq
-computerNameSearchReqDecoder =
-    Json.Decode.succeed ComputerNameSearchReq
+deviceNameSearchReqDecoder : Json.Decode.Decoder DeviceNameSearchReq
+deviceNameSearchReqDecoder =
+    Json.Decode.succeed DeviceNameSearchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
 
 
-computerNameSearchResultDecoder : Json.Decode.Decoder ComputerNameSearchResult
-computerNameSearchResultDecoder =
-    Json.Decode.succeed ComputerNameSearchResult
+deviceNameSearchResultDecoder : Json.Decode.Decoder DeviceNameSearchResult
+deviceNameSearchResultDecoder =
+    Json.Decode.succeed DeviceNameSearchResult
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
 
 
-computerNameSearchRspDecoder : Json.Decode.Decoder ComputerNameSearchRsp
-computerNameSearchRspDecoder =
-    Json.Decode.succeed ComputerNameSearchRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computers" (Json.Decode.list (computerNameSearchResultDecoder))))
+deviceNameSearchRspDecoder : Json.Decode.Decoder DeviceNameSearchRsp
+deviceNameSearchRspDecoder =
+    Json.Decode.succeed DeviceNameSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices" (Json.Decode.list (deviceNameSearchResultDecoder))))
 
 
-createComputerNameReqDecoder : Json.Decode.Decoder CreateComputerNameReq
-createComputerNameReqDecoder =
-    Json.Decode.succeed CreateComputerNameReq
+createDeviceNameReqDecoder : Json.Decode.Decoder CreateDeviceNameReq
+createDeviceNameReqDecoder =
+    Json.Decode.succeed CreateDeviceNameReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
 
 
-createComputerNameRspDecoder : Json.Decode.Decoder CreateComputerNameRsp
-createComputerNameRspDecoder =
-    Json.Decode.succeed CreateComputerNameRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computer" (computerNameSearchResultDecoder)))
+createDeviceNameRspDecoder : Json.Decode.Decoder CreateDeviceNameRsp
+createDeviceNameRspDecoder =
+    Json.Decode.succeed CreateDeviceNameRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device" (deviceNameSearchResultDecoder)))
 
 
 addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq

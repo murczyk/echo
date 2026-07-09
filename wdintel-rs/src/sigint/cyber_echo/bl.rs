@@ -44,7 +44,7 @@ pub async fn create_signal_message(
     let sender_uuid = query::ensure_current_user_sender(&txn, login)
         .await
         .c(h!())?;
-    query::validate_computer_name_id(&txn, payload.computer_name_id).await?;
+    query::validate_device_name_id(&txn, payload.device_name_id).await?;
 
     let tus_handler = TusHandler::new(
         env.config.storage_dir.clone(),
@@ -115,10 +115,10 @@ pub async fn create_signal_message(
                 msg: "message was not converted to inbox item".to_string(),
             }
         })?;
-    query::set_inbox_items_computer_name(
+    query::set_inbox_items_device_name(
         &txn,
         changed_inbox_item_ids.clone(),
-        payload.computer_name_id,
+        payload.device_name_id,
     )
     .await
     .c(h!())?;
@@ -153,7 +153,7 @@ pub async fn create_signal_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{computer_name, signal_group, system_settings};
+    use crate::entities::{device_name, signal_group, system_settings};
     use crate::functest::tests::{cleanup, mk_signal_group};
     use sea_orm::{
         ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, Set,
@@ -166,13 +166,13 @@ mod tests {
     fn payload(
         body: &str,
         signal_group_master_key: &str,
-        computer_name_id: i64,
+        device_name_id: i64,
         upload_urls: Option<Vec<String>>,
     ) -> CreateCyberEchoSignalMessagePayload {
         CreateCyberEchoSignalMessagePayload {
             body: body.to_string(),
             signal_group_master_key: signal_group_master_key.to_string(),
-            computer_name_id,
+            device_name_id,
             upload_urls,
         }
     }
@@ -212,15 +212,15 @@ mod tests {
         .unwrap();
     }
 
-    async fn insert_computer_name(dbx: &DatabaseConnection) -> i64 {
-        let computer_name = computer_name::ActiveModel {
+    async fn insert_device_name(dbx: &DatabaseConnection) -> i64 {
+        let device_name = device_name::ActiveModel {
             id: NotSet,
             name: Set(Some("southend".to_string())),
             login: Set(TEST_LOGIN.to_string()),
             created_at: NotSet,
             search_tsv: NotSet,
         };
-        computer_name::Entity::insert(computer_name)
+        device_name::Entity::insert(device_name)
             .exec(dbx)
             .await
             .unwrap()
@@ -289,7 +289,7 @@ mod tests {
     async fn cyber_echo_create_rejects_inaccessible_group() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
-        let computer_name_id = insert_computer_name(&env.dbx).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
         let foreign_group_key = "foreign-cyber-echo-group";
         mk_signal_group(
             &env.dbx,
@@ -306,7 +306,7 @@ mod tests {
         let err = create_signal_message(
             TEST_LOGIN,
             &env,
-            payload("message", foreign_group_key, computer_name_id, None),
+            payload("message", foreign_group_key, device_name_id, None),
         )
         .await
         .unwrap_err();
@@ -316,7 +316,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn cyber_echo_create_rejects_unknown_computer_name_id() {
+    async fn cyber_echo_create_rejects_unknown_device_name_id() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
 
@@ -337,7 +337,7 @@ mod tests {
     async fn cyber_echo_create_rejects_attachments_without_s3() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
-        let computer_name_id = insert_computer_name(&env.dbx).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
 
         let err = create_signal_message(
             TEST_LOGIN,
@@ -345,7 +345,7 @@ mod tests {
             payload(
                 "message",
                 TEST_SIGNAL_GROUP_KEY,
-                computer_name_id,
+                device_name_id,
                 Some(vec![
                     "/api/sigint/cyber-echo/tus/not-a-real-file.1".to_string()
                 ]),

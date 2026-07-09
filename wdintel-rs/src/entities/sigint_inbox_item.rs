@@ -52,19 +52,19 @@ pub struct Model {
     pub unit_v2: Option<String>,
     pub parsed_unit_v2: bool,
     pub post_id: Option<i64>,
-    pub computer_name_id: Option<i64>,
+    pub device_name_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::computer_name::Entity",
-        from = "Column::ComputerNameId",
-        to = "super::computer_name::Column::Id",
+        belongs_to = "super::device_name::Entity",
+        from = "Column::DeviceNameId",
+        to = "super::device_name::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    ComputerName,
+    DeviceName,
     #[sea_orm(
         belongs_to = "super::nominatimres::Entity",
         from = "Column::NominatimresId",
@@ -116,9 +116,9 @@ pub enum Relation {
     SigintNetworkFreq,
 }
 
-impl Related<super::computer_name::Entity> for Entity {
+impl Related<super::device_name::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ComputerName.def()
+        Relation::DeviceName.def()
     }
 }
 

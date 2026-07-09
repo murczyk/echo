@@ -1459,7 +1459,7 @@ mod tests {
             parsed_unit_v2: false,
             location_v2: None,
             post_id: None,
-            computer_name_id: None,
+            device_name_id: None,
         }
     }
 
@@ -1729,7 +1729,7 @@ mod tests {
             parsed_unit_v2: false,
             location_v2: Some("|КУП'ЯНСЬК|СЕНЬКОВЕ|".to_string()),
             post_id: None,
-            computer_name_id: None,
+            device_name_id: None,
         };
 
         assert_eq!(
@@ -1770,7 +1770,7 @@ mod tests {
             parsed_unit_v2: false,
             location_v2: None,
             post_id: None,
-            computer_name_id: None,
+            device_name_id: None,
         };
 
         assert_eq!(
@@ -2161,7 +2161,7 @@ mod tests {
             parsed_unit_v2: false,
             location_v2: None,
             post_id: None,
-            computer_name_id: None,
+            device_name_id: None,
         };
         let message = signal_message::Model {
             id: 1,
@@ -2210,7 +2210,7 @@ mod tests {
             parsed_unit_v2: false,
             location_v2: None,
             post_id: None,
-            computer_name_id: None,
+            device_name_id: None,
         };
         let message = signal_message::Model {
             id: 1,

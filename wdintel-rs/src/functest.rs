@@ -287,7 +287,7 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        computer_name::Entity::delete_many()
+        device_name::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
