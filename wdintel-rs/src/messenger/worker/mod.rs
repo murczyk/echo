@@ -1121,11 +1121,12 @@ async fn promote_oldest_deleted_original_duplicate(
     datasource_group_id: i64,
     group_master_key: &str,
 ) -> anyhow::Result<Vec<i64>> {
+    let duplicate_root_id = deleted_inbox_message
+        .duplicate_of
+        .unwrap_or(deleted_inbox_message.id);
     let duplicate_inbox_messages = echo_inbox_message::Entity::find()
-        .filter(
-            echo_inbox_message::Column::DuplicateOf
-                .eq(deleted_inbox_message.id),
-        )
+        .filter(echo_inbox_message::Column::DuplicateOf.eq(duplicate_root_id))
+        .filter(echo_inbox_message::Column::Id.ne(deleted_inbox_message.id))
         .filter(echo_inbox_message::Column::Deleted.eq(false))
         .filter(
             echo_inbox_message::Column::GroupId
@@ -2154,6 +2155,151 @@ mod tests {
             .unwrap();
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_promotes_sibling_after_promoted_duplicate_deleted() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group = mk_test_echo_group(
+            &env.dbx,
+            echo_account.id,
+            "promoted-sibling-dupe-group",
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            "delete promoted duplicate sibling",
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let promoted_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &original_inbox.body,
+            ts + chrono::TimeDelta::seconds(1),
+            Some(original_inbox.id),
+            true,
+        )
+        .await;
+        let sibling_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &original_inbox.body,
+            ts + chrono::TimeDelta::seconds(2),
+            Some(original_inbox.id),
+            false,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            true,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-promoted-sibling-original".to_string()),
+        )
+        .await;
+        let promoted_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            false,
+            Some(i64::from(promoted_inbox.id)),
+            Some("uid-promoted-sibling-active".to_string()),
+        )
+        .await;
+        let sibling_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            true,
+            Some(i64::from(sibling_inbox.id)),
+            Some("duplicate-trace-promoted-sibling".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        set_signal_message_dedupe_key(
+            &mut redis,
+            &promoted_signal_message.body.clone().unwrap_or_default(),
+            promoted_signal_message.attachments_hash.as_deref(),
+            promoted_signal_message.id,
+        )
+        .await
+        .unwrap();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(promoted_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let promoted_signal_message =
+            signal_message::Entity::find_by_id(promoted_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let sibling_signal_message =
+            signal_message::Entity::find_by_id(sibling_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(original_signal_message.deleted);
+        assert!(promoted_signal_message.deleted);
+        assert!(!sibling_signal_message.deleted);
+        assert!(
+            changed_inbox_item_ids.contains(&sibling_signal_message.id),
+            "{changed_inbox_item_ids:?}"
+        );
+
+        let dedupe_key =
+            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
+                &sibling_signal_message.body.clone().unwrap_or_default(),
+                sibling_signal_message.attachments_hash.as_deref(),
+            );
+        let stored_signal_message_id: Option<String> =
+            redis.get(&dedupe_key).await.unwrap();
+        assert_eq!(
+            stored_signal_message_id,
+            Some(sibling_signal_message.id.to_string())
+        );
     }
 
     #[tokio::test]
