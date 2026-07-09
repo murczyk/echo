@@ -440,8 +440,31 @@ pub async fn find_duplicate_of(
             if let Some((message, _group)) = &original {
                 if message.deleted {
                     warn!(
-                        "redis duplicate key {key} pointed to deleted signal_message id={original_id}; promoting id={db_message_id} as canonical"
+                        "redis duplicate key {key} pointed to deleted signal_message id={original_id}; repairing canonical"
                     );
+                    if let Some(duplicate) = find_duplicate_in_db(
+                        txn,
+                        body_for_dedupe,
+                        body,
+                        attachments_hash,
+                        m_timestamp,
+                    )
+                    .await
+                    .c(h!())?
+                    {
+                        if replace_signal_message_dedupe_key_if_value(
+                            manager,
+                            &key,
+                            original_id,
+                            duplicate.0.id,
+                        )
+                        .await
+                        .c(h!())?
+                        {
+                            return Ok(Some(duplicate));
+                        }
+                        continue 'redis_key_loop;
+                    }
                     if replace_signal_message_dedupe_key_if_value(
                         manager,
                         &key,
@@ -475,7 +498,24 @@ pub async fn find_duplicate_of(
         break;
     }
     info!("{db_message_id} is not a duplicate, with body {body_for_dedupe}");
+    find_duplicate_in_db(
+        txn,
+        body_for_dedupe,
+        body,
+        attachments_hash,
+        m_timestamp,
+    )
+    .await
+}
 
+async fn find_duplicate_in_db(
+    txn: &DatabaseTransaction,
+    body_for_dedupe: &str,
+    body: &str,
+    attachments_hash: Option<&str>,
+    m_timestamp: Option<NaiveDateTime>,
+) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
+{
     // find duplicate created N mins ago or later
     let created_recently = signal_message::Column::CreatedAt
         .gte(Utc::now() - chrono::Duration::minutes(30));
@@ -875,7 +915,9 @@ fn extract_network_name(s: &str) -> Result<Option<String>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{
+        cleanup, mk_datasource_group, mk_signal_message,
+    };
     use crate::utils::string::*;
 
     fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
@@ -944,6 +986,93 @@ mod tests {
         assert!(replaced);
         assert!(!stale_replaced);
         assert_eq!(stored_signal_message_id, "11");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn stale_dedupe_key_repair_uses_active_replacement() {
+        let env = cleanup().await.unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body = "stale dedupe active replacement";
+        let ts = Utc::now().naive_utc();
+        let stale_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts - chrono::TimeDelta::seconds(2)),
+                timestamp: Set(Some(ts)),
+                deleted: Set(true),
+                message_uid: Set(Some("stale-dedupe-deleted".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let active_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts - chrono::TimeDelta::seconds(1)),
+                timestamp: Set(Some(ts)),
+                deleted: Set(false),
+                message_uid: Set(Some("stale-dedupe-active".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let staged_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts),
+                timestamp: Set(Some(ts)),
+                deleted: Set(true),
+                message_uid: Set(Some("stale-dedupe-staged".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let key = crate::messenger::dedupe::redis_key_for_body_for_dedupe(body);
+        let mut redis = env.redis.clone();
+        redis::cmd("SET")
+            .arg(&key)
+            .arg(stale_message.id)
+            .arg("EX")
+            .arg(REDIS_MGS_ID_TTL)
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let duplicate = find_duplicate_of(
+            &txn,
+            body,
+            body,
+            None,
+            Some(ts),
+            staged_message.id,
+            &mut redis,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stored_signal_message_id: String = redis.get(&key).await.unwrap();
+
+        assert_eq!(duplicate.0.id, active_message.id);
+        assert_eq!(stored_signal_message_id, active_message.id.to_string());
+        txn.rollback().await.unwrap();
     }
 
     #[test]
