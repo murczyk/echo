@@ -5,8 +5,9 @@ use super::types::{
 };
 use crate::config::FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT;
 use crate::error::AppError;
+use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use sea_orm::TransactionTrait;
 
 pub async fn create_signal_message(
@@ -51,6 +52,9 @@ pub async fn create_signal_message(
         .await
         .c(h!())?;
     query::validate_device_name_id(&txn, payload.device_name_id).await?;
+    let logins = crate::users::get_organism_logins_by_login(&txn, login)
+        .await
+        .c(h!())?;
 
     let tus_handler = TusHandler::new(
         env.config.storage_dir.clone(),
@@ -65,37 +69,47 @@ pub async fn create_signal_message(
         .feature_delete_uploaded_attachment
         .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
 
-    let datasource_group_id =
-        query::ensure_datasource_group_id(&txn, &signal_group.master_key)
+    let datasource_id = signal_group.datasource_id.unwrap_or(
+        query::resolve_datasource_id_for_group(&txn, &signal_group.master_key)
             .await
-            .c(h!())?;
-    let signal_message = query::insert_signal_message(
+            .c(h!())?,
+    );
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            &txn,
+            signal_group.master_key.clone(),
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
+    let submit_item =
+        cyber_echo_payload_to_submit_item(&payload, body, sender_uuid);
+    let submitted =
+        crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups(
+            env,
+            &txn,
+            datasource_id,
+            &[(signal_group.master_key.clone(), datasource_group_id)],
+            login,
+            &logins,
+            submit_item,
+        )
+        .await
+        .c(h!())?;
+    let signal_message_id = submitted.signal_message_id;
+    let inbox_item_id = submitted.inbox_id;
+
+    query::set_inbox_items_device_name(
         &txn,
-        body,
-        Utc::now().naive_utc(),
-        Some(sender_uuid),
-        datasource_group_id,
-    )
-    .await
-    .c(h!())?;
-    query::insert_signal_message_group(
-        &txn,
-        &signal_group.master_key,
-        &signal_message,
-    )
-    .await
-    .c(h!())?;
-    let signal_message = crate::messenger::id::update_message_with_uid(
-        &txn,
-        &env.config,
-        signal_message,
+        vec![inbox_item_id],
+        payload.device_name_id,
     )
     .await
     .c(h!())?;
 
     let media = crate::messenger::media::store_media_attachments(
         &uploads,
-        signal_message.id,
+        signal_message_id,
         &env.config,
         &env.s3,
         &txn,
@@ -104,34 +118,9 @@ pub async fn create_signal_message(
     .await
     .c(h!())?;
 
-    let changed_inbox_item_ids =
-        crate::rer_importer::bgworker::process_message_to_inbox(
-            env.settlements.clone(),
-            &txn,
-            &env.rq,
-            &env.config,
-            signal_message.id,
-            None,
-        )
-        .await
-        .c(h!())?;
-    let inbox_item_id =
-        changed_inbox_item_ids.first().copied().ok_or_else(|| {
-            AppError::BL {
-                msg: "message was not converted to inbox item".to_string(),
-            }
-        })?;
-    query::set_inbox_items_device_name(
-        &txn,
-        changed_inbox_item_ids.clone(),
-        payload.device_name_id,
-    )
-    .await
-    .c(h!())?;
-
     crate::sigint::worker::incoming_message_after_insert(
         &txn,
-        signal_message.id,
+        signal_message_id,
     )
     .await
     .c(h!())?;
@@ -144,16 +133,43 @@ pub async fn create_signal_message(
     }
 
     let mut redis = env.redis.clone();
-    crate::inbox::fanout_inbox_changes(&mut redis, changed_inbox_item_ids)
+    crate::inbox::fanout_inbox_changes(&mut redis, vec![inbox_item_id])
         .await
         .c(h!())?;
 
     Ok(CreateCyberEchoSignalMessageRsp {
-        signal_message_id: signal_message.id,
-        message_uid: signal_message.message_uid,
+        signal_message_id,
+        message_uid: Some(submitted.message_uid),
         inbox_item_id,
         media_ids: media.media.into_iter().map(|media| media.id).collect(),
     })
+}
+
+fn cyber_echo_payload_to_submit_item(
+    payload: &CreateCyberEchoSignalMessagePayload,
+    text: String,
+    sender: String,
+) -> InboxSubmitItem {
+    InboxSubmitItem {
+        message_uid: payload.message_uid.clone(),
+        text,
+        freq: payload.freq.clone(),
+        coords: payload.coords.clone(),
+        from_callsign: payload.from_callsign.clone(),
+        to: payload.to_callsigns.clone(),
+        tags: payload.tags.clone(),
+        timestamp: payload.timestamp.clone().unwrap_or_else(|| {
+            Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+        }),
+        sender: Some(sender),
+        full_body: payload.full_body.clone(),
+        post: payload.post.clone(),
+        unit: payload.unit.clone(),
+        locations: payload.locations.clone(),
+        group_names: None,
+        network: payload.network.clone(),
+        dmr: vec![],
+    }
 }
 
 #[cfg(test)]

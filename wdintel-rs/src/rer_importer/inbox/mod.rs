@@ -747,11 +747,6 @@ async fn inbox_submit_v11(
 fn validate_generic_submit_item(
     item: &InboxSubmitItem,
 ) -> Result<(), AppError> {
-    if item.text.trim().is_empty() {
-        return Err(AppError::BL {
-            msg: "Inbox submit requires message text".to_string(),
-        });
-    }
     if item
         .group_names
         .as_ref()
@@ -759,6 +754,17 @@ fn validate_generic_submit_item(
     {
         return Err(AppError::BL {
             msg: "Inbox submit requires at least one group name".to_string(),
+        });
+    }
+    validate_submit_item_content(item)
+}
+
+fn validate_submit_item_content(
+    item: &InboxSubmitItem,
+) -> Result<(), AppError> {
+    if item.text.trim().is_empty() {
+        return Err(AppError::BL {
+            msg: "Inbox submit requires message text".to_string(),
         });
     }
     validate_submit_network(item.network.as_ref())?;

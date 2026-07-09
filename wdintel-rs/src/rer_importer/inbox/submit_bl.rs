@@ -9,6 +9,7 @@ use sea_orm::*;
 #[derive(Debug)]
 pub(crate) struct SubmittedInboxItem {
     pub(crate) message_uid: String,
+    pub(crate) signal_message_id: i64,
     pub(crate) inbox_id: i64,
     pub(crate) warnings: Vec<InboxSubmitWarning>,
 }
@@ -80,6 +81,28 @@ pub(crate) async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    submit_inbox_item_with_groups(
+        env.as_ref(),
+        txn,
+        datasource.id,
+        &groups,
+        login,
+        logins,
+        item,
+    )
+    .await
+}
+
+pub(crate) async fn submit_inbox_item_with_groups(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    groups: &[(String, i64)],
+    login: &str,
+    logins: &Vec<String>,
+    item: InboxSubmitItem,
+) -> Result<SubmittedInboxItem, AppError> {
+    super::validate_submit_item_content(&item)?;
     let tag_ids =
         super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
     let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;
@@ -100,12 +123,12 @@ pub(crate) async fn submit_generic_inbox_item(
     let signal_message = super::upsert_submit_signal_message(
         txn,
         &env.config,
-        datasource.id,
+        datasource_id,
         item.message_uid.as_deref(),
         &message,
         Some(timestamp),
         operator_tags,
-        &groups,
+        groups,
     )
     .await
     .c(h!())?;
@@ -132,6 +155,7 @@ pub(crate) async fn submit_generic_inbox_item(
 
     Ok(SubmittedInboxItem {
         message_uid,
+        signal_message_id: signal_message.id,
         inbox_id,
         warnings,
     })
