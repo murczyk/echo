@@ -15,6 +15,7 @@ const hoisted = vi.hoisted(() => ({
   messages: [] as Array<[number, InboxMessage]>,
   mapOpenMessages: [] as Array<[number, InboxMessage]>,
   loadMessageComments: vi.fn(),
+  reload: vi.fn(),
   onError: vi.fn(),
   onUnauthorized: vi.fn().mockReturnValue(false),
 }));
@@ -195,7 +196,7 @@ vi.mock('./use-analysis-filter-sections', () => ({
 }));
 
 vi.mock('./use-analysis-reload-orchestrator', () => ({
-  useAnalysisReloadOrchestrator: () => ({ reload: vi.fn().mockResolvedValue(undefined) }),
+  useAnalysisReloadOrchestrator: () => ({ reload: hoisted.reload }),
 }));
 
 vi.mock('./use-analysis-actions', () => ({
@@ -285,6 +286,8 @@ beforeEach(() => {
   hoisted.fetchMessagesByIds.mockReset();
   hoisted.loadMessageComments.mockReset();
   hoisted.loadMessageComments.mockResolvedValue(undefined);
+  hoisted.reload.mockReset();
+  hoisted.reload.mockResolvedValue(undefined);
   hoisted.onInboxChangedMessageIds = vi.fn();
   hoisted.onError.mockReset();
   hoisted.onUnauthorized.mockReturnValue(false);
@@ -313,6 +316,7 @@ describe('useAnalysisData inbox refreshes', () => {
 
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+    expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
   it('refreshes visible ids, point tokens, and preserves existing rendered fields', async () => {
@@ -456,6 +460,20 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.messages).toEqual([]);
     expect(latest?.mapAttrs.messages).toEqual([]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
+  });
+
+  it('reloads instead of partially merging when server-only filters are active', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
+    hoisted.mapOpenMessages = [[1, inboxMessage({ text: 'map-current' })]];
+
+    renderHook({ search: 'needle' });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(hoisted.reload).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 
   it('filters model tags again when withoutModelTags is enabled', async () => {

@@ -129,6 +129,45 @@ function messageMatchesLiveRefreshFilters(
   );
 }
 
+function hasSelectedValues(values: readonly unknown[]): boolean {
+  return values.length > 0;
+}
+
+function hasSearchText(value: string): boolean {
+  return value.trim() !== '';
+}
+
+function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boolean {
+  return (
+    hasSearchText(queryState.fromDateTimeStr) ||
+    hasSearchText(queryState.toDateTimeStr) ||
+    queryState.includeOnlyNewFreqs ||
+    hasSelectedValues(queryState.aorsSelected) ||
+    hasSelectedValues(queryState.groupsSelected) ||
+    hasSelectedValues(queryState.sendersSelected) ||
+    hasSelectedValues(queryState.callsignsSelected) ||
+    hasSelectedValues(queryState.unitsSelected) ||
+    hasSelectedValues(queryState.locationsSelected) ||
+    hasSelectedValues(queryState.postsSelected) ||
+    hasSelectedValues(queryState.networksSelected) ||
+    queryState.withoutNetwork ||
+    queryState.orWithExtendedForm ||
+    queryState.orBookmarked ||
+    queryState.orImportant ||
+    queryState.orWithCoords ||
+    queryState.orWithoutCoords ||
+    hasSearchText(queryState.search) ||
+    hasSelectedValues(queryState.metadataCc) ||
+    hasSelectedValues(queryState.metadataSender) ||
+    hasSelectedValues(queryState.metadataReceiver) ||
+    hasSelectedValues(queryState.metadataHash) ||
+    queryState.onlyWithMetadata ||
+    queryState.withoutMetadata ||
+    queryState.reportTagsOnlyThisUnit ||
+    queryState.onlyWithMedia
+  );
+}
+
 function mergeRefreshedMessage(
   currentMessage: InboxMessage,
   refreshedMessage: InboxMessage,
@@ -346,6 +385,11 @@ export function useAnalysisData({
       if (messageIds.length === 0) return;
 
       try {
+        if (requiresServerFilteredInboxRefresh(queryState)) {
+          await reloadRef.current();
+          return;
+        }
+
         const refreshedMessageItems = await fetchMessagesByIds(messageIds);
         const refreshedMessages = new Map(
           refreshedMessageItems.map(([id, message]) => [id, message]),
