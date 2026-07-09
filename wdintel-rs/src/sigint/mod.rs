@@ -417,10 +417,12 @@ pub async fn find_duplicate_of(
         .await
         .c(h!())?;
 
-    let original_id: String = manager.get(&key).await.c(h!())?;
-    let original_id: i64 = original_id.parse().c(h!())?;
-
-    if original_id != db_message_id {
+    'redis_key_loop: loop {
+        let original_id: String = manager.get(&key).await.c(h!())?;
+        let original_id: i64 = original_id.parse().c(h!())?;
+        if original_id == db_message_id {
+            break;
+        }
         let mut retry_count = 3;
         let mut original;
         loop {
@@ -440,15 +442,18 @@ pub async fn find_duplicate_of(
                     warn!(
                         "redis duplicate key {key} pointed to deleted signal_message id={original_id}; promoting id={db_message_id} as canonical"
                     );
-                    redis::cmd("SET")
-                        .arg(&key)
-                        .arg(&new_value)
-                        .arg("EX")
-                        .arg(REDIS_MGS_ID_TTL)
-                        .query_async::<()>(manager)
-                        .await
-                        .c(h!())?;
-                    return Ok(None);
+                    if replace_signal_message_dedupe_key_if_value(
+                        manager,
+                        &key,
+                        original_id,
+                        db_message_id,
+                    )
+                    .await
+                    .c(h!())?
+                    {
+                        return Ok(None);
+                    }
+                    continue 'redis_key_loop;
                 }
                 break;
             }
@@ -467,6 +472,7 @@ pub async fn find_duplicate_of(
             info!("{db_message_id} is duplicate of {original_id}");
             return Ok(Some(original));
         }
+        break;
     }
     info!("{db_message_id} is not a duplicate, with body {body_for_dedupe}");
 
@@ -535,6 +541,33 @@ pub async fn find_duplicate_of(
         .flat_map(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
         .next();
     Ok(m_duplicate)
+}
+
+async fn replace_signal_message_dedupe_key_if_value(
+    manager: &mut ConnectionManager,
+    key: &str,
+    expected_signal_message_id: i64,
+    new_signal_message_id: i64,
+) -> Result<bool, AppError> {
+    let replaced = redis::cmd("EVAL")
+        .arg(
+            r#"
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    redis.call("SET", KEYS[1], ARGV[2], "EX", ARGV[3])
+    return 1
+end
+return 0
+"#,
+        )
+        .arg(1)
+        .arg(key)
+        .arg(expected_signal_message_id.to_string())
+        .arg(new_signal_message_id.to_string())
+        .arg(REDIS_MGS_ID_TTL)
+        .query_async::<i32>(manager)
+        .await
+        .c(h!())?;
+    Ok(replaced == 1)
 }
 
 pub async fn save_attachment_restapi(
@@ -842,6 +875,7 @@ fn extract_network_name(s: &str) -> Result<Option<String>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::cleanup;
     use crate::utils::string::*;
 
     fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
@@ -875,6 +909,41 @@ mod tests {
     fn test_base64_01() {
         let bytes: Vec<u8> = vec![1, 2, 3];
         assert_eq!(bytes.clone(), from_base64(&base64(&bytes)).unwrap());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn stale_dedupe_key_repair_uses_compare_and_swap() {
+        let env = cleanup().await.unwrap();
+        let key = format!(
+            "signal_message:test-stale-cas-{}",
+            Uuid::new_v4().simple()
+        );
+        let mut redis = env.redis.clone();
+        redis::cmd("SET")
+            .arg(&key)
+            .arg("10")
+            .arg("EX")
+            .arg(REDIS_MGS_ID_TTL)
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+
+        let replaced = replace_signal_message_dedupe_key_if_value(
+            &mut redis, &key, 10, 11,
+        )
+        .await
+        .unwrap();
+        let stale_replaced = replace_signal_message_dedupe_key_if_value(
+            &mut redis, &key, 10, 12,
+        )
+        .await
+        .unwrap();
+        let stored_signal_message_id: String = redis.get(&key).await.unwrap();
+
+        assert!(replaced);
+        assert!(!stale_replaced);
+        assert_eq!(stored_signal_message_id, "11");
     }
 
     #[test]
