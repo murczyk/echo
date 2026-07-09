@@ -356,7 +356,8 @@ export function useWindowedFeedScroll({
         scroller.scrollTop = scroller.scrollHeight;
       }
       previousScrollTopRef.current = scroller.scrollTop;
-      updateScrollState({ allowLoadOlder: false, allowTopReached: false });
+      const canScroll = scroller.scrollHeight > scroller.clientHeight;
+      updateScrollState({ allowLoadOlder: !canScroll, allowTopReached: false });
       captureAnchorSnapshot();
     },
     [captureAnchorSnapshot, updateScrollState],
