@@ -18,7 +18,13 @@ pub async fn create_signal_message(
         .await
         .c(h!())?;
 
-    let body = payload.body.trim().replace("\r\n", "\n");
+    let body = payload
+        .text
+        .as_deref()
+        .or(payload.body.as_deref())
+        .unwrap_or_default()
+        .trim()
+        .replace("\r\n", "\n");
     if body.is_empty() {
         return Err(AppError::BL {
             msg: "message body cannot be empty".to_string(),
@@ -170,7 +176,20 @@ mod tests {
         upload_urls: Option<Vec<String>>,
     ) -> CreateCyberEchoSignalMessagePayload {
         CreateCyberEchoSignalMessagePayload {
-            body: body.to_string(),
+            message_uid: None,
+            body: None,
+            text: Some(body.to_string()),
+            freq: None,
+            coords: vec![],
+            from_callsign: None,
+            to_callsigns: vec![],
+            tags: None,
+            timestamp: None,
+            full_body: None,
+            post: None,
+            unit: None,
+            locations: vec![],
+            network: None,
             signal_group_master_key: signal_group_master_key.to_string(),
             device_name_id,
             upload_urls,

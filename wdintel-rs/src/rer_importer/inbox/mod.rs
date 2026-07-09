@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub(crate) mod bl;
 pub mod metadata;
 pub mod query;
+pub(crate) mod submit_bl;
+
+use submit_bl::*;
 
 async fn apply_test_inbox_settings(
     env: &Env,
@@ -739,85 +742,6 @@ async fn inbox_submit_v11(
             Err(e)
         }
     }
-}
-
-#[derive(Debug)]
-struct SubmittedInboxItem {
-    message_uid: String,
-    inbox_id: i64,
-    warnings: Vec<InboxSubmitWarning>,
-}
-
-async fn submit_generic_inbox_item(
-    env: &Data<Env>,
-    txn: &DatabaseTransaction,
-    datasource: &datasource::Model,
-    login: &str,
-    logins: &Vec<String>,
-    item: InboxSubmitItem,
-) -> Result<SubmittedInboxItem, AppError> {
-    validate_generic_submit_item(&item)?;
-    let groups = ensure_submit_groups(
-        txn,
-        datasource,
-        login,
-        item.group_names.as_deref().unwrap_or(&[]),
-    )
-    .await
-    .c(h!())?;
-    let tag_ids = resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
-    let operator_tags = submit_operator_tags(item.tags.as_deref())?;
-    let (mut message, timestamp) = generic_submit_item_to_inbox_message(&item)?;
-    let post = normalized_optional_string(message.post.as_deref());
-    let post_id = match message.post_id {
-        Some(post_id) => Some(post_id),
-        None => crate::sigint::post::get_or_create_post_id(txn, &post)
-            .await
-            .c(h!())?,
-    };
-    message.group_master_key = groups.first().map(|(key, _)| key.clone());
-    message.post = post;
-    message.post_id = post_id;
-    prepare_submit_body_for_coordinate_extraction(&mut message)?;
-
-    let signal_message = upsert_submit_signal_message(
-        txn,
-        &env.config,
-        datasource.id,
-        item.message_uid.as_deref(),
-        &message,
-        Some(timestamp),
-        operator_tags,
-        &groups,
-    )
-    .await
-    .c(h!())?;
-    let message_uid = signal_message.message_uid.clone().c(h!())?;
-    let inbox_id = submit_upsert_inbox_item(
-        env.settlements.clone(),
-        txn,
-        signal_message.id,
-        &message,
-        login,
-        logins,
-        InboxLocationSubmitMode::Parse,
-    )
-    .await
-    .c(h!())?;
-    add_submit_tags(txn, inbox_id, login, tag_ids)
-        .await
-        .c(h!())?;
-    let InboxSubmitItem { network, dmr, .. } = item;
-    let warnings =
-        save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
-            .await
-            .c(h!())?;
-
-    Ok(SubmittedInboxItem {
-        message_uid,
-        inbox_id,
-        warnings,
-    })
 }
 
 fn validate_generic_submit_item(
@@ -1773,56 +1697,6 @@ async fn submit_legacy_inbox(
         .await
         .context(h!())?;
     submit_legacy_inbox_messages(env, &login, &logins, req).await
-}
-
-async fn submit_generic_inbox(
-    user: Identity,
-    env: &Data<Env>,
-    item: InboxSubmitItem,
-) -> Result<GenericInboxSubmitRsp, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_any_role(
-        &env.dbx,
-        &login,
-        vec!["Rer", "Api", "ApiAgent"],
-    )
-    .await
-    .c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
-    let submitted =
-        submit_generic_inbox_message(env, &login, &logins, item).await?;
-    Ok(GenericInboxSubmitRsp {
-        message_uid: submitted.message_uid,
-        warnings: submitted.warnings,
-    })
-}
-
-async fn submit_generic_inbox_message(
-    env: &Data<Env>,
-    login: &str,
-    logins: &Vec<String>,
-    item: InboxSubmitItem,
-) -> Result<SubmittedInboxItem, AppError> {
-    let txn = env.dbx.begin().await.c(h!())?;
-    let datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
-        .filter(datasource::Column::Enabled.eq(true))
-        .filter(datasource::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-    let submitted =
-        submit_generic_inbox_item(env, &txn, &datasource, login, logins, item)
-            .await
-            .c(h!())?;
-    let inbox_id = submitted.inbox_id;
-
-    txn.commit().await.c(h!())?;
-    fanout_inbox_changed(env, vec![inbox_id]).await;
-    Ok(submitted)
 }
 
 async fn submit_legacy_inbox_messages(
