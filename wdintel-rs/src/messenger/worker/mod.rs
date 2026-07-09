@@ -1254,6 +1254,7 @@ async fn promote_oldest_deleted_original_duplicate(
         redis,
         &deleted_signal_message.body.clone().unwrap_or_default(),
         deleted_signal_message.attachments_hash.as_deref(),
+        deleted_signal_message.id,
     )
     .await
     .c(h!())?;
@@ -1725,15 +1726,27 @@ async fn clear_signal_message_dedupe_key(
     redis: &mut redis::aio::ConnectionManager,
     body: &str,
     attachments_hash: Option<&str>,
+    signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let key =
         crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
             body,
             attachments_hash,
         );
-    redis::cmd("DEL")
+    redis::cmd("EVAL")
+        .arg(
+            r#"
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    redis.call("DEL", KEYS[1])
+    return 1
+end
+return 0
+"#,
+        )
+        .arg(1)
         .arg(key)
-        .query_async::<()>(redis)
+        .arg(signal_message_id.to_string())
+        .query_async::<i32>(redis)
         .await
         .c(h!())?;
     Ok(())
@@ -2675,6 +2688,108 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_keeps_replacement_dedupe_key_without_promotable_duplicate(
+    ) {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group =
+            mk_test_echo_group(&env.dbx, echo_account.id, "dedupe-clear-group")
+                .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            "delete keeps replacement dedupe key",
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-dedupe-clear-original".to_string()),
+        )
+        .await;
+        let replacement_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts + chrono::TimeDelta::seconds(1),
+            false,
+            None,
+            Some("uid-dedupe-clear-replacement".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        set_signal_message_dedupe_key(
+            &mut redis,
+            &replacement_signal_message.body.clone().unwrap_or_default(),
+            replacement_signal_message.attachments_hash.as_deref(),
+            replacement_signal_message.id,
+        )
+        .await
+        .unwrap();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let original_signal_message =
+            signal_message::Entity::find_by_id(original_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let dedupe_key =
+            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
+                &replacement_signal_message.body.clone().unwrap_or_default(),
+                replacement_signal_message.attachments_hash.as_deref(),
+            );
+        let stored_signal_message_id: Option<String> =
+            redis.get(&dedupe_key).await.unwrap();
+
+        assert!(original_signal_message.deleted);
+        assert!(changed_inbox_item_ids.is_empty());
+        assert_eq!(
+            stored_signal_message_id,
+            Some(replacement_signal_message.id.to_string())
         );
     }
 
