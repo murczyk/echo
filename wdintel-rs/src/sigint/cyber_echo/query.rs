@@ -1,11 +1,12 @@
 use crate::entities::{
     datasource_group, device_name, sigint_inbox_item, signal_group,
-    signal_profile,
+    signal_message_media, signal_profile,
 };
 use crate::error::AppError;
 use crate::types::*;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use uuid::Uuid;
 
 pub async fn find_available_signal_group<C>(
     dbx: &C,
@@ -121,4 +122,41 @@ where
         .map(|m| m.map(|dg| dg.datasource_id))
         .unwrap_or(None)
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID))
+}
+
+pub async fn delete_signal_message_media<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    media_ids: &[Uuid],
+) -> Result<Vec<signal_message_media::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if media_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let media = signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_media::Column::Id.is_in(media_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if media.len() != media_ids.len() {
+        return Err(AppError::NotFound);
+    }
+    signal_message_media::Entity::delete_many()
+        .filter(
+            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_media::Column::Id.is_in(media_ids.iter().copied()),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(media)
 }

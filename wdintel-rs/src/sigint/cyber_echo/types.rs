@@ -36,6 +36,8 @@ pub struct CreateCyberEchoSignalMessagePayload {
     pub device_name_id: i64,
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
+    #[serde(default)]
+    pub delete_media_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

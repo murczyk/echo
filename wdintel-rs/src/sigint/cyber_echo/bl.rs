@@ -40,6 +40,11 @@ pub async fn create_signal_message(
             msg: "s3 config is required for attachment upload".to_string(),
         });
     }
+    if !payload.delete_media_ids.is_empty() && env.config.s3_config.is_none() {
+        return Err(AppError::BL {
+            msg: "s3 config is required for attachment deletion".to_string(),
+        });
+    }
 
     let txn = env.dbx.begin().await.c(h!())?;
     let signal_group = query::find_available_signal_group(
@@ -106,6 +111,14 @@ pub async fn create_signal_message(
     .await
     .c(h!())?;
 
+    let deleted_media = query::delete_signal_message_media(
+        &txn,
+        signal_message_id,
+        &payload.delete_media_ids,
+    )
+    .await
+    .c(h!())?;
+
     let media = crate::messenger::media::store_media_attachments(
         &uploads,
         signal_message_id,
@@ -130,6 +143,12 @@ pub async fn create_signal_message(
         crate::messenger::media::delete_uploaded_attachment_files(&uploads)
             .await;
     }
+    crate::messenger::media::delete_stored_media_files(
+        &deleted_media,
+        &env.config,
+        &env.s3,
+    )
+    .await;
 
     let mut redis = env.redis.clone();
     crate::inbox::fanout_inbox_changes(&mut redis, vec![inbox_item_id])
@@ -177,7 +196,7 @@ mod tests {
     use crate::entities::{
         device_name, sigint_comment, sigint_inbox_item, sigint_inbox_item_tag,
         sigint_search, signal_group, signal_message, signal_message_group,
-        system_settings, tag,
+        signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::{cleanup, mk_signal_group, mk_tag};
     use crate::rer_importer::types::SubmitCoordinates;
@@ -214,6 +233,7 @@ mod tests {
             signal_group_master_key: signal_group_master_key.to_string(),
             device_name_id,
             upload_urls,
+            delete_media_ids: vec![],
         }
     }
 
@@ -410,6 +430,7 @@ mod tests {
             body: None,
             network: None,
             upload_urls: None,
+            delete_media_ids: vec![],
         };
 
         let rsp = create_signal_message(TEST_LOGIN, &env, payload)
@@ -574,6 +595,69 @@ mod tests {
         assert_eq!(inbox_item.unit.as_deref(), Some("updated unit"));
         assert_eq!(inbox_item.location.as_deref(), Some("UPDATED LOCATION"));
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_with_existing_message_uid_deletes_existing_media(
+    ) {
+        let mut env = cleanup().await.unwrap();
+        let test_env = std::sync::Arc::get_mut(&mut env).unwrap();
+        test_env.config.s3_config = Some(crate::config::S3Config {
+            s3_bucket: "test-bucket".to_string(),
+            s3_region: "test-region".to_string(),
+            s3_endpoint: "http://127.0.0.1:9000".to_string(),
+            s3_access_key_id: "test-access-key".to_string(),
+            s3_secret_access_key: "test-secret-key".to_string(),
+            strongbox_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                .to_string(),
+        });
+        insert_settings(&env.dbx, true).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
+        let message_uid = "cyber-echo-delete-media-1";
+        let mut first_payload = payload(
+            "first cyber echo body",
+            TEST_SIGNAL_GROUP_KEY,
+            device_name_id,
+            None,
+        );
+        first_payload.message_uid = Some(message_uid.to_string());
+        let first_rsp = create_signal_message(TEST_LOGIN, &env, first_payload)
+            .await
+            .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            signal_message_id: Set(first_rsp.signal_message_id),
+            content_type: Set("text/plain".to_string()),
+            file_ext: Set(Some("txt".to_string())),
+            file_name: Set(Some("delete-me.txt".to_string())),
+            size_bytes: Set(10),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let mut second_payload = payload(
+            "updated cyber echo body",
+            TEST_SIGNAL_GROUP_KEY,
+            device_name_id,
+            None,
+        );
+        second_payload.message_uid = Some(message_uid.to_string());
+        second_payload.delete_media_ids = vec![media.id];
+
+        let second_rsp =
+            create_signal_message(TEST_LOGIN, &env, second_payload)
+                .await
+                .unwrap();
+
+        assert_eq!(second_rsp.signal_message_id, first_rsp.signal_message_id);
+        assert!(signal_message_media::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
