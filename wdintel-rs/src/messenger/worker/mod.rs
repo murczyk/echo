@@ -1383,6 +1383,9 @@ async fn store_promoted_duplicate_media(
     if echo_attachments.is_empty() {
         return Ok(true);
     }
+    cleanup_promoted_duplicate_media_rows(txn, signal_message_id)
+        .await
+        .c(h!())?;
     let upload_inputs = echo_attachments
         .iter()
         .map(|attachment| crate::messenger::media::MediaUploadInput {
@@ -1403,6 +1406,9 @@ async fn store_promoted_duplicate_media(
     {
         Ok(_) => Ok(true),
         Err(err) => {
+            cleanup_promoted_duplicate_media_rows(txn, signal_message_id)
+                .await
+                .c(h!())?;
             warn!(
                 "failed to store promoted duplicate media for signal_message_id={signal_message_id}: {:?}",
                 err
@@ -1410,6 +1416,20 @@ async fn store_promoted_duplicate_media(
             Ok(false)
         }
     }
+}
+
+async fn cleanup_promoted_duplicate_media_rows(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+) -> anyhow::Result<()> {
+    signal_message_media::Entity::delete_many()
+        .filter(
+            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn ensure_promoted_inbox_item(
@@ -2609,6 +2629,96 @@ mod tests {
         assert!(original_signal_message.deleted);
         assert!(duplicate_signal_message.deleted);
         assert!(changed_inbox_item_ids.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_cleans_partial_promoted_media_on_store_failure() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group =
+            mk_test_echo_group(&env.dbx, echo_account.id, "media-clean-group")
+                .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            "",
+            Utc::now().naive_utc(),
+            true,
+            None,
+            Some("duplicate-trace-media-clean".to_string()),
+        )
+        .await;
+        let first_path = format!("/tmp/promoted-media-{}.jpg", Uuid::new_v4());
+        tokio::fs::write(&first_path, b"stored before failure")
+            .await
+            .unwrap();
+        let now = Utc::now().naive_utc();
+        let echo_attachments = vec![
+            echo_attachment::Model {
+                id: 1,
+                name: Some("stored.jpg".to_string()),
+                path: first_path.clone(),
+                message_id: 1,
+                account_id: echo_account.id,
+                created_at: now,
+                updated_at: now,
+            },
+            echo_attachment::Model {
+                id: 2,
+                name: Some("missing.jpg".to_string()),
+                path: format!("/tmp/missing-promoted-media-{}", Uuid::new_v4()),
+                message_id: 1,
+                account_id: echo_account.id,
+                created_at: now,
+                updated_at: now,
+            },
+        ];
+        let mut config = env.config.clone();
+        config.s3_config = Some(S3Config {
+            s3_access_key_id: "test".to_string(),
+            s3_secret_access_key: "test".to_string(),
+            s3_endpoint: "http://127.0.0.1:9".to_string(),
+            s3_region: "test".to_string(),
+            s3_bucket: "test".to_string(),
+            strongbox_key: "test".to_string(),
+        });
+        let txn = env.dbx.begin().await.unwrap();
+
+        let stored = store_promoted_duplicate_media(
+            &config,
+            &None,
+            &txn,
+            signal_message.id,
+            &echo_attachments,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let _ = tokio::fs::remove_file(first_path).await;
+        assert!(!stored);
+        assert_eq!(
+            signal_message_media::Entity::find()
+                .filter(
+                    signal_message_media::Column::SignalMessageId
+                        .eq(signal_message.id),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     async fn mk_test_echo_account(
