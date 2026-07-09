@@ -146,6 +146,49 @@ export const converterSubs: Menu[] = [
 export const adminSubs: Menu[] = [
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/directions-neo' },
+    activeName: 'zones',
+    label: 'Напрямки',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/organisms-neo' },
+    activeName: 'organisms-neo',
+    label: 'Організми',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/users-neo' },
+    activeName: 'users-neo',
+    label: 'Користувачі',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/messenger-neo' },
+    activeName: 'messenger-neo',
+    label: 'Месенджери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/aor-neo' },
+    activeName: 'aor-neo',
+    label: 'Смуги',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/control-panel-neo' },
+    activeName: 'control-panel-neo',
+    label: 'Панель керування',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/system-settings-neo' },
+    activeName: 'system-settings-neo',
+    label: 'Налаштування системи',
+  },
+  { type: 'separator' },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/api-integrations' },
     activeName: 'api-integrations',
     label: 'API інтеграції',
@@ -176,45 +219,9 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/users-neo' },
-    activeName: 'users-neo',
-    label: 'Користувачі',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/messenger-neo' },
-    activeName: 'messenger-neo',
-    label: 'Месенджери',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/directions-neo' },
-    activeName: 'zones',
-    label: 'Напрямки',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/location-configs-neo' },
     activeName: 'location-config-neo',
-    label: 'Населені пункти AOR',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/organisms-neo' },
-    activeName: 'organisms-neo',
-    label: 'Організми',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/control-panel-neo' },
-    activeName: 'control-panel-neo',
-    label: 'Панель керування',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/aor-neo' },
-    activeName: 'aor-neo',
-    label: 'Смуги',
+    label: 'Населені пункти смуг',
   },
   {
     type: 'item',
@@ -234,12 +241,5 @@ export const adminSubs: Menu[] = [
     link: { type: 'internal', path: '/admin/rer-delta-import' },
     activeName: 'rer-delta-import',
     label: 'Імпорт Delta',
-  },
-  { type: 'separator' },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/system-settings-neo' },
-    activeName: 'system-settings-neo',
-    label: 'Налаштування системи',
   },
 ];
