@@ -40,6 +40,8 @@ function filterOtherMessageComments(
   const normalizedCurrentUserLogin = currentUserLogin?.trim() ?? '';
   return comments.filter((comment) => {
     const commentLogin = comment.login.trim();
+    // Analysis shows peer/post comments under the card; the current user's own
+    // comment is already rendered and edited through `msg.extendedForm`.
     return commentLogin !== '' && commentLogin !== normalizedCurrentUserLogin;
   });
 }

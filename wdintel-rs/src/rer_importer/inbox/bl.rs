@@ -360,6 +360,8 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
+        // `extended_form` is the editable duty comment, so it must come only
+        // from the active login; peer comments are shown only in analysis.
         let m_comment = find_sigint_comment_by_signal_message_id_and_login(
             env, message.id, login,
         )

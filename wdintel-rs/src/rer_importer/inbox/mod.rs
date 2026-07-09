@@ -3318,6 +3318,22 @@ mod tests {
         )
         .await
         .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(current_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(Some("sender-current".to_string())),
+                message_uid: Set(current_message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         mk_sigint_inbox_item(
             &env.dbx,
             sigint_inbox_item::ActiveModel {
@@ -3368,6 +3384,22 @@ mod tests {
                 sender: Set(Some("sender-peer-only".to_string())),
                 message_uid: Set(Some("uid-peer-only".to_string())),
                 datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(peer_only_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(Some("sender-peer-only".to_string())),
+                message_uid: Set(peer_only_message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(Utc::now().naive_utc()),
                 ..Default::default()
             },
         )
