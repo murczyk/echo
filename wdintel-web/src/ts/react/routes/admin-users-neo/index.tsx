@@ -500,10 +500,10 @@ function AddUserDialog(props: {
   );
 
   useEffect(() => {
-    if (lookups.zones.length === 0) return;
+    if (!open || lookups.zones.length !== 1) return;
     const [zoneId] = lookups.zones[0];
     setForm((prev) => (prev.sigintZoneId === null ? { ...prev, sigintZoneId: zoneId } : prev));
-  }, [lookups.zones]);
+  }, [open, lookups.zones]);
 
   useEffect(() => {
     if (!open || !DEBUG_USERS_NEO) return;
