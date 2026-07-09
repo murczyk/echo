@@ -18,7 +18,7 @@ const BASE_UPLOAD_DIR: &str = "cyber_echo_tus_upload";
 const PENDING_DIR: &str = "pending";
 const COMPLETED_DIR: &str = "completed";
 const METADATA_EXT: &str = "json";
-pub const MAX_COMPLETED_UPLOADS: usize = 10;
+pub const MAX_COMPLETED_UPLOADS: usize = 100;
 
 const HEADER_NAME_TUS_VERSION: HeaderName =
     HeaderName::from_static("tus-version");
