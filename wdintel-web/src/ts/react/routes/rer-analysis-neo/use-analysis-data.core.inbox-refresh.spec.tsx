@@ -315,9 +315,10 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 
-  it('refreshes visible ids and preserves existing rendered fields', async () => {
+  it('refreshes visible ids, point tokens, and preserves existing rendered fields', async () => {
     const currentMessage = inboxMessage({
       text: 'current',
+      pointTokens: [{ begin: 0, end: 3, etalon: 'old-point', text: 'old' }],
       keywordTokens: [{ text: 'keyword' }] as never,
       textMarked: [{ CNTextC: { text: 'marked' } }] as never,
       tags: [1],
@@ -325,6 +326,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
     const currentMapMessage = inboxMessage({
       text: 'map-current',
+      pointTokens: [{ begin: 0, end: 3, etalon: 'old-map-point', text: 'old' }],
       keywordTokens: [{ text: 'map-keyword' }] as never,
       textMarked: [{ CNTextC: { text: 'map-marked' } }] as never,
       tags: [1],
@@ -332,6 +334,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
     const updatedMessage = inboxMessage({
       text: 'updated',
+      pointTokens: [{ begin: 4, end: 9, etalon: 'new-point', text: 'new' }],
       keywordTokens: [{ text: 'new keyword' }] as never,
       textMarked: [{ CNTextC: { text: 'new marked' } }] as never,
       tags: [2],
@@ -360,6 +363,7 @@ describe('useAnalysisData inbox refreshes', () => {
           inboxTags: [
             { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
           ],
+          pointTokens: updatedMessage.pointTokens,
         },
       ],
     ]);
@@ -372,9 +376,12 @@ describe('useAnalysisData inbox refreshes', () => {
           inboxTags: [
             { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
           ],
+          pointTokens: updatedMessage.pointTokens,
         },
       ],
     ]);
+    expect(latest?.messages[1][1].pointTokens).toBe(updatedMessage.pointTokens);
+    expect(latest?.mapAttrs.messages[0][1].pointTokens).toBe(updatedMessage.pointTokens);
     expect(latest?.messages[1][1].keywordTokens).toBe(currentMessage.keywordTokens);
     expect(latest?.messages[1][1].textMarked).toBe(currentMessage.textMarked);
     expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(currentMapMessage.keywordTokens);
@@ -406,6 +413,48 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
     expect(latest?.messages).toEqual([[1, unchangedMessage]]);
     expect(latest?.mapAttrs.messages).toEqual([[3, unchangedMapMessage]]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
+  });
+
+  it('removes refreshed visible ids that no longer match selected tags', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      tags: [3],
+      inboxTags: [{ id: 1, tagId: 3, confidence: 1, login: null, model: null, organismId: null }],
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      tags: [4],
+      inboxTags: [{ id: 2, tagId: 4, confidence: 1, login: null, model: null, organismId: null }],
+    });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.mapOpenMessages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({ tags: [3] });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(latest?.messages).toEqual([]);
+    expect(latest?.mapAttrs.messages).toEqual([]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
+  });
+
+  it('removes refreshed visible ids that no longer match selected freqs', async () => {
+    const currentMessage = inboxMessage({ text: 'current', freq: '100.0000' });
+    const updatedMessage = inboxMessage({ text: 'updated', freq: '200.0000' });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.mapOpenMessages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({ freqsSelected: ['100.0000'] });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(latest?.messages).toEqual([]);
+    expect(latest?.mapAttrs.messages).toEqual([]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
   });
 

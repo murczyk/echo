@@ -16,6 +16,7 @@ import {
   buildAnalysisActionsParams,
   buildReloadOrchestratorParams,
 } from './use-analysis-data.wiring';
+import type { AnalysisQueryState } from './types';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -60,6 +61,74 @@ function applyModelTagFilter(message: InboxMessage, withoutModelTags: boolean): 
   };
 }
 
+function expandSelectedFreqs(queryState: AnalysisQueryState, allFrequencies: string[]): string[] {
+  if (queryState.adjacentFreqsRange <= 0 || queryState.freqsSelected.length === 0) {
+    return queryState.freqsSelected;
+  }
+
+  return Array.from(
+    new Set([
+      ...queryState.freqsSelected,
+      ...allFrequencies.filter((freq) => {
+        if (queryState.freqsSelected.includes(freq)) return false;
+
+        const freqNumber = parseFloat(freq);
+        if (Number.isNaN(freqNumber)) return false;
+
+        return queryState.freqsSelected.some((selectedFreq) => {
+          const selectedFreqNumber = parseFloat(selectedFreq);
+          if (Number.isNaN(selectedFreqNumber)) return false;
+          return (
+            freqNumber >= selectedFreqNumber - queryState.adjacentFreqsRange &&
+            freqNumber <= selectedFreqNumber + queryState.adjacentFreqsRange
+          );
+        });
+      }),
+    ]),
+  );
+}
+
+function messageMatchesSelectedFreqs(
+  message: InboxMessage,
+  selectedFreqs: readonly string[],
+): boolean {
+  if (selectedFreqs.length === 0) return true;
+
+  return selectedFreqs.includes(message.freq ?? '');
+}
+
+function messageTagIds(message: InboxMessage): number[] {
+  if (message.inboxTags != null && message.inboxTags.length > 0) {
+    return tagIdsFromInboxTags(message.inboxTags);
+  }
+  return message.tags ?? [];
+}
+
+function messageMatchesSelectedTags(
+  message: InboxMessage,
+  queryState: AnalysisQueryState,
+): boolean {
+  if (queryState.tags.length === 0) return true;
+
+  const tagIds = messageTagIds(message);
+  const hasTag = (tagId: number) => tagIds.includes(tagId);
+
+  if (queryState.tagsExcludeMode) return !queryState.tags.some(hasTag);
+  if (queryState.filterTagsOption === 'AllTags') return queryState.tags.every(hasTag);
+  return queryState.tags.some(hasTag);
+}
+
+function messageMatchesLiveRefreshFilters(
+  message: InboxMessage,
+  queryState: AnalysisQueryState,
+  allFrequencies: string[],
+): boolean {
+  return (
+    messageMatchesSelectedFreqs(message, expandSelectedFreqs(queryState, allFrequencies)) &&
+    messageMatchesSelectedTags(message, queryState)
+  );
+}
+
 function mergeRefreshedMessage(
   currentMessage: InboxMessage,
   refreshedMessage: InboxMessage,
@@ -70,7 +139,6 @@ function mergeRefreshedMessage(
     text: currentMessage.text,
     callsignTokens: currentMessage.callsignTokens,
     signalTokens: currentMessage.signalTokens,
-    pointTokens: currentMessage.pointTokens,
     noHeadersBody: currentMessage.noHeadersBody,
     keywordTokens: currentMessage.keywordTokens,
     textMarked: currentMessage.textMarked,
@@ -82,6 +150,7 @@ function mergeRefreshedMessages(
   changedMessageIds: ReadonlySet<number>,
   refreshedMessages: Map<number, InboxMessage>,
   withoutModelTags: boolean,
+  shouldKeepRefreshedMessage: (message: InboxMessage) => boolean,
 ): Array<[number, InboxMessage]> {
   const nextMessages: Array<[number, InboxMessage]> = [];
   for (const [messageId, currentMessage] of currentMessages) {
@@ -89,10 +158,8 @@ function mergeRefreshedMessages(
     if (refreshedMessage == null) {
       if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
     } else {
-      nextMessages.push([
-        messageId,
-        mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags),
-      ]);
+      const nextMessage = mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags);
+      if (shouldKeepRefreshedMessage(nextMessage)) nextMessages.push([messageId, nextMessage]);
     }
   }
   return nextMessages;
@@ -284,12 +351,15 @@ export function useAnalysisData({
           refreshedMessageItems.map(([id, message]) => [id, message]),
         );
         const changedMessageIdSet = new Set(messageIds);
+        const shouldKeepRefreshedMessage = (message: InboxMessage) =>
+          messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues);
         messageList.setMessages((currentMessages) =>
           mergeRefreshedMessages(
             currentMessages,
             changedMessageIdSet,
             refreshedMessages,
             queryState.withoutModelTags,
+            shouldKeepRefreshedMessage,
           ),
         );
         mapData.setMapOpenMessages((currentMessages) =>
@@ -298,14 +368,20 @@ export function useAnalysisData({
             changedMessageIdSet,
             refreshedMessages,
             queryState.withoutModelTags,
+            shouldKeepRefreshedMessage,
           ),
         );
-        await messageList.loadMessageComments(refreshedMessageItems, true);
+        await messageList.loadMessageComments(
+          refreshedMessageItems.filter(([, message]) =>
+            shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
+          ),
+          true,
+        );
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
     },
-    [mapData, messageList, onError, onUnauthorized, queryState.withoutModelTags],
+    [mapData, messageList, onError, onUnauthorized, optionsFreqValues, queryState],
   );
 
   useInboxChangedMessageIds({ onMessageIds: refreshVisibleChangedMessages });
