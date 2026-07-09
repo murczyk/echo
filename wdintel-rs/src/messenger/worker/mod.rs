@@ -609,9 +609,19 @@ async fn receive_thread(
         return Ok(0);
     }
     ensure_initial_signal_login_delay().await;
-    echo_im::worker::signal_worker_tick_once(client_name, dbx)
-        .await
-        .c(h!())?;
+    let restapi_error_discord_webhook_url =
+        crate::system_settings::get_echo_restapi_error_discord_webhook_url(dbx)
+            .await
+            .c(h!())?;
+    echo_im::worker::signal_worker_tick_once_with_options(
+        client_name,
+        dbx,
+        echo_im::worker::SignalWorkerOptions {
+            restapi_error_discord_webhook_url,
+        },
+    )
+    .await
+    .c(h!())?;
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .c(h!())?;

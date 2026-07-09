@@ -3206,6 +3206,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   cyberEchoEnabled: boolean;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -3229,6 +3230,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   cyberEchoEnabled: boolean;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3487,4 +3489,3 @@ export type UserDutySettingsDto = {
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
 };
-

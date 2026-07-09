@@ -287,6 +287,7 @@ mod m20260707_212500_echo_missing_message_duplicate_backfill;
 mod m20260708_083252_add_cyber_echo_enabled_to_settings;
 mod m20260708_130958_add_computer_name;
 mod m20260708_143111_add_computer_name_search_indexes;
+mod m20260709_092435_add_system_settings_notifications;
 
 pub struct Migrator;
 
@@ -595,6 +596,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260708_083252_add_cyber_echo_enabled_to_settings::Migration),
             Box::new(m20260708_130958_add_computer_name::Migration),
             Box::new(m20260708_143111_add_computer_name_search_indexes::Migration),
+            Box::new(
+                m20260709_092435_add_system_settings_notifications::Migration,
+            ),
         ]
     }
 }

@@ -22,6 +22,7 @@ type SystemSettingsItemRaw = {
   peleng_bounds_top_left_lng?: number | null;
   peleng_bounds_bottom_right_lat?: number | null;
   peleng_bounds_bottom_right_lng?: number | null;
+  echo_restapi_error_discord_webhook_url?: string | null;
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -65,6 +66,7 @@ type CreateSystemSettingsReqRaw = {
   peleng_bounds_top_left_lng: number | null;
   peleng_bounds_bottom_right_lat: number | null;
   peleng_bounds_bottom_right_lng: number | null;
+  echo_restapi_error_discord_webhook_url: string | null;
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -93,6 +95,7 @@ export type SystemSettingsItem = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 export type SystemSettingsCurrent = {
@@ -132,6 +135,7 @@ export type CreateSystemSettingsInput = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -157,6 +161,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
     pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
     pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
+    echoRestapiErrorDiscordWebhookUrl: raw.echo_restapi_error_discord_webhook_url ?? null,
   };
 }
 
@@ -207,6 +212,7 @@ export async function createSystemSettings(
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,
     peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
     peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
+    echo_restapi_error_discord_webhook_url: input.echoRestapiErrorDiscordWebhookUrl,
   };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);

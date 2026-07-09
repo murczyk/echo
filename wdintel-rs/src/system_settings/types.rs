@@ -49,6 +49,7 @@ pub struct SystemSettingsItem {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub cyber_echo_enabled: bool,
+    pub echo_restapi_error_discord_webhook_url: Option<String>,
 }
 
 #[derive(
@@ -83,6 +84,8 @@ pub struct CreateSystemSettingsReq {
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     #[serde(default)]
     pub cyber_echo_enabled: bool,
+    #[serde(default)]
+    pub echo_restapi_error_discord_webhook_url: Option<String>,
 }
 
 #[derive(

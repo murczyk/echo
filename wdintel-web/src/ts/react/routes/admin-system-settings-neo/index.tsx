@@ -26,7 +26,7 @@ import {
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
 
-type SystemSettingsTab = 'main' | 'pelengs';
+type SystemSettingsTab = 'main' | 'pelengs' | 'notifications';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
@@ -45,6 +45,7 @@ type SystemSettingsForm = {
   pelengBoundsTopLeftLng: string;
   pelengBoundsBottomRightLat: string;
   pelengBoundsBottomRightLng: string;
+  echoRestapiErrorDiscordWebhookUrl: string;
 };
 
 type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
@@ -66,6 +67,7 @@ type SystemSettingsPayload = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 const EMPTY_FORM: SystemSettingsForm = {
@@ -85,6 +87,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   pelengBoundsTopLeftLng: '',
   pelengBoundsBottomRightLat: '',
   pelengBoundsBottomRightLng: '',
+  echoRestapiErrorDiscordWebhookUrl: '',
 };
 
 const SUPPORT_NON_RER_TOOLTIP =
@@ -119,6 +122,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
     pelengBoundsBottomRightLat: coordinateToInput(item?.pelengBoundsBottomRightLat ?? null),
     pelengBoundsBottomRightLng: coordinateToInput(item?.pelengBoundsBottomRightLng ?? null),
+    echoRestapiErrorDiscordWebhookUrl: item?.echoRestapiErrorDiscordWebhookUrl ?? '',
   };
 }
 
@@ -139,7 +143,8 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
     a.pelengBoundsBottomRightLat === b.pelengBoundsBottomRightLat &&
-    a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng
+    a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng &&
+    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl
   );
 }
 
@@ -187,6 +192,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     pelengBoundsTopLeftLng: normalizeCoordinateInput(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: normalizeCoordinateInput(form.pelengBoundsBottomRightLng),
+    echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl.trim(),
   };
 }
 
@@ -208,6 +214,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: coordinateToPayload(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: coordinateToPayload(form.pelengBoundsBottomRightLng),
+    echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl || null,
   };
 }
 
@@ -521,6 +528,39 @@ function PelengSettingsSection({
   );
 }
 
+function NotificationsSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Нотифікації
+      </Typography>
+      <TextField
+        fullWidth
+        label="Discord webhook для помилок Echo REST API"
+        type="url"
+        value={form.echoRestapiErrorDiscordWebhookUrl}
+        onChange={(event) => {
+          patchForm({
+            echoRestapiErrorDiscordWebhookUrl: event.target.value,
+          });
+        }}
+        onBlur={(event) => {
+          patchForm({
+            echoRestapiErrorDiscordWebhookUrl: event.target.value.trim(),
+          });
+        }}
+        helperText="Порожнє значення вимикає Discord нотифікації"
+      />
+    </>
+  );
+}
+
 export function AdminSystemSettingsNeoPage() {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>('main');
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
@@ -596,6 +636,7 @@ export function AdminSystemSettingsNeoPage() {
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
         pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
         pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
+        echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
       });
       setForm(nextForm);
       setSaved(nextForm);
@@ -645,6 +686,12 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-pelengs"
                 aria-controls="system-settings-neo-panel-pelengs"
               />
+              <Tab
+                value="notifications"
+                label="Нотифікації"
+                id="system-settings-neo-tab-notifications"
+                aria-controls="system-settings-neo-panel-notifications"
+              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
@@ -679,6 +726,19 @@ export function AdminSystemSettingsNeoPage() {
                   {activeTab === 'pelengs' ? (
                     <Stack spacing={3}>
                       <PelengSettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
+                </Box>
+
+                <Box
+                  id="system-settings-neo-panel-notifications"
+                  role="tabpanel"
+                  hidden={activeTab !== 'notifications'}
+                  aria-labelledby="system-settings-neo-tab-notifications"
+                >
+                  {activeTab === 'notifications' ? (
+                    <Stack spacing={3}>
+                      <NotificationsSettingsSection form={form} patchForm={patchForm} />
                     </Stack>
                   ) : null}
                 </Box>

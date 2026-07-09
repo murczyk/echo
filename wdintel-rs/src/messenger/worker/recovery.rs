@@ -2588,6 +2588,7 @@ mod tests {
                 autofix_echoim_missing_messages,
             ),
             cyber_echo_enabled: Set(false),
+            echo_restapi_error_discord_webhook_url: Set(None),
         }
         .insert(dbx)
         .await

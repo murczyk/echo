@@ -112,7 +112,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "6dfff37705e99133b7475162b7b46329985f0c92"
+rev = "e5367e08ecd1b2d6122d051904a858739482cf05"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
