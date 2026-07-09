@@ -5,10 +5,10 @@ use super::types::{
 };
 use crate::config::FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT;
 use crate::error::AppError;
-use crate::rer_importer::types::InboxSubmitItem;
+use crate::rer_importer::types::{InboxSubmitItem, SubmitCoordinates};
 use crate::types::*;
 use chrono::{SecondsFormat, Utc};
-use sea_orm::TransactionTrait;
+use sea_orm::{ConnectionTrait, TransactionTrait};
 
 pub async fn create_signal_message(
     login: &str,
@@ -87,8 +87,15 @@ pub async fn create_signal_message(
         )
         .await
         .c(h!())?;
-    let submit_item =
-        cyber_echo_payload_to_submit_item(&payload, body, sender_uuid);
+    let submit_item = cyber_echo_payload_to_submit_item(
+        env,
+        &txn,
+        &payload,
+        body,
+        sender_uuid,
+    )
+    .await
+    .c(h!())?;
     let submitted = crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups_create_missing_uid(
         env,
         &txn,
@@ -163,31 +170,177 @@ pub async fn create_signal_message(
     })
 }
 
-fn cyber_echo_payload_to_submit_item(
+async fn cyber_echo_payload_to_submit_item<C>(
+    env: &Env,
+    txn: &C,
     payload: &CreateCyberEchoSignalMessagePayload,
     text: String,
     sender: String,
-) -> InboxSubmitItem {
-    InboxSubmitItem {
+) -> Result<InboxSubmitItem, AppError>
+where
+    C: ConnectionTrait,
+{
+    let fallback = CyberEchoBodyFallback::parse(env, txn, payload, &text)
+        .await
+        .c(h!())?;
+    Ok(InboxSubmitItem {
         message_uid: payload.message_uid.clone(),
         text,
-        freq: payload.freq.clone(),
-        coords: payload.coords.clone(),
+        freq: payload.freq.clone().or(fallback.freq),
+        coords: if payload.coords.is_empty() {
+            fallback.coords
+        } else {
+            payload.coords.clone()
+        },
         from_callsign: payload.from_callsign.clone(),
-        to: payload.to_callsigns.clone(),
+        to: if payload.to_callsigns.is_empty()
+            && payload.from_callsign.is_none()
+        {
+            fallback.callsigns
+        } else {
+            payload.to_callsigns.clone()
+        },
         tags: payload.tags.clone(),
         timestamp: payload.timestamp.clone().unwrap_or_else(|| {
             Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
         }),
         sender: Some(sender),
         full_body: payload.full_body.clone(),
-        post: payload.post.clone(),
-        unit: payload.unit.clone(),
-        locations: payload.locations.clone(),
+        post: payload.post.clone().or(fallback.post),
+        unit: payload.unit.clone().or(fallback.unit),
+        locations: if payload.locations.is_empty() {
+            fallback.locations
+        } else {
+            payload.locations.clone()
+        },
         group_names: None,
         network: payload.network.clone(),
         dmr: vec![],
+    })
+}
+
+struct CyberEchoBodyFallback {
+    freq: Option<String>,
+    coords: Vec<SubmitCoordinates>,
+    callsigns: Vec<String>,
+    post: Option<String>,
+    unit: Option<String>,
+    locations: Vec<String>,
+}
+
+impl CyberEchoBodyFallback {
+    async fn parse<C>(
+        env: &Env,
+        txn: &C,
+        payload: &CreateCyberEchoSignalMessagePayload,
+        text: &str,
+    ) -> Result<Self, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let should_parse_callsigns =
+            payload.from_callsign.is_none() && payload.to_callsigns.is_empty();
+        let callsigns = if should_parse_callsigns
+            || payload.unit.is_none()
+            || payload.locations.is_empty()
+        {
+            parse_body_callsigns(text)?
+        } else {
+            vec![]
+        };
+        let m_aor_id = if payload.unit.is_none() || payload.locations.is_empty()
+        {
+            query::resolve_group_aor_id(txn, &payload.signal_group_master_key)
+                .await
+                .c(h!())?
+        } else {
+            None
+        };
+        let unit_and_loc =
+            if payload.unit.is_none() || payload.locations.is_empty() {
+                Some(
+                    crate::unit::parser::extract_unit_with_aor(
+                        env.settlements.clone(),
+                        text,
+                        callsigns.clone(),
+                        m_aor_id,
+                    )
+                    .c(h!())?,
+                )
+            } else {
+                None
+            };
+        Ok(Self {
+            freq: if payload.freq.is_none() {
+                crate::rer_importer::frequency::extract_freq(text)
+                    .c(h!())?
+                    .map(|freq| crate::rer_importer::frequency::etalon(&freq))
+            } else {
+                None
+            },
+            coords: if payload.coords.is_empty() {
+                parse_body_coords(txn, text).await.c(h!())?
+            } else {
+                vec![]
+            },
+            callsigns: if should_parse_callsigns {
+                callsigns
+            } else {
+                vec![]
+            },
+            post: if payload.post.is_none() {
+                crate::rer_importer::post::extract_post(text).c(h!())?
+            } else {
+                None
+            },
+            unit: if payload.unit.is_none() {
+                unit_and_loc.as_ref().and_then(|value| value.unit.clone())
+            } else {
+                None
+            },
+            locations: if payload.locations.is_empty() {
+                unit_and_loc
+                    .as_ref()
+                    .and_then(|value| value.locality.clone())
+                    .into_iter()
+                    .collect()
+            } else {
+                vec![]
+            },
+        })
     }
+}
+
+fn parse_body_callsigns(text: &str) -> Result<Vec<String>, AppError> {
+    Ok(crate::utils::uniq_via_btreeset(
+        &crate::rer_importer::callsigns::extract_callsigns(text)
+            .c(h!())?
+            .iter()
+            .map(|callsign| callsign.etalon.clone())
+            .collect::<Vec<_>>(),
+    ))
+}
+
+async fn parse_body_coords<C>(
+    txn: &C,
+    text: &str,
+) -> Result<Vec<SubmitCoordinates>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let coords = crate::rer_importer::coordinates::extract_coords(text).await;
+    let coords =
+        crate::location::peleng::filter_allowed_peleng_coords(coords, txn)
+            .await
+            .c(h!())?;
+    Ok(coords
+        .first()
+        .map(|coords| SubmitCoordinates {
+            lat: coords.lat,
+            lon: coords.lng,
+        })
+        .into_iter()
+        .collect())
 }
 
 #[cfg(test)]
@@ -516,6 +669,67 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_body_only_derives_inbox_fields() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
+        let body = r#"01.04.2023_15:00 F=411,7500(МГЦ)
+УКХ радіомережа управління 1-й мсб 38 омсбр 35А (УКРАЇНСЬКЕ)
+49.12345, 37.12345
+ПЕНЗА (HB)
+ЛЕЩ (HB)
+"1. лещ я пенза прийом.""#;
+        let payload = CreateCyberEchoSignalMessagePayload {
+            message_uid: Some("cyber-echo-body-only-1".to_string()),
+            body: Some(body.to_string()),
+            text: None,
+            freq: None,
+            coords: vec![],
+            from_callsign: None,
+            to_callsigns: vec![],
+            tags: None,
+            timestamp: Some("2026-06-25T12:34:56Z".to_string()),
+            full_body: None,
+            post: None,
+            unit: None,
+            locations: vec![],
+            network: None,
+            signal_group_master_key: TEST_SIGNAL_GROUP_KEY.to_string(),
+            device_name_id,
+            upload_urls: None,
+            delete_media_ids: vec![],
+        };
+
+        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+            .await
+            .unwrap();
+
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(rsp.inbox_item_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some("411.7500"));
+        assert_eq!(inbox_item.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(inbox_item.lat, Some(49.12345));
+        assert_eq!(inbox_item.lng, Some(37.12345));
+        assert_eq!(inbox_item.location.as_deref(), Some("УКРАЇНСЬКЕ"));
+        assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+
+        let callsigns = inbox_item.callsigns.unwrap();
+        assert!(callsigns
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("пенза")));
+        assert!(callsigns
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("лещ")));
     }
 
     #[tokio::test]
