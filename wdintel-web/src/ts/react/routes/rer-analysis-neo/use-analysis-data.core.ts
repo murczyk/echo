@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
+import type { InboxMessage, InboxMessageTag } from '../../../../Bindings';
+import { fetchMessagesByIds } from '../../services/api/analysis';
 import { buildInboxReq, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
@@ -9,13 +11,87 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
 import { useAnalysisActions } from './use-analysis-actions';
+import { toErrorMessage } from './use-analysis-data.shared';
 import {
   buildAnalysisActionsParams,
   buildReloadOrchestratorParams,
 } from './use-analysis-data.wiring';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
+import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
+
+function normalizeMessageIds(messageIds: readonly unknown[]): number[] {
+  return Array.from(
+    new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))),
+  );
+}
+
+function collectVisibleChangedMessageIds(
+  changedMessageIds: readonly unknown[],
+  messages: Array<[number, InboxMessage]>,
+  mapOpenMessages: Array<[number, InboxMessage]>,
+): number[] {
+  const visibleMessageIds = new Set([
+    ...messages.map(([messageId]) => messageId),
+    ...mapOpenMessages.map(([messageId]) => messageId),
+  ]);
+  return normalizeMessageIds(changedMessageIds).filter((messageId) =>
+    visibleMessageIds.has(messageId),
+  );
+}
+
+function tagIdsFromInboxTags(inboxTags: InboxMessageTag[]): number[] {
+  const tagIds: number[] = [];
+  for (const inboxTag of inboxTags) {
+    if (!tagIds.includes(inboxTag.tagId)) tagIds.push(inboxTag.tagId);
+  }
+  return tagIds;
+}
+
+function applyModelTagFilter(message: InboxMessage, withoutModelTags: boolean): InboxMessage {
+  if (!withoutModelTags || message.inboxTags == null) return message;
+
+  const inboxTags = message.inboxTags.filter((inboxTag) => inboxTag.model == null);
+  return {
+    ...message,
+    inboxTags,
+    tags: tagIdsFromInboxTags(inboxTags),
+  };
+}
+
+function mergeRefreshedMessage(
+  currentMessage: InboxMessage,
+  refreshedMessage: InboxMessage,
+  withoutModelTags: boolean,
+): InboxMessage {
+  return {
+    ...applyModelTagFilter(refreshedMessage, withoutModelTags),
+    text: currentMessage.text,
+    callsignTokens: currentMessage.callsignTokens,
+    signalTokens: currentMessage.signalTokens,
+    pointTokens: currentMessage.pointTokens,
+    noHeadersBody: currentMessage.noHeadersBody,
+    keywordTokens: currentMessage.keywordTokens,
+    textMarked: currentMessage.textMarked,
+  };
+}
+
+function mergeRefreshedMessages(
+  currentMessages: Array<[number, InboxMessage]>,
+  refreshedMessages: Map<number, InboxMessage>,
+  withoutModelTags: boolean,
+): Array<[number, InboxMessage]> {
+  return currentMessages.map(([messageId, currentMessage]) => {
+    const refreshedMessage = refreshedMessages.get(messageId);
+    return [
+      messageId,
+      refreshedMessage == null
+        ? currentMessage
+        : mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags),
+    ];
+  });
+}
 
 export function useAnalysisData({
   authUserName,
@@ -187,6 +263,35 @@ export function useAnalysisData({
       setHasLoadedInitialMessages: messageList.setHasLoadedInitialMessages,
     }),
   );
+
+  const refreshVisibleChangedMessages = useCallback(
+    async (changedMessageIds: number[]) => {
+      const messageIds = collectVisibleChangedMessageIds(
+        changedMessageIds,
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
+      if (messageIds.length === 0) return;
+
+      try {
+        const refreshedMessageItems = await fetchMessagesByIds(messageIds);
+        const refreshedMessages = new Map(
+          refreshedMessageItems.map(([id, message]) => [id, message]),
+        );
+        messageList.setMessages((currentMessages) =>
+          mergeRefreshedMessages(currentMessages, refreshedMessages, queryState.withoutModelTags),
+        );
+        mapData.setMapOpenMessages((currentMessages) =>
+          mergeRefreshedMessages(currentMessages, refreshedMessages, queryState.withoutModelTags),
+        );
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      }
+    },
+    [mapData, messageList, onError, onUnauthorized, queryState.withoutModelTags],
+  );
+
+  useInboxChangedMessageIds({ onMessageIds: refreshVisibleChangedMessages });
 
   reloadRef.current = reload;
 

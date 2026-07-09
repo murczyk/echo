@@ -2520,6 +2520,93 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn test_submit_upsert_extended_form_does_not_update_peer_comment() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("LegacySubmitPeer".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy submit peer comment".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy peer sender".to_string())),
+                message_uid: Set(None),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer comment must stay".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy submit current comment".to_string(),
+            extended_form: Some("current user comment".to_string()),
+            group_master_key: Some(datasource_group.group_master_key.clone()),
+            sender: Some("legacy peer sender".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let peer_comment = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .filter(sigint_comment::Column::Login.eq(peer_login.login.clone()))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(peer_comment.comment, "peer comment must stay");
+
+        let current_comment = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .filter(sigint_comment::Column::Login.eq(login.login.clone()))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(current_comment.comment, "current user comment");
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_generic_external_submit_creates_message_groups_inbox_metadata_and_warnings(
     ) {
         let env = cleanup().await.unwrap();

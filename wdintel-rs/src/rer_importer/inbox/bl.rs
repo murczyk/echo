@@ -787,7 +787,7 @@ pub async fn submit_upsert_inbox_item(
     id: i64,
     message: &InboxMessage,
     login: &str,
-    logins: &Vec<String>,
+    _logins: &Vec<String>,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -843,9 +843,11 @@ pub async fn submit_upsert_inbox_item(
         .map(|x| crate::rer_importer::frequency::etalon(x));
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
+        // Inbox/detail submits carry the current user's editable comment only;
+        // never reuse a same-organism peer comment row for this update.
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(id))
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq(login))
             .one(txn)
             .await
             .c(h!())?;
