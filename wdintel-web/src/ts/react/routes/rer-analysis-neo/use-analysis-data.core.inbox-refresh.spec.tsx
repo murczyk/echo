@@ -14,6 +14,7 @@ const hoisted = vi.hoisted(() => ({
   onInboxChangedMessageIds: vi.fn(),
   messages: [] as Array<[number, InboxMessage]>,
   mapOpenMessages: [] as Array<[number, InboxMessage]>,
+  loadMessageComments: vi.fn(),
   onError: vi.fn(),
   onUnauthorized: vi.fn().mockReturnValue(false),
 }));
@@ -82,7 +83,7 @@ vi.mock('./use-analysis-message-list', () => ({
       nolimitShown: false,
       invalidateMessagePaging: vi.fn(),
       loadAllMessages: vi.fn(),
-      loadMessageComments: vi.fn(),
+      loadMessageComments: hoisted.loadMessageComments,
       loadMoreMessages: vi.fn(),
       setAorEntries: vi.fn(),
       setCounts: vi.fn(),
@@ -282,6 +283,8 @@ beforeEach(() => {
   document.body.appendChild(container);
   latest = null;
   hoisted.fetchMessagesByIds.mockReset();
+  hoisted.loadMessageComments.mockReset();
+  hoisted.loadMessageComments.mockResolvedValue(undefined);
   hoisted.onInboxChangedMessageIds = vi.fn();
   hoisted.onError.mockReset();
   hoisted.onUnauthorized.mockReturnValue(false);
@@ -309,6 +312,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 
   it('refreshes visible ids and preserves existing rendered fields', async () => {
@@ -375,7 +379,34 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.messages[1][1].textMarked).toBe(currentMessage.textMarked);
     expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(currentMapMessage.keywordTokens);
     expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(currentMapMessage.textMarked);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[2, updatedMessage]], true);
     expect(hoisted.onError).not.toHaveBeenCalled();
+  });
+
+  it('removes visible changed ids omitted from refreshed messages', async () => {
+    const unchangedMessage = inboxMessage({ text: 'unchanged' });
+    const deletedListMessage = inboxMessage({ text: 'deleted-list' });
+    const deletedMapMessage = inboxMessage({ text: 'deleted-map' });
+    const unchangedMapMessage = inboxMessage({ text: 'unchanged-map' });
+    hoisted.messages = [
+      [1, unchangedMessage],
+      [2, deletedListMessage],
+    ];
+    hoisted.mapOpenMessages = [
+      [2, deletedMapMessage],
+      [3, unchangedMapMessage],
+    ];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([]);
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([2]);
+    });
+
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
+    expect(latest?.messages).toEqual([[1, unchangedMessage]]);
+    expect(latest?.mapAttrs.messages).toEqual([[3, unchangedMapMessage]]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
   });
 
   it('filters model tags again when withoutModelTags is enabled', async () => {
@@ -410,6 +441,7 @@ describe('useAnalysisData inbox refreshes', () => {
     ]);
     expect(latest?.messages[0][1].tags).toEqual([3, 5]);
     expect(latest?.mapAttrs.messages).toEqual([]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
   });
 
   it('surfaces fetch failures and leaves state unchanged', async () => {
@@ -425,5 +457,6 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.onError).toHaveBeenCalledWith('boom');
     expect(latest?.messages[0][1].text).toBe('current');
     expect(latest?.mapAttrs.messages[0][1].text).toBe('map-current');
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 });

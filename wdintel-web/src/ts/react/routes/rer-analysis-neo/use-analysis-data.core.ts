@@ -79,18 +79,23 @@ function mergeRefreshedMessage(
 
 function mergeRefreshedMessages(
   currentMessages: Array<[number, InboxMessage]>,
+  changedMessageIds: ReadonlySet<number>,
   refreshedMessages: Map<number, InboxMessage>,
   withoutModelTags: boolean,
 ): Array<[number, InboxMessage]> {
-  return currentMessages.map(([messageId, currentMessage]) => {
+  const nextMessages: Array<[number, InboxMessage]> = [];
+  for (const [messageId, currentMessage] of currentMessages) {
     const refreshedMessage = refreshedMessages.get(messageId);
-    return [
-      messageId,
-      refreshedMessage == null
-        ? currentMessage
-        : mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags),
-    ];
-  });
+    if (refreshedMessage == null) {
+      if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
+    } else {
+      nextMessages.push([
+        messageId,
+        mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags),
+      ]);
+    }
+  }
+  return nextMessages;
 }
 
 export function useAnalysisData({
@@ -278,12 +283,24 @@ export function useAnalysisData({
         const refreshedMessages = new Map(
           refreshedMessageItems.map(([id, message]) => [id, message]),
         );
+        const changedMessageIdSet = new Set(messageIds);
         messageList.setMessages((currentMessages) =>
-          mergeRefreshedMessages(currentMessages, refreshedMessages, queryState.withoutModelTags),
+          mergeRefreshedMessages(
+            currentMessages,
+            changedMessageIdSet,
+            refreshedMessages,
+            queryState.withoutModelTags,
+          ),
         );
         mapData.setMapOpenMessages((currentMessages) =>
-          mergeRefreshedMessages(currentMessages, refreshedMessages, queryState.withoutModelTags),
+          mergeRefreshedMessages(
+            currentMessages,
+            changedMessageIdSet,
+            refreshedMessages,
+            queryState.withoutModelTags,
+          ),
         );
+        await messageList.loadMessageComments(refreshedMessageItems, true);
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
