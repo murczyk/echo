@@ -571,9 +571,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           cursorId: entry.cursorId,
           quantity: nextCount,
         };
-        const watchMode = watchModeByFeedId[feedId] ?? true;
+        const watchMode = watchModeByFeedId[feedId] ?? false;
         if (watchMode || nearBottom[feedId]) {
-          const shouldFollowScroll = !deps.disableAutoScroll && watchMode;
+          const shouldFollowScroll =
+            !deps.disableAutoScroll && watchMode && (atBottomByFeedIdRef.current[feedId] ?? false);
           await loadFeedNewerMessages(feedId, {
             scrollToEndAfterLoad: shouldFollowScroll,
             skipIfNewestExhausted: true,

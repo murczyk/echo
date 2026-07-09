@@ -458,6 +458,7 @@ export function useWindowedFeedScroll({
     startBottomSettle,
     stopBottomSettle,
     updateScrollState,
+    itemIds,
   ]);
 
   const handleScrollRafRef = useRef<number | null>(null);
@@ -471,13 +472,22 @@ export function useWindowedFeedScroll({
   }, []);
 
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
+    const scroller = scrollerRef.current;
+    if (scroller && bottomSettleActiveRef.current) {
+      const bottomDistance = distanceToBottom(scroller);
+      const atBottom = bottomDistance <= atBottomThresholdPx;
+      if (!atBottom) {
+        stopBottomSettle();
+      }
+    }
+
     if (handleScrollRafRef.current !== null) return;
     handleScrollRafRef.current = requestAnimationFrame(() => {
       updateScrollState();
       captureAnchorSnapshot();
       handleScrollRafRef.current = null;
     });
-  }, [captureAnchorSnapshot, updateScrollState]);
+  }, [captureAnchorSnapshot, updateScrollState, stopBottomSettle, atBottomThresholdPx]);
 
   const refCacheRef = useRef<Map<number, (node: HTMLDivElement | null) => void>>(new Map());
 
