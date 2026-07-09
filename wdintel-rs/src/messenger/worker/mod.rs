@@ -1223,10 +1223,15 @@ async fn promote_oldest_deleted_original_duplicate(
         )
         .await
         .c(h!())?;
+        let annotation_target_ids = if changed_inbox_item_ids.is_empty() {
+            vec![promoted_signal_message.id]
+        } else {
+            changed_inbox_item_ids.clone()
+        };
         copy_deleted_message_annotations(
             txn,
             deleted_signal_message.id,
-            promoted_signal_message.id,
+            &annotation_target_ids,
         )
         .await
         .c(h!())?;
@@ -1443,36 +1448,38 @@ async fn ensure_promoted_inbox_item(
 async fn copy_deleted_message_annotations(
     txn: &DatabaseTransaction,
     deleted_signal_message_id: i64,
-    promoted_signal_message_id: i64,
+    promoted_signal_message_ids: &[i64],
 ) -> anyhow::Result<()> {
-    copy_deleted_message_comments(
-        txn,
-        deleted_signal_message_id,
-        promoted_signal_message_id,
-    )
-    .await
-    .c(h!())?;
-    copy_deleted_message_bookmarks(
-        txn,
-        deleted_signal_message_id,
-        promoted_signal_message_id,
-    )
-    .await
-    .c(h!())?;
-    copy_deleted_message_important_marks(
-        txn,
-        deleted_signal_message_id,
-        promoted_signal_message_id,
-    )
-    .await
-    .c(h!())?;
-    copy_deleted_message_tags(
-        txn,
-        deleted_signal_message_id,
-        promoted_signal_message_id,
-    )
-    .await
-    .c(h!())?;
+    for promoted_signal_message_id in promoted_signal_message_ids {
+        copy_deleted_message_comments(
+            txn,
+            deleted_signal_message_id,
+            *promoted_signal_message_id,
+        )
+        .await
+        .c(h!())?;
+        copy_deleted_message_bookmarks(
+            txn,
+            deleted_signal_message_id,
+            *promoted_signal_message_id,
+        )
+        .await
+        .c(h!())?;
+        copy_deleted_message_important_marks(
+            txn,
+            deleted_signal_message_id,
+            *promoted_signal_message_id,
+        )
+        .await
+        .c(h!())?;
+        copy_deleted_message_tags(
+            txn,
+            deleted_signal_message_id,
+            *promoted_signal_message_id,
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 
@@ -2277,6 +2284,67 @@ mod tests {
             Some("uid-split-original".to_string()),
         )
         .await;
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(original_signal_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("split-dupe-user".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set("split-dupe-user".to_string()),
+                signal_message_id: Set(original_signal_message.id),
+                comment: Set("split comment".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_bookmark(
+            &env.dbx,
+            sigint_bookmark::ActiveModel {
+                user_id: Set("split-dupe-user".to_string()),
+                signal_message_id: Set(original_signal_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_important(
+            &env.dbx,
+            sigint_important::ActiveModel {
+                user_id: Set(Some("split-dupe-user".to_string())),
+                signal_message_id: Set(original_signal_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let original_tag = mk_sigint_inbox_item_tag(
+            &env.dbx,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(original_signal_message.id),
+                login: Set(Some("split-dupe-user".to_string())),
+                model: Set(None),
+                confidence: Set(0.9),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let duplicate_signal_message = mk_test_signal_message(
             &env.dbx,
             datasource_group_id,
@@ -2319,6 +2387,19 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+            assert_eq!(
+                annotation_counts(&env.dbx, changed_inbox_item_id).await,
+                (1, 1, 1)
+            );
+            assert_eq!(
+                manual_tag_count(
+                    &env.dbx,
+                    changed_inbox_item_id,
+                    original_tag.tag_id,
+                )
+                .await,
+                1
+            );
         }
         assert!(
             signal_message::Entity::find_by_id(original_signal_message.id)
