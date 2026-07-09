@@ -10,7 +10,6 @@ use crate::types::*;
 use crate::utils::pop_vector;
 use crate::OneoffReprocessCoordsPs;
 use anyhow::anyhow;
-use base64::engine::general_purpose;
 use base64::Engine;
 use calamine::Reader;
 use chrono::prelude::*;
@@ -404,13 +403,13 @@ pub async fn find_duplicate_of(
     manager: &mut ConnectionManager,
 ) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
 {
-    let body_base64 =
-        general_purpose::STANDARD.encode(body_for_dedupe.as_bytes());
-    let key = format!("signal_message:{body_base64}");
+    let key = crate::messenger::dedupe::redis_key_for_body_for_dedupe(
+        body_for_dedupe,
+    );
     let new_value = format!("{db_message_id}");
     redis::cmd("SET")
         .arg(key.clone())
-        .arg(new_value)
+        .arg(&new_value)
         .arg("NX")
         .arg("EX") // Add the Expire option
         .arg(REDIS_MGS_ID_TTL)
@@ -418,7 +417,7 @@ pub async fn find_duplicate_of(
         .await
         .c(h!())?;
 
-    let original_id: String = manager.get(key).await.c(h!())?;
+    let original_id: String = manager.get(&key).await.c(h!())?;
     let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
@@ -436,7 +435,21 @@ pub async fn find_duplicate_of(
                 .and_then(|(m, groups)| {
                     groups.into_iter().next().map(|g| (m, g))
                 });
-            if original.is_some() {
+            if let Some((message, _group)) = &original {
+                if message.deleted {
+                    warn!(
+                        "redis duplicate key {key} pointed to deleted signal_message id={original_id}; promoting id={db_message_id} as canonical"
+                    );
+                    redis::cmd("SET")
+                        .arg(&key)
+                        .arg(&new_value)
+                        .arg("EX")
+                        .arg(REDIS_MGS_ID_TTL)
+                        .query_async::<()>(manager)
+                        .await
+                        .c(h!())?;
+                    return Ok(None);
+                }
                 break;
             }
             if retry_count < 1 {

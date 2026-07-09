@@ -1,4 +1,5 @@
 use crate::types::warn;
+use base64::{engine::general_purpose, Engine as _};
 use sha256;
 use std::path::Path;
 
@@ -30,6 +31,22 @@ pub fn body_with_attachments_hash(
     } else {
         format!("{body}\n{attachments_hash}")
     }
+}
+
+pub fn redis_key_for_body_for_dedupe(body_for_dedupe: &str) -> String {
+    let body_base64 =
+        general_purpose::STANDARD.encode(body_for_dedupe.as_bytes());
+    format!("signal_message:{body_base64}")
+}
+
+pub fn redis_key_for_body_with_attachments_hash(
+    body: &str,
+    attachments_hash: Option<&str>,
+) -> String {
+    redis_key_for_body_for_dedupe(&body_with_attachments_hash(
+        body,
+        attachments_hash,
+    ))
 }
 
 pub async fn attachments_hash<A>(attachments: &[A]) -> Option<String>
