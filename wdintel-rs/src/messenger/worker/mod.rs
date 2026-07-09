@@ -1833,7 +1833,7 @@ mod tests {
             &env.dbx,
             echo_account.id,
             echo_group.id,
-            "11:20 123.45 TEST",
+            "plain delete duplicate message",
             ts,
             None,
             true,
