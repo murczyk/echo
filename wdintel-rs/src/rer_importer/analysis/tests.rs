@@ -1084,6 +1084,54 @@ async fn rer_analysis_search_matches_plain_prefix() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_search_matches_dotted_body_text() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    mk_analysis_message(
+        &fixture.env.dbx,
+        r#"Отримано з поста "DOT.HEADER"
+--------------------------------------
+16.02, 22:44:57
+432.1500
+УКХ р/м
+
+BODY.DOT передали координати"#,
+        "999.9",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.search = Some("BODY.DOT".to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+
+    req.search = Some(r#""BODY.DOT""#.to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+
+    req.search = Some(r#""DOT.HEADER""#.to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let counts = fetch_group_counts_with_secret_for_req(

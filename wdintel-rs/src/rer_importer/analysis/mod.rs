@@ -2126,14 +2126,10 @@ where
                 .filter(search_filter);
         }
         for ilike in search_parts.ilike {
-            q2 =
-                q2.filter(Expr::col(signal_message::Column::Body).ilike(ilike));
+            q2 = q2.filter(body_noheader_body_ilike(ilike));
         }
         for not_ilike in search_parts.not_ilike {
-            q2 = q2.filter(
-                Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
-                    .not_ilike(not_ilike),
-            );
+            q2 = q2.filter(body_noheader_body_not_ilike(not_ilike));
         }
 
         if !search_parts.freq.is_empty() {
@@ -2154,6 +2150,20 @@ where
         return Ok(q2);
     }
     Ok(q2)
+}
+
+fn body_noheader_body_ilike(pattern: String) -> SimpleExpr {
+    Expr::cust_with_values(
+        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') ILIKE $1 ESCAPE '\\'",
+        vec![pattern],
+    )
+}
+
+fn body_noheader_body_not_ilike(pattern: String) -> SimpleExpr {
+    Expr::cust_with_values(
+        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') NOT ILIKE $1 ESCAPE '\\'",
+        vec![pattern],
+    )
 }
 
 /// Summary table showing row-per-frequency
