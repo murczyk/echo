@@ -348,14 +348,15 @@ mod tests {
     use super::*;
     use crate::entities::{
         datasource_group, device_name, sigint_comment, sigint_inbox_item,
-        sigint_inbox_item_tag, sigint_search, signal_group, signal_message,
+        sigint_inbox_item_tag, signal_group, signal_message,
         signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::{cleanup, mk_signal_group, mk_tag};
     use crate::rer_importer::types::SubmitCoordinates;
     use sea_orm::{
-        ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet,
-        PaginatorTrait, QueryFilter, Set,
+        ActiveModelTrait, ColumnTrait, DatabaseConnection, DbBackend,
+        EntityTrait, FromQueryResult, NotSet, PaginatorTrait, QueryFilter, Set,
+        Statement,
     };
     use serial_test::serial;
 
@@ -445,6 +446,26 @@ mod tests {
             AppError::BL { msg } => assert!(msg.contains(expected)),
             err => panic!("expected BL error, got {err:?}"),
         }
+    }
+
+    #[derive(Debug, FromQueryResult)]
+    struct SearchText {
+        search_tsv: String,
+    }
+
+    async fn find_search_text(
+        dbx: &DatabaseConnection,
+        inbox_item_id: i64,
+    ) -> Option<String> {
+        SearchText::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select search_tsv::text as search_tsv from sigint_search where id = $1",
+            [inbox_item_id.into()],
+        ))
+        .one(dbx)
+        .await
+        .unwrap()
+        .map(|search| search.search_tsv)
     }
 
     #[tokio::test]
@@ -664,10 +685,8 @@ mod tests {
             .unwrap();
         assert_eq!(inbox_tag.tag_id, tag.id);
 
-        assert!(sigint_search::Entity::find_by_id(rsp.inbox_item_id)
-            .one(&env.dbx)
+        assert!(find_search_text(&env.dbx, rsp.inbox_item_id)
             .await
-            .unwrap()
             .is_some());
     }
 
@@ -741,7 +760,7 @@ mod tests {
         let device_name_id = insert_device_name(&env.dbx).await;
         let message_uid = "cyber-echo-manual-update-1";
         let mut first_payload = payload(
-            "first cyber echo body",
+            "first cyber echo uniquesearchold body",
             TEST_SIGNAL_GROUP_KEY,
             device_name_id,
             None,
@@ -756,7 +775,7 @@ mod tests {
             .unwrap();
 
         let mut second_payload = payload(
-            "updated cyber echo body",
+            "updated cyber echo uniquesearchnew body",
             TEST_SIGNAL_GROUP_KEY,
             device_name_id,
             None,
@@ -796,7 +815,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             signal_message.body.as_deref(),
-            Some("updated cyber echo body")
+            Some("updated cyber echo uniquesearchnew body")
         );
 
         let inbox_item =
@@ -809,6 +828,17 @@ mod tests {
         assert_eq!(inbox_item.unit.as_deref(), Some("updated unit"));
         assert_eq!(inbox_item.location.as_deref(), Some("UPDATED LOCATION"));
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+        let body_noheader = inbox_item.body_noheader.unwrap();
+        assert_eq!(
+            body_noheader["body"],
+            serde_json::json!("updated cyber echo uniquesearchnew body")
+        );
+
+        let search = find_search_text(&env.dbx, first_rsp.inbox_item_id)
+            .await
+            .unwrap();
+        assert!(search.contains("uniquesearchnew"));
+        assert!(!search.contains("uniquesearchold"));
     }
 
     #[tokio::test]

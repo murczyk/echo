@@ -1008,6 +1008,11 @@ pub async fn submit_upsert_inbox_item(
         .freq
         .as_ref()
         .map(|x| crate::rer_importer::frequency::etalon(x));
+    let body_noheader = match message.no_headers_body.clone() {
+        Some(body_noheader) => body_noheader,
+        None => crate::rer_importer::body_noheader::extract_text(&message.text)
+            .c(h!())?,
+    };
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
         upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
@@ -1064,7 +1069,9 @@ pub async fn submit_upsert_inbox_item(
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
             datetime: NotSet,
-            body_noheader: NotSet,
+            body_noheader: Set(Some(
+                serde_json::to_value(&body_noheader).context(h!())?,
+            )),
             post_id: Set(message.post_id),
             device_name_id: Set(None),
             unit_v2: Set(message.unit.clone()),
@@ -1089,6 +1096,7 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Lng,
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
+                    sigint_inbox_item::Column::BodyNoheader,
                     sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),
