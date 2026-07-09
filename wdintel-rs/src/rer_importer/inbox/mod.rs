@@ -1159,6 +1159,10 @@ async fn upsert_submit_signal_message_inner(
 ) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
         groups.first().cloned().c(h!())?;
+    let group_master_keys = groups
+        .iter()
+        .map(|(group_master_key, _)| group_master_key.clone())
+        .collect::<Vec<_>>();
     let signal_message = match normalized_optional_string(message_uid) {
         Some(message_uid) => {
             let signal_message = SignalMessage::find()
@@ -1166,10 +1170,18 @@ async fn upsert_submit_signal_message_inner(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
                 )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SignalMessageGroup.def(),
+                )
                 .filter(signal_message::Column::MessageUid.eq(&message_uid))
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource_id),
+                )
+                .filter(
+                    signal_message_group::Column::GroupMasterKey
+                        .is_in(group_master_keys),
                 )
                 .one(txn)
                 .await

@@ -347,9 +347,9 @@ where
 mod tests {
     use super::*;
     use crate::entities::{
-        device_name, sigint_comment, sigint_inbox_item, sigint_inbox_item_tag,
-        sigint_search, signal_group, signal_message, signal_message_group,
-        signal_message_media, system_settings, tag,
+        datasource_group, device_name, sigint_comment, sigint_inbox_item,
+        sigint_inbox_item_tag, sigint_search, signal_group, signal_message,
+        signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::{cleanup, mk_signal_group, mk_tag};
     use crate::rer_importer::types::SubmitCoordinates;
@@ -809,6 +809,107 @@ mod tests {
         assert_eq!(inbox_item.unit.as_deref(), Some("updated unit"));
         assert_eq!(inbox_item.location.as_deref(), Some("UPDATED LOCATION"));
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_with_existing_message_uid_ignores_other_group() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
+        let test_group =
+            signal_group::Entity::find_by_id(TEST_SIGNAL_GROUP_KEY.to_string())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let datasource_id = test_group.datasource_id.unwrap();
+        let foreign_group_key = "foreign-same-datasource-cyber-echo-group";
+        mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(foreign_group_key.to_string()),
+                name: Set(Some("Foreign same datasource".to_string())),
+                datasource_id: Set(Some(datasource_id)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let foreign_datasource_group = datasource_group::ActiveModel {
+            id: NotSet,
+            group_master_key: Set(foreign_group_key.to_string()),
+            datasource_id: Set(datasource_id),
+            last_sync_at: Set(Utc::now().naive_utc()),
+            created_at: Set(Utc::now().naive_utc()),
+            name: Set("Foreign same datasource".to_string()),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message_uid = "cyber-echo-foreign-group-uid";
+        let foreign_message = signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some("foreign original body".to_string())),
+            created_at: NotSet,
+            timestamp: Set(None),
+            sender: Set(Some("ForeignSender".to_string())),
+            format: NotSet,
+            deleted: Set(false),
+            external_id: Set(None),
+            echo_inbox_message_id: Set(None),
+            message_uid: Set(Some(message_uid.to_string())),
+            datasource_group_id: Set(Some(foreign_datasource_group.id)),
+            operator_tags: Set(None),
+            attachments_hash: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(foreign_message.id),
+            group_master_key: Set(Some(foreign_group_key.to_string())),
+            sender: Set(foreign_message.sender.clone()),
+            message_uid: Set(foreign_message.message_uid.clone()),
+            datasource_group_id: Set(Some(foreign_datasource_group.id)),
+            created_at: Set(foreign_message.created_at),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut payload = payload(
+            "allowed group body",
+            TEST_SIGNAL_GROUP_KEY,
+            device_name_id,
+            None,
+        );
+        payload.message_uid = Some(message_uid.to_string());
+
+        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+            .await
+            .unwrap();
+
+        assert_ne!(rsp.signal_message_id, foreign_message.id);
+        let foreign_message =
+            signal_message::Entity::find_by_id(foreign_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            foreign_message.body.as_deref(),
+            Some("foreign original body")
+        );
+        let signal_message_count = signal_message::Entity::find()
+            .filter(signal_message::Column::MessageUid.eq(message_uid))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(signal_message_count, 2);
     }
 
     #[tokio::test]
