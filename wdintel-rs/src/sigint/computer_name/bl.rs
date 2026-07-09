@@ -3,7 +3,6 @@ use super::types::{
     ComputerNameSearchReq, ComputerNameSearchResult, ComputerNameSearchRsp,
     CreateComputerNameReq, CreateComputerNameRsp,
 };
-use crate::entities::computer_name;
 use crate::error::AppError;
 use crate::types::*;
 use sea_orm::ConnectionTrait;
@@ -66,7 +65,7 @@ where
 }
 
 fn render_computer_name(
-    computer: computer_name::Model,
+    computer: query::ComputerNameRow,
 ) -> Result<ComputerNameSearchResult, AppError> {
     Ok(ComputerNameSearchResult {
         id: computer.id,
