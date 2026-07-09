@@ -1415,7 +1415,7 @@ async fn ensure_promoted_inbox_item(
     {
         return Ok(());
     }
-    crate::rer_importer::bgworker::process_message_to_inbox(
+    crate::rer_importer::bgworker::process_message_to_inbox_nofail(
         resources.settlements.clone(),
         txn,
         &resources.rq,
@@ -1423,8 +1423,7 @@ async fn ensure_promoted_inbox_item(
         signal_message_id,
         None,
     )
-    .await
-    .c(h!())?;
+    .await;
     crate::sigint::worker::incoming_message_after_insert(
         txn,
         signal_message_id,
@@ -1454,6 +1453,13 @@ async fn copy_deleted_message_annotations(
     .await
     .c(h!())?;
     copy_deleted_message_important_marks(
+        txn,
+        deleted_signal_message_id,
+        promoted_signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    copy_deleted_message_tags(
         txn,
         deleted_signal_message_id,
         promoted_signal_message_id,
@@ -1588,6 +1594,65 @@ async fn copy_deleted_message_important_marks(
             signal_message_id: Set(promoted_signal_message_id),
             created_at: Set(mark.created_at),
             deleted: Set(mark.deleted),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_deleted_message_tags(
+    txn: &DatabaseTransaction,
+    deleted_signal_message_id: i64,
+    promoted_signal_message_id: i64,
+) -> anyhow::Result<()> {
+    if sigint_inbox_item::Entity::find_by_id(promoted_signal_message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        warn!(
+            "skipping promoted tag copy without sigint_inbox_item: deleted_signal_message_id={} promoted_signal_message_id={}",
+            deleted_signal_message_id,
+            promoted_signal_message_id,
+        );
+        return Ok(());
+    }
+    let tags = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId
+                .eq(deleted_signal_message_id),
+        )
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
+        .all(txn)
+        .await
+        .c(h!())?;
+    let existing = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId
+                .eq(promoted_signal_message_id),
+        )
+        .all(txn)
+        .await
+        .c(h!())?;
+    for tag in tags {
+        let exists = existing.iter().any(|existing| {
+            existing.tag_id == tag.tag_id
+                && existing.login == tag.login
+                && existing.model == tag.model
+        });
+        if exists {
+            continue;
+        }
+        sigint_inbox_item_tag::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(promoted_signal_message_id),
+            tag_id: Set(tag.tag_id),
+            confidence: Set(tag.confidence),
+            login: Set(tag.login),
+            model: Set(tag.model),
         }
         .insert(txn)
         .await
@@ -1808,6 +1873,7 @@ mod tests {
     use crate::functest::tests::{
         cleanup, mk_datasource, mk_login, mk_sigint_bookmark,
         mk_sigint_comment, mk_sigint_important, mk_sigint_inbox_item,
+        mk_sigint_inbox_item_tag,
     };
 
     #[tokio::test]
@@ -1926,6 +1992,18 @@ mod tests {
         )
         .await
         .unwrap();
+        let original_tag = mk_sigint_inbox_item_tag(
+            &env.dbx,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(original_signal_message.id),
+                login: Set(Some("delete-dupe-user".to_string())),
+                model: Set(None),
+                confidence: Set(0.75),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         crate::messenger::missing_message::record_duplicate_missing_message(
             &env.dbx,
             duplicate_inbox.id,
@@ -2001,6 +2079,15 @@ mod tests {
             annotation_counts(&env.dbx, duplicate_signal_message.id).await,
             (1, 1, 1)
         );
+        assert_eq!(
+            manual_tag_count(
+                &env.dbx,
+                duplicate_signal_message.id,
+                original_tag.tag_id,
+            )
+            .await,
+            1
+        );
         let missing_message = echo_missing_message::Entity::find()
             .filter(
                 echo_missing_message::Column::MessageId.eq(duplicate_inbox.id),
@@ -2011,6 +2098,104 @@ mod tests {
             .unwrap();
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_commits_promotion_when_inbox_parsing_fails() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group =
+            mk_test_echo_group(&env.dbx, echo_account.id, "parse-fail-group")
+                .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            "11:20 123.45 TEST",
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let duplicate_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &original_inbox.body,
+            ts + chrono::TimeDelta::seconds(1),
+            Some(original_inbox.id),
+            false,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-parse-fail-original".to_string()),
+        )
+        .await;
+        let duplicate_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            true,
+            Some(i64::from(duplicate_inbox.id)),
+            Some("duplicate-trace-parse-fail".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let original_signal_message =
+            signal_message::Entity::find_by_id(original_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let duplicate_signal_message =
+            signal_message::Entity::find_by_id(duplicate_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(original_signal_message.deleted);
+        assert!(!duplicate_signal_message.deleted);
+        assert!(changed_inbox_item_ids.contains(&duplicate_signal_message.id));
     }
 
     #[tokio::test]
@@ -2261,6 +2446,23 @@ mod tests {
             .await
             .unwrap();
         (comments, bookmarks, important)
+    }
+
+    async fn manual_tag_count(
+        dbx: &DatabaseConnection,
+        signal_message_id: i64,
+        tag_id: i64,
+    ) -> u64 {
+        sigint_inbox_item_tag::Entity::find()
+            .filter(
+                sigint_inbox_item_tag::Column::SigintInboxItemId
+                    .eq(signal_message_id),
+            )
+            .filter(sigint_inbox_item_tag::Column::TagId.eq(tag_id))
+            .filter(sigint_inbox_item_tag::Column::Model.is_null())
+            .count(dbx)
+            .await
+            .unwrap()
     }
 
     #[test]
