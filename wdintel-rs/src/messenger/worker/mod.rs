@@ -1054,21 +1054,20 @@ async fn mark_message_deleted(
         message_am.deleted = Set(true);
         message_am.update(txn).await.c(h!())?;
     }
-    if let Some(restored_id) = promote_oldest_deleted_original_duplicate(
-        config,
-        resources,
-        redis,
-        txn,
-        &inbox_message,
-        &canonical_deleted_message,
-        datasource_group_id,
-        &group_master_key,
-    )
-    .await
-    .c(h!())?
-    {
-        changed_inbox_item_ids.push(restored_id);
-    }
+    changed_inbox_item_ids.extend(
+        promote_oldest_deleted_original_duplicate(
+            config,
+            resources,
+            redis,
+            txn,
+            &inbox_message,
+            &canonical_deleted_message,
+            datasource_group_id,
+            &group_master_key,
+        )
+        .await
+        .c(h!())?,
+    );
     Ok(())
 }
 
@@ -1083,12 +1082,19 @@ async fn load_active_messages_for_deleted_inbox(
             signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
         )
         .filter(signal_message::Column::EchoInboxMessageId.eq(inbox_message_id))
-        .filter(signal_message::Column::Deleted.eq(false))
         .all(txn)
         .await
         .c(h!())?;
+    let active_exact = exact
+        .iter()
+        .filter(|message| !message.deleted)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !active_exact.is_empty() {
+        return Ok(active_exact);
+    }
     if !exact.is_empty() {
-        return Ok(exact);
+        return Ok(vec![]);
     }
 
     signal_message::Entity::find()
@@ -1114,7 +1120,7 @@ async fn promote_oldest_deleted_original_duplicate(
     deleted_signal_message: &signal_message::Model,
     datasource_group_id: i64,
     group_master_key: &str,
-) -> anyhow::Result<Option<i64>> {
+) -> anyhow::Result<Vec<i64>> {
     let duplicate_inbox_messages = echo_inbox_message::Entity::find()
         .filter(
             echo_inbox_message::Column::DuplicateOf
@@ -1144,7 +1150,7 @@ async fn promote_oldest_deleted_original_duplicate(
             continue;
         };
         if !duplicate_signal_message.deleted {
-            return Ok(None);
+            return Ok(vec![]);
         }
 
         let echo_attachments =
@@ -1209,7 +1215,7 @@ async fn promote_oldest_deleted_original_duplicate(
             );
         }
 
-        ensure_promoted_inbox_item(
+        let changed_inbox_item_ids = ensure_promoted_inbox_item(
             config,
             resources,
             txn,
@@ -1235,7 +1241,7 @@ async fn promote_oldest_deleted_original_duplicate(
         )
         .await
         .c(h!())?;
-        return Ok(Some(promoted_signal_message.id));
+        return Ok(changed_inbox_item_ids);
     }
 
     clear_signal_message_dedupe_key(
@@ -1245,7 +1251,7 @@ async fn promote_oldest_deleted_original_duplicate(
     )
     .await
     .c(h!())?;
-    Ok(None)
+    Ok(vec![])
 }
 
 async fn load_promotable_duplicate_signal_message(
@@ -1406,31 +1412,32 @@ async fn ensure_promoted_inbox_item(
     resources: &ReceiveWorkerResources,
     txn: &DatabaseTransaction,
     signal_message_id: i64,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<i64>> {
     if sigint_inbox_item::Entity::find_by_id(signal_message_id)
         .one(txn)
         .await
         .c(h!())?
         .is_some()
     {
-        return Ok(());
+        return Ok(vec![signal_message_id]);
     }
-    crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-        resources.settlements.clone(),
-        txn,
-        &resources.rq,
-        config,
-        signal_message_id,
-        None,
-    )
-    .await;
+    let changed_inbox_item_ids =
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+            resources.settlements.clone(),
+            txn,
+            &resources.rq,
+            config,
+            signal_message_id,
+            None,
+        )
+        .await;
     crate::sigint::worker::incoming_message_after_insert(
         txn,
         signal_message_id,
     )
     .await
     .c(h!())?;
-    Ok(())
+    Ok(changed_inbox_item_ids)
 }
 
 async fn copy_deleted_message_annotations(
@@ -2088,6 +2095,28 @@ mod tests {
             .await,
             1
         );
+        let mut repeated_changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut repeated_changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        let duplicate_signal_message =
+            signal_message::Entity::find_by_id(duplicate_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(!duplicate_signal_message.deleted);
+        assert!(repeated_changed_inbox_item_ids.is_empty());
         let missing_message = echo_missing_message::Entity::find()
             .filter(
                 echo_missing_message::Column::MessageId.eq(duplicate_inbox.id),
@@ -2196,6 +2225,109 @@ mod tests {
         assert!(original_signal_message.deleted);
         assert!(!duplicate_signal_message.deleted);
         assert!(changed_inbox_item_ids.contains(&duplicate_signal_message.id));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_fans_out_split_promoted_inbox_items() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group =
+            mk_test_echo_group(&env.dbx, echo_account.id, "split-dupe-group")
+                .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let body = split_promoted_body();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &body,
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let duplicate_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &body,
+            ts + chrono::TimeDelta::seconds(1),
+            Some(original_inbox.id),
+            false,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-split-original".to_string()),
+        )
+        .await;
+        let duplicate_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &body,
+            ts,
+            true,
+            Some(i64::from(duplicate_inbox.id)),
+            Some("duplicate-trace-split".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert!(!changed_inbox_item_ids.is_empty());
+        assert!(!changed_inbox_item_ids.contains(&duplicate_signal_message.id));
+        for changed_inbox_item_id in changed_inbox_item_ids {
+            assert!(sigint_inbox_item::Entity::find_by_id(
+                changed_inbox_item_id
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        }
+        assert!(
+            signal_message::Entity::find_by_id(original_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]
@@ -2463,6 +2595,11 @@ mod tests {
             .count(dbx)
             .await
             .unwrap()
+    }
+
+    fn split_promoted_body() -> String {
+        let filler = "plain promoted split line\n".repeat(140);
+        format!("03.04, 05:45:53\n{filler}03.04, 05:46:53\n{filler}")
     }
 
     #[test]
