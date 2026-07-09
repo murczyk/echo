@@ -1108,6 +1108,55 @@ async fn upsert_submit_signal_message(
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
+    upsert_submit_signal_message_inner(
+        txn,
+        config,
+        datasource_id,
+        message_uid,
+        message,
+        timestamp,
+        operator_tags,
+        groups,
+        false,
+    )
+    .await
+}
+
+async fn upsert_submit_signal_message_create_missing_uid(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    datasource_id: i64,
+    message_uid: Option<&str>,
+    message: &InboxMessage,
+    timestamp: Option<NaiveDateTime>,
+    operator_tags: Option<serde_json::Value>,
+    groups: &[(String, i64)],
+) -> Result<signal_message::Model, AppError> {
+    upsert_submit_signal_message_inner(
+        txn,
+        config,
+        datasource_id,
+        message_uid,
+        message,
+        timestamp,
+        operator_tags,
+        groups,
+        true,
+    )
+    .await
+}
+
+async fn upsert_submit_signal_message_inner(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    datasource_id: i64,
+    message_uid: Option<&str>,
+    message: &InboxMessage,
+    timestamp: Option<NaiveDateTime>,
+    operator_tags: Option<serde_json::Value>,
+    groups: &[(String, i64)],
+    create_missing_uid: bool,
+) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
         groups.first().cloned().c(h!())?;
     let signal_message = match normalized_optional_string(message_uid) {
@@ -1117,23 +1166,46 @@ async fn upsert_submit_signal_message(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
                 )
-                .filter(signal_message::Column::MessageUid.eq(message_uid))
+                .filter(signal_message::Column::MessageUid.eq(&message_uid))
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource_id),
                 )
                 .one(txn)
                 .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)?;
-            let mut signal_message = signal_message.into_active_model();
-            signal_message.body = Set(Some(message.text.clone()));
-            signal_message.datasource_group_id = Set(Some(datasource_group_id));
-            signal_message.timestamp = Set(timestamp);
-            signal_message.sender = Set(message.sender.clone());
-            signal_message.operator_tags = Set(operator_tags);
-            signal_message.deleted = Set(false);
-            signal_message.update(txn).await.c(h!())?
+                .c(h!())?;
+            match signal_message {
+                Some(signal_message) => {
+                    let mut signal_message = signal_message.into_active_model();
+                    signal_message.body = Set(Some(message.text.clone()));
+                    signal_message.datasource_group_id =
+                        Set(Some(datasource_group_id));
+                    signal_message.timestamp = Set(timestamp);
+                    signal_message.sender = Set(message.sender.clone());
+                    signal_message.operator_tags = Set(operator_tags);
+                    signal_message.deleted = Set(false);
+                    signal_message.update(txn).await.c(h!())?
+                }
+                None if create_missing_uid => signal_message::ActiveModel {
+                    id: NotSet,
+                    body: Set(Some(message.text.clone())),
+                    datasource_group_id: Set(Some(datasource_group_id)),
+                    created_at: NotSet,
+                    timestamp: Set(timestamp),
+                    sender: Set(message.sender.clone()),
+                    format: NotSet,
+                    deleted: Set(false),
+                    external_id: Set(None),
+                    echo_inbox_message_id: Set(None),
+                    message_uid: Set(Some(message_uid)),
+                    operator_tags: Set(operator_tags),
+                    attachments_hash: Set(None),
+                }
+                .insert(txn)
+                .await
+                .c(h!())?,
+                None => return Err(AppError::NotFound),
+            }
         }
         None => signal_message::ActiveModel {
             id: NotSet,

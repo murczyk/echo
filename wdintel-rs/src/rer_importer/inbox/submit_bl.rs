@@ -102,6 +102,51 @@ pub(crate) async fn submit_inbox_item_with_groups(
     logins: &Vec<String>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        env,
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        false,
+    )
+    .await
+}
+
+pub(crate) async fn submit_inbox_item_with_groups_create_missing_uid(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    groups: &[(String, i64)],
+    login: &str,
+    logins: &Vec<String>,
+    item: InboxSubmitItem,
+) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        env,
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        true,
+    )
+    .await
+}
+
+async fn submit_inbox_item_with_groups_inner(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    groups: &[(String, i64)],
+    login: &str,
+    logins: &Vec<String>,
+    item: InboxSubmitItem,
+    create_missing_uid: bool,
+) -> Result<SubmittedInboxItem, AppError> {
     super::validate_submit_item_content(&item)?;
     let tag_ids =
         super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
@@ -120,18 +165,33 @@ pub(crate) async fn submit_inbox_item_with_groups(
     message.post_id = post_id;
     super::prepare_submit_body_for_coordinate_extraction(&mut message)?;
 
-    let signal_message = super::upsert_submit_signal_message(
-        txn,
-        &env.config,
-        datasource_id,
-        item.message_uid.as_deref(),
-        &message,
-        Some(timestamp),
-        operator_tags,
-        groups,
-    )
-    .await
-    .c(h!())?;
+    let signal_message = if create_missing_uid {
+        super::upsert_submit_signal_message_create_missing_uid(
+            txn,
+            &env.config,
+            datasource_id,
+            item.message_uid.as_deref(),
+            &message,
+            Some(timestamp),
+            operator_tags,
+            groups,
+        )
+        .await
+        .c(h!())?
+    } else {
+        super::upsert_submit_signal_message(
+            txn,
+            &env.config,
+            datasource_id,
+            item.message_uid.as_deref(),
+            &message,
+            Some(timestamp),
+            operator_tags,
+            groups,
+        )
+        .await
+        .c(h!())?
+    };
     let message_uid = signal_message.message_uid.clone().c(h!())?;
     let inbox_id = super::submit_upsert_inbox_item(
         env.settlements.clone(),

@@ -84,18 +84,17 @@ pub async fn create_signal_message(
         .c(h!())?;
     let submit_item =
         cyber_echo_payload_to_submit_item(&payload, body, sender_uuid);
-    let submitted =
-        crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups(
-            env,
-            &txn,
-            datasource_id,
-            &[(signal_group.master_key.clone(), datasource_group_id)],
-            login,
-            &logins,
-            submit_item,
-        )
-        .await
-        .c(h!())?;
+    let submitted = crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups_create_missing_uid(
+        env,
+        &txn,
+        datasource_id,
+        &[(signal_group.master_key.clone(), datasource_group_id)],
+        login,
+        &logins,
+        submit_item,
+    )
+    .await
+    .c(h!())?;
     let signal_message_id = submitted.signal_message_id;
     let inbox_item_id = submitted.inbox_id;
 
@@ -175,10 +174,16 @@ fn cyber_echo_payload_to_submit_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{device_name, signal_group, system_settings};
-    use crate::functest::tests::{cleanup, mk_signal_group};
+    use crate::entities::{
+        device_name, sigint_comment, sigint_inbox_item, sigint_inbox_item_tag,
+        sigint_search, signal_group, signal_message, signal_message_group,
+        system_settings, tag,
+    };
+    use crate::functest::tests::{cleanup, mk_signal_group, mk_tag};
+    use crate::rer_importer::types::SubmitCoordinates;
     use sea_orm::{
-        ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, Set,
+        ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet,
+        PaginatorTrait, QueryFilter, Set,
     };
     use serial_test::serial;
 
@@ -364,6 +369,211 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_with_extended_fields_creates_inbox_item() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
+        let tag = mk_tag(
+            &env.dbx,
+            tag::ActiveModel {
+                label: Set("cyber-echo-submit-tag".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let payload = CreateCyberEchoSignalMessagePayload {
+            message_uid: Some("cyber-echo-manual-1".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            freq: Some("145.02678".to_string()),
+            coords: vec![SubmitCoordinates {
+                lat: 49.12345,
+                lon: 37.12345,
+            }],
+            from_callsign: Some("ЯРУС".to_string()),
+            to_callsigns: vec!["СВЕТЛЫЙ".to_string()],
+            tags: Some(vec![
+                "cyber-echo-submit-tag".to_string(),
+                "missing-cyber-echo-tag".to_string(),
+            ]),
+            timestamp: Some("2026-06-25T12:34:56Z".to_string()),
+            full_body: Some("Повна форма Cyber Echo".to_string()),
+            post: Some("SC1".to_string()),
+            unit: Some("42 мсд".to_string()),
+            locations: vec!["ЛИМАН ПЕРШИЙ".to_string()],
+            signal_group_master_key: TEST_SIGNAL_GROUP_KEY.to_string(),
+            device_name_id,
+            body: None,
+            network: None,
+            upload_urls: None,
+        };
+
+        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+            .await
+            .unwrap();
+
+        assert_eq!(rsp.message_uid.as_deref(), Some("cyber-echo-manual-1"));
+        assert_eq!(rsp.signal_message_id, rsp.inbox_item_id);
+        assert!(rsp.media_ids.is_empty());
+
+        let signal_message =
+            signal_message::Entity::find_by_id(rsp.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            signal_message.body.as_deref(),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
+        );
+        assert_eq!(signal_message.sender.as_deref(), Some(TEST_LOGIN));
+
+        let signal_message_group = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(rsp.signal_message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            signal_message_group.group_master_key.as_deref(),
+            Some(TEST_SIGNAL_GROUP_KEY)
+        );
+        assert_eq!(
+            signal_message_group.message_uid.as_deref(),
+            Some("cyber-echo-manual-1")
+        );
+
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(rsp.inbox_item_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some("145.0267"));
+        assert_eq!(inbox_item.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(inbox_item.lat, Some(49.12345));
+        assert_eq!(inbox_item.lng, Some(37.12345));
+        assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+        assert_eq!(inbox_item.unit.as_deref(), Some("42 мсд"));
+        assert_eq!(inbox_item.location.as_deref(), Some("ЛИМАН ПЕРШИЙ"));
+
+        let comment = sigint_comment::Entity::find()
+            .filter(
+                sigint_comment::Column::SignalMessageId
+                    .eq(rsp.signal_message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(comment.comment, "Повна форма Cyber Echo");
+
+        let inbox_tag = sigint_inbox_item_tag::Entity::find()
+            .filter(
+                sigint_inbox_item_tag::Column::SigintInboxItemId
+                    .eq(rsp.inbox_item_id),
+            )
+            .filter(
+                sigint_inbox_item_tag::Column::Login
+                    .eq(Some(TEST_LOGIN.to_string())),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_tag.tag_id, tag.id);
+
+        assert!(sigint_search::Entity::find_by_id(rsp.inbox_item_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cyber_echo_create_with_existing_message_uid_updates_existing_rows()
+    {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let device_name_id = insert_device_name(&env.dbx).await;
+        let message_uid = "cyber-echo-manual-update-1";
+        let mut first_payload = payload(
+            "first cyber echo body",
+            TEST_SIGNAL_GROUP_KEY,
+            device_name_id,
+            None,
+        );
+        first_payload.message_uid = Some(message_uid.to_string());
+        first_payload.freq = Some("145.02678".to_string());
+        first_payload.unit = Some("first unit".to_string());
+        first_payload.locations = vec!["FIRST LOCATION".to_string()];
+
+        let first_rsp = create_signal_message(TEST_LOGIN, &env, first_payload)
+            .await
+            .unwrap();
+
+        let mut second_payload = payload(
+            "updated cyber echo body",
+            TEST_SIGNAL_GROUP_KEY,
+            device_name_id,
+            None,
+        );
+        second_payload.message_uid = Some(message_uid.to_string());
+        second_payload.freq = Some("146.12345".to_string());
+        second_payload.unit = Some("updated unit".to_string());
+        second_payload.locations = vec!["UPDATED LOCATION".to_string()];
+
+        let second_rsp =
+            create_signal_message(TEST_LOGIN, &env, second_payload)
+                .await
+                .unwrap();
+
+        assert_eq!(second_rsp.signal_message_id, first_rsp.signal_message_id);
+        assert_eq!(second_rsp.inbox_item_id, first_rsp.inbox_item_id);
+
+        let signal_message_count = signal_message::Entity::find()
+            .filter(signal_message::Column::MessageUid.eq(message_uid))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(signal_message_count, 1);
+
+        let signal_message_group_count = signal_message_group::Entity::find()
+            .filter(signal_message_group::Column::MessageUid.eq(message_uid))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(signal_message_group_count, 1);
+
+        let signal_message =
+            signal_message::Entity::find_by_id(first_rsp.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            signal_message.body.as_deref(),
+            Some("updated cyber echo body")
+        );
+
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(first_rsp.inbox_item_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.freq.as_deref(), Some("146.1234"));
+        assert_eq!(inbox_item.unit.as_deref(), Some("updated unit"));
+        assert_eq!(inbox_item.location.as_deref(), Some("UPDATED LOCATION"));
+        assert_eq!(inbox_item.device_name_id, Some(device_name_id));
     }
 
     #[tokio::test]
