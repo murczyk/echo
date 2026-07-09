@@ -941,6 +941,7 @@ pub async fn submit_upsert_inbox_item(
             datetime: NotSet,
             body_noheader: NotSet,
             post_id: Set(message.post_id),
+            computer_name_id: Set(None),
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
         })

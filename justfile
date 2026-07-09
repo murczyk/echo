@@ -1926,6 +1926,7 @@ fmt:
     just --fmt --unstable
     (cd echo-migration && cargo fmt)
     (cd wdintel-rs && cargo fmt)
+    (cd wdintel-web && npm run format:all)
     (cd wdintel-rs && cargo clippy --all-targets --all-features -- -D warnings)
 
 # setup-kibana-local:

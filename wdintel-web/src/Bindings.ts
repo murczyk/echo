@@ -2147,6 +2147,27 @@ export type SignalUnitStatRow = {
   count: number;
 };
 
+export type ComputerNameSearchReq = {
+  search: string;
+};
+
+export type ComputerNameSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type ComputerNameSearchRsp = {
+  computers: Array<ComputerNameSearchResult>;
+};
+
+export type CreateComputerNameReq = {
+  name: string;
+};
+
+export type CreateComputerNameRsp = {
+  computer: ComputerNameSearchResult;
+};
+
 export type AddAsKnownNetworkCallsignReq = {
   networkId: number;
   knownCallsignIds: Array<number>;
@@ -3160,6 +3181,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3183,6 +3205,7 @@ export type SystemSettingsItem = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3205,6 +3228,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  cyberEchoEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3463,3 +3487,4 @@ export type UserDutySettingsDto = {
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
 };
+

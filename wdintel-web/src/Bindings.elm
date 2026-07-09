@@ -5594,6 +5594,68 @@ signalUnitStatRowEncoder struct =
         ]
 
 
+type alias ComputerNameSearchReq =
+    { search : String
+    }
+
+
+computerNameSearchReqEncoder : ComputerNameSearchReq -> Json.Encode.Value
+computerNameSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias ComputerNameSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+computerNameSearchResultEncoder : ComputerNameSearchResult -> Json.Encode.Value
+computerNameSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias ComputerNameSearchRsp =
+    { computers : List (ComputerNameSearchResult)
+    }
+
+
+computerNameSearchRspEncoder : ComputerNameSearchRsp -> Json.Encode.Value
+computerNameSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "computers", (Json.Encode.list (computerNameSearchResultEncoder)) struct.computers )
+        ]
+
+
+type alias CreateComputerNameReq =
+    { name : String
+    }
+
+
+createComputerNameReqEncoder : CreateComputerNameReq -> Json.Encode.Value
+createComputerNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias CreateComputerNameRsp =
+    { computer : ComputerNameSearchResult
+    }
+
+
+createComputerNameRspEncoder : CreateComputerNameRsp -> Json.Encode.Value
+createComputerNameRspEncoder struct =
+    Json.Encode.object
+        [ ( "computer", (computerNameSearchResultEncoder) struct.computer )
+        ]
+
+
 type alias AddAsKnownNetworkCallsignReq =
     { networkId : Int
     , knownCallsignIds : List (Int)
@@ -8169,6 +8231,7 @@ type alias SystemSettingsCurrentRsp =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
+    , cyberEchoEnabled : Bool
     }
 
 
@@ -8191,6 +8254,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
+        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
         ]
 
 
@@ -8215,6 +8279,7 @@ type alias SystemSettingsItem =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
+    , cyberEchoEnabled : Bool
     }
 
 
@@ -8241,6 +8306,7 @@ systemSettingsItemEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
+        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
         ]
 
 
@@ -8272,6 +8338,7 @@ type alias CreateSystemSettingsReq =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
+    , cyberEchoEnabled : Bool
     }
 
 
@@ -8293,6 +8360,7 @@ createSystemSettingsReqEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
+        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
         ]
 
 
@@ -12076,6 +12144,37 @@ signalUnitStatRowDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
+computerNameSearchReqDecoder : Json.Decode.Decoder ComputerNameSearchReq
+computerNameSearchReqDecoder =
+    Json.Decode.succeed ComputerNameSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+computerNameSearchResultDecoder : Json.Decode.Decoder ComputerNameSearchResult
+computerNameSearchResultDecoder =
+    Json.Decode.succeed ComputerNameSearchResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+computerNameSearchRspDecoder : Json.Decode.Decoder ComputerNameSearchRsp
+computerNameSearchRspDecoder =
+    Json.Decode.succeed ComputerNameSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computers" (Json.Decode.list (computerNameSearchResultDecoder))))
+
+
+createComputerNameReqDecoder : Json.Decode.Decoder CreateComputerNameReq
+createComputerNameReqDecoder =
+    Json.Decode.succeed CreateComputerNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+createComputerNameRspDecoder : Json.Decode.Decoder CreateComputerNameRsp
+createComputerNameRspDecoder =
+    Json.Decode.succeed CreateComputerNameRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "computer" (computerNameSearchResultDecoder)))
+
+
 addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq
 addAsKnownNetworkCallsignReqDecoder =
     Json.Decode.succeed AddAsKnownNetworkCallsignReq
@@ -13053,7 +13152,7 @@ networkCallsignRelationMessagesReqDecoder =
 
 
 networkCallsignRelationEnrichmentSourceDecoder : Json.Decode.Decoder NetworkCallsignRelationEnrichmentSource
-networkCallsignRelationEnrichmentSourceDecoder =
+networkCallsignRelationEnrichmentSourceDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -13764,6 +13863,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -13789,6 +13889,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -13815,6 +13916,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

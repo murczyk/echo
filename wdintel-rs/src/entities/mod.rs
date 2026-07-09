@@ -13,6 +13,7 @@ pub mod callsign_additional_source;
 pub mod callsign_lexeme;
 pub mod comp_freq;
 pub mod comp_freq_callsign;
+pub mod computer_name;
 pub mod datasource;
 pub mod datasource_group;
 pub mod delta_kv;

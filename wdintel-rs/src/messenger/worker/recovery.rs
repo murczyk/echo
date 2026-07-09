@@ -2587,6 +2587,7 @@ mod tests {
             autofix_echoim_missing_messages: Set(
                 autofix_echoim_missing_messages,
             ),
+            cyber_echo_enabled: Set(false),
         }
         .insert(dbx)
         .await

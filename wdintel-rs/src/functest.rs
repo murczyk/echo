@@ -71,11 +71,11 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        sigint_network_callsign::Entity::delete_many()
+        sigint_network_callsign_changelog::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        sigint_network_callsign_changelog::Entity::delete_many()
+        sigint_network_callsign::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -84,6 +84,14 @@ pub mod tests {
             .await
             .context(h!())?;
         sigint_network_freq_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_encryption_key_freq::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_encryption_key::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -148,6 +156,10 @@ pub mod tests {
             .await
             .context(h!())?;
         sigint_inbox_item_tag::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_inbox_tag_model_error::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -265,6 +277,26 @@ pub mod tests {
             .await
             .context(h!())?;
         system_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        computer_name::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        api_integration::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        area_of_responsibility::Entity::update_many()
+            .col_expr(
+                area_of_responsibility::Column::UpdatedBy,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_key_share_policy::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
