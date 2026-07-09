@@ -86,9 +86,7 @@ pub async fn store_media_attachments(
     let s3_config = storage::S3Config::from(config);
     let strongbox_key = &config.strongbox_key;
     let mut stored = Vec::with_capacity(attachments.len());
-    let mut files_to_delete = vec![];
     for attachment in attachments {
-        files_to_delete.push(attachment.path.clone());
         let data = fs::read(&attachment.path).await.c(h!())?;
         let ct = attachment.content_type.clone().unwrap_or_else(|| {
             detect_content_type(
@@ -137,13 +135,22 @@ pub async fn store_media_attachments(
         stored.push(model);
     }
     if delete_uploaded {
-        for file in files_to_delete {
-            if let Err(e) = tokio::fs::remove_file(&file).await {
-                error!("failed to delete attachment file {file}: {:?}", e);
-            }
-        }
+        delete_uploaded_attachment_files(attachments).await;
     }
     Ok(stored)
+}
+
+pub async fn delete_uploaded_attachment_files(
+    attachments: &[MediaUploadInput],
+) {
+    for attachment in attachments {
+        if let Err(e) = tokio::fs::remove_file(&attachment.path).await {
+            error!(
+                "failed to delete attachment file {}: {:?}",
+                attachment.path, e
+            );
+        }
+    }
 }
 
 pub(crate) async fn ensure_media_access(
