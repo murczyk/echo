@@ -6,13 +6,28 @@ import { useState } from 'react';
 import type { MessageComment } from '../../../../../Bindings';
 
 const OTHER_COMMENTS_PREVIEW_COUNT = 3;
+const SYSTEM_COMMENT_LOGIN = 'system';
 
-function commentAuthorLabel(comment: MessageComment): string {
+function commentAuthorLabel(
+  comment: MessageComment,
+  signalMessageSenderLabel: string | null | undefined,
+): string {
   const sigintPostName = comment.sigintPostName?.trim() ?? '';
-  return sigintPostName === '' ? comment.login : sigintPostName;
+  if (sigintPostName !== '') return sigintPostName;
+
+  const senderLabel = signalMessageSenderLabel?.trim() ?? '';
+  if (comment.login.trim() === SYSTEM_COMMENT_LOGIN && senderLabel !== '') return senderLabel;
+
+  return comment.login;
 }
 
-export function MessageCardComments({ messageComments }: { messageComments: MessageComment[] }) {
+export function MessageCardComments({
+  messageComments,
+  signalMessageSenderLabel,
+}: {
+  messageComments: MessageComment[];
+  signalMessageSenderLabel?: string | null;
+}) {
   const [showOtherCommentsRest, setShowOtherCommentsRest] = useState(false);
   const hasOtherCommentsRest = messageComments.length > OTHER_COMMENTS_PREVIEW_COUNT;
   const visibleOtherComments =
@@ -77,7 +92,7 @@ export function MessageCardComments({ messageComments }: { messageComments: Mess
             variant="caption"
             sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}
           >
-            {commentAuthorLabel(comment)}
+            {commentAuthorLabel(comment, signalMessageSenderLabel)}
           </Typography>
           <Typography
             variant="caption"

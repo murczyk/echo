@@ -1620,6 +1620,26 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('system');
   });
 
+  it('renders signal message sender as the author for system comments without post', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      messageComments: [
+        {
+          id: 11,
+          messageId: 42,
+          comment: 'auto comment without post',
+          login: 'system',
+          sigintPostName: null,
+        },
+      ],
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Dow_Jones_2');
+    expect(view.container.textContent).toContain('auto comment without post');
+    expect(view.container.textContent).not.toContain('system');
+  });
+
   it('collapses other comments after the first three and expands on demand', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

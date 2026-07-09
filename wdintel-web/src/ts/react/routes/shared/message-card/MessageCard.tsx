@@ -317,6 +317,7 @@ export function MessageCard({
           networks={networks}
           unitsMap={unitsMap}
           messageComments={visibleMessageComments}
+          signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
         />
       </Box>
