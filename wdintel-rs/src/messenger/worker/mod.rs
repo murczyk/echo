@@ -1093,7 +1093,7 @@ async fn load_active_messages_for_deleted_inbox(
     if !active_exact.is_empty() {
         return Ok(active_exact);
     }
-    if !exact.is_empty() {
+    if !exact.is_empty() && inbox_message.duplicate_of.is_none() {
         return Ok(vec![]);
     }
 
@@ -2232,6 +2232,107 @@ mod tests {
         assert!(original_signal_message.deleted);
         assert!(!duplicate_signal_message.deleted);
         assert!(changed_inbox_item_ids.contains(&duplicate_signal_message.id));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_for_duplicate_trace_uses_fallback() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group =
+            mk_test_echo_group(&env.dbx, echo_account.id, "trace-dupe-group")
+                .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            "duplicate trace fallback",
+            ts,
+            None,
+            false,
+        )
+        .await;
+        let duplicate_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &original_inbox.body,
+            ts,
+            Some(original_inbox.id),
+            true,
+        )
+        .await;
+        let canonical_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-trace-canonical".to_string()),
+        )
+        .await;
+        let duplicate_trace_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            true,
+            Some(i64::from(duplicate_inbox.id)),
+            Some("duplicate-trace-delete".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(duplicate_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert!(
+            signal_message::Entity::find_by_id(canonical_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert!(
+            signal_message::Entity::find_by_id(
+                duplicate_trace_signal_message.id
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted
+        );
     }
 
     #[tokio::test]
