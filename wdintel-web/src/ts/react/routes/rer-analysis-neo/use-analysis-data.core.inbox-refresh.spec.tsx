@@ -14,6 +14,7 @@ const hoisted = vi.hoisted(() => ({
   onInboxChangedMessageIds: vi.fn(),
   messages: [] as Array<[number, InboxMessage]>,
   mapOpenMessages: [] as Array<[number, InboxMessage]>,
+  loadMissingNetworksForMessages: vi.fn(),
   loadMessageComments: vi.fn(),
   reload: vi.fn(),
   onError: vi.fn(),
@@ -40,7 +41,7 @@ vi.mock('./use-analysis-data.wiring', () => ({
 }));
 
 vi.mock('./use-analysis-data.support', () => ({
-  useLoadMissingNetworksForMessages: () => vi.fn().mockResolvedValue(undefined),
+  useLoadMissingNetworksForMessages: () => hoisted.loadMissingNetworksForMessages,
   mergeNetworksById: vi.fn(),
   shouldSkipNewCallsignsLoad: vi.fn(),
 }));
@@ -284,6 +285,8 @@ beforeEach(() => {
   document.body.appendChild(container);
   latest = null;
   hoisted.fetchMessagesByIds.mockReset();
+  hoisted.loadMissingNetworksForMessages.mockReset();
+  hoisted.loadMissingNetworksForMessages.mockResolvedValue(undefined);
   hoisted.loadMessageComments.mockReset();
   hoisted.loadMessageComments.mockResolvedValue(undefined);
   hoisted.reload.mockReset();
@@ -315,6 +318,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -341,6 +345,7 @@ describe('useAnalysisData inbox refreshes', () => {
       pointTokens: [{ begin: 4, end: 9, etalon: 'new-point', text: 'new' }],
       keywordTokens: [{ text: 'new keyword' }] as never,
       textMarked: [{ CNTextC: { text: 'new marked' } }] as never,
+      networkIds: [42],
       tags: [2],
       inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
     });
@@ -370,6 +375,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.messages[1][1].textMarked).toBe(updatedMessage.textMarked);
     expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(updatedMessage.keywordTokens);
     expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(updatedMessage.textMarked);
+    expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[2, updatedMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[2, updatedMessage]], true);
     expect(hoisted.onError).not.toHaveBeenCalled();
   });
@@ -509,6 +515,7 @@ describe('useAnalysisData inbox refreshes', () => {
 
     expect(hoisted.reload).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 
@@ -560,6 +567,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.onError).toHaveBeenCalledWith('boom');
     expect(latest?.messages[0][1].text).toBe('current');
     expect(latest?.mapAttrs.messages[0][1].text).toBe('map-current');
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
   });
 });

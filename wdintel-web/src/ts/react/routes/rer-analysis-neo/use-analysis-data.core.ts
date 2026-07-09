@@ -440,17 +440,24 @@ export function useAnalysisData({
             shouldKeepRefreshedMessage,
           ),
         );
-        await messageList.loadMessageComments(
-          refreshedMessageItems.filter(([, message]) =>
-            shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
-          ),
-          true,
+        const keptRefreshedMessageItems = refreshedMessageItems.filter(([, message]) =>
+          shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
         );
+        await loadMissingNetworksForMessages(keptRefreshedMessageItems);
+        await messageList.loadMessageComments(keptRefreshedMessageItems, true);
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
     },
-    [mapData, messageList, onError, onUnauthorized, optionsFreqValues, queryState],
+    [
+      loadMissingNetworksForMessages,
+      mapData,
+      messageList,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+    ],
   );
 
   useInboxChangedMessageIds({ onMessageIds: refreshVisibleChangedMessages });
