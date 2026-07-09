@@ -169,19 +169,10 @@ function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boo
 }
 
 function mergeRefreshedMessage(
-  currentMessage: InboxMessage,
   refreshedMessage: InboxMessage,
   withoutModelTags: boolean,
 ): InboxMessage {
-  return {
-    ...applyModelTagFilter(refreshedMessage, withoutModelTags),
-    text: currentMessage.text,
-    callsignTokens: currentMessage.callsignTokens,
-    signalTokens: currentMessage.signalTokens,
-    noHeadersBody: currentMessage.noHeadersBody,
-    keywordTokens: currentMessage.keywordTokens,
-    textMarked: currentMessage.textMarked,
-  };
+  return applyModelTagFilter(refreshedMessage, withoutModelTags);
 }
 
 function mergeRefreshedMessages(
@@ -197,7 +188,7 @@ function mergeRefreshedMessages(
     if (refreshedMessage == null) {
       if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
     } else {
-      const nextMessage = mergeRefreshedMessage(currentMessage, refreshedMessage, withoutModelTags);
+      const nextMessage = mergeRefreshedMessage(refreshedMessage, withoutModelTags);
       if (shouldKeepRefreshedMessage(nextMessage)) nextMessages.push([messageId, nextMessage]);
     }
   }

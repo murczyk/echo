@@ -319,7 +319,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
-  it('refreshes visible ids, point tokens, and preserves existing rendered fields', async () => {
+  it('refreshes visible ids and rendered text fields', async () => {
     const currentMessage = inboxMessage({
       text: 'current',
       pointTokens: [{ begin: 0, end: 3, etalon: 'old-point', text: 'old' }],
@@ -359,37 +359,17 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
     expect(latest?.messages).toEqual([
       [1, currentMessage],
-      [
-        2,
-        {
-          ...currentMessage,
-          tags: [2],
-          inboxTags: [
-            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
-          ],
-          pointTokens: updatedMessage.pointTokens,
-        },
-      ],
+      [2, updatedMessage],
     ]);
-    expect(latest?.mapAttrs.messages).toEqual([
-      [
-        2,
-        {
-          ...currentMapMessage,
-          tags: [2],
-          inboxTags: [
-            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
-          ],
-          pointTokens: updatedMessage.pointTokens,
-        },
-      ],
-    ]);
+    expect(latest?.mapAttrs.messages).toEqual([[2, updatedMessage]]);
+    expect(latest?.messages[1][1].text).toBe(updatedMessage.text);
+    expect(latest?.mapAttrs.messages[0][1].text).toBe(updatedMessage.text);
     expect(latest?.messages[1][1].pointTokens).toBe(updatedMessage.pointTokens);
     expect(latest?.mapAttrs.messages[0][1].pointTokens).toBe(updatedMessage.pointTokens);
-    expect(latest?.messages[1][1].keywordTokens).toBe(currentMessage.keywordTokens);
-    expect(latest?.messages[1][1].textMarked).toBe(currentMessage.textMarked);
-    expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(currentMapMessage.keywordTokens);
-    expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(currentMapMessage.textMarked);
+    expect(latest?.messages[1][1].keywordTokens).toBe(updatedMessage.keywordTokens);
+    expect(latest?.messages[1][1].textMarked).toBe(updatedMessage.textMarked);
+    expect(latest?.mapAttrs.messages[0][1].keywordTokens).toBe(updatedMessage.keywordTokens);
+    expect(latest?.mapAttrs.messages[0][1].textMarked).toBe(updatedMessage.textMarked);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[2, updatedMessage]], true);
     expect(hoisted.onError).not.toHaveBeenCalled();
   });
