@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { InboxMessage, InboxMessageTag } from '../../../../Bindings';
 import { fetchMessagesByIds } from '../../services/api/analysis';
+import { combineDateTimeInputToMs } from '../../utils/misc';
 import { buildInboxReq, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
@@ -118,12 +119,46 @@ function messageMatchesSelectedTags(
   return queryState.tags.some(hasTag);
 }
 
+function getClientCheckableDateRange(
+  queryState: AnalysisQueryState,
+): { sinceDateInclusiveMs: number; tillDateNoninclusiveMs: number } | null | undefined {
+  const hasFromDate = hasSearchText(queryState.fromDateTimeStr);
+  const hasToDate = hasSearchText(queryState.toDateTimeStr);
+  if (!hasFromDate && !hasToDate) return null;
+  if (!hasFromDate || !hasToDate) return undefined;
+
+  const sinceDateInclusiveMs = combineDateTimeInputToMs(queryState.fromDateTimeStr);
+  const tillDateNoninclusiveMs = combineDateTimeInputToMs(queryState.toDateTimeStr);
+  if (
+    sinceDateInclusiveMs == null ||
+    tillDateNoninclusiveMs == null ||
+    sinceDateInclusiveMs > tillDateNoninclusiveMs
+  ) {
+    return undefined;
+  }
+
+  return { sinceDateInclusiveMs, tillDateNoninclusiveMs };
+}
+
+function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQueryState): boolean {
+  const dateRange = getClientCheckableDateRange(queryState);
+  if (dateRange === null) return true;
+  if (dateRange === undefined) return false;
+  if (message.timestamp == null) return false;
+
+  return (
+    message.timestamp >= dateRange.sinceDateInclusiveMs &&
+    message.timestamp < dateRange.tillDateNoninclusiveMs
+  );
+}
+
 function messageMatchesLiveRefreshFilters(
   message: InboxMessage,
   queryState: AnalysisQueryState,
   allFrequencies: string[],
 ): boolean {
   return (
+    messageMatchesDateRange(message, queryState) &&
     messageMatchesSelectedFreqs(message, expandSelectedFreqs(queryState, allFrequencies)) &&
     messageMatchesSelectedTags(message, queryState)
   );
@@ -139,8 +174,7 @@ function hasSearchText(value: string): boolean {
 
 function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boolean {
   return (
-    hasSearchText(queryState.fromDateTimeStr) ||
-    hasSearchText(queryState.toDateTimeStr) ||
+    getClientCheckableDateRange(queryState) === undefined ||
     queryState.includeOnlyNewFreqs ||
     hasSelectedValues(queryState.aorsSelected) ||
     hasSelectedValues(queryState.groupsSelected) ||

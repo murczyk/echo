@@ -442,6 +442,62 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
   });
 
+  it('uses partial refresh when only a client-checkable date range is active', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      timestamp: Date.UTC(2026, 0, 16, 12),
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      timestamp: Date.UTC(2026, 0, 16, 13),
+    });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.mapOpenMessages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({
+      fromDateTimeStr: '2026-01-16T00:00',
+      toDateTimeStr: '2026-01-17T00:00',
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(hoisted.reload).not.toHaveBeenCalled();
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([1]);
+    expect(latest?.messages).toEqual([[1, updatedMessage]]);
+    expect(latest?.mapAttrs.messages).toEqual([[1, updatedMessage]]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
+  });
+
+  it('removes refreshed visible ids outside the active date range', async () => {
+    const currentMessage = inboxMessage({
+      text: 'current',
+      timestamp: Date.UTC(2026, 0, 16, 12),
+    });
+    const updatedMessage = inboxMessage({
+      text: 'updated',
+      timestamp: Date.UTC(2026, 0, 18, 12),
+    });
+    hoisted.messages = [[1, currentMessage]];
+    hoisted.mapOpenMessages = [[1, currentMessage]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+
+    renderHook({
+      fromDateTimeStr: '2026-01-16T00:00',
+      toDateTimeStr: '2026-01-17T00:00',
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(hoisted.reload).not.toHaveBeenCalled();
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([1]);
+    expect(latest?.messages).toEqual([]);
+    expect(latest?.mapAttrs.messages).toEqual([]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
+  });
+
   it('reloads instead of partially merging when server-only filters are active', async () => {
     hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
     hoisted.mapOpenMessages = [[1, inboxMessage({ text: 'map-current' })]];
