@@ -220,11 +220,11 @@ export function MessageCardVideoPreviewDialog({
         sx: {
           display: 'flex',
           flexDirection: 'column',
-          width: playerState.isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
-          height: playerState.isFullscreen ? '100svh' : '92svh',
-          maxWidth: playerState.isFullscreen ? '100vw' : 'min(92vw, 1280px)',
-          maxHeight: playerState.isFullscreen ? '100svh' : '92svh',
-          borderRadius: playerState.isFullscreen ? 0 : 2,
+          width: playerState.isFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
+          height: playerState.isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+          maxWidth: playerState.isFullscreen ? '100vw' : { xs: '100vw', sm: 'min(92vw, 1280px)' },
+          maxHeight: playerState.isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+          borderRadius: playerState.isFullscreen ? 0 : { xs: 0, sm: 2 },
           m: 0,
           overflow: 'hidden',
         },
@@ -235,8 +235,8 @@ export function MessageCardVideoPreviewDialog({
     >
       <DialogContent
         sx={{
-          px: playerState.isFullscreen ? 0 : 2,
-          pt: playerState.isFullscreen ? 0 : 2,
+          px: playerState.isFullscreen ? 0 : { xs: 0, sm: 2 },
+          pt: playerState.isFullscreen ? 0 : { xs: 0, sm: 2 },
           pb: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -253,11 +253,10 @@ export function MessageCardVideoPreviewDialog({
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderRadius: playerState.isFullscreen ? 0 : 1.5,
+            borderRadius: playerState.isFullscreen ? 0 : { xs: 0, sm: 1.5 },
             overflow: 'hidden',
             backgroundColor: 'background.paper',
-            border: playerState.isFullscreen ? 'none' : 1,
-            borderColor: 'divider',
+            border: 'none',
           }}
         >
           <MessageCardVideoPreviewStage

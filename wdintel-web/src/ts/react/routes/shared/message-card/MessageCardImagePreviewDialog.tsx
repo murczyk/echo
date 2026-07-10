@@ -1,6 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent, Typography } from '@mui/material';
+import { Box, Dialog, DialogContent } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import {
@@ -15,12 +15,10 @@ import {
 import { shouldIgnoreArrowNavigation } from './document-preview-utils';
 import {
   isInteractivePreviewTarget,
-  sampleCornerColors,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
   type DragState,
-  type StagePalette,
 } from './message-card-image-preview-utils';
 import {
   MessageCardImagePreviewActions,
@@ -31,7 +29,6 @@ import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-clipboard';
 import {
   blurActivePreviewDialogElement,
-  getMessageCardPreviewCounterSx,
   getMessageCardPreviewDialogPaperSx,
 } from './message-card-preview-shell';
 
@@ -68,11 +65,9 @@ export function MessageImagePreviewDialog({
   const [zoom, setZoom] = useState(ZOOM_MIN);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
-  const [, setStagePaletteVersion] = useState(0);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
-  const stagePaletteByHrefRef = useRef(new Map<string, StagePalette>());
   const stageRef = useRef<HTMLDivElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
@@ -97,11 +92,6 @@ export function MessageImagePreviewDialog({
         : `image-${resolvedIndex + 1}`,
     [currentImage, resolvedIndex],
   );
-  const stagePalette =
-    currentHref !== '' ? (stagePaletteByHrefRef.current.get(currentHref) ?? null) : null;
-  const stageBackground = stagePalette
-    ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
-    : 'none';
   const theme = useTheme();
 
   const removePointerListeners = useCallback(() => {
@@ -295,23 +285,11 @@ export function MessageImagePreviewDialog({
   const goToIndex = (nextIndex: number) =>
     onIndexChange(normalizePreviewIndex(nextIndex, imageCount));
 
-  const sampleStagePalette = (image: HTMLImageElement) => {
-    const sampleHref = currentHref;
-    window.requestAnimationFrame(() => {
-      if (sampleHref !== currentHrefRef.current) return;
-      const palette = sampleCornerColors(image);
-      if (palette === null || sampleHref !== currentHrefRef.current) return;
-      stagePaletteByHrefRef.current.set(sampleHref, palette);
-      setStagePaletteVersion((value) => value + 1);
-    });
-  };
-
   const handleImageLoad = (image: HTMLImageElement) => {
     setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
     setFailedHref(null);
     setLoadedImage(image);
     setLoadedImageKey(currentPreviewKey);
-    sampleStagePalette(image);
   };
 
   const handleImageError = () => {
@@ -381,10 +359,11 @@ export function MessageImagePreviewDialog({
           ...getMessageCardPreviewDialogPaperSx(isFullscreen),
           display: 'flex',
           flexDirection: 'column',
-          width: isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
-          height: isFullscreen ? '100svh' : '92svh',
-          maxWidth: isFullscreen ? '100vw' : 'min(92vw, 1280px)',
-          maxHeight: isFullscreen ? '100svh' : '92svh',
+          width: isFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
+          height: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+          maxWidth: isFullscreen ? '100vw' : { xs: '100vw', sm: 'min(92vw, 1280px)' },
+          maxHeight: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+          borderRadius: isFullscreen ? 0 : { xs: 0, sm: 2 },
           m: 0,
         },
       }}
@@ -394,8 +373,8 @@ export function MessageImagePreviewDialog({
     >
       <DialogContent
         sx={{
-          px: isFullscreen ? 0 : 2,
-          pt: isFullscreen ? 0 : 2,
+          px: isFullscreen ? 0 : { xs: 0, sm: 2 },
+          pt: isFullscreen ? 0 : { xs: 0, sm: 2 },
           pb: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -412,11 +391,10 @@ export function MessageImagePreviewDialog({
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderRadius: isFullscreen ? 0 : 1.5,
+            borderRadius: isFullscreen ? 0 : { xs: 0, sm: 1.5 },
             overflow: 'hidden',
             backgroundColor: 'background.paper',
-            border: isFullscreen ? 'none' : 1,
-            borderColor: 'divider',
+            border: 'none',
           }}
         >
           <MessageCardImagePreviewStage
@@ -430,7 +408,6 @@ export function MessageImagePreviewDialog({
             pan={pan}
             failedHref={failedHref}
             imageSize={imageSize}
-            stageBackground={stageBackground}
             isFullscreen={isFullscreen}
             onImageLoad={handleImageLoad}
             onImageError={handleImageError}
