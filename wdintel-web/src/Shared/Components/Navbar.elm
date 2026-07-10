@@ -170,12 +170,10 @@ navBar user shared activeName props =
             , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
             , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
             , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
-            , internalMenu Route.Path.Admin_ControlPanelNeo "control-panel-neo" "Панель керування"
             , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
             , MenuSeparator
             , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "API інтеграції"
             , internalMenu Route.Path.Admin_AllReports "all-reports" "Всі звіти"
-            , internalMenu Route.Path.Admin_EchoMissingMessages "echo-missing-messages" "Відсутні Echo IM"
             , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
             , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
             , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти смуг"

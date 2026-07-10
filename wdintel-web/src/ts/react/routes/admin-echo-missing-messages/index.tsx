@@ -14,6 +14,12 @@ import {
   resolveEchoMissingMessage,
 } from '../../services/api/echo-missing-message';
 import { parseUtcDateTime } from '../../services/api/report-history';
+import {
+  countRowsByAppDay,
+  DayCounterCalendar,
+  isRowOnAppDay,
+  todayInAppTimeZone,
+} from '../admin-messenger-neo/DayCounterCalendar';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
 const TRANSLATIONS = {
@@ -302,12 +308,13 @@ function MissingMessageTable({
   );
 }
 
-export function AdminEchoMissingMessagesPage() {
+export function AdminEchoMissingMessagesSection() {
   const [rows, setRows] = useState<EchoMissingMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resolvingIds, setResolvingIds] = useState<Set<number>>(() => new Set());
+  const [selectedDate, setSelectedDate] = useState(todayInAppTimeZone);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -342,20 +349,55 @@ export function AdminEchoMissingMessagesPage() {
     }
   }, []);
 
+  const countsByDay = useMemo(() => countRowsByAppDay(rows, (row) => row.createdAt), [rows]);
+  const filteredRows = useMemo(
+    () => rows.filter((row) => isRowOnAppDay(row, selectedDate, (item) => item.createdAt)),
+    [rows, selectedDate],
+  );
+
   return (
-    <Box className="w-full h-full min-h-0">
-      <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-        <PageHeader title={TRANSLATIONS.pageTitle} />
-        {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-        {actionError ? <PowerAlert severity="error">{actionError}</PowerAlert> : null}
-        <Box sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
+      {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+      {actionError ? <PowerAlert severity="error">{actionError}</PowerAlert> : null}
+      <Box
+        sx={{
+          display: { xs: 'flex', lg: 'grid' },
+          flexDirection: { xs: 'column', lg: 'row' },
+          gridTemplateColumns: { lg: '336px minmax(0, 1fr)' },
+          gap: 2,
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      >
+        <DayCounterCalendar
+          countsByDay={countsByDay}
+          disabled={loading}
+          selectedDate={selectedDate}
+          selectedLabel="Повідомлень"
+          onSelectedDateChange={setSelectedDate}
+        />
+        <Box sx={{ minHeight: 0, minWidth: 0 }}>
           <MissingMessageTable
-            rows={rows}
+            rows={filteredRows}
             loading={loading}
             resolvingIds={resolvingIds}
             onResolve={handleResolve}
             onRefresh={loadRows}
           />
+        </Box>
+      </Box>
+    </Stack>
+  );
+}
+
+export function AdminEchoMissingMessagesPage() {
+  return (
+    <Box className="w-full h-full min-h-0">
+      <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
+        <PageHeader title={TRANSLATIONS.pageTitle} />
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <AdminEchoMissingMessagesSection />
         </Box>
       </Stack>
     </Box>

@@ -1134,6 +1134,7 @@ export type NetworkUnit = {
 
 export type MessageIdsReq = {
   messageIds: Array<number>;
+  inboxReq: InboxMessagesReq | null;
 };
 
 export type MessageIdsRsp = {
@@ -3256,6 +3257,37 @@ export type EchoMissingMessageListRsp = {
 
 export type EchoMissingMessageResolveReq = {
   id: number;
+};
+
+export type SignalRestapiErrorListReq = {
+  since: string;
+  till: string;
+  limit: number | null;
+};
+
+export type SignalRestapiErrorRow = {
+  id: number;
+  createdAt: string;
+  responseText: string;
+  responseJson: string | null;
+};
+
+export type SignalRestapiErrorListRsp = {
+  items: Array<SignalRestapiErrorRow>;
+};
+
+export type SignalRestapiErrorCountsReq = {
+  since: string;
+  till: string;
+};
+
+export type SignalRestapiErrorDayCount = {
+  day: string;
+  count: number;
+};
+
+export type SignalRestapiErrorCountsRsp = {
+  items: Array<SignalRestapiErrorDayCount>;
 };
 
 export type DeltaLoginUrl = {

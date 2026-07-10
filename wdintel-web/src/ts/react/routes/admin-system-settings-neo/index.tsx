@@ -25,8 +25,9 @@ import {
   listSystemSettings,
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
+import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 
-type SystemSettingsTab = 'main' | 'pelengs' | 'notifications';
+type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
@@ -340,9 +341,21 @@ function MainSettingsSection({
         }
         label="Використовувати новий аналіз за замовчуванням"
       />
+    </>
+  );
+}
 
+function DutySettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: тестові повідомлення
+        Тестові повідомлення
       </Typography>
       <FormControlLabel
         control={
@@ -401,7 +414,7 @@ function MainSettingsSection({
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: Echo IM
+        Echo IM
       </Typography>
 
       <FormControlLabel
@@ -429,7 +442,7 @@ function MainSettingsSection({
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: Короткий URL
+        Короткий URL
       </Typography>
 
       <FormControlLabel
@@ -681,6 +694,18 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-main"
               />
               <Tab
+                value="duty"
+                label="Оперативний"
+                id="system-settings-neo-tab-duty"
+                aria-controls="system-settings-neo-panel-duty"
+              />
+              <Tab
+                value="control"
+                label="Керування"
+                id="system-settings-neo-tab-control"
+                aria-controls="system-settings-neo-panel-control"
+              />
+              <Tab
                 value="pelengs"
                 label="Пеленги"
                 id="system-settings-neo-tab-pelengs"
@@ -715,6 +740,28 @@ export function AdminSystemSettingsNeoPage() {
                       <MainSettingsSection form={form} patchForm={patchForm} />
                     </Stack>
                   ) : null}
+                </Box>
+
+                <Box
+                  id="system-settings-neo-panel-duty"
+                  role="tabpanel"
+                  hidden={activeTab !== 'duty'}
+                  aria-labelledby="system-settings-neo-tab-duty"
+                >
+                  {activeTab === 'duty' ? (
+                    <Stack spacing={3}>
+                      <DutySettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
+                </Box>
+
+                <Box
+                  id="system-settings-neo-panel-control"
+                  role="tabpanel"
+                  hidden={activeTab !== 'control'}
+                  aria-labelledby="system-settings-neo-tab-control"
+                >
+                  {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
                 </Box>
 
                 <Box

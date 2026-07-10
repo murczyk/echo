@@ -473,7 +473,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     openEditor: editor.openEditor,
     profiles: data.profiles,
     queryState,
-    users: data.users,
     tagsLayout: dutySettings.tagsLayout,
     rightPanelOpen,
     rightSidebarTab,

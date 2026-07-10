@@ -197,7 +197,6 @@ function buildProps(
     onToggleMessageTag: vi.fn(),
     onAddFrequencyToFilter: vi.fn(),
     profiles: {},
-    users: {},
     tagsMap: {},
     tagsOrder: [],
     tagsLoading: false,
@@ -411,30 +410,6 @@ describe('AnalysisMessagesPane', () => {
             },
           ],
         },
-        users: {
-          'external-login': {
-            name: 'external-login',
-            roles: [],
-            sigintZoneId: null,
-            organismId: 2,
-            deltaLogin: null,
-            goiConfiguredForOrganism: false,
-            goiFullAccessForOrganism: false,
-            goiHost: null,
-            goiIntegrations: [],
-          },
-          'peer-login': {
-            name: 'peer-login',
-            roles: [],
-            sigintZoneId: null,
-            organismId: 1,
-            deltaLogin: null,
-            goiConfiguredForOrganism: false,
-            goiFullAccessForOrganism: false,
-            goiHost: null,
-            goiIntegrations: [],
-          },
-        },
       }),
     );
     rendered.push(view);
@@ -445,11 +420,11 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
       'system:auto post comment',
     );
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
       'peer-login:same-organism comment',
     );
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
-      'hidden self comment',
+      'tester:hidden self comment',
     );
   });
 

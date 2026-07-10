@@ -176,12 +176,6 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/control-panel-neo' },
-    activeName: 'control-panel-neo',
-    label: 'Панель керування',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/system-settings-neo' },
     activeName: 'system-settings-neo',
     label: 'Налаштування системи',
@@ -198,12 +192,6 @@ export const adminSubs: Menu[] = [
     link: { type: 'internal', path: '/admin/all-reports' },
     activeName: 'all-reports',
     label: 'Всі звіти',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/echo-missing-messages' },
-    activeName: 'echo-missing-messages',
-    label: 'Відсутні Echo IM',
   },
   {
     type: 'item',
