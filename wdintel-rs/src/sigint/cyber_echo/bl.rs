@@ -10,7 +10,7 @@ use crate::types::*;
 use chrono::{SecondsFormat, Utc};
 use sea_orm::{ConnectionTrait, TransactionTrait};
 
-pub async fn create_signal_message(
+pub async fn submit_signal_message(
     login: &str,
     env: &Env,
     payload: CreateCyberEchoSignalMessagePayload,
@@ -473,7 +473,7 @@ mod tests {
     async fn cyber_echo_create_rejects_when_setting_missing() {
         let env = cleanup().await.unwrap();
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload("message", TEST_SIGNAL_GROUP_KEY, 1, None),
@@ -490,7 +490,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, false).await;
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload("message", TEST_SIGNAL_GROUP_KEY, 1, None),
@@ -507,7 +507,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload(" \r\n ", TEST_SIGNAL_GROUP_KEY, 1, None),
@@ -537,7 +537,7 @@ mod tests {
         .await
         .unwrap();
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload("message", foreign_group_key, device_name_id, None),
@@ -554,7 +554,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload("message", TEST_SIGNAL_GROUP_KEY, i64::MAX, None),
@@ -607,7 +607,7 @@ mod tests {
             delete_media_ids: vec![],
         };
 
-        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+        let rsp = submit_signal_message(TEST_LOGIN, &env, payload)
             .await
             .unwrap();
 
@@ -723,7 +723,7 @@ mod tests {
             delete_media_ids: vec![],
         };
 
-        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+        let rsp = submit_signal_message(TEST_LOGIN, &env, payload)
             .await
             .unwrap();
 
@@ -770,7 +770,7 @@ mod tests {
         first_payload.unit = Some("first unit".to_string());
         first_payload.locations = vec!["FIRST LOCATION".to_string()];
 
-        let first_rsp = create_signal_message(TEST_LOGIN, &env, first_payload)
+        let first_rsp = submit_signal_message(TEST_LOGIN, &env, first_payload)
             .await
             .unwrap();
 
@@ -786,7 +786,7 @@ mod tests {
         second_payload.locations = vec!["UPDATED LOCATION".to_string()];
 
         let second_rsp =
-            create_signal_message(TEST_LOGIN, &env, second_payload)
+            submit_signal_message(TEST_LOGIN, &env, second_payload)
                 .await
                 .unwrap();
 
@@ -918,7 +918,7 @@ mod tests {
         );
         payload.message_uid = Some(message_uid.to_string());
 
-        let rsp = create_signal_message(TEST_LOGIN, &env, payload)
+        let rsp = submit_signal_message(TEST_LOGIN, &env, payload)
             .await
             .unwrap();
 
@@ -966,7 +966,7 @@ mod tests {
             None,
         );
         first_payload.message_uid = Some(message_uid.to_string());
-        let first_rsp = create_signal_message(TEST_LOGIN, &env, first_payload)
+        let first_rsp = submit_signal_message(TEST_LOGIN, &env, first_payload)
             .await
             .unwrap();
         let media = signal_message_media::ActiveModel {
@@ -992,7 +992,7 @@ mod tests {
         second_payload.delete_media_ids = vec![media.id];
 
         let second_rsp =
-            create_signal_message(TEST_LOGIN, &env, second_payload)
+            submit_signal_message(TEST_LOGIN, &env, second_payload)
                 .await
                 .unwrap();
 
@@ -1012,7 +1012,7 @@ mod tests {
         insert_settings(&env.dbx, true).await;
         let device_name_id = insert_device_name(&env.dbx).await;
 
-        let err = create_signal_message(
+        let err = submit_signal_message(
             TEST_LOGIN,
             &env,
             payload(

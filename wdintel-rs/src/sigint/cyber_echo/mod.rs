@@ -12,8 +12,8 @@ use types::{
 
 const CYBER_ECHO_TUS_PATH_BASE: &str = "/api/sigint/cyber-echo/tus";
 
-#[post("/api/sigint/cyber-echo/message/create")]
-pub async fn cyber_echo_message_create(
+#[post("/api/sigint/cyber-echo/message/submit")]
+pub async fn cyber_echo_message_submit(
     user: actix_identity::Identity,
     env: web::Data<Env>,
     payload: web::Json<CreateCyberEchoSignalMessagePayload>,
@@ -23,7 +23,7 @@ pub async fn cyber_echo_message_create(
         .await
         .c(h!())?;
     Ok(web::Json(
-        bl::create_signal_message(&login, &env, payload.into_inner())
+        bl::submit_signal_message(&login, &env, payload.into_inner())
             .await
             .c(h!())?,
     ))

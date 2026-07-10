@@ -624,7 +624,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::user_settings::user_settings_put)
             .service(crate::users::user_sigint_groups)
             .service(crate::users::user_sigint_groups_detailed)
-            .service(crate::sigint::cyber_echo::cyber_echo_message_create)
+            .service(crate::sigint::cyber_echo::cyber_echo_message_submit)
             .service(crate::sigint::cyber_echo::cyber_echo_tus_base)
             .service(crate::sigint::cyber_echo::cyber_echo_tus_file)
             .service(crate::sigint::device_name::device_name_create)
