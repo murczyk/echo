@@ -235,13 +235,16 @@ describe('SettingsMyReportsSection', () => {
       status: 'done',
       hasFile: true,
       createdAt: '2026-06-26 16:45:00',
-      completedAt: '2026-06-27 21:40:12',
+      startedAt: '2026-06-26 17:00:37',
+      completedAt: '2026-06-26 17:01:21',
     };
 
     expect(executionTimeColumn?.header).toBe('Час виконання');
     expect(executionTimeColumn?.enableSorting).toBe(false);
     expect(executionTimeColumn?.enableColumnFilter).toBe(false);
-    expect(executionTimeColumn?.accessorFn?.(completedRow)).toBe('1д 4г 55хв 12с');
+    expect(executionTimeColumn?.accessorFn?.(completedRow)).toBe(
+      'очікування 15хв 37с, виконання 44с',
+    );
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
       executionTime: true,

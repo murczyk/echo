@@ -311,14 +311,7 @@ function formatReportProgress(progress: number): string {
   return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
 }
 
-function formatReportExecutionTime(row: ReportHistoryRow): string {
-  if (row.status !== 'done' || !row.hasFile) return '';
-
-  const createdAt = parseReportDate(row.createdAt);
-  const completedAt = parseReportDate(row.completedAt);
-  if (createdAt === null || completedAt === null) return '';
-
-  const totalSeconds = Math.floor((completedAt.getTime() - createdAt.getTime()) / 1000);
+function formatReportDuration(totalSeconds: number): string {
   if (totalSeconds < 0) return '';
 
   const days = Math.floor(totalSeconds / 86400);
@@ -334,6 +327,33 @@ function formatReportExecutionTime(row: ReportHistoryRow): string {
   ];
 
   return parts.filter((part) => part !== null).join(' ');
+}
+
+function reportDurationSeconds(startedAt: Date, completedAt: Date): number | null {
+  const totalSeconds = Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000);
+  return totalSeconds < 0 ? null : totalSeconds;
+}
+
+function formatReportExecutionTime(row: ReportHistoryRow): string {
+  if (row.status !== 'done' || !row.hasFile) return '';
+
+  const createdAt = parseReportDate(row.createdAt);
+  const startedAt = parseReportDate(row.startedAt);
+  const completedAt = parseReportDate(row.completedAt);
+  if (createdAt === null || completedAt === null) return '';
+
+  if (startedAt === null) {
+    const totalSeconds = reportDurationSeconds(createdAt, completedAt);
+    return totalSeconds === null ? '' : formatReportDuration(totalSeconds);
+  }
+
+  const queueSeconds = reportDurationSeconds(createdAt, startedAt);
+  const executionSeconds = reportDurationSeconds(startedAt, completedAt);
+  if (queueSeconds === null || executionSeconds === null) return '';
+
+  return `очікування ${formatReportDuration(queueSeconds)}, виконання ${formatReportDuration(
+    executionSeconds,
+  )}`;
 }
 
 function formatReportStatus(row: ReportHistoryRow): string {
