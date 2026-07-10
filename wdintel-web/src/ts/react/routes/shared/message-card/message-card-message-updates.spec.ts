@@ -164,16 +164,17 @@ describe('mergeUpdatedDutyFeedMessages', () => {
         items: [
           [1, inboxMessage({ text: 'one' })],
           [2, inboxMessage({ text: 'two' })],
+          [3, inboxMessage({ text: 'three' })],
         ] as Array<[number, InboxMessage]>,
-        unreadCount: 0,
-        readIds: new Set<number>(),
+        unreadCount: 2,
+        readIds: new Set<number>([1, 3]),
       },
     ];
 
-    const next = mergeUpdatedDutyFeedMessages(feeds, 'a', [2], []);
+    const next = mergeUpdatedDutyFeedMessages(feeds, 'a', [2, 3], []);
 
     expect(next[0].items).toEqual([[1, feeds[0].items[0][1]]]);
-    expect(next[0].unreadCount).toBe(0);
-    expect(next[0].readIds).toBe(feeds[0].readIds);
+    expect(next[0].unreadCount).toBe(1);
+    expect(next[0].readIds).toEqual(new Set<number>([1]));
   });
 });
