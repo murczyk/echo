@@ -353,13 +353,14 @@ async fn replace_secret_group_access(
     }
 
     for login in normalize_login_list(user_logins) {
-        secret_group_user::ActiveModel {
+        secret_group_user::Entity::insert(secret_group_user::ActiveModel {
             id: NotSet,
             master_key: Set(master_key.to_string()),
             login: Set(login),
             secret_group_organism_id: Set(None),
-        }
-        .insert(txn)
+        })
+        .on_conflict_do_nothing()
+        .exec(txn)
         .await
         .c(h!())?;
     }
@@ -367,13 +368,16 @@ async fn replace_secret_group_access(
     for organism_id in
         load_active_organism_ids(txn, organism_ids).await.c(h!())?
     {
-        secret_group_organism::ActiveModel {
-            id: NotSet,
-            master_key: Set(master_key.to_string()),
-            organism_id: Set(organism_id),
-            created_at: NotSet,
-        }
-        .insert(txn)
+        secret_group_organism::Entity::insert(
+            secret_group_organism::ActiveModel {
+                id: NotSet,
+                master_key: Set(master_key.to_string()),
+                organism_id: Set(organism_id),
+                created_at: NotSet,
+            },
+        )
+        .on_conflict_do_nothing()
+        .exec(txn)
         .await
         .c(h!())?;
     }
@@ -662,13 +666,14 @@ pub async fn refresh_secret_group_memberships(
         )) {
             continue;
         }
-        secret_group_user::ActiveModel {
+        secret_group_user::Entity::insert(secret_group_user::ActiveModel {
             id: NotSet,
             master_key: Set(master_key),
             login: Set(login),
             secret_group_organism_id: Set(Some(secret_group_organism_id)),
-        }
-        .insert(txn)
+        })
+        .on_conflict_do_nothing()
+        .exec(txn)
         .await
         .c(h!())?;
     }
