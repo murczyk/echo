@@ -32,6 +32,11 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
         .filter(|description| !description.is_empty())
 }
 
+fn has_update_login_description(req: &serde_json::Value) -> bool {
+    req.as_object()
+        .is_some_and(|req| req.contains_key("description"))
+}
+
 pub async fn has_role(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &str,
@@ -145,11 +150,15 @@ async fn keep_alive(
 pub async fn update_login(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<UpdateLoginReq>,
+    req: Json<serde_json::Value>,
 ) -> Result<Json<Login>, AppError> {
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .c(h!())?;
+
+    let req = req.into_inner();
+    let update_description = has_update_login_description(&req);
+    let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -206,8 +215,10 @@ pub async fn update_login(
             .clone()
             .map(DeactivationReasonEnum::from));
     }
-    login_obj.description =
-        Set(normalize_login_description(req.description.clone()));
+    if update_description {
+        login_obj.description =
+            Set(normalize_login_description(req.description.clone()));
+    }
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
@@ -1557,6 +1568,17 @@ mod tests {
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
 
+    #[test]
+    fn detects_update_login_description_presence() {
+        assert!(!has_update_login_description(&serde_json::json!({})));
+        assert!(has_update_login_description(&serde_json::json!({
+            "description": null
+        })));
+        assert!(has_update_login_description(&serde_json::json!({
+            "description": "note"
+        })));
+    }
+
     #[tokio::test]
     #[serial]
     async fn register_delta_user_reassigns_case_insensitive_delta_login() {
@@ -1597,6 +1619,7 @@ mod tests {
             &env.dbx,
             "kolya".to_string(),
             vec!["Rer".to_string()],
+            None,
             None,
             None,
         )
