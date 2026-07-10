@@ -176,12 +176,6 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/control-panel-neo' },
-    activeName: 'control-panel-neo',
-    label: 'Панель керування',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/system-settings-neo' },
     activeName: 'system-settings-neo',
     label: 'Налаштування системи',

@@ -43,7 +43,7 @@ function formatErrorMessage(error: unknown): string {
   return 'Невідома помилка. Спробуйте ще раз.';
 }
 
-export function AdminControlPanelNeoPage() {
+export function AdminControlPanelNeoSection() {
   const [form, setForm] = useState<RestartEchoForm>(initialForm);
   const restarting = useBoolean(false);
   const [status, setStatus] = useState<StatusState>(null);
@@ -89,59 +89,66 @@ export function AdminControlPanelNeoPage() {
   }
 
   return (
+    <div className="space-y-5">
+      <Typography variant="h6" component="h3" className="!text-lg !font-semibold mb-3">
+        Натисніть, щоб перезапустити ЕХО Сервер
+      </Typography>
+      <FormGroup>
+        <FormControlLabel
+          disableTypography
+          control={
+            <Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />
+          }
+          label={
+            <span style={{ color: 'var(--bs-secondary-color)' }}>
+              Перезапустити PostgreSQL (база даних)
+            </span>
+          }
+        />
+        <FormControlLabel
+          disableTypography
+          control={
+            <Checkbox
+              checked={form.restartOutdatedSources}
+              onChange={handleToggleRestartOutdatedSources}
+            />
+          }
+          label={
+            <span style={{ color: 'var(--bs-secondary-color)' }}>
+              Перезапустити месенджери що відстали
+            </span>
+          }
+        />
+      </FormGroup>
+      <div className="flex items-center gap-2">
+        <PowerButton
+          variant="contained"
+          color="error"
+          type="button"
+          disabled={restarting.value}
+          onClick={handleRestart}
+        >
+          Перезапустити
+        </PowerButton>
+        {restarting.value ? <CircularProgress size={18} /> : null}
+      </div>
+      {status?.kind === 'error' ? <Info text={status.message} color="error" /> : null}
+      {status?.kind === 'success' ? (
+        <p className="text-sm" style={{ color: 'var(--bs-success)' }} role="status">
+          {status.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function AdminControlPanelNeoPage() {
+  return (
     <div className="space-y-6">
       <PageHeader title="Панель керування" />
       <Card variant="outlined">
         <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <div className="space-y-5">
-            <Typography variant="h6" component="h3" className="!text-lg !font-semibold mb-3">
-              Натисніть, щоб перезапустити ЕХО Сервер
-            </Typography>
-            <FormGroup>
-              <FormControlLabel
-                disableTypography
-                control={
-                  <Checkbox checked={form.restartPostgres} onChange={handleToggleRestartPostgres} />
-                }
-                label={
-                  <span style={{ color: 'var(--bs-secondary-color)' }}>
-                    Перезапустити PostgreSQL (база даних)
-                  </span>
-                }
-              />
-              <FormControlLabel
-                disableTypography
-                control={
-                  <Checkbox
-                    checked={form.restartOutdatedSources}
-                    onChange={handleToggleRestartOutdatedSources}
-                  />
-                }
-                label={
-                  <span style={{ color: 'var(--bs-secondary-color)' }}>
-                    Перезапустити месенджери що відстали
-                  </span>
-                }
-              />
-            </FormGroup>
-            <div className="flex items-center gap-2">
-              <PowerButton
-                variant="contained"
-                color="error"
-                disabled={restarting.value}
-                onClick={handleRestart}
-              >
-                Перезапустити
-              </PowerButton>
-              {restarting.value ? <CircularProgress size={18} /> : null}
-            </div>
-            {status?.kind === 'error' ? <Info text={status.message} color="error" /> : null}
-            {status?.kind === 'success' ? (
-              <p className="text-sm" style={{ color: 'var(--bs-success)' }} role="status">
-                {status.message}
-              </p>
-            ) : null}
-          </div>
+          <AdminControlPanelNeoSection />
         </CardContent>
       </Card>
     </div>
