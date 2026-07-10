@@ -27,12 +27,24 @@ import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
-import { filterOtherMessageComments } from '../use-analysis-data.comments';
 
 type BotTagAction = {
   messageId: number;
   tagId: number;
 };
+
+function filterOtherMessageComments(
+  currentUserLogin: string | null,
+  comments: MessageComment[],
+): MessageComment[] {
+  const normalizedCurrentUserLogin = currentUserLogin?.trim() ?? '';
+  return comments.filter((comment) => {
+    const commentLogin = comment.login.trim();
+    // Analysis shows peer/post comments under the card; the current user's own
+    // comment is already rendered and edited through `msg.extendedForm`.
+    return commentLogin !== '' && commentLogin !== normalizedCurrentUserLogin;
+  });
+}
 
 export function getAnalysisMessagesScrollSx(theme: Theme) {
   const thumbColor =
@@ -96,7 +108,6 @@ type Props = {
   onToggleMessageTag: (messageId: number, tagId: number) => void;
   onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
-  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];
   tagsLoading: boolean;
@@ -109,7 +120,7 @@ type Props = {
 
 type AnalysisMessageCardItemProps = {
   authUserName: string | null;
-  currentUser: User | null;
+  currentUserLogin: string | null;
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
   id: number;
@@ -133,7 +144,6 @@ type AnalysisMessageCardItemProps = {
   onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
-  users: Record<string, User | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];
   tagsLoading: boolean;
@@ -146,7 +156,7 @@ type AnalysisMessageCardItemProps = {
 
 const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   authUserName,
-  currentUser,
+  currentUserLogin,
   copiedFeedbackId,
   botTagAction,
   groupInfos,
@@ -167,7 +177,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onAddFrequencyToFilter,
   profiles,
   referenceTimeMs,
-  users,
   tagsMap,
   tagsOrder,
   tagsLoading,
@@ -186,6 +195,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
     networks,
   });
   const labels = buildMessageCardDisplayLabels(message, { groupInfos, profiles });
+  const visibleMessageComments = filterOtherMessageComments(currentUserLogin, messageComments);
 
   return (
     <AnalysisMessageCard
@@ -196,12 +206,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       groupName={labels.groupName}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
-      messageComments={filterOtherMessageComments(
-        authUserName,
-        currentUser,
-        users,
-        messageComments,
-      )}
+      messageComments={visibleMessageComments}
       networkDisplayMap={networkDisplayMap}
       tagsMap={tagsMap}
       tagsOrder={tagsOrder}
@@ -343,7 +348,6 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageTag,
   onAddFrequencyToFilter,
   profiles,
-  users,
   tagsMap,
   tagsOrder,
   tagsLoading,
@@ -362,6 +366,7 @@ function AnalysisMessagesPaneComponent({
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
@@ -433,7 +438,7 @@ function AnalysisMessagesPaneComponent({
             <AnalysisMessageCardItem
               key={id}
               authUserName={authUserName}
-              currentUser={currentUser}
+              currentUserLogin={currentUserLogin}
               copiedFeedbackId={copiedFeedbackId}
               botTagAction={botTagAction}
               groupInfos={groupInfos}
@@ -453,7 +458,6 @@ function AnalysisMessagesPaneComponent({
               onToggleMessageTag={onToggleMessageTag}
               onAddFrequencyToFilter={onAddFrequencyToFilter}
               profiles={profiles}
-              users={users}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
               tagsOrder={tagsOrder}

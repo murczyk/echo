@@ -2126,14 +2126,10 @@ where
                 .filter(search_filter);
         }
         for ilike in search_parts.ilike {
-            q2 =
-                q2.filter(Expr::col(signal_message::Column::Body).ilike(ilike));
+            q2 = q2.filter(body_noheader_body_ilike(ilike));
         }
         for not_ilike in search_parts.not_ilike {
-            q2 = q2.filter(
-                Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
-                    .not_ilike(not_ilike),
-            );
+            q2 = q2.filter(body_noheader_body_not_ilike(not_ilike));
         }
 
         if !search_parts.freq.is_empty() {
@@ -2154,6 +2150,20 @@ where
         return Ok(q2);
     }
     Ok(q2)
+}
+
+fn body_noheader_body_ilike(pattern: String) -> SimpleExpr {
+    Expr::cust_with_values(
+        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') ILIKE $1 ESCAPE '\\'",
+        vec![pattern],
+    )
+}
+
+fn body_noheader_body_not_ilike(pattern: String) -> SimpleExpr {
+    Expr::cust_with_values(
+        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') NOT ILIKE $1 ESCAPE '\\'",
+        vec![pattern],
+    )
 }
 
 /// Summary table showing row-per-frequency
@@ -3763,25 +3773,18 @@ pub async fn batch_message_comments_bl(
 ) -> Result<MessageComments, AppError> {
     let message_ids = accessible_message_ids(dbx, login, message_ids).await?;
     let comments = sigint_comment::Entity::find()
+        .find_also_related(sigint_post::Entity)
         .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
         .order_by_asc(sigint_comment::Column::CreatedAt)
         .all(dbx)
         .await
         .c(h!())?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
-    for comment in comments {
+    for (comment, sigint_post) in comments {
         let message_id = comment.signal_message_id;
-        let mut comm_vec = match res.get(&message_id) {
-            None => vec![],
-            Some(v) => v.clone(),
-        };
-        comm_vec.push(MessageComment {
-            message_id,
-            id: comment.id,
-            comment: comment.comment,
-            login: comment.login,
-        });
-        res.insert(message_id, comm_vec);
+        res.entry(message_id)
+            .or_default()
+            .push(message_comment_from_model(comment, sigint_post));
     }
     let data = res
         .iter()
@@ -3791,6 +3794,19 @@ pub async fn batch_message_comments_bl(
         })
         .collect();
     Ok(MessageComments { data })
+}
+
+fn message_comment_from_model(
+    comment: sigint_comment::Model,
+    sigint_post: Option<sigint_post::Model>,
+) -> MessageComment {
+    MessageComment {
+        message_id: comment.signal_message_id,
+        id: comment.id,
+        comment: comment.comment,
+        login: comment.login,
+        sigint_post_name: sigint_post.map(|sigint_post| sigint_post.name),
+    }
 }
 
 async fn accessible_message_ids(
@@ -3835,26 +3851,22 @@ pub async fn message_comments(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    let message = signal_message::Entity::find_by_id(req.message_id)
+    signal_message::Entity::find_by_id(req.message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(&env.dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let comments = sigint_comment::Entity::find()
+        .find_also_related(sigint_post::Entity)
         .filter(sigint_comment::Column::SignalMessageId.eq(req.message_id))
         .order_by_asc(sigint_comment::Column::CreatedAt)
         .all(&env.dbx)
         .await
         .c(h!())?;
     let mut res = vec![];
-    for comment in comments {
-        res.push(MessageComment {
-            id: comment.id,
-            message_id: message.id,
-            comment: comment.comment,
-            login: comment.login,
-        });
+    for (comment, sigint_post) in comments {
+        res.push(message_comment_from_model(comment, sigint_post));
     }
     Ok(Json(res))
 }

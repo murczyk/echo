@@ -254,6 +254,8 @@ export function MessageCard({
     metadataTrigger,
     excludeMenuOptions,
   };
+  // Duty cards intentionally hide peer/post comments. The editable duty comment
+  // remains visible via `msg.extendedForm` in `MessageCardContent`.
   const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
 
   return (
@@ -317,6 +319,7 @@ export function MessageCard({
           networks={networks}
           unitsMap={unitsMap}
           messageComments={visibleMessageComments}
+          signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
         />
       </Box>

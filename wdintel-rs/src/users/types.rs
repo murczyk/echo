@@ -72,6 +72,7 @@ pub struct Login {
     pub delta_login: Option<String>,
     pub last_active_at: Option<i64>,
     pub deactivation_reason: Option<DeactivationReasonType>,
+    pub description: Option<String>,
 }
 
 #[derive(
@@ -106,6 +107,7 @@ pub struct CreateLoginReq {
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: i64,
+    pub description: Option<String>,
 }
 
 #[derive(
@@ -116,6 +118,7 @@ pub struct CreateDeltaLoginReq {
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: i64,
+    pub description: Option<String>,
 }
 
 #[derive(
@@ -130,6 +133,7 @@ pub struct UpdateLoginReq {
     pub password: Option<String>,
     pub delta_login: Option<String>,
     pub deactivation_reason: Option<DeactivationReasonType>,
+    pub description: Option<String>,
 }
 
 #[derive(

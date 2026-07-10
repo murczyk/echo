@@ -14,6 +14,7 @@ pub struct Model {
     pub master_key: String,
     #[sea_orm(column_type = "Text")]
     pub login: String,
+    pub secret_group_organism_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -27,6 +28,14 @@ pub enum Relation {
     )]
     Login,
     #[sea_orm(
+        belongs_to = "super::secret_group_organism::Entity",
+        from = "Column::SecretGroupOrganismId",
+        to = "super::secret_group_organism::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    SecretGroupOrganism,
+    #[sea_orm(
         belongs_to = "super::signal_group::Entity",
         from = "Column::MasterKey",
         to = "super::signal_group::Column::MasterKey",
@@ -39,6 +48,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::secret_group_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SecretGroupOrganism.def()
     }
 }
 

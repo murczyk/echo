@@ -153,6 +153,49 @@ isOurOrganism user users login =
                 False
 
 
+isPostAuthoredComment : B.MessageComment -> Bool
+isPostAuthoredComment comment =
+    comment.sigintPostName
+        |> Maybe.withDefault ""
+        |> trim
+        |> (/=) ""
+
+
+systemCommentLogin : String
+systemCommentLogin =
+    "system"
+
+
+nonEmptyTrimmed : Maybe String -> Maybe String
+nonEmptyTrimmed value =
+    value
+        |> Maybe.map trim
+        |> Maybe.andThen
+            (\trimmedValue ->
+                if trimmedValue == "" then
+                    Nothing
+
+                else
+                    Just trimmedValue
+            )
+
+
+commentAuthorLabel : Maybe String -> B.MessageComment -> String
+commentAuthorLabel signalMessageSenderLabel comment =
+    case nonEmptyTrimmed comment.sigintPostName of
+        Just sigintPostName ->
+            sigintPostName
+
+        Nothing ->
+            if trim comment.login == systemCommentLogin then
+                signalMessageSenderLabel
+                    |> nonEmptyTrimmed
+                    |> Maybe.withDefault comment.login
+
+            else
+                comment.login
+
+
 addCallsign :
     Model
     -> Int
@@ -1537,13 +1580,21 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             vps.messageComments
                 |> Dict.get msgId
                 |> Maybe.withDefault []
-                |> List.filter (\x -> not (isOurOrganism vps.user vps.users x.login))
+                |> List.filter
+                    (\x ->
+                        isPostAuthoredComment x
+                            || not (isOurOrganism vps.user vps.users x.login)
+                )
                 |> List.map renderOtherComment
+
+        signalMessageSenderLabel =
+            message.sender
+                |> Maybe.map (getProfileName vps.profiles)
 
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text comment.login ]
+                [ strong [] [ text (commentAuthorLabel signalMessageSenderLabel comment) ]
                 , text ": "
                 , text comment.comment
                 ]

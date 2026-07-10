@@ -26,6 +26,9 @@ import type {
   FreqDailyActivityCount,
   FreqStatsReq,
   GroupStatsRsp,
+  InboxMessagesReq,
+  InboxMessage,
+  MessageIdsRsp,
   MapPointsRsp,
   MetadataStatsRsp,
   NetJsonGraphAndMeta,
@@ -50,7 +53,6 @@ import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import type { BgtaskStatusAndLogsRsp } from './bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
-export { fetchMessagesByIds } from './inbox-messages';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -348,6 +350,18 @@ export async function fetchAnalysisMapPoints(
     options,
   );
   return transformSnakeToCamel<MapPointsRsp>(raw);
+}
+
+export async function fetchMessagesByIds(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+): Promise<Array<[number, InboxMessage]>> {
+  const req = inboxReq == null ? { messageIds } : { messageIds, inboxReq };
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/messages-by-id',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
 export async function fetchMessageComments(req: BatchMessageCommentsReq): Promise<MessageComments> {

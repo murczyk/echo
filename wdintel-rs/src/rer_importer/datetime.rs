@@ -451,6 +451,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_datetime_ts_freq_reporting_format() {
+        let input = "01.07.2026 02:58:08 F=170.0250(МГц)\nПерехоплення";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 6, 30, 10, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 7, 1)
+                .unwrap()
+                .and_hms_opt(2, 58, 8)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
     fn extract_datetime_test02() {
         let input = r#"17.11, 00:01:49
 465.8250

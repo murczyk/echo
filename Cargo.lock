@@ -2440,7 +2440,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202607081130"
+version = "0.1.1-rc.202607100936"
 
 [[package]]
 name = "echo-iggy"
@@ -2448,41 +2448,15 @@ version = "1.0.0"
 
 [[package]]
 name = "echo-im"
-version = "0.1.1-rc.202606111013"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=6dfff37705e99133b7475162b7b46329985f0c92#6dfff37705e99133b7475162b7b46329985f0c92"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=6dfff37705e99133b7475162b7b46329985f0c92)",
- "echo-im-signal 0.1.1-rc.202606111013",
- "echo-im-whatsapp 0.1.1-rc.202606111013",
- "lazy_static",
- "libc",
- "log",
- "qrcode",
- "regex",
- "reqwest 0.12.28",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
- "xshell",
-]
-
-[[package]]
-name = "echo-im"
 version = "0.1.1-rc.202607031318"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9431b7a5a905ed7b50c429320e1ccf70180463e6#9431b7a5a905ed7b50c429320e1ccf70180463e6"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=e5367e08ecd1b2d6122d051904a858739482cf05#e5367e08ecd1b2d6122d051904a858739482cf05"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=9431b7a5a905ed7b50c429320e1ccf70180463e6)",
- "echo-im-signal 0.1.1-rc.202607031318",
- "echo-im-whatsapp 0.1.1-rc.202607031318",
+ "echo-im-migration",
+ "echo-im-signal",
+ "echo-im-whatsapp",
  "lazy_static",
  "libc",
  "log",
@@ -2501,18 +2475,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=6dfff37705e99133b7475162b7b46329985f0c92#6dfff37705e99133b7475162b7b46329985f0c92"
-dependencies = [
- "async-std",
- "clap",
- "sea-orm-migration",
- "tokio",
-]
-
-[[package]]
-name = "echo-im-migration"
-version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9431b7a5a905ed7b50c429320e1ccf70180463e6#9431b7a5a905ed7b50c429320e1ccf70180463e6"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=e5367e08ecd1b2d6122d051904a858739482cf05#e5367e08ecd1b2d6122d051904a858739482cf05"
 dependencies = [
  "async-std",
  "clap",
@@ -2522,27 +2485,17 @@ dependencies = [
 
 [[package]]
 name = "echo-im-signal"
-version = "0.1.1-rc.202606111013"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=6dfff37705e99133b7475162b7b46329985f0c92#6dfff37705e99133b7475162b7b46329985f0c92"
-
-[[package]]
-name = "echo-im-signal"
 version = "0.1.1-rc.202607031318"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9431b7a5a905ed7b50c429320e1ccf70180463e6#9431b7a5a905ed7b50c429320e1ccf70180463e6"
-
-[[package]]
-name = "echo-im-whatsapp"
-version = "0.1.1-rc.202606111013"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=6dfff37705e99133b7475162b7b46329985f0c92#6dfff37705e99133b7475162b7b46329985f0c92"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=e5367e08ecd1b2d6122d051904a858739482cf05#e5367e08ecd1b2d6122d051904a858739482cf05"
 
 [[package]]
 name = "echo-im-whatsapp"
 version = "0.1.1-rc.202607031318"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9431b7a5a905ed7b50c429320e1ccf70180463e6#9431b7a5a905ed7b50c429320e1ccf70180463e6"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=e5367e08ecd1b2d6122d051904a858739482cf05#e5367e08ecd1b2d6122d051904a858739482cf05"
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202607081130"
+version = "0.1.1-rc.202607100936"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -2594,13 +2547,13 @@ dependencies = [
 
 [[package]]
 name = "echo-swapp"
-version = "0.1.1-rc.202607081130"
+version = "0.1.1-rc.202607100936"
 dependencies = [
  "actix-web",
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im 0.1.1-rc.202607031318",
+ "echo-im",
  "env_logger 0.11.9",
  "log",
  "regex",
@@ -3263,7 +3216,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202607081130"
+version = "0.1.1-rc.202607100936"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -8559,7 +8512,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202607081130"
+version = "0.1.1-rc.202607100936"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -8585,7 +8538,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "docx-rs",
- "echo-im 0.1.1-rc.202606111013",
+ "echo-im",
  "echo-install-utils",
  "echo-migration",
  "elm_rs",

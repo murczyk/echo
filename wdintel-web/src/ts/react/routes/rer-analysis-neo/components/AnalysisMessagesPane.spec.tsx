@@ -197,7 +197,6 @@ function buildProps(
     onToggleMessageTag: vi.fn(),
     onAddFrequencyToFilter: vi.fn(),
     profiles: {},
-    users: {},
     tagsMap: {},
     tagsOrder: [],
     tagsLoading: false,
@@ -381,34 +380,35 @@ describe('AnalysisMessagesPane', () => {
         messages: [[7, buildMessage()]],
         messageComments: {
           7: [
-            { id: 19, messageId: 7, comment: 'other-organism comment', login: 'external-login' },
-            { id: 21, messageId: 7, comment: 'same-organism comment', login: 'peer-login' },
-            { id: 20, messageId: 7, comment: 'hidden self comment', login: 'tester' },
+            {
+              id: 19,
+              messageId: 7,
+              comment: 'other-organism comment',
+              login: 'external-login',
+              sigintPostName: null,
+            },
+            {
+              id: 21,
+              messageId: 7,
+              comment: 'same-organism comment',
+              login: 'peer-login',
+              sigintPostName: null,
+            },
+            {
+              id: 20,
+              messageId: 7,
+              comment: 'hidden self comment',
+              login: 'tester',
+              sigintPostName: null,
+            },
+            {
+              id: 22,
+              messageId: 7,
+              comment: 'auto post comment',
+              login: 'system',
+              sigintPostName: 'Пост Альфа',
+            },
           ],
-        },
-        users: {
-          'external-login': {
-            name: 'external-login',
-            roles: [],
-            sigintZoneId: null,
-            organismId: 2,
-            deltaLogin: null,
-            goiConfiguredForOrganism: false,
-            goiFullAccessForOrganism: false,
-            goiHost: null,
-            goiIntegrations: [],
-          },
-          'peer-login': {
-            name: 'peer-login',
-            roles: [],
-            sigintZoneId: null,
-            organismId: 1,
-            deltaLogin: null,
-            goiConfiguredForOrganism: false,
-            goiFullAccessForOrganism: false,
-            goiHost: null,
-            goiIntegrations: [],
-          },
         },
       }),
     );
@@ -417,11 +417,14 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
       'external-login:other-organism comment',
     );
-    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
+      'system:auto post comment',
+    );
+    expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).toContain(
       'peer-login:same-organism comment',
     );
     expect(view.container.querySelector('[data-testid="comments-7"]')?.textContent).not.toContain(
-      'hidden self comment',
+      'tester:hidden self comment',
     );
   });
 

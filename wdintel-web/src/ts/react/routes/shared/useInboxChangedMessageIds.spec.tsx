@@ -1,15 +1,23 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement } from 'react';
+import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useInboxChangedMessageIds } from './useInboxChangedMessageIds';
 
-let root: Root | null = null;
+const hoisted = vi.hoisted(() => ({
+  postJson: vi.fn(),
+}));
+
+vi.mock('../../services/api/client', () => ({
+  postJson: hoisted.postJson,
+  isAbortError: (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
+}));
+
 let container: HTMLDivElement | null = null;
-let onMessageIdsMock = vi.fn();
+let root: Root | null = null;
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -21,26 +29,33 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function renderHook() {
+function Harness({
+  onMessageIds,
+}: {
+  onMessageIds: (messageIds: number[]) => void | Promise<void>;
+}) {
+  useInboxChangedMessageIds({ onMessageIds });
+  return null;
+}
+
+function renderHook(onMessageIds: (messageIds: number[]) => void | Promise<void>) {
   if (container == null) throw new Error('container not initialized');
-
-  const Harness = () => {
-    useInboxChangedMessageIds({
-      onMessageIds: onMessageIdsMock,
-    });
-    return null;
-  };
-
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(Harness));
+    root?.render(React.createElement(Harness, { onMessageIds }));
+  });
+}
+
+async function flushPromises() {
+  await act(async () => {
+    await Promise.resolve();
   });
 }
 
 beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
-  onMessageIdsMock = vi.fn().mockResolvedValue(undefined);
+  hoisted.postJson.mockReset();
 });
 
 afterEach(() => {
@@ -53,101 +68,75 @@ afterEach(() => {
 });
 
 describe('useInboxChangedMessageIds', () => {
-  it('deduplicates message ids from browser events and ignores malformed payloads', () => {
-    renderHook();
+  it('long-polls backend events and forwards changed inbox message ids', async () => {
+    hoisted.postJson
+      .mockResolvedValueOnce({
+        events: [
+          { id: '1', event_type: { ETInboxChanged: 7 }, created_at: 1 },
+          { id: '2', event_type: 'ETGeneric', created_at: 2 },
+          { id: '3', event_type: { ETInboxChanged: 7 }, created_at: 3 },
+          { id: '4', event_type: { ETInboxChanged: 8 }, created_at: 4 },
+        ],
+        last_event_id: 'stream-1',
+      })
+      .mockReturnValue(new Promise(() => undefined));
+    const onMessageIds = vi.fn().mockResolvedValue(undefined);
 
-    window.dispatchEvent(
-      new CustomEvent('echo-inbox-changed', {
-        detail: { messageIds: [7, 7, 9, 'bad', null, 9] },
-      }),
-    );
-    window.dispatchEvent(
-      new CustomEvent('echo-inbox-changed', {
-        detail: { notMessageIds: [1, 2, 3] },
-      }),
-    );
-    window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: null }));
+    renderHook(onMessageIds);
+    await flushPromises();
+    await flushPromises();
 
-    expect(onMessageIdsMock).toHaveBeenCalledTimes(1);
-    expect(onMessageIdsMock).toHaveBeenCalledWith([7, 9]);
+    expect(hoisted.postJson).toHaveBeenCalledWith(
+      '/api/event-stream/long-poll',
+      { session_id: 'current', last_event_id: null },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(onMessageIds).toHaveBeenCalledWith([7, 8]);
+    expect(hoisted.postJson).toHaveBeenCalledTimes(2);
+    expect(hoisted.postJson.mock.calls[1][1]).toEqual({
+      session_id: 'current',
+      last_event_id: 'stream-1',
+    });
   });
 
-  it('serializes close events and coalesces duplicate ids while a refresh is in flight', async () => {
-    const first = createDeferred<void>();
-    const second = createDeferred<void>();
-    onMessageIdsMock = vi
+  it('waits for the current refresh before starting the next long-poll', async () => {
+    const firstRefresh = createDeferred<void>();
+    hoisted.postJson
+      .mockResolvedValueOnce({
+        events: [{ id: '1', event_type: { ETInboxChanged: 1 }, created_at: 1 }],
+        last_event_id: 'stream-1',
+      })
+      .mockResolvedValueOnce({
+        events: [
+          { id: '2', event_type: { ETInboxChanged: 1 }, created_at: 2 },
+          { id: '3', event_type: { ETInboxChanged: 2 }, created_at: 3 },
+        ],
+        last_event_id: 'stream-2',
+      })
+      .mockReturnValue(new Promise(() => undefined));
+    const onMessageIds = vi
       .fn()
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise);
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockResolvedValue(undefined);
 
-    renderHook();
+    renderHook(onMessageIds);
+    await flushPromises();
+    await flushPromises();
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('echo-inbox-changed', {
-          detail: { messageIds: [1, 1, 2] },
-        }),
-      );
-    });
-
-    expect(onMessageIdsMock).toHaveBeenCalledTimes(1);
-    expect(onMessageIdsMock).toHaveBeenCalledWith([1, 2]);
-
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('echo-inbox-changed', {
-          detail: { messageIds: [2, 3, 3] },
-        }),
-      );
-    });
-
-    expect(onMessageIdsMock).toHaveBeenCalledTimes(1);
+    expect(onMessageIds).toHaveBeenCalledTimes(1);
+    expect(onMessageIds).toHaveBeenCalledWith([1]);
+    expect(hoisted.postJson).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      first.resolve();
+      firstRefresh.resolve();
       await Promise.resolve();
     });
+    await flushPromises();
 
-    expect(onMessageIdsMock).toHaveBeenCalledTimes(2);
-    expect(onMessageIdsMock).toHaveBeenNthCalledWith(2, [2, 3]);
-
-    await act(async () => {
-      second.resolve();
-      await Promise.resolve();
+    expect(hoisted.postJson.mock.calls[1][1]).toEqual({
+      session_id: 'current',
+      last_event_id: 'stream-1',
     });
-  });
-
-  it('removes the listener on unmount', () => {
-    renderHook();
-    act(() => {
-      root?.unmount();
-    });
-    root = null;
-
-    window.dispatchEvent(
-      new CustomEvent('echo-inbox-changed', {
-        detail: { messageIds: [11] },
-      }),
-    );
-
-    expect(onMessageIdsMock).not.toHaveBeenCalled();
-  });
-
-  it('keeps working after an unmount and remount in the same test', () => {
-    renderHook();
-    act(() => {
-      root?.unmount();
-    });
-    root = null;
-
-    renderHook();
-    window.dispatchEvent(
-      new CustomEvent('echo-inbox-changed', {
-        detail: { messageIds: [11] },
-      }),
-    );
-
-    expect(onMessageIdsMock).toHaveBeenCalledTimes(1);
-    expect(onMessageIdsMock).toHaveBeenCalledWith([11]);
+    expect(onMessageIds).toHaveBeenNthCalledWith(2, [1, 2]);
   });
 });

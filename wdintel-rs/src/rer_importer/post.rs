@@ -283,6 +283,14 @@ mod tests {
     }
 
     #[test]
+    fn extract_post_separate_freq_post_line_without_space_inside_post() {
+        let body =
+            "01.07.2026, 03:04:16\n463.4500 ЦФП52\nУКХ р/м НВ підрозділу";
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "ЦФП52")
+    }
+
+    #[test]
     fn extract_post_extra_01() {
         let body = r#"Отримано з поста "DOT3_1 (77)"
 --------------------------------------

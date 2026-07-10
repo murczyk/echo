@@ -82,7 +82,17 @@ fn map_system_settings_item(
         peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
+        cyber_echo_enabled: settings.cyber_echo_enabled,
+        echo_restapi_error_discord_webhook_url: settings
+            .echo_restapi_error_discord_webhook_url,
     })
+}
+
+fn normalize_optional_setting(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 pub async fn get_active_system_settings<C>(
@@ -106,6 +116,22 @@ where
     C: ConnectionTrait,
 {
     Ok(get_echo_im_sync_cursor(dbx).await?.created_at)
+}
+
+pub async fn get_echo_restapi_error_discord_webhook_url<C>(
+    dbx: &C,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| {
+            normalize_optional_setting(
+                settings.echo_restapi_error_discord_webhook_url.as_deref(),
+            )
+        }))
 }
 
 pub async fn get_echo_im_sync_cursor<C>(
@@ -222,6 +248,29 @@ where
     } else {
         Err(AppError::Forbidden(
             "support_non_rer_interceptions is disabled".to_string(),
+        ))
+    }
+}
+
+pub async fn cyber_echo_enabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.cyber_echo_enabled)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_cyber_echo_enabled<C>(dbx: &C) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if cyber_echo_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "cyber_echo_enabled is disabled".to_string(),
         ))
     }
 }
@@ -358,6 +407,12 @@ fn system_settings_active_model(
         peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
+        cyber_echo_enabled: Set(req.cyber_echo_enabled),
+        echo_restapi_error_discord_webhook_url: Set(
+            normalize_optional_setting(
+                req.echo_restapi_error_discord_webhook_url.as_deref(),
+            ),
+        ),
     }
 }
 
@@ -466,6 +521,7 @@ pub async fn current_system_settings(
                 .peleng_bounds_bottom_right_lat,
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
+            cyber_echo_enabled: settings.cyber_echo_enabled,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -484,6 +540,7 @@ pub async fn current_system_settings(
             peleng_bounds_top_left_lng: None,
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
+            cyber_echo_enabled: false,
         },
     }))
 }
@@ -700,11 +757,13 @@ mod tests {
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
+            cyber_echo_enabled: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
+            echo_restapi_error_discord_webhook_url: None,
         }
     }
 
@@ -754,6 +813,8 @@ mod tests {
             peleng_bounds_bottom_right_lng: Set(None),
             default_neo_analysis: Set(false),
             autofix_echoim_missing_messages: Set(false),
+            cyber_echo_enabled: Set(false),
+            echo_restapi_error_discord_webhook_url: Set(None),
         }
         .insert(dbx)
         .await

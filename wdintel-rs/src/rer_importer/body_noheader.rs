@@ -3,7 +3,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(
     Elm,
@@ -28,7 +28,7 @@ pub struct NoHeadersBody {
 lazy_static! {
     // Remove data from Buran
     static ref RE: Regex = Regex::new(
-        r#"^(Район|Частота|Час|Дата|Локація|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип сигналу|Приналежність|Мітки перехоплення):"#
+        r#"^(Район|Частота|Час|Дата|Локація|Мережа|Засічка|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип сигналу|Приналежність|Мітки перехоплення):"#
     )
     .unwrap();
     // Remove data with line starting as below
@@ -71,6 +71,16 @@ lazy_static! {
         r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$"#
     )
     .unwrap();
+    // Remove data time + freq line dd.mm.yyyy hh:mm:ss F=123.4567(МГц)
+    static ref RE25_FREQ: Regex = Regex::new(
+        r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\s+[Ff]\s*=\s*[0-9]{3}(\.|,)[0-9]{3,5}\s*(\(?МГц\)?|MHz)$"#
+    )
+    .unwrap();
+    // Remove frequency line like F=148.175 DMR
+    static ref RE_F_DMR: Regex = Regex::new(
+        r#"^[Ff]\s*=\s*[0-9]{3}(\.|,)[0-9]{3,5}\s*DMR\s*$"#
+    )
+    .unwrap();
     // Remove data time line dd.mm.yyyy hh:mm
     static ref RE25A: Regex = Regex::new(
         r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}[,\s]+[0-9]{1,2}:[0-9]{2}\s*$"#
@@ -105,18 +115,36 @@ lazy_static! {
     static ref RE31: Regex =
         Regex::new(r#"^[0-9]{2}-[0-9]{2}(-[0-9]{2})?$"#).unwrap();
     // Remove unit line from Mouse
-    static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
+    static ref RE3: Regex = Regex::new(r#"^[^\p{L}\p{N}]*(?i:new\s+)?(?:[0-9]{3}(?:\.|,)[0-9]{3,5}\s*(?:\(?МГц\)?|MHz)\s+)?(?i:(?:\[dmr\]\s*)?(?:укх|управління)|dmre?\s+р/м|р/м|ймовірно\s+.+\s+/\s*(?:район|р-н))\s"#).unwrap();
     // Remove freq line from Mouse
-    static ref RE4: Regex = Regex::new(r#"^[0-9]{3}(\.|,)[0-9]{3,5}\s*(ЦФП [0-9]{2,3})?\s*$"#).unwrap();
+    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(?:\.|,)[0-9]{3,5}\*|[0-9]{3}(?:\.|,)[0-9]{3,5})(?:\s+[а-яіїА-ЯІЇ]{0,2}(?:П|п)\s*-?\s*\d{1,3})?\s*$"#).unwrap();
     // Remove coordinates line from Mouse
     static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
     // Remove line with ---------------------
     static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
     // Buran-style date/time label line: `Дата: ...` / `Час: ...`
     static ref RE_DT_LABEL: Regex = Regex::new(r#"^(Дата|Час)\s*[: ]"#).unwrap();
+    static ref UNIT_WATERMARK_LINES: HashSet<String> = ["---- РР 47 ОМБР ----"]
+        .into_iter()
+        .map(normalize_unit_watermark_line)
+        .collect();
 }
 
 pub fn is_header_line(line: &str) -> bool {
+    is_metadata_header_line(line) || is_non_metadata_header_line(line)
+}
+
+fn is_metadata_header_line(line: &str) -> bool {
+    crate::rer_importer::inbox::metadata::is_metadata_line(line)
+}
+
+fn is_non_metadata_header_line(line: &str) -> bool {
+    is_header_line_raw(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| is_header_line_raw(&line))
+}
+
+fn is_header_line_raw(line: &str) -> bool {
     RE.is_match(line)
         || RE0.is_match(line)
         || RE1.is_match(line)
@@ -126,6 +154,8 @@ pub fn is_header_line(line: &str) -> bool {
         || RE23.is_match(line)
         || RE24.is_match(line)
         || RE25.is_match(line)
+        || RE25_FREQ.is_match(line)
+        || RE_F_DMR.is_match(line)
         || RE25A.is_match(line)
         || RE26.is_match(line)
         || RE27.is_match(line)
@@ -140,6 +170,12 @@ pub fn is_header_line(line: &str) -> bool {
 }
 
 pub fn is_datetime_header_line(line: &str) -> bool {
+    is_datetime_header_line_raw(line)
+        || normalize_decorated_header_line(line)
+            .is_some_and(|line| is_datetime_header_line_raw(&line))
+}
+
+fn is_datetime_header_line_raw(line: &str) -> bool {
     RE1.is_match(line)
         || RE2.is_match(line)
         || RE21.is_match(line)
@@ -147,6 +183,7 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE23.is_match(line)
         || RE24.is_match(line)
         || RE25.is_match(line)
+        || RE25_FREQ.is_match(line)
         || RE25A.is_match(line)
         || RE26.is_match(line)
         || RE27.is_match(line)
@@ -155,6 +192,33 @@ pub fn is_datetime_header_line(line: &str) -> bool {
         || RE30.is_match(line)
         || RE31.is_match(line)
         || RE_DT_LABEL.is_match(line)
+}
+
+fn normalize_decorated_header_line(line: &str) -> Option<String> {
+    let line = demoji::demoji(line);
+    let line = line
+        .chars()
+        .map(|ch| match ch {
+            '[' | ']' | '{' | '}' | '(' | ')' => ' ',
+            '╬' => ' ',
+            '│' => ' ',
+            '\u{200d}' | '\u{fe0e}' | '\u{fe0f}' => ' ',
+            _ => ch,
+        })
+        .collect::<String>();
+    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.is_empty() {
+        return None;
+    }
+    Some(line)
+}
+
+fn is_unit_watermark_line(line: &str) -> bool {
+    UNIT_WATERMARK_LINES.contains(&normalize_unit_watermark_line(line))
+}
+
+fn normalize_unit_watermark_line(line: &str) -> String {
+    line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn trim_otrymano_post_header(line: &str) -> Option<String> {
@@ -210,6 +274,7 @@ pub(crate) fn extract_text_excluding_lines(
         .lines()
         .enumerate()
         .filter(|(idx, _)| !excluded_lines.contains(idx))
+        .filter(|(_, x)| !is_unit_watermark_line(x))
         .map(|(_, x)| {
             trim_otrymano_post_header(x).unwrap_or_else(|| x.to_string())
         })
@@ -222,15 +287,22 @@ pub(crate) fn extract_text_excluding_lines(
         return Ok(exact_format_text);
     }
 
-    lines = lines
-        .iter()
-        // .filter(|l| l.trim() != "")
-        .filter(|l| !is_header_line(l))
-        .cloned()
-        .collect();
-    // lines.truncate(5);
+    lines.retain(|line| !is_non_metadata_header_line(line));
 
-    let mut res = lines.join("\n");
+    let mut start_line = 0;
+    while start_line < lines.len()
+        && is_boundary_header_or_empty(&lines[start_line])
+    {
+        start_line += 1;
+    }
+    let mut end_line = lines.len();
+    while end_line > start_line
+        && is_boundary_header_or_empty(&lines[end_line - 1])
+    {
+        end_line -= 1;
+    }
+
+    let mut res = lines[start_line..end_line].join("\n");
 
     // 2. Find start position in character indices
     let start_byte_pos = input.find(&res).unwrap_or(0);
@@ -258,6 +330,10 @@ pub(crate) fn extract_text_excluding_lines(
     })
 }
 
+fn is_boundary_header_or_empty(line: &str) -> bool {
+    line.trim().is_empty() || is_header_line(line)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +343,140 @@ mod tests {
         let body = " audio | 2026-07-01_14-47-03 \nПерехоплення\nрядок 2";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "Перехоплення\nрядок 2");
+    }
+
+    #[test]
+    fn extract_text_metadata_lines_are_headers() {
+        let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nID➡️: 261\nID(CG)⬅️: 8584772\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_bare_receiver_group_metadata_lines_are_headers() {
+        let body =
+            "01.07.2026 02:58:08\nID(CG):395251\nID(CG) 395252\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_blank_optional_metadata_lines_are_headers() {
+        let body = "01.07.2026 02:58:08\nID відправника: -\nКод групи: НВ\nКод кольору: -\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_keeps_dialog_lines_with_inline_metadata() {
+        let body = "01.07.2026 02:58:08 F=170.0250(МГц)\nСС: 5\nПрийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення";
+        let res = extract_text(body).unwrap();
+        assert_eq!(
+            res.body,
+            "Прийняв ID: 123 і пішов\nПередай СС: 5 завтра\nID(CG)⬅️: 8584772\nПерехоплення"
+        );
+        let start_byte = body.find(&res.body).unwrap();
+        assert_eq!(res.start, body[..start_byte].chars().count());
+    }
+
+    #[test]
+    fn extract_text_decorated_header_lines_are_headers() {
+        let body = "🔺(01.07.2026 02:58:08)\n🔺(01.07.2026 02:58:08 F=170.0250(МГц))\n│╬{*123.7586*}\n[УКХ р/м]\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_f_dmr_line_is_header() {
+        let body = "F= 148.175 DMR\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_freq_post_line_without_space_inside_post_is_header() {
+        let body = "01.07.2026, 03:04:16\n463.4500 ЦФП52\nУКХ р/м НВ підрозділу\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_freq_mhz_unit_line_is_header() {
+        let body = "02.07.2026, 03:00:04\n446.1500\n446.150 МГц УКХ р/м постів повітряного спостереження (ППС) 80 омсбр 14 АК (ІВАНІВКА, ЧУЛАКІВКА, БЕХТЕРИ)\nНВ\nОРБИТА\n\n— Орбита, Орбита, переходим на этаж выше.\n\nМітки перехоплення: 👆👆👆 - Звернути увагу";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "НВ\nОРБИТА\n\n— Орбита, Орбита, переходим на этаж выше."
+        );
+    }
+
+    #[test]
+    fn extract_text_dmr_unit_line_is_header() {
+        let body = "Отримано з поста \"Radiotrap_Г-Б4\"\n--------------------------------------\n02.07.2026, 02:58:44\n150.5500\nDMR р/м управління підрозділом протидії БпЛА 245 мсп 3 мсд 20 А 150.550 МГц (БОРИСІВКА, ГРУЗСКОЄ, ЦАПОВКА, КРАСНИЙ ХУТІР)\nГРОМ\nБАЗА\n\n— База, База, я Гром, остановка 7.\n— Гром, Гром, я База, принял.\n\n\nКоментар: Доповідь по обстановці.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "ГРОМ\nБАЗА\n\n— База, База, я Гром, остановка 7.\n— Гром, Гром, я База, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_decorated_ukh_unit_line_with_inline_cc_is_header() {
+        let body = "02.07.2026, 02:58:17\n430.8750\n🐵🪖УКХ ╬ р/м 9мср 3 мсб 1432 мсп ╬ (СТЕЛЬМАХІВКА - НОВОПЛАТОНІВКА) СС:10\nНВ\nАРХИВ, КОНДОР, АДВОКАТ\n\n— 5 малых, 5 малых назад выходили, выходили 1000, 1000 принял?\n— Принял, принял.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "НВ\nАРХИВ, КОНДОР, АДВОКАТ\n\n— 5 малых, 5 малых назад выходили, выходили 1000, 1000 принял?\n— Принял, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_lowercase_decorated_ukh_unit_line_is_header() {
+        let body = "02.07.2026, 02:57:03\n142.2001\n🌊/🏡 укх р/м 31 мсп 67 мсд 25 ЗА (р-н ЯМПОЛІВКА - ЗАРІЧНЕ)\nРУДНИК\nБАБАЙКА\n\n— Бабайка Роднику костлявая прошла.\n— Бабайка, да, принял.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(
+            res,
+            "РУДНИК\nБАБАЙКА\n\n— Бабайка Роднику костлявая прошла.\n— Бабайка, да, принял."
+        );
+    }
+
+    #[test]
+    fn extract_text_new_unit_line_with_trailing_mapping_date_is_header() {
+        let body = "07.05.2026, 12:00:00\n155.0250\nnew УКХ р/м ПУ ФСБ рф (р-н ХОДЕЙКОВО- АЛЕКСЕЕВКА - ПОПОВО ЛЕЖАЧИ - ТЕТКИНО Курська область) 07.05\nНВ\n\n— Прийом.";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "НВ\n\n— Прийом.");
+    }
+
+    #[test]
+    fn extract_text_network_metadata_rows_are_headers() {
+        let rows = [
+            "р/м управління підрозділами 2 мсп (кт) ПКС (КОЗИНКА, ГРАЙВОРОН, БЕЗИМЕННО, НОВОСТРОЄВКА-ВТОРАЯ, БЄЛГОРОДСЬКА ОБЛАСТЬ) 6 хв",
+            "р/м ситуаційної обізнаності м/н Грайворонський р-н",
+            "ймовірно ПУ ФСБ РФ / район ПОПОВО-ЛЕЖАЧИ (РФ) - ТЕТКИНО (РФ) (19.06)",
+            "ймовірно 12 прикз / р-н ГРАЙВОРОН (РФ) (20.06)",
+            "Мережа: УКХ р/м НВ підрозділу",
+            "Мережа: УКХ р/м 123 мсб 45 мсп 99А (р-н КУКУЄВО (РФ))",
+            "Засічка: Тишино",
+            "🏡/🪵 укх р/м зрбатр 37 мсп 67 мсд 25 ЗА (р-н ЛИМАН - ТОРСЬКЕ)",
+            "new УКХ р/м ПУ ФСБ рф (р-н ХОДЕЙКОВО- АЛЕКСЕЕВКА - ПОПОВО ЛЕЖАЧИ - ТЕТКИНО Курська область) 07.05",
+        ];
+        for row in rows {
+            let body = format!(
+                "02.07.2026, 02:57:03\n142.2001\n{row}\nРУДНИК\n\n— Прийом."
+            );
+            let res = extract_text(&body).unwrap().body;
+            assert_eq!(res, "РУДНИК\n\n— Прийом.");
+        }
+    }
+
+    #[test]
+    fn extract_text_removes_unit_watermark_line() {
+        let watermark = "----\u{00a0}РР\u{00a0}47\u{00a0}ОМБР\u{00a0}----";
+        let body = format!(
+            "02.07.2026, 02:58:17\n430.8750\nУКХ р/м 9мср\nНВ\n\n— Прийом.\n{watermark}"
+        );
+        let res = extract_text(&body).unwrap().body;
+        assert_eq!(res, "НВ\n\n— Прийом.");
     }
 
     #[test]

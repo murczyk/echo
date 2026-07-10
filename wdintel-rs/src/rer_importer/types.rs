@@ -331,6 +331,7 @@ pub enum TagPresenceFilter {
 )]
 pub struct MessageIdsReq {
     pub message_ids: Vec<i64>,
+    pub inbox_req: Option<InboxMessagesReq>,
 }
 
 #[derive(
@@ -1485,6 +1486,7 @@ pub struct MessageComment {
     pub message_id: i64,
     pub comment: String,
     pub login: String,
+    pub sigint_post_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

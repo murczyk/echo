@@ -8,6 +8,7 @@ import {
   MyAdminSignalGroupEditReferenceRsp,
   MyAdminSignalGroupsRsp,
   MyAdminSignalGroupUpdateReq,
+  MyOrganism,
   SignalGroupLogin,
   OrphanSignalGroupEntry,
   SigintZone,
@@ -156,6 +157,8 @@ type ZoneDatasourceGroupLike = {
   disable_network_assignment?: boolean;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
+  allowedOrganismIds?: Array<number | string> | null;
+  allowed_organism_ids?: Array<number | string> | null;
   adminLogins?: string[] | null;
   admin_logins?: string[] | null;
   shortNote?: string | null;
@@ -193,6 +196,8 @@ type MyAdminSignalGroupLike = {
   disable_network_assignment?: boolean;
   allowedUsers?: SignalGroupLoginLike[] | null;
   allowed_users?: SignalGroupLoginLike[] | null;
+  allowedOrganismIds?: Array<number | string> | null;
+  allowed_organism_ids?: Array<number | string> | null;
   adminLogins?: SignalGroupLoginLike[] | null;
   admin_logins?: SignalGroupLoginLike[] | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
@@ -205,8 +210,14 @@ type MyAdminSignalGroupsRspLike = {
 
 type MyAdminSignalGroupEditReferenceRspLike = {
   logins?: string[] | null;
+  organisms?: MyOrganismLike[] | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+};
+
+type MyOrganismLike = {
+  id?: number | string;
+  name?: string;
 };
 
 type ZoneDatasourceGroupAddRspLike = {
@@ -236,6 +247,7 @@ type ZoneDatasourceGroupAddReqBody = {
   interseption_kind: InterseptionKind | null;
   master_key: string;
   user_logins: string[];
+  organism_ids: number[];
   admin_logins: string[];
   short_note: string | null;
   long_note: string | null;
@@ -247,6 +259,7 @@ type ZoneDatasourceGroupUpdateReqBody = {
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   user_logins: string[];
+  organism_ids: number[];
   admin_logins: string[];
   short_note: string | null;
   long_note: string | null;
@@ -264,6 +277,7 @@ type MyAdminSignalGroupUpdateReqBody = {
   is_secret: boolean;
   disable_network_assignment: boolean;
   user_logins: string[];
+  organism_ids: number[];
   admin_logins: string[];
   area_of_responsibility_ids: number[] | null;
 };
@@ -290,6 +304,11 @@ function normalizeNumber(value: number | string | null | undefined): number {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim() !== '') return Number(value);
   return 0;
+}
+
+function normalizeNumberArray(values: Array<number | string> | null | undefined): number[] {
+  if (!Array.isArray(values)) return [];
+  return values.map(normalizeNumber).filter((value) => Number.isFinite(value));
 }
 
 function normalizeCoordinates(raw: AorCoordinatesLike | null | undefined) {
@@ -398,11 +417,19 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
+    allowedOrganismIds: normalizeNumberArray(raw.allowedOrganismIds ?? raw.allowed_organism_ids),
     adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+  };
+}
+
+function normalizeMyOrganism(raw: MyOrganismLike): MyOrganism {
+  return {
+    id: normalizeNumber(raw.id),
+    name: raw.name ?? '',
   };
 }
 
@@ -474,6 +501,7 @@ function toZoneDatasourceGroupAddReqBody(
     interseption_kind: req.interseptionKind ?? null,
     master_key: req.masterKey,
     user_logins: req.userLogins,
+    organism_ids: req.organismIds,
     admin_logins: req.adminLogins,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
@@ -489,6 +517,7 @@ function toZoneDatasourceGroupUpdateReqBody(
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     user_logins: req.userLogins,
+    organism_ids: req.organismIds,
     admin_logins: req.adminLogins,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
@@ -505,6 +534,7 @@ function toMyAdminSignalGroupUpdateReqBody(
     is_secret: req.isSecret,
     disable_network_assignment: req.disableNetworkAssignment,
     user_logins: req.userLogins,
+    organism_ids: req.organismIds,
     admin_logins: req.adminLogins,
     area_of_responsibility_ids: req.areaOfResponsibilityIds ?? null,
   };
@@ -585,6 +615,7 @@ function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignal
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     allowedUsers: (raw.allowedUsers ?? raw.allowed_users ?? []).map(normalizeSignalGroupLogin),
+    allowedOrganismIds: normalizeNumberArray(raw.allowedOrganismIds ?? raw.allowed_organism_ids),
     adminLogins: (raw.adminLogins ?? raw.admin_logins ?? []).map(normalizeSignalGroupLogin),
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
@@ -665,6 +696,7 @@ export async function fetchMyAdminGroupEditReference(
   );
   return {
     logins: data?.logins ?? [],
+    organisms: (data?.organisms ?? []).map(normalizeMyOrganism),
     areasOfResponsibility: (data?.areasOfResponsibility ?? data?.areas_of_responsibility ?? []).map(
       normalizeAor,
     ),

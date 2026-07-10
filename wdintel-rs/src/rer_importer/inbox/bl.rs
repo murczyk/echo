@@ -91,7 +91,7 @@ pub async fn get_inbox_map_items(
 pub async fn aggregate_to_inbox_messages(
     login: &str,
     messages: Vec<InboxMessageDesc>,
-    logins: &Vec<String>,
+    _logins: &Vec<String>,
     req: &&InboxMessagesReq,
     env: &&Env,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -360,8 +360,10 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            env, message.id, logins,
+        // `extended_form` is the editable duty comment, so it must come only
+        // from the active login; peer comments are shown only in analysis.
+        let m_comment = find_sigint_comment_by_signal_message_id_and_login(
+            env, message.id, login,
         )
         .await?;
         let location_v2 = match message.location_v2.clone() {
@@ -428,14 +430,29 @@ pub async fn aggregate_to_inbox_messages(
     Ok(res)
 }
 
-pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_login(
     env: &Env,
     item_id: i64,
-    logins: &Vec<String>,
+    login: &str,
 ) -> Result<Option<sigint_comment::Model>, AppError> {
     let m_comment = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+        .filter(sigint_comment::Column::Login.eq(login))
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+
+    Ok(m_comment)
+}
+
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+    env: &Env,
+    item_id: i64,
+    logins: &[String],
+) -> Result<Option<sigint_comment::Model>, AppError> {
+    let m_comment = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
+        .filter(sigint_comment::Column::Login.eq_any(logins.to_vec()))
         .one(&env.dbx)
         .await
         .c(h!())?;
@@ -770,7 +787,7 @@ pub async fn submit_upsert_inbox_item(
     id: i64,
     message: &InboxMessage,
     login: &str,
-    logins: &Vec<String>,
+    _logins: &Vec<String>,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -826,9 +843,11 @@ pub async fn submit_upsert_inbox_item(
         .map(|x| crate::rer_importer::frequency::etalon(x));
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
+        // Inbox/detail submits carry the current user's editable comment only;
+        // never reuse a same-organism peer comment row for this update.
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(id))
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq(login))
             .one(txn)
             .await
             .c(h!())?;
@@ -941,6 +960,7 @@ pub async fn submit_upsert_inbox_item(
             datetime: NotSet,
             body_noheader: NotSet,
             post_id: Set(message.post_id),
+            computer_name_id: Set(None),
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
         })

@@ -25,8 +25,9 @@ import {
   listSystemSettings,
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
+import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 
-type SystemSettingsTab = 'main' | 'pelengs';
+type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
@@ -39,11 +40,13 @@ type SystemSettingsForm = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
+  cyberEchoEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
   pelengBoundsBottomRightLat: string;
   pelengBoundsBottomRightLng: string;
+  echoRestapiErrorDiscordWebhookUrl: string;
 };
 
 type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
@@ -59,11 +62,13 @@ type SystemSettingsPayload = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
+  cyberEchoEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 const EMPTY_FORM: SystemSettingsForm = {
@@ -77,11 +82,13 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyPollIntervalSec: 1,
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
+  cyberEchoEnabled: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
   pelengBoundsBottomRightLat: '',
   pelengBoundsBottomRightLng: '',
+  echoRestapiErrorDiscordWebhookUrl: '',
 };
 
 const SUPPORT_NON_RER_TOOLTIP =
@@ -109,13 +116,14 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
-    autofixEchoimMissingMessages:
-      item?.autofixEchoimMissingMessages ?? false,
+    autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
+    cyberEchoEnabled: item?.cyberEchoEnabled ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
     pelengBoundsBottomRightLat: coordinateToInput(item?.pelengBoundsBottomRightLat ?? null),
     pelengBoundsBottomRightLng: coordinateToInput(item?.pelengBoundsBottomRightLng ?? null),
+    echoRestapiErrorDiscordWebhookUrl: item?.echoRestapiErrorDiscordWebhookUrl ?? '',
   };
 }
 
@@ -131,11 +139,13 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
     a.shortUrlEnabled === b.shortUrlEnabled &&
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
+    a.cyberEchoEnabled === b.cyberEchoEnabled &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
     a.pelengBoundsBottomRightLat === b.pelengBoundsBottomRightLat &&
-    a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng
+    a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng &&
+    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl
   );
 }
 
@@ -183,6 +193,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     pelengBoundsTopLeftLng: normalizeCoordinateInput(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: normalizeCoordinateInput(form.pelengBoundsBottomRightLng),
+    echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl.trim(),
   };
 }
 
@@ -198,11 +209,13 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyPollIntervalSec: form.dutyPollIntervalSec,
     shortUrlEnabled: form.shortUrlEnabled,
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
+    cyberEchoEnabled: form.cyberEchoEnabled,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: coordinateToPayload(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: coordinateToPayload(form.pelengBoundsBottomRightLng),
+    echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl || null,
   };
 }
 
@@ -328,9 +341,21 @@ function MainSettingsSection({
         }
         label="Використовувати новий аналіз за замовчуванням"
       />
+    </>
+  );
+}
 
+function DutySettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: тестові повідомлення
+        Тестові повідомлення
       </Typography>
       <FormControlLabel
         control={
@@ -389,7 +414,7 @@ function MainSettingsSection({
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: Echo IM
+        Echo IM
       </Typography>
 
       <FormControlLabel
@@ -404,8 +429,20 @@ function MainSettingsSection({
         label="Автоматично відновлювати відсутні Echo IM повідомлення"
       />
 
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.cyberEchoEnabled}
+            onChange={(_, checked) => {
+              patchForm({ cyberEchoEnabled: checked });
+            }}
+          />
+        }
+        label="Увімкнути режим Cyber Echo"
+      />
+
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Оперативний: Короткий URL
+        Короткий URL
       </Typography>
 
       <FormControlLabel
@@ -504,6 +541,39 @@ function PelengSettingsSection({
   );
 }
 
+function NotificationsSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Нотифікації
+      </Typography>
+      <TextField
+        fullWidth
+        label="Discord webhook для помилок Echo REST API"
+        type="url"
+        value={form.echoRestapiErrorDiscordWebhookUrl}
+        onChange={(event) => {
+          patchForm({
+            echoRestapiErrorDiscordWebhookUrl: event.target.value,
+          });
+        }}
+        onBlur={(event) => {
+          patchForm({
+            echoRestapiErrorDiscordWebhookUrl: event.target.value.trim(),
+          });
+        }}
+        helperText="Порожнє значення вимикає Discord нотифікації"
+      />
+    </>
+  );
+}
+
 export function AdminSystemSettingsNeoPage() {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>('main');
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
@@ -572,13 +642,14 @@ export function AdminSystemSettingsNeoPage() {
         rerDutyShortUrl: payload.shortUrlEnabled,
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
-        autofixEchoimMissingMessages:
-          payload.autofixEchoimMissingMessages,
+        autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
+        cyberEchoEnabled: payload.cyberEchoEnabled,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
         pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
         pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
+        echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
       });
       setForm(nextForm);
       setSaved(nextForm);
@@ -623,10 +694,28 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-main"
               />
               <Tab
+                value="duty"
+                label="Оперативний"
+                id="system-settings-neo-tab-duty"
+                aria-controls="system-settings-neo-panel-duty"
+              />
+              <Tab
+                value="control"
+                label="Керування"
+                id="system-settings-neo-tab-control"
+                aria-controls="system-settings-neo-panel-control"
+              />
+              <Tab
                 value="pelengs"
                 label="Пеленги"
                 id="system-settings-neo-tab-pelengs"
                 aria-controls="system-settings-neo-panel-pelengs"
+              />
+              <Tab
+                value="notifications"
+                label="Нотифікації"
+                id="system-settings-neo-tab-notifications"
+                aria-controls="system-settings-neo-panel-notifications"
               />
             </Tabs>
 
@@ -654,6 +743,28 @@ export function AdminSystemSettingsNeoPage() {
                 </Box>
 
                 <Box
+                  id="system-settings-neo-panel-duty"
+                  role="tabpanel"
+                  hidden={activeTab !== 'duty'}
+                  aria-labelledby="system-settings-neo-tab-duty"
+                >
+                  {activeTab === 'duty' ? (
+                    <Stack spacing={3}>
+                      <DutySettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
+                </Box>
+
+                <Box
+                  id="system-settings-neo-panel-control"
+                  role="tabpanel"
+                  hidden={activeTab !== 'control'}
+                  aria-labelledby="system-settings-neo-tab-control"
+                >
+                  {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
+                </Box>
+
+                <Box
                   id="system-settings-neo-panel-pelengs"
                   role="tabpanel"
                   hidden={activeTab !== 'pelengs'}
@@ -662,6 +773,19 @@ export function AdminSystemSettingsNeoPage() {
                   {activeTab === 'pelengs' ? (
                     <Stack spacing={3}>
                       <PelengSettingsSection form={form} patchForm={patchForm} />
+                    </Stack>
+                  ) : null}
+                </Box>
+
+                <Box
+                  id="system-settings-neo-panel-notifications"
+                  role="tabpanel"
+                  hidden={activeTab !== 'notifications'}
+                  aria-labelledby="system-settings-neo-tab-notifications"
+                >
+                  {activeTab === 'notifications' ? (
+                    <Stack spacing={3}>
+                      <NotificationsSettingsSection form={form} patchForm={patchForm} />
                     </Stack>
                   ) : null}
                 </Box>

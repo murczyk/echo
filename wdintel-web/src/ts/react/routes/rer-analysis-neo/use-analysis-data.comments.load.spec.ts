@@ -1,16 +1,14 @@
+/**
+ * @vitest-environment happy-dom
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, MessageComment, User } from '../../../../Bindings';
+import type { InboxMessage, MessageComment } from '../../../../Bindings';
 
 const fetchMessageComments = vi.hoisted(() => vi.fn());
-const fetchUserInfo = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/api/analysis', () => ({
   fetchMessageComments,
-}));
-
-vi.mock('../../services/api/user', () => ({
-  fetchUserInfo,
 }));
 
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
@@ -19,27 +17,13 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function buildUser(overrides: Partial<User>): User {
-  return {
-    name: 'tester',
-    roles: [],
-    sigintZoneId: null,
-    organismId: 1,
-    deltaLogin: null,
-    goiConfiguredForOrganism: false,
-    goiFullAccessForOrganism: false,
-    goiHost: null,
-    goiIntegrations: [],
-    ...overrides,
-  };
-}
-
 function buildComment(overrides: Partial<MessageComment>): MessageComment {
   return {
     id: 1,
     messageId: 42,
     login: 'peer-login',
     comment: 'peer comment',
+    sigintPostName: null,
     ...overrides,
   };
 }
@@ -70,74 +54,100 @@ function buildMessage(): InboxMessage {
 }
 
 describe('loadMissingMessageCommentsForMessages', () => {
-  it('caches failed user lookups as null so repeated loads do not retry the same login', async () => {
+  it('loads comments without filtering out self-authored entries', async () => {
     fetchMessageComments.mockResolvedValue({
-      data: [{ messageId: 42, comments: [buildComment({ login: 'missing-login' })] }],
+      data: [
+        {
+          messageId: 42,
+          comments: [
+            buildComment({ login: 'peer-login', comment: 'peer comment' }),
+            buildComment({ login: 'tester', comment: 'self comment' }),
+          ],
+        },
+      ],
     });
-    fetchUserInfo.mockRejectedValue(new Error('missing'));
 
-    const setUsers = vi.fn();
     const setMessageComments = vi.fn();
 
     await loadMissingMessageCommentsForMessages([[42, buildMessage()]], {
-      authUserName: 'tester',
-      currentUser: buildUser({ name: 'tester', organismId: 1 }),
       messageComments: {},
       messageCommentsLoadVersionRef: { current: 1 },
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       setMessageComments,
-      setUsers,
-      users: {},
     });
 
-    expect(setUsers).toHaveBeenCalledTimes(1);
-    const updater = setUsers.mock.calls[0]?.[0];
+    expect(fetchMessageComments).toHaveBeenCalledTimes(1);
+    expect(setMessageComments).toHaveBeenCalledTimes(1);
+    const updater = setMessageComments.mock.calls[0]?.[0];
     expect(updater).toEqual(expect.any(Function));
-    expect(updater({})).toEqual({ 'missing-login': null });
-
-    await loadMissingMessageCommentsForMessages([[42, buildMessage()]], {
-      authUserName: 'tester',
-      currentUser: buildUser({ name: 'tester', organismId: 1 }),
-      messageComments: { 42: [] },
-      messageCommentsLoadVersionRef: { current: 2 },
-      onError: vi.fn(),
-      onUnauthorized: vi.fn().mockReturnValue(false),
-      setMessageComments,
-      setUsers,
-      users: { 'missing-login': null },
+    expect(updater({})).toEqual({
+      42: [
+        buildComment({ login: 'peer-login', comment: 'peer comment' }),
+        buildComment({ login: 'tester', comment: 'self comment' }),
+      ],
     });
-
-    expect(fetchUserInfo).toHaveBeenCalledTimes(1);
   });
 
-  it('does not surface stale per-login lookup failures after the request version changes', async () => {
+  it('does not surface stale loads after the request version changes', async () => {
     fetchMessageComments.mockResolvedValue({
       data: [{ messageId: 42, comments: [buildComment({ login: 'stale-login' })] }],
     });
-    fetchUserInfo.mockRejectedValue(new Error('stale'));
 
-    const setUsers = vi.fn();
     const setMessageComments = vi.fn();
     const onError = vi.fn();
     const versionRef = { current: 1 };
 
     const promise = loadMissingMessageCommentsForMessages([[42, buildMessage()]], {
-      authUserName: 'tester',
-      currentUser: buildUser({ name: 'tester', organismId: 1 }),
       messageComments: {},
       messageCommentsLoadVersionRef: versionRef,
       onError,
       onUnauthorized: vi.fn().mockReturnValue(false),
       setMessageComments,
-      setUsers,
-      users: {},
     });
 
     versionRef.current = 2;
     await promise;
 
     expect(onError).not.toHaveBeenCalled();
-    expect(setUsers).not.toHaveBeenCalled();
+    expect(setMessageComments).not.toHaveBeenCalled();
+  });
+
+  it('preserves post-authored comments', async () => {
+    fetchMessageComments.mockResolvedValue({
+      data: [
+        {
+          messageId: 42,
+          comments: [
+            buildComment({
+              login: 'system',
+              sigintPostName: 'Пост Альфа',
+              comment: 'auto comment',
+            }),
+          ],
+        },
+      ],
+    });
+
+    const setMessageComments = vi.fn();
+
+    await loadMissingMessageCommentsForMessages([[42, buildMessage()]], {
+      messageComments: {},
+      messageCommentsLoadVersionRef: { current: 1 },
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      setMessageComments,
+    });
+
+    const updater = setMessageComments.mock.calls[0]?.[0];
+    expect(updater({})).toEqual({
+      42: [
+        buildComment({
+          login: 'system',
+          sigintPostName: 'Пост Альфа',
+          comment: 'auto comment',
+        }),
+      ],
+    });
   });
 });
