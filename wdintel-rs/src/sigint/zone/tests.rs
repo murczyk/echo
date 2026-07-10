@@ -68,6 +68,52 @@ fn test_keep_existing_my_admin_group_user_outside_organism() {
     .unwrap();
 }
 
+#[test]
+fn test_group_requests_default_missing_organism_ids() {
+    let update_req: ZoneDatasourceGroupUpdateReq =
+        serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "is_secret": true,
+            "interseption_kind": null,
+            "disable_network_assignment": null,
+            "user_logins": [],
+            "admin_logins": [],
+            "short_note": null,
+            "long_note": null,
+            "area_of_responsibility_id": null,
+            "area_of_responsibility_ids": null
+        }))
+        .unwrap();
+    assert!(update_req.organism_ids.is_empty());
+
+    let add_req: ZoneDatasourceGroupAddReq =
+        serde_json::from_value(serde_json::json!({
+            "zone_id": 1,
+            "datasource_id": 2,
+            "is_secret": true,
+            "interseption_kind": null,
+            "master_key": "group-key",
+            "user_logins": [],
+            "admin_logins": [],
+            "short_note": null,
+            "long_note": null
+        }))
+        .unwrap();
+    assert!(add_req.organism_ids.is_empty());
+
+    let my_admin_req: MyAdminSignalGroupUpdateReq =
+        serde_json::from_value(serde_json::json!({
+            "master_key": "group-key",
+            "is_secret": true,
+            "disable_network_assignment": false,
+            "user_logins": [],
+            "admin_logins": [],
+            "area_of_responsibility_ids": null
+        }))
+        .unwrap();
+    assert!(my_admin_req.organism_ids.is_empty());
+}
+
 #[serial]
 #[tokio::test]
 async fn test_collect_active_organism_logins_excludes_deleted() {

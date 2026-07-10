@@ -17,7 +17,7 @@ const fetchCurrentUserMock = vi.hoisted(() =>
 const listMyAdminGroupsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
 const updateMyAdminGroupMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue({ logins: [], areasOfResponsibility: [] }),
+  vi.fn().mockResolvedValue({ logins: [], organisms: [], areasOfResponsibility: [] }),
 );
 
 vi.mock('@mui/material', () => ({
@@ -243,6 +243,7 @@ vi.mock('./SettingsMyOrganismSection', () => ({
 }));
 
 import { SettingsNeoPage } from './index';
+import { preserveUnknownOrganismIds } from './SettingsMyGroupsSection';
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -651,6 +652,16 @@ describe('SettingsNeoPage', () => {
         adminLogins: ['admin-a'],
       }),
     );
+  });
+
+  it('preserves hidden existing organism ids when selection changes', () => {
+    expect(
+      preserveUnknownOrganismIds(
+        [{ id: 7, name: 'Own Org' }],
+        [7, 8],
+        [{ id: 7, name: 'Own Org' }],
+      ),
+    ).toEqual([8, 7]);
   });
 
   it('does not save my group edits without admins', async () => {

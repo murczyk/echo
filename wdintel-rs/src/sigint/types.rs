@@ -92,6 +92,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub user_logins: Vec<String>,
+    #[serde(default)]
     pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
@@ -111,6 +112,7 @@ pub struct ZoneDatasourceGroupAddReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub master_key: String,
     pub user_logins: Vec<String>,
+    #[serde(default)]
     pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
@@ -160,6 +162,7 @@ pub struct MyAdminSignalGroupUpdateReq {
     pub is_secret: bool,
     pub disable_network_assignment: bool,
     pub user_logins: Vec<String>,
+    #[serde(default)]
     pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,

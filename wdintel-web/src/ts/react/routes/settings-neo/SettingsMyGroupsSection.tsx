@@ -137,6 +137,18 @@ function selectedOrganisms(selectedIds: number[], options: MyOrganism[]) {
     .filter(Boolean) as MyOrganism[];
 }
 
+export function preserveUnknownOrganismIds(
+  selectedOrganisms: MyOrganism[],
+  previousIds: number[],
+  options: MyOrganism[],
+) {
+  const optionIds = new Set(options.map((organism) => organism.id));
+  return [
+    ...previousIds.filter((id) => !optionIds.has(id)),
+    ...selectedOrganisms.map((organism) => organism.id),
+  ];
+}
+
 function DisableNetworkAssignmentLabel() {
   return (
     <Box
@@ -399,7 +411,11 @@ function MyGroupEditDialog(props: {
               editDialog &&
               setEditDialog({
                 ...editDialog,
-                selectedOrganismIds: value.map((organism) => organism.id),
+                selectedOrganismIds: preserveUnknownOrganismIds(
+                  value,
+                  editDialog.selectedOrganismIds,
+                  props.organisms,
+                ),
               })
             }
             renderOption={(optionProps, option) => {
