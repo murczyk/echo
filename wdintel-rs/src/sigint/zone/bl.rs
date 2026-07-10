@@ -15,6 +15,7 @@ pub struct BlSzdGroupUpdateRes {
     pub disable_network_assignment: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
+    pub allowed_organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -27,6 +28,7 @@ pub async fn bl_szd_group_update(
 ) -> Result<BlSzdGroupUpdateRes, AppError> {
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
+        req.organism_ids.clone(),
         req.admin_logins.clone(),
         req.is_secret,
         req.short_note.clone(),
@@ -37,15 +39,22 @@ pub async fn bl_szd_group_update(
     .await
     .c(h!())?;
 
-    // Fetch updated allowed users
-    let allowed_users = secret_group_user::Entity::find()
-        .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
-        .all(txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|u| u.login)
-        .collect::<Vec<_>>();
+    let allowed_users = collect_direct_secret_group_users(
+        vec![szd.group_master_key.clone()],
+        txn,
+    )
+    .await
+    .c(h!())?
+    .remove(&szd.group_master_key)
+    .unwrap_or_default();
+    let allowed_organism_ids = collect_secret_group_organism_ids(
+        vec![szd.group_master_key.clone()],
+        txn,
+    )
+    .await
+    .c(h!())?
+    .remove(&szd.group_master_key)
+    .unwrap_or_default();
 
     // Fetch updated is_secret and other group attributes
 
@@ -113,6 +122,7 @@ pub async fn bl_szd_group_update(
         disable_network_assignment,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
+        allowed_organism_ids,
         admin_logins: collect_signal_group_admins(
             vec![szd.group_master_key.clone()],
             txn,
@@ -222,6 +232,7 @@ pub async fn update_group_interseption_kind_if_enabled(
 
 pub async fn bl_zones_datasources_group_update_or_add(
     user_logins: Vec<String>,
+    organism_ids: Vec<i64>,
     admin_logins: Vec<String>,
     is_secret: bool,
     short_note: Option<String>,
@@ -268,6 +279,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
 
         update_signal_group_access_and_admins(
             user_logins,
+            organism_ids,
             admin_logins,
             is_secret,
             &master_key,
@@ -281,6 +293,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
 
 pub async fn update_signal_group_access_and_admins(
     user_logins: Vec<String>,
+    organism_ids: Vec<i64>,
     admin_logins: Vec<String>,
     is_secret: bool,
     master_key: &str,
@@ -299,28 +312,110 @@ pub async fn update_signal_group_access_and_admins(
         group.is_secret = Set(is_secret);
         group.update(txn).await.c(h!())?;
 
-        secret_group_user::Entity::delete_many()
-            .filter(secret_group_user::Column::MasterKey.eq(master_key))
-            .exec(txn)
-            .await
-            .c(h!())?;
-
-        for login in user_logins {
-            secret_group_user::ActiveModel {
-                master_key: Set(master_key.to_string()),
-                login: Set(login),
-                ..Default::default()
-            }
-            .insert(txn)
-            .await
-            .c(h!())?;
-        }
+        replace_secret_group_access(
+            txn,
+            master_key,
+            is_secret,
+            user_logins,
+            organism_ids,
+        )
+        .await
+        .c(h!())?;
 
         replace_group_admin_logins(txn, master_key, admin_logins)
             .await
             .c(h!())?;
     }
     Ok(())
+}
+
+async fn replace_secret_group_access(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    is_secret: bool,
+    user_logins: Vec<String>,
+    organism_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    secret_group_user::Entity::delete_many()
+        .filter(secret_group_user::Column::MasterKey.eq(master_key))
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    secret_group_organism::Entity::delete_many()
+        .filter(secret_group_organism::Column::MasterKey.eq(master_key))
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    if !is_secret {
+        return Ok(());
+    }
+
+    for login in normalize_login_list(user_logins) {
+        secret_group_user::ActiveModel {
+            id: NotSet,
+            master_key: Set(master_key.to_string()),
+            login: Set(login),
+            secret_group_organism_id: Set(None),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+
+    for organism_id in
+        load_active_organism_ids(txn, organism_ids).await.c(h!())?
+    {
+        secret_group_organism::ActiveModel {
+            id: NotSet,
+            master_key: Set(master_key.to_string()),
+            organism_id: Set(organism_id),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+
+    refresh_secret_group_memberships(txn).await.c(h!())?;
+    Ok(())
+}
+
+fn normalize_login_list(logins: Vec<String>) -> Vec<String> {
+    logins
+        .into_iter()
+        .map(|login| login.trim().to_string())
+        .filter(|login| !login.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+async fn load_active_organism_ids(
+    txn: &DatabaseTransaction,
+    organism_ids: Vec<i64>,
+) -> Result<Vec<i64>, AppError> {
+    let organism_ids = organism_ids
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if organism_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    Ok(organism::Entity::find()
+        .filter(organism::Column::Id.eq_any(organism_ids))
+        .filter(organism::Column::Enabled.eq(true))
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(organism::Column::Id)
+        .order_by_asc(organism::Column::Id)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())?)
 }
 
 pub async fn replace_group_admin_logins(
@@ -401,6 +496,186 @@ where
     Ok(res)
 }
 
+pub async fn collect_direct_secret_group_users<'a, 'async_trait, C>(
+    master_keys: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, Vec<String>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if master_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq_any(master_keys))
+        .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+        .select_only()
+        .column(secret_group_user::Column::MasterKey)
+        .column(secret_group_user::Column::Login)
+        .order_by_asc(secret_group_user::Column::Login)
+        .into_tuple::<(String, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res = HashMap::<String, Vec<String>>::new();
+    for (master_key, login) in rows {
+        res.entry(master_key).or_default().push(login);
+    }
+    Ok(res)
+}
+
+pub async fn collect_secret_group_organism_ids<'a, 'async_trait, C>(
+    master_keys: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, Vec<i64>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if master_keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = secret_group_organism::Entity::find()
+        .filter(secret_group_organism::Column::MasterKey.eq_any(master_keys))
+        .select_only()
+        .column(secret_group_organism::Column::MasterKey)
+        .column(secret_group_organism::Column::OrganismId)
+        .order_by_asc(secret_group_organism::Column::OrganismId)
+        .into_tuple::<(String, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res = HashMap::<String, Vec<i64>>::new();
+    for (master_key, organism_id) in rows {
+        res.entry(master_key).or_default().push(organism_id);
+    }
+    Ok(res)
+}
+
+pub async fn refresh_secret_group_memberships(
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let all_invites = secret_group_organism::Entity::find()
+        .all(txn)
+        .await
+        .c(h!())?;
+    if all_invites.is_empty() {
+        return Ok(());
+    }
+
+    let invited_organism_ids = all_invites
+        .iter()
+        .map(|invite| invite.organism_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let active_organism_ids = organism::Entity::find()
+        .filter(organism::Column::Id.eq_any(invited_organism_ids.clone()))
+        .filter(organism::Column::Enabled.eq(true))
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(organism::Column::Id)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    let mut valid_invites = vec![];
+    for invite in all_invites {
+        if active_organism_ids.contains(&invite.organism_id) {
+            valid_invites.push(invite);
+        } else {
+            invite.delete(txn).await.c(h!())?;
+        }
+    }
+
+    if valid_invites.is_empty() {
+        return Ok(());
+    }
+
+    let logins = login::Entity::find()
+        .filter(login::Column::OrganismId.eq_any(invited_organism_ids))
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    let mut logins_by_organism = HashMap::<i64, Vec<String>>::new();
+    for login in logins {
+        if let Some(organism_id) = login.organism_id {
+            logins_by_organism
+                .entry(organism_id)
+                .or_default()
+                .push(login.login);
+        }
+    }
+
+    let mut desired = HashSet::<(i64, String, String)>::new();
+    for invite in &valid_invites {
+        let Some(logins) = logins_by_organism.get(&invite.organism_id) else {
+            continue;
+        };
+        for login in logins {
+            desired.insert((
+                invite.id,
+                invite.master_key.clone(),
+                login.clone(),
+            ));
+        }
+    }
+
+    let existing = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::SecretGroupOrganismId.is_not_null())
+        .all(txn)
+        .await
+        .c(h!())?;
+    let mut existing_keys = HashSet::new();
+    for secret_group_user in existing {
+        let Some(secret_group_organism_id) =
+            secret_group_user.secret_group_organism_id
+        else {
+            continue;
+        };
+        let key = (
+            secret_group_organism_id,
+            secret_group_user.master_key.clone(),
+            secret_group_user.login.clone(),
+        );
+        if desired.contains(&key) {
+            existing_keys.insert(key);
+        } else {
+            secret_group_user.delete(txn).await.c(h!())?;
+        }
+    }
+
+    for (secret_group_organism_id, master_key, login) in desired {
+        if existing_keys.contains(&(
+            secret_group_organism_id,
+            master_key.clone(),
+            login.clone(),
+        )) {
+            continue;
+        }
+        secret_group_user::ActiveModel {
+            id: NotSet,
+            master_key: Set(master_key),
+            login: Set(login),
+            secret_group_organism_id: Set(Some(secret_group_organism_id)),
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+
+    Ok(())
+}
+
 pub async fn unlink_reserve_group_dupes<'a, 'async_trait, C>(
     dbx: &'a C,
 ) -> anyhow::Result<()>
@@ -460,7 +735,6 @@ pub async fn bl_szd_groups_list(
 ) -> Result<BlSzdGroupsListRes, AppError> {
     #[derive(FromQueryResult, Debug)]
     struct Res {
-        login: Option<String>,
         id: i64,
         group_master_key: String,
         is_secret: bool,
@@ -483,10 +757,6 @@ pub async fn bl_szd_groups_list(
             JoinType::LeftJoin,
             signal_group::Relation::GroupAdminData.def(),
         )
-        .join(
-            JoinType::LeftJoin,
-            signal_group::Relation::SecretGroupUser.def(),
-        )
         .column_as(
             sigint_zone_datasource::Column::GroupMasterKey,
             "group_master_key",
@@ -498,7 +768,6 @@ pub async fn bl_szd_groups_list(
             signal_group::Column::DisableNetworkAssignment,
             "disable_network_assignment",
         )
-        .column_as(secret_group_user::Column::Login, "login")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -518,24 +787,12 @@ pub async fn bl_szd_groups_list(
             InterseptionKind,
             bool,
             i64,
-            Vec<String>,
             Option<String>,
             Option<String>,
         ),
     >::new();
     for row in rows {
-        if let Some((_, _, _, _, login_vec, _, _)) =
-            res.get_mut(&row.group_master_key)
-        {
-            if let Some(user_login) = row.login {
-                login_vec.push(user_login);
-            }
-        } else {
-            let logins = if let Some(user_login) = row.login {
-                vec![user_login]
-            } else {
-                vec![]
-            };
+        if !res.contains_key(&row.group_master_key) {
             res.insert(
                 row.group_master_key,
                 (
@@ -543,7 +800,6 @@ pub async fn bl_szd_groups_list(
                     row.interseption_kind.into(),
                     row.disable_network_assignment,
                     row.id,
-                    logins,
                     row.short_note,
                     row.long_note,
                 ),
@@ -556,7 +812,14 @@ pub async fn bl_szd_groups_list(
         crate::sigint::aor::bl::collect_group_aors(keys.clone(), txn)
             .await
             .c(h!())?;
-    let group_admins = collect_signal_group_admins(keys, txn).await.c(h!())?;
+    let group_admins = collect_signal_group_admins(keys.clone(), txn)
+        .await
+        .c(h!())?;
+    let group_users = collect_direct_secret_group_users(keys.clone(), txn)
+        .await
+        .c(h!())?;
+    let group_organisms =
+        collect_secret_group_organism_ids(keys, txn).await.c(h!())?;
 
     let groups = res
         .into_iter()
@@ -568,7 +831,6 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     szd_id,
-                    allowed_users,
                     short_note,
                     long_note,
                 ),
@@ -580,7 +842,14 @@ pub async fn bl_szd_groups_list(
                     is_group_secret: is_secret,
                     interseption_kind,
                     disable_network_assignment,
-                    allowed_users,
+                    allowed_users: group_users
+                        .get(&master_key)
+                        .cloned()
+                        .unwrap_or_default(),
+                    allowed_organism_ids: group_organisms
+                        .get(&master_key)
+                        .cloned()
+                        .unwrap_or_default(),
                     admin_logins: group_admins
                         .get(&master_key)
                         .cloned()

@@ -38,6 +38,7 @@ import {
   AreaOfResponsibility,
   Datasource,
   InterseptionKind,
+  Organism,
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupEntry,
@@ -76,6 +77,7 @@ import {
 import { listAors } from '../../services/api/aor';
 import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
+import { listOrganisms } from '../../services/api/organisms';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import {
   addZoneDatasourceGroup,
@@ -137,6 +139,7 @@ function InterseptionKindSelect({
 
 type DatasourceEntry = [number, Datasource];
 type ZoneEntry = [number, SigintZone];
+type OrganismById = Map<number, Organism>;
 type ZoneGroupRow = {
   id: string;
   zoneId: number;
@@ -151,6 +154,7 @@ type OrphanAssignState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
+  selectedOrganismIds: number[];
   selectedAdmins: string[];
   isSaving: boolean;
   error: string | null;
@@ -165,6 +169,7 @@ type GroupEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
+  selectedOrganismIds: number[];
   selectedAdmins: string[];
   shortNote: string;
   longNote: string;
@@ -398,6 +403,31 @@ function getDatasource(datasourceId: number | null, datasourceById: Map<number, 
   return datasourceById.get(datasourceId) ?? null;
 }
 
+function getOrganismLabel(organismId: number, organismById: OrganismById) {
+  const organism = organismById.get(organismId);
+  return organism?.name || `#${organismId}`;
+}
+
+function buildAccessLabel(
+  users: string[] | null | undefined,
+  organismIds: number[] | null | undefined,
+  organismById: OrganismById,
+) {
+  const parts: string[] = [];
+  if (users && users.length > 0) parts.push(users.join(', '));
+
+  const organismLabels = (organismIds ?? []).map((id) => getOrganismLabel(id, organismById));
+  if (organismLabels.length > 0) parts.push(`Організми: ${organismLabels.join(', ')}`);
+
+  return parts.length > 0 ? parts.join('; ') : 'без обмежень';
+}
+
+function selectedOrganisms(selectedIds: number[], options: Organism[]) {
+  return selectedIds
+    .map((id) => options.find((organism) => organism.id === id))
+    .filter(Boolean) as Organism[];
+}
+
 function renderDatasourceCell(
   datasourceId: number | null,
   datasourceById: Map<number, Datasource>,
@@ -502,6 +532,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
       allowedUsers: [],
+      allowedOrganismIds: [],
       adminLogins: [],
       areasOfResponsibility: null,
       shortNote: null,
@@ -894,6 +925,7 @@ function ZoneGroupsTable(props: {
   rows: ZoneGroupRow[];
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
+  organismById: OrganismById;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
@@ -1019,12 +1051,17 @@ function ZoneGroupsTable(props: {
         header: 'Доступ',
         id: 'access',
         accessorFn: (row) =>
-          row?.group?.allowedUsers?.length > 0 ? row.group.allowedUsers.join(', ') : 'без обмежень',
+          buildAccessLabel(
+            row?.group?.allowedUsers,
+            row?.group?.allowedOrganismIds,
+            props.organismById,
+          ),
         Cell: ({ row }) => {
-          const label =
-            row.original?.group?.allowedUsers?.length > 0
-              ? row.original.group.allowedUsers.join(', ')
-              : 'без обмежень';
+          const label = buildAccessLabel(
+            row.original?.group?.allowedUsers,
+            row.original?.group?.allowedOrganismIds,
+            props.organismById,
+          );
           return (
             <Tooltip title={label}>
               <span>{label}</span>
@@ -1107,6 +1144,7 @@ function ZoneGroupsTable(props: {
     [
       isLoading,
       props.datasourceById,
+      props.organismById,
       props.groupInfos,
       props.aorFilterOptions,
       timeline.data,
@@ -1319,6 +1357,7 @@ function ZoneGroupsSection(props: {
   rows: ZoneGroupRow[];
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
+  organismById: OrganismById;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
@@ -1338,6 +1377,7 @@ function ZoneGroupsSection(props: {
           rows={props.rows}
           loading={props.loading}
           datasourceById={props.datasourceById}
+          organismById={props.organismById}
           groupInfos={props.groupInfos}
           aorFilterOptions={props.aorFilterOptions}
           onEdit={props.onEdit}

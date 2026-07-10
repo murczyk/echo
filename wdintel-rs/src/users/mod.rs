@@ -225,6 +225,9 @@ pub async fn update_login(
             .await
             .c(h!())?;
     }
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
@@ -272,16 +275,21 @@ pub async fn delete_login(
         .await
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.clone()))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.deleted = Set(true);
-    login_obj.update(&env.dbx).await.c(h!())?;
+    login_obj.update(&txn).await.c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -302,8 +310,9 @@ pub async fn create_login(
     let hash =
         argon2::hash_encoded(req.password.as_bytes(), salt, &config).c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     let res = insert_login(
-        &env.dbx,
+        &txn,
         login::ActiveModel {
             // Make sure delta link is cleared for regular accounts
             delta_login_id: Set(None),
@@ -329,7 +338,7 @@ pub async fn create_login(
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
         .filter(organism::Column::DeletedPermanently.eq(false))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
     {
@@ -337,7 +346,7 @@ pub async fn create_login(
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
     };
 
-    Ok(Json(Login {
+    let result = Login {
         delta_login: None,
         organism_name,
         organism_enabled,
@@ -348,7 +357,7 @@ pub async fn create_login(
         sigint_zone_id: res.sigint_zone_id,
         sigint_zone_name: sigint_zone::Entity::find()
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
-            .one(&env.dbx)
+            .one(&txn)
             .await
             .c(h!())?
             .map(|sz| sz.name),
@@ -360,7 +369,12 @@ pub async fn create_login(
             .deactivation_reason
             .map(DeactivationReasonType::from),
         description: res.description,
-    }))
+    };
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(result))
 }
 
 #[post("/api/login/create-delta")]
@@ -857,6 +871,9 @@ pub async fn register_user(
     .insert(&txn)
     .await
     .c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(())
 }
@@ -1266,6 +1283,9 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
     };
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(result)
 }
