@@ -225,6 +225,9 @@ pub async fn update_login(
             .await
             .c(h!())?;
     }
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
@@ -272,16 +275,21 @@ pub async fn delete_login(
         .await
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.clone()))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.deleted = Set(true);
-    login_obj.update(&env.dbx).await.c(h!())?;
+    login_obj.update(&txn).await.c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -302,8 +310,9 @@ pub async fn create_login(
     let hash =
         argon2::hash_encoded(req.password.as_bytes(), salt, &config).c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     let res = insert_login(
-        &env.dbx,
+        &txn,
         login::ActiveModel {
             // Make sure delta link is cleared for regular accounts
             delta_login_id: Set(None),
@@ -329,7 +338,7 @@ pub async fn create_login(
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
         .filter(organism::Column::DeletedPermanently.eq(false))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
     {
@@ -337,7 +346,7 @@ pub async fn create_login(
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
     };
 
-    Ok(Json(Login {
+    let result = Login {
         delta_login: None,
         organism_name,
         organism_enabled,
@@ -348,7 +357,7 @@ pub async fn create_login(
         sigint_zone_id: res.sigint_zone_id,
         sigint_zone_name: sigint_zone::Entity::find()
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
-            .one(&env.dbx)
+            .one(&txn)
             .await
             .c(h!())?
             .map(|sz| sz.name),
@@ -360,7 +369,12 @@ pub async fn create_login(
             .deactivation_reason
             .map(DeactivationReasonType::from),
         description: res.description,
-    }))
+    };
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(result))
 }
 
 #[post("/api/login/create-delta")]
@@ -857,6 +871,9 @@ pub async fn register_user(
     .insert(&txn)
     .await
     .c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(())
 }
@@ -1266,6 +1283,9 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
     };
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(result)
 }
@@ -1507,6 +1527,7 @@ async fn inactive_users_worker_1(
 ) -> anyhow::Result<()> {
     let threshold = Utc::now().naive_utc()
         - Duration::days(INACTIVE_USERS_DEACTIVATE_AFTER_DAYS);
+    let txn = dbx.begin().await.c(h!())?;
 
     // Find all active users whose last_active_at is older than threshold
     let inactive_users = login::Entity::find()
@@ -1522,20 +1543,29 @@ async fn inactive_users_worker_1(
             "NOT (roles @> $1::jsonb)",
             vec![r#"["NoAutoLogout"]"#.to_string()],
         ))
-        .all(dbx)
+        .all(&txn)
         .await
         .c(h!())?;
 
+    let deactivated_any = !inactive_users.is_empty();
     for user in inactive_users {
         let login_name = user.login.clone();
         let mut model = user.into_active_model();
         model.deleted = Set(true);
         model.deactivation_reason =
             Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
-        model.update(dbx).await.c(h!())?;
+        model.update(&txn).await.c(h!())?;
 
         info!("> Deactivating user {login_name} due to inactivity");
     }
+
+    if deactivated_any {
+        crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+            .await
+            .c(h!())?;
+    }
+
+    txn.commit().await.c(h!())?;
     debug!("inactive_users_worker completed");
     Ok(())
 }
@@ -1562,7 +1592,9 @@ pub async fn update_last_active_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{
+        cleanup, mk_login, mk_organism, mk_signal_group,
+    };
     use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
@@ -1860,5 +1892,92 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(login.deleted_permanently);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn inactive_users_worker_refreshes_secret_group_memberships() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("inactive-secret-group-user".to_string()),
+                organism_id: Set(Some(organism.id)),
+                last_active_at: Set(Some(
+                    Utc::now().naive_utc()
+                        - Duration::days(
+                            INACTIVE_USERS_DEACTIVATE_AFTER_DAYS + 1,
+                        ),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        crate::sigint::zone::bl::update_signal_group_access_and_admins(
+            vec![],
+            vec![organism.id],
+            vec![],
+            true,
+            &group.master_key,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let derived_count = secret_group_user::Entity::find()
+            .filter(
+                secret_group_user::Column::MasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .filter(secret_group_user::Column::Login.eq(login.login.clone()))
+            .filter(
+                secret_group_user::Column::SecretGroupOrganismId.is_not_null(),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(derived_count, 1);
+
+        inactive_users_worker_1(&env.dbx).await.unwrap();
+
+        let login = login::Entity::find_by_id(login.login.clone())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(login.deleted);
+        let derived_count = secret_group_user::Entity::find()
+            .filter(
+                secret_group_user::Column::MasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .filter(secret_group_user::Column::Login.eq(login.login))
+            .filter(
+                secret_group_user::Column::SecretGroupOrganismId.is_not_null(),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(derived_count, 0);
     }
 }

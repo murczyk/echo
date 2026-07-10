@@ -41,6 +41,8 @@ pub enum Relation {
     NetworkInvalidationTask,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
+    #[sea_orm(has_many = "super::secret_group_organism::Entity")]
+    SecretGroupOrganism,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
@@ -80,6 +82,12 @@ impl Related<super::network_invalidation_task::Entity> for Entity {
 impl Related<super::organism_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrganismGroup.def()
+    }
+}
+
+impl Related<super::secret_group_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SecretGroupOrganism.def()
     }
 }
 

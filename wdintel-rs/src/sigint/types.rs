@@ -1,6 +1,7 @@
 use crate::types::*;
 
 use crate::entities::sea_orm_active_enums as db_enums;
+use crate::organism::types::MyOrganism;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
@@ -68,6 +69,7 @@ pub struct ZoneDatasourceGroup {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub allowed_users: Vec<String>,
+    pub allowed_organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -90,6 +92,8 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub user_logins: Vec<String>,
+    #[serde(default)]
+    pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -108,6 +112,8 @@ pub struct ZoneDatasourceGroupAddReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub master_key: String,
     pub user_logins: Vec<String>,
+    #[serde(default)]
+    pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -143,6 +149,7 @@ pub struct MyAdminSignalGroup {
     pub is_group_secret: bool,
     pub disable_network_assignment: bool,
     pub allowed_users: Vec<SignalGroupLogin>,
+    pub allowed_organism_ids: Vec<i64>,
     pub admin_logins: Vec<SignalGroupLogin>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
@@ -155,6 +162,8 @@ pub struct MyAdminSignalGroupUpdateReq {
     pub is_secret: bool,
     pub disable_network_assignment: bool,
     pub user_logins: Vec<String>,
+    #[serde(default)]
+    pub organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
 }
@@ -171,6 +180,7 @@ pub struct MyAdminSignalGroupEditReferenceReq {
 )]
 pub struct MyAdminSignalGroupEditReferenceRsp {
     pub logins: Vec<String>,
+    pub organisms: Vec<MyOrganism>,
     pub areas_of_responsibility: Vec<AreaOfResponsibility>,
 }
 

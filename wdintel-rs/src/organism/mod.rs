@@ -113,16 +113,21 @@ pub async fn delete_organism(
         .await
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     if let Some(model) = organism::Entity::find_by_id(req.0)
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
     {
         let mut rec = model.into_active_model();
         rec.enabled = Set(false);
         rec.deleted_permanently = Set(true);
-        rec.update(&env.dbx).await.c(h!())?;
+        rec.update(&txn).await.c(h!())?;
     }
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(()))
 }
@@ -286,6 +291,9 @@ pub async fn update_organism(
 
     let txn = env.dbx.begin().await.c(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     let login_counts =
         fetch_login_counts(&env.dbx, &[organism.id]).await.c(h!())?;

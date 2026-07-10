@@ -1787,6 +1787,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
+  allowedOrganismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1809,6 +1810,7 @@ export type ZoneDatasourceGroupAddReq = {
   interseptionKind: InterseptionKind | null;
   masterKey: string;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1820,6 +1822,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1840,6 +1843,7 @@ export type MyAdminSignalGroup = {
   isGroupSecret: boolean;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<SignalGroupLogin>;
+  allowedOrganismIds: Array<number>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
 };
@@ -1849,6 +1853,7 @@ export type MyAdminSignalGroupUpdateReq = {
   isSecret: boolean;
   disableNetworkAssignment: boolean;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   areaOfResponsibilityIds: Array<number> | null;
 };
@@ -1859,6 +1864,7 @@ export type MyAdminSignalGroupEditReferenceReq = {
 
 export type MyAdminSignalGroupEditReferenceRsp = {
   logins: Array<string>;
+  organisms: Array<MyOrganism>;
   areasOfResponsibility: Array<AreaOfResponsibility>;
 };
 

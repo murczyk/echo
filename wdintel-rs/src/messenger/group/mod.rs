@@ -516,13 +516,19 @@ where
         load_organism_group_ids(txn, organism_id)
             .await
             .context(h!())?;
+    let mut available_keys = organism_groups.available_keys;
+    for master_key in
+        load_secret_group_organism_master_keys(txn, organism_id).await?
+    {
+        if !available_keys.contains(&master_key) {
+            available_keys.push(master_key);
+        }
+    }
+
     let group_query = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
-        .filter(
-            signal_group::Column::MasterKey
-                .eq_any(organism_groups.available_keys),
-        )
+        .filter(signal_group::Column::MasterKey.eq_any(available_keys))
         .filter(
             Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
                 .equals((
@@ -566,6 +572,24 @@ where
         .collect();
 
     Ok(organism_groups_obj)
+}
+
+async fn load_secret_group_organism_master_keys<'a, 'async_trait, C>(
+    txn: &'a C,
+    organism_id: i64,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(secret_group_organism::Entity::find()
+        .filter(secret_group_organism::Column::OrganismId.eq(organism_id))
+        .select_only()
+        .column(secret_group_organism::Column::MasterKey)
+        .distinct()
+        .into_tuple::<String>()
+        .all(txn)
+        .await
+        .c(h!())?)
 }
 
 /// Gets group keys similar to get_identity_sigint_groups but without the import group id

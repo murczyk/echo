@@ -80,6 +80,7 @@ pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::restream::Entity as Restream;
 pub use super::restream_setup::Entity as RestreamSetup;
 pub use super::seaql_im_migrations::Entity as SeaqlImMigrations;
+pub use super::secret_group_organism::Entity as SecretGroupOrganism;
 pub use super::secret_group_user::Entity as SecretGroupUser;
 pub use super::settlement::Entity as Settlement;
 pub use super::sigint_bookmark::Entity as SigintBookmark;
