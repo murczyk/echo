@@ -992,6 +992,7 @@ leftColumn ( messageId, message ) ps model =
                                 ]
                             ]
                         ]
+        -- Classic duty shows only the current user's editable comment; peer/post comments belong to analysis.
         , flip HtmlX.viewMaybe message.extendedForm <|
             \extendedForm ->
                 div

@@ -2944,6 +2944,7 @@ networkUnitEncoder struct =
 
 type alias MessageIdsReq =
     { messageIds : List (Int)
+    , inboxReq : Maybe (InboxMessagesReq)
     }
 
 
@@ -2951,6 +2952,7 @@ messageIdsReqEncoder : MessageIdsReq -> Json.Encode.Value
 messageIdsReqEncoder struct =
     Json.Encode.object
         [ ( "message_ids", (Json.Encode.list (Json.Encode.int)) struct.messageIds )
+        , ( "inbox_req", (Maybe.withDefault Json.Encode.null << Maybe.map (inboxMessagesReqEncoder)) struct.inboxReq )
         ]
 
 
@@ -10454,6 +10456,7 @@ messageIdsReqDecoder : Json.Decode.Decoder MessageIdsReq
 messageIdsReqDecoder =
     Json.Decode.succeed MessageIdsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_req" (Json.Decode.nullable (inboxMessagesReqDecoder))))
 
 
 messageIdsRspDecoder : Json.Decode.Decoder MessageIdsRsp

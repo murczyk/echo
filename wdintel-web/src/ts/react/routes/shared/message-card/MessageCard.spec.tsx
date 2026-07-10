@@ -83,6 +83,10 @@ vi.mock('./MessageCardDocumentPreviewDialog', () => ({
     open ? <div role="dialog">document-dialog</div> : null,
 }));
 
+vi.mock('./MessageCardWatermark', () => ({
+  MessageCardWatermark: () => null,
+}));
+
 /** Narrow width for tag-row measurement in compact layout (MessageCardTagChips `useLayoutEffect`). */
 const TAG_ROW_MEASURE_WIDTH_PX = 200;
 const LIGHT_CARD_BG = '#F8F9FB';
@@ -1580,7 +1584,7 @@ describe('MessageCard', () => {
         {
           id: 11,
           messageId: 42,
-          comment: 'visible comment',
+          comment: 'peer comment',
           login: 'peer-login',
           sigintPostName: null,
         },
@@ -1595,8 +1599,8 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('visible comment');
     expect(view.container.textContent).toContain('peer-login');
+    expect(view.container.textContent).toContain('peer comment');
     expect(view.container.textContent).toContain('hidden comment');
   });
 

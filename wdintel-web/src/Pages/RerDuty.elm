@@ -270,7 +270,7 @@ update shared user msg model =
 
                         else
                             ( model
-                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids }
+                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids, inboxReq = Nothing }
                             )
                    )
 

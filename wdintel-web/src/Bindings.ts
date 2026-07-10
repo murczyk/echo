@@ -1134,6 +1134,7 @@ export type NetworkUnit = {
 
 export type MessageIdsReq = {
   messageIds: Array<number>;
+  inboxReq: InboxMessagesReq | null;
 };
 
 export type MessageIdsRsp = {

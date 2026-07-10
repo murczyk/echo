@@ -108,7 +108,6 @@ export type UseAnalysisDataResult = {
   onToggleMessageTag: (messageId: number, tagId: number) => Promise<void>;
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
-  users: Record<string, User | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   reload: () => Promise<void>;
   summaryLoading: boolean;

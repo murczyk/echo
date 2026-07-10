@@ -150,7 +150,6 @@ const baseAnalysisData = {
     metadataHashes: [],
   },
   profiles: {},
-  users: {},
   refreshMapDateRange: vi.fn(),
   reload: vi.fn(),
   summaryLoading: false,

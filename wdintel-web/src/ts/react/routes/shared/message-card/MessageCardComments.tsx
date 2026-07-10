@@ -90,7 +90,12 @@ export function MessageCardComments({
         >
           <Typography
             variant="caption"
-            sx={{ fontWeight: 700, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}
+            sx={{
+              fontWeight: 700,
+              overflowWrap: 'anywhere',
+              whiteSpace: 'pre-wrap',
+              minWidth: 0,
+            }}
           >
             {commentAuthorLabel(comment, signalMessageSenderLabel)}
           </Typography>
