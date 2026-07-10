@@ -309,7 +309,7 @@ pub async fn aggregate_to_inbox_messages(
             .or_else(|| message.sender.clone());
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
             match message.callsign_tokens {
-                None => None,
+                None | Some(serde_json::Value::Null) => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
         let without_model_tags = req.without_model_tags.unwrap_or(false);
@@ -1055,9 +1055,12 @@ pub async fn submit_upsert_inbox_item(
             checked: Set(Some(message.checked)),
             reviewed: Set(Some(true)),
             unit: Set(message.unit.clone()),
-            callsign_tokens: Set(Some(
-                serde_json::to_value(&message.callsign_tokens).context(h!())?,
-            )),
+            callsign_tokens: Set(message
+                .callsign_tokens
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .context(h!())?),
             keyword_tokens: Set(None),
             lat: Set(lat),
             lng: Set(lng),
