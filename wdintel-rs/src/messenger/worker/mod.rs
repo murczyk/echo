@@ -1492,13 +1492,35 @@ async fn ensure_promoted_inbox_item(
             None,
         )
         .await;
-    crate::sigint::worker::incoming_message_after_insert(
-        txn,
-        signal_message_id,
-    )
-    .await
-    .c(h!())?;
+    index_promoted_inbox_items(txn, signal_message_id, &changed_inbox_item_ids)
+        .await
+        .c(h!())?;
     Ok(changed_inbox_item_ids)
+}
+
+async fn index_promoted_inbox_items(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    changed_inbox_item_ids: &[i64],
+) -> anyhow::Result<()> {
+    if changed_inbox_item_ids.is_empty() {
+        crate::sigint::worker::incoming_message_after_insert(
+            txn,
+            signal_message_id,
+        )
+        .await
+        .c(h!())?;
+        return Ok(());
+    }
+    for changed_inbox_item_id in changed_inbox_item_ids {
+        crate::sigint::worker::incoming_message_after_insert(
+            txn,
+            *changed_inbox_item_id,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn promoted_dedupe_signal_message_id(
@@ -2940,6 +2962,16 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+            assert_eq!(
+                sigint_search::Entity::find()
+                    .filter(
+                        sigint_search::Column::Id.eq(*changed_inbox_item_id)
+                    )
+                    .count(&env.dbx)
+                    .await
+                    .unwrap(),
+                1
+            );
             assert_eq!(
                 annotation_counts(&env.dbx, *changed_inbox_item_id).await,
                 (1, 1, 1)
