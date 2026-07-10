@@ -1649,6 +1649,7 @@ where
             deactivation_reason: Set(None),
             deleted_permanently: Set(false),
             last_release_seen: NotSet,
+            description: NotSet,
         })
         .collect::<Vec<_>>();
 

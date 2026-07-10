@@ -26,6 +26,12 @@ fn log_login_form_error(login: &str, errors: &BTreeMap<String, String>) {
     );
 }
 
+fn normalize_login_description(description: Option<String>) -> Option<String> {
+    description
+        .map(|description| description.trim().to_string())
+        .filter(|description| !description.is_empty())
+}
+
 pub async fn has_role(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &str,
@@ -200,6 +206,8 @@ pub async fn update_login(
             .clone()
             .map(DeactivationReasonEnum::from));
     }
+    login_obj.description =
+        Set(normalize_login_description(req.description.clone()));
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
@@ -239,6 +247,7 @@ pub async fn update_login(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        description: res.description,
     }))
 }
 
@@ -298,6 +307,9 @@ pub async fn create_login(
             deactivation_reason: NotSet,
             deleted_permanently: NotSet,
             last_release_seen: NotSet,
+            description: Set(normalize_login_description(
+                req.description.clone(),
+            )),
         },
     )
     .await
@@ -336,6 +348,7 @@ pub async fn create_login(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        description: res.description,
     }))
 }
 
@@ -353,11 +366,18 @@ pub async fn create_delta_login(
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
     let organism_id = Some(req.organism_id);
+    let description = req.description.clone();
 
-    let result =
-        register_delta_user(&env.dbx, login, roles, sigint_zone, organism_id)
-            .await
-            .c(h!())?;
+    let result = register_delta_user(
+        &env.dbx,
+        login,
+        roles,
+        sigint_zone,
+        organism_id,
+        description,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(result))
 }
 
@@ -385,6 +405,7 @@ pub async fn list_logins(
         organism_name: Option<String>,
         organism_enabled: Option<bool>,
         delta_login: Option<String>,
+        description: Option<String>,
     }
 
     let users_iter = login::Entity::find()
@@ -403,6 +424,7 @@ pub async fn list_logins(
             login::Column::Deleted,
             login::Column::LastActiveAt,
             login::Column::DeactivationReason,
+            login::Column::Description,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
@@ -456,6 +478,7 @@ pub async fn list_logins(
             deactivation_reason: login
                 .deactivation_reason
                 .map(DeactivationReasonType::from),
+            description: login.description,
         };
         users.push(user);
     }
@@ -818,6 +841,7 @@ pub async fn register_user(
         deactivation_reason: NotSet,
         deleted_permanently: NotSet,
         last_release_seen: NotSet,
+        description: NotSet,
     }
     .insert(&txn)
     .await
@@ -995,6 +1019,7 @@ pub async fn oneoff_register_delta_user(
         vec![ps.role.clone()],
         Some(ps.sigint_zone),
         ps.organism_id,
+        None,
     )
     .await
     .c(h!())?;
@@ -1149,6 +1174,7 @@ async fn register_delta_user(
     roles: Vec<String>,
     sigint_zone: Option<i64>,
     organism_id: Option<i64>,
+    description: Option<String>,
 ) -> Result<Login, AppError> {
     let txn = dbx.begin().await.c(h!())?;
 
@@ -1167,6 +1193,7 @@ async fn register_delta_user(
             deactivation_reason: NotSet,
             deleted_permanently: NotSet,
             last_release_seen: NotSet,
+            description: Set(normalize_login_description(description)),
         },
     )
     .await
@@ -1226,6 +1253,7 @@ async fn register_delta_user(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        description: res.description,
     };
     txn.commit().await.c(h!())?;
     Ok(result)
@@ -1559,6 +1587,7 @@ mod tests {
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
+                description: Default::default(),
             },
         )
         .await
@@ -1627,6 +1656,7 @@ mod tests {
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
+                    description: Default::default(),
                 },
             )
             .await
@@ -1695,6 +1725,7 @@ mod tests {
                     deactivation_reason: Set(None),
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
+                    description: Default::default(),
                 },
             )
             .await
@@ -1716,6 +1747,7 @@ mod tests {
                 deactivation_reason: Set(None),
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
+                description: Default::default(),
             },
         )
         .await
@@ -1765,6 +1797,7 @@ mod tests {
             deactivation_reason: Set(None),
             deleted_permanently: Set(true),
             last_release_seen: Default::default(),
+            description: Default::default(),
         }
         .insert(&env.dbx)
         .await
@@ -1785,6 +1818,7 @@ mod tests {
                 deactivation_reason: NotSet,
                 deleted_permanently: NotSet,
                 last_release_seen: Default::default(),
+                description: Default::default(),
             },
         )
         .await
