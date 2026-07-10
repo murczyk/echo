@@ -518,7 +518,7 @@ pub async fn find_duplicate_of(
         break;
     }
     info!("{db_message_id} is not a duplicate, with body {body_for_dedupe}");
-    find_duplicate_in_db(
+    let duplicate = find_duplicate_in_db(
         txn,
         body_for_dedupe,
         body,
@@ -526,6 +526,18 @@ pub async fn find_duplicate_of(
         m_timestamp,
     )
     .await
+    .c(h!())?;
+    if let Some((message, _group)) = &duplicate {
+        replace_signal_message_dedupe_key_if_value(
+            manager,
+            &key,
+            db_message_id,
+            message.id,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(duplicate)
 }
 
 async fn find_active_split_child_for_deleted_message(
@@ -1111,6 +1123,72 @@ mod tests {
             &txn,
             body,
             body,
+            None,
+            Some(ts),
+            staged_message.id,
+            &mut redis,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stored_signal_message_id: String = redis.get(&key).await.unwrap();
+
+        assert_eq!(duplicate.0.id, active_message.id);
+        assert_eq!(stored_signal_message_id, active_message.id.to_string());
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn db_fallback_duplicate_repairs_new_dedupe_key() {
+        let env = cleanup().await.unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body = format!("db fallback repairs key {}", Uuid::new_v4());
+        let ts = Utc::now().naive_utc();
+        let active_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts - chrono::TimeDelta::seconds(1)),
+                timestamp: Set(Some(ts)),
+                deleted: Set(false),
+                message_uid: Set(Some("db-fallback-active".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let staged_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts),
+                timestamp: Set(Some(ts)),
+                deleted: Set(true),
+                message_uid: Set(Some("db-fallback-staged".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let key =
+            crate::messenger::dedupe::redis_key_for_body_for_dedupe(&body);
+        let mut redis = env.redis.clone();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let duplicate = find_duplicate_of(
+            &txn,
+            &body,
+            &body,
             None,
             Some(ts),
             staged_message.id,
